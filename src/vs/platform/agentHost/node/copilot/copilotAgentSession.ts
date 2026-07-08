@@ -1738,6 +1738,29 @@ export class CopilotAgentSession extends Disposable {
 		}
 	}
 
+	async startMcpServer(id: string): Promise<void> {
+		const serverName = this._mcpCustomizations.serverNameForCustomizationId(id);
+		if (!serverName) {
+			this._logService.warn(`[Copilot:${this.sessionId}] Cannot start unknown MCP server customization ${id}`);
+			return;
+		}
+		// stopServer leaves inline session MCP servers not_configured; disable->enable is the validated restart path.
+		await this._wrapper.session.rpc.mcp.disable({ serverName });
+		await this._wrapper.session.rpc.mcp.enable({ serverName });
+		await this._wrapper.session.rpc.mcp.listTools({ serverName });
+		this._seedMcpServersFromRpc();
+	}
+
+	async stopMcpServer(id: string): Promise<void> {
+		const serverName = this._mcpCustomizations.serverNameForCustomizationId(id);
+		if (!serverName) {
+			this._logService.warn(`[Copilot:${this.sessionId}] Cannot stop unknown MCP server customization ${id}`);
+			return;
+		}
+		await this._wrapper.session.rpc.mcp.stopServer({ serverName });
+		this._mcpCustomizations.applyOne({ name: serverName, state: { kind: McpServerStatus.Stopped } });
+	}
+
 	/**
 	 * Forwards an App→host `sampling/createMessage` request received
 	 * over the AHP `mcp://` channel to `rpc.mcp.executeSampling`. The
@@ -1961,10 +1984,7 @@ export class CopilotAgentSession extends Disposable {
 				return { kind: 'reject' };
 			}
 
-			// Derive display information from the permission request kind
-			const { confirmationTitle, invocationMessage, toolInput, permissionKind, permissionPath } = getPermissionDisplay(request, this._workingDirectory);
-
-			// For write permission requests, build an FileEdit preview so the
+			// For write permission requests, build a FileEdit preview so the
 			// client can show a diff before the user approves or denies. This
 			// awaits async filesystem operations; the SDK already calls
 			// `handlePermissionRequest` from an arbitrary async context, so the
@@ -1978,6 +1998,9 @@ export class CopilotAgentSession extends Disposable {
 			if (!this._pendingPermissions.has(toolCallId)) {
 				return { kind: 'reject' };
 			}
+
+			const isNewFile = edits?.items.some(edit => !edit.before && !!edit.after);
+			const { confirmationTitle, invocationMessage, toolInput, permissionKind, permissionPath } = getPermissionDisplay(request, this._workingDirectory, isNewFile);
 
 			// Fire a pending_confirmation signal to transition the tool to PendingConfirmation
 			const toolName = request.toolName ?? request.kind;
@@ -3329,8 +3352,7 @@ export class CopilotAgentSession extends Disposable {
 
 	private _applyMcpServerList(servers: readonly { readonly name: string; readonly status: SdkMcpServerStatus; readonly error?: string }[]): void {
 		const sdkServers = servers
-			.map(s => this._toSdkMcpServer(s.name, s.status, s.error))
-			.filter(isDefined);
+			.map(s => this._toSdkMcpServer(s.name, s.status, s.error));
 		this._mcpCustomizations.applyAll(sdkServers);
 	}
 
@@ -3357,23 +3379,13 @@ export class CopilotAgentSession extends Disposable {
 
 	/**
 	 * Translates the SDK's flat MCP status string into AHP's discriminated
-	 * {@link McpServerState} union. Returns `undefined` for
-	 * `not_configured`, which has no AHP equivalent — the server is
-	 * dropped from the inventory.
-	 *
-	 * V1 maps `needs-auth` to {@link McpServerStatus.Starting}: OAuth
-	 * handling is intentionally out of scope, so authRequired transitions
-	 * are masked as "still connecting" until the auth pipeline lands.
+	 * {@link McpServerState} union.
 	 */
-	private _toSdkMcpServer(name: string, status: SdkMcpServerStatus, error?: string): ISdkMcpServer | undefined {
-		const state = this._translateSdkMcpStatus(status, error);
-		if (!state) {
-			return undefined;
-		}
-		return { name, state };
+	private _toSdkMcpServer(name: string, status: SdkMcpServerStatus, error?: string): ISdkMcpServer {
+		return { name, state: this._translateSdkMcpStatus(name, status, error) };
 	}
 
-	private _translateSdkMcpStatus(status: SdkMcpServerStatus, error?: string): McpServerState | undefined {
+	private _translateSdkMcpStatus(name: string, status: SdkMcpServerStatus, error?: string): McpServerState {
 		switch (status) {
 			case 'connected':
 				return { kind: McpServerStatus.Ready };
@@ -3386,16 +3398,18 @@ export class CopilotAgentSession extends Disposable {
 					},
 				};
 			case 'pending':
-			case 'needs-auth':
-				// TODO: surface `needs-auth` as McpServerStatus.AuthRequired
-				// once OAuth wiring is in place.
+			case 'needs-auth': {
+				const previous = this._mcpCustomizations.stateForServer(name);
+				if (previous?.kind === McpServerStatus.AuthRequired) {
+					return previous;
+				}
 				return { kind: McpServerStatus.Starting };
+			}
 			case 'disabled':
-				return { kind: McpServerStatus.Stopped };
 			case 'not_configured':
-				return undefined;
+				return { kind: McpServerStatus.Stopped };
 			default:
-				return undefined;
+				return { kind: McpServerStatus.Stopped };
 		}
 	}
 

@@ -326,13 +326,23 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 	const services = new ServiceCollection();
 	services.set(ILogService, options?.logService ?? new NullLogService());
 	services.set(ITelemetryService, options?.telemetryService ?? new NullTelemetryServiceShape());
+	const storedFileContents = new Map(Object.entries(options?.fileContents ?? {}));
 	services.set(IFileService, {
 		_serviceBrand: undefined,
 		readFile: async (resource: URI) => {
 			if (options?.fileReadErrors?.includes(resource.toString()) || options?.fileReadErrors?.includes(resource.fsPath)) {
 				throw new Error('read failed');
 			}
-			return { value: VSBuffer.fromString(options?.fileContents?.[resource.toString()] ?? options?.fileContents?.[resource.fsPath] ?? '') };
+			return { value: VSBuffer.fromString(storedFileContents.get(resource.toString()) ?? storedFileContents.get(resource.fsPath) ?? '') };
+		},
+		exists: async (resource: URI) => storedFileContents.has(resource.toString()) || storedFileContents.has(resource.fsPath),
+		writeFile: async (resource: URI, content: VSBuffer) => {
+			storedFileContents.set(resource.toString(), content.toString());
+			return { resource } as Awaited<ReturnType<IFileService['writeFile']>>;
+		},
+		del: async (resource: URI) => {
+			storedFileContents.delete(resource.toString());
+			storedFileContents.delete(resource.fsPath);
 		},
 	} as Partial<IFileService> as IFileService);
 	services.set(ISessionDataService, createSessionDataService());
@@ -1482,6 +1492,39 @@ suite('CopilotAgentSession', () => {
 			assert.strictEqual(result.kind, 'approve-once');
 		});
 
+		test('new-file write permission includes proposed content and create wording', async () => {
+			const { session, runtime, waitForSignal } = await createAgentSession(disposables);
+			const resultPromise = runtime.handlePermissionRequest({
+				kind: 'write',
+				fileName: '/workspace/package.json',
+				newFileContents: '{"name":"example"}\n',
+				toolCallId: 'tc-create',
+			});
+
+			const signal = await waitForSignal(s => s.kind === 'pending_confirmation');
+			assert.strictEqual(signal.kind, 'pending_confirmation');
+			if (signal.kind !== 'pending_confirmation') {
+				throw new Error('Expected a pending confirmation');
+			}
+			const edit = signal.state.edits?.items[0];
+			assert.deepStrictEqual({
+				title: signal.state.confirmationTitle,
+				message: signal.state.invocationMessage,
+				before: edit?.before,
+				afterUri: edit?.after?.uri,
+				contentScheme: edit?.after?.content.uri ? URI.parse(edit.after.content.uri).scheme : undefined,
+			}, {
+				title: 'Create file?',
+				message: { markdown: 'Creating [package.json](file:///workspace/package.json)' },
+				before: undefined,
+				afterUri: 'file:///workspace/package.json',
+				contentScheme: 'pending-edit-content',
+			});
+
+			assert.ok(session.respondToPermissionRequest('tc-create', false));
+			assert.strictEqual((await resultPromise).kind, 'reject');
+		});
+
 		test('auto-approves write permission for session-state plan files', async () => {
 			const previousXdgStateHome = process.env['XDG_STATE_HOME'];
 			process.env['XDG_STATE_HOME'] = '/mock-state-home';
@@ -2305,7 +2348,7 @@ suite('CopilotAgentSession', () => {
 			}
 		});
 
-		test('live tool_complete preserves SDK shell_exit content', async () => {
+		test('live tool_complete maps SDK shell_exit content to terminal completion', async () => {
 			const { mockSession, signals } = await createAgentSession(disposables);
 
 			mockSession.fire('tool.execution_start', {
