@@ -27,6 +27,8 @@ import { ISessionsListModelService } from '../../../../../sessions/services/sess
 import { ISessionsProvidersService } from '../../../../../sessions/services/sessions/browser/sessionsProvidersService.js';
 // eslint-disable-next-line local/code-import-patterns
 import { BlockedSessionsList } from '../../../../../sessions/contrib/sessions/browser/blockedSessionsList.js';
+// eslint-disable-next-line local/code-import-patterns
+import { ISessionCIFailures, ISessionCIFailuresProvider } from '../../../../../sessions/contrib/sessions/browser/sessionCIFailuresModel.js';
 import { IChatService, IChatQuestion, IChatQuestionCarousel } from '../../../../contrib/chat/common/chatService/chatService.js';
 import { IChatModel } from '../../../../contrib/chat/common/model/chatModel.js';
 import { ITerminalChatService } from '../../../../contrib/terminal/browser/terminal.js';
@@ -92,6 +94,8 @@ interface IBlockedSessionOptions {
 	approvalCommand?: string;
 	/** A pending ask-questions carousel; renders the question widget inline in the row. */
 	questionCarousel?: IChatQuestionCarousel;
+	/** Failing-CI state; renders the inline "Fix CI" row. */
+	ciFailures?: ISessionCIFailures;
 }
 
 function createBlockedSession(options: IBlockedSessionOptions, approvals?: Map<string, IAgentSessionApprovalInfo>): ISession {
@@ -166,6 +170,30 @@ function buildApprovalScenario(specs: readonly IBlockedSessionOptions[]): { sess
 	const approvals = new Map<string, IAgentSessionApprovalInfo>();
 	const sessions = specs.map(spec => createBlockedSession(spec, approvals));
 	return { sessions, approvalModel: createApprovalModel(approvals) };
+}
+
+/** A CI failures provider backed by a fixed, per-session-resource map. */
+function createCIFailuresProvider(failures: ReadonlyMap<string, ISessionCIFailures>): ISessionCIFailuresProvider {
+	return {
+		getCIFailures: (session: ISession): IObservable<ISessionCIFailures | undefined> => constObservable(failures.get(session.resource.toString())),
+		fixChecks: async () => { },
+	};
+}
+
+/**
+ * Build a set of sessions together with a CI failures provider: each session
+ * whose spec has `ciFailures` shows the inline "Fix CI" row.
+ */
+function buildCIScenario(specs: readonly IBlockedSessionOptions[]): { sessions: ISession[]; ciFailuresProvider: ISessionCIFailuresProvider } {
+	const failures = new Map<string, ISessionCIFailures>();
+	const sessions = specs.map(spec => {
+		const session = createBlockedSession(spec);
+		if (spec.ciFailures) {
+			failures.set(session.resource.toString(), spec.ciFailures);
+		}
+		return session;
+	});
+	return { sessions, ciFailuresProvider: createCIFailuresProvider(failures) };
 }
 
 function createMockListModelService(): ISessionsListModelService {
@@ -256,7 +284,7 @@ const multiSelectQuestion: IChatQuestion = {
 // Render helper
 // ============================================================================
 
-function renderBlockedList(ctx: ComponentFixtureContext, sessions: readonly ISession[], approvalModel?: AgentSessionApprovalModel): void {
+function renderBlockedList(ctx: ComponentFixtureContext, sessions: readonly ISession[], approvalModel?: AgentSessionApprovalModel, ciFailuresProvider?: ISessionCIFailuresProvider): void {
 	const { container, disposableStore } = ctx;
 
 	const instantiationService = createEditorServices(disposableStore, {
@@ -310,6 +338,9 @@ function renderBlockedList(ctx: ComponentFixtureContext, sessions: readonly ISes
 	const list = disposableStore.add(instantiationService.createInstance(BlockedSessionsList, container, {
 		onSessionOpen: () => { },
 		approvalModel,
+		// Default to a no-op provider so fixtures don't instantiate the real
+		// GitHub-backed model (which needs services not registered here).
+		ciFailuresProvider: ciFailuresProvider ?? createCIFailuresProvider(new Map()),
 	}));
 	list.setSessions(sessions);
 }
@@ -449,6 +480,30 @@ export default defineThemedFixtureGroup({ path: 'sessions/' }, {
 				{ title: 'Choose the release targets', status: SessionStatus.NeedsInput, minutesAgo: 3, workspace: createMockWorkspace('vscode', 'release/targets'), questionCarousel: createCarousel([multiSelectQuestion]) },
 			]);
 			renderBlockedList(ctx, sessions, approvalModel);
+		},
+	}),
+
+	// A single failing-CI session — renders the inline "Fix CI" row with an
+	// orange button, mirroring the CI input banner.
+	BlockedSessionsList_OneCIFailure: defineComponentFixture({
+		render: (ctx) => {
+			const { sessions, ciFailuresProvider } = buildCIScenario([
+				{ title: 'Add telemetry for startup performance', status: SessionStatus.Completed, minutesAgo: 62, workspace: createMockWorkspace('vscode', 'perf/startup-telemetry', failingChecksPr), changesSummary: createMockChangesSummary(8, 240, 58), ciFailures: { failed: 2, completed: 7, pending: 3 } },
+			]);
+			renderBlockedList(ctx, sessions, undefined, ciFailuresProvider);
+		},
+	}),
+
+	// Several failing-CI sessions spanning single-failure, multi-failure and
+	// no-pending variations of the "Fix CI" row.
+	BlockedSessionsList_CIFailures: defineComponentFixture({
+		render: (ctx) => {
+			const { sessions, ciFailuresProvider } = buildCIScenario([
+				{ title: 'Add telemetry for startup performance', status: SessionStatus.Completed, minutesAgo: 62, workspace: createMockWorkspace('vscode', 'perf/startup-telemetry', failingChecksPr), changesSummary: createMockChangesSummary(8, 240, 58), ciFailures: { failed: 1, completed: 6, pending: 0 } },
+				{ title: 'Investigate flaky terminal integration test', status: SessionStatus.Completed, minutesAgo: 320, workspace: createMockWorkspace('vscode', 'fix/flaky-terminal-test', failingChecksPr), changesSummary: createMockChangesSummary(3, 41, 12), ciFailures: { failed: 3, completed: 5, pending: 4 } },
+				{ title: 'Bump the bundler to the next major', status: SessionStatus.Completed, minutesAgo: 500, workspace: createMockWorkspace('vscode', 'chore/bundler-major', failingChecksPr), changesSummary: createMockChangesSummary(2, 18, 6), ciFailures: { failed: 5, completed: 9, pending: 0 } },
+			]);
+			renderBlockedList(ctx, sessions, undefined, ciFailuresProvider);
 		},
 	}),
 });

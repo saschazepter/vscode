@@ -39,6 +39,9 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../../pla
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { GITHUB_REMOTE_FILE_SCHEME, ISession, ISessionWorkspace, SessionStatus } from '../../../../services/sessions/common/session.js';
 import { AgentSessionApprovalKind, AgentSessionApprovalModel, agentSessionApprovalId, IAgentSessionApprovalInfo } from '../../../../../workbench/contrib/chat/browser/agentSessions/agentSessionApprovalModel.js';
+import { ISessionCIFailuresProvider } from '../sessionCIFailuresModel.js';
+import { asCssVariable } from '../../../../../platform/theme/common/colorUtils.js';
+import { chartsOrange } from '../../../../../platform/theme/common/colors/chartsColors.js';
 import { ChatQuestionCarouselPart } from '../../../../../workbench/contrib/chat/browser/widget/chatContentParts/chatQuestionCarouselPart.js';
 import { IChatContentPartRenderContext } from '../../../../../workbench/contrib/chat/browser/widget/chatContentParts/chatContentParts.js';
 import { IChatQuestionAnswerValue } from '../../../../../workbench/contrib/chat/common/chatService/chatService.js';
@@ -205,6 +208,12 @@ const APPROVAL_CAROUSEL_ESTIMATE_HEIGHT = 240;
 /** Top-margin of the approval row (matches `.session-approval-row` in the CSS), added to the measured carousel height. */
 const APPROVAL_ROW_CAROUSEL_MARGIN = 4;
 
+/**
+ * Height (px) added to a session row for the inline "Fix CI" row. A single line
+ * of text plus the button, matching `.session-ci-row` in `sessionsList.css`.
+ */
+const CI_ROW_HEIGHT = 36;
+
 //#endregion
 
 //#region Tree Delegate
@@ -229,6 +238,7 @@ class SessionsTreeDelegate implements IListVirtualDelegate<SessionListItem> {
 		private readonly _approvalRowMaxLines: number = DEFAULT_APPROVAL_ROW_MAX_LINES,
 		private readonly _visibleApprovalKinds: readonly AgentSessionApprovalKind[] = DEFAULT_VISIBLE_APPROVAL_KINDS,
 		private readonly _getMeasuredApprovalHeight: (session: ISession) => number | undefined = () => undefined,
+		private readonly _ciFailuresProvider: ISessionCIFailuresProvider | undefined = undefined,
 	) { }
 
 	getHeight(element: SessionListItem): number {
@@ -251,11 +261,14 @@ class SessionsTreeDelegate implements IListVirtualDelegate<SessionListItem> {
 				height += SessionItemRenderer.getApprovalRowHeight(approval.label, this._approvalRowMaxLines);
 			}
 		}
+		if (this._ciFailuresProvider?.getCIFailures(element as ISession).get()) {
+			height += CI_ROW_HEIGHT;
+		}
 		return height;
 	}
 
 	hasDynamicHeight(element: SessionListItem): boolean {
-		return !!this._approvalModel && isSessionItem(element);
+		return (!!this._approvalModel || !!this._ciFailuresProvider) && isSessionItem(element);
 	}
 
 	getTemplateId(element: SessionListItem): string {
@@ -315,6 +328,9 @@ interface ISessionItemTemplate {
 	readonly approvalRow: HTMLElement;
 	readonly approvalLabel: HTMLElement;
 	readonly approvalButtonContainer: HTMLElement;
+	readonly ciRow: HTMLElement;
+	readonly ciLabel: HTMLElement;
+	readonly ciButtonContainer: HTMLElement;
 	readonly contextKeyService: IContextKeyService;
 	readonly disposables: DisposableStore;
 	readonly elementDisposables: DisposableStore;
@@ -362,7 +378,7 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 	}
 
 	constructor(
-		private readonly options: { grouping: () => SessionsGrouping; isPinned: (session: ISession) => boolean; isRead: (session: ISession) => boolean; visibleSessions: IObservable<readonly (IActiveSession | undefined)[]>; getMultiSelectedSessions: (session: ISession) => ISession[]; isInChatsSection: (session: ISession) => boolean; showHover: boolean; approvalRowMaxLines: number; toolbarActions: boolean; visibleApprovalKinds: readonly AgentSessionApprovalKind[] },
+		private readonly options: { grouping: () => SessionsGrouping; isPinned: (session: ISession) => boolean; isRead: (session: ISession) => boolean; visibleSessions: IObservable<readonly (IActiveSession | undefined)[]>; getMultiSelectedSessions: (session: ISession) => ISession[]; isInChatsSection: (session: ISession) => boolean; showHover: boolean; approvalRowMaxLines: number; toolbarActions: boolean; visibleApprovalKinds: readonly AgentSessionApprovalKind[]; ciFailuresProvider: ISessionCIFailuresProvider | undefined },
 		private readonly approvalModel: AgentSessionApprovalModel | undefined,
 		private readonly instantiationService: IInstantiationService,
 		private readonly contextKeyService: IContextKeyService,
@@ -414,6 +430,16 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 		const approvalLabel = DOM.append(approvalRow, $('span.session-approval-label'));
 		const approvalButtonContainer = DOM.append(approvalRow, $('.session-approval-button'));
 
+		// CI failures row ("N checks failed, X pending" + a Fix CI button).
+		const ciRow = DOM.append(mainCol, $('.session-ci-row'));
+		const ciLabel = DOM.append(ciRow, $('span.session-ci-label'));
+		const ciButtonContainer = DOM.append(ciRow, $('.session-ci-button'));
+		// Keep clicks on the CI row (its button) from opening the session.
+		for (const eventType of ['pointerdown', 'pointerup', 'click', 'dblclick'] as const) {
+			disposables.add(DOM.addDisposableListener(ciRow, eventType, e => e.stopPropagation()));
+		}
+		disposables.add(Gesture.ignoreTarget(ciRow));
+
 		const contextKeyService = disposables.add(this.contextKeyService.createScoped(container));
 		const scopedInstantiationService = disposables.add(this.instantiationService.createChild(new ServiceCollection([IContextKeyService, contextKeyService])));
 		// When toolbar actions are disabled (e.g. the blocked-sessions dropdown) the row
@@ -427,7 +453,7 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 			}));
 		}
 
-		return { container, statusIcon, title, titleContainer, titleToolbar, detailsRow, approvalRow, approvalLabel, approvalButtonContainer, contextKeyService, disposables, elementDisposables };
+		return { container, statusIcon, title, titleContainer, titleToolbar, detailsRow, approvalRow, approvalLabel, approvalButtonContainer, ciRow, ciLabel, ciButtonContainer, contextKeyService, disposables, elementDisposables };
 	}
 
 	renderElement(node: ITreeNode<SessionListItem, FuzzyScore>, _index: number, template: ISessionItemTemplate): void {
@@ -663,6 +689,79 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 		if (this.approvalModel) {
 			this.renderApprovalRow(element, template);
 		}
+
+		// CI failures row — reactive
+		if (this.options.ciFailuresProvider) {
+			this.renderCIRow(element, template);
+		}
+	}
+
+	/**
+	 * Render the inline "Fix CI" row for a session whose pull request has failing
+	 * CI checks: a single line summarising the failures and an orange "Fix CI"
+	 * button that dispatches the same fix flow as the CI input banner.
+	 */
+	private renderCIRow(element: ISession, template: ISessionItemTemplate): void {
+		const provider = this.options.ciFailuresProvider;
+		if (!provider) {
+			return;
+		}
+
+		const failuresObs = provider.getCIFailures(element);
+		let wasVisible = !!failuresObs.get();
+		template.ciRow.classList.toggle('visible', wasVisible);
+
+		const rowStore = template.elementDisposables.add(new DisposableStore());
+
+		template.elementDisposables.add(autorun(reader => {
+			rowStore.clear();
+
+			const failures = failuresObs.read(reader);
+			const visible = !!failures;
+			template.ciRow.classList.toggle('visible', visible);
+
+			if (failures) {
+				const failedText = failures.completed === 1
+					? localize('sessionCi.oneCheckFailed', "1 check failed")
+					: localize('sessionCi.checksFailed', "{0} out of {1} checks failed", failures.failed, failures.completed);
+				const text = failures.pending > 0
+					? localize('sessionCi.checksFailedPending', "{0}, {1} pending", failedText, failures.pending)
+					: failedText;
+
+				template.ciLabel.textContent = text;
+				if (this.options.showHover) {
+					rowStore.add(this.hoverService.setupDelayedHover(template.ciLabel, {
+						content: text,
+						position: { hoverPosition: HoverPosition.BELOW },
+					}));
+				}
+
+				template.ciButtonContainer.textContent = '';
+				const button = rowStore.add(new Button(template.ciButtonContainer, {
+					title: localize('sessionCi.fixTitle', "Fix failing CI checks"),
+					...defaultButtonStyles,
+					buttonBackground: asCssVariable(chartsOrange),
+					buttonHoverBackground: `color-mix(in srgb, ${asCssVariable(chartsOrange)} 88%, black)`,
+					buttonBorder: asCssVariable(chartsOrange),
+				}));
+				button.label = localize('sessionCi.fix', "Fix CI");
+				rowStore.add(button.onDidClick(async () => {
+					// Disable while the fix is dispatched so a second click can't
+					// submit a duplicate request (the model also guards internally).
+					button.enabled = false;
+					try {
+						await provider.fixChecks(element);
+					} finally {
+						button.enabled = true;
+					}
+				}));
+			}
+
+			if (wasVisible !== visible) {
+				wasVisible = visible;
+				this._onDidChangeItemHeight.fire(element);
+			}
+		}));
 	}
 
 	private renderApprovalRow(element: ISession, template: ISessionItemTemplate): void {
@@ -1748,7 +1847,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 		// TEMPORARY (#320480): see the note on the `IAgentSessionsService` import.
 		const agentSessionsService = instantiationService.invokeFunction(accessor => accessor.get(IAgentSessionsService));
 		const sessionRenderer = new SessionItemRenderer(
-			{ grouping: this.options.grouping, isPinned: s => this.isSessionPinned(s), isRead: s => this.isSessionRead(s), visibleSessions: this._sessionsService.visibleSessions, getMultiSelectedSessions: s => this.getMultiSelectedSessions(s), isInChatsSection: s => this._chatsSectionSessionIds.has(s.resource.toString()), showHover: true, approvalRowMaxLines: DEFAULT_APPROVAL_ROW_MAX_LINES, toolbarActions: true, visibleApprovalKinds: DEFAULT_VISIBLE_APPROVAL_KINDS },
+			{ grouping: this.options.grouping, isPinned: s => this.isSessionPinned(s), isRead: s => this.isSessionRead(s), visibleSessions: this._sessionsService.visibleSessions, getMultiSelectedSessions: s => this.getMultiSelectedSessions(s), isInChatsSection: s => this._chatsSectionSessionIds.has(s.resource.toString()), showHover: true, approvalRowMaxLines: DEFAULT_APPROVAL_ROW_MAX_LINES, toolbarActions: true, visibleApprovalKinds: DEFAULT_VISIBLE_APPROVAL_KINDS, ciFailuresProvider: undefined },
 			approvalModel,
 			instantiationService,
 			contextKeyService,
@@ -3406,6 +3505,12 @@ export interface ISessionsFlatListOptions {
 	 * (the blocked-sessions list) opt into {@link AgentSessionApprovalKind.QuestionCarousel}.
 	 */
 	readonly visibleApprovalKinds?: readonly AgentSessionApprovalKind[];
+	/**
+	 * Provides per-session CI failure state. When set, session rows whose pull
+	 * request has failing CI checks render an inline "Fix CI" row. Only supplied
+	 * by the blocked-sessions list; omitted elsewhere so no other list shows it.
+	 */
+	readonly ciFailuresProvider?: ISessionCIFailuresProvider;
 }
 
 /**
@@ -3464,6 +3569,7 @@ export class SessionsFlatList extends Disposable {
 				approvalRowMaxLines: this.options.approvalRowMaxLines ?? DEFAULT_APPROVAL_ROW_MAX_LINES,
 				toolbarActions: this.options.toolbarActions ?? true,
 				visibleApprovalKinds: this.options.visibleApprovalKinds ?? DEFAULT_VISIBLE_APPROVAL_KINDS,
+				ciFailuresProvider: this.options.ciFailuresProvider,
 			},
 			approvalModel,
 			instantiationService,
@@ -3474,7 +3580,7 @@ export class SessionsFlatList extends Disposable {
 			agentSessionsService,
 		);
 
-		this._delegate = new SessionsTreeDelegate(approvalModel, () => false, this.options.approvalRowMaxLines ?? DEFAULT_APPROVAL_ROW_MAX_LINES, this.options.visibleApprovalKinds ?? DEFAULT_VISIBLE_APPROVAL_KINDS, s => sessionRenderer.getMeasuredApprovalHeight(s));
+		this._delegate = new SessionsTreeDelegate(approvalModel, () => false, this.options.approvalRowMaxLines ?? DEFAULT_APPROVAL_ROW_MAX_LINES, this.options.visibleApprovalKinds ?? DEFAULT_VISIBLE_APPROVAL_KINDS, s => sessionRenderer.getMeasuredApprovalHeight(s), this.options.ciFailuresProvider);
 
 		this.tree = this._register(instantiationService.createInstance(
 			WorkbenchObjectTree<SessionListItem, FuzzyScore>,

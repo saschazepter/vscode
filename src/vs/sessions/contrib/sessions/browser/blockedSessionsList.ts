@@ -15,6 +15,7 @@ import { Menus } from '../../../browser/menus.js';
 import { ISession } from '../../../services/sessions/common/session.js';
 import { IApprovedSession, SessionsFlatList, ALL_VISIBLE_APPROVAL_KINDS } from './views/sessionsList.js';
 import { AgentSessionApprovalKind, AgentSessionApprovalModel } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionApprovalModel.js';
+import { ISessionCIFailuresProvider, SessionCIFailuresModel } from './sessionCIFailuresModel.js';
 
 /** Fixed width of the blocked-sessions list, in pixels. */
 const BLOCKED_LIST_WIDTH = 360;
@@ -36,6 +37,12 @@ export interface IBlockedSessionsListOptions {
 	 * surfaces the ask-questions carousel in addition to terminal approvals.
 	 */
 	readonly visibleApprovalKinds?: readonly AgentSessionApprovalKind[];
+	/**
+	 * Provides per-session CI failure state so failing-CI rows show an inline
+	 * "Fix CI" row. Defaults to a {@link SessionCIFailuresModel} owned by the
+	 * list; injectable so tests/fixtures can supply preset failures.
+	 */
+	readonly ciFailuresProvider?: ISessionCIFailuresProvider;
 }
 
 /**
@@ -86,6 +93,8 @@ export class BlockedSessionsList extends Disposable {
 
 		this._rowsContainer = append(element, $('.agent-sessions-blocked-list-rows'));
 
+		const ciFailuresProvider = options.ciFailuresProvider ?? this._register(instantiationService.createInstance(SessionCIFailuresModel));
+
 		this._list = this._register(instantiationService.createInstance(SessionsFlatList, this._rowsContainer, {
 			showSessionHover: true,
 			onSessionOpen: options.onSessionOpen,
@@ -93,6 +102,7 @@ export class BlockedSessionsList extends Disposable {
 			approvalRowMaxLines: BLOCKED_LIST_APPROVAL_ROW_MAX_LINES,
 			toolbarActions: false,
 			visibleApprovalKinds: options.visibleApprovalKinds ?? ALL_VISIBLE_APPROVAL_KINDS,
+			ciFailuresProvider,
 		}));
 
 		this._register(this._list.onDidChangeContentHeight(() => {
