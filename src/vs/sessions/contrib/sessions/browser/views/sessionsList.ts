@@ -3164,10 +3164,29 @@ export class SessionsList extends Disposable implements ISessionsList {
  * as lightweight stand-ins that the widget never touches.
  */
 function createCarouselRenderContext(container: HTMLElement): IChatContentPartRenderContext {
+	const requestVm: IChatRequestViewModel = {
+		id: 'blockedSessionsCarousel',
+		sessionResource: URI.parse('vscode-chat://blocked-sessions-carousel'),
+		dataId: 'blockedSessionsCarousel',
+		username: '',
+		message: { kind: 'reply', message: '', agentId: '' },
+		messageText: '',
+		attempt: 0,
+		variables: [],
+		currentRenderedHeight: undefined,
+		shouldBeRemovedOnSend: undefined,
+		isComplete: false,
+		isCompleteAddedRequest: false,
+		slashCommand: undefined,
+		agentOrSlashCommandDetected: false,
+		shouldBeBlocked: constObservable(false),
+		timestamp: 0,
+	};
+
 	return {
 		// A bare, non-response object so `isResponseVM` is false and the carousel
 		// renders interactively rather than as a completed summary.
-		element: { id: 'blockedSessionsCarousel' } as unknown as IChatRequestViewModel,
+		element: requestVm,
 		elementIndex: 0,
 		container,
 		content: [],
