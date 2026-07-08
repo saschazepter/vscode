@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { getWindow } from '../../../../base/browser/dom.js';
+import { DEFAULT_SCROLLBAR_SIZE } from '../../../../base/browser/ui/scrollbar/scrollableElement.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../base/common/observable.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
@@ -15,6 +16,9 @@ import { MIN_PROMPTS, PROMPT_TIMELINE_CONTRIB_ID, PROMPT_TIMELINE_ENABLED_SETTIN
 import { PromptTimelineModel, PromptEntry } from './promptTimelineModel.js';
 import { IPromptTimelineRail } from './promptTimelineRail.js';
 import { PromptTimelineRulerRail } from './promptTimelineRulerRail.js';
+
+/** Space (px) left between the native scrollbar and the interactive marks, so the scrollbar stays grabbable. */
+const SCROLLBAR_GUTTER_GAP = 6;
 
 /**
  * Per-widget contribution that overlays a prompt timeline rail on the chat
@@ -117,6 +121,11 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 		this._enablement.add(autorun(reader => {
 			railNode.style.setProperty('--prompt-timeline-bottom', `${inputPart.height.read(reader)}px`);
 		}));
+
+		// Reserve a gutter for the transcript's native scrollbar so the interactive marks sit to its
+		// left and never block the (now primary) scrollbar. Derived from the real slider width plus a
+		// small gap rather than a magic number, so it tracks the platform default.
+		railNode.style.setProperty('--prompt-timeline-scrollbar-gutter', `${DEFAULT_SCROLLBAR_SIZE + SCROLLBAR_GUTTER_GAP}px`);
 
 		// Report the host width so the rail can hide on very narrow transcripts.
 		const ResizeObserverCtor = getWindow(host).ResizeObserver;
