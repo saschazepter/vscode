@@ -2859,3 +2859,188 @@ body:has(.automation-dialog) .monaco-menu-container {
 	text-overflow: ellipsis;
 	max-width: 240px;
 }
+
+/* Automations card grid layout */
+.automations-list-widget .automations-list-scrollable {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+}
+
+.automations-list-widget .automations-list {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+}
+
+.automations-list-widget .automations-cards-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+	gap: 10px;
+	padding: 0 2px 8px 0;
+	box-sizing: border-box;
+}
+
+.automations-list-widget .automations-card-wrapper {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	border-radius: 6px;
+}
+
+.automations-list-widget .automations-card {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	padding: 10px 12px 12px;
+	border: 1px solid var(--vscode-widget-border);
+	border-radius: 6px;
+	background: var(--vscode-sideBar-background);
+	cursor: pointer;
+	transition: background-color 0.1s ease;
+	min-width: 0;
+}
+
+.automations-list-widget .automations-card:hover {
+	background: var(--vscode-list-hoverBackground);
+}
+
+.automations-list-widget .automations-card:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.automations-list-widget .automations-card-expanded {
+	border-bottom-left-radius: 0;
+	border-bottom-right-radius: 0;
+}
+
+.automations-list-widget .automations-card-disabled {
+	opacity: 0.72;
+}
+
+.automations-list-widget .automations-card-header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.automations-list-widget .automations-card-title {
+	margin: 0;
+	font-size: var(--vscode-agents-fontSize-body1);
+	font-weight: var(--vscode-agents-fontWeight-semiBold);
+	color: var(--vscode-foreground);
+	word-break: break-word;
+}
+
+.automations-list-widget .automations-card-badge {
+	flex-shrink: 0;
+	font-size: 11px;
+	line-height: 16px;
+	padding: 1px 6px;
+	border-radius: 999px;
+	white-space: nowrap;
+}
+
+.automations-list-widget .automations-card-badge.enabled {
+	background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+	color: var(--vscode-descriptionForeground);
+}
+
+.automations-list-widget .automations-card-badge.disabled {
+	background: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+}
+
+.automations-list-widget .automations-card-body {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	min-width: 0;
+}
+
+.automations-list-widget .automations-card-meta {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+}
+
+.automations-list-widget .automations-card-meta-row {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	gap: 6px;
+	font-size: 12px;
+	line-height: 1.4;
+	color: var(--vscode-descriptionForeground);
+}
+
+.automations-list-widget .automations-card-meta-label {
+	color: var(--vscode-foreground);
+	opacity: 0.9;
+}
+
+.automations-list-widget .automations-card-meta-value {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.automations-list-widget .automations-card-prompt {
+	margin: 0;
+	font-size: 12px;
+	line-height: 1.45;
+	color: var(--vscode-descriptionForeground);
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.automations-list-widget .automations-card-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	align-items: center;
+	margin-top: auto;
+}
+
+.automations-list-widget .automations-card-action-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--vscode-icon-foreground);
+	cursor: pointer;
+	font-size: 16px;
+}
+
+.automations-list-widget .automations-card-action-button:hover:not(:disabled) {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.automations-list-widget .automations-card-action-button:focus {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.automations-list-widget .automations-card-action-button:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
+.automations-list-widget .automations-card-wrapper-expanded .automations-row-history {
+	display: flex;
+	padding: 0 12px 12px;
+	border: 1px solid var(--vscode-widget-border);
+	border-top: none;
+	border-bottom-left-radius: 6px;
+	border-bottom-right-radius: 6px;
+	background: var(--vscode-sideBar-background);
+	gap: 8px;
+}
