@@ -41,14 +41,17 @@ suite('SessionServerTools', () => {
 		return { session: URI.parse(`copilot:/${id}`), startTime: 0, modifiedTime: 0, status, workingDirectory: dir, summary: `title-${id}` };
 	}
 
-	function createAccessor(overrides?: Partial<ISessionServerToolAccessor> & { onCreate?: (config: IAgentCreateSessionConfig) => void; onPrompt?: (session: URI, chat: URI, prompt: string) => void; onCreateChat?: (session: URI, chat: URI, title?: string) => void; onDelete?: (session: URI) => void }): ISessionServerToolAccessor {
+	function createAccessor(overrides?: Partial<ISessionServerToolAccessor> & { onCreate?: (config: IAgentCreateSessionConfig) => void; onPrompt?: (session: URI, chat: URI, prompt: string) => void; onCreateChat?: (session: URI, chat: URI, options?: { title?: string; model?: IAgentModelInfo }) => void; onDelete?: (session: URI) => void; depths?: Map<string, number> }): ISessionServerToolAccessor {
+		const depths = overrides?.depths ?? new Map<string, number>();
 		return {
 			listSessions: overrides?.listSessions ?? (async () => [sessionMeta('s1', SessionStatus.InProgress, workspace)]),
 			createSession: overrides?.createSession ?? (async config => { overrides?.onCreate?.(config); return URI.parse('copilot:/new'); }),
 			getModels: overrides?.getModels ?? (() => [model]),
 			startPrompt: overrides?.startPrompt ?? (async (session, chat, prompt) => { overrides?.onPrompt?.(session, chat, prompt); }),
-			createChat: overrides?.createChat ?? (async (session, chat, title) => { overrides?.onCreateChat?.(session, chat, title); }),
+			createChat: overrides?.createChat ?? (async (session, chat, options) => { overrides?.onCreateChat?.(session, chat, options); }),
 			deleteSession: overrides?.deleteSession ?? (async session => { overrides?.onDelete?.(session); }),
+			getSessionSpawnDepth: overrides?.getSessionSpawnDepth ?? (session => depths.get(session.toString()) ?? 0),
+			setSessionSpawnDepth: overrides?.setSessionSpawnDepth ?? ((session, depth) => { depths.set(session.toString(), depth); }),
 		};
 	}
 
@@ -121,42 +124,67 @@ suite('SessionServerTools', () => {
 		store.dispose();
 	});
 
-	test('create_session enforces a recursion cap', async () => {
+	test('create_session stamps spawn depth and enforces the recursion depth limit', async () => {
 		const store = new DisposableStore();
 		const stateManager = store.add(new AgentHostStateManager(new NullLogService()));
-		const group = createSessionServerToolGroup(createAccessor());
+		const depths = new Map<string, number>();
+		const group = createSessionServerToolGroup(createAccessor({ depths }));
 		const args = { workspace: workspace.toString(), prompt: 'go' };
-		for (let i = 0; i < 5; i++) {
-			await group.execute(stateManager, 'copilot:/caller', createSessionToolName, args);
-		}
-		await assert.rejects(async () => { await group.execute(stateManager, 'copilot:/caller', createSessionToolName, args); }, /more than 5 sessions/);
+
+		// From a top-level (depth 0) session, the created session is stamped depth 1.
+		await group.execute(stateManager, 'copilot:/caller', createSessionToolName, args);
+		assert.strictEqual(depths.get('copilot:/new'), 1);
+
+		// A session already at the max spawn depth may not create further sessions.
+		depths.set('copilot:/deep', 3);
+		await assert.rejects(
+			async () => { await group.execute(stateManager, 'copilot:/deep', createSessionToolName, args); },
+			/recursion limit/,
+		);
 		store.dispose();
 	});
 
-	test('getCreateChatArgs resolves an explicit session, falls back to current, and validates', () => {
+	test('create_session enforces a process-wide breadth backstop', async () => {
+		const store = new DisposableStore();
+		const stateManager = store.add(new AgentHostStateManager(new NullLogService()));
+		// Each created session gets a unique URI so depth never blocks (all children of a depth-0 caller).
+		let n = 0;
+		const group = createSessionServerToolGroup(createAccessor({ createSession: async () => URI.parse(`copilot:/s${n++}`) }));
+		const args = { workspace: workspace.toString(), prompt: 'go' };
+		for (let i = 0; i < 25; i++) {
+			await group.execute(stateManager, 'copilot:/caller', createSessionToolName, args);
+		}
+		await assert.rejects(async () => { await group.execute(stateManager, 'copilot:/caller', createSessionToolName, args); }, /more than 25 sessions/);
+		store.dispose();
+	});
+
+	test('getCreateChatArgs resolves an explicit session, model, falls back to current, and validates', () => {
 		const sessions = [sessionMeta('s1', SessionStatus.Idle, workspace)];
-		const explicit = getCreateChatArgs({ session: 'copilot:/s1', prompt: 'hi', title: 'My chat' }, sessions);
+		const explicit = getCreateChatArgs({ session: 'copilot:/s1', prompt: 'hi', title: 'My chat', model: 'gpt-4o' }, sessions, [model]);
 		assert.strictEqual(explicit.session.toString(), 'copilot:/s1');
 		assert.strictEqual(explicit.title, 'My chat');
-		const current = getCreateChatArgs({ prompt: 'hi' }, sessions, URI.parse('copilot:/s1'));
+		assert.strictEqual(explicit.model?.id, 'gpt-4o');
+		const current = getCreateChatArgs({ prompt: 'hi' }, sessions, [model], URI.parse('copilot:/s1'));
 		assert.strictEqual(current.session.toString(), 'copilot:/s1');
-		assert.throws(() => getCreateChatArgs({ session: 'copilot:/unknown', prompt: 'hi' }, sessions), /session/);
-		assert.throws(() => getCreateChatArgs({ prompt: 'hi' }, sessions), /session/);
+		assert.throws(() => getCreateChatArgs({ session: 'copilot:/unknown', prompt: 'hi' }, sessions, [model]), /session/);
+		assert.throws(() => getCreateChatArgs({ prompt: 'hi' }, sessions, [model]), /session/);
+		assert.throws(() => getCreateChatArgs({ prompt: 'hi', model: 'nope' }, sessions, [model], URI.parse('copilot:/s1')), /model/);
 	});
 
 	test('create_chat adds a chat to the session, starts the prompt, and returns an open link', async () => {
-		let createdChat: { session: URI; chat: URI; title?: string } | undefined;
+		let createdChat: { session: URI; chat: URI; options?: { title?: string; model?: IAgentModelInfo } } | undefined;
 		let prompted: { session: URI; chat: URI; prompt: string } | undefined;
 		const accessor = createAccessor({
 			listSessions: async () => [sessionMeta('s1', SessionStatus.Idle, workspace)],
-			onCreateChat: (session, chat, title) => { createdChat = { session, chat, title }; },
+			onCreateChat: (session, chat, options) => { createdChat = { session, chat, options }; },
 			onPrompt: (session, chat, prompt) => { prompted = { session, chat, prompt }; },
 		});
-		const result = await applyCreateChatTool(accessor, { session: 'copilot:/s1', prompt: 'do it', title: 'T' });
+		const result = await applyCreateChatTool(accessor, { session: 'copilot:/s1', prompt: 'do it', title: 'T', model: 'gpt-4o' });
 		assert.strictEqual(result.session, 'copilot:/s1');
 		assert.strictEqual(result.openLink, 'agent-host-session://copilot/s1');
 		assert.strictEqual(createdChat?.session.toString(), 'copilot:/s1');
-		assert.strictEqual(createdChat?.title, 'T');
+		assert.strictEqual(createdChat?.options?.title, 'T');
+		assert.strictEqual(createdChat?.options?.model?.id, 'gpt-4o');
 		assert.strictEqual(createdChat?.chat.toString(), result.chat);
 		assert.strictEqual(prompted?.chat.toString(), result.chat);
 		assert.strictEqual(prompted?.prompt, 'do it');
@@ -178,9 +206,12 @@ suite('SessionServerTools', () => {
 	test('getDeleteSessionArgs validates and refuses the current session', () => {
 		const sessions = [sessionMeta('s1', SessionStatus.Idle, workspace), sessionMeta('s2', SessionStatus.Idle, workspace)];
 		assert.strictEqual(getDeleteSessionArgs({ session: 'copilot:/s2' }, sessions).toString(), 'copilot:/s2');
+		// Accepts the agent-host-session:// open link form (as returned by create_session).
+		assert.strictEqual(getDeleteSessionArgs({ session: 'agent-host-session://copilot/s2' }, sessions).toString(), 'copilot:/s2');
 		assert.throws(() => getDeleteSessionArgs({ session: 'copilot:/unknown' }, sessions), /session/);
 		assert.throws(() => getDeleteSessionArgs({}, sessions), /session/);
 		assert.throws(() => getDeleteSessionArgs({ session: 'copilot:/s1' }, sessions, URI.parse('copilot:/s1')), /current session/);
+		assert.throws(() => getDeleteSessionArgs({ session: 'agent-host-session://copilot/s1' }, sessions, URI.parse('copilot:/s1')), /current session/);
 	});
 
 	test('delete_session deletes the target and returns a confirmation', async () => {

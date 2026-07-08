@@ -8,7 +8,7 @@ import { localize } from '../../../../nls.js';
 import type { IAgentCreateSessionConfig, IAgentModelInfo, IAgentSessionMetadata } from '../../common/agentService.js';
 import { SessionStatus } from '../../common/state/protocol/channels-session/state.js';
 import { buildChatUri, buildDefaultChatUri, parseChatUri, type ToolDefinition, type StringOrMarkdown, type URI as ProtocolURI } from '../../common/state/sessionState.js';
-import { buildOpenSessionLinkUri, CREATE_CHAT_TOOL_NAME, CREATE_SESSION_TOOL_NAME } from '../../common/openSessionLink.js';
+import { buildOpenSessionLinkUri, CREATE_CHAT_TOOL_NAME, CREATE_SESSION_TOOL_NAME, parseOpenSessionLinkUri } from '../../common/openSessionLink.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import type { AgentHostStateManager } from '../agentHostStateManager.js';
 import type { IServerToolDisplay, IServerToolDisplayResult, IServerToolGroup } from './agentServerToolHost.js';
@@ -19,8 +19,18 @@ export const createSessionToolName = CREATE_SESSION_TOOL_NAME;
 export const createChatToolName = CREATE_CHAT_TOOL_NAME;
 export const deleteSessionToolName = 'delete_session';
 
-const maxCreatedSessions = 5;
-const maxCreatedChats = 10;
+/**
+ * Maximum `create_session` recursion depth. A user/top-level session is depth 0;
+ * a session created by `create_session` from within a depth-N session is depth
+ * N+1. Once a session reaches this depth, its agent may not create further
+ * sessions — this bounds recursive spawn *chains* (A→B→C→…). Breadth is bounded
+ * separately by {@link maxCreatedSessions} plus the per-call user confirmation.
+ */
+const maxSessionSpawnDepth = 3;
+
+/** Process-wide backstop against runaway spawning (breadth), independent of depth. */
+const maxCreatedSessions = 25;
+const maxCreatedChats = 25;
 
 const sessionConfirmationToolNames: ReadonlySet<string> = new Set([createSessionToolName, createChatToolName, deleteSessionToolName]);
 
@@ -52,9 +62,10 @@ const getCurrentSessionInputSchema: ToolDefinition['inputSchema'] = {
 const createChatInputSchema: ToolDefinition['inputSchema'] = {
 	type: 'object',
 	properties: {
-		session: { type: 'string', description: 'Optional session URI to add the chat to (from `list_sessions`). Defaults to the current session when omitted.' },
+		session: { type: 'string', description: 'Optional session to add the chat to: a session URI from `list_sessions` or an `agent-host-session://` link. Defaults to the current session when omitted.' },
 		prompt: { type: 'string', description: 'Initial prompt to send to the new chat.' },
 		title: { type: 'string', description: 'Optional title for the new chat.' },
+		model: { type: 'string', description: 'Optional model ID or display name. Defaults to the session\'s model.' },
 	},
 	required: ['prompt'],
 };
@@ -62,7 +73,7 @@ const createChatInputSchema: ToolDefinition['inputSchema'] = {
 const deleteSessionInputSchema: ToolDefinition['inputSchema'] = {
 	type: 'object',
 	properties: {
-		session: { type: 'string', description: 'The session URI to delete (from `list_sessions`).' },
+		session: { type: 'string', description: 'The session to delete: a session URI from `list_sessions` or an `agent-host-session://` link (e.g. from `create_session`).' },
 	},
 	required: ['session'],
 };
@@ -93,7 +104,7 @@ export const sessionServerToolDefinitions: ToolDefinition[] = [
 	{
 		name: createChatToolName,
 		title: 'Create Chat',
-		description: 'Add a new chat to an existing Agent Host session and start it with an initial prompt. Omit `session` to add the chat to the current session; otherwise pass a session URI from `list_sessions`. The UI shows a "Chat Created" confirmation with a button to open the session, so reply with a single short sentence and do NOT print the session URL or tell the user to click a button.',
+		description: 'Add a new chat to an existing Agent Host session and start it with an initial prompt. Omit `session` to add the chat to the current session; otherwise pass a session URI from `list_sessions`. Optionally pass a `model` to use for the chat (defaults to the session\'s model). The UI shows a "Chat Created" confirmation with a button to open the session, so reply with a single short sentence and do NOT print the session URL or tell the user to click a button.',
 		inputSchema: createChatInputSchema,
 		annotations: { readOnlyHint: false },
 	},
@@ -130,8 +141,12 @@ export interface ISessionServerToolAccessor {
 	readonly createSession: (config: IAgentCreateSessionConfig) => Promise<URI>;
 	readonly getModels: () => readonly IAgentModelInfo[];
 	readonly startPrompt: (session: URI, chat: URI, prompt: string) => Promise<void>;
-	readonly createChat: (session: URI, chat: URI, title?: string) => Promise<void>;
+	readonly createChat: (session: URI, chat: URI, options?: { title?: string; model?: IAgentModelInfo }) => Promise<void>;
 	readonly deleteSession: (session: URI) => Promise<void>;
+	/** The spawn depth of a session (0 for a user/top-level session, N for one created N levels deep by `create_session`). */
+	readonly getSessionSpawnDepth: (session: URI) => number;
+	/** Records the spawn depth of a freshly-created session so its own `create_session` calls can enforce the recursion limit. */
+	readonly setSessionSpawnDepth: (session: URI, depth: number) => void;
 }
 
 interface ISerializedSession {
@@ -264,8 +279,17 @@ export interface ICreateSessionResult {
 	readonly openLink: string;
 }
 
-/** Creates a session, sends its initial prompt, and returns the created channels. */
-export async function applyCreateSessionTool(accessor: ISessionServerToolAccessor, rawArgs: unknown): Promise<ICreateSessionResult> {
+/**
+ * Creates a session, sends its initial prompt, and returns the created channels.
+ * Enforces the {@link maxSessionSpawnDepth recursion limit} against
+ * {@link currentSession} (the session the tool runs in) and stamps the new
+ * session one level deeper so its own `create_session` calls are bounded too.
+ */
+export async function applyCreateSessionTool(accessor: ISessionServerToolAccessor, rawArgs: unknown, currentSession?: URI): Promise<ICreateSessionResult> {
+	const parentDepth = currentSession ? accessor.getSessionSpawnDepth(currentSession) : 0;
+	if (parentDepth >= maxSessionSpawnDepth) {
+		throw new Error(`Refusing to create a session: recursion limit reached (max spawn depth ${maxSessionSpawnDepth}). This session was itself created ${parentDepth} level(s) deep.`);
+	}
 	const sessions = await accessor.listSessions();
 	const args = getCreateSessionArgs(rawArgs, sessions, accessor.getModels());
 	const config: IAgentCreateSessionConfig = {
@@ -273,6 +297,7 @@ export async function applyCreateSessionTool(accessor: ISessionServerToolAccesso
 		...(args.model !== undefined ? { provider: args.model.provider, model: { id: args.model.id } } : {}),
 	};
 	const session = await accessor.createSession(config);
+	accessor.setSessionSpawnDepth(session, parentDepth + 1);
 	const chat = URI.parse(buildDefaultChatUri(session));
 	await accessor.startPrompt(session, chat, args.prompt);
 	return { session: session.toString(), chat: chat.toString(), openLink: buildOpenSessionLinkUri(session) };
@@ -292,6 +317,7 @@ interface ICreateChatArgs {
 	readonly session?: unknown;
 	readonly prompt?: unknown;
 	readonly title?: unknown;
+	readonly model?: unknown;
 }
 
 export interface ICreateChatResult {
@@ -301,28 +327,36 @@ export interface ICreateChatResult {
 	readonly openLink: string;
 }
 
+/**
+ * Resolves a session identifier — accepting either a backend session URI
+ * (`copilotcli:/…` from `list_sessions`) or an `agent-host-session://…` open
+ * link (as returned by `create_session`/`get_current_session`) — against the
+ * set of known sessions. Returns `undefined` when it matches no known session.
+ */
+function resolveKnownSession(sessionInput: string, sessions: readonly IAgentSessionMetadata[]): URI | undefined {
+	// Normalize an open-session link back to its backend session URI.
+	const fromLink = parseOpenSessionLinkUri(sessionInput);
+	const candidate = fromLink?.toString() ?? sessionInput;
+	const match = sessions.find(s => s.session.toString() === candidate);
+	return match?.session;
+}
+
 /** Resolves the target session URI for `create_chat` against the known sessions. */
 function resolveChatSession(sessionInput: string, sessions: readonly IAgentSessionMetadata[]): URI {
-	const match = sessions.find(s => s.session.toString() === sessionInput);
-	if (match) {
-		return match.session;
+	const session = resolveKnownSession(sessionInput, sessions);
+	if (!session) {
+		throw new Error(`Invalid ${createChatToolName} input: session must match the URI of a known session (see list_sessions).`);
 	}
-	try {
-		const parsed = URI.parse(sessionInput, true);
-		if (parsed.scheme && sessions.some(s => s.session.toString() === parsed.toString())) {
-			return parsed;
-		}
-	} catch {
-		// fall through
-	}
-	throw new Error(`Invalid ${createChatToolName} input: session must match the URI of a known session (see list_sessions).`);
+	return session;
 }
 
 /** Validates and resolves create-chat arguments; defaults the session to {@link currentSession} when omitted. */
-export function getCreateChatArgs(rawArgs: unknown, sessions: readonly IAgentSessionMetadata[], currentSession?: URI): { session: URI; prompt: string; title?: string } {
+export function getCreateChatArgs(rawArgs: unknown, sessions: readonly IAgentSessionMetadata[], models: readonly IAgentModelInfo[], currentSession?: URI): { session: URI; prompt: string; title?: string; model?: IAgentModelInfo } {
 	const args = (rawArgs ?? {}) as ICreateChatArgs;
 	const prompt = getRequiredString(args.prompt, 'prompt', createChatToolName);
 	const title = getOptionalString(args.title, 'title', createChatToolName);
+	const modelName = getOptionalString(args.model, 'model', createChatToolName);
+	const model = resolveModel(modelName, models);
 	const sessionInput = getOptionalString(args.session, 'session', createChatToolName);
 	let session: URI;
 	if (sessionInput !== undefined) {
@@ -332,15 +366,15 @@ export function getCreateChatArgs(rawArgs: unknown, sessions: readonly IAgentSes
 	} else {
 		throw new Error(`Invalid ${createChatToolName} input: no session provided and the current session could not be determined.`);
 	}
-	return { session, prompt, ...(title !== undefined ? { title } : {}) };
+	return { session, prompt, ...(title !== undefined ? { title } : {}), ...(model !== undefined ? { model } : {}) };
 }
 
 /** Adds a chat to a session, sends its initial prompt, and returns the created channels. */
 export async function applyCreateChatTool(accessor: ISessionServerToolAccessor, rawArgs: unknown, currentSession?: URI): Promise<ICreateChatResult> {
 	const sessions = await accessor.listSessions();
-	const args = getCreateChatArgs(rawArgs, sessions, currentSession);
+	const args = getCreateChatArgs(rawArgs, sessions, accessor.getModels(), currentSession);
 	const chat = URI.parse(buildChatUri(args.session.toString(), generateUuid()));
-	await accessor.createChat(args.session, chat, args.title);
+	await accessor.createChat(args.session, chat, { title: args.title, model: args.model });
 	await accessor.startPrompt(args.session, chat, args.prompt);
 	return { session: args.session.toString(), chat: chat.toString(), openLink: buildOpenSessionLinkUri(args.session) };
 }
@@ -384,14 +418,14 @@ interface IDeleteSessionArgs {
 export function getDeleteSessionArgs(rawArgs: unknown, sessions: readonly IAgentSessionMetadata[], currentSession?: URI): URI {
 	const args = (rawArgs ?? {}) as IDeleteSessionArgs;
 	const sessionInput = getRequiredString(args.session, 'session', deleteSessionToolName);
-	const match = sessions.find(s => s.session.toString() === sessionInput);
-	if (!match) {
+	const session = resolveKnownSession(sessionInput, sessions);
+	if (!session) {
 		throw new Error(`Invalid ${deleteSessionToolName} input: session must match the URI of a known session (see list_sessions).`);
 	}
-	if (currentSession && match.session.toString() === currentSession.toString()) {
+	if (currentSession && session.toString() === currentSession.toString()) {
 		throw new Error(`Invalid ${deleteSessionToolName} input: refusing to delete the current session.`);
 	}
-	return match.session;
+	return session;
 }
 
 /** Deletes a session and returns the model-facing confirmation. */
@@ -451,8 +485,14 @@ function getSessionToolDisplay(toolName: string, _args: unknown, result?: IServe
 
 /**
  * Creates the session server-tool group with process-local recursion protection.
+ *
+ * The {@link accessor} is optional so the group can also back the pure display
+ * path (`getServerToolDisplay`), which only needs {@link IServerToolGroup.definitions},
+ * {@link IServerToolGroup.getDisplay} and {@link IServerToolGroup.requiresConfirmation}
+ * and never invokes {@link IServerToolGroup.execute}. `execute` throws when no
+ * accessor was provided.
  */
-export function createSessionServerToolGroup(accessor: ISessionServerToolAccessor): IServerToolGroup {
+export function createSessionServerToolGroup(accessor?: ISessionServerToolAccessor): IServerToolGroup {
 	let createdSessionCount = 0;
 	let createdChatCount = 0;
 	const group: IServerToolGroup = {
@@ -464,6 +504,9 @@ export function createSessionServerToolGroup(accessor: ISessionServerToolAccesso
 			return getSessionToolDisplay(toolName, args, result);
 		},
 		async execute(_stateManager: AgentHostStateManager, sessionUri: ProtocolURI, toolName: string, rawArgs: unknown): Promise<string> {
+			if (!accessor) {
+				throw new Error(`Session server tool "${toolName}" cannot run: the group was built without a session accessor.`);
+			}
 			switch (toolName) {
 				case listSessionsToolName:
 					return serializeSessions(await accessor.listSessions());
@@ -473,7 +516,7 @@ export function createSessionServerToolGroup(accessor: ISessionServerToolAccesso
 					if (createdSessionCount >= maxCreatedSessions) {
 						throw new Error(`Refusing to create more than ${maxCreatedSessions} sessions from server tools in this process.`);
 					}
-					const result = await applyCreateSessionTool(accessor, rawArgs);
+					const result = await applyCreateSessionTool(accessor, rawArgs, currentSessionUri(sessionUri));
 					createdSessionCount++;
 					return formatCreateSessionResult(result);
 				}

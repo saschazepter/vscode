@@ -206,7 +206,7 @@ export class ChatToolInvocationPart extends Disposable implements IChatContentPa
 			}
 		}
 
-		if (this.toolInvocation.toolSpecificData?.kind === 'sessionCreated') {
+		if (this.toolInvocation.toolSpecificData?.kind === 'sessionCreated' && this._isInAgentsWindow()) {
 			return this.instantiationService.createInstance(ChatSessionCreatedResultSubPart, this.toolInvocation, this.toolInvocation.toolSpecificData, this.context, this.renderer);
 		}
 
@@ -272,6 +272,17 @@ export class ChatToolInvocationPart extends Disposable implements IChatContentPa
 		}
 
 		return this.instantiationService.createInstance(ChatToolProgressSubPart, this.toolInvocation, this.context, this.renderer, this.announcedToolProgressKeys);
+	}
+
+	/**
+	 * Whether this tool invocation is rendered inside the Agents window. The
+	 * "Open Session" pill (for `create_session`/`create_chat`) only works there —
+	 * the `agent-host-session://` opener and session services are Agents-window
+	 * only — so the pill is suppressed elsewhere (e.g. the editor-window chat),
+	 * falling back to the normal tool-call display.
+	 */
+	private _isInAgentsWindow(): boolean {
+		return !!this.context.container.closest('.agent-sessions-workbench');
 	}
 
 	/**

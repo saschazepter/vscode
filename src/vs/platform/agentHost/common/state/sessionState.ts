@@ -1045,6 +1045,23 @@ export function withSessionGitHubState(meta: SessionSummaryMeta | undefined, git
 }
 
 /**
+ * Reserved key under {@link SessionSummaryMeta} recording how deeply a session
+ * was spawned via the `create_session` host tool (0 for a top-level, user-created
+ * session). Used to bound recursive session creation. VS Code-specific convention
+ * layered on top of the protocol's generic `_meta` bag.
+ */
+export const SESSION_META_SPAWN_DEPTH_KEY = 'agentHost/sessionSpawnDepth';
+
+/**
+ * Reads the `create_session` spawn depth from a {@link SessionSummaryMeta} bag,
+ * returning `0` when the key is absent or not a finite number.
+ */
+export function readSessionSpawnDepth(meta: SessionSummaryMeta | undefined): number {
+	const value = meta?.[SESSION_META_SPAWN_DEPTH_KEY];
+	return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/**
  * Reserved key under {@link SessionSummaryMeta} marking a session as
  * workspace-less: a session with no workspace/folder binding (surfaced in the
  * UI as a "Quick Chat"). Carried on the summary bag (not the full state) so
