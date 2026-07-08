@@ -1972,6 +1972,11 @@ export function finalizeToolInvocation(invocation: ChatToolInvocation, tc: ToolC
 	}
 
 	const hasMcpAppData = invocation.toolSpecificData?.kind === 'input' && !!invocation.toolSpecificData.mcpAppData;
+	// The generic raw input/output details (the expandable JSON blob) are
+	// suppressed for tool kinds that render their own bespoke UI — the subagent
+	// card and the `sessionCreated` "Open Session" pill — so we don't duplicate
+	// the result underneath them. Search results and separately-rendered file
+	// edits are likewise excluded.
 	const resultDetails = !isTerminal
 		&& invocation.toolSpecificData?.kind !== 'subagent'
 		&& invocation.toolSpecificData?.kind !== 'sessionCreated'
