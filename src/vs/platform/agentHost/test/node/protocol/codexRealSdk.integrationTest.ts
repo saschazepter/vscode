@@ -56,6 +56,9 @@ const CODEX_CONFIG: IRealSdkProviderConfig = {
 	supportsWorktreeIsolation: false,
 	supportsSubagents: false,
 	supportsPlanMode: false,
+	// Codex's `exec_command` shell tool call is not emitted by the bundled Codex
+	// CLI on Windows during replay, so the shell-permission test is POSIX-only.
+	shellPermissionReplayUnstableOnWindows: true,
 };
 
 defineSharedRealSdkTests(CODEX_CONFIG);

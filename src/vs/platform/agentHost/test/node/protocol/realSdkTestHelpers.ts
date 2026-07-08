@@ -56,6 +56,9 @@ import {
  */
 const RECORD = process.env['AGENT_HOST_REPLAY_RECORD'] === '1';
 const REPLAY_MODE: CapiReplayMode = RECORD ? 'record' : 'auto';
+/** Gate for real-SDK tests whose local execution is POSIX-specific (shell tool
+ * calls, git worktrees, `pwd`) and does not reproduce on Windows. */
+const isWindows = process.platform === 'win32';
 /** A synthetic token used on replay (no real credential needed). */
 export const REPLAY_PLACEHOLDER_TOKEN = 'replay-no-token';
 
@@ -174,6 +177,13 @@ export interface IRealSdkProviderConfig {
 	 * replaying deterministically.
 	 */
 	readonly subagentFixturesStale?: boolean;
+	/**
+	 * When set, this provider's shell tool call is not reproduced by its bundled
+	 * SDK on Windows during replay (e.g. Codex's `exec_command` yields no
+	 * tool-call notification there), so the shell-permission test runs only on
+	 * POSIX. macOS/Linux keep full coverage.
+	 */
+	readonly shellPermissionReplayUnstableOnWindows?: boolean;
 	/**
 	 * Whether the provider's plan-mode flow matches the shared test's
 	 * expectations (auto-approve session-state writes; reach the
@@ -697,7 +707,11 @@ export function defineSharedRealSdkTests(config: IRealSdkProviderConfig): void {
 			}
 		});
 
-		test('tool call triggers permission request and can be approved', async function () {
+		// Codex's `exec_command` shell tool call is not emitted by the bundled
+		// Codex CLI on Windows during replay (the turn streams text and completes
+		// with no tool call), so this shell-permission test is POSIX-only for such
+		// providers; Claude/Copilot still run it everywhere.
+		((isWindows && config.shellPermissionReplayUnstableOnWindows) ? test.skip : test)('tool call triggers permission request and can be approved', async function () {
 			this.timeout(120_000);
 
 			const tempDir = mkdtempSync(`${tmpdir()}/ahp-perm-test-`);
@@ -858,7 +872,10 @@ export function defineSharedRealSdkTests(config: IRealSdkProviderConfig): void {
 				`subscribe snapshot summary should carry the requested working directory`);
 		});
 
-		(config.supportsWorktreeIsolation ? test : test.skip)('worktree session uses the resolved worktree as working directory', async function () {
+		// Worktree isolation asserts on resolved `.worktrees/...` paths and a
+		// host-terminal `pwd`, which are POSIX-shaped (the fixtures were recorded on
+		// macOS); skip on Windows where the worktree paths and shell differ.
+		(config.supportsWorktreeIsolation && !isWindows ? test : test.skip)('worktree session uses the resolved worktree as working directory', async function () {
 			this.timeout(120_000);
 
 			const tempDir = mkdtempSync(`${tmpdir()}/ahp-wt-test-`);
