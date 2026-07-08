@@ -5,7 +5,6 @@
 
 import * as assert from 'assert';
 import * as fs from 'fs';
-import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import { Application, Chat, Logger } from '../../../../automation';
@@ -13,17 +12,18 @@ import { dumpFailureDiagnostics, getCopilotSmokeTestEnv, getMockLlmServerPath, i
 
 const WARMUP_SCENARIO_ID = 'smoke-chat-sandbox-warmup';
 const WARMUP_REPLY = 'MOCKED_CHAT_SANDBOX_WARMUP';
-const EXECUTION_SCENARIO_ID = 'smoke-chat-sandbox-execution';
-const FILESYSTEM_SCENARIO_ID = 'smoke-chat-sandbox-filesystem';
-const OUTSIDE_READ_SCENARIO_ID = 'smoke-chat-sandbox-outside-read';
-const TMPDIR_SCENARIO_ID = 'smoke-chat-sandbox-tmpdir';
-const NETWORK_DENY_SCENARIO_ID = 'smoke-chat-sandbox-network-deny';
+const SANDBOX_SCENARIO_ID = 'smoke-chat-sandbox';
+const NETWORK_SCENARIO_ID = 'smoke-chat-sandbox-network';
+const NETWORK_ALLOWED_SCENARIO_ID = 'smoke-chat-sandbox-network-allowed';
+const HOME_READ_SCENARIO_ID = 'smoke-chat-sandbox-home-read';
+const HOME_READ_ALLOWED_SCENARIO_ID = 'smoke-chat-sandbox-home-read-allowed';
+const CHAT_RESPONSE_TIMEOUT = 120_000;
+const NETWORK_BLOCKED_PATTERN = /ECONNREFUSED|EPERM|EACCES|ENETUNREACH|EHOSTUNREACH|ENETDOWN|EAI_AGAIN/;
+const SANDBOX_EXIT_CODE_PATTERN = /SANDBOX_EXIT_CODE=(\d+)/;
+const HOME_READ_BLOCKED_EXIT_CODE_PATTERN = /HOME_READ_BLOCKED_EXIT_CODE=(\d+)/;
+const HOME_READ_ALLOWED_EXIT_CODE_PATTERN = /HOME_READ_ALLOWED_EXIT_CODE=(\d+)/;
 
-function quoteShellArgument(value: string): string {
-	return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-function terminalScenario(command: string) {
+function terminalCommandScenario(command: string) {
 	return {
 		type: 'multi-turn',
 		turns: [
@@ -34,17 +34,34 @@ function terminalScenario(command: string) {
 						toolNamePattern: /run.?in.?terminal|execute.?command/i,
 						arguments: {
 							command,
-							explanation: 'Verify chat terminal sandbox isolation',
-							goal: 'Run the chat sandbox smoke probe',
+							explanation: 'Run a terminal command for a chat smoke test',
+							goal: 'Run a terminal command',
 							mode: 'sync',
 							timeout: 30_000,
 						},
 					},
 				],
 			},
-			{ kind: 'echo-last-message' },
+			{ kind: 'echo-last-tool-result' },
 		],
 	};
+}
+
+function terminalCommandOutcomeMatcher(...outcomes: Array<string | RegExp>): RegExp {
+	const sources = outcomes.map(outcome => typeof outcome === 'string'
+		? outcome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+		: outcome.source
+	);
+	return new RegExp(`"(?:output|content)":[\\s\\S]*(?:${sources.join('|')})`);
+}
+
+function appendUserSettings(userDataPath: string, settings: Record<string, unknown>): void {
+	const settingsPath = path.join(userDataPath, 'User', 'settings.json');
+	const contents = fs.readFileSync(settingsPath, 'utf8');
+	const closingBrace = contents.lastIndexOf('}');
+	assert.notStrictEqual(closingBrace, -1, `expected a root object in ${settingsPath}`);
+	const entries = Object.entries(settings).map(([key, value]) => `\t${JSON.stringify(key)}: ${JSON.stringify(value)},\n`).join('');
+	fs.writeFileSync(settingsPath, `${contents.slice(0, closingBrace)}${entries}${contents.slice(closingBrace)}`);
 }
 
 async function warmUpChat(chat: Chat, logger: Logger): Promise<void> {
@@ -68,15 +85,6 @@ async function warmUpChat(chat: Chat, logger: Logger): Promise<void> {
 	throw new Error(`Chat did not become ready for the sandbox probe. Last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }
 
-async function runTerminalScenario(app: Application, mockServer: MockLlmServer, logger: Logger, scenarioId: string, resultMarker: string): Promise<string> {
-	const requestsBefore = mockServer.requestCount();
-	await app.workbench.chat.sendMessage(`Run the terminal sandbox probe [scenario:${scenarioId}]`);
-	const responseText = await app.workbench.chat.waitForResponseText(new RegExp(`"output":[\\s\\S]*${resultMarker}`), 120_000);
-	logger.log(`[Chat Sandbox/${scenarioId}] probe response: ${responseText}`);
-	assert.ok(mockServer.requestCount() > requestsBefore, `expected the mock LLM server to receive scenario ${scenarioId}`);
-	return responseText;
-}
-
 export function setup(logger: Logger): void {
 	if (process.platform !== 'darwin' && process.platform !== 'linux') {
 		return;
@@ -87,84 +95,33 @@ export function setup(logger: Logger): void {
 		this.retries(0);
 
 		let mockServer: MockLlmServer;
-		let networkServer: http.Server | undefined;
-		let networkRequestCount = 0;
-		let outsideDirectory: string;
-		let outsideFile: string;
-		let workspaceFileName: string;
-		let token: string;
-		let executionMarker: string;
-		let filesystemMarker: string;
-		let outsideReadMarker: string;
-		let tmpdirMarker: string;
-		let networkDenyMarker: string;
+		let sandboxReply: string;
+		let networkAllowedReply: string;
+		let homeFilePath: string;
+		let homeFileContents: string;
 
 		before(async function () {
 			const { startServer, ScenarioBuilder, registerScenario } = require(getMockLlmServerPath());
 
-			const uniqueId = `${process.platform}-${process.pid}-${Date.now()}`;
-			token = `CHAT_SANDBOX_TOKEN_${uniqueId}`;
-			executionMarker = `CHAT_SANDBOX_EXECUTION_${uniqueId}`;
-			filesystemMarker = `CHAT_SANDBOX_FILESYSTEM_${uniqueId}`;
-			outsideReadMarker = `CHAT_SANDBOX_OUTSIDE_READ_${uniqueId}`;
-			tmpdirMarker = `CHAT_SANDBOX_TMPDIR_${uniqueId}`;
-			networkDenyMarker = `CHAT_SANDBOX_NETWORK_DENY_${uniqueId}`;
-			workspaceFileName = `.chat-sandbox-smoke-${uniqueId}.txt`;
-			outsideDirectory = fs.mkdtempSync(path.join(os.homedir(), '.vscode-chat-sandbox-smoke-'));
-			outsideFile = path.join(outsideDirectory, 'blocked.txt');
-
-			// Prove the target is writable without the sandbox. The actual probe
-			// must then fail solely because chat.agent.sandbox.enabled is on.
-			const baselineFile = path.join(outsideDirectory, 'baseline.txt');
-			fs.writeFileSync(baselineFile, 'host-write-ok');
-			assert.strictEqual(fs.readFileSync(baselineFile, 'utf8'), 'host-write-ok');
-			fs.unlinkSync(baselineFile);
-
-			networkServer = http.createServer((_request, response) => {
-				networkRequestCount++;
-				response.writeHead(200, { 'Content-Type': 'text/plain' });
-				response.end('host-network-reachable');
-			});
-			await new Promise<void>((resolve, reject) => {
-				networkServer!.once('error', reject);
-				networkServer!.listen(0, '127.0.0.1', resolve);
-			});
-			const networkAddress = networkServer.address();
-			assert.ok(networkAddress && typeof networkAddress !== 'string', 'expected the network probe server to listen on a TCP port');
-
-			const filesystemCommand = [
-				`workspace_file=${quoteShellArgument(workspaceFileName)}`,
-				`outside_file=${quoteShellArgument(outsideFile)}`,
-				`token=${quoteShellArgument(token)}`,
-				'if printf \'%s\' "$token" > "$workspace_file"; then workspace_status=ALLOWED; else workspace_status=BLOCKED; fi',
-				'if { printf \'%s\' "$token" > "$outside_file"; } 2>/dev/null; then outside_status=ALLOWED; else outside_status=BLOCKED; fi',
-				`printf '%s workspace=%s outside=%s\\n' ${quoteShellArgument(filesystemMarker)} "$workspace_status" "$outside_status"`,
-			].join('\n');
-			const outsideReadCommand = [
-				'if test -r /etc/shells && head -n 1 /etc/shells >/dev/null; then read_status=ALLOWED; else read_status=BLOCKED; fi',
-				`printf '%s read=%s\\n' ${quoteShellArgument(outsideReadMarker)} "$read_status"`,
-			].join('\n');
-			const tmpdirCommand = [
-				`tmp_file="$TMPDIR/${tmpdirMarker}.txt"`,
-				`if printf '%s' ${quoteShellArgument(token)} > "$tmp_file" && test "$(cat "$tmp_file")" = ${quoteShellArgument(token)}; then tmpdir_status=WRITABLE; else tmpdir_status=BLOCKED; fi`,
-				'rm -f "$tmp_file"',
-				`printf '%s tmpdir=%s\\n' ${quoteShellArgument(tmpdirMarker)} "$tmpdir_status"`,
-			].join('\n');
-			const networkDenyCommand = [
-				`probe_url=${quoteShellArgument(`http://127.0.0.1:${networkAddress.port}/chat-sandbox-network-probe`)}`,
-				'if command -v curl >/dev/null 2>&1; then if curl --silent --show-error --connect-timeout 3 --max-time 5 --noproxy \'*\' "$probe_url" >/dev/null 2>&1; then network_status=ALLOWED; else network_status=BLOCKED; fi; else network_status=NO_CURL; fi',
-				`printf '%s network=%s\\n' ${quoteShellArgument(networkDenyMarker)} "$network_status"`,
-			].join('\n');
+			sandboxReply = `MOCKED_CHAT_SANDBOX_RESPONSE_${process.platform}_${process.pid}_${Date.now()}`;
+			networkAllowedReply = `MOCKED_CHAT_SANDBOX_NETWORK_ALLOWED_${process.platform}_${process.pid}_${Date.now()}`;
+			homeFileContents = `MOCKED_CHAT_SANDBOX_HOME_FILE_${process.platform}_${process.pid}_${Date.now()}`;
+			const homeFileName = `.vscode-chat-sandbox-smoke-${process.pid}-${Date.now()}.txt`;
+			homeFilePath = path.join(os.homedir(), homeFileName);
+			fs.writeFileSync(homeFilePath, homeFileContents);
 
 			registerScenario('text-only', new ScenarioBuilder().emit('OK').build());
 			registerScenario(WARMUP_SCENARIO_ID, new ScenarioBuilder().emit(WARMUP_REPLY).build());
-			registerScenario(EXECUTION_SCENARIO_ID, terminalScenario(`printf '%s\\n' ${quoteShellArgument(executionMarker)}`));
-			registerScenario(FILESYSTEM_SCENARIO_ID, terminalScenario(filesystemCommand));
-			registerScenario(OUTSIDE_READ_SCENARIO_ID, terminalScenario(outsideReadCommand));
-			registerScenario(TMPDIR_SCENARIO_ID, terminalScenario(tmpdirCommand));
-			registerScenario(NETWORK_DENY_SCENARIO_ID, terminalScenario(networkDenyCommand));
+			registerScenario(SANDBOX_SCENARIO_ID, terminalCommandScenario(`echo ${sandboxReply}; status=$?; printf 'SANDBOX_EXIT_CODE=%s\n' "$status"; exit "$status"`));
 
 			mockServer = await startServer(0, { logger: (message: string) => logger.log(`[mock-llm] ${message}`), verbose: true });
+			const encodedNetworkAllowedReply = Buffer.from(networkAllowedReply).toString('base64');
+			const networkProbe = `node -e "const http=require('http');const req=http.get('${mockServer.url}',res=>{res.resume();console.log(Buffer.from('${encodedNetworkAllowedReply}','base64').toString())});req.on('error',error=>console.log(error.code))"`;
+			registerScenario(NETWORK_SCENARIO_ID, terminalCommandScenario(networkProbe));
+			registerScenario(NETWORK_ALLOWED_SCENARIO_ID, terminalCommandScenario(networkProbe));
+			const homeReadProbe = (resultMarker: string) => `cat "$HOME/${homeFileName}" >/dev/null 2>&1; status=$?; printf '${resultMarker}=%s\n' "$status"; exit "$status"`;
+			registerScenario(HOME_READ_SCENARIO_ID, terminalCommandScenario(homeReadProbe('HOME_READ_BLOCKED_EXIT_CODE')));
+			registerScenario(HOME_READ_ALLOWED_SCENARIO_ID, terminalCommandScenario(homeReadProbe('HOME_READ_ALLOWED_EXIT_CODE')));
 			logger.log(`[Chat Sandbox] mock LLM server started at ${mockServer.url}; platform=${process.platform}`);
 		});
 
@@ -188,12 +145,12 @@ export function setup(logger: Logger): void {
 				['chat.mcp.enabled', 'false'],
 				['chat.disableAIFeatures', 'false'],
 				['chat.agent.sandbox.enabled', '"on"'],
-				// Pin the default-deny behavior and prevent a failed probe from being
-				// retried with relaxed network access or outside the sandbox.
-				['chat.agent.sandbox.allowNetwork', 'false'],
+				// Leave allowNetwork at its default (false), and prevent a failed probe
+				// from being retried with relaxed network access or outside the sandbox.
 				['chat.agent.sandbox.retryWithAllowNetworkRequests', 'false'],
 				['chat.agent.sandbox.allowUnsandboxedCommands', 'false'],
 			]);
+			await app.workbench.quickaccess.runCommand('workbench.action.closeActiveEditor');
 		});
 
 		before(async function () {
@@ -204,25 +161,38 @@ export function setup(logger: Logger): void {
 		});
 
 		after(async function () {
-			const app = this.app as Application | undefined;
-			if (app && workspaceFileName) {
-				fs.rmSync(path.join(app.workspacePathOrFolder, workspaceFileName), { force: true });
-			}
-			if (outsideDirectory) {
-				fs.rmSync(outsideDirectory, { recursive: true, force: true });
-			}
-			if (networkServer) {
-				await new Promise<void>((resolve, reject) => networkServer!.close(error => error ? reject(error) : resolve()));
-			}
 			await mockServer?.close();
 		});
 
+		/*
+		 * Input: Ask chat to run an echo command through the terminal tool with sandboxing enabled.
+		 * Expected result: The command is sandbox-wrapped and its output contains
+		 * `${sandboxReply}` and `SANDBOX_EXIT_CODE=0`.
+		 */
 		it('runs terminal commands inside the sandbox', async function () {
 			const app = this.app as Application;
 
 			try {
-				const responseText = await runTerminalScenario(app, mockServer, logger, EXECUTION_SCENARIO_ID, executionMarker);
-				assert.ok(responseText.includes(executionMarker), `expected terminal output to contain ${executionMarker}:\n${responseText}`);
+				const requestsBefore = mockServer.requestCount();
+				await app.workbench.chat.sendMessage(`Run the terminal sandbox probe [scenario:${SANDBOX_SCENARIO_ID}]`);
+
+				const responseText = await app.workbench.chat.waitForResponseText(SANDBOX_EXIT_CODE_PATTERN, CHAT_RESPONSE_TIMEOUT);
+				logger.log(`[Chat Sandbox] response: ${responseText}`);
+				assert.ok(mockServer.requestCount() > requestsBefore, 'expected the mock LLM server to receive the sandbox scenario');
+				assert.ok(responseText.includes(sandboxReply), 'expected the terminal result to include the sandbox probe reply');
+				const exitCodeMatch = SANDBOX_EXIT_CODE_PATTERN.exec(responseText);
+				assert.ok(exitCodeMatch, 'expected the terminal result to include the sandbox probe exit code');
+				assert.strictEqual(Number(exitCodeMatch[1]), 0, 'expected the sandboxed terminal command to exit successfully');
+
+				// Confirm that the terminal tool actually wrapped the command for
+				// sandbox execution instead of using an unsandboxed fallback.
+				const terminalLogPath = path.join(app.logsPath, 'terminal.log');
+				const terminalLog = fs.readFileSync(terminalLogPath, 'utf8');
+				assert.match(
+					terminalLog,
+					/RunInTerminalTool: Command rewritten by CommandLineSandboxRewriter: Wrapped command for sandbox execution/,
+					`expected sandbox-wrapped terminal execution in ${terminalLogPath}`
+				);
 			} catch (error) {
 				logger.log(`[Chat Sandbox/execution] FAILURE: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
 				await dumpFailureDiagnostics(app, logger, `Chat Sandbox (${process.platform}) execution`);
@@ -230,72 +200,123 @@ export function setup(logger: Logger): void {
 			}
 		});
 
-		it('allows workspace writes and blocks writes outside the workspace', async function () {
+		/*
+		 * Input: Ask chat to run an HTTP request to the local mock server with allowNetwork disabled.
+		 * Expected result: The sandbox blocks the request and its output contains a network error such as
+		 * `ECONNREFUSED`, `EPERM`, `EACCES`, `ENETUNREACH`, `EHOSTUNREACH`, `ENETDOWN`, or `EAI_AGAIN`.
+		 */
+		it('blocks terminal network access by default', async function () {
 			const app = this.app as Application;
-			const workspaceFile = path.join(app.workspacePathOrFolder, workspaceFileName);
 
 			try {
-				const responseText = await runTerminalScenario(app, mockServer, logger, FILESYSTEM_SCENARIO_ID, filesystemMarker);
+				const requestsBefore = mockServer.requestCount();
+				await app.workbench.chat.sendMessage(`Run the terminal network sandbox probe [scenario:${NETWORK_SCENARIO_ID}]`);
 
-				assert.strictEqual(
-					fs.readFileSync(workspaceFile, 'utf8'),
-					token,
-					`expected chat.agent.sandbox.enabled to allow workspace writes on ${process.platform}`
+				const responseText = await app.workbench.chat.waitForResponseText(
+					terminalCommandOutcomeMatcher(NETWORK_BLOCKED_PATTERN, networkAllowedReply),
+					CHAT_RESPONSE_TIMEOUT
 				);
-				assert.strictEqual(
-					fs.existsSync(outsideFile),
-					false,
-					`expected chat.agent.sandbox.enabled to block writes outside the workspace on ${process.platform}`
+				logger.log(`[Chat Sandbox/network] response: ${responseText}`);
+				assert.ok(mockServer.requestCount() > requestsBefore, 'expected the mock LLM server to receive the network sandbox scenario');
+				assert.match(
+					responseText,
+					terminalCommandOutcomeMatcher(NETWORK_BLOCKED_PATTERN),
+					'expected the sandbox to block the terminal command from reaching the local mock server'
 				);
-				assert.ok(responseText.includes(`${filesystemMarker} workspace=ALLOWED outside=BLOCKED`), `unexpected sandbox probe result:\n${responseText}`);
 			} catch (error) {
-				logger.log(`[Chat Sandbox] FAILURE: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
-				await dumpFailureDiagnostics(app, logger, `Chat Sandbox (${process.platform})`);
+				logger.log(`[Chat Sandbox/network] FAILURE: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+				await dumpFailureDiagnostics(app, logger, `Chat Sandbox (${process.platform}) network`);
 				throw error;
 			}
 		});
 
-		it('allows reads outside the workspace by default', async function () {
+		/*
+		 * Input: Enable allowNetwork and ask chat to run an HTTP request to the local mock server.
+		 * Expected result: The sandbox permits the request and its output contains `${networkAllowedReply}`.
+		 */
+		it('allows terminal network access when allowNetwork is enabled', async function () {
 			const app = this.app as Application;
 
 			try {
-				const responseText = await runTerminalScenario(app, mockServer, logger, OUTSIDE_READ_SCENARIO_ID, outsideReadMarker);
-				assert.ok(responseText.includes(`${outsideReadMarker} read=ALLOWED`), `unexpected outside-read probe result:\n${responseText}`);
-			} catch (error) {
-				logger.log(`[Chat Sandbox/outside-read] FAILURE: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
-				await dumpFailureDiagnostics(app, logger, `Chat Sandbox (${process.platform}) outside read`);
-				throw error;
-			}
-		});
+				assert.ok(app.userDataPath, 'expected a user data path');
+				appendUserSettings(app.userDataPath, {
+					'chat.agent.sandbox.allowNetwork': true,
+				});
 
-		it('provides a writable sandbox temporary directory', async function () {
-			const app = this.app as Application;
+				const requestsBefore = mockServer.requestCount();
+				await app.workbench.chat.sendMessage(`Run the allowed terminal network sandbox probe [scenario:${NETWORK_ALLOWED_SCENARIO_ID}]`);
 
-			try {
-				const responseText = await runTerminalScenario(app, mockServer, logger, TMPDIR_SCENARIO_ID, tmpdirMarker);
-				assert.ok(responseText.includes(`${tmpdirMarker} tmpdir=WRITABLE`), `unexpected TMPDIR probe result:\n${responseText}`);
-			} catch (error) {
-				logger.log(`[Chat Sandbox/tmpdir] FAILURE: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
-				await dumpFailureDiagnostics(app, logger, `Chat Sandbox (${process.platform}) TMPDIR`);
-				throw error;
-			}
-		});
-
-		it('denies network access by default', async function () {
-			const app = this.app as Application;
-			const requestsBefore = networkRequestCount;
-
-			try {
-				const responseText = await runTerminalScenario(app, mockServer, logger, NETWORK_DENY_SCENARIO_ID, networkDenyMarker);
-				assert.ok(responseText.includes(`${networkDenyMarker} network=BLOCKED`), `unexpected network probe result:\n${responseText}`);
-				assert.strictEqual(
-					networkRequestCount,
-					requestsBefore,
-					`expected chat.agent.sandbox.enabled to prevent the network probe from reaching the host server on ${process.platform}`
+				const responseText = await app.workbench.chat.waitForResponseText(
+					terminalCommandOutcomeMatcher(networkAllowedReply, NETWORK_BLOCKED_PATTERN),
+					CHAT_RESPONSE_TIMEOUT
+				);
+				logger.log(`[Chat Sandbox/network allowed] response: ${responseText}`);
+				assert.ok(mockServer.requestCount() > requestsBefore, 'expected the mock LLM server to receive the allowed network sandbox scenario');
+				assert.match(
+					responseText,
+					terminalCommandOutcomeMatcher(networkAllowedReply),
+					'expected allowNetwork to permit the sandboxed terminal command to reach the local mock server'
 				);
 			} catch (error) {
-				logger.log(`[Chat Sandbox/network-deny] FAILURE: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
-				await dumpFailureDiagnostics(app, logger, `Chat Sandbox (${process.platform}) network deny`);
+				logger.log(`[Chat Sandbox/network allowed] FAILURE: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+				await dumpFailureDiagnostics(app, logger, `Chat Sandbox (${process.platform}) network allowed`);
+				throw error;
+			}
+		});
+
+		/*
+		 * Input: Ask chat to read a test file in the home directory without configuring allowRead.
+		 * Expected result: The sandbox blocks the read and its output contains
+		 * `HOME_READ_BLOCKED_EXIT_CODE=<nonzero exit code>`.
+		 */
+		it('blocks reading files in the home directory outside the workspace by default', async function () {
+			const app = this.app as Application;
+
+			try {
+				const requestsBefore = mockServer.requestCount();
+				await app.workbench.chat.sendMessage(`Read the home directory sandbox probe [scenario:${HOME_READ_SCENARIO_ID}]`);
+
+				const responseText = await app.workbench.chat.waitForResponseText(HOME_READ_BLOCKED_EXIT_CODE_PATTERN, CHAT_RESPONSE_TIMEOUT);
+				logger.log(`[Chat Sandbox/home read] response: ${responseText}`);
+				assert.ok(mockServer.requestCount() > requestsBefore, 'expected the mock LLM server to receive the home read sandbox scenario');
+				const exitCodeMatch = HOME_READ_BLOCKED_EXIT_CODE_PATTERN.exec(responseText);
+				assert.ok(exitCodeMatch, 'expected the terminal result to include the home read exit code');
+				const exitCode = Number(exitCodeMatch[1]);
+				assert.notStrictEqual(exitCode, 0, `expected the sandbox to block reading ${homeFilePath}; the path must be added to chat.agent.sandbox.fileSystem.${process.platform === 'darwin' ? 'mac' : 'linux'}.allowRead to permit access`);
+			} catch (error) {
+				logger.log(`[Chat Sandbox/home read] FAILURE: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+				await dumpFailureDiagnostics(app, logger, `Chat Sandbox (${process.platform}) home read`);
+				throw error;
+			}
+		});
+
+		/*
+		 * Input: Add the home test file to allowRead and ask chat to read it through the terminal tool.
+		 * Expected result: The sandbox permits the read and its output contains `HOME_READ_ALLOWED_EXIT_CODE=0`.
+		 */
+		it('allows reading a home directory file configured in allowRead', async function () {
+			const app = this.app as Application;
+
+			try {
+				assert.ok(app.userDataPath, 'expected a user data path');
+				const fileSystemSetting = { allowRead: [homeFilePath] };
+				appendUserSettings(app.userDataPath, {
+					'chat.agent.sandbox.fileSystem.linux': fileSystemSetting,
+					'chat.agent.sandbox.fileSystem.mac': fileSystemSetting,
+				});
+
+				const requestsBefore = mockServer.requestCount();
+				await app.workbench.chat.sendMessage(`Read the allowed home directory sandbox probe [scenario:${HOME_READ_ALLOWED_SCENARIO_ID}]`);
+
+				const responseText = await app.workbench.chat.waitForResponseText(HOME_READ_ALLOWED_EXIT_CODE_PATTERN, CHAT_RESPONSE_TIMEOUT);
+				logger.log(`[Chat Sandbox/home read allowed] response: ${responseText}`);
+				assert.ok(mockServer.requestCount() > requestsBefore, 'expected the mock LLM server to receive the allowed home read sandbox scenario');
+				const exitCodeMatch = HOME_READ_ALLOWED_EXIT_CODE_PATTERN.exec(responseText);
+				assert.ok(exitCodeMatch, 'expected the terminal result to include the allowed home read exit code');
+				assert.strictEqual(Number(exitCodeMatch[1]), 0, `expected allowRead to permit reading ${homeFilePath}`);
+			} catch (error) {
+				logger.log(`[Chat Sandbox/home read allowed] FAILURE: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+				await dumpFailureDiagnostics(app, logger, `Chat Sandbox (${process.platform}) home read allowed`);
 				throw error;
 			}
 		});
