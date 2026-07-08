@@ -51,7 +51,7 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 			markdownDescription: localize('sessions.layout.autoCollapseSessionsSidebar', "Controls whether the sessions sidebar is automatically collapsed in a narrow Agents window while both the editor and the side panel are open, and shown again once either of them closes."),
 			default: product.quality !== 'stable',
 			tags: ['experimental'],
-			experiment: { mode: 'startup' }
+			experiment: { mode: 'auto' }
 		},
 		[DOCK_DETAIL_PANEL_SETTING]: {
 			type: 'boolean',
