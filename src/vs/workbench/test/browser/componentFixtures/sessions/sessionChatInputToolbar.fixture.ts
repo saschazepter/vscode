@@ -100,7 +100,7 @@ async function renderChatViewWithPills(ctx: ComponentFixtureContext, mock: IMock
 	await renderChatWidget(ctx, {
 		messages,
 		decorateInputPart: (inputPart, instantiationService) => {
-			// Both pills are off by default; enable them so the fixture renders.
+			// All pills are off by default; enable them so the fixture renders.
 			instantiationService.invokeFunction(accessor => {
 				(accessor.get(IConfigurationService) as TestConfigurationService).setUserConfiguration(ChatConfiguration.TurnStatusPills, { changes: true, preview: true, browser: true });
 			});
