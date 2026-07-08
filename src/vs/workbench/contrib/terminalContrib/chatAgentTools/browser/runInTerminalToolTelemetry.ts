@@ -216,9 +216,8 @@ export class RunInTerminalToolTelemetry {
 	}
 
 	logCompactionHint(command: string): void {
-		const lowerCaseCommand = command.toLowerCase();
-		const hasCompactionKeyword = compactionHintKeywords.some(keyword => lowerCaseCommand.includes(keyword));
-		if (!hasCompactionKeyword) {
+		const tokens = command.toLowerCase().split(/[\s;|&<>(){}]+/).filter(t => t.length > 0);
+		if (!compactionHintKeywords.some(keyword => tokens.includes(keyword))) {
 			return;
 		}
 		type TelemetryEvent = {
