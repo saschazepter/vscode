@@ -37,7 +37,7 @@
 	color: var(--vscode-agentsPanel-foreground);
 }
 
-.monaco-workbench.floating-panels .part > .content {
+.monaco-workbench.floating-panels .part.editor > .content {
 	border-radius: var(--vscode-cornerRadius-large, 8px);
 }
 
