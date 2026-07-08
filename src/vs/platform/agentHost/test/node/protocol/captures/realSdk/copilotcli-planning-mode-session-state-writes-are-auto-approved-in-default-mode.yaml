@@ -18,7 +18,7 @@ exchanges:
           id: toolcall_1
           name: create
           input:
-            path: ${homedir}/.copilot/session-state/445a8898-c0da-497d-a584-8e81f111eb21/plan.md
+            path: ${homedir}/.copilot/session-state/${uuid_0}/plan.md
             file_text: |
               # Plan
 
@@ -49,7 +49,7 @@ exchanges:
             - type: tool_use
               name: create
               input:
-                path: ${homedir}/.copilot/session-state/445a8898-c0da-497d-a584-8e81f111eb21/plan.md
+                path: ${homedir}/.copilot/session-state/${uuid_0}/plan.md
                 file_text: |
                   # Plan
 
@@ -69,7 +69,7 @@ exchanges:
               content: '1 row(s) inserted. Last inserted row ID: 1.'
             - type: tool_result
               tool_use_id: toolcall_1
-              content: Created file ${homedir}/.copilot/session-state/445a8898-c0da-497d-a584-8e81f111eb21/plan.md with 63 characters
+              content: Created file ${homedir}/.copilot/session-state/${uuid_0}/plan.md with 63 characters
     response:
       content:
         - type: tool_use
@@ -101,7 +101,7 @@ exchanges:
             - type: tool_use
               name: create
               input:
-                path: ${homedir}/.copilot/session-state/445a8898-c0da-497d-a584-8e81f111eb21/plan.md
+                path: ${homedir}/.copilot/session-state/${uuid_0}/plan.md
                 file_text: |
                   # Plan
 
@@ -121,7 +121,7 @@ exchanges:
               content: '1 row(s) inserted. Last inserted row ID: 1.'
             - type: tool_result
               tool_use_id: toolcall_1
-              content: Created file ${homedir}/.copilot/session-state/445a8898-c0da-497d-a584-8e81f111eb21/plan.md with 63 characters
+              content: Created file ${homedir}/.copilot/session-state/${uuid_0}/plan.md with 63 characters
         - role: assistant
           content:
             - type: tool_use
@@ -162,7 +162,7 @@ exchanges:
             - type: tool_use
               name: create
               input:
-                path: ${homedir}/.copilot/session-state/445a8898-c0da-497d-a584-8e81f111eb21/plan.md
+                path: ${homedir}/.copilot/session-state/${uuid_0}/plan.md
                 file_text: |
                   # Plan
 
@@ -182,7 +182,7 @@ exchanges:
               content: '1 row(s) inserted. Last inserted row ID: 1.'
             - type: tool_result
               tool_use_id: toolcall_1
-              content: Created file ${homedir}/.copilot/session-state/445a8898-c0da-497d-a584-8e81f111eb21/plan.md with 63 characters
+              content: Created file ${homedir}/.copilot/session-state/${uuid_0}/plan.md with 63 characters
         - role: assistant
           content:
             - type: tool_use

@@ -500,6 +500,7 @@ export class CapiReplayProxy {
 		const built = this._recorded.map(exchange => this._toFixtureExchange(exchange));
 		const exchanges = built.map(b => b.exchange);
 		this._normalizeToolCallIds(exchanges);
+		this._normalizeUuids(exchanges);
 		// Every turn in a fixture shares one endpoint, so the dialect (and the
 		// `(method, path)` it implies) is stored once at the top instead of on each
 		// exchange.
@@ -555,6 +556,48 @@ export class CapiReplayProxy {
 					}
 				}
 			}
+		}
+	}
+
+	/**
+	 * Replace ephemeral UUIDs (shell ids, session-state ids, ...) that appear in
+	 * captured request/response content with stable ordinal placeholders
+	 * (`${uuid_0}`, `${uuid_1}`, ...). They change on every re-record, so
+	 * normalizing them keeps committed fixtures diff-clean. Distinct UUIDs get
+	 * distinct placeholders; repeats of the same UUID reuse its placeholder.
+	 */
+	private _normalizeUuids(exchanges: IFixtureExchange[]): void {
+		const idMap = new Map<string, string>();
+		const uuidRe = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+		const mapUuid = (uuid: string): string => {
+			let mapped = idMap.get(uuid);
+			if (mapped === undefined) {
+				mapped = `\${uuid_${idMap.size}}`;
+				idMap.set(uuid, mapped);
+			}
+			return mapped;
+		};
+		const walk = (value: unknown): unknown => {
+			if (typeof value === 'string') {
+				return value.replace(uuidRe, mapUuid);
+			}
+			if (Array.isArray(value)) {
+				for (let i = 0; i < value.length; i++) {
+					value[i] = walk(value[i]);
+				}
+				return value;
+			}
+			if (value && typeof value === 'object') {
+				const obj = value as Record<string, unknown>;
+				for (const key of Object.keys(obj)) {
+					obj[key] = walk(obj[key]);
+				}
+				return value;
+			}
+			return value;
+		};
+		for (const exchange of exchanges) {
+			walk(exchange);
 		}
 	}
 

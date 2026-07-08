@@ -47,7 +47,7 @@ exchanges:
             - type: tool_result
               tool_use_id: toolcall_1
               content: |-
-                Shell ID: 574556c9-a9c3-4f2f-9630-e74228bda370
+                Shell ID: ${uuid_0}
                 Exit code: 0
     response:
       content: |-
