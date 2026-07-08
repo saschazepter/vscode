@@ -5,6 +5,7 @@
 
 import { ChildProcess, fork } from 'child_process';
 import { createRequire } from 'module';
+import { userInfo } from 'os';
 import { fileURLToPath } from 'url';
 import { WebSocket } from 'ws';
 import { CapiReplayProxy, type CapiReplayMode } from './capiReplayProxy.js';
@@ -333,6 +334,7 @@ export async function startRealServer(options?: { readonly claudeSdkRoot?: strin
 			mode: options.capiReplay.mode,
 			workDir: options.capiReplay.workDir,
 			homeDir: options.homeDir,
+			userName: userInfo().username,
 			// Real hosts (consumer defaults); override for Enterprise/Business accounts.
 			githubUpstreamUrl: process.env['AGENT_HOST_RECORD_GITHUB_URL'] || 'https://api.github.com',
 			capiUpstreamUrl: process.env['AGENT_HOST_RECORD_CAPI_URL'] || 'https://api.githubcopilot.com',
@@ -341,6 +343,7 @@ export async function startRealServer(options?: { readonly claudeSdkRoot?: strin
 			mode: options.capiReplay.mode,
 			workDir: options.capiReplay.workDir,
 			homeDir: options.homeDir,
+			userName: userInfo().username,
 			upstreamUrl: mockLlmServer!.url,
 		});
 		await capiReplayProxy.start();

@@ -58,6 +58,13 @@ const MODEL_ENDPOINTS = new Set(['/chat/completions', '/responses', '/v1/message
 const WORKDIR_PLACEHOLDER = '${workdir}';
 const HOMEDIR_PLACEHOLDER = '${homedir}';
 /**
+ * Placeholder for the recorder's OS username. It appears in captured tool output
+ * (e.g. the owner column of `ls -la`) where it is not part of a path, so
+ * `homeDir` normalization misses it — scrub it explicitly to keep local identity
+ * out of fixtures.
+ */
+const USER_PLACEHOLDER = '${user}';
+/**
  * Placeholder for the upstream CAPI origin in recorded response bodies. Token /
  * user-discovery responses echo the CAPI host (`endpoints.api`); rewriting that
  * origin to this placeholder — and back to the proxy's own URL on replay —
@@ -170,6 +177,8 @@ export interface ICapiReplayProxyOptions {
 	readonly workDir?: string;
 	/** Absolute home directory to normalize out of request bodies. */
 	readonly homeDir?: string;
+	/** OS username to normalize out of recorded bodies (e.g. `ls -la` owner columns). */
+	readonly userName?: string;
 	/**
 	 * Fail (throw from {@link stop}) if any request missed the cache while
 	 * replaying. Defaults to true. Ignored while recording.
@@ -335,9 +344,9 @@ export class CapiReplayProxy {
 
 		if (item.kind === 'turn') {
 			// Regenerate the dialect's SSE stream from the captured reply.
-			const body = item.dialect === 'responses' ? responsesMessageToSse(item.message) : anthropicMessageToSse(item.message);
+			const sseBody = item.dialect === 'responses' ? responsesMessageToSse(item.message) : anthropicMessageToSse(item.message);
 			res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
-			res.end(body);
+			res.end(sseBody);
 			return;
 		}
 
@@ -575,6 +584,9 @@ export class CapiReplayProxy {
 		}
 		if (this._options.homeDir) {
 			result = replaceAll(result, this._options.homeDir, HOMEDIR_PLACEHOLDER);
+		}
+		if (this._options.userName) {
+			result = replaceAll(result, this._options.userName, USER_PLACEHOLDER);
 		}
 		return result;
 	}

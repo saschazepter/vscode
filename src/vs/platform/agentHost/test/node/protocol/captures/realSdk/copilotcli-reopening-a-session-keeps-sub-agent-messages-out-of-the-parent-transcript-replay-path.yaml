@@ -98,7 +98,7 @@ exchanges:
                 ${workdir}/ahp-subagent-replay-D1IH5t/file-b.txt
             - type: tool_result
               tool_use_id: toolcall_3
-              content: "Shell ID: 013f779e-e215-4b2d-b431-f662bacb1be2\nExit code: 0\nls -la /var/folders/yj \r/46gvyjxx5479vlbnxz_914xw0000gn/T/ahp-subagent-replay-D1IH5t\r\ntotal 16\r\ndrwx------    4 paulwang  staff    128 Jul  7 16:05 .\r\ndrwx------@ 975 paulwang  staff  31200 Jul  7 16:06 ..\r\n-rw-r--r--    1 paulwang  staff      5 Jul  7 16:05 file-a.txt\r\n-rw-r--r--    1 paulwang  staff      4 Jul  7 16:05 file-b.txt"
+              content: "Shell ID: 013f779e-e215-4b2d-b431-f662bacb1be2\nExit code: 0\nls -la /var/folders/yj \r/46gvyjxx5479vlbnxz_914xw0000gn/T/ahp-subagent-replay-D1IH5t\r\ntotal 16\r\ndrwx------    4 ${user}  staff    128 Jul  7 16:05 .\r\ndrwx------@ 975 ${user}  staff  31200 Jul  7 16:06 ..\r\n-rw-r--r--    1 ${user}  staff      5 Jul  7 16:05 file-a.txt\r\n-rw-r--r--    1 ${user}  staff      4 Jul  7 16:05 file-b.txt"
     response:
       content: |-
         **Files in the current working directory:**

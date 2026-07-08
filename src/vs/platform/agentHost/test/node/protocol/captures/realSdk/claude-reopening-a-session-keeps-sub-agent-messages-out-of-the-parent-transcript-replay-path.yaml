@@ -84,10 +84,10 @@ exchanges:
               tool_use_id: toolcall_1
               content: |-
                 total 16
-                drwx------    4 paulwang  staff    128 Jul  7 16:13 .
-                drwx------@ 975 paulwang  staff  31200 Jul  7 16:13 ..
-                -rw-r--r--    1 paulwang  staff      5 Jul  7 16:13 file-a.txt
-                -rw-r--r--    1 paulwang  staff      4 Jul  7 16:13 file-b.txt
+                drwx------    4 ${user}  staff    128 Jul  7 16:13 .
+                drwx------@ 975 ${user}  staff  31200 Jul  7 16:13 ..
+                -rw-r--r--    1 ${user}  staff      5 Jul  7 16:13 file-a.txt
+                -rw-r--r--    1 ${user}  staff      4 Jul  7 16:13 file-b.txt
     response:
       content: |-
         subagent replay note sentinel-7f3a
