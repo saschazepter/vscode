@@ -23,6 +23,8 @@ import {
 	getCreateSessionArgs,
 	getCurrentSessionToolName,
 	getDeleteSessionArgs,
+	filterSessions,
+	getListSessionsArgs,
 	listSessionsToolName,
 	sessionServerToolDefinitions,
 	sessionToolRequiresConfirmation,
@@ -122,6 +124,41 @@ suite('SessionServerTools', () => {
 		const text = await group.execute(stateManager, 'copilot:/caller', listSessionsToolName, {});
 		assert.deepStrictEqual(JSON.parse(text).sessions.map((s: { session: string }) => s.session), ['copilot:/s1']);
 		store.dispose();
+	});
+
+	test('list_sessions filters by status, workspace, and pending changes', async () => {
+		const store = new DisposableStore();
+		const stateManager = store.add(new AgentHostStateManager(new NullLogService()));
+		const other = URI.parse('file:///workspace/other');
+		const idle = { ...sessionMeta('idle', SessionStatus.Idle, workspace), changes: { files: 2, additions: 5, deletions: 1 } };
+		const needsInput = sessionMeta('needsInput', SessionStatus.InputNeeded, workspace);
+		const elsewhere = sessionMeta('elsewhere', SessionStatus.Idle, other);
+		const sessions = [idle, needsInput, elsewhere];
+		const group = createSessionServerToolGroup(createAccessor({ listSessions: async () => sessions }));
+
+		const ids = async (args: object) => JSON.parse(await group.execute(stateManager, 'copilot:/caller', listSessionsToolName, args)).sessions.map((s: { session: string }) => s.session);
+
+		assert.deepStrictEqual({
+			byStatus: await ids({ status: ['inputNeeded'] }),
+			byWorkspace: await ids({ workspace: workspace.toString() }),
+			withChanges: await ids({ withChanges: true }),
+			combined: await ids({ status: ['idle'], workspace: workspace.toString(), withChanges: true }),
+			all: await ids({}),
+		}, {
+			byStatus: ['copilot:/needsInput'],
+			byWorkspace: ['copilot:/idle', 'copilot:/needsInput'],
+			withChanges: ['copilot:/idle'],
+			combined: ['copilot:/idle'],
+			all: ['copilot:/idle', 'copilot:/needsInput', 'copilot:/elsewhere'],
+		});
+		store.dispose();
+	});
+
+	test('getListSessionsArgs validates filter input', () => {
+		assert.deepStrictEqual(getListSessionsArgs({}), { status: undefined, workspace: undefined, withChanges: undefined });
+		assert.throws(() => getListSessionsArgs({ status: ['bogus'] }), /status/);
+		assert.throws(() => getListSessionsArgs({ withChanges: 'yes' }), /withChanges/);
+		assert.strictEqual(filterSessions([sessionMeta('s1', SessionStatus.Idle, workspace)], getListSessionsArgs({})).length, 1);
 	});
 
 	test('create_session stamps spawn depth and enforces the recursion depth limit', async () => {

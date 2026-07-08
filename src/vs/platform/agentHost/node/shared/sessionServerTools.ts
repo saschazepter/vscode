@@ -39,9 +39,19 @@ export function sessionToolRequiresConfirmation(toolName: string): boolean {
 	return sessionConfirmationToolNames.has(toolName);
 }
 
+const listSessionsStatusValues = ['idle', 'inProgress', 'inputNeeded', 'error', 'archived'] as const;
+
 const listSessionsInputSchema: ToolDefinition['inputSchema'] = {
 	type: 'object',
-	properties: {},
+	properties: {
+		status: {
+			type: 'array',
+			items: { type: 'string', enum: [...listSessionsStatusValues] },
+			description: 'Only return sessions whose status matches one of these (e.g. `inputNeeded` for sessions awaiting a reply, `inProgress` for running ones). Omit to return every status.',
+		},
+		workspace: { type: 'string', description: 'Only return sessions whose working directory is this folder — an absolute path or a workspace URI.' },
+		withChanges: { type: 'boolean', description: 'When true, only return sessions that have pending worktree changes.' },
+	},
 };
 
 const createSessionInputSchema: ToolDefinition['inputSchema'] = {
@@ -83,7 +93,7 @@ export const sessionServerToolDefinitions: ToolDefinition[] = [
 	{
 		name: listSessionsToolName,
 		title: 'List Sessions',
-		description: 'List Agent Host sessions and their compact metadata.',
+		description: 'List Agent Host sessions and their compact metadata (status, working directory, worktree changes, title). Optionally filter by `status`, `workspace`, or `withChanges`.',
 		inputSchema: listSessionsInputSchema,
 		annotations: { readOnlyHint: true },
 	},
@@ -247,6 +257,81 @@ function describeSessionStatus(status: SessionStatus): string {
 		names.push('archived');
 	}
 	return names.join(',') || 'unknown';
+}
+
+/** Filters accepted by `list_sessions` to narrow the returned set. */
+export interface IListSessionsArgs {
+	readonly status?: ReadonlySet<string>;
+	readonly workspace?: string;
+	readonly withChanges?: boolean;
+}
+
+/** Validates and normalizes the optional `list_sessions` filter arguments. */
+export function getListSessionsArgs(rawArgs: unknown): IListSessionsArgs {
+	const args = (rawArgs ?? {}) as { status?: unknown; workspace?: unknown; withChanges?: unknown };
+
+	let status: Set<string> | undefined;
+	if (args.status !== undefined) {
+		if (!Array.isArray(args.status) || args.status.some(value => typeof value !== 'string')) {
+			throw new Error(`Invalid ${listSessionsToolName} input: status must be an array of status names.`);
+		}
+		const invalid = (args.status as string[]).filter(value => !(listSessionsStatusValues as readonly string[]).includes(value));
+		if (invalid.length > 0) {
+			throw new Error(`Invalid ${listSessionsToolName} input: unknown status value(s) ${invalid.join(', ')}. Valid values: ${listSessionsStatusValues.join(', ')}.`);
+		}
+		status = new Set(args.status as string[]);
+	}
+
+	let withChanges: boolean | undefined;
+	if (args.withChanges !== undefined) {
+		if (typeof args.withChanges !== 'boolean') {
+			throw new Error(`Invalid ${listSessionsToolName} input: withChanges must be a boolean.`);
+		}
+		withChanges = args.withChanges;
+	}
+
+	return { status, workspace: getOptionalString(args.workspace, 'workspace', listSessionsToolName), withChanges };
+}
+
+/** Whether a session has any pending worktree changes (insertions, deletions, or changed files). */
+function sessionHasChanges(session: IAgentSessionMetadata): boolean {
+	const changes = session.changes;
+	return !!changes && ((changes.files ?? 0) > 0 || (changes.additions ?? 0) > 0 || (changes.deletions ?? 0) > 0);
+}
+
+/** Whether a session's working directory matches the given folder (absolute path or URI). */
+function sessionMatchesWorkspace(session: IAgentSessionMetadata, workspace: string): boolean {
+	const dir = session.workingDirectory;
+	if (!dir) {
+		return false;
+	}
+	if (dir.toString() === workspace || dir.fsPath === workspace) {
+		return true;
+	}
+	const parsed = parseWorkspaceUri(workspace);
+	return !!parsed && parsed.toString() === dir.toString();
+}
+
+/** Applies the {@link IListSessionsArgs} filters to a set of sessions. */
+export function filterSessions(sessions: readonly IAgentSessionMetadata[], args: IListSessionsArgs): readonly IAgentSessionMetadata[] {
+	if (!args.status && args.workspace === undefined && args.withChanges === undefined) {
+		return sessions;
+	}
+	return sessions.filter(session => {
+		if (args.status) {
+			const names = session.status !== undefined ? describeSessionStatus(session.status).split(',') : [];
+			if (!names.some(name => args.status!.has(name))) {
+				return false;
+			}
+		}
+		if (args.workspace !== undefined && !sessionMatchesWorkspace(session, args.workspace)) {
+			return false;
+		}
+		if (args.withChanges && !sessionHasChanges(session)) {
+			return false;
+		}
+		return true;
+	});
 }
 
 function serializeSession(session: IAgentSessionMetadata): ISerializedSession {
@@ -509,7 +594,7 @@ export function createSessionServerToolGroup(accessor?: ISessionServerToolAccess
 			}
 			switch (toolName) {
 				case listSessionsToolName:
-					return serializeSessions(await accessor.listSessions());
+					return serializeSessions(filterSessions(await accessor.listSessions(), getListSessionsArgs(rawArgs)));
 				case getCurrentSessionToolName:
 					return serializeCurrentSession(currentSessionUri(sessionUri), await accessor.listSessions());
 				case createSessionToolName: {
