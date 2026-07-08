@@ -29,7 +29,7 @@ import { Menus } from '../../../../browser/menus.js';
 import { ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsListModelService } from '../../../../services/sessions/browser/sessionsListModelService.js';
 import { ChatContextKeys } from '../../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
-import { AgentHostEnabledSettingId } from '../../../../../platform/agentHost/common/agentService.js';
+import { AGENT_HOST_ENABLED_CONTEXT_KEY } from '../../../../../platform/agentHost/common/agentHostEnablementService.js';
 import { ISessionsPartService } from '../../../../services/sessions/browser/sessionsPartService.js';
 import { ISessionsService } from '../../../../services/sessions/browser/sessionsService.js';
 
@@ -477,7 +477,7 @@ const NEW_QUICK_CHAT_COMMAND_ID = 'sessionsView.newQuickChat';
 // quick chats) being available.
 const QuickChatEnabledContext = ContextKeyExpr.and(
 	ChatContextKeys.enabled,
-	ContextKeyExpr.equals(`config.${AgentHostEnabledSettingId}`, true),
+	AGENT_HOST_ENABLED_CONTEXT_KEY,
 );
 
 registerAction2(class NewQuickChatAction extends Action2 {

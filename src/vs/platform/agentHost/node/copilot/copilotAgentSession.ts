@@ -412,7 +412,19 @@ class CopilotTurn {
 	/** Current reasoning response part IDs for this turn, keyed by `parentToolCallId ?? ''`. */
 	readonly reasoningPartIds = new Map<string, string>();
 
-	constructor(readonly id: string, readonly senderClientId: string | undefined) { }
+	/**
+	 * Per-turn tool-call aggregate accumulated across the turn's `assistant.message` rounds (main
+	 * agent only), for the restricted `toolCallDetails` telemetry. `toolCounts` is keyed by tool name.
+	 */
+	readonly toolCounts = new Map<string, number>();
+	toolCallRounds = 0;
+	totalToolCalls = 0;
+	parallelToolCallRounds = 0;
+	parallelToolCallsTotal = 0;
+	/** Model of the most recent round, reported as the turn's model. */
+	lastModel: string | undefined;
+
+	constructor(readonly id: string, readonly ordinal: number, readonly senderClientId: string | undefined) { }
 
 	get state(): CopilotTurnState { return this._state; }
 	get isPending(): boolean { return this._state === 'pending'; }
@@ -507,11 +519,15 @@ export class CopilotAgentSession extends Disposable {
 	 * {@link resetTurnState}, finalized by {@link _completeActiveTurn}.
 	 */
 	private _currentTurn: CopilotTurn | undefined;
+	/** Monotonic 0-based ordinal assigned to each turn as it starts, for numeric `turnIndex` telemetry parity. */
+	private _nextTurnOrdinal = 0;
 	/**
 	 * Protocol turn ID of the active turn, or `''` when idle. Used by file
 	 * edit tracking and emitted on per-turn actions.
 	 */
 	private get _turnId(): string { return this._currentTurn?.id ?? ''; }
+	/** 0-based ordinal of the active turn within the session, or `0` when idle. */
+	private get _turnOrdinal(): number { return this._currentTurn?.ordinal ?? 0; }
 	/**
 	 * Last model id seen on the SDK's per-LLM-call `Usage` event (or a
 	 * direct {@link setModel} call). We rely on the
@@ -803,7 +819,7 @@ export class CopilotAgentSession extends Disposable {
 	 * response part. The turn becomes `running` on the first SDK event.
 	 */
 	resetTurnState(turnId: string, senderClientId?: string): void {
-		this._currentTurn = new CopilotTurn(turnId, senderClientId);
+		this._currentTurn = new CopilotTurn(turnId, this._nextTurnOrdinal++, senderClientId);
 	}
 
 	private _completeActiveTurn(): void {
@@ -812,6 +828,21 @@ export class CopilotAgentSession extends Disposable {
 			return;
 		}
 		turn.markCompleted();
+		// Emit the restricted per-turn tool-call aggregate before the turn is cleared. Main agent
+		// only: `_appliedSnapshot.tools` and this turn's accumulator describe the main session's turn.
+		// No-ops (in the reporter) when the turn made no tool calls.
+		this._telemetryReporter.toolCallDetails({
+			session: this.sessionUri.toString(),
+			turnId: turn.id,
+			model: turn.lastModel,
+			responseType: 'success',
+			toolCounts: Object.fromEntries(turn.toolCounts),
+			availableTools: this._appliedSnapshot.tools.map(tool => tool.name),
+			numRequests: turn.toolCallRounds,
+			totalToolCalls: turn.totalToolCalls,
+			parallelToolCallRounds: turn.parallelToolCallRounds,
+			parallelToolCallsTotal: turn.parallelToolCallsTotal,
+		});
 		this._emitAction({
 			type: ActionType.ChatTurnComplete,
 			turnId: turn.id,
@@ -1700,6 +1731,29 @@ export class CopilotAgentSession extends Disposable {
 			default:
 				throw new Error(`Method not found: ${method}`);
 		}
+	}
+
+	async startMcpServer(id: string): Promise<void> {
+		const serverName = this._mcpCustomizations.serverNameForCustomizationId(id);
+		if (!serverName) {
+			this._logService.warn(`[Copilot:${this.sessionId}] Cannot start unknown MCP server customization ${id}`);
+			return;
+		}
+		// stopServer leaves inline session MCP servers not_configured; disable->enable is the validated restart path.
+		await this._wrapper.session.rpc.mcp.disable({ serverName });
+		await this._wrapper.session.rpc.mcp.enable({ serverName });
+		await this._wrapper.session.rpc.mcp.listTools({ serverName });
+		this._seedMcpServersFromRpc();
+	}
+
+	async stopMcpServer(id: string): Promise<void> {
+		const serverName = this._mcpCustomizations.serverNameForCustomizationId(id);
+		if (!serverName) {
+			this._logService.warn(`[Copilot:${this.sessionId}] Cannot stop unknown MCP server customization ${id}`);
+			return;
+		}
+		await this._wrapper.session.rpc.mcp.stopServer({ serverName });
+		this._mcpCustomizations.applyOne({ name: serverName, state: { kind: McpServerStatus.Stopped } });
 	}
 
 	/**
@@ -2640,7 +2694,29 @@ export class CopilotAgentSession extends Disposable {
 			if (!e.agentId) {
 				this._telemetryReporter.assistantMessageReceived(this.sessionUri.toString(), e.data.serviceRequestId, this._appliedSnapshot.tools);
 				// Restricted `conversation.messageText` (source=model): the model's raw response text.
-				this._telemetryReporter.modelMessageText(this.sessionUri.toString(), e.data.content, this._turnId, e.data.serviceRequestId);
+				this._telemetryReporter.modelMessageText(this.sessionUri.toString(), e.data.content, this._turnOrdinal, e.data.serviceRequestId);
+				// Accumulate the per-turn tool-call aggregate for the restricted `toolCallDetails` event.
+				// Every main-agent `assistant.message` is one model-call round (matches the extension's
+				// `numRequests = toolCallRounds.length`, which counts the final tool-free response round
+				// too); the tool-count stats only apply to rounds that carried tool requests.
+				const turn = this._currentTurn;
+				if (turn) {
+					turn.toolCallRounds++;
+					if (e.data.model) {
+						turn.lastModel = e.data.model;
+					}
+					const toolRequests = e.data.toolRequests;
+					if (toolRequests?.length) {
+						turn.totalToolCalls += toolRequests.length;
+						if (toolRequests.length > 1) {
+							turn.parallelToolCallRounds++;
+							turn.parallelToolCallsTotal += toolRequests.length;
+						}
+						for (const req of toolRequests) {
+							turn.toolCounts.set(req.name, (turn.toolCounts.get(req.name) ?? 0) + 1);
+						}
+					}
+				}
 			}
 			// The SDK fires a `message` event with the full assembled content after
 			// streaming deltas. If deltas already created a markdown part for this
@@ -3271,8 +3347,7 @@ export class CopilotAgentSession extends Disposable {
 
 	private _applyMcpServerList(servers: readonly { readonly name: string; readonly status: SdkMcpServerStatus; readonly error?: string }[]): void {
 		const sdkServers = servers
-			.map(s => this._toSdkMcpServer(s.name, s.status, s.error))
-			.filter(isDefined);
+			.map(s => this._toSdkMcpServer(s.name, s.status, s.error));
 		this._mcpCustomizations.applyAll(sdkServers);
 	}
 
@@ -3299,23 +3374,13 @@ export class CopilotAgentSession extends Disposable {
 
 	/**
 	 * Translates the SDK's flat MCP status string into AHP's discriminated
-	 * {@link McpServerState} union. Returns `undefined` for
-	 * `not_configured`, which has no AHP equivalent — the server is
-	 * dropped from the inventory.
-	 *
-	 * V1 maps `needs-auth` to {@link McpServerStatus.Starting}: OAuth
-	 * handling is intentionally out of scope, so authRequired transitions
-	 * are masked as "still connecting" until the auth pipeline lands.
+	 * {@link McpServerState} union.
 	 */
-	private _toSdkMcpServer(name: string, status: SdkMcpServerStatus, error?: string): ISdkMcpServer | undefined {
-		const state = this._translateSdkMcpStatus(status, error);
-		if (!state) {
-			return undefined;
-		}
-		return { name, state };
+	private _toSdkMcpServer(name: string, status: SdkMcpServerStatus, error?: string): ISdkMcpServer {
+		return { name, state: this._translateSdkMcpStatus(name, status, error) };
 	}
 
-	private _translateSdkMcpStatus(status: SdkMcpServerStatus, error?: string): McpServerState | undefined {
+	private _translateSdkMcpStatus(name: string, status: SdkMcpServerStatus, error?: string): McpServerState {
 		switch (status) {
 			case 'connected':
 				return { kind: McpServerStatus.Ready };
@@ -3328,16 +3393,18 @@ export class CopilotAgentSession extends Disposable {
 					},
 				};
 			case 'pending':
-			case 'needs-auth':
-				// TODO: surface `needs-auth` as McpServerStatus.AuthRequired
-				// once OAuth wiring is in place.
+			case 'needs-auth': {
+				const previous = this._mcpCustomizations.stateForServer(name);
+				if (previous?.kind === McpServerStatus.AuthRequired) {
+					return previous;
+				}
 				return { kind: McpServerStatus.Starting };
+			}
 			case 'disabled':
-				return { kind: McpServerStatus.Stopped };
 			case 'not_configured':
-				return undefined;
+				return { kind: McpServerStatus.Stopped };
 			default:
-				return undefined;
+				return { kind: McpServerStatus.Stopped };
 		}
 	}
 
@@ -3558,7 +3625,7 @@ export class CopilotAgentSession extends Disposable {
 			// and SDK-injected synthetic messages (skill/harness injections carry a non-`user` source,
 			// matching `isSyntheticUserMessage`) so injected content is not reported as the user's prompt.
 			if (!e.agentId && (!e.data.source || e.data.source.toLowerCase() === 'user')) {
-				this._telemetryReporter.userMessageText(this.sessionUri.toString(), e.data.content, this._turnId);
+				this._telemetryReporter.userMessageText(this.sessionUri.toString(), e.data.content, this._turnOrdinal);
 			}
 		}));
 

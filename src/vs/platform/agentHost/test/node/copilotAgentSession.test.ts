@@ -2305,7 +2305,7 @@ suite('CopilotAgentSession', () => {
 			}
 		});
 
-		test('live tool_complete preserves SDK shell_exit content', async () => {
+		test('live tool_complete maps SDK shell_exit content to terminal completion', async () => {
 			const { mockSession, signals } = await createAgentSession(disposables);
 
 			mockSession.fire('tool.execution_start', {
@@ -2330,7 +2330,7 @@ suite('CopilotAgentSession', () => {
 				assert.strictEqual(action.result.success, true);
 				assert.deepStrictEqual(action.result.content, [
 					{ type: ToolResultContentType.Text, text: 'command not found\n' },
-					{ type: ToolResultContentType.ShellExit, shellId: '0', exitCode: 127, cwd: '/repo' },
+					{ type: ToolResultContentType.TerminalComplete, exitCode: 127, cwd: URI.file('/repo').toString() },
 				]);
 				assert.ok(!action.result.content?.some(content => content.type === ToolResultContentType.Terminal));
 			}
