@@ -65,7 +65,7 @@ type CopilotSessionLaunchConfig = ResumeSessionConfig & {
 	 * it on `SessionConfigBase`; it is forwarded to `createSession` and read by the
 	 * runtime at runtime regardless of the published SDK's static type.
 	 */
-	readonly selfFetchManagedSettings?: boolean;
+	readonly enableManagedSettings?: boolean;
 };
 
 /**
@@ -421,7 +421,7 @@ export class CopilotSessionLauncher implements ICopilotSessionLauncher {
 			// the session's gitHubToken to call /copilot_internal/managed_settings
 			// and enforces the result fail-closed before the first turn.
 			// Typed locally on CopilotSessionLaunchConfig pending the SDK type update.
-			selfFetchManagedSettings: true,
+			enableManagedSettings: true,
 		};
 	}
 }
