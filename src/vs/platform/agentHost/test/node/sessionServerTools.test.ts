@@ -10,7 +10,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/c
 import { NullLogService } from '../../../log/common/log.js';
 import type { IAgentCreateSessionConfig, IAgentModelInfo, IAgentSessionMetadata } from '../../common/agentService.js';
 import { SessionStatus } from '../../common/state/protocol/channels-session/state.js';
-import { buildDefaultChatUri } from '../../common/state/sessionState.js';
+import { buildDefaultChatUri, withSessionGitState, withSessionGitHubState } from '../../common/state/sessionState.js';
 import { AgentHostStateManager } from '../../node/agentHostStateManager.js';
 import {
 	applyCreateChatTool,
@@ -74,6 +74,39 @@ suite('SessionServerTools', () => {
 				status: 'inputNeeded',
 				workingDirectory: workspace.toString(),
 				title: 'title-s1',
+			}],
+		});
+	});
+
+	test('serializeSessions includes meaningful metadata when present', () => {
+		let meta = withSessionGitState(undefined, { branchName: 'feature/x', baseBranchName: 'main', outgoingChanges: 2, incomingChanges: 1, uncommittedChanges: 3 });
+		meta = withSessionGitHubState(meta, { owner: 'microsoft', repo: 'vscode', pullRequestUrl: 'https://github.com/microsoft/vscode/pull/1' });
+		const rich: IAgentSessionMetadata = {
+			session: URI.parse('copilot:/rich'),
+			startTime: 0,
+			modifiedTime: 1700000000000,
+			status: SessionStatus.InProgress,
+			activity: 'Running tests',
+			workingDirectory: workspace,
+			project: { uri: workspace, displayName: 'app' },
+			isRead: false,
+			summary: 'Rich session',
+			changes: { files: 1, additions: 2, deletions: 0 },
+			_meta: meta,
+		};
+		assert.deepStrictEqual(JSON.parse(serializeSessions([rich])), {
+			sessions: [{
+				session: 'copilot:/rich',
+				title: 'Rich session',
+				status: 'inProgress',
+				activity: 'Running tests',
+				workingDirectory: workspace.toString(),
+				project: 'app',
+				unread: true,
+				modifiedAt: new Date(1700000000000).toISOString(),
+				changes: { files: 1, additions: 2, deletions: 0 },
+				git: { branch: 'feature/x', baseBranch: 'main', ahead: 2, behind: 1, uncommittedChanges: 3 },
+				github: { owner: 'microsoft', repo: 'vscode', pullRequestUrl: 'https://github.com/microsoft/vscode/pull/1' },
 			}],
 		});
 	});

@@ -4,10 +4,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from '../../../../base/common/uri.js';
+import type { Mutable } from '../../../../base/common/types.js';
 import { localize } from '../../../../nls.js';
 import type { IAgentCreateSessionConfig, IAgentModelInfo, IAgentSessionMetadata } from '../../common/agentService.js';
 import { SessionStatus } from '../../common/state/protocol/channels-session/state.js';
-import { buildChatUri, buildDefaultChatUri, parseChatUri, type ToolDefinition, type StringOrMarkdown, type URI as ProtocolURI } from '../../common/state/sessionState.js';
+import { buildChatUri, buildDefaultChatUri, parseChatUri, readSessionGitState, readSessionGitHubState, type ToolDefinition, type StringOrMarkdown, type URI as ProtocolURI } from '../../common/state/sessionState.js';
 import { buildOpenSessionLinkUri, CREATE_CHAT_TOOL_NAME, CREATE_SESSION_TOOL_NAME, parseOpenSessionLinkUri } from '../../common/openSessionLink.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import type { AgentHostStateManager } from '../agentHostStateManager.js';
@@ -159,10 +160,34 @@ export interface ISessionServerToolAccessor {
 	readonly setSessionSpawnDepth: (session: URI, depth: number) => void;
 }
 
+interface ISerializedGitState {
+	readonly branch?: string;
+	readonly baseBranch?: string;
+	readonly upstreamBranch?: string;
+	readonly ahead?: number;
+	readonly behind?: number;
+	readonly uncommittedChanges?: number;
+}
+
+interface ISerializedGitHubState {
+	readonly owner?: string;
+	readonly repo?: string;
+	readonly pullRequestUrl?: string;
+}
+
 interface ISerializedSession {
 	readonly session: string;
+	readonly title?: string;
 	readonly status?: string;
+	/** Human-readable description of what the session is currently doing. */
+	readonly activity?: string;
 	readonly workingDirectory?: string;
+	/** Display name of the session's project/workspace. */
+	readonly project?: string;
+	/** `true` when the session has updates the user has not yet seen. */
+	readonly unread?: boolean;
+	/** ISO-8601 timestamp of the session's last activity. */
+	readonly modifiedAt?: string;
 	readonly changes?: IAgentSessionMetadata['changes'];
 	readonly changesets?: readonly {
 		readonly label: string;
@@ -170,7 +195,8 @@ interface ISerializedSession {
 		readonly uriTemplate: string;
 		readonly description?: string;
 	}[];
-	readonly title?: string;
+	readonly git?: ISerializedGitState;
+	readonly github?: ISerializedGitHubState;
 }
 
 function getRequiredString(value: unknown, field: string, toolName: string): string {
@@ -243,7 +269,9 @@ export function getCreateSessionArgs(rawArgs: unknown, sessions: readonly IAgent
 /** Decodes the {@link SessionStatus} bit-flags into readable names for the agent. */
 function describeSessionStatus(status: SessionStatus): string {
 	const names: string[] = [];
-	if (status & SessionStatus.InputNeeded) {
+	// `InputNeeded` is a superset of the `InProgress` bit, so it must be matched
+	// with an exact-bits check before falling back to plain `InProgress`.
+	if ((status & SessionStatus.InputNeeded) === SessionStatus.InputNeeded) {
 		names.push('inputNeeded');
 	} else if (status & SessionStatus.InProgress) {
 		names.push('inProgress');
@@ -334,11 +362,45 @@ export function filterSessions(sessions: readonly IAgentSessionMetadata[], args:
 	});
 }
 
+function serializeGitState(session: IAgentSessionMetadata): ISerializedGitState | undefined {
+	const git = readSessionGitState(session._meta);
+	if (!git) {
+		return undefined;
+	}
+	const result: Mutable<ISerializedGitState> = {};
+	if (git.branchName !== undefined) { result.branch = git.branchName; }
+	if (git.baseBranchName !== undefined) { result.baseBranch = git.baseBranchName; }
+	if (git.upstreamBranchName !== undefined) { result.upstreamBranch = git.upstreamBranchName; }
+	if (git.outgoingChanges !== undefined) { result.ahead = git.outgoingChanges; }
+	if (git.incomingChanges !== undefined) { result.behind = git.incomingChanges; }
+	if (git.uncommittedChanges !== undefined) { result.uncommittedChanges = git.uncommittedChanges; }
+	return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function serializeGitHubState(session: IAgentSessionMetadata): ISerializedGitHubState | undefined {
+	const github = readSessionGitHubState(session._meta);
+	if (!github) {
+		return undefined;
+	}
+	const result: Mutable<ISerializedGitHubState> = {};
+	if (github.owner !== undefined) { result.owner = github.owner; }
+	if (github.repo !== undefined) { result.repo = github.repo; }
+	if (github.pullRequestUrl !== undefined) { result.pullRequestUrl = github.pullRequestUrl; }
+	return Object.keys(result).length > 0 ? result : undefined;
+}
+
 function serializeSession(session: IAgentSessionMetadata): ISerializedSession {
+	const git = serializeGitState(session);
+	const github = serializeGitHubState(session);
 	return {
 		session: session.session.toString(),
+		...(session.summary !== undefined ? { title: session.summary } : {}),
 		...(session.status !== undefined ? { status: describeSessionStatus(session.status) } : {}),
+		...(session.activity !== undefined ? { activity: session.activity } : {}),
 		...(session.workingDirectory !== undefined ? { workingDirectory: session.workingDirectory.toString() } : {}),
+		...(session.project !== undefined ? { project: session.project.displayName } : {}),
+		...(session.isRead === false ? { unread: true } : {}),
+		...(session.modifiedTime > 0 ? { modifiedAt: new Date(session.modifiedTime).toISOString() } : {}),
 		...(session.changes !== undefined ? { changes: session.changes } : {}),
 		...(session.changesets !== undefined ? {
 			changesets: session.changesets.map(changeset => ({
@@ -348,7 +410,8 @@ function serializeSession(session: IAgentSessionMetadata): ISerializedSession {
 				...(changeset.description !== undefined ? { description: changeset.description } : {}),
 			})),
 		} : {}),
-		...(session.summary !== undefined ? { title: session.summary } : {}),
+		...(git !== undefined ? { git } : {}),
+		...(github !== undefined ? { github } : {}),
 	};
 }
 
