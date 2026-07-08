@@ -2375,7 +2375,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return false;
 		});
 
-		const targetSessionId = this._targetSession.get()?.toString();
+		// Prefer an explicit target session, but fall back to the currently
+		// focused session so the backend always has a single active session to
+		// act on. Without this, when several sessions await confirmation the
+		// backend has no active session and asks the user which one to use.
+		const targetSessionId = this._targetSession.get()?.toString() ?? this._getFocusedSessionId();
 
 		const sessionList = sessions.map(s => {
 			const model = this.chatService.getSession(s.resource);
