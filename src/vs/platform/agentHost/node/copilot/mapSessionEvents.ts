@@ -49,9 +49,8 @@ export function appendSdkToolResultContent(content: ToolResultContent[], sdkCont
 			case 'shell_exit':
 				content.push({
 					type: ToolResultContentType.ShellExit,
-					shellId: sdkContent.shellId,
 					exitCode: sdkContent.exitCode,
-					...(sdkContent.cwd !== undefined ? { cwd: sdkContent.cwd } : {}),
+					...(sdkContent.cwd !== undefined ? { cwd: URI.file(sdkContent.cwd).toString() } : {}),
 					...(sdkContent.outputPreview !== undefined ? { outputPreview: sdkContent.outputPreview } : {}),
 					...(sdkContent.outputTruncated !== undefined ? { outputTruncated: sdkContent.outputTruncated } : {}),
 				});

@@ -1499,7 +1499,7 @@ suite('stateToProgressAdapter', () => {
 				toolInput: 'gti status',
 				content: [
 					{ type: ToolResultContentType.Text, text: 'command not found\n' },
-					{ type: ToolResultContentType.ShellExit, shellId: '0', exitCode: 127, cwd: '/repo', outputPreview: 'preview only\n' },
+					{ type: ToolResultContentType.ShellExit, exitCode: 127, cwd: URI.file('/repo').toString(), outputPreview: 'preview only\n' },
 				],
 				success: true,
 			});
@@ -1525,7 +1525,7 @@ suite('stateToProgressAdapter', () => {
 				toolInput: 'pwd',
 				content: [
 					{ type: ToolResultContentType.Text, text: '/repo\n' },
-					{ type: ToolResultContentType.ShellExit, shellId: '0', exitCode: 0, cwd: '/repo' },
+					{ type: ToolResultContentType.ShellExit, exitCode: 0, cwd: URI.file('/repo').toString() },
 				],
 				success: true,
 			});
@@ -1616,7 +1616,7 @@ suite('stateToProgressAdapter', () => {
 				pastTenseMessage: 'Ran false',
 				content: [
 					{ type: ToolResultContentType.Text, text: '' },
-					{ type: ToolResultContentType.ShellExit, shellId: '0', exitCode: 1, cwd: '/repo' },
+					{ type: ToolResultContentType.ShellExit, exitCode: 1, cwd: URI.file('/repo').toString() },
 				],
 			});
 

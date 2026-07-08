@@ -856,7 +856,7 @@ function getTerminalInput(tc: ToolCallState): string | undefined {
 }
 function getTerminalOutput(tc: ToolCallState) {
 	// TODO: Revisit whether SDK shell tool output should continue coming from
-	// ToolResultContentType.Text, or from shell_exit.outputPreview when available.
+	// ToolResultContentType.Text, or from shellExit.outputPreview when available.
 	const text = tc.status === ToolCallStatus.Completed || tc.status === ToolCallStatus.Running ? tc.content?.find(isToolResultTextContent)?.text : undefined;
 	if (!text) {
 		return undefined;
@@ -876,7 +876,7 @@ function getTerminalCommandState(tc: ToolCallState, fallbackSuccess?: boolean): 
 	const shellExit = tc.status === ToolCallStatus.Completed || tc.status === ToolCallStatus.Running
 		? tc.content?.find(isToolResultShellExitContent)
 		: undefined;
-	if (shellExit) {
+	if (shellExit?.exitCode !== undefined) {
 		return { exitCode: shellExit.exitCode };
 	}
 	return fallbackSuccess === undefined ? undefined : { exitCode: fallbackSuccess ? 0 : 1 };

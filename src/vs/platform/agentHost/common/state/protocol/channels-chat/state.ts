@@ -63,6 +63,15 @@ export interface ChatState {
 	// ── Conversation contents ──────────────────────────────────────────
 	/** Completed turns */
 	turns: Turn[];
+	/**
+	 * Cursor for loading older completed turns into this chat state.
+	 *
+	 * Presence means `turns` is a tail window and more historical turns are
+	 * available. Pass this opaque cursor to `fetchTurns`; the host MUST insert
+	 * the loaded turns into state and update or clear this cursor before
+	 * responding. Absence means the state contains all retained turns.
+	 */
+	turnsNextCursor?: string;
 	/** Currently in-progress turn */
 	activeTurn?: ActiveTurn;
 	/** Message to inject into the current turn at a convenient point */
@@ -1156,7 +1165,7 @@ export const enum ToolResultContentType {
 	Resource = 'resource',
 	FileEdit = 'fileEdit',
 	Terminal = 'terminal',
-	ShellExit = 'shell_exit',
+	ShellExit = 'shellExit',
 	Subagent = 'subagent',
 }
 
@@ -1225,21 +1234,19 @@ export interface ToolResultTerminalContent {
 }
 
 /**
- * Shell command exit metadata emitted by the Copilot SDK shell tool.
+ * Shell command exit metadata emitted by a shell tool.
  *
  * @category Tool Result Content
  */
 export interface ToolResultShellExitContent {
 	type: ToolResultContentType.ShellExit;
-	/** Shell id, as assigned by Copilot runtime */
-	shellId: string;
-	/** Exit code from the completed shell command */
-	exitCode: number;
+	/** Exit code from the completed shell command, if reported by the runtime */
+	exitCode?: number;
 	/** Working directory where the shell command was executed */
-	cwd?: string;
+	cwd?: URI;
 	/** Output preview associated with the shell command, if available */
 	outputPreview?: string;
-	/** Whether outputPreview is known to be incomplete or truncated */
+	/** Whether `outputPreview` is known to be incomplete or truncated */
 	outputTruncated?: boolean;
 }
 
