@@ -10,8 +10,9 @@
 import assert from 'assert';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
+import { timeout } from '../../../../../base/common/async.js';
 import { URI } from '../../../../../base/common/uri.js';
-import { ResponsePartKind } from '../../../common/state/sessionState.js';
+import { buildDefaultChatUri, ResponsePartKind, type ISessionWithDefaultChat } from '../../../common/state/sessionState.js';
 import { createRealSession, dispatchTurn, IRealSdkProviderConfig } from './realSdkTestHelpers.js';
 import { fetchSessionWithChat, isActionNotification, IServerHandle, startRealServer, TestProtocolClient } from './testHelpers.js';
 
@@ -91,5 +92,60 @@ suite('Protocol WebSocket — Real Copilot SDK, Mocked LLM (Copilot-specific)', 
 		const markdownText = turn?.responseParts.map(p => p.kind === ResponsePartKind.Markdown ? p.content : '').join('\n') ?? ``;
 		assert.ok(markdownText.trim().length > 0, `expected non-empty assistant markdown; got: ${JSON.stringify(markdownText)}`);
 		assert.match(markdownText, new RegExp(`\\b${probeToken}\\b`, 'i'), `expected probe token in assistant markdown; got: ${JSON.stringify(markdownText)}`);
+	});
+
+	test('releases an idle session and resumes it losslessly on re-subscribe (mock LLM)', async function () {
+		this.timeout(180_000);
+
+		const assistantMarkdown = (turns: ISessionWithDefaultChat['turns'], turnId: string): string =>
+			turns.find(t => t.id === turnId)?.responseParts.map(p => p.kind === ResponsePartKind.Markdown ? p.content : '').join('\n') ?? '';
+		// Project each turn onto its durable transcript content: the user message
+		// and the assistant's rendered markdown. Live-only or reconstructed fields
+		// (regenerated response-part ids, the internal turn id which is rebuilt
+		// from the SDK event log on restore, per-turn `usage` token telemetry that
+		// is not persisted) legitimately do not survive a restore-from-disk, so
+		// "lossless" is asserted over the transcript the user sees.
+		const transcript = (turns: ISessionWithDefaultChat['turns']) =>
+			turns.map(t => ({ message: t.message.text, markdown: assistantMarkdown(turns, t.id) }));
+
+		const workspaceDir = await mkdtemp(`${tmpdir()}/test-mock-release-resume`);
+		tempDirs.push(workspaceDir);
+		const sessionUri = await createRealSession(client, COPILOT_CONFIG, 'real-sdk-mock-release', createdSessions, URI.file(workspaceDir));
+
+		// Drive one turn so the session has durable SDK state (a persisted event
+		// log) backed by a live SDK session that owns real per-session resources.
+		const firstProbe = 'MOCK_RELEASE_PROBE_1';
+		dispatchTurn(client, sessionUri, 'turn-release-1', `Reply with exactly: ${firstProbe}`, 1);
+		await client.waitForNotification(n => isActionNotification(n, 'chat/turnComplete'), 90_000);
+
+		const before = await fetchSessionWithChat(client, sessionUri);
+		assert.match(assistantMarkdown(before.turns, 'turn-release-1'), new RegExp(`\\b${firstProbe}\\b`, 'i'), 'first turn should have completed before release');
+
+		// Drop every subscriber. The parent-session unsubscribe is sent last so it
+		// triggers idle-session eviction on the server: the cached protocol state
+		// is dropped AND the provider releases the live SDK session
+		// (session.disconnect), while the on-disk session log is preserved.
+		for (const channel of [buildDefaultChatUri(sessionUri), sessionUri]) {
+			client.notify('unsubscribe', { channel });
+		}
+		// The release is sequenced inside the provider; give it time to run.
+		await timeout(1000);
+
+		// Re-subscribe: the server restores the session from disk and the provider
+		// resumes the SDK session on demand. The restored transcript must match
+		// the pre-release view.
+		const after = await fetchSessionWithChat(client, sessionUri);
+		assert.deepStrictEqual(transcript(after.turns), transcript(before.turns), 'restored transcript must match the pre-release state');
+
+		// Drive a SECOND turn after the release/resume cycle. This is the key
+		// assertion: it proves the SDK session resumed cleanly rather than wedging
+		// the runtime — the exact failure mode idle release could introduce.
+		client.clearReceived();
+		const secondProbe = 'MOCK_RELEASE_PROBE_2';
+		dispatchTurn(client, sessionUri, 'turn-release-2', `Reply with exactly: ${secondProbe}`, 2);
+		await client.waitForNotification(n => isActionNotification(n, 'chat/turnComplete'), 90_000);
+
+		const final = await fetchSessionWithChat(client, sessionUri);
+		assert.match(assistantMarkdown(final.turns, 'turn-release-2'), new RegExp(`\\b${secondProbe}\\b`, 'i'), 'a follow-up turn must complete after the release/resume cycle');
 	});
 });
