@@ -189,6 +189,7 @@ function createWidget(instantiationService: IInstantiationService, container: HT
 		MultiDiffEditorWidget,
 		container,
 		uiFactory,
+		undefined,
 	);
 }
 

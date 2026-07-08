@@ -8,6 +8,8 @@ import { $, append, Dimension } from '../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
 import { Range } from '../../../../editor/common/core/range.js';
+import { URI } from '../../../../base/common/uri.js';
+import { DiffEditorWidget } from '../../../../editor/browser/widget/diffEditor/diffEditorWidget.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -25,6 +27,7 @@ import { IEditorGroup } from '../../../../workbench/services/editor/common/edito
 import { MultiDiffEditorWidget } from '../../../../editor/browser/widget/multiDiffEditor/multiDiffEditorWidget.js';
 import { MultiDiffEditorViewModel } from '../../../../editor/browser/widget/multiDiffEditor/multiDiffEditorViewModel.js';
 import { IMultiDiffEditorOptions } from '../../../../editor/browser/widget/multiDiffEditor/multiDiffEditorWidgetImpl.js';
+import { IDiffEditorOptions } from '../../../../editor/common/config/editorOptions.js';
 import { IResourceLabel, IWorkbenchUIElementFactory } from '../../../../editor/browser/widget/multiDiffEditor/workbenchUIElementFactory.js';
 import { Menus } from '../../../browser/menus.js';
 import { shouldUseSinglePaneLayout } from '../../../browser/parts/singlePaneEditorPart.js';
@@ -34,6 +37,16 @@ import { ChangesActionsBar } from './changesView.js';
 import { SessionChangesEditorInput } from './sessionChangesEditorInput.js';
 
 const HEADER_HEIGHT = 35;
+
+/**
+ * Optimizes the embedded diffs for the narrow Agents window panel: in inline
+ * view this hides the original file's line-number column, removing the wide
+ * empty gutter that otherwise sits left of the modified line numbers. Unlike
+ * `compactMode` it keeps the full expandable hidden-region widgets.
+ */
+const COMPACT_DIFF_EDITOR_OPTIONS: IDiffEditorOptions = {
+	hideOriginalLineNumbers: true,
+};
 
 class SessionChangesUIElementFactory implements IWorkbenchUIElementFactory {
 
@@ -124,12 +137,37 @@ export class SessionChangesEditor extends EditorPane {
 			MultiDiffEditorWidget,
 			this.bodyContainer,
 			paneInstantiationService.createInstance(SessionChangesUIElementFactory),
+			COMPACT_DIFF_EDITOR_OPTIONS,
 		));
 		this.widget.setRenderSideBySide(this.configurationService.getValue<boolean>('diffEditor.renderSideBySide') ?? true);
 	}
 
 	toggleInlineView(): void {
 		this.widget?.toggleRenderSideBySide();
+	}
+
+	/**
+	 * Reveals all hidden unchanged regions of the diff for the given file, so the
+	 * full file is shown. In compact mode the collapsed-region widgets do not
+	 * offer their own expand affordance, so this is surfaced as a file-toolbar
+	 * action instead.
+	 */
+	expandAllUnchangedRegions(resource: URI): void {
+		const diffEditor = this.widget?.tryGetCodeEditor(resource)?.diffEditor;
+		if (diffEditor instanceof DiffEditorWidget) {
+			diffEditor.showAllUnchangedRegions();
+		}
+	}
+
+	/**
+	 * Collapses all unchanged regions of the diff for the given file, hiding the
+	 * unchanged context again so only the changes are shown.
+	 */
+	collapseAllUnchangedRegions(resource: URI): void {
+		const diffEditor = this.widget?.tryGetCodeEditor(resource)?.diffEditor;
+		if (diffEditor instanceof DiffEditorWidget) {
+			diffEditor.collapseAllUnchangedRegions();
+		}
 	}
 
 	/** Creates the classic (non-single-pane) internal header toolbars. */

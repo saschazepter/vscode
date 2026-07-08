@@ -15,6 +15,7 @@ import { localize, localize2 } from '../../../../nls.js';
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
 import { Action2, MenuId, MenuItemAction, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { EditorContextKeys } from '../../../../editor/common/editorContextKeys.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { bindContextKey } from '../../../../platform/observable/common/platformObservableUtils.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
@@ -31,6 +32,7 @@ import { IActiveSession } from '../../../services/sessions/common/sessionsManage
 import { IChangesViewService } from '../common/changesViewService.js';
 import { ChangesMultiDiffSourceResolver, SessionChangesFileResourceContext, SessionChangesReviewedFilesContext } from './changesMultiDiffSourceResolver.js';
 import { ISessionChangesService } from './sessionChangesService.js';
+import { SessionChangesEditor } from './sessionChangesEditor.js';
 import { isEqual } from '../../../../base/common/resources.js';
 
 /**
@@ -132,6 +134,93 @@ class OpenChangedFileAction extends Action2 {
 	}
 }
 registerAction2(OpenChangedFileAction);
+
+// --- Expand Full File action (per-file toolbar in the session changes multi-diff editor)
+
+/**
+ * Reveals all hidden unchanged regions for the file shown in a diff row of the
+ * Agents window's session Changes editor. The Changes editor renders in compact
+ * mode, whose collapsed-region widgets do not offer their own expand control, so
+ * this file-toolbar action provides the "show the whole file" affordance.
+ */
+class ExpandFullFileAction extends Action2 {
+
+	static readonly ID = 'workbench.agentSessions.changes.expandFullFile';
+
+	constructor() {
+		super({
+			id: ExpandFullFileAction.ID,
+			title: localize2('agentSessions.changes.expandFullFile', 'Expand Full File'),
+			icon: Codicon.unfold,
+			f1: false,
+			menu: {
+				id: MenuId.MultiDiffEditorFileToolbar,
+				when: ContextKeyExpr.and(
+					ContextKeyExpr.equals('resourceScheme', 'changes-multi-diff-source'),
+					EditorContextKeys.multiDiffEditorItemAllUnchangedRegionsShown.toNegated()),
+				group: 'navigation',
+				order: 21,
+			},
+		});
+	}
+
+	override async run(accessor: ServicesAccessor, ...args: unknown[]): Promise<void> {
+		const resource = args[0];
+		if (!(resource instanceof URI)) {
+			return;
+		}
+
+		const activeEditorPane = accessor.get(IEditorService).activeEditorPane;
+		if (activeEditorPane instanceof SessionChangesEditor) {
+			activeEditorPane.expandAllUnchangedRegions(resource);
+		}
+	}
+}
+registerAction2(ExpandFullFileAction);
+
+// --- Collapse Unchanged Regions action (per-file toolbar in the session changes multi-diff editor)
+
+/**
+ * Collapses all unchanged regions for the file shown in a diff row of the Agents
+ * window's session Changes editor, hiding the unchanged context so only the
+ * changes are shown. The symmetric counterpart of {@link ExpandFullFileAction}:
+ * the two occupy the same toolbar slot and swap based on whether the file is
+ * fully expanded.
+ */
+class CollapseUnchangedRegionsAction extends Action2 {
+
+	static readonly ID = 'workbench.agentSessions.changes.collapseUnchangedRegions';
+
+	constructor() {
+		super({
+			id: CollapseUnchangedRegionsAction.ID,
+			title: localize2('agentSessions.changes.collapseUnchangedRegions', 'Collapse Unchanged Regions'),
+			icon: Codicon.fold,
+			f1: false,
+			menu: {
+				id: MenuId.MultiDiffEditorFileToolbar,
+				when: ContextKeyExpr.and(
+					ContextKeyExpr.equals('resourceScheme', 'changes-multi-diff-source'),
+					EditorContextKeys.multiDiffEditorItemAllUnchangedRegionsShown),
+				group: 'navigation',
+				order: 21,
+			},
+		});
+	}
+
+	override async run(accessor: ServicesAccessor, ...args: unknown[]): Promise<void> {
+		const resource = args[0];
+		if (!(resource instanceof URI)) {
+			return;
+		}
+
+		const activeEditorPane = accessor.get(IEditorService).activeEditorPane;
+		if (activeEditorPane instanceof SessionChangesEditor) {
+			activeEditorPane.collapseAllUnchangedRegions(resource);
+		}
+	}
+}
+registerAction2(CollapseUnchangedRegionsAction);
 
 // --- View All Changes action view item (session header diff stats)
 
