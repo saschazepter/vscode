@@ -452,13 +452,12 @@ export class ChangesActionsBar extends Disposable {
 // Menus.SessionsEditorHeaderPrimary (Branch Changes picker + diff stats, left) and
 // Menus.SessionsEditorHeaderSecondary (diff/code-review/view-mode actions, right), and
 // the editor group renders them. The Create Pull Request bar (ChangesActionsBar) is
-// hosted by the editor title (Menus.SessionsEditorTitle) via SessionChangesEditor.
-// The custom action view items below are registered globally by menu id so the group's
-// generic toolbars render them.
+// hosted in the sessions title bar (Menus.TitleBarSessionMenu). The custom action view
+// items below are registered globally by menu id so the toolbars render them.
 
 export const CHANGES_HEADER_ACTIONS_ID = 'workbench.changesView.headerActions';
 
-/** Renders the {@link ChangesActionsBar} widget as the Create Pull Request editor-title action item. */
+/** Renders the {@link ChangesActionsBar} widget as the Create Pull Request title-bar action item. */
 export class ChangesActionsBarActionViewItem extends BaseActionViewItem {
 	constructor(
 		action: IAction,
