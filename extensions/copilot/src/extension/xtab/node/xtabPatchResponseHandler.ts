@@ -26,6 +26,14 @@ class Patch {
 	public removedLines: string[] = [];
 	public addedLines: string[] = [];
 
+	/**
+	 * True for the early cursor-line replacement emitted by a progressive ghost-text
+	 * reveal. Such a patch is, by construction, a 1-for-1 additive edit whose single
+	 * added line IS the change we want to surface, so the duplicate-additions policy is
+	 * skipped for it (see {@link handleResponse}).
+	 */
+	public isProgressiveRevealEarlyEdit = false;
+
 	private constructor(
 		/**
 		 * Expected to be file path relative to workspace root.
@@ -356,6 +364,7 @@ export namespace XtabPatchResponseHandler {
 		duplicateAdditionsMode: DuplicateAdditionsMode = DuplicateAdditionsMode.Off,
 		enableProgressiveGhostText: boolean = false,
 		splitPatchOnDiff: boolean = false,
+		enableProgressiveGhostTextMultiLine: boolean = false,
 	): AsyncGenerator<StreamedEdit, NoNextEditReason, void> {
 		const tracer = parentTracer.createSubLogger(['XtabCustomDiffPatchResponseHandler', 'handleResponse']);
 		const activeDocRelativePath = toUniquePath(activeDocumentId, workspaceRoot?.path);
@@ -364,7 +373,17 @@ export namespace XtabPatchResponseHandler {
 			let dropAllRemaining = false;
 			const cursorLine = enableProgressiveGhostText ? currentDocument.cursorLineOffset : undefined;
 			const progressiveDocPath = enableProgressiveGhostText ? activeDocRelativePath : undefined;
-			for await (const edit of extractEdits(linesStream, cursorLine, progressiveDocPath)) {
+			// Multi-line progressive reveal is an extension of the single-line reveal, so it only
+			// applies when the base flag is on (which also acts as the kill switch). It is further
+			// restricted to duplicate-additions modes that preserve a patch's removed range: the
+			// continuation of a multi-line reveal carries removed lines, and `DropPatch`/
+			// `DropAllRemaining` would skip that continuation *after* the early cursor-line edit has
+			// already been emitted, leaving stale old lines below the cursor. `Off` (no dedup) and
+			// `TrimDuplicate` (trims only duplicate additions, keeps the removal) are safe.
+			const isDuplicateModeSafeForMultiLine = duplicateAdditionsMode === DuplicateAdditionsMode.Off
+				|| duplicateAdditionsMode === DuplicateAdditionsMode.TrimDuplicate;
+			const allowMultiLineRemoval = enableProgressiveGhostText && enableProgressiveGhostTextMultiLine && isDuplicateModeSafeForMultiLine;
+			for await (const edit of extractEdits(linesStream, cursorLine, progressiveDocPath, allowMultiLineRemoval)) {
 				if (dropAllRemaining) {
 					continue;
 				}
@@ -382,7 +401,17 @@ export namespace XtabPatchResponseHandler {
 
 				// Only attempt dedup for the active document — other files'
 				// content is not directly available here.
-				if (duplicateAdditionsMode !== DuplicateAdditionsMode.Off && isActiveDoc) {
+				//
+				// The early cursor-line edit of a progressive ghost-text reveal is excluded: it is
+				// by construction a 1-line -> 1-line additive replacement whose single added line is
+				// the edit we want to surface, so it carries no re-emitted context to trim. Running
+				// the policy on it is never useful and can be harmful — when that added line happens
+				// to coincide with the line just below the cursor (e.g. a cascade edit where the
+				// cursor line is completed to match the next line, which the same source patch then
+				// extends further), the "following" window points at a line the patch itself is
+				// replacing, so the policy spuriously trims the added line to empty and emits a
+				// cursor-line *deletion*, dropping the intended change.
+				if (duplicateAdditionsMode !== DuplicateAdditionsMode.Off && isActiveDoc && !edit.isProgressiveRevealEarlyEdit) {
 					const decision = applyDuplicatePolicy(edit, lineReplacement, currentDocument.content, duplicateAdditionsMode, tracer);
 					switch (decision.kind) {
 						case 'skip':
@@ -437,26 +466,49 @@ export namespace XtabPatchResponseHandler {
 
 	/**
 	 * Checks whether the first patch qualifies for ghost-text progressive reveal.
-	 * A patch qualifies if it has exactly one removed line, at least one added line,
-	 * targets the cursor line in the active document, and the edit on the first
-	 * line is additive (the removed line is a subsequence of the first added line).
+	 * A patch qualifies if it has at least one added line, targets the cursor line in the
+	 * active document, and the edit on the first line is additive (the removed line is a
+	 * subsequence of the first added line).
+	 *
+	 * By default only single-removed-line patches qualify. When `allowMultiLineRemoval` is
+	 * set, patches that remove more than one line also qualify (the cursor-line change is
+	 * revealed first and the remaining removed/added lines are streamed as a continuation).
+	 * In that case an empty cursor line that merely absorbs the next line is rejected: when
+	 * `removedLines[0]` is blank and the first added line equals or is a prefix of the next
+	 * removed line (which is the original line just below the cursor), the model is deleting
+	 * the empty line and shifting content up rather than additively editing the cursor line.
 	 */
-	export function isGhostTextPatch(patch: Patch, cursorLineZeroBased: number, activeDocRelativePath: string): boolean {
-		return patch.removedLines.length === 1
-			&& patch.addedLines.length >= 1
-			&& patch.lineNumZeroBased === cursorLineZeroBased
-			&& patch.filePath === activeDocRelativePath
-			&& ResponseProcessor.isAdditiveEdit(patch.removedLines[0], patch.addedLines[0]);
+	export function isGhostTextPatch(patch: Patch, cursorLineZeroBased: number, activeDocRelativePath: string, allowMultiLineRemoval: boolean): boolean {
+		const removedLinesQualify = allowMultiLineRemoval ? patch.removedLines.length >= 1 : patch.removedLines.length === 1;
+		if (!removedLinesQualify
+			|| patch.addedLines.length < 1
+			|| patch.lineNumZeroBased !== cursorLineZeroBased
+			|| patch.filePath !== activeDocRelativePath
+			|| !ResponseProcessor.isAdditiveEdit(patch.removedLines[0], patch.addedLines[0])
+		) {
+			return false;
+		}
+		if (patch.removedLines.length >= 2 && patch.removedLines[0].trim() === '') {
+			const nextRemovedLine = patch.removedLines[1];
+			const firstAddedLine = patch.addedLines[0];
+			if (firstAddedLine === nextRemovedLine || nextRemovedLine.startsWith(firstAddedLine)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
 	 * @param cursorLineZeroBased When provided (along with activeDocRelativePath),
 	 * enables ghost-text progressive reveal for the first patch: if the first patch
-	 * is a ghost-text (single removed line at the cursor that is additively edited),
-	 * the cursor-line replacement is yielded immediately and any further added lines
-	 * are collected into a separate pure-insertion patch.
+	 * is a ghost-text (a removed line at the cursor that is additively edited),
+	 * the cursor-line replacement is yielded immediately and any further removed/added
+	 * lines are collected into a separate continuation patch.
+	 * @param allowMultiLineRemoval When set, progressive reveal also fires for first patches
+	 * that remove more than one line (see {@link isGhostTextPatch}); the continuation then
+	 * carries the remaining removed lines instead of being a pure insertion.
 	 */
-	export async function* extractEdits(linesStream: AsyncIterable<string>, cursorLineZeroBased?: number, activeDocRelativePath?: string): AsyncGenerator<Patch> {
+	export async function* extractEdits(linesStream: AsyncIterable<string>, cursorLineZeroBased?: number, activeDocRelativePath?: string, allowMultiLineRemoval: boolean = false): AsyncGenerator<Patch> {
 		let currentPatch: Patch | null = null;
 		let isFirstPatch = true;
 
@@ -493,17 +545,25 @@ export namespace XtabPatchResponseHandler {
 					&& currentPatch.addedLines.length === 1
 					&& currentPatch.removedLines.length >= 1
 				) {
-					if (isGhostTextPatch(currentPatch, cursorLineZeroBased, activeDocRelativePath)) {
+					if (isGhostTextPatch(currentPatch, cursorLineZeroBased, activeDocRelativePath, allowMultiLineRemoval)) {
 						// Both the early and continuation patches stem from the same
 						// model patch, so they share its index.
 						const sourcePatchIndex = currentPatch.patchIndex;
-						// Yield the cursor-line replacement immediately
+						// Yield the cursor-line replacement immediately: the first removed
+						// line -> the first added line. This is always a 1-for-1 change, so
+						// it does not shift the line anchors of the continuation below.
 						const earlyPatch = Patch.insertion(currentPatch.filePath, currentPatch.lineNumZeroBased, sourcePatchIndex);
-						earlyPatch.removedLines = [...currentPatch.removedLines];
+						earlyPatch.removedLines = [currentPatch.removedLines[0]];
 						earlyPatch.addedLines = [...currentPatch.addedLines];
+						earlyPatch.isProgressiveRevealEarlyEdit = true;
 						yield earlyPatch;
-						// Replace currentPatch with a continuation pure-insertion patch
-						currentPatch = Patch.insertion(currentPatch.filePath, currentPatch.lineNumZeroBased + 1, sourcePatchIndex);
+						// Replace currentPatch with a continuation patch anchored on the next
+						// line that carries any remaining removed lines (empty for the common
+						// single-removed-line case, making it a pure insertion) and collects
+						// the remaining added lines as they stream in.
+						const continuationPatch = Patch.insertion(currentPatch.filePath, currentPatch.lineNumZeroBased + 1, sourcePatchIndex);
+						continuationPatch.removedLines = currentPatch.removedLines.slice(1);
+						currentPatch = continuationPatch;
 					}
 					progressiveRevealDone = true;
 				}
