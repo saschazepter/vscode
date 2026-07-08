@@ -17,11 +17,12 @@ export const listSessionsToolName = 'list_sessions';
 export const getCurrentSessionToolName = 'get_current_session';
 export const createSessionToolName = CREATE_SESSION_TOOL_NAME;
 export const createChatToolName = CREATE_CHAT_TOOL_NAME;
+export const deleteSessionToolName = 'delete_session';
 
 const maxCreatedSessions = 5;
 const maxCreatedChats = 10;
 
-const sessionConfirmationToolNames: ReadonlySet<string> = new Set([createSessionToolName, createChatToolName]);
+const sessionConfirmationToolNames: ReadonlySet<string> = new Set([createSessionToolName, createChatToolName, deleteSessionToolName]);
 
 /** Whether the given session server tool requires user confirmation before it runs. */
 export function sessionToolRequiresConfirmation(toolName: string): boolean {
@@ -58,6 +59,14 @@ const createChatInputSchema: ToolDefinition['inputSchema'] = {
 	required: ['prompt'],
 };
 
+const deleteSessionInputSchema: ToolDefinition['inputSchema'] = {
+	type: 'object',
+	properties: {
+		session: { type: 'string', description: 'The session URI to delete (from `list_sessions`).' },
+	},
+	required: ['session'],
+};
+
 /** Protocol tool definitions for the session-management server tools. */
 export const sessionServerToolDefinitions: ToolDefinition[] = [
 	{
@@ -88,6 +97,13 @@ export const sessionServerToolDefinitions: ToolDefinition[] = [
 		inputSchema: createChatInputSchema,
 		annotations: { readOnlyHint: false },
 	},
+	{
+		name: deleteSessionToolName,
+		title: 'Delete Session',
+		description: 'Permanently delete an Agent Host session (identified by a session URI from `list_sessions`), including its stored data. This cannot be undone. Refuses to delete the current session.',
+		inputSchema: deleteSessionInputSchema,
+		annotations: { readOnlyHint: false, destructiveHint: true },
+	},
 ];
 
 /** Resolves the owning backend session URI for the channel a tool call runs on. */
@@ -115,6 +131,7 @@ export interface ISessionServerToolAccessor {
 	readonly getModels: () => readonly IAgentModelInfo[];
 	readonly startPrompt: (session: URI, chat: URI, prompt: string) => Promise<void>;
 	readonly createChat: (session: URI, chat: URI, title?: string) => Promise<void>;
+	readonly deleteSession: (session: URI) => Promise<void>;
 }
 
 interface ISerializedSession {
@@ -355,6 +372,36 @@ function parseListedSessionCount(resultText: string | undefined): number | undef
 	}
 }
 
+interface IDeleteSessionArgs {
+	readonly session?: unknown;
+}
+
+/**
+ * Validates delete-session arguments against current sessions and refuses to
+ * delete {@link currentSession} (deleting the session the tool runs in would
+ * tear down its own conversation).
+ */
+export function getDeleteSessionArgs(rawArgs: unknown, sessions: readonly IAgentSessionMetadata[], currentSession?: URI): URI {
+	const args = (rawArgs ?? {}) as IDeleteSessionArgs;
+	const sessionInput = getRequiredString(args.session, 'session', deleteSessionToolName);
+	const match = sessions.find(s => s.session.toString() === sessionInput);
+	if (!match) {
+		throw new Error(`Invalid ${deleteSessionToolName} input: session must match the URI of a known session (see list_sessions).`);
+	}
+	if (currentSession && match.session.toString() === currentSession.toString()) {
+		throw new Error(`Invalid ${deleteSessionToolName} input: refusing to delete the current session.`);
+	}
+	return match.session;
+}
+
+/** Deletes a session and returns the model-facing confirmation. */
+export async function applyDeleteSessionTool(accessor: ISessionServerToolAccessor, rawArgs: unknown, currentSession?: URI): Promise<string> {
+	const sessions = await accessor.listSessions();
+	const session = getDeleteSessionArgs(rawArgs, sessions, currentSession);
+	await accessor.deleteSession(session);
+	return `Deleted session ${session.toString()}. Reply with one short sentence confirming the session was deleted.`;
+}
+
 function getSessionToolDisplay(toolName: string, _args: unknown, result?: IServerToolDisplayResult): IServerToolDisplay | undefined {
 	switch (toolName) {
 		case listSessionsToolName: {
@@ -390,6 +437,12 @@ function getSessionToolDisplay(toolName: string, _args: unknown, result?: IServe
 				displayName: localize('toolName.getCurrentSession', "Get Current Session"),
 				invocationMessage: localize('toolInvoke.getCurrentSession', "Checking current session"),
 				pastTenseMessage: localize('toolComplete.getCurrentSession', "Checked current session"),
+			};
+		case deleteSessionToolName:
+			return {
+				displayName: localize('toolName.deleteSession', "Delete Session"),
+				invocationMessage: localize('toolInvoke.deleteSession', "Deleting session"),
+				pastTenseMessage: localize('toolComplete.deleteSession', "Deleted session"),
 			};
 		default:
 			return undefined;
@@ -432,6 +485,8 @@ export function createSessionServerToolGroup(accessor: ISessionServerToolAccesso
 					createdChatCount++;
 					return formatCreateChatResult(result);
 				}
+				case deleteSessionToolName:
+					return applyDeleteSessionTool(accessor, rawArgs, currentSessionUri(sessionUri));
 				default:
 					throw new Error(`Unknown session server tool: ${toolName}`);
 			}

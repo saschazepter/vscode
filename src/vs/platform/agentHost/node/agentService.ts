@@ -514,6 +514,7 @@ export class AgentService extends Disposable implements IAgentService {
 			},
 			startPrompt: (session, chat, prompt) => this._startSessionPrompt(session, chat, prompt),
 			createChat: (session, chat, title) => this.createChat(session, chat, title !== undefined ? { title } : undefined),
+			deleteSession: session => this.disposeSession(session),
 		};
 	}
 

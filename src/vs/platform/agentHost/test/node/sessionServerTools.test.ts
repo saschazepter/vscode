@@ -14,12 +14,15 @@ import { buildDefaultChatUri } from '../../common/state/sessionState.js';
 import { AgentHostStateManager } from '../../node/agentHostStateManager.js';
 import {
 	applyCreateChatTool,
+	applyDeleteSessionTool,
 	createChatToolName,
 	createSessionServerToolGroup,
 	createSessionToolName,
+	deleteSessionToolName,
 	getCreateChatArgs,
 	getCreateSessionArgs,
 	getCurrentSessionToolName,
+	getDeleteSessionArgs,
 	listSessionsToolName,
 	sessionServerToolDefinitions,
 	sessionToolRequiresConfirmation,
@@ -38,20 +41,22 @@ suite('SessionServerTools', () => {
 		return { session: URI.parse(`copilot:/${id}`), startTime: 0, modifiedTime: 0, status, workingDirectory: dir, summary: `title-${id}` };
 	}
 
-	function createAccessor(overrides?: Partial<ISessionServerToolAccessor> & { onCreate?: (config: IAgentCreateSessionConfig) => void; onPrompt?: (session: URI, chat: URI, prompt: string) => void; onCreateChat?: (session: URI, chat: URI, title?: string) => void }): ISessionServerToolAccessor {
+	function createAccessor(overrides?: Partial<ISessionServerToolAccessor> & { onCreate?: (config: IAgentCreateSessionConfig) => void; onPrompt?: (session: URI, chat: URI, prompt: string) => void; onCreateChat?: (session: URI, chat: URI, title?: string) => void; onDelete?: (session: URI) => void }): ISessionServerToolAccessor {
 		return {
 			listSessions: overrides?.listSessions ?? (async () => [sessionMeta('s1', SessionStatus.InProgress, workspace)]),
 			createSession: overrides?.createSession ?? (async config => { overrides?.onCreate?.(config); return URI.parse('copilot:/new'); }),
 			getModels: overrides?.getModels ?? (() => [model]),
 			startPrompt: overrides?.startPrompt ?? (async (session, chat, prompt) => { overrides?.onPrompt?.(session, chat, prompt); }),
 			createChat: overrides?.createChat ?? (async (session, chat, title) => { overrides?.onCreateChat?.(session, chat, title); }),
+			deleteSession: overrides?.deleteSession ?? (async session => { overrides?.onDelete?.(session); }),
 		};
 	}
 
 	test('definitions and confirmation', () => {
-		assert.deepStrictEqual(sessionServerToolDefinitions.map(d => d.name), [listSessionsToolName, getCurrentSessionToolName, createSessionToolName, createChatToolName]);
+		assert.deepStrictEqual(sessionServerToolDefinitions.map(d => d.name), [listSessionsToolName, getCurrentSessionToolName, createSessionToolName, createChatToolName, deleteSessionToolName]);
 		assert.strictEqual(sessionToolRequiresConfirmation(createSessionToolName), true);
 		assert.strictEqual(sessionToolRequiresConfirmation(createChatToolName), true);
+		assert.strictEqual(sessionToolRequiresConfirmation(deleteSessionToolName), true);
 		assert.strictEqual(sessionToolRequiresConfirmation(listSessionsToolName), false);
 		assert.strictEqual(sessionToolRequiresConfirmation(getCurrentSessionToolName), false);
 	});
@@ -168,5 +173,24 @@ suite('SessionServerTools', () => {
 		assert.strictEqual(parsed.session, 'copilot:/s1');
 		assert.strictEqual(parsed.openLink, 'agent-host-session://copilot/s1');
 		store.dispose();
+	});
+
+	test('getDeleteSessionArgs validates and refuses the current session', () => {
+		const sessions = [sessionMeta('s1', SessionStatus.Idle, workspace), sessionMeta('s2', SessionStatus.Idle, workspace)];
+		assert.strictEqual(getDeleteSessionArgs({ session: 'copilot:/s2' }, sessions).toString(), 'copilot:/s2');
+		assert.throws(() => getDeleteSessionArgs({ session: 'copilot:/unknown' }, sessions), /session/);
+		assert.throws(() => getDeleteSessionArgs({}, sessions), /session/);
+		assert.throws(() => getDeleteSessionArgs({ session: 'copilot:/s1' }, sessions, URI.parse('copilot:/s1')), /current session/);
+	});
+
+	test('delete_session deletes the target and returns a confirmation', async () => {
+		let deleted: URI | undefined;
+		const accessor = createAccessor({
+			listSessions: async () => [sessionMeta('s1', SessionStatus.Idle, workspace), sessionMeta('s2', SessionStatus.Idle, workspace)],
+			onDelete: session => { deleted = session; },
+		});
+		const text = await applyDeleteSessionTool(accessor, { session: 'copilot:/s2' }, URI.parse('copilot:/s1'));
+		assert.strictEqual(deleted?.toString(), 'copilot:/s2');
+		assert.ok(text.includes('copilot:/s2'));
 	});
 });
