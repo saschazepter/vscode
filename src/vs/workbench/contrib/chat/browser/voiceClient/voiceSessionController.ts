@@ -24,6 +24,8 @@ import { IVoicePlaybackService } from '../../common/voicePlaybackService.js';
 import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
 import { AgentSessionStatus } from '../agentSessions/agentSessionsModel.js';
 import { IChatService, IChatToolInvocation, ToolConfirmKind, IChatModelReference } from '../../common/chatService/chatService.js';
+import { IChatWidgetService } from '../chat.js';
+import { FileAccess } from '../../../../../base/common/network.js';
 import { IChatModel } from '../../common/model/chatModel.js';
 import { ChatAgentLocation } from '../../common/constants.js';
 import { IWorkbenchEnvironmentService } from '../../../../services/environment/common/environmentService.js';
@@ -204,6 +206,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	// incorrectly cleared the flag.
 	private _suppressIncomingAudio = false;
 
+	// --- Deferred responses for non-focused sessions ---
+	/** Session resource string currently focused/visible in the chat pane. */
+	private _focusedSessionId: string | undefined;
+	/** Buffered audio for responses that arrived while their session was not
+	 *  focused. Flushed to playback when the session becomes focused. */
+	private readonly _deferredResponses = new Map<string, { audio: string; isFirstChunk: boolean; isFinal: boolean; transcript: string | undefined }[]>();
+	private _responseReceivedCue: HTMLAudioElement | undefined;
+
 	// --- Session audio cache for replay ---
 	private readonly _sessionAudioCache = new Map<string, Float32Array>();
 	private _replaySourceNode: AudioBufferSourceNode | undefined;
@@ -296,8 +306,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IAccessibilitySignalService private readonly accessibilitySignalService: IAccessibilitySignalService,
 		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
+		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 	) {
 		super();
+
+		// Track the focused chat session so we can defer voice responses that
+		// arrive for a session the user isn't currently looking at, and flush
+		// them once that session becomes focused.
+		this._register(this.chatWidgetService.onDidChangeFocusedSession(() => this._onFocusedSessionChanged()));
 
 		// Set up the tool dispatch delegate — uses command bridge for widget ops
 		this.voiceToolDispatchService.setDelegate({
@@ -474,6 +490,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (this._isConnecting.get() || this._isConnected.get()) { return; }
 
 		this._window = window;
+		void this._onFocusedSessionChanged();
 		this._isConnecting.set(true, undefined);
 		this._statusText.set('Connecting...', undefined);
 		this._voiceState.set('idle', undefined);
@@ -1010,7 +1027,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				});
 				this._telemetryPttUpMs = undefined;
 			}
-			this._enqueueAudio(e.codingSessionId, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
+			// If this response is for a session the user isn't currently looking
+			// at, don't play it now: buffer it until that session is focused and
+			// notify with a short audio cue instead.
+			if (this._shouldDeferResponse(e.codingSessionId)) {
+				this._deferResponse(e.codingSessionId!, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
+			} else {
+				this._enqueueAudio(e.codingSessionId, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
+			}
 			// On the final chunk we have the complete assistant transcript to persist.
 			if (e.isFinal && e.transcript) {
 				this._persistTurn('assistant', e.transcript);
@@ -1137,6 +1161,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._currentPlaybackSessionId = null;
 		this._isProcessingQueue = false;
 		this._suppressIncomingAudio = false;
+		this._clearDeferredResponses();
 		this._prevSessionStates.clear();
 		for (const t of this._userCancelledSessions.values()) { clearTimeout(t); }
 		this._userCancelledSessions.clear();
@@ -1870,6 +1895,93 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return collapsed.length > 600 ? `${collapsed.slice(0, 597)}...` : collapsed;
 		}
 		return sentences.join(' ');
+	}
+
+	// --- Deferred responses for non-focused sessions ---
+
+	/**
+	 * Refresh the cached focused session and flush any response that was held
+	 * for the session that just became focused.
+	 */
+	private async _onFocusedSessionChanged(): Promise<void> {
+		const focused = await this.commandService.executeCommand<string | undefined>('_chat.voice.getCurrentSession').catch(() => undefined);
+		this._focusedSessionId = focused;
+		if (focused) {
+			this._flushDeferredResponse(focused);
+		}
+	}
+
+	/**
+	 * A response should be deferred when it targets a specific session that
+	 * isn't the one currently focused. Once we start deferring a response we
+	 * keep buffering its remaining chunks so a whole response stays together.
+	 */
+	private _shouldDeferResponse(sessionId: string | undefined): boolean {
+		if (!sessionId) {
+			return false;
+		}
+		if (this._deferredResponses.has(sessionId)) {
+			return true;
+		}
+		return this._focusedSessionId !== undefined && this._focusedSessionId !== sessionId;
+	}
+
+	private _deferResponse(sessionId: string, audio: string, isFirstChunk: boolean, isFinal: boolean, transcript: string | undefined): void {
+		let buffer = this._deferredResponses.get(sessionId);
+		if (isFirstChunk || !buffer) {
+			// A new response for this session - start a fresh buffer (dropping any
+			// older un-played response) and notify the user with the audio cue.
+			buffer = [];
+			this._deferredResponses.set(sessionId, buffer);
+			this._markPendingResponse(sessionId, true);
+			this._playResponseReceivedCue();
+		}
+		buffer.push({ audio, isFirstChunk, isFinal, transcript });
+	}
+
+	/** Play the buffered response for a session that just became focused. */
+	private _flushDeferredResponse(sessionId: string): void {
+		const buffer = this._deferredResponses.get(sessionId);
+		this._deferredResponses.delete(sessionId);
+		this._markPendingResponse(sessionId, false);
+		if (!buffer) {
+			return;
+		}
+		for (const chunk of buffer) {
+			this._enqueueAudio(sessionId, chunk.audio, chunk.isFirstChunk, chunk.isFinal, chunk.transcript);
+		}
+	}
+
+	private _markPendingResponse(sessionId: string, pending: boolean): void {
+		try {
+			this.voicePlaybackService.setPendingResponse(URI.parse(sessionId), pending);
+		} catch {
+			// sessionId isn't a parseable resource - nothing to indicate.
+		}
+	}
+
+	private _clearDeferredResponses(): void {
+		for (const sessionId of this._deferredResponses.keys()) {
+			this._markPendingResponse(sessionId, false);
+		}
+		this._deferredResponses.clear();
+	}
+
+	private _playResponseReceivedCue(): void {
+		const window = this._window;
+		if (!window) {
+			return;
+		}
+		try {
+			const uri = FileAccess.asBrowserUri('vs/workbench/contrib/chat/browser/voiceClient/media/voiceResponseReceived.mp3').toString(true);
+			if (!this._responseReceivedCue) {
+				this._responseReceivedCue = new window.Audio(uri);
+			}
+			this._responseReceivedCue.currentTime = 0;
+			this._responseReceivedCue.play().catch(err => this.logService.warn('[voice] response-received cue play failed:', err));
+		} catch (err) {
+			this.logService.warn('[voice] response-received cue error:', err);
+		}
 	}
 
 	// --- Audio FIFO queue ---

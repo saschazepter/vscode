@@ -282,6 +282,7 @@ const desktopResourcePatterns = [
 
 	// Media - audio
 	'vs/platform/accessibilitySignal/browser/media/*.mp3',
+	'vs/workbench/contrib/chat/browser/voiceClient/media/*.mp3',
 
 	// Media - images
 	'vs/workbench/contrib/welcomeGettingStarted/common/media/**/*.svg',
@@ -342,6 +343,7 @@ const serverWebResourcePatterns = [
 
 	// Media - audio
 	'vs/platform/accessibilitySignal/browser/media/*.mp3',
+	'vs/workbench/contrib/chat/browser/voiceClient/media/*.mp3',
 
 	// Media - images
 	'vs/workbench/contrib/welcomeGettingStarted/common/media/**/*.svg',
@@ -369,6 +371,7 @@ const webResourcePatterns = [
 
 	// Media - audio
 	'vs/platform/accessibilitySignal/browser/media/*.mp3',
+	'vs/workbench/contrib/chat/browser/voiceClient/media/*.mp3',
 
 	// Media - images
 	'vs/workbench/contrib/welcomeGettingStarted/common/media/**/*.svg',
