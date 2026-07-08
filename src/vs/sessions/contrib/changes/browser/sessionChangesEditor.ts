@@ -9,7 +9,8 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
 import { Range } from '../../../../editor/common/core/range.js';
 import { URI } from '../../../../base/common/uri.js';
-import { DiffEditorWidget } from '../../../../editor/browser/widget/diffEditor/diffEditorWidget.js';
+import { IDiffEditor } from '../../../../editor/common/editorCommon.js';
+import { ICodeEditor } from '../../../../editor/browser/editorBrowser.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -44,7 +45,7 @@ const HEADER_HEIGHT = 35;
  * empty gutter that otherwise sits left of the modified line numbers. Unlike
  * `compactMode` it keeps the full expandable hidden-region widgets.
  */
-const COMPACT_DIFF_EDITOR_OPTIONS: IDiffEditorOptions = {
+const CHANGES_DIFF_EDITOR_OPTIONS: IDiffEditorOptions = {
 	hideOriginalLineNumbers: true,
 };
 
@@ -137,7 +138,7 @@ export class SessionChangesEditor extends EditorPane {
 			MultiDiffEditorWidget,
 			this.bodyContainer,
 			paneInstantiationService.createInstance(SessionChangesUIElementFactory),
-			COMPACT_DIFF_EDITOR_OPTIONS,
+			CHANGES_DIFF_EDITOR_OPTIONS,
 		));
 		this.widget.setRenderSideBySide(this.configurationService.getValue<boolean>('diffEditor.renderSideBySide') ?? true);
 	}
@@ -147,27 +148,12 @@ export class SessionChangesEditor extends EditorPane {
 	}
 
 	/**
-	 * Reveals all hidden unchanged regions of the diff for the given file, so the
-	 * full file is shown. In compact mode the collapsed-region widgets do not
-	 * offer their own expand affordance, so this is surfaced as a file-toolbar
-	 * action instead.
+	 * Resolves the diff editor and code editor showing the given file, mirroring
+	 * {@link MultiDiffEditor.tryGetCodeEditor} so file-toolbar actions can operate
+	 * on this editor and the plain multi-diff editor uniformly.
 	 */
-	expandAllUnchangedRegions(resource: URI): void {
-		const diffEditor = this.widget?.tryGetCodeEditor(resource)?.diffEditor;
-		if (diffEditor instanceof DiffEditorWidget) {
-			diffEditor.showAllUnchangedRegions();
-		}
-	}
-
-	/**
-	 * Collapses all unchanged regions of the diff for the given file, hiding the
-	 * unchanged context again so only the changes are shown.
-	 */
-	collapseAllUnchangedRegions(resource: URI): void {
-		const diffEditor = this.widget?.tryGetCodeEditor(resource)?.diffEditor;
-		if (diffEditor instanceof DiffEditorWidget) {
-			diffEditor.collapseAllUnchangedRegions();
-		}
+	tryGetCodeEditor(resource: URI): { diffEditor: IDiffEditor; editor: ICodeEditor } | undefined {
+		return this.widget?.tryGetCodeEditor(resource);
 	}
 
 	/** Creates the classic (non-single-pane) internal header toolbars. */

@@ -20,7 +20,9 @@ import { IInstantiationService, ServicesAccessor } from '../../../../platform/in
 import { bindContextKey } from '../../../../platform/observable/common/platformObservableUtils.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
+import { IEditorPane } from '../../../../workbench/common/editor.js';
 import { MultiDiffEditor } from '../../../../workbench/contrib/multiDiffEditor/browser/multiDiffEditor.js';
+import { DiffEditorWidget } from '../../../../editor/browser/widget/diffEditor/diffEditorWidget.js';
 import { IAgentWorkbenchLayoutService } from '../../../browser/workbench.js';
 import { Menus } from '../../../browser/menus.js';
 import { SessionHeaderMetaActionViewItem } from '../../../browser/parts/sessionHeaderMetaActionViewItem.js';
@@ -138,10 +140,23 @@ registerAction2(OpenChangedFileAction);
 // --- Expand Full File action (per-file toolbar in the session changes multi-diff editor)
 
 /**
+ * Resolves the {@link DiffEditorWidget} showing `resource` in the active Changes
+ * multi-diff editor. The Changes editor opens either as the docked
+ * {@link SessionChangesEditor} or, in the non-docked layout, as a plain
+ * {@link MultiDiffEditor}; both expose `tryGetCodeEditor`, so the expand/collapse
+ * actions work in either mode.
+ */
+function getChangesDiffEditor(pane: IEditorPane | undefined, resource: URI): DiffEditorWidget | undefined {
+	const codeEditor = pane instanceof SessionChangesEditor || pane instanceof MultiDiffEditor
+		? pane.tryGetCodeEditor(resource)
+		: undefined;
+	return codeEditor?.diffEditor instanceof DiffEditorWidget ? codeEditor.diffEditor : undefined;
+}
+
+/**
  * Reveals all hidden unchanged regions for the file shown in a diff row of the
- * Agents window's session Changes editor. The Changes editor renders in compact
- * mode, whose collapsed-region widgets do not offer their own expand control, so
- * this file-toolbar action provides the "show the whole file" affordance.
+ * Agents window's Changes editor, showing the whole file at once (a per-file
+ * counterpart to the per-region reveal controls).
  */
 class ExpandFullFileAction extends Action2 {
 
@@ -170,10 +185,7 @@ class ExpandFullFileAction extends Action2 {
 			return;
 		}
 
-		const activeEditorPane = accessor.get(IEditorService).activeEditorPane;
-		if (activeEditorPane instanceof SessionChangesEditor) {
-			activeEditorPane.expandAllUnchangedRegions(resource);
-		}
+		getChangesDiffEditor(accessor.get(IEditorService).activeEditorPane, resource)?.showAllUnchangedRegions();
 	}
 }
 registerAction2(ExpandFullFileAction);
@@ -182,10 +194,10 @@ registerAction2(ExpandFullFileAction);
 
 /**
  * Collapses all unchanged regions for the file shown in a diff row of the Agents
- * window's session Changes editor, hiding the unchanged context so only the
- * changes are shown. The symmetric counterpart of {@link ExpandFullFileAction}:
- * the two occupy the same toolbar slot and swap based on whether the file is
- * fully expanded.
+ * window's Changes editor, hiding the unchanged context so only the changes are
+ * shown. The symmetric counterpart of {@link ExpandFullFileAction}: the two
+ * occupy the same toolbar slot and swap based on whether the file is fully
+ * expanded.
  */
 class CollapseUnchangedRegionsAction extends Action2 {
 
@@ -214,10 +226,7 @@ class CollapseUnchangedRegionsAction extends Action2 {
 			return;
 		}
 
-		const activeEditorPane = accessor.get(IEditorService).activeEditorPane;
-		if (activeEditorPane instanceof SessionChangesEditor) {
-			activeEditorPane.collapseAllUnchangedRegions(resource);
-		}
+		getChangesDiffEditor(accessor.get(IEditorService).activeEditorPane, resource)?.collapseAllUnchangedRegions();
 	}
 }
 registerAction2(CollapseUnchangedRegionsAction);
