@@ -8,6 +8,7 @@ import { Barrier } from '../../../../../../base/common/async.js';
 import { VSBuffer } from '../../../../../../base/common/buffer.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../../../base/common/cancellation.js';
 import { CancellationError, isCancellationError } from '../../../../../../base/common/errors.js';
+import { autorun } from '../../../../../../base/common/observable.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { IAccessibilityService } from '../../../../../../platform/accessibility/common/accessibility.js';
@@ -4983,6 +4984,88 @@ suite('LanguageModelToolsService', () => {
 
 			// Updated parameters should be applied since validation passed
 			assert.deepStrictEqual(receivedParameters, { command: 'safe-command' });
+		});
+	});
+
+	suite('preApproved (out-of-band auto-approval)', () => {
+		let preApprovedService: LanguageModelToolsService;
+		let preApprovedChatService: MockChatService;
+
+		setup(() => {
+			const setup = createTestToolsService(store);
+			preApprovedService = setup.service;
+			preApprovedChatService = setup.chatService;
+		});
+
+		test('a confirmable tool with dto.preApproved never enters WaitingForConfirmation', async () => {
+			let invokeCompleted = false;
+			const tool = registerToolForTest(preApprovedService, store, 'preApprovedTool', {
+				invoke: async () => {
+					invokeCompleted = true;
+					return { content: [{ kind: 'text', value: 'success' }] };
+				},
+				prepareToolInvocation: async () => ({
+					confirmationMessages: {
+						title: 'Confirm this action?',
+						message: 'This tool would normally require confirmation',
+						allowAutoConfirm: true,
+					},
+				}),
+			});
+
+			const capture: { invocation?: ChatToolInvocation } = {};
+			stubGetSession(preApprovedChatService, 'pre-approved', { requestId: 'req1', capture });
+
+			const dto = tool.makeDto({ test: 1 }, { sessionId: 'pre-approved' });
+			dto.preApproved = { type: ToolConfirmKind.Setting, id: 'autoApprove' };
+
+			// Record every state the published invocation passes through.
+			const seenStates: IChatToolInvocation.StateKind[] = [];
+			const result = await preApprovedService.invokeTool(dto, async () => 0, CancellationToken.None);
+			const invocation = await waitForPublishedInvocation(capture);
+			store.add(autorun(reader => { seenStates.push(invocation.state.read(reader).type); }));
+
+			assert.deepStrictEqual(
+				{
+					invokeCompleted,
+					value: (result.content[0] as IToolResultTextPart).value,
+					sawWaitingForConfirmation: seenStates.includes(IChatToolInvocation.StateKind.WaitingForConfirmation),
+				},
+				{
+					invokeCompleted: true,
+					value: 'success',
+					sawWaitingForConfirmation: false,
+				},
+			);
+		});
+
+		test('dto.preApproved does not override a preToolUse hook that returned ask', async () => {
+			const tool = registerToolForTest(preApprovedService, store, 'preApprovedAskTool', {
+				invoke: async () => ({ content: [{ kind: 'text', value: 'success' }] }),
+				prepareToolInvocation: async () => ({
+					confirmationMessages: {
+						title: 'Confirm this action?',
+						message: 'This tool requires confirmation',
+						allowAutoConfirm: true,
+					},
+				}),
+			});
+
+			const capture: { invocation?: ChatToolInvocation } = {};
+			stubGetSession(preApprovedChatService, 'pre-approved-ask', { requestId: 'req1', capture });
+
+			const dto = tool.makeDto({ test: 1 }, { sessionId: 'pre-approved-ask' });
+			dto.preApproved = { type: ToolConfirmKind.Setting, id: 'autoApprove' };
+			dto.preToolUseResult = { permissionDecision: 'ask', permissionDecisionReason: 'Requires user confirmation' };
+
+			const invokePromise = preApprovedService.invokeTool(dto, async () => 0, CancellationToken.None);
+			const invocation = await waitForPublishedInvocation(capture);
+
+			assert.strictEqual(invocation.state.get().type, IChatToolInvocation.StateKind.WaitingForConfirmation,
+				'preApproved must not override an explicit hook ask');
+
+			IChatToolInvocation.confirmWith(invocation, { type: ToolConfirmKind.UserAction });
+			await invokePromise;
 		});
 	});
 });
