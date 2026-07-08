@@ -329,6 +329,8 @@ jobs:
       - name: Run Completions Core lib tests using VS Code
         working-directory: extensions/copilot
         run: xvfb-run -a npm run test:completions-core
+        env:
+          VSCODE_TEST_VERSION: 8781689004112ab856e013537730681719540f2f
 
       - name: Archive simulation output
         if: always()
@@ -418,5 +420,7 @@ jobs:
       - name: Run Completions Core lib tests using VS Code
         working-directory: extensions/copilot
         run: npm run test:completions-core
+        env:
+          VSCODE_TEST_VERSION: 8781689004112ab856e013537730681719540f2f
 
 
