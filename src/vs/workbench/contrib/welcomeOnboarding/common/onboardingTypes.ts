@@ -26,7 +26,7 @@ export function getOnboardingStepTitle(stepId: OnboardingStepId): string {
 		case OnboardingStepId.SignIn:
 			return localize('onboarding.step.signIn', "Sign In");
 		case OnboardingStepId.ImportFromEditor:
-			return localize('onboarding.step.importFromEditor', "Bring Your Setup");
+			return localize('onboarding.step.importFromEditor', "Import Your Setup");
 		case OnboardingStepId.Personalize:
 			return localize('onboarding.step.personalize', "Make It Yours");
 		case OnboardingStepId.AiPreference:
@@ -44,7 +44,7 @@ export function getOnboardingStepSubtitle(stepId: OnboardingStepId): string {
 		case OnboardingStepId.SignIn:
 			return localize('onboarding.step.signIn.subtitle', "Sync settings, unlock AI features, and connect to GitHub");
 		case OnboardingStepId.ImportFromEditor:
-			return localize('onboarding.step.importFromEditor.subtitle', "Import your settings, keyboard shortcuts, and extensions from another editor");
+			return '';
 		case OnboardingStepId.Personalize:
 			return localize('onboarding.step.personalize.subtitle', "Choose your theme and keyboard mapping");
 		case OnboardingStepId.AiPreference:

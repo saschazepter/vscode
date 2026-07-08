@@ -48,7 +48,7 @@ import {
 	parseGheInstanceInput,
 } from '../common/onboardingTypes.js';
 import { IOnboardingService } from '../common/onboardingService.js';
-import { IExternalEditorImportService, IExternalEditorSource } from '../../externalEditorImport/common/externalEditorImport.js';
+import { IExternalEditorImportService, IExternalEditorImportPreview, IExternalEditorSource } from '../../externalEditorImport/common/externalEditorImport.js';
 
 type OnboardingStepViewClassification = {
 	owner: 'cwebster-99';
@@ -132,6 +132,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 	private _importSource: IExternalEditorSource | undefined;
 	private readonly _importSelection = { settings: true, keybindings: true, snippets: true, extensions: true };
 	private _importCompleted = false;
+	private _importPreviewPromise: Promise<IExternalEditorImportPreview> | undefined;
 	private _userSignedIn = false;
 	private selectedAiMode: AiCollaborationMode = AiCollaborationMode.Balanced;
 	private enterpriseSignInUiState: EnterpriseSignInUiState = 'options';
@@ -178,6 +179,19 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			if (!source || this._isShowing) {
 				return; // nothing to import, or the modal is already showing
 			}
+
+			// Skip the step entirely when there is nothing new to bring over (i.e. the user
+			// already has everything the source has). This uses only fast, local checks
+			// (no gallery lookups) so it does not delay showing the modal; the richer
+			// preview shown in the step UI is computed lazily.
+			const hasSomethingNew = await this.externalEditorImportService.hasImportableChanges(source);
+			if (this._isShowing) {
+				return; // the modal started showing while we were checking
+			}
+			if (!hasSomethingNew) {
+				return; // nothing different to bring over — skip the step
+			}
+
 			this._importSource = source;
 			if (!this.steps.includes(OnboardingStepId.ImportFromEditor)) {
 				const signInIndex = this.steps.indexOf(OnboardingStepId.SignIn);
@@ -412,14 +426,17 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		const stepId = this.steps[this.currentStepIndex];
 		const useSignInHero = stepId === OnboardingStepId.SignIn;
 		this.titleEl.style.display = useSignInHero ? 'none' : '';
-		this.subtitleEl.style.display = useSignInHero ? 'none' : '';
 		this.titleEl.textContent = getOnboardingStepTitle(stepId);
 		if (stepId === OnboardingStepId.AgentSessions) {
+			this.subtitleEl.style.display = useSignInHero ? 'none' : '';
 			this._renderAgentSessionsSubtitle(this.subtitleEl);
 		} else if (stepId === OnboardingStepId.Personalize) {
+			this.subtitleEl.style.display = useSignInHero ? 'none' : '';
 			this._renderPersonalizeSubtitle(this.subtitleEl);
 		} else {
-			this.subtitleEl.textContent = getOnboardingStepSubtitle(stepId);
+			const subtitle = getOnboardingStepSubtitle(stepId);
+			this.subtitleEl.textContent = subtitle;
+			this.subtitleEl.style.display = (useSignInHero || !subtitle) ? 'none' : '';
 		}
 
 		clearNode(this.contentEl);
@@ -1084,10 +1101,16 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 
 		const wrapper = append(container, $('.onboarding-a-import'));
 
-		const hint = append(wrapper, $('div.onboarding-a-import-hint'));
-		hint.textContent = localize('onboarding.import.hint', "We found {0} on your machine. Pick what you'd like to bring over.", source.label);
+		const group = append(wrapper, $('.onboarding-a-import-group'));
 
-		const list = append(wrapper, $('.onboarding-a-import-list'));
+		const groupHeader = append(group, $('.onboarding-a-import-group-header'));
+		const groupIcon = append(groupHeader, $('span.onboarding-a-import-group-icon'));
+		groupIcon.setAttribute('aria-hidden', 'true');
+		groupIcon.appendChild(renderIcon(Codicon.window));
+		const groupLabel = append(groupHeader, $('span.onboarding-a-import-group-label'));
+		groupLabel.textContent = source.label;
+
+		const list = append(group, $('.onboarding-a-import-list'));
 		list.setAttribute('role', 'group');
 		list.setAttribute('aria-label', localize('onboarding.import.listLabel', "Customizations to import from {0}", source.label));
 
@@ -1105,23 +1128,27 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 				continue;
 			}
 
-			const item = this._registerStepFocusable(append(list, $<HTMLButtonElement>('button.onboarding-a-import-item')));
-			item.type = 'button';
-			item.setAttribute('role', 'checkbox');
-			item.setAttribute('aria-checked', this._importSelection[row.key] ? 'true' : 'false');
+			const card = append(list, $('.onboarding-a-import-item'));
+			const header = append(card, $('.onboarding-a-import-item-header'));
 
-			const check = append(item, $('span.onboarding-a-import-check'));
+			const toggle = this._registerStepFocusable(append(header, $<HTMLButtonElement>('button.onboarding-a-import-toggle')));
+			toggle.type = 'button';
+			toggle.setAttribute('role', 'checkbox');
+			toggle.setAttribute('aria-checked', this._importSelection[row.key] ? 'true' : 'false');
+			toggle.setAttribute('aria-label', row.label);
+
+			const check = append(toggle, $('span.onboarding-a-import-check'));
 			check.setAttribute('aria-hidden', 'true');
-			const iconEl = append(item, $('span.onboarding-a-import-icon'));
+			const iconEl = append(toggle, $('span.onboarding-a-import-icon'));
 			iconEl.setAttribute('aria-hidden', 'true');
 			iconEl.appendChild(renderIcon(row.icon));
-			const labelEl = append(item, $('span.onboarding-a-import-label'));
+			const labelEl = append(toggle, $('span.onboarding-a-import-label'));
 			labelEl.textContent = row.label;
 
 			const updateChecked = () => {
 				const checked = this._importSelection[row.key];
-				item.classList.toggle('selected', checked);
-				item.setAttribute('aria-checked', checked ? 'true' : 'false');
+				card.classList.toggle('selected', checked);
+				toggle.setAttribute('aria-checked', checked ? 'true' : 'false');
 				clearNode(check);
 				if (checked) {
 					check.appendChild(renderIcon(Codicon.check));
@@ -1129,11 +1156,71 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			};
 			updateChecked();
 
-			this.stepDisposables.add(addDisposableListener(item, EventType.CLICK, () => {
+			this.stepDisposables.add(addDisposableListener(toggle, EventType.CLICK, () => {
 				this._importSelection[row.key] = !this._importSelection[row.key];
 				this._logAction('toggleImport', OnboardingStepId.ImportFromEditor, row.key);
 				updateChecked();
 			}));
+
+			// Expandable preview of the concrete items that would be imported.
+			const previewId = `onboarding-a-import-preview-${row.key}`;
+			const expand = this._registerStepFocusable(append(header, $<HTMLButtonElement>('button.onboarding-a-import-expand')));
+			expand.type = 'button';
+			expand.setAttribute('aria-expanded', 'false');
+			expand.setAttribute('aria-controls', previewId);
+			expand.setAttribute('aria-label', localize('onboarding.import.previewLabel', "Preview {0} to import", row.label));
+			const chevron = append(expand, $('span.onboarding-a-import-chevron'));
+			chevron.setAttribute('aria-hidden', 'true');
+			chevron.appendChild(renderIcon(Codicon.chevronDown));
+
+			const preview = append(card, $('.onboarding-a-import-preview'));
+			preview.id = previewId;
+			preview.setAttribute('role', 'region');
+			preview.hidden = true;
+
+			let loaded = false;
+			this.stepDisposables.add(addDisposableListener(expand, EventType.CLICK, () => {
+				const expanded = expand.getAttribute('aria-expanded') === 'true';
+				const next = !expanded;
+				expand.setAttribute('aria-expanded', next ? 'true' : 'false');
+				expand.classList.toggle('expanded', next);
+				preview.hidden = !next;
+				if (next && !loaded) {
+					loaded = true;
+					this._logAction('previewImport', OnboardingStepId.ImportFromEditor, row.key);
+					this._populateImportPreview(source, row.key, row.label, preview);
+				}
+			}));
+		}
+	}
+
+	private async _populateImportPreview(source: IExternalEditorSource, key: 'settings' | 'keybindings' | 'snippets' | 'extensions', label: string, container: HTMLElement): Promise<void> {
+		clearNode(container);
+		const message = append(container, $('.onboarding-a-import-preview-message'));
+		message.textContent = localize('onboarding.import.preview.loading', "Loading…");
+
+		let items: readonly string[];
+		try {
+			if (!this._importPreviewPromise) {
+				this._importPreviewPromise = this.externalEditorImportService.preview(source);
+			}
+			const preview = await this._importPreviewPromise;
+			items = preview[key];
+		} catch {
+			clearNode(container);
+			append(container, $('.onboarding-a-import-preview-message')).textContent = localize('onboarding.import.preview.error', "Couldn't load a preview of {0}.", label);
+			return;
+		}
+
+		clearNode(container);
+		if (items.length === 0) {
+			append(container, $('.onboarding-a-import-preview-message')).textContent = localize('onboarding.import.preview.empty', "Nothing new to bring over — you already have these.");
+			return;
+		}
+
+		const itemsEl = append(container, $<HTMLUListElement>('ul.onboarding-a-import-preview-items'));
+		for (const item of items) {
+			append(itemsEl, $<HTMLLIElement>('li.onboarding-a-import-preview-item')).textContent = item;
 		}
 	}
 

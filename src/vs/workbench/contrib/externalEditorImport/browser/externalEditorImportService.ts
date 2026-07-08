@@ -16,7 +16,7 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { IJSONEditingService, IJSONValue } from '../../../services/configuration/common/jsonEditing.js';
 import { IPathService } from '../../../services/path/common/pathService.js';
 import { IUserDataProfileService } from '../../../services/userDataProfile/common/userDataProfile.js';
-import { IExternalEditorImportResult, IExternalEditorImportSelection, IExternalEditorImportService, IExternalEditorSource } from '../common/externalEditorImport.js';
+import { IExternalEditorImportPreview, IExternalEditorImportResult, IExternalEditorImportSelection, IExternalEditorImportService, IExternalEditorSource } from '../common/externalEditorImport.js';
 
 /**
  * Describes how to locate a known source editor's user data. Source editors that
@@ -136,6 +136,134 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		}
 
 		return { settingsImported, keybindingsImported, snippetsImported, extensionsInstalled, extensionsFailed };
+	}
+
+	// =====================================================================
+	// Preview
+	// =====================================================================
+
+	async preview(source: IExternalEditorSource, token?: CancellationToken): Promise<IExternalEditorImportPreview> {
+		const [settings, keybindings, snippets, extensions] = await Promise.all([
+			source.hasSettings ? this.previewSettings(source) : Promise.resolve([]),
+			source.hasKeybindings ? this.previewKeybindings(source) : Promise.resolve([]),
+			source.hasSnippets ? this.previewSnippets(source) : Promise.resolve([]),
+			source.hasExtensions ? this.previewExtensions(source, token) : Promise.resolve([]),
+		]);
+		return { settings, keybindings, snippets, extensions };
+	}
+
+	async hasImportableChanges(source: IExternalEditorSource): Promise<boolean> {
+		const [settings, keybindings, snippets, extensions] = await Promise.all([
+			source.hasSettings ? this.previewSettings(source) : Promise.resolve([]),
+			source.hasKeybindings ? this.previewKeybindings(source) : Promise.resolve([]),
+			source.hasSnippets ? this.previewSnippets(source) : Promise.resolve([]),
+			source.hasExtensions ? this.hasNewExtensions(source) : Promise.resolve(false),
+		]);
+		return settings.length > 0 || keybindings.length > 0 || snippets.length > 0 || extensions;
+	}
+
+	private async hasNewExtensions(source: IExternalEditorSource): Promise<boolean> {
+		if (!source.extensionsManifestUri) {
+			return false;
+		}
+
+		const identifiers = await this.readExtensionIdentifiers(source.extensionsManifestUri);
+		if (identifiers.length === 0) {
+			return false;
+		}
+
+		const installed = await this.extensionManagementService.getInstalled();
+		return identifiers.some(identifier => !installed.some(local => areSameExtensions(local.identifier, identifier)));
+	}
+
+	private async previewSettings(source: IExternalEditorSource): Promise<string[]> {
+		const sourceSettings = await this.readJsonObject(URI.joinPath(source.userDataUri, 'settings.json'));
+		if (!sourceSettings) {
+			return [];
+		}
+
+		const existingSettings = await this.readJsonObject(this.userDataProfileService.currentProfile.settingsResource) ?? {};
+		const keys: string[] = [];
+		for (const key of Object.keys(sourceSettings)) {
+			if (Object.prototype.hasOwnProperty.call(existingSettings, key) || this.isBlockedSettingKey(key)) {
+				continue;
+			}
+			keys.push(key);
+		}
+		return keys;
+	}
+
+	private async previewKeybindings(source: IExternalEditorSource): Promise<string[]> {
+		const sourceKeybindings = await this.readJsonArray(URI.joinPath(source.userDataUri, 'keybindings.json'));
+		if (!sourceKeybindings || sourceKeybindings.length === 0) {
+			return [];
+		}
+
+		const existingKeybindings = await this.readJsonArray(this.userDataProfileService.currentProfile.keybindingsResource) ?? [];
+		const labels: string[] = [];
+		for (const entry of sourceKeybindings) {
+			if (existingKeybindings.some(existing => this.deepEqual(existing, entry))) {
+				continue;
+			}
+			const key = (entry as { key?: unknown } | null)?.key;
+			const command = (entry as { command?: unknown } | null)?.command;
+			if (typeof key === 'string' && key) {
+				labels.push(typeof command === 'string' && command ? `${key} → ${command}` : key);
+			}
+		}
+		return labels;
+	}
+
+	private async previewSnippets(source: IExternalEditorSource): Promise<string[]> {
+		const sourceSnippetsHome = URI.joinPath(source.userDataUri, 'snippets');
+		let sourceStat;
+		try {
+			sourceStat = await this.fileService.resolve(sourceSnippetsHome);
+		} catch {
+			return [];
+		}
+
+		if (!sourceStat.children?.length) {
+			return [];
+		}
+
+		const targetSnippetsHome = this.userDataProfileService.currentProfile.snippetsHome;
+		const names: string[] = [];
+		for (const child of sourceStat.children) {
+			if (child.isDirectory) {
+				continue;
+			}
+			if (await this.safeExists(URI.joinPath(targetSnippetsHome, child.name))) {
+				continue;
+			}
+			names.push(child.name);
+		}
+		return names;
+	}
+
+	private async previewExtensions(source: IExternalEditorSource, token?: CancellationToken): Promise<string[]> {
+		if (!source.extensionsManifestUri) {
+			return [];
+		}
+
+		const identifiers = await this.readExtensionIdentifiers(source.extensionsManifestUri);
+		if (identifiers.length === 0) {
+			return [];
+		}
+
+		const installed = await this.extensionManagementService.getInstalled();
+		const toQuery = identifiers.filter(identifier => !installed.some(local => areSameExtensions(local.identifier, identifier)));
+		if (toQuery.length === 0) {
+			return [];
+		}
+
+		try {
+			const galleryExtensions = await this.extensionGalleryService.getExtensions(toQuery.map(identifier => ({ id: identifier.id })), token ?? CancellationToken.None);
+			return galleryExtensions.map(extension => extension.displayName || extension.identifier.id);
+		} catch (error) {
+			this.logService.error('[externalEditorImport] Failed to query extensions for preview', error);
+			return toQuery.map(identifier => identifier.id);
+		}
 	}
 
 	// =====================================================================

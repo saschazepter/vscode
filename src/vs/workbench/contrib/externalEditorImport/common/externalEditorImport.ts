@@ -52,6 +52,21 @@ export interface IExternalEditorImportResult {
 	readonly extensionsFailed: number;
 }
 
+/**
+ * A preview of the concrete items that an import would apply, after filtering out
+ * items the user already has and source-specific items that are never imported.
+ */
+export interface IExternalEditorImportPreview {
+	/** Setting keys that would be newly added. */
+	readonly settings: readonly string[];
+	/** Keyboard shortcut labels that would be newly added. */
+	readonly keybindings: readonly string[];
+	/** Snippet file names that would be newly added. */
+	readonly snippets: readonly string[];
+	/** Extension display names that would be newly installed. */
+	readonly extensions: readonly string[];
+}
+
 export interface IExternalEditorImportService {
 	readonly _serviceBrand: undefined;
 
@@ -60,6 +75,19 @@ export interface IExternalEditorImportService {
 	 * Returns an empty array in environments where local detection is not possible (e.g. web).
 	 */
 	detectSources(token?: CancellationToken): Promise<IExternalEditorSource[]>;
+
+	/**
+	 * Computes a preview of the concrete items that {@link import} would apply for the
+	 * given source, without making any changes.
+	 */
+	preview(source: IExternalEditorSource, token?: CancellationToken): Promise<IExternalEditorImportPreview>;
+
+	/**
+	 * Quickly determines whether importing from the given source would bring over anything
+	 * new. Uses only local checks (no gallery lookups) so it is safe to call on a hot path,
+	 * such as deciding whether to show the import step at all.
+	 */
+	hasImportableChanges(source: IExternalEditorSource): Promise<boolean>;
 
 	/**
 	 * Imports the selected categories of customizations from the given source into the current profile.
