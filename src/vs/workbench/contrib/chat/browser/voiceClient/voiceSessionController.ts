@@ -2056,15 +2056,21 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	/**
-	 * A response should be deferred when it is a proactive narration targeting a
-	 * specific session that isn't the one currently focused. Two responses must
-	 * NEVER be deferred, no matter which coding session they reference:
-	 *
-	 *  1. A direct reply to the user's own utterance. `_awaitingReplyAudio` is
-	 *     true from the moment the user sends a command/question until its reply
-	 *     audio arrives. Deferring it would swallow the answer the user just
-	 *     asked for (e.g. "what is session B doing?" while looking at session A).
-	 *  2. Untagged audio we can't attribute to a session (chit-chat, greetings).
+	 * The session the user is actively working with for the purpose of routing
+	 * voice audio: the explicitly targeted session if one is set, otherwise the
+	 * focused one. This mirrors how `_buildSessionContext` computes the backend's
+	 * `is_active` session, so playback and the backend agree on which session is
+	 * "active" and everything else is a background narration.
+	 */
+	private _getActiveSessionId(): string | undefined {
+		return this._targetSession.get()?.toString() ?? this._getFocusedSessionId();
+	}
+
+	/**
+	 * A response is deferred when it is a background narration for a session the
+	 * user is NOT actively working with. It plays immediately when it is for the
+	 * active session (targeted or focused) or when it is untagged audio we can't
+	 * attribute to any session (chit-chat, greetings, direct answers).
 	 *
 	 * The decision is made on the first chunk and recorded in `_liveReplyKey`;
 	 * remaining chunks follow the same decision so a response is never split
@@ -2073,23 +2079,17 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private _shouldDeferResponse(sessionId: string | undefined, isFirstChunk: boolean): boolean {
 		const key = sessionId ?? '';
 		if (isFirstChunk) {
-			// A direct reply to the user's own utterance always plays.
-			if (this._awaitingReplyAudio) {
-				this._liveReplyKey = key;
-				return false;
-			}
-			// Untagged proactive audio can't be attributed to a session — play it.
+			// Untagged audio can't be attributed to a session — always play it.
 			if (!sessionId) {
 				this._liveReplyKey = key;
 				return false;
 			}
-			// Proactive narration for a specific session: defer unless it's the
-			// one the user is currently looking at. Read the live focus so a stale
-			// cache can't misroute the decision (e.g. when the focus event was
-			// missed while voice was busy).
-			const focused = this._getFocusedSessionId();
-			this._focusedSessionId = focused;
-			if (focused === sessionId) {
+			// Play immediately for the session the user is actively working with;
+			// defer any other session's narration until the user looks at it.
+			// Read live so a stale cache can't misroute the decision (e.g. when
+			// the focus event was missed while voice was busy).
+			this._focusedSessionId = this._getFocusedSessionId();
+			if (this._getActiveSessionId() === sessionId) {
 				this._liveReplyKey = key;
 				return false;
 			}
@@ -2104,13 +2104,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (this._liveReplyKey === key) {
 			return false;
 		}
-		// Continuation whose first chunk we never observed: fall back to focus.
+		// Continuation whose first chunk we never observed: fall back to active.
 		if (!sessionId) {
 			return false;
 		}
-		const focused = this._getFocusedSessionId();
-		this._focusedSessionId = focused;
-		return focused !== sessionId;
+		this._focusedSessionId = this._getFocusedSessionId();
+		return this._getActiveSessionId() !== sessionId;
 	}
 
 	private _deferResponse(sessionId: string, audio: string, isFirstChunk: boolean, isFinal: boolean, transcript: string | undefined): void {
@@ -2252,6 +2251,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	// --- Audio FIFO queue ---
 
 	private _enqueueAudio(sessionId: string | undefined, audio: string, isFirstChunk: boolean, isFinal: boolean, transcript: string | undefined): void {
+		// An incoming response frame means the assistant is actively replying, so
+		// cancel any pending auto-listen. Otherwise a debounced listen scheduled
+		// when the previous session's playback stopped can fire mid-response and
+		// its synthetic pttDown suppresses this session's audio. This matters most
+		// when a response leads with a transcript-only frame (empty audio): it
+		// consumes the first-chunk flag without starting playback, so the later
+		// audio chunks arrive as non-first chunks and would be dropped.
+		this._clearAutoListenTimer();
+
 		// User interrupted (pttDown / onSpeechStarted): drop late chunks from the
 		// previous turn. The backend marks the first audio chunk of a new
 		// response with `is_first_chunk: true` — that's our signal that a fresh
