@@ -412,7 +412,19 @@ class CopilotTurn {
 	/** Current reasoning response part IDs for this turn, keyed by `parentToolCallId ?? ''`. */
 	readonly reasoningPartIds = new Map<string, string>();
 
-	constructor(readonly id: string, readonly senderClientId: string | undefined) { }
+	/**
+	 * Per-turn tool-call aggregate accumulated across the turn's `assistant.message` rounds (main
+	 * agent only), for the restricted `toolCallDetails` telemetry. `toolCounts` is keyed by tool name.
+	 */
+	readonly toolCounts = new Map<string, number>();
+	toolCallRounds = 0;
+	totalToolCalls = 0;
+	parallelToolCallRounds = 0;
+	parallelToolCallsTotal = 0;
+	/** Model of the most recent round, reported as the turn's model. */
+	lastModel: string | undefined;
+
+	constructor(readonly id: string, readonly ordinal: number, readonly senderClientId: string | undefined) { }
 
 	get state(): CopilotTurnState { return this._state; }
 	get isPending(): boolean { return this._state === 'pending'; }
@@ -454,6 +466,16 @@ export class CopilotAgentSession extends Disposable {
 	 * cleared on turn boundaries.
 	 */
 	private readonly _parentToolCallIdsByAgentId = new Map<string, string>();
+	/**
+	 * Maps a tool call id to the `agentId` carried on its `permission.requested`
+	 * event, captured from the raw SDK event because the SDK's permission
+	 * handler callback does not receive `agentId`. Used by
+	 * {@link _ensureClientToolCallStarted} to resolve the parent tool call for a
+	 * subagent client tool synthesized at permission time (SDK >= 1.0.6-preview
+	 * fires `permission.requested` before `tool.execution_start`). Entries are
+	 * cleared when the tool completes or the session is disposed.
+	 */
+	private readonly _permissionRequestAgentIds = new Map<string, string>();
 	/** Pending permission requests awaiting a renderer-side decision. */
 	private readonly _pendingPermissions = new Map<string, DeferredPromise<boolean>>();
 	/** Pending user input requests awaiting a renderer-side answer. */
@@ -497,11 +519,15 @@ export class CopilotAgentSession extends Disposable {
 	 * {@link resetTurnState}, finalized by {@link _completeActiveTurn}.
 	 */
 	private _currentTurn: CopilotTurn | undefined;
+	/** Monotonic 0-based ordinal assigned to each turn as it starts, for numeric `turnIndex` telemetry parity. */
+	private _nextTurnOrdinal = 0;
 	/**
 	 * Protocol turn ID of the active turn, or `''` when idle. Used by file
 	 * edit tracking and emitted on per-turn actions.
 	 */
 	private get _turnId(): string { return this._currentTurn?.id ?? ''; }
+	/** 0-based ordinal of the active turn within the session, or `0` when idle. */
+	private get _turnOrdinal(): number { return this._currentTurn?.ordinal ?? 0; }
 	/**
 	 * Whether the session currently has an in-flight turn. Used by
 	 * non-destructive idle release to avoid disconnecting mid-turn.
@@ -676,6 +702,7 @@ export class CopilotAgentSession extends Disposable {
 			}));
 		}
 		this._register(toDisposable(() => this._cancelPendingClientToolCalls()));
+		this._register(toDisposable(() => this._permissionRequestAgentIds.clear()));
 	}
 
 	// ---- AgentSignal helpers ------------------------------------------------
@@ -797,7 +824,7 @@ export class CopilotAgentSession extends Disposable {
 	 * response part. The turn becomes `running` on the first SDK event.
 	 */
 	resetTurnState(turnId: string, senderClientId?: string): void {
-		this._currentTurn = new CopilotTurn(turnId, senderClientId);
+		this._currentTurn = new CopilotTurn(turnId, this._nextTurnOrdinal++, senderClientId);
 	}
 
 	private _completeActiveTurn(): void {
@@ -806,6 +833,21 @@ export class CopilotAgentSession extends Disposable {
 			return;
 		}
 		turn.markCompleted();
+		// Emit the restricted per-turn tool-call aggregate before the turn is cleared. Main agent
+		// only: `_appliedSnapshot.tools` and this turn's accumulator describe the main session's turn.
+		// No-ops (in the reporter) when the turn made no tool calls.
+		this._telemetryReporter.toolCallDetails({
+			session: this.sessionUri.toString(),
+			turnId: turn.id,
+			model: turn.lastModel,
+			responseType: 'success',
+			toolCounts: Object.fromEntries(turn.toolCounts),
+			availableTools: this._appliedSnapshot.tools.map(tool => tool.name),
+			numRequests: turn.toolCallRounds,
+			totalToolCalls: turn.totalToolCalls,
+			parallelToolCallRounds: turn.parallelToolCallRounds,
+			parallelToolCallsTotal: turn.parallelToolCallsTotal,
+		});
 		this._emitAction({
 			type: ActionType.ChatTurnComplete,
 			turnId: turn.id,
@@ -1760,6 +1802,78 @@ export class CopilotAgentSession extends Disposable {
 	// ---- permission handling ------------------------------------------------
 
 	/**
+	 * Emits a `ChatToolCallStart` for a client tool that is about to have a
+	 * permission-derived `ChatToolCallReady` dispatched for it, when the real
+	 * `tool.execution_start` has not been observed yet.
+	 *
+	 * The Copilot SDK (>= 1.0.6-preview) reordered client-tool events so that
+	 * `permission.requested` now fires *before* `tool.execution_start`. The host
+	 * derives `ChatToolCallReady` from the permission request, but the tool-call
+	 * part is only created by `ChatToolCallStart` (emitted from
+	 * `tool.execution_start`). Without this, the ready would arrive before the
+	 * part exists, be dropped by the reducer, and leave the client tool stuck in
+	 * `Streaming` — the workbench never invokes it, the parked SDK handler never
+	 * resolves, and the turn hangs. Synthesizing the start here restores the
+	 * start-before-ready ordering the downstream pipeline assumes.
+	 *
+	 * No-ops for: non-client tools (server/shell tools execute in-process and
+	 * don't depend on this), tools already started (the real
+	 * `tool.execution_start`, or a previous call here), and client tools with no
+	 * connected owning client (the no-client failure path in `onToolStart`
+	 * handles those).
+	 */
+	private _ensureClientToolCallStarted(request: ITypedPermissionRequest): void {
+		const toolCallId = request.toolCallId;
+		const toolName = request.toolName;
+		if (!toolCallId || !toolName) {
+			return;
+		}
+		if (this._activeToolCalls.has(toolCallId)) {
+			return;
+		}
+		if (!this._clientToolNames.has(toolName)) {
+			return;
+		}
+		const ownerClientId = this._activeClientToolSet.ownerOf(toolName, this._currentTurn?.senderClientId);
+		if (!ownerClientId) {
+			return;
+		}
+		// Resolve the parent tool call for subagent client tools. The SDK's
+		// permission handler callback drops the event's `agentId`, so we recover
+		// it from the raw `permission.requested` event captured in
+		// `_permissionRequestAgentIds`. Routing the synthesized start (and, via
+		// `_activeToolCalls`, the subsequent permission `pending_confirmation`)
+		// to the subagent session keeps the tool rendering in the right chat.
+		const agentId = this._permissionRequestAgentIds.get(toolCallId);
+		const parentToolCallId = agentId ? this._parentToolCallIdsByAgentId.get(agentId) : undefined;
+		const parameters = request.args;
+		const toolArgs = parameters !== undefined ? tryStringify(parameters) : undefined;
+		const displayName = getToolDisplayName(toolName);
+		const meta: Mutable<IToolCallMeta> = { toolKind: getToolKind(toolName) };
+		if (toolArgs !== undefined) {
+			meta.toolArguments = toolArgs;
+		}
+		this._logService.info(`[Copilot:${this.sessionId}] Synthesizing tool start for client tool ahead of permission ready: ${toolName} (toolCallId=${toolCallId}, parentToolCallId=${parentToolCallId ?? 'none'})`);
+		this._activeToolCalls.set(toolCallId, { toolName, displayName, parameters, content: [], parentToolCallId, mcpServerName: undefined, meta });
+
+		// A new tool call invalidates the current markdown and reasoning parts
+		// so the next delta starts a fresh part (mirrors `onToolStart`).
+		this._currentTurn?.markdownPartIds.delete(parentToolCallId ?? '');
+		this._currentTurn?.reasoningPartIds.delete(parentToolCallId ?? '');
+
+		this._emitAction({
+			type: ActionType.ChatToolCallStart,
+			turnId: this._turnId,
+			toolCallId,
+			toolName,
+			displayName,
+			intention: getShellIntention(toolName, parameters),
+			contributor: { kind: ToolCallContributorKind.Client, clientId: ownerClientId },
+			_meta: toToolCallMeta(meta),
+		}, parentToolCallId);
+	}
+
+	/**
 	 * Handles a permission request from the SDK by firing a `tool_ready` event
 	 * (which transitions the tool to PendingConfirmation) and waiting for the
 	 * side-effects layer to respond via {@link respondToPermissionRequest}.
@@ -1867,6 +1981,16 @@ export class CopilotAgentSession extends Disposable {
 
 			// Fire a pending_confirmation signal to transition the tool to PendingConfirmation
 			const toolName = request.toolName ?? request.kind;
+
+			// The Copilot SDK (>= 1.0.6-preview) fires `permission.requested`
+			// *before* `tool.execution_start`, so for client tools the
+			// `ChatToolCallStart` that creates the tool-call part has not been
+			// emitted yet. Synthesize it here so the permission-derived
+			// `ChatToolCallReady` below lands on an existing part rather than
+			// being dropped (which would leave the client tool stuck streaming
+			// and hang the turn). No-op for non-client / already-started tools.
+			this._ensureClientToolCallStarted(request);
+
 			// Forward the tool's parentToolCallId (if any) so the host can
 			// route the resulting ChatToolCallReady to the correct
 			// subagent session — without it the action would land on the
@@ -2551,6 +2675,30 @@ export class CopilotAgentSession extends Disposable {
 			// describe a subagent's model call, so subagent messages (mapped or dropped) are skipped.
 			if (!e.agentId) {
 				this._telemetryReporter.assistantMessageReceived(this.sessionUri.toString(), e.data.serviceRequestId, this._appliedSnapshot.tools);
+				// Restricted `conversation.messageText` (source=model): the model's raw response text.
+				this._telemetryReporter.modelMessageText(this.sessionUri.toString(), e.data.content, this._turnOrdinal, e.data.serviceRequestId);
+				// Accumulate the per-turn tool-call aggregate for the restricted `toolCallDetails` event.
+				// Every main-agent `assistant.message` is one model-call round (matches the extension's
+				// `numRequests = toolCallRounds.length`, which counts the final tool-free response round
+				// too); the tool-count stats only apply to rounds that carried tool requests.
+				const turn = this._currentTurn;
+				if (turn) {
+					turn.toolCallRounds++;
+					if (e.data.model) {
+						turn.lastModel = e.data.model;
+					}
+					const toolRequests = e.data.toolRequests;
+					if (toolRequests?.length) {
+						turn.totalToolCalls += toolRequests.length;
+						if (toolRequests.length > 1) {
+							turn.parallelToolCallRounds++;
+							turn.parallelToolCallsTotal += toolRequests.length;
+						}
+						for (const req of toolRequests) {
+							turn.toolCounts.set(req.name, (turn.toolCounts.get(req.name) ?? 0) + 1);
+						}
+					}
+				}
 			}
 			// The SDK fires a `message` event with the full assembled content after
 			// streaming deltas. If deltas already created a markdown part for this
@@ -2581,9 +2729,33 @@ export class CopilotAgentSession extends Disposable {
 			}, parentToolCallId);
 		}));
 
+		this._register(wrapper.onPermissionRequested(e => {
+			// Capture the raw event's `agentId` (dropped by the SDK's permission
+			// handler callback) so `_ensureClientToolCallStarted` can route a
+			// subagent client tool's synthesized start to the right session.
+			// This fires synchronously during SDK event dispatch, before the
+			// permission handler resumes past its first await, so the mapping is
+			// available by synthesis time.
+			const toolCallId = e.data.permissionRequest.toolCallId;
+			if (toolCallId && e.agentId) {
+				this._permissionRequestAgentIds.set(toolCallId, e.agentId);
+			}
+		}));
+
 		this._register(wrapper.onToolStart(e => {
 			if (isHiddenTool(e.data.toolName)) {
 				this._logService.trace(`[Copilot:${sessionId}] Tool started (hidden): ${e.data.toolName}`);
+				return;
+			}
+			// The client-tool start may already have been synthesized at
+			// permission time (SDK >= 1.0.6-preview fires `permission.requested`
+			// before `tool.execution_start`; see `_ensureClientToolCallStarted`).
+			// In that case the part already exists with the correct client
+			// contributor, so skip emitting a duplicate `ChatToolCallStart`.
+			// Client tools emit no `ChatToolCallReady` from here anyway, so
+			// there is nothing else to do.
+			if (this._activeToolCalls.has(e.data.toolCallId)) {
+				this._logService.trace(`[Copilot:${sessionId}] Tool start already emitted for ${e.data.toolCallId}; skipping duplicate.`);
 				return;
 			}
 			this._logService.info(`[Copilot:${sessionId}] Tool started: ${e.data.toolName}`);
@@ -2737,6 +2909,7 @@ export class CopilotAgentSession extends Disposable {
 			}
 			this._logService.info(`[Copilot:${sessionId}] Tool completed: ${e.data.toolCallId}`);
 			this._activeToolCalls.delete(e.data.toolCallId);
+			this._permissionRequestAgentIds.delete(e.data.toolCallId);
 			const displayName = tracked.displayName;
 			const toolOutput = e.data.error?.message ?? e.data.result?.content;
 
@@ -3438,6 +3611,13 @@ export class CopilotAgentSession extends Disposable {
 
 		this._register(wrapper.onUserMessage(e => {
 			this._logService.trace(`[Copilot:${sessionId}] User message: ${e.data.content.length} chars, ${e.data.attachments?.length ?? 0} attachments`);
+			// Restricted `conversation.messageText` (source=user): the raw user prompt text. Emit only
+			// for genuine human prompts on the main agent — skip subagent turns (driven by the parent)
+			// and SDK-injected synthetic messages (skill/harness injections carry a non-`user` source,
+			// matching `isSyntheticUserMessage`) so injected content is not reported as the user's prompt.
+			if (!e.agentId && (!e.data.source || e.data.source.toLowerCase() === 'user')) {
+				this._telemetryReporter.userMessageText(this.sessionUri.toString(), e.data.content, this._turnOrdinal);
+			}
 		}));
 
 		this._register(wrapper.onPendingMessagesModified(() => {
