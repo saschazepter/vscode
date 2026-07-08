@@ -5,32 +5,22 @@
 
 .chat-open-session-result {
 	display: flex;
-	flex-direction: column;
-	align-items: flex-start;
-	gap: 4px;
-}
-
-.chat-open-session-card {
-	display: flex;
 	flex-direction: row;
 	align-items: center;
 	flex-wrap: wrap;
-	gap: 8px;
-	margin-top: 2px;
+	gap: 6px;
 }
 
-.chat-open-session-title {
+.chat-open-session-result > .codicon {
+	color: var(--vscode-descriptionForeground);
+}
+
+.chat-open-session-label {
 	color: var(--vscode-descriptionForeground);
 }
 
 .chat-open-session-result .monaco-button.chat-open-session-button {
 	width: fit-content;
 	max-width: 100%;
-	align-self: flex-start;
-	padding: 2px 10px 2px 8px;
-}
-
-.chat-open-session-result .monaco-button.chat-open-session-button .codicon {
-	margin-left: 0;
-	margin-right: 4px;
+	padding: 2px 10px;
 }
