@@ -1062,6 +1062,14 @@ export function readSessionSpawnDepth(meta: SessionSummaryMeta | undefined): num
 }
 
 /**
+ * Returns a new {@link SessionSummaryMeta} with the `create_session` spawn depth
+ * set to `depth`, preserving any other keys in the bag.
+ */
+export function withSessionSpawnDepth(meta: SessionSummaryMeta | undefined, depth: number): SessionSummaryMeta {
+	return { ...meta, [SESSION_META_SPAWN_DEPTH_KEY]: depth };
+}
+
+/**
  * Reserved key under {@link SessionSummaryMeta} marking a session as
  * workspace-less: a session with no workspace/folder binding (surfaced in the
  * UI as a "Quick Chat"). Carried on the summary bag (not the full state) so
