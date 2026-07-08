@@ -1684,6 +1684,52 @@ suite('CopilotAgentSession', () => {
 			assert.strictEqual(result.kind, 'reject');
 		});
 
+		test('shell tool: permission before tool.execution_start re-fires the dropped confirmation and suppresses the not-needed ready (SDK >= 1.0.6 ordering)', async () => {
+			// Regression: server-managed tools (shell/read) fire
+			// `permission.requested` a few ms *before* `tool.execution_start`
+			// under the SDK 1.0.6 reorder. The permission-derived
+			// `ChatToolCallReady` (with confirmationTitle) is dropped by the
+			// reducer because no part exists yet; `onToolStart` then emits a
+			// not-needed ready that wrongly transitions the tool to "running",
+			// losing the user's approval prompt and hanging the tool. The host
+			// must re-fire the confirmation onto the freshly created part and
+			// suppress the not-needed ready.
+			const { session, runtime, mockSession, signals, waitForSignal } = await createAgentSession(disposables);
+
+			// Permission fires FIRST — no tool.execution_start yet.
+			const resultPromise = runtime.handlePermissionRequest({
+				kind: 'shell',
+				toolCallId: 'tc-shell-reorder',
+				fullCommandText: 'gh search code "x"',
+			});
+			await waitForSignal(s => s.kind === 'pending_confirmation');
+			assert.strictEqual(signals.filter(s => s.kind === 'pending_confirmation').length, 1);
+			assert.strictEqual(signals.filter(s => isAction(s, ActionType.ChatToolCallStart)).length, 0);
+
+			// The real shell tool.execution_start arrives.
+			mockSession.fire('tool.execution_start', {
+				toolCallId: 'tc-shell-reorder',
+				toolName: 'bash',
+				arguments: { command: 'gh search code "x"' },
+			} as SessionEventPayload<'tool.execution_start'>['data']);
+
+			// A ChatToolCallStart was emitted, and the confirmation was re-fired
+			// AFTER it so it lands on the part.
+			const startSignals = signals.filter(s => isAction(s, ActionType.ChatToolCallStart));
+			assert.strictEqual(startSignals.length, 1);
+			const pendingConfirmations = signals.filter(s => s.kind === 'pending_confirmation');
+			assert.strictEqual(pendingConfirmations.length, 2, 'confirmation should be re-fired after the tool start');
+			assert.ok(signals.indexOf(startSignals[0]) < signals.indexOf(pendingConfirmations[1]), 'ChatToolCallStart must precede the re-fired confirmation');
+
+			// The not-needed ready must NOT be emitted — it would clobber the
+			// pending confirmation and hang the tool at "running".
+			const notNeededReady = signals.filter(s => isAction(s, ActionType.ChatToolCallReady) && (s.action as ChatToolCallReadyAction).confirmed === ToolCallConfirmationReason.NotNeeded);
+			assert.strictEqual(notNeededReady.length, 0, 'onToolStart must not emit a not-needed ready when a confirmation is pending');
+
+			session.respondToPermissionRequest('tc-shell-reorder', false);
+			assert.strictEqual((await resultPromise).kind, 'reject');
+		});
+
 		test('auto-approves sandboxed-by-default shell command without prompting', async () => {
 			const { runtime, signals } = await createAgentSession(disposables, {
 				rootValues: { [AgentHostSandboxConfigKey.Sandbox]: { [AgentHostSandboxKey.Enabled]: AgentSandboxEnabledValue.On } },
