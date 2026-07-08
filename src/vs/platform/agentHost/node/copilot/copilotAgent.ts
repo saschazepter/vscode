@@ -1377,7 +1377,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			const { session, chat } = this._resolveChatTarget(chatUri);
 			return this._disposeChat(session, chat);
 		},
-		sendMessage: (chatUri: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string, workingDirectory?: URI): Promise<void> => {
+		sendMessage: (chatUri: URI, prompt: string, workingDirectory: URI | undefined, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string): Promise<void> => {
 			return this._sendMessage(chatUri, prompt, attachments, turnId, senderClientId, workingDirectory);
 		},
 		abort: (chatUri: URI): Promise<void> => {

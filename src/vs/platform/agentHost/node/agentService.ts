@@ -422,7 +422,7 @@ export class AgentService extends Disposable implements IAgentService {
 					scopes: this._gitHubEndpointService.getCopilotResource().scopes_supported,
 				});
 			},
-			resolveWorktreeBeforeSend: params => this._resolveWorktreeBeforeSend(params),
+			resolveWorkingDirectoryBeforeSend: params => this._resolveWorkingDirectoryBeforeSend(params),
 			onTurnComplete: async session => {
 				// Refresh the git state for the session.
 				const workingDirStr = this._stateManager.getSessionState(session)?.workingDirectory;
@@ -456,29 +456,49 @@ export class AgentService extends Disposable implements IAgentService {
 
 	/**
 	 * Host-owned first-send hook (invoked by {@link AgentSideEffects} before the
-	 * agent locks its subprocess cwd). When the session selected `worktree`
-	 * isolation and its worktree has not been created yet, creates it (using the
-	 * user's prompt for branch naming) and surfaces the "Created isolated
-	 * worktree" announcement as the first markdown response part of the turn.
-	 * Idempotent; a no-op for folder sessions and once the worktree exists.
-	 * Returns the created worktree URI (or `undefined` for folder sessions and
-	 * once the worktree already exists) so the caller can hand it to the agent as
-	 * the session's working directory at send time.
+	 * agent locks its subprocess cwd). Resolves the working directory the session
+	 * will actually run in and hands it to the agent at send time:
+	 *  - `worktree` isolation: the isolated worktree, created here on the first
+	 *    send (see {@link _resolveWorktreeBeforeSend});
+	 *  - `folder` isolation: the picked folder;
+	 *  - workspace-less: `undefined` (the agent runs in its own scratch dir).
 	 */
-	private async _resolveWorktreeBeforeSend(params: { session: string; chat: string; turnId: string; prompt: string }): Promise<URI | undefined> {
-		if (!this._worktree) {
-			return undefined;
-		}
+	private async _resolveWorkingDirectoryBeforeSend(params: { session: string; chat: string; turnId: string; prompt: string }): Promise<URI | undefined> {
 		const sessionId = AgentSession.id(params.session);
-		if (!this._worktree.isWorkingDirectoryPending(sessionId)) {
+		const pickedFolder = this._configurationService.getEffectiveWorkingDirectory(params.session);
+		const pickedFolderUri = pickedFolder ? URI.parse(pickedFolder) : undefined;
+
+		// Only worktree-isolation sessions defer directory resolution to the first
+		// send (so the prompt can name the branch); folder / workspace-less
+		// sessions run directly in the picked folder.
+		if (!this._worktree?.isWorkingDirectoryPending(sessionId)) {
+			return pickedFolderUri;
+		}
+
+		// Fall back to the picked folder when worktree creation failed so the
+		// session still materializes in the user's folder rather than nowhere.
+		return await this._resolveWorktreeBeforeSend({ ...params, sessionId, pickedFolderUri }) ?? pickedFolderUri;
+	}
+
+	/**
+	 * Creates the session's isolated worktree on the first send (deferred so the
+	 * user's prompt can name the branch), surfaces the "Created isolated worktree"
+	 * announcement as the first markdown response part of the turn, and returns
+	 * the created worktree URI. Idempotent; safe to call once the worktree exists.
+	 * Returns `undefined` when worktree creation failed. Only invoked for sessions
+	 * whose worktree is still pending (see {@link _resolveWorkingDirectoryBeforeSend}).
+	 */
+	private async _resolveWorktreeBeforeSend(params: { session: string; chat: string; turnId: string; prompt: string; sessionId: string; pickedFolderUri: URI | undefined }): Promise<URI | undefined> {
+		const { sessionId, pickedFolderUri } = params;
+		const worktree = this._worktree;
+		if (!worktree) {
 			return undefined;
 		}
-		const pickedFolder = this._configurationService.getEffectiveWorkingDirectory(params.session);
 		try {
-			await this._worktree.resolveOnFirstSend({
+			await worktree.resolveOnFirstSend({
 				sessionUri: URI.parse(params.session),
 				sessionId,
-				workingDirectory: pickedFolder ? URI.parse(pickedFolder) : undefined,
+				workingDirectory: pickedFolderUri,
 				config: this._configurationService.getSessionConfigValues(params.session),
 				prompt: params.prompt,
 				githubToken: this.getAuthToken({
@@ -489,7 +509,7 @@ export class AgentService extends Disposable implements IAgentService {
 		} catch (err) {
 			this._logService.warn(`[AgentService] worktree resolution failed for ${params.session}: ${toErrorMessage(err)}`);
 		}
-		const announcement = this._worktree.takePendingAnnouncement(sessionId);
+		const announcement = worktree.takePendingAnnouncement(sessionId);
 		if (announcement !== undefined) {
 			this._stateManager.dispatchServerAction(params.chat, {
 				type: ActionType.ChatResponsePart,
@@ -497,7 +517,7 @@ export class AgentService extends Disposable implements IAgentService {
 				part: { kind: ResponsePartKind.Markdown, id: generateUuid(), content: announcement },
 			});
 		}
-		return this._worktree.getResolvedWorktree(sessionId);
+		return worktree.getResolvedWorktree(sessionId);
 	}
 
 	registerProvider(provider: IAgent): void {

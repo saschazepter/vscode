@@ -1627,7 +1627,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			// default chat lives and dies with its session.
 			return Promise.resolve();
 		},
-		sendMessage: (chat: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, _senderClientId?: string, workingDirectory?: URI): Promise<void> => {
+		sendMessage: (chat: URI, prompt: string, workingDirectory: URI | undefined, attachments?: readonly MessageAttachment[], turnId?: string, _senderClientId?: string): Promise<void> => {
 			return this._sendMessage(chat, prompt, attachments, turnId, workingDirectory);
 		},
 		abort: (chat: URI): Promise<void> => {

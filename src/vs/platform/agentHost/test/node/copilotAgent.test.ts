@@ -1394,7 +1394,7 @@ suite('CopilotAgent', () => {
 					workingDirectory: URI.file('/workspace'),
 					...(model ? { model } : {}),
 				});
-				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello');
+				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', undefined);
 				return capturedConfig;
 			} finally {
 				await disposeAgent(agent);
@@ -2202,7 +2202,7 @@ suite('CopilotAgent', () => {
 					workingDirectory: URI.file('/workspace'),
 				});
 
-				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello');
+				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', undefined);
 
 				assert.strictEqual(capturedConfig?.sessionId, 'prov-default-chat');
 			} finally {
@@ -2311,7 +2311,7 @@ suite('CopilotAgent', () => {
 				});
 				assert.strictEqual(result.provisional, true);
 
-				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello');
+				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', undefined);
 
 				assert.ok(capturedConfig, 'SDK createSession should be called during provisional materialization');
 				const systemMessage = capturedConfig.systemMessage;
@@ -2351,7 +2351,7 @@ suite('CopilotAgent', () => {
 				});
 				assert.strictEqual(result.provisional, true);
 
-				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello');
+				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', undefined);
 
 				assert.strictEqual(capturedConfig?.gitHubToken, 'gh-token-abc',
 					'createSession should receive the GitHub token at session level so the SDK can resolve a per-session GitHub identity');
@@ -2380,7 +2380,7 @@ suite('CopilotAgent', () => {
 				});
 				assert.strictEqual(result.provisional, true);
 
-				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello');
+				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', undefined);
 
 				assert.deepStrictEqual(capturedConfig?.tools?.map(tool => tool.name), []);
 			} finally {
@@ -2794,7 +2794,7 @@ suite('CopilotAgent', () => {
 				setPeerChatStub(agent, chatA, a.fake);
 				setPeerChatStub(agent, chatB, b.fake);
 
-				await agent.chats.sendMessage(chatA, 'hello-a', undefined, 'turn-a', 'client-1');
+				await agent.chats.sendMessage(chatA, 'hello-a', undefined, undefined, 'turn-a', 'client-1');
 
 				assert.deepStrictEqual({
 					aSends: a.rec.sends.map(s => ({ prompt: s.prompt, turnId: s.turnId, senderClientId: s.senderClientId })),
@@ -2818,7 +2818,7 @@ suite('CopilotAgent', () => {
 				const session = AgentSession.uri('copilotcli', 'route-ghost');
 				const chatUri = URI.parse(buildChatUri(session, 'ghost'));
 				await assert.rejects(
-					() => agent.chats.sendMessage(chatUri, 'hi'),
+					() => agent.chats.sendMessage(chatUri, 'hi', undefined),
 					/unknown chat/,
 				);
 			} finally {
@@ -2924,7 +2924,7 @@ suite('CopilotAgent', () => {
 					return makeFakeChatSession(session, launchPlan.sessionId, async () => peerAHistory, launchPlan.shellManager).fake;
 				};
 
-				await agent2.chats.sendMessage(peerA, 'after restart');
+				await agent2.chats.sendMessage(peerA, 'after restart', undefined);
 				const history = await getPeerChatStub(agent2, peerA)!.getMessages();
 
 				assert.deepStrictEqual({
@@ -3180,7 +3180,7 @@ suite('CopilotAgent', () => {
 				const chatUri = URI.parse(buildChatUri(session, 'peer-a'));
 				const rec = installFake(agent, chatUri.toString(), 'chat', session);
 
-				await agent.chats.sendMessage(chatUri, 'hello-peer', undefined, 'turn-1', 'client-1');
+				await agent.chats.sendMessage(chatUri, 'hello-peer', undefined, undefined, 'turn-1', 'client-1');
 
 				assert.deepStrictEqual({
 					sends: rec.sends,
@@ -3200,7 +3200,7 @@ suite('CopilotAgent', () => {
 				const session = AgentSession.uri('copilotcli', 'conv-send-default');
 				const rec = installFake(agent, AgentSession.id(session), 'session', session);
 
-				await agent.chats.sendMessage(defaultChatUri(session), 'hello-default', undefined, 'turn-d', 'client-d');
+				await agent.chats.sendMessage(defaultChatUri(session), 'hello-default', undefined, undefined, 'turn-d', 'client-d');
 
 				assert.deepStrictEqual(rec.sends, [{ prompt: 'hello-default', turnId: 'turn-d', senderClientId: 'client-d' }]);
 			} finally {
@@ -3733,7 +3733,7 @@ suite('CopilotAgent', () => {
 				await agent.authenticate('https://api.github.com', 'token');
 				const result = await agent.createSession({ session: AgentSession.uri('copilotcli', 'anchor-session'), workingDirectory: originalFolder });
 				assert.strictEqual(result.provisional, true);
-				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', undefined, undefined, undefined, resolvedWorkingDirectory);
+				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', resolvedWorkingDirectory, undefined, undefined, undefined);
 			} finally {
 				await disposeAgent(agent);
 			}
@@ -3791,7 +3791,7 @@ suite('CopilotAgent', () => {
 					activeClient: { clientId: 'c1', tools: [] },
 				});
 				assert.strictEqual(result.provisional, true);
-				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', undefined, undefined, undefined, worktree);
+				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', worktree, undefined, undefined, undefined);
 			} finally {
 				await disposeAgent(agent);
 			}
@@ -3948,7 +3948,7 @@ suite('CopilotAgent', () => {
 					agent: { uri: repoAgentFile.toString() },
 				});
 				assert.strictEqual(result.provisional, true);
-				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', undefined, undefined, undefined, worktreeFolder);
+				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', worktreeFolder, undefined, undefined, undefined);
 
 				// `_readSessionMetadata` reads back the exact agent field the
 				// resume path consumes, so asserting it stands in for restore.

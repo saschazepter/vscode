@@ -837,7 +837,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			const { session, chat } = this._resolveChatTarget(chatUri);
 			return this._disposeChat(session, chat);
 		},
-		sendMessage: (chatUri, prompt, attachments, turnId, senderClientId, workingDirectory) => {
+		sendMessage: (chatUri, prompt, workingDirectory, attachments, turnId, senderClientId) => {
 			return this._sendMessage(chatUri, prompt, attachments, turnId, senderClientId, workingDirectory);
 		},
 		abort: chatUri => {
@@ -974,16 +974,13 @@ export class ClaudeAgent extends Disposable implements IAgent {
 
 		const canUseTool = this._makeCanUseTool(sessionId);
 
-		// The host hands us the resolved working directory (an isolated worktree for
-		// worktree isolation) on the first send; adopt it before `materialize` locks
-		// the SDK subprocess `cwd`. Undefined for folder / workspace-less sessions,
-		// which keep the directory captured at create time.
-		if (workingDirectory) {
-			session.workingDirectory = workingDirectory;
-		}
-
+		// The host hands us the resolved working directory (an isolated worktree
+		// for worktree isolation, or the picked folder) on the first send; pass it
+		// into `materialize`, which locks the SDK subprocess `cwd`. Undefined for
+		// workspace-less sessions, which keep the `workspace` captured at create
+		// time.
 		try {
-			await session.materialize({ transport, canUseTool, isResume: false, serverToolHost: this._serverToolHost });
+			await session.materialize({ transport, canUseTool, isResume: false, workingDirectory, serverToolHost: this._serverToolHost });
 		} catch (err) {
 			this._sessions.deleteAndDispose(sessionId);
 			throw err;
