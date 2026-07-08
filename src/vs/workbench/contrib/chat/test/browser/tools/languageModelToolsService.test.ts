@@ -8,7 +8,6 @@ import { Barrier } from '../../../../../../base/common/async.js';
 import { VSBuffer } from '../../../../../../base/common/buffer.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../../../base/common/cancellation.js';
 import { CancellationError, isCancellationError } from '../../../../../../base/common/errors.js';
-import { autorun } from '../../../../../../base/common/observable.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { IAccessibilityService } from '../../../../../../platform/accessibility/common/accessibility.js';
@@ -5019,22 +5018,32 @@ suite('LanguageModelToolsService', () => {
 			const dto = tool.makeDto({ test: 1 }, { sessionId: 'pre-approved' });
 			dto.preApproved = { type: ToolConfirmKind.Setting, id: 'autoApprove' };
 
-			// Record every state the published invocation passes through.
-			const seenStates: IChatToolInvocation.StateKind[] = [];
-			const result = await preApprovedService.invokeTool(dto, async () => 0, CancellationToken.None);
+			// Start the invocation without awaiting so the state at publish time is
+			// observable: an auto-approved call must be published already executing
+			// and must never surface a confirmation prompt (which would flicker
+			// "needs input" in the sessions list).
+			const invokePromise = preApprovedService.invokeTool(dto, async () => 0, CancellationToken.None);
 			const invocation = await waitForPublishedInvocation(capture);
-			store.add(autorun(reader => { seenStates.push(invocation.state.read(reader).type); }));
+			const publishedState = invocation.state.get().type;
+
+			// If the fix regressed, the call would be stuck awaiting confirmation;
+			// confirm it so the promise resolves and the assertion below (rather
+			// than a test timeout) reports the failure.
+			if (publishedState === IChatToolInvocation.StateKind.WaitingForConfirmation) {
+				IChatToolInvocation.confirmWith(invocation, { type: ToolConfirmKind.UserAction });
+			}
+			const result = await invokePromise;
 
 			assert.deepStrictEqual(
 				{
 					invokeCompleted,
 					value: (result.content[0] as IToolResultTextPart).value,
-					sawWaitingForConfirmation: seenStates.includes(IChatToolInvocation.StateKind.WaitingForConfirmation),
+					publishedWaitingForConfirmation: publishedState === IChatToolInvocation.StateKind.WaitingForConfirmation,
 				},
 				{
 					invokeCompleted: true,
 					value: 'success',
-					sawWaitingForConfirmation: false,
+					publishedWaitingForConfirmation: false,
 				},
 			);
 		});
