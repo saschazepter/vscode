@@ -50,7 +50,7 @@ import { IAgentHostReviewService, NULL_REVIEW_SERVICE } from '../../common/agent
 import { IAgentHostGitHubEndpointService } from '../../node/agentHostGitHubEndpointService.js';
 import { createTestGitHubEndpointService } from './testGitHubEndpointService.js';
 import { CopilotAgentSession } from '../../node/copilot/copilotAgentSession.js';
-import { AgentBranchNameGenerator, IAgentBranchNameGenerator, getAgentBranchNameHintFromMessage, normalizeAgentBranchName } from '../../node/shared/agentBranchNameGenerator.js';
+import { AgentBranchNameGenerator, getAgentBranchNameHintFromMessage, normalizeAgentBranchName } from '../../node/shared/agentBranchNameGenerator.js';
 import type { CopilotSessionLaunchPlan, IActiveClientSnapshot } from '../../node/copilot/copilotSessionLauncher.js';
 import { ShellManager } from '../../node/copilot/copilotShellTools.js';
 import { registerPendingEditContentProvider } from '../../node/copilot/pendingEditContentStore.js';
@@ -567,7 +567,6 @@ function createTestAgentContext(disposables: Pick<DisposableStore, 'add'>, optio
 	services.set(IByokLmBridgeRegistry, new ByokLmBridgeRegistry());
 	const copilotApiService = options?.copilotApiService ?? new TestCopilotApiService();
 	services.set(ICopilotApiService, copilotApiService);
-	services.set(IAgentBranchNameGenerator, new AgentBranchNameGenerator(copilotApiService, logService));
 	services.set(ITelemetryService, NullTelemetryService);
 	if (options?.environmentServiceRegistration !== 'none') {
 		const environmentService = {

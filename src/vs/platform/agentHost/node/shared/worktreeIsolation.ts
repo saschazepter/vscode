@@ -18,7 +18,8 @@ import { ISchemaProperty, schemaProperty } from '../../common/agentHostSchema.js
 import { ISessionDataService } from '../../common/sessionDataService.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { ResponsePart, ResponsePartKind, Turn } from '../../common/state/sessionState.js';
-import { AGENT_BRANCH_PREFIX, IAgentBranchNameGenerator } from './agentBranchNameGenerator.js';
+import { AGENT_BRANCH_PREFIX, AgentBranchNameGenerator, IAgentBranchNameGenerator } from './agentBranchNameGenerator.js';
+import { ICopilotApiService } from './copilotApiService.js';
 
 /**
  * Per-session-database metadata keys under which the worktree an agent
@@ -196,13 +197,18 @@ export class WorktreeIsolation extends Disposable {
 	 */
 	private readonly _sequencer = new SequencerByKey<string>();
 
+	/** Branch-name generator for worktree sessions; created from {@link ICopilotApiService} unless a test supplies an override. */
+	private readonly _branchNameGenerator: IAgentBranchNameGenerator;
+
 	constructor(
+		branchNameGenerator: IAgentBranchNameGenerator | undefined,
 		@IAgentHostGitService private readonly _gitService: IAgentHostGitService,
-		@IAgentBranchNameGenerator private readonly _branchNameGenerator: IAgentBranchNameGenerator,
+		@ICopilotApiService copilotApiService: ICopilotApiService,
 		@ISessionDataService private readonly _sessionDataService: ISessionDataService,
 		@ILogService private readonly _logService: ILogService,
 	) {
 		super();
+		this._branchNameGenerator = branchNameGenerator ?? new AgentBranchNameGenerator(copilotApiService, this._logService);
 	}
 
 	/** SessionIds with a worktree created by this agent in the current process. */

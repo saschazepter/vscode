@@ -38,7 +38,6 @@ import { CopilotAgent } from './copilot/copilotAgent.js';
 import { AgentHostProxyResolver, IAgentHostProxyResolver } from './agentHostProxyResolver.js';
 import { IByokLmBridgeRegistry, NullByokLmBridgeRegistry } from './byokLmBridgeRegistry.js';
 import { IByokLmProxyService, NullByokLmProxyService } from './copilot/byokLmProxyService.js';
-import { AgentBranchNameGenerator, IAgentBranchNameGenerator } from './shared/agentBranchNameGenerator.js';
 import { WorktreeIsolation } from './shared/worktreeIsolation.js';
 import { CopilotApiService, ICopilotApiService } from './shared/copilotApiService.js';
 import { ClaudeAgent } from './claude/claudeAgent.js';
@@ -271,11 +270,10 @@ async function main(): Promise<void> {
 		// the proxy service constructor requires it.
 		const copilotApiService = instantiationService.createInstance(CopilotApiService, undefined);
 		diServices.set(ICopilotApiService, copilotApiService);
-		diServices.set(IAgentBranchNameGenerator, instantiationService.createInstance(AgentBranchNameGenerator));
 		// Host-owned worktree isolation controller: a single instance drives folder
-		// / worktree isolation for every agent, so providers stay unaware of it.
-		// Created after the branch-name generator it depends on.
-		agentService.setWorktreeIsolation(disposables.add(instantiationService.createInstance(WorktreeIsolation)));
+		// / worktree isolation for every agent, so providers stay unaware of it. It
+		// owns its branch-name generator, created from ICopilotApiService.
+		agentService.setWorktreeIsolation(disposables.add(instantiationService.createInstance(WorktreeIsolation, undefined)));
 		// CLI flags become env vars BEFORE the downloader is constructed so
 		// `isAvailable()` and `loadSdkRoot()` see them as dev overrides.
 		if (options.claudeSdkRoot) {

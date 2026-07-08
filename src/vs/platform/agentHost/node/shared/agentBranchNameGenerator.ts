@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ILogService } from '../../../log/common/log.js';
-import { createDecorator } from '../../../instantiation/common/instantiation.js';
 import { ICopilotApiService, type ICopilotUtilityChatMessage } from './copilotApiService.js';
 
 /**
@@ -30,15 +29,11 @@ export interface IAgentBranchNameGeneratorRequest {
 	readonly branchExists?: (branchName: string) => Promise<boolean>;
 }
 
-export const IAgentBranchNameGenerator = createDecorator<IAgentBranchNameGenerator>('agentBranchNameGenerator');
-
 export interface IAgentBranchNameGenerator {
-	readonly _serviceBrand: undefined;
 	generateBranchName(request: IAgentBranchNameGeneratorRequest): Promise<string>;
 }
 
 export class AgentBranchNameGenerator implements IAgentBranchNameGenerator {
-	declare readonly _serviceBrand: undefined;
 
 	constructor(
 		@ICopilotApiService private readonly _copilotApiService: ICopilotApiService,

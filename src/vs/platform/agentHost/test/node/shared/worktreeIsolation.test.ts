@@ -16,8 +16,26 @@ import { IAgentHostGitService } from '../../../common/agentHostGitService.js';
 import { SessionConfigKey } from '../../../common/sessionConfigKeys.js';
 import { MessageKind, ResponsePartKind, TurnState, type Turn } from '../../../common/state/sessionState.js';
 import { IAgentBranchNameGenerator } from '../../../node/shared/agentBranchNameGenerator.js';
+import { ICopilotApiService } from '../../../node/shared/copilotApiService.js';
 import { WorktreeIsolation, getWorktreeName, getWorktreesRoot } from '../../../node/shared/worktreeIsolation.js';
 import { TestSessionDatabase, createNoopGitService, createSessionDataService } from '../../common/sessionTestHelpers.js';
+
+/**
+ * Minimal {@link ICopilotApiService} stub for constructing {@link WorktreeIsolation}
+ * in tests. Tests inject their own branch-name generator, so its methods are never called.
+ */
+function createNullCopilotApiService(): ICopilotApiService {
+	return {
+		_serviceBrand: undefined,
+		messages: (..._args: unknown[]): never => { throw new Error('not implemented'); },
+		countTokens: async () => { throw new Error('not implemented'); },
+		models: async () => [],
+		responses: async () => { throw new Error('not implemented'); },
+		utilityChatCompletion: async () => { throw new Error('not implemented'); },
+		resolveRestrictedTelemetryContext: async () => { throw new Error('not implemented'); },
+		resolveApiEndpoint: async () => undefined,
+	};
+}
 
 suite('WorktreeIsolation', () => {
 
@@ -64,12 +82,12 @@ suite('WorktreeIsolation', () => {
 
 	function createIsolation(disposableStore: Pick<DisposableStore, 'add'>): WorktreeIsolation {
 		const branchNameGenerator: IAgentBranchNameGenerator = {
-			_serviceBrand: undefined,
 			generateBranchName: async () => branchName,
 		};
 		return disposableStore.add(new WorktreeIsolation(
-			createGitService(),
 			branchNameGenerator,
+			createGitService(),
+			createNullCopilotApiService(),
 			createSessionDataService(db),
 			new NullLogService(),
 		));
