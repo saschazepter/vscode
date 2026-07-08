@@ -1771,7 +1771,7 @@ export function createApiFactoryAndRegisterActors(accessor: ServicesAccessor): I
 				checkProposedApiEnabled(extension, 'chatContextProvider');
 				return { dispose: () => { } };
 			},
-			registerChatResourceContextProvider(_elector: vscode.DocumentSelector, _id: string, _provider: vscode.ChatTabContextProvider): vscode.Disposable {
+			registerChatResourceContextProvider(_selector: vscode.DocumentSelector, _id: string, _provider: vscode.ChatTabContextProvider): vscode.Disposable {
 				checkProposedApiEnabled(extension, 'chatContextProvider');
 				return { dispose: () => { } };
 			},

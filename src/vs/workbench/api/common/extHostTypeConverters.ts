@@ -230,8 +230,6 @@ export namespace TabSelector {
 	}
 }
 
-
-
 export namespace DiagnosticTag {
 	export function from(value: vscode.DiagnosticTag): MarkerTag | undefined {
 		switch (value) {
