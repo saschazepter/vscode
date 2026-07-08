@@ -10,16 +10,14 @@
  * It sits in front of an upstream CAPI-speaking server (either the in-repo mock
  * LLM server or, when recording with a real token, real CAPI) and:
  *
+ *  - **replay** mode (default): serves recorded responses from the committed
+ *    fixture with no upstream contact at all — deterministic and token-free.
+ *    The fixture must exist (a missing one throws) and a request with no
+ *    recorded response is a strict cache miss that fails the run, so CI can
+ *    never silently reach real CAPI.
  *  - **record** mode: forwards every request to the upstream, streams the
- *    response back to the caller, and captures the raw response bytes to a
- *    JSON fixture on disk.
- *  - **replay** mode: serves recorded responses from the fixture with no
- *    upstream contact at all — deterministic and token-free.
- *  - **auto** mode (default): replays when a fixture exists, otherwise records
- *    one (mirrors the CLI e2e harness workflow). This is self-healing: a
- *    missing fixture records instead of failing, so the suite stays green
- *    before fixtures are committed. When replaying a committed fixture, a
- *    request with no recorded response is a strict cache miss (fails the run).
+ *    response back to the caller, and captures it to the fixture on disk.
+ *    Opt-in (`AGENT_HOST_REPLAY_RECORD=1`) since it needs a real token.
  *
  * The proxy is intentionally **wire-agnostic**: it captures and replays the raw
  * response body, so it works identically for the Chat Completions
@@ -95,7 +93,7 @@ const SYSTEM_PROMPT_PLACEHOLDER = '${system}';
 /** GitHub-API path prefixes (routed to the GitHub upstream, not CAPI). */
 const GITHUB_API_PREFIXES = ['/copilot_internal', '/telemetry'];
 
-export type CapiReplayMode = 'auto' | 'record' | 'replay';
+export type CapiReplayMode = 'record' | 'replay';
 
 interface IRecordedResponse {
 	readonly status: number;
@@ -183,7 +181,7 @@ export interface ICapiReplayProxyOptions {
 	readonly githubUpstreamUrl?: string;
 	/** Real CAPI base for model/`/models` traffic while recording (e.g. `https://api.githubcopilot.com`). */
 	readonly capiUpstreamUrl?: string;
-	/** Recording/replay behavior. Defaults to `auto`. */
+	/** Recording/replay behavior. Defaults to `replay`. */
 	readonly mode?: CapiReplayMode;
 	/** Absolute working directory to normalize out of request bodies. */
 	readonly workDir?: string;
@@ -226,17 +224,17 @@ export class CapiReplayProxy {
 
 	constructor(private readonly _options: ICapiReplayProxyOptions) {
 		const fixtureExists = existsSync(_options.fixturePath);
-		this._mode = _options.mode ?? 'auto';
+		this._mode = _options.mode ?? 'replay';
 		this._strict = _options.strict ?? true;
 
 		if (this._mode === 'replay' && !fixtureExists) {
 			throw new Error(`[capi-replay] replay mode requires a fixture but none exists at ${_options.fixturePath}`);
 		}
 
-		// `auto` replays a committed fixture when present, otherwise records one
-		// by proxying the upstream (self-healing, so a missing fixture never
-		// breaks the run — it just records instead of replaying).
-		this._isReplaying = this._mode === 'replay' || (this._mode === 'auto' && fixtureExists);
+		// Replay is read-only (never contacts the upstream); recording is the
+		// only mode that proxies real traffic. This keeps CI from ever reaching
+		// real CAPI: a missing fixture throws above rather than silently recording.
+		this._isReplaying = this._mode === 'replay';
 		if (this._isReplaying) {
 			this._loadFixture();
 		}

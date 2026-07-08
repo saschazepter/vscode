@@ -55,7 +55,7 @@ import {
  * it replays the committed fixtures deterministically with no token.
  */
 const RECORD = process.env['AGENT_HOST_REPLAY_RECORD'] === '1';
-const REPLAY_MODE: CapiReplayMode = RECORD ? 'record' : 'auto';
+const REPLAY_MODE: CapiReplayMode = RECORD ? 'record' : 'replay';
 /** Gate for real-SDK tests whose local execution is POSIX-specific (shell tool
  * calls, git worktrees, `pwd`) and does not reproduce on Windows. */
 const isWindows = process.platform === 'win32';
