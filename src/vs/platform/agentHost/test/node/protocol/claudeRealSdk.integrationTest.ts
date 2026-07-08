@@ -66,6 +66,11 @@ const CLAUDE_CONFIG: IRealSdkProviderConfig = {
 	// The shared suite skips that test when the flag is false.
 	supportsWorktreeIsolation: false,
 	supportsSubagents: true,
+	// The Claude SDK's subagent flow now emits a different number of
+	// `/v1/messages` turns than the committed fixtures captured, so subagent
+	// replay is skipped for Claude until the fixtures are re-recorded (see
+	// `subagentFixturesStale`). Copilot's subagent fixtures still match.
+	subagentFixturesStale: true,
 	// Plan mode is wired (`ExitPlanMode` interactive tool exists) but the
 	// shared test's Copilot-flavoured prompt doesn't reliably drive Claude
 	// to invoke it. TODO: rework the prompt for Claude conventions.
