@@ -190,11 +190,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	/** Tracks whether the initial listen cue has been played after connecting. */
 	private _hasPlayedInitialListenCue = false;
 
-	/**
-	 * True while barge-in monitoring is active: the mic streams to the backend
-	 * during assistant playback (hands-free) so the user can interrupt by
-	 * talking over it. See `_startBargeInMonitor`.
-	 */
+	/** True while streaming mic audio to the backend during playback (barge-in). */
 	private _bargeInMonitorActive = false;
 
 	// --- Audio FIFO queue ---
@@ -966,14 +962,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			const wasMonitoring = this._bargeInMonitorActive;
 			this._clearAutoListenTimer();
 			if (wasMonitoring && !this._pttHeld) {
-				// Barge-in: promote the monitor into a real turn. pttDown stops
-				// playback, clears the queue, and stops the monitor while
-				// keeping the mic warm (no re-acquire), so the utterance start
-				// isn't dropped.
+				// Promote the monitor into a real turn (mic stays warm via pttDown).
 				this.pttDown();
 				this.pttUp();
-				// Playback kept pushing AEC suppression ~800ms ahead; clear it
-				// so the warm mic's audio isn't gated at the turn start.
+				// Clear the playback AEC suppression so the turn start isn't gated.
 				this.micCaptureService.suppressUntil(0);
 			} else {
 				this.ttsPlaybackService.stopPlayback();
@@ -1293,9 +1285,8 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			}
 			this.disconnect();
 		});
-		// Stop the monitor after mic pttDown so the mic service's own
-		// _pttStreaming flag is set first, so stopMonitor keeps the mic
-		// warm instead of releasing and re-acquiring it.
+		// Stop the monitor after mic pttDown so its _pttStreaming flag is set
+		// first, letting stopMonitor keep the mic warm instead of re-acquiring.
 		this._stopBargeInMonitor();
 		this.ttsPlaybackService.stopPlayback();
 		this._voiceState.set('listening', undefined);
@@ -1490,11 +1481,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 	/**
 	 * Start barge-in monitoring: stream mic audio to the backend during
-	 * assistant playback so the user can interrupt by talking over it.
-	 * Hands-free only; no-op if already active, disconnected, mid-press, or the
-	 * window isn't ready. The backend emits `speech_started` on detection,
-	 * which `onSpeechStarted` promotes into a real turn. Inert until the
-	 * backend consumes `barge_in_*` (unknown messages are ignored server-side).
+	 * playback so the user can talk over the assistant. Hands-free only;
+	 * the backend emits `speech_started`, which `onSpeechStarted` promotes
+	 * into a real turn. Inert until the backend consumes `barge_in_*`.
 	 */
 	private _startBargeInMonitor(): void {
 		if (this._bargeInMonitorActive || !this._isConnected.get() || this._pttHeld || !this._window) {

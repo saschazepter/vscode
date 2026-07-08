@@ -92,11 +92,7 @@ export interface IMicCaptureService {
 	/** Fired when a PTT segment ends. All chunks have been sent before this fires. */
 	readonly onPttEnd: Event<void>;
 
-	/**
-	 * Fired during barge-in monitoring with base64 raw PCM16 chunks (see
-	 * `startMonitor`). Separate from `onPttAudioChunk` so it isn't treated as
-	 * turn input.
-	 */
+	/** Base64 raw PCM16 chunks during barge-in monitoring (not turn input). */
 	readonly onMonitorAudioChunk: Event<string>;
 
 	/**
@@ -136,11 +132,7 @@ export interface IMicCaptureService {
 	 */
 	abortPtt(): void;
 
-	/**
-	 * Stream raw mic audio for barge-in detection during assistant playback,
-	 * without opening a PTT turn. Emitted via `onMonitorAudioChunk` and NOT
-	 * subject to AEC suppression. Acquires the mic if not already capturing.
-	 */
+	/** Stream mic audio for barge-in detection (no PTT turn, no AEC gating). */
 	startMonitor(window: Window & typeof globalThis): Promise<void>;
 
 	/** Stop barge-in monitoring. Releases the mic only if no PTT press is active. */
@@ -357,20 +349,16 @@ export class MicCaptureService extends Disposable implements IMicCaptureService 
 		this._window = window;
 		if (this._monitoring) { return; }
 		this._monitoring = true;
-		// Reuse an open PTT pipeline; otherwise acquire the mic. Acquisition
-		// failure disables monitoring silently (best-effort, not core flow).
 		if (!this._isCapturing) {
 			try {
 				await this.startCapture(window);
 			} catch (err) {
-				// Surface the failure so the controller resets its own
-				// _bargeInMonitorActive flag (keeping the two in sync).
+				// Rethrow so the controller resets its _bargeInMonitorActive flag.
 				this._monitoring = false;
 				this.logService.warn('[mic] barge-in monitor could not acquire microphone', err);
 				throw err;
 			}
-			// Monitoring may have been cancelled while acquiring; release the
-			// freshly-opened mic so it isn't left running unused.
+			// Cancelled mid-acquire: release the mic we just opened.
 			if (!this._monitoring && !this._pttHeld && !this._pttStreaming) {
 				this.stopCapture();
 			}
@@ -380,7 +368,7 @@ export class MicCaptureService extends Disposable implements IMicCaptureService 
 	stopMonitor(): void {
 		if (!this._monitoring) { return; }
 		this._monitoring = false;
-		// Only release the mic if no push-to-talk press is relying on it.
+		// Keep the mic if a PTT press is using it.
 		if (!this._pttHeld && !this._pttStreaming) {
 			this.stopCapture();
 		}
@@ -389,8 +377,7 @@ export class MicCaptureService extends Disposable implements IMicCaptureService 
 	async startCapture(window: Window & typeof globalThis): Promise<void> {
 		this._window = window;
 		if (this._isCapturing) { return; }
-		// Serialize concurrent acquisitions (e.g. barge-in monitor + a PTT press
-		// racing to open the mic) so only one getUserMedia/AudioContext is created.
+		// Serialize concurrent acquisitions (monitor + PTT) into one getUserMedia.
 		if (this._capturePromise) { return this._capturePromise; }
 		this._capturePromise = this._acquireCapture(window);
 		try {
@@ -494,8 +481,7 @@ export class MicCaptureService extends Disposable implements IMicCaptureService 
 			}
 
 			// Barge-in monitor: stream raw audio during playback (not a turn,
-			// not AEC-gated) so the backend can detect the user talking over
-			// the assistant. Echo is handled by `echoCancellation` + backend VAD.
+			// not AEC-gated) so the backend can detect the user talking over it.
 			if (this._monitoring) {
 				const monitorData = e.inputBuffer.getChannelData(0);
 				const monitorSamples = new Float32Array(monitorData);
