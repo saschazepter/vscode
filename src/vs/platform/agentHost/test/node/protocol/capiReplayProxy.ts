@@ -39,7 +39,6 @@ import type * as https from 'https';
 import { createRequire } from 'module';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname } from '../../../../../base/common/path.js';
-import { escapeRegExpCharacters } from '../../../../../base/common/strings.js';
 import { aggregateAnthropicSse, anthropicMessageToSse, ANTHROPIC_MESSAGES_PATH, aggregateResponsesSse, responsesMessageToSse, RESPONSES_PATH, summarizeResponsesRequest, deserializeAnthropicContent, serializeAnthropicContent, summarizeAnthropicRequest, type AnthropicContentBlock, type IAnthropicMessage, type IReadableAnthropicRequest } from './capiWireCodec.js';
 import { getAncillaryStub } from './capiStubs.js';
 
@@ -88,26 +87,6 @@ const SYSTEM_PROMPT_PLACEHOLDER = '${system}';
 
 /** GitHub-API path prefixes (routed to the GitHub upstream, not CAPI). */
 const GITHUB_API_PREFIXES = ['/copilot_internal', '/telemetry'];
-
-/**
- * Real CAPI `/models` returns the full catalog, which includes unreleased /
- * internal preview models that must never be committed to fixtures. When
- * writing a fixture we keep only (a) models this recording actually used
- * (referenced in a captured request body) plus (b) this hardcoded allowlist of
- * stable, public models the suites may exercise. Every other entry — notably
- * internal preview models — is dropped. Extend the allowlist only with public
- * model ids; the used-model set already preserves whatever a run depends on.
- */
-const MODELS_ALLOWLIST = new Set<string>([
-	'gpt-4o',
-	'gpt-4o-mini',
-	'gpt-4.1',
-	'gpt-5.3-codex',
-	'claude-sonnet-4.5',
-]);
-const MODEL_ID_IN_BODY_RE = /"model"\s*:\s*"([^"]+)"/g;
-/** Placeholder that replaces dropped (internal/unused) model ids and names. */
-const MODEL_PLACEHOLDER = '${model}';
 
 export type CapiReplayMode = 'auto' | 'record' | 'replay';
 
@@ -487,17 +466,7 @@ export class CapiReplayProxy {
 	}
 
 	private _writeFixture(): void {
-		const usedModels = this._collectUsedModels();
-		const keptIds = new Set<string>([...usedModels, ...MODELS_ALLOWLIST]);
-		// The full catalog the backend returned lets us scrub the models we drop
-		// from the `/models` list out of ancillary bodies too. (Model turns store
-		// the system prompt as a placeholder, so the big catalog leak is gone by
-		// construction there.)
-		const redactTerms = this._collectModelCatalog()
-			.filter(model => !keptIds.has(model.id))
-			.flatMap(model => model.name ? [model.id, model.name] : [model.id])
-			.sort((a, b) => b.length - a.length); // longest first so substrings don't leave fragments
-		const exchanges = this._recorded.map(exchange => this._toFixtureExchange(exchange, keptIds, redactTerms));
+		const exchanges = this._recorded.map(exchange => this._toFixtureExchange(exchange));
 		this._normalizeToolCallIds(exchanges);
 		const fixture: IFixture = { version: 1, exchanges };
 		mkdirSync(dirname(this._options.fixturePath), { recursive: true });
@@ -556,9 +525,9 @@ export class CapiReplayProxy {
 	/**
 	 * Convert a raw recorded exchange into its fixture form: model-endpoint calls
 	 * become readable turns (parsed request + regeneratable reply); everything
-	 * else stays raw (with model-catalog filtering + redaction applied).
+	 * else stays raw.
 	 */
-	private _toFixtureExchange(exchange: IRecordedExchange, keptIds: ReadonlySet<string>, redactTerms: readonly string[]): IFixtureExchange {
+	private _toFixtureExchange(exchange: IRecordedExchange): IFixtureExchange {
 		if (exchange.method === 'POST' && exchange.path === ANTHROPIC_MESSAGES_PATH) {
 			const request = summarizeAnthropicRequest(exchange.requestBody);
 			const message = aggregateAnthropicSse(exchange.response.body);
@@ -575,9 +544,7 @@ export class CapiReplayProxy {
 				return { method: exchange.method, path: exchange.path, dialect: 'responses', request, response: { content: serializeAnthropicContent(content), stopReason: message.stopReason, usage: message.usage } };
 			}
 		}
-		const filtered = this._filterModelsCatalog(exchange, keptIds);
-		const redacted = redactTerms.length ? this._redactModelTerms(filtered, redactTerms) : filtered;
-		return { method: redacted.method, path: redacted.path, response: redacted.response };
+		return { method: exchange.method, path: exchange.path, response: exchange.response };
 	}
 
 	/**
@@ -599,75 +566,6 @@ export class CapiReplayProxy {
 			}
 			return { type: 'tool_use', id: block.id, name: block.name, input };
 		});
-	}
-
-	/** Model ids the recorded run actually referenced (from request bodies). */
-	private _collectUsedModels(): Set<string> {
-		const used = new Set<string>();
-		for (const exchange of this._recorded) {
-			MODEL_ID_IN_BODY_RE.lastIndex = 0;
-			let match: RegExpExecArray | null;
-			while ((match = MODEL_ID_IN_BODY_RE.exec(exchange.requestBody)) !== null) {
-				used.add(match[1]);
-			}
-		}
-		return used;
-	}
-
-	/** All `(id, name)` pairs the backend returned across `/models` responses. */
-	private _collectModelCatalog(): Array<{ id: string; name?: string }> {
-		const catalog = new Map<string, { id: string; name?: string }>();
-		for (const exchange of this._recorded) {
-			if (exchange.method !== 'GET' || exchange.path !== '/models') {
-				continue;
-			}
-			try {
-				const parsed = JSON.parse(exchange.response.body) as { data?: Array<{ id?: string; name?: string }> };
-				for (const entry of parsed.data ?? []) {
-					if (typeof entry.id === 'string') {
-						catalog.set(entry.id, { id: entry.id, name: typeof entry.name === 'string' ? entry.name : undefined });
-					}
-				}
-			} catch {
-				// non-JSON body; skip
-			}
-		}
-		return [...catalog.values()];
-	}
-
-	/** Replace dropped model ids/names (whole tokens only) with a placeholder. */
-	private _redactModelTerms(exchange: IRecordedExchange, terms: readonly string[]): IRecordedExchange {
-		let requestBody = exchange.requestBody;
-		let body = exchange.response.body;
-		for (const term of terms) {
-			// Whole-token match so e.g. dropping `gpt-4` never corrupts kept `gpt-4o`.
-			const re = new RegExp(`(?<![\\w.-])${escapeRegExpCharacters(term)}(?![\\w.-])`, 'g');
-			requestBody = requestBody.replace(re, MODEL_PLACEHOLDER);
-			body = body.replace(re, MODEL_PLACEHOLDER);
-		}
-		return { ...exchange, requestBody, response: { ...exchange.response, body } };
-	}
-
-	/**
-	 * Strip unused/internal models from a `/models` catalog response so fixtures
-	 * never leak unreleased model ids. Non-`/models` exchanges pass through.
-	 */
-	private _filterModelsCatalog(exchange: IRecordedExchange, keptIds: ReadonlySet<string>): IRecordedExchange {
-		if (exchange.method !== 'GET' || exchange.path !== '/models') {
-			return exchange;
-		}
-		let parsed: { data?: Array<{ id?: string }> };
-		try {
-			parsed = JSON.parse(exchange.response.body);
-		} catch {
-			return exchange;
-		}
-		if (!Array.isArray(parsed.data)) {
-			return exchange;
-		}
-		const data = parsed.data.filter(entry => typeof entry.id === 'string' && keptIds.has(entry.id));
-		const body = JSON.stringify({ ...parsed, data });
-		return { ...exchange, response: { ...exchange.response, body } };
 	}
 
 	private _normalize(text: string): string {
@@ -692,7 +590,8 @@ function replaceAll(text: string, search: string, replacement: string): string {
 /** Decompress a response body per its `content-encoding` into a UTF-8 string. */
 function decodeBody(buffer: Buffer, encoding: string | undefined): string {
 	try {
-		switch (encoding) {
+		// Normalize header casing/whitespace (e.g. `GZIP`, ` gzip `) before matching.
+		switch (encoding?.trim().toLowerCase()) {
 			case 'gzip': return zlibModule.gunzipSync(buffer).toString('utf8');
 			case 'br': return zlibModule.brotliDecompressSync(buffer).toString('utf8');
 			case 'deflate': return zlibModule.inflateSync(buffer).toString('utf8');

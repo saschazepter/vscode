@@ -123,6 +123,19 @@ export function getAncillaryStub(method: string, path: string): IStubResponse | 
 	if (path === '/models' && method === 'GET') {
 		return { status: 200, headers: JSON_HEADERS, body: JSON.stringify({ data: STUB_MODELS.map(expandModel), object: 'list' }) };
 	}
+	// Auto-mode model-selection endpoints the SDK/agent host probes during model
+	// setup: `/models/session/intent` (model router) and `/models/session` (auto
+	// model / session token). Replay drives the model turn from the recorded
+	// response, so auto-mode selection is neither needed nor wanted here (letting
+	// it pick a model could steer the SDK onto an endpoint the fixture never
+	// recorded). Answer with the same failure the proxy already returns for an
+	// unrecorded call (500 + `x-should-retry: false`) so the SDK falls back to
+	// the configured model exactly as it does today — but served as a stub (not
+	// recorded, not a strict cache miss) so an SDK bump that starts calling these
+	// does not fail the run and no short-lived session token lands in a fixture.
+	if ((path === '/models/session' || path === '/models/session/intent') && method === 'POST') {
+		return { status: 500, headers: { 'content-type': 'text/plain', 'x-should-retry': 'false' }, body: 'auto-mode not available in replay' };
+	}
 	if (path.startsWith('/copilot_internal/')) {
 		if (path.includes('/token') || path.includes('/nltoken')) {
 			return { status: 200, headers: JSON_HEADERS, body: tokenStubBody() };
