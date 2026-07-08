@@ -343,6 +343,7 @@ export class BlockedSessionsIndicatorModel extends Disposable {
 					case AgentSessionApprovalKind.Terminal:
 						return RequiresInputKind.TerminalApproval;
 					case AgentSessionApprovalKind.Question:
+					case AgentSessionApprovalKind.QuestionCarousel:
 						return RequiresInputKind.Question;
 					default:
 						return undefined;
