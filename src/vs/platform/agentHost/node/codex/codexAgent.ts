@@ -1655,19 +1655,32 @@ export class CodexAgent extends Disposable implements IAgent {
 			this._logService.trace(`[Codex] autoApprovalReview/completed for unknown threadId=${params.threadId}; ignoring`);
 			return;
 		}
+		// Dev/test affordance: when the force-denied env flag is set, rewrite an
+		// otherwise-approved review as a denial so the denial-surfacing UI below
+		// runs. Tracked per-review (not just from the env flag) so that a genuine
+		// denial arriving while the flag happens to be set is still treated as
+		// real — its "Approve anyway" round-trip must reach the app-server rather
+		// than being finalized as the synthetic no-op below.
+		let forcedThisReview = false;
 		if (this._forceReviewDenied && params.review.status !== 'denied' && params.review.status !== 'inProgress') {
-			// Dev/test affordance: rewrite this completed review as a denial so the
-			// denial-surfacing UI below runs. Real denials are hard to provoke on
-			// demand because the primary model refuses unsafe actions before they
-			// reach the reviewer, so this env flag lets us verify the notification
-			// and "Approve anyway" card against an otherwise-approved review.
-			this._logService.warn(`[Codex:${sessionId}] ${AgentHostCodexForceReviewDeniedEnvVar} active — coercing review ${params.reviewId} (was ${params.review.status}) to denied for UI verification`);
+			// Real denials are hard to provoke on demand because the primary model
+			// refuses unsafe actions before they reach the reviewer, so this flag
+			// lets us exercise the notification + "Approve anyway" card. Crucially
+			// this is display-only: the real auto-reviewer already ALLOWED the
+			// action, so Codex ran the command — the flag cannot (and must not
+			// pretend to) block execution. Replace the pass-through rationale (which
+			// otherwise reads e.g. "low-risk allow decision" under a "denied"
+			// header, looking broken) with an honest explanation, and mark the
+			// notice "(simulated)" so it is never mistaken for a real block.
+			forcedThisReview = true;
+			const realStatus = params.review.status;
+			this._logService.warn(`[Codex:${sessionId}] ${AgentHostCodexForceReviewDeniedEnvVar} active — coercing review ${params.reviewId} (was ${realStatus}) to denied for UI verification`);
 			params = {
 				...params,
 				review: {
 					...params.review,
 					status: 'denied',
-					rationale: params.review.rationale ?? `Forced denial for UI verification (${AgentHostCodexForceReviewDeniedEnvVar}).`,
+					rationale: `Simulated denial for UI verification (${AgentHostCodexForceReviewDeniedEnvVar}). The real auto-reviewer returned "${realStatus}", so Codex already ran this command — this flag only exercises the denial-surfacing UI and never blocks execution. A genuine auto-review denial is enforced inside Codex, which refuses to run the command until it is explicitly approved.`,
 				},
 			};
 		}
@@ -1707,7 +1720,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			part: {
 				kind: ResponsePartKind.Markdown,
 				id: generateUuid(),
-				content: formatGuardianDenialNotification(summary, params.review.rationale),
+				content: formatGuardianDenialNotification(summary, params.review.rationale, { simulated: forcedThisReview }),
 			},
 		});
 
@@ -1769,15 +1782,18 @@ export class CodexAgent extends Disposable implements IAgent {
 			return;
 		}
 
-		if (this._forceReviewDenied) {
+		if (forcedThisReview) {
 			// The synthetic denial has no real pending action in the app-server, so
 			// there is nothing to approve; finalize the card as a successful no-op
-			// rather than attempting a round-trip the app-server would reject.
+			// rather than attempting a round-trip the app-server would reject. Note
+			// this uses the per-review flag, not the env flag: a genuine denial that
+			// arrives while the env flag happens to be set is NOT synthetic and must
+			// still perform the real approveGuardianDeniedAction round-trip below.
 			this._fire(session.sessionUri, {
 				type: ActionType.ChatToolCallComplete,
 				turnId,
 				toolCallId,
-				result: { success: true, pastTenseMessage: 'Approved (forced-denial verification - no real action to retry)' },
+				result: { success: true, pastTenseMessage: 'Approved (simulated-denial verification - no real action to retry)' },
 			});
 			return;
 		}
