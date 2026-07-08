@@ -159,15 +159,15 @@ suite('SessionServerTools', () => {
 		store.dispose();
 	});
 
-	test('list_sessions filters by status, workspace, and pending changes', async () => {
+	test('list_sessions filters by status, workspace, changes, archived and creation time', async () => {
 		const store = new DisposableStore();
 		const stateManager = store.add(new AgentHostStateManager(new NullLogService()));
 		const other = URI.parse('file:///workspace/other');
-		const idle = { ...sessionMeta('idle', SessionStatus.Idle, workspace), changes: { files: 2, additions: 5, deletions: 1 } };
-		const needsInput = { ...sessionMeta('needsInput', SessionStatus.InputNeeded, workspace), isRead: false };
-		const elsewhere = sessionMeta('elsewhere', SessionStatus.Idle, other);
-		const archived = { ...sessionMeta('archived', SessionStatus.Idle, workspace), isArchived: true };
-		const withPr = { ...sessionMeta('withPr', SessionStatus.Idle, workspace), _meta: withSessionGitHubState(undefined, { pullRequestUrl: 'https://github.com/o/r/pull/2' }) };
+		const idle = { ...sessionMeta('idle', SessionStatus.Idle, workspace), startTime: 1000, changes: { files: 2, additions: 5, deletions: 1 } };
+		const needsInput = { ...sessionMeta('needsInput', SessionStatus.InputNeeded, workspace), startTime: 3000, isRead: false };
+		const elsewhere = { ...sessionMeta('elsewhere', SessionStatus.Idle, other), startTime: 5000 };
+		const archived = { ...sessionMeta('archived', SessionStatus.Idle, workspace), startTime: 2000, isArchived: true };
+		const withPr = { ...sessionMeta('withPr', SessionStatus.Idle, workspace), startTime: 4000, _meta: withSessionGitHubState(undefined, { pullRequestUrl: 'https://github.com/o/r/pull/2' }) };
 		const sessions = [idle, needsInput, elsewhere, archived, withPr];
 		const group = createSessionServerToolGroup(createAccessor({ listSessions: async () => sessions }));
 
@@ -179,27 +179,32 @@ suite('SessionServerTools', () => {
 			withChanges: await ids({ withChanges: true }),
 			unread: await ids({ unread: true }),
 			withPullRequest: await ids({ withPullRequest: true }),
-			noArchived: await ids({ includeArchived: false }),
+			withArchived: await ids({ includeArchived: true }),
+			createdAfter: await ids({ createdAfter: new Date(3000).toISOString() }),
+			createdBefore: await ids({ createdBefore: new Date(3000).toISOString() }),
 			combined: await ids({ status: ['idle'], workspace: workspace.toString(), withChanges: true }),
 			all: await ids({}),
 		}, {
 			byStatus: ['copilot:/needsInput'],
-			byWorkspace: ['copilot:/idle', 'copilot:/needsInput', 'copilot:/archived', 'copilot:/withPr'],
+			byWorkspace: ['copilot:/idle', 'copilot:/needsInput', 'copilot:/withPr'],
 			withChanges: ['copilot:/idle'],
 			unread: ['copilot:/needsInput'],
 			withPullRequest: ['copilot:/withPr'],
-			noArchived: ['copilot:/idle', 'copilot:/needsInput', 'copilot:/elsewhere', 'copilot:/withPr'],
+			withArchived: ['copilot:/idle', 'copilot:/needsInput', 'copilot:/elsewhere', 'copilot:/archived', 'copilot:/withPr'],
+			createdAfter: ['copilot:/needsInput', 'copilot:/elsewhere', 'copilot:/withPr'],
+			createdBefore: ['copilot:/idle', 'copilot:/needsInput'],
 			combined: ['copilot:/idle'],
-			all: ['copilot:/idle', 'copilot:/needsInput', 'copilot:/elsewhere', 'copilot:/archived', 'copilot:/withPr'],
+			all: ['copilot:/idle', 'copilot:/needsInput', 'copilot:/elsewhere', 'copilot:/withPr'],
 		});
 		store.dispose();
 	});
 
 	test('getListSessionsArgs validates filter input', () => {
-		assert.deepStrictEqual(getListSessionsArgs({}), { status: undefined, workspace: undefined, withChanges: undefined, unread: undefined, withPullRequest: undefined, includeArchived: undefined });
+		assert.deepStrictEqual(getListSessionsArgs({}), { status: undefined, workspace: undefined, withChanges: undefined, unread: undefined, withPullRequest: undefined, includeArchived: undefined, createdAfter: undefined, createdBefore: undefined });
 		assert.throws(() => getListSessionsArgs({ status: ['bogus'] }), /status/);
 		assert.throws(() => getListSessionsArgs({ withChanges: 'yes' }), /withChanges/);
 		assert.throws(() => getListSessionsArgs({ includeArchived: 'no' }), /includeArchived/);
+		assert.throws(() => getListSessionsArgs({ createdAfter: 'not-a-date' }), /createdAfter/);
 		assert.strictEqual(filterSessions([sessionMeta('s1', SessionStatus.Idle, workspace)], getListSessionsArgs({})).length, 1);
 	});
 

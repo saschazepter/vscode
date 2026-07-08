@@ -54,7 +54,9 @@ const listSessionsInputSchema: ToolDefinition['inputSchema'] = {
 		withChanges: { type: 'boolean', description: 'When true, only return sessions that have pending worktree changes.' },
 		unread: { type: 'boolean', description: 'When true, only return sessions with updates the user has not seen yet.' },
 		withPullRequest: { type: 'boolean', description: 'When true, only return sessions that have a linked GitHub pull request.' },
-		includeArchived: { type: 'boolean', description: 'Whether to include archived sessions. Defaults to true; set false to omit archived sessions.' },
+		includeArchived: { type: 'boolean', description: 'Whether to include archived sessions. Defaults to false; set true to also return archived sessions.' },
+		createdAfter: { type: 'string', description: 'Only return sessions created at or after this time (ISO-8601 timestamp, e.g. `2025-01-31T00:00:00Z`).' },
+		createdBefore: { type: 'string', description: 'Only return sessions created at or before this time (ISO-8601 timestamp).' },
 	},
 };
 
@@ -97,7 +99,7 @@ export const sessionServerToolDefinitions: ToolDefinition[] = [
 	{
 		name: listSessionsToolName,
 		title: 'List Sessions',
-		description: 'List Agent Host sessions and their compact metadata (status, activity, working directory, project, worktree changes, git/GitHub info). Optionally filter by `status`, `workspace`, `withChanges`, `unread`, `withPullRequest`, or `includeArchived`.',
+		description: 'List Agent Host sessions and their compact metadata (status, activity, working directory, project, worktree changes, git/GitHub info, timestamps). By default archived sessions are omitted. Optionally filter by `status`, `workspace`, `withChanges`, `unread`, `withPullRequest`, `includeArchived`, `createdAfter`, or `createdBefore`.',
 		inputSchema: listSessionsInputSchema,
 		annotations: { readOnlyHint: true },
 	},
@@ -189,6 +191,8 @@ interface ISerializedSession {
 	readonly project?: string;
 	/** `true` when the session has updates the user has not yet seen. */
 	readonly unread?: boolean;
+	/** ISO-8601 timestamp of when the session was created. */
+	readonly createdAt?: string;
 	/** ISO-8601 timestamp of the session's last activity. */
 	readonly modifiedAt?: string;
 	readonly changes?: IAgentSessionMetadata['changes'];
@@ -298,6 +302,10 @@ export interface IListSessionsArgs {
 	readonly unread?: boolean;
 	readonly withPullRequest?: boolean;
 	readonly includeArchived?: boolean;
+	/** Lower bound on session creation time, in epoch milliseconds. */
+	readonly createdAfter?: number;
+	/** Upper bound on session creation time, in epoch milliseconds. */
+	readonly createdBefore?: number;
 }
 
 function getOptionalBoolean(value: unknown, field: string, toolName: string): boolean | undefined {
@@ -310,9 +318,23 @@ function getOptionalBoolean(value: unknown, field: string, toolName: string): bo
 	return value;
 }
 
+function getOptionalTimestamp(value: unknown, field: string, toolName: string): number | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	if (typeof value !== 'string') {
+		throw new Error(`Invalid ${toolName} input: ${field} must be an ISO-8601 timestamp string.`);
+	}
+	const parsed = Date.parse(value);
+	if (Number.isNaN(parsed)) {
+		throw new Error(`Invalid ${toolName} input: ${field} must be a valid ISO-8601 timestamp (e.g. 2025-01-31T00:00:00Z).`);
+	}
+	return parsed;
+}
+
 /** Validates and normalizes the optional `list_sessions` filter arguments. */
 export function getListSessionsArgs(rawArgs: unknown): IListSessionsArgs {
-	const args = (rawArgs ?? {}) as { status?: unknown; workspace?: unknown; withChanges?: unknown; unread?: unknown; withPullRequest?: unknown; includeArchived?: unknown };
+	const args = (rawArgs ?? {}) as { status?: unknown; workspace?: unknown; withChanges?: unknown; unread?: unknown; withPullRequest?: unknown; includeArchived?: unknown; createdAfter?: unknown; createdBefore?: unknown };
 
 	let status: Set<string> | undefined;
 	if (args.status !== undefined) {
@@ -333,6 +355,8 @@ export function getListSessionsArgs(rawArgs: unknown): IListSessionsArgs {
 		unread: getOptionalBoolean(args.unread, 'unread', listSessionsToolName),
 		withPullRequest: getOptionalBoolean(args.withPullRequest, 'withPullRequest', listSessionsToolName),
 		includeArchived: getOptionalBoolean(args.includeArchived, 'includeArchived', listSessionsToolName),
+		createdAfter: getOptionalTimestamp(args.createdAfter, 'createdAfter', listSessionsToolName),
+		createdBefore: getOptionalTimestamp(args.createdBefore, 'createdBefore', listSessionsToolName),
 	};
 }
 
@@ -381,7 +405,14 @@ export function filterSessions(sessions: readonly IAgentSessionMetadata[], args:
 		if (args.withPullRequest && !readSessionGitHubState(session._meta)?.pullRequestUrl) {
 			return false;
 		}
-		if (args.includeArchived === false && sessionIsArchived(session)) {
+		// Archived sessions are hidden unless explicitly requested.
+		if (args.includeArchived !== true && sessionIsArchived(session)) {
+			return false;
+		}
+		if (args.createdAfter !== undefined && session.startTime < args.createdAfter) {
+			return false;
+		}
+		if (args.createdBefore !== undefined && session.startTime > args.createdBefore) {
 			return false;
 		}
 		return true;
@@ -426,6 +457,7 @@ function serializeSession(session: IAgentSessionMetadata): ISerializedSession {
 		...(session.workingDirectory !== undefined ? { workingDirectory: session.workingDirectory.toString() } : {}),
 		...(session.project !== undefined ? { project: session.project.displayName } : {}),
 		...(session.isRead === false ? { unread: true } : {}),
+		...(session.startTime > 0 ? { createdAt: new Date(session.startTime).toISOString() } : {}),
 		...(session.modifiedTime > 0 ? { modifiedAt: new Date(session.modifiedTime).toISOString() } : {}),
 		...(session.changes !== undefined ? { changes: session.changes } : {}),
 		...(session.changesets !== undefined ? {
