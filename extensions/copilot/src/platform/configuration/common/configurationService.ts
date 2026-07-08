@@ -971,8 +971,10 @@ export namespace ConfigKey {
 	export const ResponsesApiPromptCacheBreakpointEnabled = defineSetting<boolean>('chat.responsesApi.promptCacheBreakpoint.enabled', ConfigType.ExperimentBased, false);
 	/** Enable updated prompt for 5.3Codex model */
 	export const Updated53CodexPromptEnabled = defineSetting<boolean>('chat.updated53CodexPrompt.enabled', ConfigType.ExperimentBased, true);
-	/** Enable updated prompt for Claude Opus 4.7 model */
-	export const Claude47OpusPromptEnabled = defineSetting<boolean>('chat.claude47OpusPrompt.enabled', ConfigType.ExperimentBased, false);
+	/** Enable updated prompt for Claude Opus 4.8 model */
+	export const Claude48OpusPromptEnabled = defineSetting<boolean>('chat.claude48OpusPrompt.enabled', ConfigType.ExperimentBased, false);
+	/** Enable updated prompt for Claude Sonnet 5 model */
+	export const ClaudeSonnet5PromptEnabled = defineSetting<boolean>('chat.claudeSonnet5Prompt.enabled', ConfigType.ExperimentBased, false);
 	/** Enable get_changed_files tool for GPT-5.5 models */
 	export const EnableGpt55GetChangedFilesTool = defineSetting<boolean>('chat.gpt55GetChangedFilesTool.enabled', ConfigType.ExperimentBased, true);
 	/** Enable get_changed_files tool for Gemini 3 models */
@@ -1090,7 +1092,7 @@ export namespace ConfigKey {
 	export const ViewImageToolEnabled = defineSetting<boolean>('chat.tools.viewImage.enabled', ConfigType.ExperimentBased, true);
 
 	/** Enable local session search index — tracks sessions locally and enables chronicle commands.*/
-	export const LocalIndexEnabled = defineSetting<boolean>('chat.localIndex.enabled', ConfigType.ExperimentBased, false);
+	export const LocalIndexEnabled = defineSetting<boolean>('chat.localIndex.enabled', ConfigType.ExperimentBased, true);
 
 	/** grep_search configs */
 	export const GrepSearchOutputFormat = defineSetting<'grep' | 'tag'>('chat.tools.grepSearch.outputFormat', ConfigType.ExperimentBased, 'grep');
