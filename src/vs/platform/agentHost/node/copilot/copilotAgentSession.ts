@@ -3311,8 +3311,12 @@ export class CopilotAgentSession extends Disposable {
 		const wrapper = this._wrapper;
 		const sessionId = this.sessionId;
 
-		this._register(wrapper.onUserMessage(() => {
-			(async () => {
+		this._register(wrapper.onUserMessage(e => {
+			// Skip SDK-injected messages (matches guard on this event above).
+			if (e.data.source && e.data.source.toLowerCase() !== 'user') {
+				return;
+			}
+			void (async () => {
 				let sources;
 				try {
 					sources = (await wrapper.session.rpc.instructions.getSources()).sources;
@@ -3370,7 +3374,9 @@ export class CopilotAgentSession extends Disposable {
 					referencedInstructionsCount,
 					claudeMdCount,
 				});
-			})();
+			})().catch(err => {
+				this._logService.trace(`[Copilot:${sessionId}] instructionsCollected telemetry failed: ${getErrorMessage(err)}`);
+			});
 		}));
 	}
 
