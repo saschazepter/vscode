@@ -175,6 +175,7 @@ export class MicCaptureService extends Disposable implements IMicCaptureService 
 	private _isMuted = false;
 	private _suppressUntilTs = 0;
 	private _pttAcquiring = false;
+	private _capturePromise: Promise<void> | undefined;
 	private _pttReleasedDuringAcquire = false;
 	private _monitoring = false;
 
@@ -362,9 +363,11 @@ export class MicCaptureService extends Disposable implements IMicCaptureService 
 			try {
 				await this.startCapture(window);
 			} catch (err) {
+				// Surface the failure so the controller resets its own
+				// _bargeInMonitorActive flag (keeping the two in sync).
 				this._monitoring = false;
 				this.logService.warn('[mic] barge-in monitor could not acquire microphone', err);
-				return;
+				throw err;
 			}
 			// Monitoring may have been cancelled while acquiring; release the
 			// freshly-opened mic so it isn't left running unused.
@@ -386,7 +389,19 @@ export class MicCaptureService extends Disposable implements IMicCaptureService 
 	async startCapture(window: Window & typeof globalThis): Promise<void> {
 		this._window = window;
 		if (this._isCapturing) { return; }
+		// Serialize concurrent acquisitions (e.g. barge-in monitor + a PTT press
+		// racing to open the mic) so only one getUserMedia/AudioContext is created.
+		if (this._capturePromise) { return this._capturePromise; }
+		this._capturePromise = this._acquireCapture(window);
+		try {
+			await this._capturePromise;
+		} finally {
+			this._capturePromise = undefined;
+		}
+	}
 
+	private async _acquireCapture(window: Window & typeof globalThis): Promise<void> {
+		if (this._isCapturing) { return; }
 		const deviceId = this.storageService.get(AgentsVoiceStorageKeys.MicrophoneDevice, StorageScope.APPLICATION);
 		const audioConstraints: MediaTrackConstraints = {
 			channelCount: 1,

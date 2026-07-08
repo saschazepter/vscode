@@ -1245,9 +1245,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 		if (this._pttHeld) { this.logService.info('[voice] pttDown ignored: already held'); return; }
 		this._pttHeld = true;
-		// This press owns the mic now; stop the monitor. The mic stays warm
-		// because _pttHeld is already set (stopMonitor won't release it).
-		this._stopBargeInMonitor();
 		this._autoListenSuppressed = false;
 		this._clearAutoListenTimer();
 		this._pttCurrentTurnId = generateUuid();
@@ -1296,6 +1293,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			}
 			this.disconnect();
 		});
+		// Stop the monitor after mic pttDown so the mic service's own
+		// _pttStreaming flag is set first, so stopMonitor keeps the mic
+		// warm instead of releasing and re-acquiring it.
+		this._stopBargeInMonitor();
 		this.ttsPlaybackService.stopPlayback();
 		this._voiceState.set('listening', undefined);
 		this._statusText.set('Listening...', undefined);
