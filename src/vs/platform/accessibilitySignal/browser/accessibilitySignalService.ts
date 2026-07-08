@@ -336,7 +336,6 @@ export class Sound {
 	public static readonly format = Sound.register({ fileName: 'format.mp3' });
 	public static readonly voiceRecordingStarted = Sound.register({ fileName: 'voiceRecordingStarted.mp3' });
 	public static readonly voiceRecordingStopped = Sound.register({ fileName: 'voiceRecordingStopped.mp3' });
-	public static readonly voiceResponseReceived = Sound.register({ fileName: 'voiceResponseReceived.mp3' });
 	public static readonly progress = Sound.register({ fileName: 'progress.mp3' });
 	public static readonly chatEditModifiedFile = Sound.register({ fileName: 'chatEditModifiedFile.mp3' });
 	public static readonly editsKept = Sound.register({ fileName: 'editsKept.mp3' });
@@ -676,13 +675,6 @@ export class AccessibilitySignal {
 		sound: Sound.voiceRecordingStopped,
 		legacySoundSettingsKey: 'audioCues.voiceRecordingStopped',
 		settingsKey: 'accessibility.signals.voiceRecordingStopped'
-	});
-
-	public static readonly voiceResponseReceived = AccessibilitySignal.register({
-		name: localize('accessibilitySignals.voiceResponseReceived', 'Voice Response Received'),
-		sound: Sound.voiceResponseReceived,
-		announcementMessage: localize('accessibility.signals.voiceResponseReceived', 'Voice response ready'),
-		settingsKey: 'accessibility.signals.voiceResponseReceived'
 	});
 
 	public static readonly editsKept = AccessibilitySignal.register({

@@ -212,6 +212,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	/** Buffered audio for responses that arrived while their session was not
 	 *  focused. Flushed to playback when the session becomes focused. */
 	private readonly _deferredResponses = new Map<string, { audio: string; isFirstChunk: boolean; isFinal: boolean; transcript: string | undefined }[]>();
+	/** Sessions currently showing a pending-response indicator because they are
+	 *  awaiting confirmation while unfocused (client-driven, no audio needed). */
+	private readonly _confirmationPendingSessions = new Set<string>();
 
 	// --- Session audio cache for replay ---
 	private readonly _sessionAudioCache = new Map<string, Float32Array>();
@@ -888,6 +891,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					}
 					// Clear watchdogs for sessions that are no longer awaiting confirmation
 					const stillWaiting = new Set(waitingForConfirmationSessions.map(w => w.sessionId));
+					// Keep the sessions-list pending indicator in sync with the set
+					// of sessions awaiting confirmation while unfocused.
+					this._reconcileConfirmationIndicators(stillWaiting);
 					for (const id of [...this._confirmationFlushWatchdogs.keys()]) {
 						if (!stillWaiting.has(id)) {
 							const t = this._confirmationFlushWatchdogs.get(id);
@@ -1060,7 +1066,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				'focus_session',
 			];
 			if (e.name === 'send_to_chat') {
-				const text = typeof e.args?.['text'] === 'string' ? (e.args['text'] as string) : '';
+				const rawText = typeof e.args?.['text'] === 'string' ? (e.args['text'] as string) : '';
+				// Defensively strip a trailing stop phrase (e.g. "send it") that
+				// the backend should have removed but sometimes leaves in.
+				const text = this._stripStopPhrase(rawText);
+				if (text !== rawText && e.args) {
+					e.args['text'] = text;
+				}
 				this._statusText.set(VoiceToolDispatchService.getActionLabel(e.name), undefined);
 				this._persistEntry('agent_tool_call', this._renderToolCallSummary(e.name, e.args), {
 					toolName: e.name,
@@ -1422,6 +1434,42 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// unresolved/undefined value still enables hands-free (matches the
 		// `handsFree` default and the window-service `!== false` check).
 		return this.configurationService.getValue<boolean>('agents.voice.handsFree') !== false;
+	}
+
+	/**
+	 * Strip a trailing stop phrase (e.g. "send it") from a transcript before it
+	 * is sent to chat. The backend is supposed to strip the matched phrase from
+	 * `agents.voice.turn.stopPhrases`, but when it doesn't the raw phrase leaks
+	 * into the request, so we defensively strip it client-side. Matching is
+	 * case-insensitive, ignores trailing punctuation, and only strips on a word
+	 * boundary so phrases aren't removed from the middle of a word.
+	 */
+	private _stripStopPhrase(text: string): string {
+		const raw = this.configurationService.getValue<string[]>('agents.voice.turn.stopPhrases');
+		const phrases = Array.isArray(raw)
+			? raw.map(p => (typeof p === 'string' ? p.trim() : '')).filter(p => p.length > 0)
+			: [];
+		if (phrases.length === 0) {
+			return text;
+		}
+		// Strip trailing punctuation that speech recognizers often append.
+		const trimmed = text.trimEnd().replace(/[.,!?;:]+$/, '').trimEnd();
+		const trimmedLower = trimmed.toLowerCase();
+		// Prefer the longest matching phrase so more specific phrases win.
+		const sorted = [...phrases].sort((a, b) => b.length - a.length);
+		for (const phrase of sorted) {
+			const phraseLower = phrase.toLowerCase();
+			if (!trimmedLower.endsWith(phraseLower)) {
+				continue;
+			}
+			const idx = trimmed.length - phrase.length;
+			// Only strip on a word boundary (start of string or preceded by
+			// whitespace) so "out" isn't removed from "checkout".
+			if (idx === 0 || /\s/.test(trimmed[idx - 1])) {
+				return trimmed.slice(0, idx).replace(/[.,!?;:\s]+$/, '');
+			}
+		}
+		return text;
 	}
 
 	/** Re-enter listening via synthetic short tap. */
@@ -1923,7 +1971,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._focusedSessionId = focused;
 		if (focused) {
 			this._flushDeferredResponse(focused);
+			// The user is now looking at this session, so any pending-response
+			// indicator for it (confirmation awaiting input) is resolved.
+			this._clearConfirmationIndicator(focused);
 		}
+		// Re-send + flush context on focus change so the backend's notion of the
+		// active session (is_active) tracks focus promptly rather than waiting
+		// for the next poll.
+		this._sendContext();
+		this.voiceClientService.flushSessionContext();
 	}
 
 	/**
@@ -1949,12 +2005,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		let buffer = this._deferredResponses.get(sessionId);
 		if (isFirstChunk || !buffer) {
 			// A new response for this session - start a fresh buffer (dropping any
-			// older un-played response) and notify the user with the audio cue.
+			// older un-played response) and flag the sessions list so the pending
+			// indicator shows for the unfocused session.
 			buffer = [];
 			this._deferredResponses.set(sessionId, buffer);
 			this._markPendingResponse(sessionId, true);
-			this._playResponseReceivedCue();
-			this.logService.info(`[voice] deferring response for unfocused session=${sessionId}; playing cue + pending indicator`);
+			this.logService.info(`[voice] deferring response for unfocused session=${sessionId}; showing pending indicator`);
 		}
 		buffer.push({ audio, isFirstChunk, isFinal, transcript });
 	}
@@ -2029,18 +2085,56 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 	}
 
+	/**
+	 * Reconcile the sessions-list "pending response" indicator for confirmations.
+	 * A session that is awaiting user confirmation while NOT focused should show
+	 * the indicator; once it is focused or the confirmation is resolved the
+	 * indicator is cleared. This is driven purely from client-observed session
+	 * state, so it is accurate regardless of whether the backend narrates the
+	 * confirmation as audio.
+	 */
+	private _reconcileConfirmationIndicators(waitingSessionIds: Set<string>): void {
+		const focusedId = this._getFocusedSessionId();
+		// Show the indicator for every unfocused waiting session.
+		for (const sessionId of waitingSessionIds) {
+			if (sessionId === focusedId) {
+				continue;
+			}
+			if (!this._confirmationPendingSessions.has(sessionId)) {
+				this._confirmationPendingSessions.add(sessionId);
+				this._markPendingResponse(sessionId, true);
+			}
+		}
+		// Clear it for sessions that are now focused or no longer waiting.
+		for (const sessionId of [...this._confirmationPendingSessions]) {
+			if (waitingSessionIds.has(sessionId) && sessionId !== focusedId) {
+				continue;
+			}
+			this._clearConfirmationIndicator(sessionId);
+		}
+	}
+
+	private _clearConfirmationIndicator(sessionId: string): void {
+		if (!this._confirmationPendingSessions.delete(sessionId)) {
+			return;
+		}
+		// Don't clear the visible indicator if there is still buffered audio
+		// waiting to be played for this session - that indicator is owned by the
+		// deferred-response flush path.
+		if (!this._deferredResponses.has(sessionId)) {
+			this._markPendingResponse(sessionId, false);
+		}
+	}
+
 	private _clearDeferredResponses(): void {
 		for (const sessionId of this._deferredResponses.keys()) {
 			this._markPendingResponse(sessionId, false);
 		}
 		this._deferredResponses.clear();
-	}
-
-	private _playResponseReceivedCue(): void {
-		// Route through the accessibility signal service so the cue respects the
-		// user's `accessibility.signals.voiceResponseReceived` sound/announcement
-		// settings and emits a screen-reader announcement.
-		this.accessibilitySignalService.playSignal(AccessibilitySignal.voiceResponseReceived);
+		for (const sessionId of this._confirmationPendingSessions) {
+			this._markPendingResponse(sessionId, false);
+		}
+		this._confirmationPendingSessions.clear();
 	}
 
 	// --- Audio FIFO queue ---
