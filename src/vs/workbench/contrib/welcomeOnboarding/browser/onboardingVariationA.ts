@@ -48,6 +48,7 @@ import {
 	parseGheInstanceInput,
 } from '../common/onboardingTypes.js';
 import { IOnboardingService } from '../common/onboardingService.js';
+import { IExternalEditorImportService, IExternalEditorSource } from '../../externalEditorImport/common/externalEditorImport.js';
 
 type OnboardingStepViewClassification = {
 	owner: 'cwebster-99';
@@ -117,7 +118,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 	private _footerSignInBtn: HTMLButtonElement | undefined;
 
 	private currentStepIndex = 0;
-	private readonly steps = ONBOARDING_STEPS;
+	private steps: OnboardingStepId[] = [...ONBOARDING_STEPS];
 	private readonly disposables = this._register(new DisposableStore());
 	private readonly stepDisposables = this._register(new DisposableStore());
 	private previouslyFocusedElement: HTMLElement | undefined;
@@ -128,6 +129,9 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 	private selectedThemeId = 'dark-2026';
 	private selectedKeymapId = 'vscode';
 	private _detectedEditorIds: Set<string> | undefined;
+	private _importSource: IExternalEditorSource | undefined;
+	private readonly _importSelection = { settings: true, keybindings: true, snippets: true, extensions: true };
+	private _importCompleted = false;
 	private _userSignedIn = false;
 	private selectedAiMode: AiCollaborationMode = AiCollaborationMode.Balanced;
 	private enterpriseSignInUiState: EnterpriseSignInUiState = 'options';
@@ -147,6 +151,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
+		@IExternalEditorImportService private readonly externalEditorImportService: IExternalEditorImportService,
 	) {
 		super();
 
@@ -160,6 +165,28 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 
 		// Start detecting installed editors early so results are ready by the Personalize step
 		this._detectInstalledEditors().then(ids => { this._detectedEditorIds = ids; });
+
+		// Detect importable customizations from another editor (e.g. Cursor) and,
+		// if found, insert the import step right after Sign In.
+		this._detectImportSource();
+	}
+
+	private async _detectImportSource(): Promise<void> {
+		try {
+			const sources = await this.externalEditorImportService.detectSources();
+			const source = sources[0];
+			if (!source || this._isShowing) {
+				return; // nothing to import, or the modal is already showing
+			}
+			this._importSource = source;
+			if (!this.steps.includes(OnboardingStepId.ImportFromEditor)) {
+				const signInIndex = this.steps.indexOf(OnboardingStepId.SignIn);
+				const insertAt = signInIndex >= 0 ? signInIndex + 1 : 0;
+				this.steps.splice(insertAt, 0, OnboardingStepId.ImportFromEditor);
+			}
+		} catch {
+			// Detection failed — the step simply will not be shown
+		}
 	}
 
 	get isShowing(): boolean {
@@ -322,6 +349,9 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			if (leavingStep === OnboardingStepId.Personalize) {
 				this._applyKeymap(this.selectedKeymapId);
 			}
+			if (leavingStep === OnboardingStepId.ImportFromEditor) {
+				this._runImport();
+			}
 			this.currentStepIndex++;
 			this._renderStep();
 			this._renderProgress();
@@ -397,6 +427,9 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		switch (stepId) {
 			case OnboardingStepId.SignIn:
 				this._renderSignInStep(this.contentEl);
+				break;
+			case OnboardingStepId.ImportFromEditor:
+				this._renderImportFromEditorStep(this.contentEl);
 				break;
 			case OnboardingStepId.Personalize:
 				this._renderPersonalizeStep(this.contentEl);
@@ -1037,6 +1070,92 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		}));
 
 		return detected;
+	}
+
+	// =====================================================================
+	// Step: Import From Editor
+	// =====================================================================
+
+	private _renderImportFromEditorStep(container: HTMLElement): void {
+		const source = this._importSource;
+		if (!source) {
+			return;
+		}
+
+		const wrapper = append(container, $('.onboarding-a-import'));
+
+		const hint = append(wrapper, $('div.onboarding-a-import-hint'));
+		hint.textContent = localize('onboarding.import.hint', "We found {0} on your machine. Pick what you'd like to bring over.", source.label);
+
+		const list = append(wrapper, $('.onboarding-a-import-list'));
+		list.setAttribute('role', 'group');
+		list.setAttribute('aria-label', localize('onboarding.import.listLabel', "Customizations to import from {0}", source.label));
+
+		interface IImportRow { key: 'settings' | 'keybindings' | 'snippets' | 'extensions'; label: string; icon: ThemeIcon; available: boolean }
+		const rows: IImportRow[] = [
+			{ key: 'settings', label: localize('onboarding.import.settings', "Settings"), icon: Codicon.settingsGear, available: source.hasSettings },
+			{ key: 'keybindings', label: localize('onboarding.import.keybindings', "Keyboard Shortcuts"), icon: Codicon.keyboard, available: source.hasKeybindings },
+			{ key: 'snippets', label: localize('onboarding.import.snippets', "Snippets"), icon: Codicon.code, available: source.hasSnippets },
+			{ key: 'extensions', label: localize('onboarding.import.extensions', "Extensions"), icon: Codicon.extensions, available: source.hasExtensions },
+		];
+
+		for (const row of rows) {
+			if (!row.available) {
+				this._importSelection[row.key] = false;
+				continue;
+			}
+
+			const item = this._registerStepFocusable(append(list, $<HTMLButtonElement>('button.onboarding-a-import-item')));
+			item.type = 'button';
+			item.setAttribute('role', 'checkbox');
+			item.setAttribute('aria-checked', this._importSelection[row.key] ? 'true' : 'false');
+
+			const check = append(item, $('span.onboarding-a-import-check'));
+			check.setAttribute('aria-hidden', 'true');
+			const iconEl = append(item, $('span.onboarding-a-import-icon'));
+			iconEl.setAttribute('aria-hidden', 'true');
+			iconEl.appendChild(renderIcon(row.icon));
+			const labelEl = append(item, $('span.onboarding-a-import-label'));
+			labelEl.textContent = row.label;
+
+			const updateChecked = () => {
+				const checked = this._importSelection[row.key];
+				item.classList.toggle('selected', checked);
+				item.setAttribute('aria-checked', checked ? 'true' : 'false');
+				clearNode(check);
+				if (checked) {
+					check.appendChild(renderIcon(Codicon.check));
+				}
+			};
+			updateChecked();
+
+			this.stepDisposables.add(addDisposableListener(item, EventType.CLICK, () => {
+				this._importSelection[row.key] = !this._importSelection[row.key];
+				this._logAction('toggleImport', OnboardingStepId.ImportFromEditor, row.key);
+				updateChecked();
+			}));
+		}
+	}
+
+	private async _runImport(): Promise<void> {
+		const source = this._importSource;
+		if (!source || this._importCompleted) {
+			return;
+		}
+		if (!this._importSelection.settings && !this._importSelection.keybindings && !this._importSelection.snippets && !this._importSelection.extensions) {
+			return; // nothing selected
+		}
+
+		this._importCompleted = true;
+		this._logAction('import', OnboardingStepId.ImportFromEditor, source.id);
+		try {
+			await this.externalEditorImportService.import(source, { ...this._importSelection });
+		} catch {
+			this.notificationService.notify({
+				severity: Severity.Warning,
+				message: localize('onboarding.import.error', "Some customizations could not be imported from {0}. You can try again later from the Command Palette.", source.label),
+			});
+		}
 	}
 
 	// =====================================================================
