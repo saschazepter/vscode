@@ -1875,6 +1875,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	// --- Audio FIFO queue ---
 
 	private _enqueueAudio(sessionId: string | undefined, audio: string, isFirstChunk: boolean, isFinal: boolean, transcript: string | undefined): void {
+		// An incoming response frame means the assistant is actively replying, so
+		// cancel any pending auto-listen. Otherwise a debounced listen scheduled
+		// when the previous session's playback stopped can fire mid-response and
+		// its synthetic pttDown suppresses this session's audio. This matters most
+		// when a response leads with a transcript-only frame (empty audio): it
+		// consumes the first-chunk flag without starting playback, so the later
+		// audio chunks arrive as non-first chunks and would be dropped.
+		this._clearAutoListenTimer();
+
 		// User interrupted (pttDown / onSpeechStarted): drop late chunks from the
 		// previous turn. The backend marks the first audio chunk of a new
 		// response with `is_first_chunk: true` — that's our signal that a fresh
