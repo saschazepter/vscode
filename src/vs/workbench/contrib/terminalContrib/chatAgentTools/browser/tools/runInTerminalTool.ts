@@ -32,7 +32,6 @@ import { TerminalToolConfirmationStorageKeys } from '../../../../chat/browser/wi
 import { IChatService, ChatRequestQueueKind, ElicitationState, type IChatExternalToolInvocationUpdate, type IChatTerminalToolInvocationData } from '../../../../chat/common/chatService/chatService.js';
 import { autorun, constObservable, type IObservable } from '../../../../../../base/common/observable.js';
 import { ChatModel, type IChatRequestModeInfo } from '../../../../chat/common/model/chatModel.js';
-import { ChatConfiguration, ChatPermissionLevel, isAutoApproveLevel } from '../../../../chat/common/constants.js';
 import type { UserSelectedTools } from '../../../../chat/common/participants/chatAgents.js';
 import { CountTokensCallback, ILanguageModelToolsService, IPreparedToolInvocation, IToolConfirmationMessages, IStreamedToolInvocation, IToolData, IToolImpl, IToolInvocation, IToolInvocationPreparationContext, IToolInvocationStreamContext, IToolResult, ToolDataSource, ToolInvocationPresentation, ToolProgress } from '../../../../chat/common/tools/languageModelToolsService.js';
 import { ITerminalChatService, ITerminalService, type ITerminalInstance } from '../../../../terminal/browser/terminal.js';
@@ -113,7 +112,7 @@ export interface ISandboxingDisabledOptions {
 }
 export type ISandboxingOptions = ISandboxingOnOptions | ISandboxingDisabledOptions;
 
-function createPowerShellModelDescription(shell: string, sandboxingOptions: ISandboxingOptions, includeElevationGuidance: boolean): string {
+function createPowerShellModelDescription(shell: string, sandboxingOptions: ISandboxingOptions): string {
 	const isWinPwsh = isWindowsPowerShell(shell);
 	const parts = [
 		`This tool allows you to execute ${isWinPwsh ? 'Windows PowerShell 5.1' : 'PowerShell'} commands in a persistent terminal session, preserving environment variables, working directory, and other context across multiple commands.`,
@@ -166,9 +165,6 @@ function createPowerShellModelDescription(shell: string, sandboxingOptions: ISan
 		'- Use Test-Path to check file/directory existence',
 		'- Be specific with Select-Object properties to avoid excessive output',
 		'- Avoid printing credentials unless absolutely required',
-		...(includeElevationGuidance ? [
-			'- Avoid commands that trigger an interactive elevation prompt, such as Start-Process -Verb RunAs or runas.exe. They block on a UAC/password prompt that cannot be answered in this mode, and secrets must never be routed through the model. If elevated privileges are required, tell the user to run the command themselves and stop — do NOT retry the command with variations.',
-		] : []),
 		`- NEVER run Start-Sleep or similar wait commands. You will be automatically notified on your next turn when async terminal commands or timed-out sync commands complete or need input. Do NOT poll for completion.`,
 		'- NEVER pipe interactive commands through Select-Object, Where-Object, or other filters — this hides prompts and prevents the terminal from detecting when input is needed. Run interactive commands without pipes.',
 		'',
@@ -273,7 +269,7 @@ export function createSandboxProperties(sandboxingOptions: ISandboxingOnOptions)
 	};
 }
 
-function createGenericDescription(sandboxingOptions: ISandboxingOptions, includeElevationGuidance: boolean): string {
+function createGenericDescription(sandboxingOptions: ISandboxingOptions): string {
 	const parts = [`
 Command Execution:
 - Use && to chain simple commands on one line
@@ -316,7 +312,7 @@ Best Practices:
 - Use find with -exec or xargs for file operations
 - Be specific with commands to avoid excessive output
 - Avoid printing credentials unless absolutely required
-${includeElevationGuidance ? '- Avoid commands that require interactive privilege escalation, such as sudo/su/doas without a non-interactive flag (e.g. sudo -n). They block on a password prompt that cannot be answered in this mode, and secrets must never be routed through the model. If a command needs elevated privileges, tell the user to run it themselves in the terminal and stop — do NOT retry the command with variations.\n' : ''}- NEVER run sleep or similar wait commands in a terminal. You will be automatically notified on your next turn when async terminal commands or timed-out sync commands complete or need input. Do NOT poll for completion.
+- NEVER run sleep or similar wait commands in a terminal. You will be automatically notified on your next turn when async terminal commands or timed-out sync commands complete or need input. Do NOT poll for completion.
 - NEVER pipe interactive commands through tail, head, grep, or other filters — this hides prompts and prevents the terminal from detecting when input is needed. Run interactive commands without pipes.
 
 Interactive Input Handling:
@@ -329,19 +325,19 @@ Interactive Input Handling:
 	return parts.join('');
 }
 
-function createBashModelDescription(sandboxingOptions: ISandboxingOptions, includeElevationGuidance: boolean): string {
+function createBashModelDescription(sandboxingOptions: ISandboxingOptions): string {
 	return [
 		'This tool allows you to execute shell commands in a persistent bash terminal session, preserving environment variables, working directory, and other context across multiple commands.',
-		createGenericDescription(sandboxingOptions, includeElevationGuidance),
+		createGenericDescription(sandboxingOptions),
 		'- Use [[ ]] for conditional tests instead of [ ]',
 		'- Prefer $() over backticks for command substitution'
 	].join('\n');
 }
 
-function createZshModelDescription(sandboxingOptions: ISandboxingOptions, includeElevationGuidance: boolean): string {
+function createZshModelDescription(sandboxingOptions: ISandboxingOptions): string {
 	return [
 		'This tool allows you to execute shell commands in a persistent zsh terminal session, preserving environment variables, working directory, and other context across multiple commands.',
-		createGenericDescription(sandboxingOptions, includeElevationGuidance),
+		createGenericDescription(sandboxingOptions),
 		'- Use type to check command type (builtin, function, alias)',
 		'- Use jobs, fg, bg for job control',
 		'- Use [[ ]] for conditional tests instead of [ ]',
@@ -354,10 +350,10 @@ function createZshModelDescription(sandboxingOptions: ISandboxingOptions, includ
 	].join('\n');
 }
 
-function createFishModelDescription(sandboxingOptions: ISandboxingOptions, includeElevationGuidance: boolean): string {
+function createFishModelDescription(sandboxingOptions: ISandboxingOptions): string {
 	return [
 		'This tool allows you to execute shell commands in a persistent fish terminal session, preserving environment variables, working directory, and other context across multiple commands.',
-		createGenericDescription(sandboxingOptions, includeElevationGuidance),
+		createGenericDescription(sandboxingOptions),
 		'- Use type to check command type (builtin, function, alias)',
 		'- Use jobs, fg, bg for job control',
 		'- Use test expressions for conditionals (no [[ ]] syntax)',
@@ -375,23 +371,6 @@ export async function createRunInTerminalToolData(
 	const configurationService = accessor.get(IConfigurationService);
 	const allowToRunUnsandboxedCommands = configurationService.getValue<boolean>(AgentSandboxSettingId.AgentSandboxAllowUnsandboxedCommands) === true;
 	const retryWithAllowNetworkRequestsSetting = configurationService.getValue<boolean>(AgentSandboxSettingId.AgentSandboxRetryWithAllowNetworkRequests) === true;
-	// Only steer the model away from interactive privilege-escalation commands when the session is
-	// (or defaults to) an auto-approving mode. In interactive mode the user can focus the terminal and
-	// type a password/UAC prompt directly (bypassing the model), which is a supported flow; in
-	// auto-approve/Bypass Approvals/Autopilot mode such prompts are cancelled since no human is
-	// available to answer them.
-	//
-	// Note: the tool description is computed once at registration, so it cannot observe the live,
-	// per-session permission level (which can change mid-session via the picker). We therefore use the
-	// best available static signals: the terminal auto-approve setting, the global auto-approve
-	// setting, and the default permission level for new sessions. Sessions switched into Bypass
-	// Approvals/Autopilot mid-session from an otherwise-interactive default are not covered by this
-	// static description.
-	const defaultPermissionLevel = configurationService.getValue<ChatPermissionLevel | undefined>(ChatConfiguration.DefaultPermissionLevel);
-	const includeElevationGuidance =
-		configurationService.getValue(TerminalChatAgentToolsSettingId.EnableAutoApprove) === true ||
-		configurationService.getValue(ChatConfiguration.GlobalAutoApprove) === true ||
-		isAutoApproveLevel(defaultPermissionLevel);
 
 	const profileFetcher = instantiationService.createInstance(TerminalProfileFetcher);
 	const [shell, os, isSandboxEnabled, isSandboxAllowNetworkEnabled] = await Promise.all([
@@ -420,13 +399,13 @@ export async function createRunInTerminalToolData(
 
 	let modelDescription: string;
 	if (shell && os && isPowerShell(shell, os)) {
-		modelDescription = createPowerShellModelDescription(shell, sandboxingOptions, includeElevationGuidance);
+		modelDescription = createPowerShellModelDescription(shell, sandboxingOptions);
 	} else if (shell && os && isZsh(shell, os)) {
-		modelDescription = createZshModelDescription(sandboxingOptions, includeElevationGuidance);
+		modelDescription = createZshModelDescription(sandboxingOptions);
 	} else if (shell && os && isFish(shell, os)) {
-		modelDescription = createFishModelDescription(sandboxingOptions, includeElevationGuidance);
+		modelDescription = createFishModelDescription(sandboxingOptions);
 	} else {
-		modelDescription = createBashModelDescription(sandboxingOptions, includeElevationGuidance);
+		modelDescription = createBashModelDescription(sandboxingOptions);
 	}
 
 	const sharedProperties: IJSONSchemaMap = {
