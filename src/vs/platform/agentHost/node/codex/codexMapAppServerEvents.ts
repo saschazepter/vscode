@@ -10,6 +10,7 @@ import { MessageKind, ResponsePartKind, ToolCallConfirmationReason, ToolCallCont
 import { extractForwardedErrorInfo } from '../shared/forwardedChatError.js';
 import { getServerToolDisplay } from '../shared/serverToolGroups.js';
 import { ActiveClientToolSet } from '../activeClientState.js';
+import { unwrapShellInvocation } from './codexShellCommand.js';
 import type { AgentMessageDeltaNotification } from './protocol/generated/v2/AgentMessageDeltaNotification.js';
 import type { CommandExecutionOutputDeltaNotification } from './protocol/generated/v2/CommandExecutionOutputDeltaNotification.js';
 import type { FileChangeOutputDeltaNotification } from './protocol/generated/v2/FileChangeOutputDeltaNotification.js';
@@ -179,39 +180,6 @@ function describeFileChange(changes: readonly FileUpdateChange[]): string {
 
 function fileChangeOutput(changes: readonly FileUpdateChange[]): string {
 	return changes.map(change => `${describeFileChange([change])}\n${change.diff}`.trim()).join('\n\n');
-}
-
-/**
- * Codex reports a shell command as the exact invocation it hands to the OS —
- * the user's login shell wrapping the actual script, e.g.
- * `/bin/zsh -lc 'touch ~/foo'`. That wrapper is noise in the chat UI and makes
- * Codex's terminal pills look different from Claude's (which surface the bare
- * `touch ~/foo`). Peel off a leading `<shell> -[l]c <script>` wrapper and
- * return the inner script so both agents render identically. Falls back to the
- * raw command when it doesn't match the wrapper shape.
- */
-export function unwrapShellInvocation(command: string): string {
-	const match = /^\s*\S*sh(?:\.exe)?\s+-[a-z]*c\s+([\s\S]+)$/i.exec(command);
-	if (!match) {
-		return command;
-	}
-	return unquoteShellArg(match[1].trim());
-}
-
-/**
- * Strips the surrounding quotes the shell wrapper added around a script
- * argument and undoes the corresponding escaping (POSIX `'\''` for single
- * quotes; backslash escapes for double quotes). Returns the argument unchanged
- * when it is not quoted.
- */
-function unquoteShellArg(arg: string): string {
-	if (arg.length >= 2 && arg[0] === '\'' && arg[arg.length - 1] === '\'') {
-		return arg.slice(1, -1).replace(/'\\''/g, '\'');
-	}
-	if (arg.length >= 2 && arg[0] === '"' && arg[arg.length - 1] === '"') {
-		return arg.slice(1, -1).replace(/\\(["\\$`])/g, '$1');
-	}
-	return arg;
 }
 
 function jsonValueToText(value: JsonValue): string {

@@ -7,6 +7,7 @@ import type { GuardianApprovalReviewAction } from './protocol/generated/v2/Guard
 import type { ItemGuardianApprovalReviewCompletedNotification } from './protocol/generated/v2/ItemGuardianApprovalReviewCompletedNotification.js';
 import type { RequestPermissionProfile } from './protocol/generated/v2/RequestPermissionProfile.js';
 import type { JsonValue } from './protocol/generated/serde_json/JsonValue.js';
+import { unwrapShellInvocation } from './codexShellCommand.js';
 
 /**
  * Auto-review (guardian) notifications are emitted by the app-server with
@@ -142,9 +143,13 @@ export interface IGuardianActionSummary {
 export function summarizeGuardianReviewAction(action: GuardianApprovalReviewAction): IGuardianActionSummary {
 	switch (action.type) {
 		case 'command':
-			return { title: 'Run command', detail: action.command, toolKind: 'terminal' };
+			// Display-only: unwrap the OS shell wrapper (`/bin/zsh -lc '…'`) so the
+			// denial notice and "Approve anyway" card show the same clean command
+			// as the terminal pill. The raw action is still round-tripped verbatim
+			// to the app-server via toGuardianAssessmentEventJson on approval.
+			return { title: 'Run command', detail: unwrapShellInvocation(action.command), toolKind: 'terminal' };
 		case 'execve':
-			return { title: 'Run program', detail: [action.program, ...action.argv].join(' '), toolKind: 'terminal' };
+			return { title: 'Run program', detail: unwrapShellInvocation([action.program, ...action.argv].join(' ')), toolKind: 'terminal' };
 		case 'applyPatch':
 			return { title: 'Apply file changes', detail: action.files.join(', ') };
 		case 'networkAccess':

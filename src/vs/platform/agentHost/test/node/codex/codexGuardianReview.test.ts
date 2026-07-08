@@ -64,6 +64,22 @@ suite('codexGuardianReview', () => {
 		});
 	});
 
+	test('summarizeGuardianReviewAction unwraps the OS shell wrapper so the card matches the terminal pill', () => {
+		assert.deepStrictEqual({
+			command: summarizeGuardianReviewAction({
+				type: 'command', source: 'shell',
+				command: '/bin/zsh -lc \'rm -rf ~/secret\'', cwd: '/tmp',
+			} as never),
+			execve: summarizeGuardianReviewAction({
+				type: 'execve', source: 'shell',
+				program: '/bin/bash', argv: ['-lc', 'echo hi'], cwd: '/tmp',
+			} as never),
+		}, {
+			command: { title: 'Run command', detail: 'rm -rf ~/secret', toolKind: 'terminal' },
+			execve: { title: 'Run program', detail: 'echo hi', toolKind: 'terminal' },
+		});
+	});
+
 	const deniedPermissionsReview: ItemGuardianApprovalReviewCompletedNotification = {
 		threadId: 'thread-2',
 		turnId: 'turn-2',
