@@ -1344,7 +1344,9 @@ export class AgentSideEffects extends Disposable {
 
 		await Promise.all(selectionUpdates);
 
-		await agent.chats.sendMessage(chatUri, message.text, message.attachments, turnId, senderClientId).catch(err => {
+		try {
+			await agent.chats.sendMessage(chatUri, message.text, message.attachments, turnId, senderClientId);
+		} catch (err) {
 			const errCode = (err as { code?: number })?.code;
 			this._logService.error(`[AgentSideEffects] sendMessage failed for session=${turnChannel}: code=${errCode}, message=${err instanceof Error ? err.message : String(err)}, type=${err?.constructor?.name}`, err);
 			this._stateManager.dispatchServerAction(turnChannel, {
@@ -1355,7 +1357,7 @@ export class AgentSideEffects extends Disposable {
 			this._turnTracker.turnCompleted(turnChannel, turnId, 'error');
 			this._toolCallTracker.clearSession(turnChannel);
 			this._failSessionCreationIfStillCreating(sessionChannel, err);
-		});
+		}
 	}
 
 	/**
