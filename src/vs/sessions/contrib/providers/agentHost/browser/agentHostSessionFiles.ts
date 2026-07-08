@@ -387,7 +387,12 @@ function extractBrowserToolUrl(toolCall: ToolCallState): string | undefined {
 	if (!BROWSER_URL_TOOL_NAMES.has(toolCall.toolName)) {
 		return undefined;
 	}
-	const input = 'toolInput' in toolCall ? toolCall.toolInput : undefined;
+	// `toolInput` (the raw JSON arguments) is present on every tool call state
+	// except while the parameters are still streaming.
+	if (toolCall.status === ToolCallStatus.Streaming) {
+		return undefined;
+	}
+	const input = toolCall.toolInput;
 	if (typeof input !== 'string') {
 		return undefined;
 	}
