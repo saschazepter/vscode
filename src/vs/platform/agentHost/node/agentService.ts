@@ -532,23 +532,14 @@ export class AgentService extends Disposable implements IAgentService {
 				? { ...(options.title !== undefined ? { title: options.title } : {}), ...(options.model !== undefined ? { model: { id: options.model.id } } : {}) }
 				: undefined),
 			deleteSession: session => this.disposeSession(session),
-			getSessionSpawnDepth: session => this._getSessionSpawnDepth(session),
-			setSessionSpawnDepth: (session, depth) => this._setSessionSpawnDepth(session, depth),
+			// Reads the `create_session` spawn depth from a session's `_meta` (0 when absent).
+			getSessionSpawnDepth: session => readSessionSpawnDepth(this._stateManager.getSessionSummary(session.toString())?._meta),
+			// Stamps a session's `create_session` spawn depth into its `_meta` (merging existing keys).
+			setSessionSpawnDepth: (session, depth) => this._stateManager.dispatchServerAction(session.toString(), {
+				type: ActionType.SessionMetaChanged,
+				_meta: withSessionSpawnDepth(this._stateManager.getSessionSummary(session.toString())?._meta, depth),
+			}),
 		};
-	}
-
-	/** Reads the `create_session` spawn depth from a session's `_meta` (0 when absent). */
-	private _getSessionSpawnDepth(session: URI): number {
-		return readSessionSpawnDepth(this._stateManager.getSessionSummary(session.toString())?._meta);
-	}
-
-	/** Stamps a session's `create_session` spawn depth into its `_meta` (merging existing keys). */
-	private _setSessionSpawnDepth(session: URI, depth: number): void {
-		const existing = this._stateManager.getSessionSummary(session.toString())?._meta;
-		this._stateManager.dispatchServerAction(session.toString(), {
-			type: ActionType.SessionMetaChanged,
-			_meta: withSessionSpawnDepth(existing, depth),
-		});
 	}
 
 	/**
