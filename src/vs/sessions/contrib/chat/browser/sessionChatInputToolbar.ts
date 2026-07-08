@@ -19,7 +19,7 @@ import { isAgentHostProviderId } from '../../../common/agentHostSessionsProvider
 import { ISessionsService } from '../../../services/sessions/browser/sessionsService.js';
 import { IChat, SessionStatus } from '../../../services/sessions/common/session.js';
 import { IActiveSession } from '../../../services/sessions/common/sessionsManagement.js';
-import { VIEW_SESSION_CHANGES_COMMAND_ID } from '../../changes/browser/changesActions.js';
+import { VIEW_SESSION_CHANGES_COMMAND_ID } from '../../changes/common/changes.js';
 import './media/sessionChatInputToolbar.css';
 
 /** The per-turn data both pills reflect. */
