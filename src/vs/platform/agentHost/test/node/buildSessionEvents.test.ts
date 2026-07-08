@@ -129,6 +129,30 @@ suite('buildSessionEventsFromTurns — reverse of mapSessionEvents', () => {
 		assert.deepStrictEqual(project(reconstructed), project(turns));
 	});
 
+	test('emits an abort for a cancelled turn so it reconstructs as cancelled with its text', async () => {
+		const id = generateUuid();
+		const turns: Turn[] = [{
+			id,
+			message: { text: 'stop', origin: { kind: MessageKind.User } },
+			responseParts: [markdown('partial answer')],
+			usage: undefined,
+			state: TurnState.Cancelled,
+		}];
+
+		const events = buildSessionEventsFromTurns(turns, { sessionId });
+
+		// The abort trails the already-flushed assistant content.
+		assert.deepStrictEqual(events.map(e => e.type), [
+			'session.start',
+			'user.message',
+			'assistant.message',
+			'abort',
+		]);
+
+		const { turns: reconstructed } = await mapSessionEvents(session, undefined, events);
+		assert.deepStrictEqual(project(reconstructed), project(turns));
+	});
+
 	test('round-trips a completed tool call interleaved with assistant text preserving order and identity', async () => {
 		const id = generateUuid();
 		const toolCallId = generateUuid();

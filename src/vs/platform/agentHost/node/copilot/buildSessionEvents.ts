@@ -5,7 +5,7 @@
 
 import type { SessionEvent } from '@github/copilot-sdk';
 import { generateUuid, isUUID } from '../../../../base/common/uuid.js';
-import { ResponsePartKind, ToolCallStatus, ToolResultContentType, type ToolCallCompletedState, type ToolResultContent, type ToolResultSubagentContent, type Turn } from '../../common/state/sessionState.js';
+import { ResponsePartKind, ToolCallStatus, ToolResultContentType, TurnState, type ToolCallCompletedState, type ToolResultContent, type ToolResultSubagentContent, type Turn } from '../../common/state/sessionState.js';
 
 /**
  * Default schema version stamped on the synthesized `session.start` event.
@@ -65,9 +65,11 @@ export interface IBuildSessionEventsOptions {
  * SDK's fork / truncate RPCs address and the caller can seed matching protocol
  * turns; a non-UUID id is replaced with a minted UUID.
  *
- * Only completed tool calls are translated; streaming / cancelled / pending
- * states and file-edit content (which lives in the session database) are not
- * yet emitted. Content refs and system notifications are also skipped.
+ * Only completed tool calls are translated; streaming / pending tool states and
+ * file-edit content (which lives in the session database) are not yet emitted.
+ * A cancelled turn ({@link TurnState.Cancelled}) emits a trailing `abort` event
+ * so it reconstructs as cancelled. Content refs and system notifications are
+ * skipped.
  */
 export function buildSessionEventsFromTurns(turns: readonly Turn[], options: IBuildSessionEventsOptions): SessionEvent[] {
 	const events: SessionEvent[] = [];
@@ -220,6 +222,21 @@ export function buildSessionEventsFromTurns(turns: readonly Turn[], options: IBu
 			// Content refs and system notifications are not yet translated.
 		}
 		flushAssistantMessage();
+
+		// A cancelled turn reconstructs as `TurnState.Cancelled` only if the event
+		// stream ends without a finalizing assistant message (the reverse mapper
+		// defaults to cancelled and upgrades to complete on a final message). Emit
+		// an explicit `abort` after the already-flushed content so the turn is
+		// marked cancelled while keeping its text.
+		if (turn.state === TurnState.Cancelled) {
+			push({
+				id: generateUuid(),
+				parentId,
+				timestamp: nextTimestamp(),
+				type: 'abort',
+				data: { reason: 'user_initiated' },
+			});
+		}
 	}
 
 	return events;
