@@ -152,7 +152,7 @@ export function setup(logger: Logger): void {
 			].join('\n');
 			const networkDenyCommand = [
 				`probe_url=${quoteShellArgument(`http://127.0.0.1:${networkAddress.port}/chat-sandbox-network-probe`)}`,
-				'if curl --silent --show-error --connect-timeout 3 --max-time 5 --noproxy \'*\' "$probe_url" >/dev/null 2>&1; then network_status=ALLOWED; else network_status=BLOCKED; fi',
+				'if command -v curl >/dev/null 2>&1; then if curl --silent --show-error --connect-timeout 3 --max-time 5 --noproxy \'*\' "$probe_url" >/dev/null 2>&1; then network_status=ALLOWED; else network_status=BLOCKED; fi; else network_status=NO_CURL; fi',
 				`printf '%s network=%s\\n' ${quoteShellArgument(networkDenyMarker)} "$network_status"`,
 			].join('\n');
 
