@@ -218,6 +218,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	/** Sessions currently showing a pending-response indicator because they are
 	 *  awaiting confirmation while unfocused (client-driven, no audio needed). */
 	private readonly _confirmationPendingSessions = new Set<string>();
+	/**
+	 * Key (session resource string, or ``''`` for untagged audio) of the response
+	 * we are currently playing live rather than deferring. Recorded on the first
+	 * chunk so the remaining chunks of that response follow the same decision and
+	 * a response is never split between playback and the deferred buffer.
+	 * ``undefined`` when no response is playing live.
+	 */
+	private _liveReplyKey: string | undefined;
 
 	// --- Session audio cache for replay ---
 	private readonly _sessionAudioCache = new Map<string, Float32Array>();
@@ -1053,14 +1061,24 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// If this response is for a session the user isn't currently looking
 			// at, don't play it now: buffer it until that session is focused and
 			// notify with a short audio cue instead.
-			const defer = this._shouldDeferResponse(e.codingSessionId);
+			const defer = this._shouldDeferResponse(e.codingSessionId, e.isFirstChunk);
 			if (e.isFirstChunk || e.isFinal) {
 				this.logService.info(`[voice] audio_response codingSessionId=${e.codingSessionId ?? '<none>'} focused=${this._focusedSessionId ?? '<none>'} isFirstChunk=${e.isFirstChunk} isFinal=${e.isFinal} suppress=${this._suppressIncomingAudio} defer=${defer}`);
 			}
 			if (defer) {
 				this._deferResponse(e.codingSessionId!, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
 			} else {
+				// A fresh reply that plays live supersedes any older buffered
+				// response for the same session; drop the stale buffer and its
+				// pending indicator so we don't leave a phantom indicator behind.
+				if (e.isFirstChunk && e.codingSessionId && this._deferredResponses.has(e.codingSessionId)) {
+					this._deferredResponses.delete(e.codingSessionId);
+					this._markPendingResponse(e.codingSessionId, false);
+				}
 				this._enqueueAudio(e.codingSessionId, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
+				if (e.isFinal) {
+					this._liveReplyKey = undefined;
+				}
 			}
 			// On the final chunk we have the complete assistant transcript to persist.
 			if (e.isFinal && e.transcript) {
@@ -1196,6 +1214,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._isProcessingQueue = false;
 		this._suppressIncomingAudio = false;
 		this._clearDeferredResponses();
+		this._liveReplyKey = undefined;
 		this._prevSessionStates.clear();
 		for (const t of this._userCancelledSessions.values()) { clearTimeout(t); }
 		this._userCancelledSessions.clear();
@@ -2037,22 +2056,61 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	/**
-	 * A response should be deferred when it targets a specific session that
-	 * isn't the one currently focused. Once we start deferring a response we
-	 * keep buffering its remaining chunks so a whole response stays together.
+	 * A response should be deferred when it is a proactive narration targeting a
+	 * specific session that isn't the one currently focused. Two responses must
+	 * NEVER be deferred, no matter which coding session they reference:
+	 *
+	 *  1. A direct reply to the user's own utterance. `_awaitingReplyAudio` is
+	 *     true from the moment the user sends a command/question until its reply
+	 *     audio arrives. Deferring it would swallow the answer the user just
+	 *     asked for (e.g. "what is session B doing?" while looking at session A).
+	 *  2. Untagged audio we can't attribute to a session (chit-chat, greetings).
+	 *
+	 * The decision is made on the first chunk and recorded in `_liveReplyKey`;
+	 * remaining chunks follow the same decision so a response is never split
+	 * between playback and the deferred buffer.
 	 */
-	private _shouldDeferResponse(sessionId: string | undefined): boolean {
+	private _shouldDeferResponse(sessionId: string | undefined, isFirstChunk: boolean): boolean {
+		const key = sessionId ?? '';
+		if (isFirstChunk) {
+			// A direct reply to the user's own utterance always plays.
+			if (this._awaitingReplyAudio) {
+				this._liveReplyKey = key;
+				return false;
+			}
+			// Untagged proactive audio can't be attributed to a session — play it.
+			if (!sessionId) {
+				this._liveReplyKey = key;
+				return false;
+			}
+			// Proactive narration for a specific session: defer unless it's the
+			// one the user is currently looking at. Read the live focus so a stale
+			// cache can't misroute the decision (e.g. when the focus event was
+			// missed while voice was busy).
+			const focused = this._getFocusedSessionId();
+			this._focusedSessionId = focused;
+			if (focused === sessionId) {
+				this._liveReplyKey = key;
+				return false;
+			}
+			this._liveReplyKey = undefined;
+			return true;
+		}
+
+		// Continuation chunk: stay consistent with how this response started.
+		if (this._deferredResponses.has(key)) {
+			return true;
+		}
+		if (this._liveReplyKey === key) {
+			return false;
+		}
+		// Continuation whose first chunk we never observed: fall back to focus.
 		if (!sessionId) {
 			return false;
 		}
-		if (this._deferredResponses.has(sessionId)) {
-			return true;
-		}
-		// Refresh from the live focus so a stale cache can't misroute the
-		// decision (e.g. when the focus event was missed while voice was busy).
 		const focused = this._getFocusedSessionId();
 		this._focusedSessionId = focused;
-		return focused !== undefined && focused !== sessionId;
+		return focused !== sessionId;
 	}
 
 	private _deferResponse(sessionId: string, audio: string, isFirstChunk: boolean, isFinal: boolean, transcript: string | undefined): void {
