@@ -695,6 +695,10 @@ const configuration: IConfigurationNode = {
 					...announcementFeatureBase,
 				},
 			},
+			'default': {
+				'sound': 'on',
+				'announcement': 'auto'
+			}
 		},
 		'accessibility.signals.clear': {
 			...signalFeatureBase,

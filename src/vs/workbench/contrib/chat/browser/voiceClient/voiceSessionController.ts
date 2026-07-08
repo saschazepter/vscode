@@ -9,6 +9,7 @@ import { disposableWindowInterval } from '../../../../../base/browser/dom.js';
 import { disposableTimeout } from '../../../../../base/common/async.js';
 import { CancellationTokenSource } from '../../../../../base/common/cancellation.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { isEqual } from '../../../../../base/common/resources.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
 import { InstantiationType, registerSingleton } from '../../../../../platform/instantiation/common/extensions.js';
@@ -1960,30 +1961,63 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 	/** Play the buffered response for a session that just became focused. */
 	private _flushDeferredResponse(sessionId: string): void {
-		const buffer = this._deferredResponses.get(sessionId);
-		this._deferredResponses.delete(sessionId);
-		this._markPendingResponse(sessionId, false);
+		// Match the buffered key robustly: try the exact string first, then fall
+		// back to URI equality so a trivial serialization difference between the
+		// backend's coding_session_id and the focused widget's sessionResource
+		// can't strand the response (which would leave it stuck as idle with a
+		// pending indicator and no playback).
+		let key: string | undefined = this._deferredResponses.has(sessionId) ? sessionId : undefined;
+		if (!key && this._deferredResponses.size > 0) {
+			let focusedUri: URI | undefined;
+			try { focusedUri = URI.parse(sessionId); } catch { focusedUri = undefined; }
+			if (focusedUri) {
+				for (const candidate of this._deferredResponses.keys()) {
+					try {
+						if (isEqual(URI.parse(candidate), focusedUri)) { key = candidate; break; }
+					} catch { /* ignore unparseable keys */ }
+				}
+			}
+		}
+		if (!key) {
+			if (this._deferredResponses.size > 0) {
+				this.logService.info(`[voice] no buffered response matches focused=${sessionId}; pending keys=[${[...this._deferredResponses.keys()].join(', ')}]`);
+			}
+			return;
+		}
+
+		const buffer = this._deferredResponses.get(key);
+		this._deferredResponses.delete(key);
+		this._markPendingResponse(key, false);
 		if (!buffer || buffer.length === 0) {
 			return;
 		}
-		this.logService.info(`[voice] flushing ${buffer.length} buffered chunk(s) for now-focused session=${sessionId}`);
+		this.logService.info(`[voice] flushing ${buffer.length} buffered chunk(s) for now-focused session=${key}`);
 
-		// Clear any speculative auto-listen that engaged while the response was
-		// held; otherwise the controller can sit in listening mode and the
-		// buffered audio is suppressed instead of played. Also drop the incoming
-		// suppression flag so the first buffered chunk isn't discarded.
+		// Exit any active listening / auto-listen so playback can take over.
+		// If we don't, the controller can sit in listening and the buffered
+		// audio is suppressed instead of played (leaving the user stuck).
 		this._clearAutoListenTimer();
+		this._autoListenSuppressed = false;
+		if (this._pttHeld) {
+			this._finishPtt('auto');
+		}
+		this._pttToggleMode = false;
+		this._pttHeld = false;
 		this._suppressIncomingAudio = false;
 
-		// If the playback slot is stale (nothing is actually playing) reset it so
+		// Force-reset the playback slot when nothing is actually playing so
 		// `_enqueueAudio` can claim it and drive the state machine to 'speaking'.
-		if (!this.ttsPlaybackService.isPlaying && this._audioQueue.length === 0) {
+		// (`undefined` from a prior generic response is NOT `null`, so an
+		// explicit reset is required - otherwise the fast-path is skipped and
+		// the queue never processes.)
+		if (!this.ttsPlaybackService.isPlaying) {
+			this._audioQueue.length = 0;
 			this._currentPlaybackSessionId = null;
 			this._isProcessingQueue = false;
 		}
 
 		for (const chunk of buffer) {
-			this._enqueueAudio(sessionId, chunk.audio, chunk.isFirstChunk, chunk.isFinal, chunk.transcript);
+			this._enqueueAudio(key, chunk.audio, chunk.isFirstChunk, chunk.isFinal, chunk.transcript);
 		}
 	}
 
@@ -2215,11 +2249,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private _checkSessionStateChanges(): void {
 		// Safety net: if the focus-change event was missed while voice was busy,
 		// flush any buffered response for the session now shown to the user so it
-		// never stays stuck as a pending indicator with no playback.
+		// never stays stuck as a pending indicator with no playback. The flush
+		// itself matches the buffered key robustly (exact + URI equality).
 		if (this._deferredResponses.size > 0) {
 			const focused = this._getFocusedSessionId();
-			if (focused && this._deferredResponses.has(focused)) {
-				this.logService.info(`[voice] flushing deferred response via safety-net for focused=${focused}`);
+			if (focused) {
 				this._flushDeferredResponse(focused);
 			}
 		}
