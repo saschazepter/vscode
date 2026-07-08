@@ -52,6 +52,9 @@ const listSessionsInputSchema: ToolDefinition['inputSchema'] = {
 		},
 		workspace: { type: 'string', description: 'Only return sessions whose working directory is this folder — an absolute path or a workspace URI.' },
 		withChanges: { type: 'boolean', description: 'When true, only return sessions that have pending worktree changes.' },
+		unread: { type: 'boolean', description: 'When true, only return sessions with updates the user has not seen yet.' },
+		withPullRequest: { type: 'boolean', description: 'When true, only return sessions that have a linked GitHub pull request.' },
+		includeArchived: { type: 'boolean', description: 'Whether to include archived sessions. Defaults to true; set false to omit archived sessions.' },
 	},
 };
 
@@ -94,7 +97,7 @@ export const sessionServerToolDefinitions: ToolDefinition[] = [
 	{
 		name: listSessionsToolName,
 		title: 'List Sessions',
-		description: 'List Agent Host sessions and their compact metadata (status, working directory, worktree changes, title). Optionally filter by `status`, `workspace`, or `withChanges`.',
+		description: 'List Agent Host sessions and their compact metadata (status, activity, working directory, project, worktree changes, git/GitHub info). Optionally filter by `status`, `workspace`, `withChanges`, `unread`, `withPullRequest`, or `includeArchived`.',
 		inputSchema: listSessionsInputSchema,
 		annotations: { readOnlyHint: true },
 	},
@@ -292,11 +295,24 @@ export interface IListSessionsArgs {
 	readonly status?: ReadonlySet<string>;
 	readonly workspace?: string;
 	readonly withChanges?: boolean;
+	readonly unread?: boolean;
+	readonly withPullRequest?: boolean;
+	readonly includeArchived?: boolean;
+}
+
+function getOptionalBoolean(value: unknown, field: string, toolName: string): boolean | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	if (typeof value !== 'boolean') {
+		throw new Error(`Invalid ${toolName} input: ${field} must be a boolean.`);
+	}
+	return value;
 }
 
 /** Validates and normalizes the optional `list_sessions` filter arguments. */
 export function getListSessionsArgs(rawArgs: unknown): IListSessionsArgs {
-	const args = (rawArgs ?? {}) as { status?: unknown; workspace?: unknown; withChanges?: unknown };
+	const args = (rawArgs ?? {}) as { status?: unknown; workspace?: unknown; withChanges?: unknown; unread?: unknown; withPullRequest?: unknown; includeArchived?: unknown };
 
 	let status: Set<string> | undefined;
 	if (args.status !== undefined) {
@@ -310,21 +326,25 @@ export function getListSessionsArgs(rawArgs: unknown): IListSessionsArgs {
 		status = new Set(args.status as string[]);
 	}
 
-	let withChanges: boolean | undefined;
-	if (args.withChanges !== undefined) {
-		if (typeof args.withChanges !== 'boolean') {
-			throw new Error(`Invalid ${listSessionsToolName} input: withChanges must be a boolean.`);
-		}
-		withChanges = args.withChanges;
-	}
-
-	return { status, workspace: getOptionalString(args.workspace, 'workspace', listSessionsToolName), withChanges };
+	return {
+		status,
+		workspace: getOptionalString(args.workspace, 'workspace', listSessionsToolName),
+		withChanges: getOptionalBoolean(args.withChanges, 'withChanges', listSessionsToolName),
+		unread: getOptionalBoolean(args.unread, 'unread', listSessionsToolName),
+		withPullRequest: getOptionalBoolean(args.withPullRequest, 'withPullRequest', listSessionsToolName),
+		includeArchived: getOptionalBoolean(args.includeArchived, 'includeArchived', listSessionsToolName),
+	};
 }
 
 /** Whether a session has any pending worktree changes (insertions, deletions, or changed files). */
 function sessionHasChanges(session: IAgentSessionMetadata): boolean {
 	const changes = session.changes;
 	return !!changes && ((changes.files ?? 0) > 0 || (changes.additions ?? 0) > 0 || (changes.deletions ?? 0) > 0);
+}
+
+/** Whether a session is archived (either the metadata flag or the status bit). */
+function sessionIsArchived(session: IAgentSessionMetadata): boolean {
+	return session.isArchived === true || (session.status !== undefined && (session.status & SessionStatus.IsArchived) !== 0);
 }
 
 /** Whether a session's working directory matches the given folder (absolute path or URI). */
@@ -342,9 +362,6 @@ function sessionMatchesWorkspace(session: IAgentSessionMetadata, workspace: stri
 
 /** Applies the {@link IListSessionsArgs} filters to a set of sessions. */
 export function filterSessions(sessions: readonly IAgentSessionMetadata[], args: IListSessionsArgs): readonly IAgentSessionMetadata[] {
-	if (!args.status && args.workspace === undefined && args.withChanges === undefined) {
-		return sessions;
-	}
 	return sessions.filter(session => {
 		if (args.status) {
 			const names = session.status !== undefined ? describeSessionStatus(session.status).split(',') : [];
@@ -356,6 +373,15 @@ export function filterSessions(sessions: readonly IAgentSessionMetadata[], args:
 			return false;
 		}
 		if (args.withChanges && !sessionHasChanges(session)) {
+			return false;
+		}
+		if (args.unread && session.isRead !== false) {
+			return false;
+		}
+		if (args.withPullRequest && !readSessionGitHubState(session._meta)?.pullRequestUrl) {
+			return false;
+		}
+		if (args.includeArchived === false && sessionIsArchived(session)) {
 			return false;
 		}
 		return true;

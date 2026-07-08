@@ -164,9 +164,11 @@ suite('SessionServerTools', () => {
 		const stateManager = store.add(new AgentHostStateManager(new NullLogService()));
 		const other = URI.parse('file:///workspace/other');
 		const idle = { ...sessionMeta('idle', SessionStatus.Idle, workspace), changes: { files: 2, additions: 5, deletions: 1 } };
-		const needsInput = sessionMeta('needsInput', SessionStatus.InputNeeded, workspace);
+		const needsInput = { ...sessionMeta('needsInput', SessionStatus.InputNeeded, workspace), isRead: false };
 		const elsewhere = sessionMeta('elsewhere', SessionStatus.Idle, other);
-		const sessions = [idle, needsInput, elsewhere];
+		const archived = { ...sessionMeta('archived', SessionStatus.Idle, workspace), isArchived: true };
+		const withPr = { ...sessionMeta('withPr', SessionStatus.Idle, workspace), _meta: withSessionGitHubState(undefined, { pullRequestUrl: 'https://github.com/o/r/pull/2' }) };
+		const sessions = [idle, needsInput, elsewhere, archived, withPr];
 		const group = createSessionServerToolGroup(createAccessor({ listSessions: async () => sessions }));
 
 		const ids = async (args: object) => JSON.parse(await group.execute(stateManager, 'copilot:/caller', listSessionsToolName, args)).sessions.map((s: { session: string }) => s.session);
@@ -175,22 +177,29 @@ suite('SessionServerTools', () => {
 			byStatus: await ids({ status: ['inputNeeded'] }),
 			byWorkspace: await ids({ workspace: workspace.toString() }),
 			withChanges: await ids({ withChanges: true }),
+			unread: await ids({ unread: true }),
+			withPullRequest: await ids({ withPullRequest: true }),
+			noArchived: await ids({ includeArchived: false }),
 			combined: await ids({ status: ['idle'], workspace: workspace.toString(), withChanges: true }),
 			all: await ids({}),
 		}, {
 			byStatus: ['copilot:/needsInput'],
-			byWorkspace: ['copilot:/idle', 'copilot:/needsInput'],
+			byWorkspace: ['copilot:/idle', 'copilot:/needsInput', 'copilot:/archived', 'copilot:/withPr'],
 			withChanges: ['copilot:/idle'],
+			unread: ['copilot:/needsInput'],
+			withPullRequest: ['copilot:/withPr'],
+			noArchived: ['copilot:/idle', 'copilot:/needsInput', 'copilot:/elsewhere', 'copilot:/withPr'],
 			combined: ['copilot:/idle'],
-			all: ['copilot:/idle', 'copilot:/needsInput', 'copilot:/elsewhere'],
+			all: ['copilot:/idle', 'copilot:/needsInput', 'copilot:/elsewhere', 'copilot:/archived', 'copilot:/withPr'],
 		});
 		store.dispose();
 	});
 
 	test('getListSessionsArgs validates filter input', () => {
-		assert.deepStrictEqual(getListSessionsArgs({}), { status: undefined, workspace: undefined, withChanges: undefined });
+		assert.deepStrictEqual(getListSessionsArgs({}), { status: undefined, workspace: undefined, withChanges: undefined, unread: undefined, withPullRequest: undefined, includeArchived: undefined });
 		assert.throws(() => getListSessionsArgs({ status: ['bogus'] }), /status/);
 		assert.throws(() => getListSessionsArgs({ withChanges: 'yes' }), /withChanges/);
+		assert.throws(() => getListSessionsArgs({ includeArchived: 'no' }), /includeArchived/);
 		assert.strictEqual(filterSessions([sessionMeta('s1', SessionStatus.Idle, workspace)], getListSessionsArgs({})).length, 1);
 	});
 
