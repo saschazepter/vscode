@@ -3,11 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { $, addDisposableListener, append, clearNode, EventType, getWindow } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, append, clearNode, EventType, getWindow, scheduleAtNextAnimationFrame } from '../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
-import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { PromptTimelineCard } from './promptTimelineCard.js';
 import { IPromptScrollLayout, PromptFileDiff, PromptTick } from './promptTimelineModel.js';
@@ -39,6 +39,8 @@ export class PromptTimelineRulerRail extends Disposable implements IPromptTimeli
 	private readonly _card: PromptTimelineCard;
 	private readonly _markDisposables = this._register(new DisposableStore());
 	private readonly _marks: IMarkEntry[] = [];
+	/** Delays enabling the glide until after a structural rebuild's first layout, so freshly created marks don't slide in from the top. */
+	private readonly _glideEnabler = this._register(new MutableDisposable());
 
 	private _activeRequestId: string | undefined;
 	private _layout: IPromptScrollLayout | undefined;
@@ -99,6 +101,10 @@ export class PromptTimelineRulerRail extends Disposable implements IPromptTimeli
 		this._marks.length = 0;
 		clearNode(this._marksContainer);
 		this._card.hide();
+		// New buttons start at top:0; disable the glide so they don't animate from
+		// the top into place, then re-enable it after this layout so later drift glides.
+		this._marksContainer.classList.remove('glide');
+		this._glideEnabler.clear();
 
 		for (const tick of ticks) {
 			const button = append(this._marksContainer, $<HTMLButtonElement>('button.prompt-timeline-ruler-mark'));
@@ -120,6 +126,8 @@ export class PromptTimelineRulerRail extends Disposable implements IPromptTimeli
 		this._updateTabStops(activeIndex >= 0 ? activeIndex : 0);
 		this._updateActiveClasses();
 		this._relayout();
+		// Marks are now positioned; enable the glide for subsequent (drift) relayouts.
+		this._glideEnabler.value = scheduleAtNextAnimationFrame(getWindow(this._domNode), () => this._marksContainer.classList.add('glide'));
 	}
 
 	/** Roving tabindex: exactly one mark is tabbable so the toolbar is a single Tab stop. */
@@ -213,11 +221,14 @@ export class PromptTimelineRulerRail extends Disposable implements IPromptTimeli
 			// The button is a >=24px hit target centered on the mark's compressed position.
 			entry.button.style.top = `${top * scale - MIN_TARGET / 2}px`;
 		}
-		// The thumb reuses the scrollbar slider: its span is the visible viewport,
-		// approximated by the rail height (the rail overlays the transcript viewport).
+		// The thumb mirrors the native scrollbar, so it uses the list's own space
+		// (scrollTop/scrollHeight) rather than the marks' estimated space; otherwise
+		// the two would separate while heights are still settling and look like two
+		// scrollbars. Its span approximates the viewport as the rail height.
+		const scrollHeight = layout.scrollHeight > 0 ? layout.scrollHeight : layout.total;
 		this._thumb.classList.remove('hidden');
-		this._thumb.style.top = `${(layout.scrollTop / layout.total) * height}px`;
-		this._thumb.style.height = `${Math.max(20, (height / layout.total) * height)}px`;
+		this._thumb.style.top = `${(layout.scrollTop / scrollHeight) * height}px`;
+		this._thumb.style.height = `${Math.max(20, (height / scrollHeight) * height)}px`;
 	}
 
 	private _updateActiveClasses(): void {

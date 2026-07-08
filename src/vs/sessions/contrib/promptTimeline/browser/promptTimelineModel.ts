@@ -16,9 +16,10 @@ import { MultiDiffEditorInput } from '../../../../workbench/contrib/multiDiffEdi
 import { MultiDiffEditorItem } from '../../../../workbench/contrib/multiDiffEditor/browser/multiDiffSourceResolverService.js';
 import { IMultiDiffEditorOptions } from '../../../../editor/browser/widget/multiDiffEditor/multiDiffEditorWidgetImpl.js';
 import { ChatWidget } from '../../../../workbench/contrib/chat/browser/widget/chatWidget.js';
+import { ChatTreeItem } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { IChatResponseFileChangesService } from '../../../../workbench/contrib/chat/browser/chatResponseFileChangesService.js';
 import { IChatEditingService, IEditSessionEntryDiff } from '../../../../workbench/contrib/chat/common/editing/chatEditingService.js';
-import { isRequestVM } from '../../../../workbench/contrib/chat/common/model/chatViewModel.js';
+import { isRequestVM, isResponseVM } from '../../../../workbench/contrib/chat/common/model/chatViewModel.js';
 import { budgetBucketPrompts, MAX_TICKS, PromptItem } from './promptBucketing.js';
 
 /** Aggregated diff stats for the edits a prompt (or bucket) produced. */
@@ -42,12 +43,14 @@ export interface PromptFileDiff {
 
 /** Content-space layout used by the overview-ruler rail to place marks + the viewport thumb. */
 export interface IPromptScrollLayout {
-	/** Each prompt's top offset in transcript content pixels. */
+	/** Each prompt's top offset in the rail's estimated content space. */
 	readonly marks: readonly { readonly requestId: string; readonly top: number }[];
-	/** Total transcript content height in pixels. */
+	/** Total content height in the estimated space, matching `marks` (used to place marks). */
 	readonly total: number;
-	/** Current scroll offset in content pixels. */
+	/** Current scroll offset in the list's own space (used to place the thumb over the native scrollbar). */
 	readonly scrollTop: number;
+	/** Total content height in the list's own space, matching `scrollTop` (used to size the thumb). */
+	readonly scrollHeight: number;
 }
 
 /** A single tick shown on the prompt timeline rail. */
@@ -69,6 +72,23 @@ export interface PromptTick {
 }
 
 const MAX_PREVIEW_LENGTH = 80;
+
+/** Kinds of transcript row, bucketed for height estimation (prompts are short, responses tall). */
+type PromptItemKind = 'request' | 'response' | 'other';
+
+/** Rough seed heights (px) used until we have a measured row of each kind to average. */
+const HEIGHT_PRIORS: Record<PromptItemKind, number> = { request: 52, response: 180, other: 40 };
+
+/** Classifies a transcript item for per-kind height estimation. */
+function itemKind(item: ChatTreeItem): PromptItemKind {
+	if (isRequestVM(item)) {
+		return 'request';
+	}
+	if (isResponseVM(item)) {
+		return 'response';
+	}
+	return 'other';
+}
 
 /** First non-empty line of a prompt, trimmed and length-capped for previews. */
 function getPromptPreview(text: string): string {
@@ -174,28 +194,71 @@ export class PromptTimelineModel extends Disposable {
 	}
 
 	/**
-	 * The prompts' positions in transcript content space, for the overview-ruler
-	 * rail. Each prompt's top comes from the chat list's layout height model
-	 * (`ChatWidget.getElementTop`), the same virtualization-safe source the
-	 * scrollbar uses, so off-screen prompts get correct positions without waiting
-	 * for their rows to render. Marks, `total`, and `scrollTop` all share the
-	 * list's content-pixel space, so the viewport thumb stays aligned.
+	 * The prompts' positions for the overview-ruler rail. The *marks* live in an
+	 * *estimated* content space that stays stable while the transcript virtualizes;
+	 * the *thumb* stays in the list's own space so it coincides with the native
+	 * scrollbar (otherwise you'd see two offset sliders).
+	 *
+	 * The chat list's own height model (`getElementTop`/`scrollHeight`) guesses
+	 * every un-rendered row at one flat default height (200px). Real turns are
+	 * nothing like flat — prompts are short, responses tall and variable — so as
+	 * rows render and get measured the list's tops snap around, dragging the marks
+	 * with them (the "scroll jitter"). For the marks we instead build our own
+	 * heights: measured rows use their real `currentRenderedHeight`; un-measured
+	 * rows use a running average of measured heights *of the same kind* (prompt vs
+	 * response), which is far closer to the truth than a single flat guess, so marks
+	 * land near their final spot immediately and barely drift. Once every row is
+	 * measured this estimate equals the list's real layout, so marks and thumb
+	 * converge exactly.
 	 */
 	getScrollLayout(): IPromptScrollLayout | undefined {
+		const layout = this._computeAdaptiveLayout();
+		if (!layout) {
+			return undefined;
+		}
+		const { items, tops, total } = layout;
+		const marks: { requestId: string; top: number }[] = [];
+		for (let i = 0; i < items.length; i++) {
+			const item = items[i];
+			if (isRequestVM(item)) {
+				marks.push({ requestId: item.id, top: tops[i] });
+			}
+		}
+		return { marks, total, scrollTop: this.widget.scrollTop, scrollHeight: this.widget.scrollHeight };
+	}
+
+	/**
+	 * Builds a per-item content-height model for the marks. Measured rows
+	 * contribute their real rendered height; un-measured rows get the running
+	 * average of measured heights of their kind (seeded with rough priors until
+	 * any are measured).
+	 */
+	private _computeAdaptiveLayout(): { items: readonly ChatTreeItem[]; tops: number[]; total: number } | undefined {
 		const items = this.widget.viewModel?.getItems();
 		if (!items) {
 			return undefined;
 		}
-		const marks: { requestId: string; top: number }[] = [];
+
+		const sums: Record<PromptItemKind, number> = { request: 0, response: 0, other: 0 };
+		const counts: Record<PromptItemKind, number> = { request: 0, response: 0, other: 0 };
 		for (const item of items) {
-			if (isRequestVM(item)) {
-				const top = this.widget.getElementTop(item);
-				if (top !== undefined) {
-					marks.push({ requestId: item.id, top });
-				}
+			const measured = item.currentRenderedHeight;
+			if (measured !== undefined && measured > 0) {
+				const kind = itemKind(item);
+				sums[kind] += measured;
+				counts[kind]++;
 			}
 		}
-		return { marks, total: this.widget.scrollHeight, scrollTop: this.widget.scrollTop };
+		const estimateFor = (kind: PromptItemKind): number => counts[kind] > 0 ? sums[kind] / counts[kind] : HEIGHT_PRIORS[kind];
+
+		const tops: number[] = [];
+		let acc = 0;
+		for (const item of items) {
+			tops.push(acc);
+			const measured = item.currentRenderedHeight;
+			acc += (measured !== undefined && measured > 0) ? measured : estimateFor(itemKind(item));
+		}
+		return { items, tops, total: acc };
 	}
 
 	private _bindViewModel(): void {

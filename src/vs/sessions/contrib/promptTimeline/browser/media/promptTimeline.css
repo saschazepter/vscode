@@ -186,6 +186,17 @@
 	display: none;
 }
 
+/* Glide any residual drift (marks correct as rows measure) once the initial layout is in place. Enabled by JS after a structural rebuild so new marks don't slide in. */
+.prompt-timeline-ruler-marks.glide .prompt-timeline-ruler-mark {
+	transition: top 200ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.prompt-timeline-ruler-marks.glide .prompt-timeline-ruler-mark {
+		transition: none;
+	}
+}
+
 /* The visible mark: a short bar, neutral unless the turn changed code. */
 .prompt-timeline-ruler-bar {
 	display: flex;
@@ -230,11 +241,16 @@
 	background-color: transparent;
 }
 
-.prompt-timeline-rail .prompt-timeline-ruler-mark:focus {
+.prompt-timeline-rail .prompt-timeline-ruler-mark:focus,
+.prompt-timeline-rail .prompt-timeline-ruler-mark:focus-visible {
 	outline: none;
 }
 
+/* Keyboard focus: grow the mark to a clean rounded pill and hug it with a focus ring (a bare outline on the 2px bar looked like a boxy floating rectangle). */
 .prompt-timeline-rail .prompt-timeline-ruler-mark:focus-visible .prompt-timeline-ruler-bar {
+	width: 16px;
+	height: 4px;
+	border-radius: 2px;
 	outline: 1px solid var(--vscode-focusBorder);
 	outline-offset: 2px;
 }
