@@ -309,6 +309,27 @@
 				white-space: nowrap;
 			}
 		}
+
+		/*
+		 * When a row hosts the ask-questions carousel widget it needs the full
+		 * width and its own (widget-managed) vertical layout, so switch the row
+		 * from the horizontal label + button flex to a single-column block.
+		 */
+		&.has-carousel {
+			display: none;
+			flex-direction: column;
+			align-items: stretch;
+			gap: 0;
+
+			&.visible {
+				display: flex;
+			}
+
+			.session-approval-carousel {
+				min-width: 0;
+				width: 100%;
+			}
+		}
 	}
 }
 

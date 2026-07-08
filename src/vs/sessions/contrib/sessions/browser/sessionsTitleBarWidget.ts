@@ -356,9 +356,90 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 	}
 
 	/**
-	 * Render the requires-input pill. Clicking toggles a dropdown that lists the
-	 * blocked sessions below the command center box.
+	 * Whether a blocked session should stay hidden because the user just approved
+	 * its pending action: hidden while that approval resolves (no current approval,
+	 * status lagging) or is unchanged; a new, distinct approval re-surfaces it.
 	 */
+	private _isApprovalDismissed(blocked: IBlockedSession, dismissed: ReadonlyMap<string, string>, reader: IReader): boolean {
+		const dismissedId = dismissed.get(blocked.session.sessionId);
+		if (dismissedId === undefined || blocked.reason !== BlockedSessionReason.NeedsInput) {
+			return false;
+		}
+		const approval = getFirstApprovalAcrossChats(this._approvalModel, blocked.session, reader);
+		return approval === undefined || agentSessionApprovalId(approval) === dismissedId;
+	}
+
+	/**
+	 * Remember that the user allowed this exact approval so the session drops out of
+	 * the blocked set immediately (see {@link _isApprovalDismissed}).
+	 */
+	private _dismissApproval(approved: IApprovedSession): void {
+		const next = new Map(this._dismissedApprovals.get());
+		next.set(approved.session.sessionId, approved.approvalId);
+		this._dismissedApprovals.set(next, undefined);
+	}
+
+	/**
+	 * Classify a single blocked session into a specific requires-input kind, or
+	 * `undefined` when it can't be classified (which forces the generic message).
+	 */
+	private _kindOf(blocked: IBlockedSession, reader: IReader): RequiresInputKind | undefined {
+		switch (blocked.reason) {
+			case BlockedSessionReason.FailingCI:
+				return RequiresInputKind.FailingCI;
+			case BlockedSessionReason.UnresolvedComments:
+				return RequiresInputKind.UnresolvedComments;
+			case BlockedSessionReason.NeedsInput: {
+				const approval = getFirstApprovalAcrossChats(this._approvalModel, blocked.session, reader);
+				switch (approval?.kind) {
+					case AgentSessionApprovalKind.Terminal:
+						return RequiresInputKind.TerminalApproval;
+					case AgentSessionApprovalKind.Question:
+					case AgentSessionApprovalKind.QuestionCarousel:
+						return RequiresInputKind.Question;
+					default:
+						return undefined;
+				}
+			}
+			default:
+				return undefined;
+		}
+	}
+
+	/**
+	 * Build the requires-input pill label. A homogeneous set of blocked sessions
+	 * gets a specific, more actionable message; a mix (or an unclassified session)
+	 * falls back to the generic "N sessions require input".
+	 */
+	private _getRequiresInputLabel(count: number, kind: RequiresInputKind | undefined): string {
+		switch (kind) {
+			case RequiresInputKind.TerminalApproval:
+				return count === 1
+					? localize('oneSessionTerminalApproval', "1 session requires terminal approval")
+					: localize('nSessionsTerminalApproval', "{0} sessions require terminal approval", count);
+			case RequiresInputKind.Question:
+				return count === 1
+					? localize('oneSessionQuestion', "1 session has a question")
+					: localize('nSessionsQuestion', "{0} sessions have questions", count);
+			case RequiresInputKind.FailingCI:
+				return count === 1
+					? localize('oneSessionFailingCI', "1 session is failing CI")
+					: localize('nSessionsFailingCI', "{0} sessions are failing CI", count);
+			case RequiresInputKind.UnresolvedComments:
+				return count === 1
+					? localize('oneSessionUnresolvedComments', "1 session has unresolved comments")
+					: localize('nSessionsUnresolvedComments', "{0} sessions have unresolved comments", count);
+			default:
+				return count === 1
+					? localize('oneSessionRequiresInput', "1 session requires input")
+					: localize('nSessionsRequireInput', "{0} sessions require input", count);
+		}
+}
+
+/**
+ * Render the requires-input pill. Clicking toggles a dropdown that lists the
+ * blocked sessions below the command center box.
+ */
 	private _renderRequiresInput(count: number, kind: RequiresInputKind | undefined, shouldBlink: boolean): void {
 		const container = this._container!;
 		const label = this._blockedIndicator.getRequiresInputLabel(count, kind);

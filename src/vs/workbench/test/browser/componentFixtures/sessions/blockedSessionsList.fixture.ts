@@ -27,8 +27,9 @@ import { ISessionsListModelService } from '../../../../../sessions/services/sess
 import { ISessionsProvidersService } from '../../../../../sessions/services/sessions/browser/sessionsProvidersService.js';
 // eslint-disable-next-line local/code-import-patterns
 import { BlockedSessionsList } from '../../../../../sessions/contrib/sessions/browser/blockedSessionsList.js';
-import { IChatService } from '../../../../contrib/chat/common/chatService/chatService.js';
+import { IChatService, IChatQuestion, IChatQuestionCarousel } from '../../../../contrib/chat/common/chatService/chatService.js';
 import { IChatModel } from '../../../../contrib/chat/common/model/chatModel.js';
+import { ITerminalChatService } from '../../../../contrib/terminal/browser/terminal.js';
 import { IAgentSessionsService } from '../../../../contrib/chat/browser/agentSessions/agentSessionsService.js';
 import { IAgentSession, IAgentSessionsModel } from '../../../../contrib/chat/browser/agentSessions/agentSessionsModel.js';
 import { AgentSessionApprovalKind, AgentSessionApprovalModel, IAgentSessionApprovalInfo } from '../../../../contrib/chat/browser/agentSessions/agentSessionApprovalModel.js';
@@ -89,6 +90,8 @@ interface IBlockedSessionOptions {
 	changesSummary?: ISessionChangesSummary;
 	/** A terminal command awaiting approval; renders an approval row with an Allow button. */
 	approvalCommand?: string;
+	/** A pending ask-questions carousel; renders the question widget inline in the row. */
+	questionCarousel?: IChatQuestionCarousel;
 }
 
 function createBlockedSession(options: IBlockedSessionOptions, approvals?: Map<string, IAgentSessionApprovalInfo>): ISession {
@@ -98,15 +101,30 @@ function createBlockedSession(options: IBlockedSessionOptions, approvals?: Map<s
 	// A session awaiting a tool approval carries a chat whose resource the (mock)
 	// approval model keys the pending approval on.
 	let chats: readonly IChat[] = [];
-	if (options.approvalCommand !== undefined && approvals) {
+	if ((options.approvalCommand !== undefined || options.questionCarousel !== undefined) && approvals) {
 		const chatResource = URI.parse(`vscode-chat://chat/${Math.random().toString(36).slice(2)}`);
-		approvals.set(chatResource.toString(), {
-			kind: AgentSessionApprovalKind.Terminal,
-			label: options.approvalCommand,
-			languageId: undefined,
-			since: new Date(),
-			confirm: () => { },
-		});
+		if (options.questionCarousel !== undefined) {
+			const carousel = options.questionCarousel;
+			const firstQuestion = carousel.questions[0];
+			const message = carousel.message ?? firstQuestion?.message ?? firstQuestion?.title ?? '';
+			approvals.set(chatResource.toString(), {
+				kind: AgentSessionApprovalKind.QuestionCarousel,
+				label: typeof message === 'string' ? message : message.value,
+				languageId: undefined,
+				since: new Date(),
+				carousel,
+				confirm: () => { },
+				submitCarousel: () => { },
+			});
+		} else {
+			approvals.set(chatResource.toString(), {
+				kind: AgentSessionApprovalKind.Terminal,
+				label: options.approvalCommand!,
+				languageId: undefined,
+				since: new Date(),
+				confirm: () => { },
+			});
+		}
 		chats = [new class extends mock<IChat>() {
 			override readonly resource = chatResource;
 		}()];
@@ -192,6 +210,49 @@ const unresolvedCommentsPr: IGitHubInfo['pullRequest'] = {
 };
 
 // ============================================================================
+// Question carousels (ask-questions tool)
+// ============================================================================
+
+function createCarousel(questions: IChatQuestion[], allowSkip: boolean = true, message?: string): IChatQuestionCarousel {
+	return { questions, allowSkip, message, kind: 'questionCarousel' };
+}
+
+const textQuestion: IChatQuestion = {
+	id: 'migration-name',
+	type: 'text',
+	title: 'Migration name',
+	message: 'What should the new database migration be called?',
+	defaultValue: 'add-user-roles',
+};
+
+const singleSelectQuestion: IChatQuestion = {
+	id: 'welcome-tone',
+	type: 'singleSelect',
+	title: 'Welcome tone',
+	message: 'Which tone should the onboarding welcome step use?',
+	options: [
+		{ id: 'formal', label: 'Formal - Professional and precise', value: 'formal' },
+		{ id: 'friendly', label: 'Friendly - Warm and conversational', value: 'friendly' },
+		{ id: 'playful', label: 'Playful - Light and informal', value: 'playful' },
+	],
+	defaultValue: 'friendly',
+};
+
+const multiSelectQuestion: IChatQuestion = {
+	id: 'release-targets',
+	type: 'multiSelect',
+	title: 'Release targets',
+	message: 'Which platforms should this release build for?',
+	options: [
+		{ id: 'win', label: 'Windows', value: 'windows' },
+		{ id: 'mac', label: 'macOS', value: 'macos' },
+		{ id: 'linux', label: 'Linux', value: 'linux' },
+		{ id: 'web', label: 'Web', value: 'web' },
+	],
+	defaultValue: ['win', 'mac'],
+};
+
+// ============================================================================
 // Render helper
 // ============================================================================
 
@@ -226,6 +287,10 @@ function renderBlockedList(ctx: ComponentFixtureContext, sessions: readonly ISes
 				override getProviders() { return []; }
 				override getProvider() { return undefined; }
 			}());
+			// Required by `ChatQuestionCarouselPart` (rendered for question approvals).
+			reg.definePartialInstance(ITerminalChatService, {
+				getTerminalInstanceByExecutionId: () => undefined,
+			});
 		},
 	});
 
@@ -339,6 +404,49 @@ export default defineThemedFixtureGroup({ path: 'sessions/' }, {
 				{ title: 'Provision the review environment', status: SessionStatus.NeedsInput, minutesAgo: 7, workspace: createMockWorkspace('vscode', 'infra/review-env'), approvalCommand: 'kubectl apply -f ./deploy/review.yaml --namespace review-pr-4821 && kubectl rollout status deployment/web --namespace review-pr-4821 --timeout=180s && kubectl get pods --namespace review-pr-4821 -o wide' },
 				{ title: 'Format changed files', status: SessionStatus.NeedsInput, minutesAgo: 12, workspace: createMockWorkspace('vscode', 'chore/format'), approvalCommand: 'for f in $(git diff --name-only main); do\n  npx prettier --write "$f"\n  git add "$f"\ndone' },
 				{ title: 'Reset and reinstall', status: SessionStatus.NeedsInput, minutesAgo: 20, workspace: createMockWorkspace('vscode', 'fix/clean-install'), approvalCommand: 'rm -rf node_modules\nrm -f package-lock.json\nnpm cache clean --force\nnpm install\nnpm run test:integration' },
+			]);
+			renderBlockedList(ctx, sessions, approvalModel);
+		},
+	}),
+
+	// A single session whose agent is asking a question — renders the
+	// ask-questions carousel widget inline (single-select).
+	BlockedSessionsList_OneQuestion: defineComponentFixture({
+		render: (ctx) => {
+			const { sessions, approvalModel } = buildApprovalScenario([
+				{ title: 'Update the onboarding walkthrough copy', status: SessionStatus.NeedsInput, minutesAgo: 1, workspace: createMockWorkspace('vscode', 'docs/onboarding'), questionCarousel: createCarousel([singleSelectQuestion]) },
+			]);
+			renderBlockedList(ctx, sessions, approvalModel);
+		},
+	}),
+
+	// A free-text question carousel inline in the row.
+	BlockedSessionsList_TextQuestion: defineComponentFixture({
+		render: (ctx) => {
+			const { sessions, approvalModel } = buildApprovalScenario([
+				{ title: 'Add the user-roles migration', status: SessionStatus.NeedsInput, minutesAgo: 2, workspace: createMockWorkspace('vscode', 'feature/user-roles'), questionCarousel: createCarousel([textQuestion]) },
+			]);
+			renderBlockedList(ctx, sessions, approvalModel);
+		},
+	}),
+
+	// A multi-question carousel (text, single- and multi-select) inline in the row.
+	BlockedSessionsList_MultipleQuestions: defineComponentFixture({
+		render: (ctx) => {
+			const { sessions, approvalModel } = buildApprovalScenario([
+				{ title: 'Prepare the next release', status: SessionStatus.NeedsInput, minutesAgo: 4, workspace: createMockWorkspace('vscode', 'release/next'), questionCarousel: createCarousel([textQuestion, singleSelectQuestion, multiSelectQuestion], true, 'A few details before I prepare the release.') },
+			]);
+			renderBlockedList(ctx, sessions, approvalModel);
+		},
+	}),
+
+	// A terminal approval and a question carousel side by side — both approval
+	// kinds render in the blocked-sessions list.
+	BlockedSessionsList_TerminalAndQuestion: defineComponentFixture({
+		render: (ctx) => {
+			const { sessions, approvalModel } = buildApprovalScenario([
+				{ title: 'Build the production bundle', status: SessionStatus.NeedsInput, minutesAgo: 1, workspace: createMockWorkspace('vscode', 'release/prod-build'), approvalCommand: 'npm run build:prod' },
+				{ title: 'Choose the release targets', status: SessionStatus.NeedsInput, minutesAgo: 3, workspace: createMockWorkspace('vscode', 'release/targets'), questionCarousel: createCarousel([multiSelectQuestion]) },
 			]);
 			renderBlockedList(ctx, sessions, approvalModel);
 		},

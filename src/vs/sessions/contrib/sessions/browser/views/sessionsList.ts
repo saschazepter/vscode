@@ -17,7 +17,7 @@ import { HighlightedLabel } from '../../../../../base/browser/ui/highlightedlabe
 import { createMatches, FuzzyScore, IMatch } from '../../../../../base/common/filters.js';
 import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { MarkdownString } from '../../../../../base/common/htmlContent.js';
-import { IObservable, IReader, autorun, observableSignalFromEvent, observableValue } from '../../../../../base/common/observable.js';
+import { IObservable, IReader, autorun, constObservable, observableSignalFromEvent, observableValue } from '../../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { fromNow } from '../../../../../base/common/date.js';
@@ -38,7 +38,11 @@ import { IStyleOverride, defaultButtonStyles, defaultFindWidgetStyles, defaultIn
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { GITHUB_REMOTE_FILE_SCHEME, ISession, ISessionWorkspace, SessionStatus } from '../../../../services/sessions/common/session.js';
-import { AgentSessionApprovalModel, agentSessionApprovalId, IAgentSessionApprovalInfo } from '../../../../../workbench/contrib/chat/browser/agentSessions/agentSessionApprovalModel.js';
+import { AgentSessionApprovalKind, AgentSessionApprovalModel, agentSessionApprovalId, IAgentSessionApprovalInfo } from '../../../../../workbench/contrib/chat/browser/agentSessions/agentSessionApprovalModel.js';
+import { ChatQuestionCarouselPart } from '../../../../../workbench/contrib/chat/browser/widget/chatContentParts/chatQuestionCarouselPart.js';
+import { IChatContentPartRenderContext } from '../../../../../workbench/contrib/chat/browser/widget/chatContentParts/chatContentParts.js';
+import { IChatQuestionAnswerValue } from '../../../../../workbench/contrib/chat/common/chatService/chatService.js';
+import { IChatRequestViewModel } from '../../../../../workbench/contrib/chat/common/model/chatViewModel.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { IMarkdownRendererService } from '../../../../../platform/markdown/browser/markdownRenderer.js';
 import { Action, ActionRunner, IAction, Separator, SubmenuAction } from '../../../../../base/common/actions.js';
@@ -178,6 +182,29 @@ const FOUR_DAYS_MS = 4 * 24 * 60 * 60 * 1000;
  */
 const DEFAULT_APPROVAL_ROW_MAX_LINES = 3;
 
+/**
+ * Approval kinds shown inline in a session row by default. The ask-questions
+ * tool's structured carousel ({@link AgentSessionApprovalKind.QuestionCarousel})
+ * is intentionally excluded so it only renders in surfaces that explicitly opt
+ * in (the blocked-sessions list), which can host its dedicated widget. Generic
+ * (non-carousel) question and other confirmations still render inline as
+ * before.
+ */
+export const DEFAULT_VISIBLE_APPROVAL_KINDS: readonly AgentSessionApprovalKind[] = [AgentSessionApprovalKind.Terminal, AgentSessionApprovalKind.Question, AgentSessionApprovalKind.Other];
+
+/** Every approval kind — used by surfaces that render all of them (e.g. the blocked-sessions list). */
+export const ALL_VISIBLE_APPROVAL_KINDS: readonly AgentSessionApprovalKind[] = [AgentSessionApprovalKind.Terminal, AgentSessionApprovalKind.Question, AgentSessionApprovalKind.QuestionCarousel, AgentSessionApprovalKind.Other];
+
+/**
+ * Fallback height (px) reserved for a question-carousel approval row before its
+ * widget has been measured. The delegate replaces this with the measured height
+ * once the carousel renders.
+ */
+const APPROVAL_CAROUSEL_ESTIMATE_HEIGHT = 240;
+
+/** Top-margin of the approval row (matches `.session-approval-row` in the CSS), added to the measured carousel height. */
+const APPROVAL_ROW_CAROUSEL_MARGIN = 4;
+
 //#endregion
 
 //#region Tree Delegate
@@ -200,6 +227,8 @@ class SessionsTreeDelegate implements IListVirtualDelegate<SessionListItem> {
 		private readonly _approvalModel: AgentSessionApprovalModel | undefined,
 		private readonly _isPhone: () => boolean,
 		private readonly _approvalRowMaxLines: number = DEFAULT_APPROVAL_ROW_MAX_LINES,
+		private readonly _visibleApprovalKinds: readonly AgentSessionApprovalKind[] = DEFAULT_VISIBLE_APPROVAL_KINDS,
+		private readonly _getMeasuredApprovalHeight: (session: ISession) => number | undefined = () => undefined,
 	) { }
 
 	getHeight(element: SessionListItem): number {
@@ -215,8 +244,10 @@ class SessionsTreeDelegate implements IListVirtualDelegate<SessionListItem> {
 
 		let height = this._isPhone() ? SessionsTreeDelegate.ITEM_HEIGHT_PHONE : SessionsTreeDelegate.ITEM_HEIGHT;
 		if (this._approvalModel) {
-			const approval = getFirstApprovalAcrossChats(this._approvalModel, element as ISession, undefined);
-			if (approval) {
+			const approval = getFirstApprovalAcrossChats(this._approvalModel, element as ISession, undefined, this._visibleApprovalKinds);
+			if (approval?.kind === AgentSessionApprovalKind.QuestionCarousel && approval.carousel) {
+				height += this._getMeasuredApprovalHeight(element as ISession) ?? APPROVAL_CAROUSEL_ESTIMATE_HEIGHT;
+			} else if (approval) {
 				height += SessionItemRenderer.getApprovalRowHeight(approval.label, this._approvalRowMaxLines);
 			}
 		}
@@ -318,8 +349,20 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 	/** Fires when the user approves a session's pending action via its "Allow" button. */
 	readonly onDidApproveSession: Event<IApprovedSession> = this._onDidApproveSession.event;
 
+	/**
+	 * Measured heights (px) of rendered question-carousel approval widgets, keyed
+	 * by session resource. Shared with the tree delegate so it can size rows that
+	 * host the carousel, whose height isn't known ahead of render.
+	 */
+	private readonly _measuredApprovalHeights = new Map<string, number>();
+
+	/** Measured height of a session's carousel approval widget, if one is rendered. */
+	getMeasuredApprovalHeight(session: ISession): number | undefined {
+		return this._measuredApprovalHeights.get(session.resource.toString());
+	}
+
 	constructor(
-		private readonly options: { grouping: () => SessionsGrouping; isPinned: (session: ISession) => boolean; isRead: (session: ISession) => boolean; visibleSessions: IObservable<readonly (IActiveSession | undefined)[]>; getMultiSelectedSessions: (session: ISession) => ISession[]; isInChatsSection: (session: ISession) => boolean; showHover: boolean; approvalRowMaxLines: number; toolbarActions: boolean },
+		private readonly options: { grouping: () => SessionsGrouping; isPinned: (session: ISession) => boolean; isRead: (session: ISession) => boolean; visibleSessions: IObservable<readonly (IActiveSession | undefined)[]>; getMultiSelectedSessions: (session: ISession) => ISession[]; isInChatsSection: (session: ISession) => boolean; showHover: boolean; approvalRowMaxLines: number; toolbarActions: boolean; visibleApprovalKinds: readonly AgentSessionApprovalKind[] },
 		private readonly approvalModel: AgentSessionApprovalModel | undefined,
 		private readonly instantiationService: IInstantiationService,
 		private readonly contextKeyService: IContextKeyService,
@@ -628,67 +671,141 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 		}
 
 		const approvalModel = this.approvalModel;
-		const initialInfo = getFirstApprovalAcrossChats(approvalModel, element, undefined);
-		let wasVisible = !!initialInfo;
-		template.approvalRow.classList.toggle('visible', wasVisible);
+		const visibleKinds = this.options.visibleApprovalKinds;
+		const initialInfo = getFirstApprovalAcrossChats(approvalModel, element, undefined, visibleKinds);
+		let lastHeightKey = this._approvalHeightKey(initialInfo);
+		template.approvalRow.classList.toggle('visible', !!initialInfo);
 
 		const buttonStore = template.elementDisposables.add(new DisposableStore());
 
 		template.elementDisposables.add(autorun(reader => {
 			buttonStore.clear();
+			template.approvalRow.classList.remove('has-carousel');
 
-			const info = getFirstApprovalAcrossChats(approvalModel, element, reader);
-			const visible = !!info;
+			const info = getFirstApprovalAcrossChats(approvalModel, element, reader, visibleKinds);
+			template.approvalRow.classList.toggle('visible', !!info);
 
-			template.approvalRow.classList.toggle('visible', visible);
-
-			if (info) {
-				// Render up to `maxLines` lines as separate code blocks
-				const lines = info.label.split('\n');
-				const maxLines = this.options.approvalRowMaxLines;
-				const visibleLines = lines.slice(0, maxLines);
-				if (lines.length > maxLines) {
-					visibleLines[maxLines - 1] = `${visibleLines[maxLines - 1]} \u2026`;
-				}
-				const langId = info.languageId ?? 'json';
-				const labelContent = new MarkdownString();
-				for (const line of visibleLines) {
-					labelContent.appendCodeblock(langId, line);
-				}
-
-				template.approvalLabel.textContent = '';
-				buttonStore.add(this.markdownRendererService.render(labelContent, {}, template.approvalLabel));
-
-				if (this.options.showHover) {
-					const fullContent = new MarkdownString().appendCodeblock(info.languageId ?? 'json', info.label);
-					buttonStore.add(this.hoverService.setupDelayedHover(template.approvalLabel, {
-						content: fullContent,
-						style: HoverStyle.Pointer,
-						position: { hoverPosition: HoverPosition.BELOW },
-					}));
-				}
-
-				template.approvalButtonContainer.textContent = '';
-				const button = buttonStore.add(new Button(template.approvalButtonContainer, {
-					title: localize('allowActionOnce', "Allow once"),
-					secondary: true,
-					...defaultButtonStyles
-				}));
-				button.label = localize('allowAction', "Allow");
-				buttonStore.add(button.onDidClick(() => {
-					// Capture the approval's identity BEFORE confirming: `confirm()` may
-					// synchronously clear the pending approval, so we can't read it after.
-					const approvalId = agentSessionApprovalId(info);
-					info.confirm();
-					this._onDidApproveSession.fire({ session: element, approvalId });
-				}));
+			if (info && info.kind === AgentSessionApprovalKind.QuestionCarousel && info.carousel) {
+				this.renderApprovalCarousel(element, info, template, buttonStore);
+			} else if (info) {
+				this.renderApprovalCommand(element, info, template, buttonStore);
 			}
 
-			if (wasVisible !== visible) {
-				wasVisible = visible;
+			// Re-layout whenever the row's contribution to its height changes:
+			// visibility toggles, switching between a carousel and a command row,
+			// or a command's line count changing. Carousel rows publish their exact
+			// measured height separately once rendered.
+			const heightKey = this._approvalHeightKey(info);
+			if (heightKey !== lastHeightKey) {
+				lastHeightKey = heightKey;
 				this._onDidChangeItemHeight.fire(element);
 			}
 		}));
+	}
+
+	/** A stable key describing a row's height contribution for a given approval. */
+	private _approvalHeightKey(info: IAgentSessionApprovalInfo | undefined): string {
+		if (!info) {
+			return 'none';
+		}
+		if (info.kind === AgentSessionApprovalKind.QuestionCarousel && info.carousel) {
+			// Exact height is measured after render and published via onDidChangeItemHeight.
+			return 'carousel';
+		}
+		return `cmd:${SessionItemRenderer.getApprovalRowHeight(info.label, this.options.approvalRowMaxLines)}`;
+	}
+
+	/** Render a terminal-style approval: the pending command plus an "Allow" button. */
+	private renderApprovalCommand(element: ISession, info: IAgentSessionApprovalInfo, template: ISessionItemTemplate, buttonStore: DisposableStore): void {
+		// Render up to `maxLines` lines as separate code blocks
+		const lines = info.label.split('\n');
+		const maxLines = this.options.approvalRowMaxLines;
+		const visibleLines = lines.slice(0, maxLines);
+		if (lines.length > maxLines) {
+			visibleLines[maxLines - 1] = `${visibleLines[maxLines - 1]} \u2026`;
+		}
+		const langId = info.languageId ?? 'json';
+		const labelContent = new MarkdownString();
+		for (const line of visibleLines) {
+			labelContent.appendCodeblock(langId, line);
+		}
+
+		template.approvalLabel.textContent = '';
+		buttonStore.add(this.markdownRendererService.render(labelContent, {}, template.approvalLabel));
+
+		if (this.options.showHover) {
+			const fullContent = new MarkdownString().appendCodeblock(info.languageId ?? 'json', info.label);
+			buttonStore.add(this.hoverService.setupDelayedHover(template.approvalLabel, {
+				content: fullContent,
+				style: HoverStyle.Pointer,
+				position: { hoverPosition: HoverPosition.BELOW },
+			}));
+		}
+
+		template.approvalButtonContainer.textContent = '';
+		const button = buttonStore.add(new Button(template.approvalButtonContainer, {
+			title: localize('allowActionOnce', "Allow once"),
+			secondary: true,
+			...defaultButtonStyles
+		}));
+		button.label = localize('allowAction', "Allow");
+		buttonStore.add(button.onDidClick(() => {
+			// Capture the approval's identity BEFORE confirming: `confirm()` may
+			// synchronously clear the pending approval, so we can't read it after.
+			const approvalId = agentSessionApprovalId(info);
+			info.confirm();
+			this._onDidApproveSession.fire({ session: element, approvalId });
+		}));
+	}
+
+	/**
+	 * Render the ask-questions tool's own carousel widget inline so the user can
+	 * answer without opening the session. The row height isn't known ahead of
+	 * time, so we measure the widget and publish the height to the delegate.
+	 */
+	private renderApprovalCarousel(element: ISession, info: IAgentSessionApprovalInfo, template: ISessionItemTemplate, buttonStore: DisposableStore): void {
+		const carousel = info.carousel;
+		if (!carousel) {
+			return;
+		}
+
+		template.approvalRow.classList.add('has-carousel');
+		template.approvalLabel.textContent = '';
+		template.approvalButtonContainer.textContent = '';
+
+		const carouselContainer = DOM.append(template.approvalRow, $('.session-approval-carousel'));
+		buttonStore.add(toDisposable(() => carouselContainer.remove()));
+
+		const context = createCarouselRenderContext(carouselContainer);
+		const part = buttonStore.add(this.instantiationService.createInstance(ChatQuestionCarouselPart, carousel, context, {
+			shouldAutoFocus: false,
+			onSubmit: (answers: Map<string, IChatQuestionAnswerValue> | undefined) => {
+				const approvalId = agentSessionApprovalId(info);
+				info.submitCarousel?.(answers ? Object.fromEntries(answers) : undefined);
+				this._onDidApproveSession.fire({ session: element, approvalId });
+			},
+		}));
+		carouselContainer.appendChild(part.domNode);
+
+		const key = element.resource.toString();
+		const updateHeight = () => {
+			// Measure the whole approval row so its border/padding are included; the
+			// delegate adds this on top of the base row height. Include the row's
+			// top margin so the widget isn't clipped.
+			const measured = template.approvalRow.offsetHeight;
+			const total = measured > 0 ? measured + APPROVAL_ROW_CAROUSEL_MARGIN : 0;
+			if (total > 0 && this._measuredApprovalHeights.get(key) !== total) {
+				this._measuredApprovalHeights.set(key, total);
+				this._onDidChangeItemHeight.fire(element);
+			}
+		};
+		buttonStore.add(part.onDidChangeHeight(() => updateHeight()));
+		buttonStore.add(toDisposable(() => this._measuredApprovalHeights.delete(key)));
+
+		// Measure once laid out; offsetHeight is 0 before the row is in the DOM.
+		const targetWindow = DOM.getWindow(template.approvalRow);
+		const rafHandle = targetWindow.requestAnimationFrame(() => updateHeight());
+		buttonStore.add(toDisposable(() => targetWindow.cancelAnimationFrame(rafHandle)));
 	}
 
 	private getWorkspaceBadgeLabel(workspace: ISessionWorkspace): string | undefined {
@@ -1631,7 +1748,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 		// TEMPORARY (#320480): see the note on the `IAgentSessionsService` import.
 		const agentSessionsService = instantiationService.invokeFunction(accessor => accessor.get(IAgentSessionsService));
 		const sessionRenderer = new SessionItemRenderer(
-			{ grouping: this.options.grouping, isPinned: s => this.isSessionPinned(s), isRead: s => this.isSessionRead(s), visibleSessions: this._sessionsService.visibleSessions, getMultiSelectedSessions: s => this.getMultiSelectedSessions(s), isInChatsSection: s => this._chatsSectionSessionIds.has(s.resource.toString()), showHover: true, approvalRowMaxLines: DEFAULT_APPROVAL_ROW_MAX_LINES, toolbarActions: true },
+			{ grouping: this.options.grouping, isPinned: s => this.isSessionPinned(s), isRead: s => this.isSessionRead(s), visibleSessions: this._sessionsService.visibleSessions, getMultiSelectedSessions: s => this.getMultiSelectedSessions(s), isInChatsSection: s => this._chatsSectionSessionIds.has(s.resource.toString()), showHover: true, approvalRowMaxLines: DEFAULT_APPROVAL_ROW_MAX_LINES, toolbarActions: true, visibleApprovalKinds: DEFAULT_VISIBLE_APPROVAL_KINDS },
 			approvalModel,
 			instantiationService,
 			contextKeyService,
@@ -1655,7 +1772,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 		// observe the workbench's value rather than shadowing it with a fresh
 		// scoped default of `false`. The reactive height refresh below listens
 		// on the same scoped service for changes.
-		const delegate = new SessionsTreeDelegate(approvalModel, () => !!IsPhoneLayoutContext.getValue(contextKeyService));
+		const delegate = new SessionsTreeDelegate(approvalModel, () => !!IsPhoneLayoutContext.getValue(contextKeyService), DEFAULT_APPROVAL_ROW_MAX_LINES, DEFAULT_VISIBLE_APPROVAL_KINDS, s => sessionRenderer.getMeasuredApprovalHeight(s));
 
 		this.tree = this._register(instantiationService.createInstance(
 			WorkbenchObjectTree<SessionListItem, FuzzyScore>,
@@ -2940,11 +3057,43 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 //#region Approval Helpers
 
-export function getFirstApprovalAcrossChats(approvalModel: AgentSessionApprovalModel, session: ISession, reader: IReader | undefined,): IAgentSessionApprovalInfo | undefined {
+/**
+ * Builds a minimal {@link IChatContentPartRenderContext} for a
+ * {@link ChatQuestionCarouselPart} rendered outside the chat view (inside a
+ * session row). The carousel widget only reads `element` — to decide whether
+ * the response is complete — so the remaining, view-specific fields are supplied
+ * as lightweight stand-ins that the widget never touches.
+ */
+function createCarouselRenderContext(container: HTMLElement): IChatContentPartRenderContext {
+	return {
+		// A bare, non-response object so `isResponseVM` is false and the carousel
+		// renders interactively rather than as a completed summary.
+		element: { id: 'blockedSessionsCarousel' } as unknown as IChatRequestViewModel,
+		elementIndex: 0,
+		container,
+		content: [],
+		contentIndex: 0,
+		editorPool: undefined!,
+		codeBlockStartIndex: 0,
+		treeStartIndex: 0,
+		diffEditorPool: undefined!,
+		currentWidth: constObservable(0),
+		onDidChangeVisibility: Event.None,
+		inlineTextModels: undefined!,
+	};
+}
+
+export function getFirstApprovalAcrossChats(approvalModel: AgentSessionApprovalModel, session: ISession, reader: IReader | undefined, kinds?: readonly AgentSessionApprovalKind[]): IAgentSessionApprovalInfo | undefined {
 	let oldest: IAgentSessionApprovalInfo | undefined;
 	for (const chat of session.chats.read(reader)) {
 		const approval = approvalModel.getApproval(chat.resource).read(reader);
-		if (approval && (!oldest || approval.since.getTime() < oldest.since.getTime())) {
+		if (!approval) {
+			continue;
+		}
+		if (kinds && !kinds.includes(approval.kind)) {
+			continue;
+		}
+		if (!oldest || approval.since.getTime() < oldest.since.getTime()) {
 			oldest = approval;
 		}
 	}
@@ -3250,6 +3399,13 @@ export interface ISessionsFlatListOptions {
 	 * don't apply (e.g. the blocked-sessions dropdown), which renders no toolbar.
 	 */
 	readonly toolbarActions?: boolean;
+	/**
+	 * Which pending-approval kinds render inline in a session row. Defaults to
+	 * {@link DEFAULT_VISIBLE_APPROVAL_KINDS} (terminal and other tool
+	 * confirmations); surfaces that can host the ask-questions carousel widget
+	 * (the blocked-sessions list) opt into {@link AgentSessionApprovalKind.QuestionCarousel}.
+	 */
+	readonly visibleApprovalKinds?: readonly AgentSessionApprovalKind[];
 }
 
 /**
@@ -3307,6 +3463,7 @@ export class SessionsFlatList extends Disposable {
 				isInChatsSection: s => false,
 				approvalRowMaxLines: this.options.approvalRowMaxLines ?? DEFAULT_APPROVAL_ROW_MAX_LINES,
 				toolbarActions: this.options.toolbarActions ?? true,
+				visibleApprovalKinds: this.options.visibleApprovalKinds ?? DEFAULT_VISIBLE_APPROVAL_KINDS,
 			},
 			approvalModel,
 			instantiationService,
@@ -3317,7 +3474,7 @@ export class SessionsFlatList extends Disposable {
 			agentSessionsService,
 		);
 
-		this._delegate = new SessionsTreeDelegate(approvalModel, () => false, this.options.approvalRowMaxLines ?? DEFAULT_APPROVAL_ROW_MAX_LINES);
+		this._delegate = new SessionsTreeDelegate(approvalModel, () => false, this.options.approvalRowMaxLines ?? DEFAULT_APPROVAL_ROW_MAX_LINES, this.options.visibleApprovalKinds ?? DEFAULT_VISIBLE_APPROVAL_KINDS, s => sessionRenderer.getMeasuredApprovalHeight(s));
 
 		this.tree = this._register(instantiationService.createInstance(
 			WorkbenchObjectTree<SessionListItem, FuzzyScore>,

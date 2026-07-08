@@ -9,7 +9,8 @@ import { autorun, autorunIterableDelta, IObservable, ISettableObservable, observ
 import { URI } from '../../../../../base/common/uri.js';
 import { migrateLegacyTerminalToolSpecificData } from '../../common/chat.js';
 import { IChatModel } from '../../common/model/chatModel.js';
-import { IChatService, IChatToolInvocation, ToolConfirmKind } from '../../common/chatService/chatService.js';
+import { IChatQuestionAnswers, IChatQuestionCarousel, IChatService, IChatToolInvocation, ToolConfirmKind } from '../../common/chatService/chatService.js';
+import { ChatQuestionCarouselData } from '../../common/model/chatProgressTypes/chatQuestionCarouselData.js';
 import { ILanguageService } from '../../../../../editor/common/languages/language.js';
 
 /**
@@ -21,6 +22,11 @@ export const enum AgentSessionApprovalKind {
 	Terminal = 'terminal',
 	/** The agent is asking the user a question / needs a free-form response. */
 	Question = 'question',
+	/**
+	 * The ask-questions tool is presenting a structured question carousel that
+	 * carries its own interactive widget (see {@link IAgentSessionApprovalInfo.carousel}).
+	 */
+	QuestionCarousel = 'questionCarousel',
 	/** Some other tool invocation is waiting for confirmation. */
 	Other = 'other',
 }
@@ -30,7 +36,18 @@ export interface IAgentSessionApprovalInfo {
 	readonly label: string;
 	readonly languageId: string | undefined;
 	readonly since: Date;
+	/**
+	 * The question carousel awaiting answers, present only for
+	 * {@link AgentSessionApprovalKind.Question} approvals produced by the
+	 * ask-questions tool. Consumers that can render the carousel widget (e.g. the
+	 * blocked-sessions list) use this to show the tool's own UI inline.
+	 */
+	readonly carousel?: IChatQuestionCarousel;
 	confirm(): void;
+	/**
+	 * Submit answers for {@link carousel}. No-op for approvals without a carousel.
+	 */
+	submitCarousel?(answers: IChatQuestionAnswers | undefined): void;
 }
 
 /**
@@ -93,7 +110,7 @@ export class AgentSessionApprovalModel extends Disposable {
 			if (current === value) {
 				return;
 			}
-			if (current !== undefined && value !== undefined && current.kind === value.kind && current.label === value.label && current.languageId === value.languageId) {
+			if (current !== undefined && value !== undefined && current.kind === value.kind && current.label === value.label && current.languageId === value.languageId && current.carousel === value.carousel) {
 				return;
 			}
 			settable.set(value, undefined);
@@ -113,6 +130,26 @@ export class AgentSessionApprovalModel extends Disposable {
 			}
 
 			for (const part of lastResponse.response.value) {
+				if (part.kind === 'questionCarousel') {
+					if (part.isUsed) {
+						continue;
+					}
+					const carousel = part;
+					const requestId = model.lastRequest?.id;
+					const firstQuestion = carousel.questions[0];
+					const messageSource = carousel.message ?? firstQuestion?.message ?? firstQuestion?.title;
+					const label = messageSource === undefined ? '' : (typeof messageSource === 'string' ? messageSource : renderAsPlaintext(messageSource));
+					setIfChanged({
+						kind: AgentSessionApprovalKind.QuestionCarousel,
+						label,
+						languageId: undefined,
+						since: new Date(),
+						carousel,
+						confirm: () => this._submitCarousel(requestId, carousel, undefined),
+						submitCarousel: answers => this._submitCarousel(requestId, carousel, answers),
+					});
+					return;
+				}
 				if (part.kind !== 'toolInvocation' || part.toolSpecificData?.kind === 'modifiedFilesConfirmation') {
 					continue; // unsupported
 				}
@@ -149,5 +186,26 @@ export class AgentSessionApprovalModel extends Disposable {
 
 			setIfChanged(undefined);
 		});
+	}
+
+	/**
+	 * Resolve a pending question carousel with the given answers, completing the
+	 * ask-questions tool invocation that produced it. Safe to call once — later
+	 * calls are no-ops once the carousel is used.
+	 */
+	private _submitCarousel(requestId: string | undefined, carousel: IChatQuestionCarousel, answers: IChatQuestionAnswers | undefined): void {
+		if (carousel.isUsed) {
+			return;
+		}
+		carousel.data = answers ?? {};
+		carousel.isUsed = true;
+		if (carousel instanceof ChatQuestionCarouselData) {
+			carousel.draftAnswers = undefined;
+			carousel.draftCurrentIndex = undefined;
+			carousel.completion.complete({ answers });
+		}
+		if (requestId && carousel.resolveId) {
+			this._chatService.notifyQuestionCarouselAnswer(requestId, carousel.resolveId, answers);
+		}
 	}
 }

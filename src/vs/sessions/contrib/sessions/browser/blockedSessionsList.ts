@@ -13,8 +13,8 @@ import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../platform/a
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { Menus } from '../../../browser/menus.js';
 import { ISession } from '../../../services/sessions/common/session.js';
-import { IApprovedSession, SessionsFlatList } from './views/sessionsList.js';
-import { AgentSessionApprovalModel } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionApprovalModel.js';
+import { IApprovedSession, SessionsFlatList, ALL_VISIBLE_APPROVAL_KINDS } from './views/sessionsList.js';
+import { AgentSessionApprovalKind, AgentSessionApprovalModel } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionApprovalModel.js';
 
 /** Fixed width of the blocked-sessions list, in pixels. */
 const BLOCKED_LIST_WIDTH = 360;
@@ -30,6 +30,12 @@ export interface IBlockedSessionsListOptions {
 	readonly width?: number;
 	/** Approval model forwarded to the underlying list (see {@link ISessionsFlatListOptions.approvalModel}). */
 	readonly approvalModel?: AgentSessionApprovalModel;
+	/**
+	 * Which pending-approval kinds render inline in a session row. Defaults to
+	 * every kind ({@link ALL_VISIBLE_APPROVAL_KINDS}) so the blocked-sessions list
+	 * surfaces the ask-questions carousel in addition to terminal approvals.
+	 */
+	readonly visibleApprovalKinds?: readonly AgentSessionApprovalKind[];
 }
 
 /**
@@ -86,6 +92,7 @@ export class BlockedSessionsList extends Disposable {
 			approvalModel: options.approvalModel,
 			approvalRowMaxLines: BLOCKED_LIST_APPROVAL_ROW_MAX_LINES,
 			toolbarActions: false,
+			visibleApprovalKinds: options.visibleApprovalKinds ?? ALL_VISIBLE_APPROVAL_KINDS,
 		}));
 
 		this._register(this._list.onDidChangeContentHeight(() => {
