@@ -88,6 +88,7 @@ import { AgentHostSessionReferenceAttachmentDisplayKind, AgentHostSessionReferen
 import { buildHostLocalEventsPath } from '../../copilotCliEventsUri.js';
 import { toolDataToDefinition } from './agentHostToolUtils.js';
 import { IAgentHostUntitledProvisionalSessionService } from './agentHostUntitledProvisionalSessionService.js';
+import { IAgentHostImportConversationStore } from './agentHostImportConversationStore.js';
 import { activeTurnToProgress, completedToolCallToEditParts, completedToolCallToSerialized, finalizeToolInvocation, formatTurnResponseDetails, getTerminalContentUri, isSubagentTool, makeAhpTerminalToolSessionId, messageAttachmentsToVariableData, messageToVariableData, parseAhpTerminalToolSessionId, rawMarkdownToString, rewriteAgentHostLinkTarget, stringOrMarkdownToString, systemNotificationToChatPart, toolCallStateToInvocation, turnsToHistory, updateRunningToolSpecificData, usageInfoToChatUsage, usageInfoToQuotas, type IToolCallFileEdit, type TurnModelLookup } from './stateToProgressAdapter.js';
 import { resolveMcpServerAuthentication, agentHostMcpServerId } from './agentHostAuth.js';
 export { toolDataToDefinition };
@@ -650,6 +651,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		@IAgentHostSessionWorkingDirectoryResolver private readonly _workingDirectoryResolver: IAgentHostSessionWorkingDirectoryResolver,
 		@IAgentHostNewSessionFolderService private readonly _newSessionFolderService: IAgentHostNewSessionFolderService,
 		@IAgentHostUntitledProvisionalSessionService private readonly _provisionalService: IAgentHostUntitledProvisionalSessionService,
+		@IAgentHostImportConversationStore private readonly _importConversationStore: IAgentHostImportConversationStore,
 		@ILanguageModelToolsService private readonly _toolsService: ILanguageModelToolsService,
 		@IChatWidgetService private readonly _chatWidgetService: IChatWidgetService,
 		@ILanguageModelsService private readonly _languageModelsService: ILanguageModelsService,
@@ -1132,7 +1134,12 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			// folder-pick time, or this session was created via a legacy/
 			// test path). Fall back to the original create-then-subscribe
 			// flow.
-			await this._createAndSubscribe(request.sessionResource, this._createModelSelection(request.userSelectedModelId, request.modelConfiguration), undefined, request.agentHostSessionConfig);
+			//
+			// If a conversation was imported ("Continue in…") into this
+			// session, seed it as real editable history at creation time.
+			const imported = this._importConversationStore.take(request.sessionResource);
+			const model = imported?.model ?? this._createModelSelection(request.userSelectedModelId, request.modelConfiguration);
+			await this._createAndSubscribe(request.sessionResource, model, undefined, request.agentHostSessionConfig, imported ? { turns: imported.turns, model: imported.model } : undefined);
 		} else {
 			// Eager-created session: take a refcounted subscription so the
 			// handler observes state changes for the duration of the chat
@@ -3453,7 +3460,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	}
 
 	/** Creates a new backend session and subscribes to its state. */
-	private async _createAndSubscribe(sessionResource: URI, model: ModelSelection | undefined, fork?: { session: URI; turnIndex: number; turnId: string }, config?: Record<string, unknown>): Promise<URI> {
+	private async _createAndSubscribe(sessionResource: URI, model: ModelSelection | undefined, fork?: { session: URI; turnIndex: number; turnId: string }, config?: Record<string, unknown>, importConversation?: { readonly turns: readonly Turn[]; readonly model?: ModelSelection }): Promise<URI> {
 		const workingDirectory = this._resolveRequestedWorkingDirectory(sessionResource);
 		const requestedSession = fork ? undefined : this._resolveSessionUri(sessionResource);
 
@@ -3483,6 +3490,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				workingDirectory,
 				fork,
 				config,
+				importConversation,
 				activeClient,
 			});
 		} catch (err) {
@@ -3498,6 +3506,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 						workingDirectory,
 						fork,
 						config,
+						importConversation,
 						activeClient,
 					});
 				} else {

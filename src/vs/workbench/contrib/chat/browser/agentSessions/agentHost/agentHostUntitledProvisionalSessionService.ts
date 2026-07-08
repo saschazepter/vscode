@@ -68,6 +68,7 @@ import { IWorkbenchEnvironmentService } from '../../../../../services/environmen
 import { ChatConfiguration, type IChatDefaultConfiguration } from '../../../common/constants.js';
 import { IChatService } from '../../../common/chatService/chatService.js';
 import { IAgentHostNewSessionFolderService } from './agentHostNewSessionFolderService.js';
+import { IAgentHostImportConversationStore } from './agentHostImportConversationStore.js';
 
 export const IAgentHostUntitledProvisionalSessionService =
 	createDecorator<IAgentHostUntitledProvisionalSessionService>('agentHostUntitledProvisionalSessionService');
@@ -220,6 +221,7 @@ export class AgentHostUntitledProvisionalSessionService extends Disposable imple
 		@IWorkbenchEnvironmentService private readonly _environmentService: IWorkbenchEnvironmentService,
 		@IAgentHostNewSessionFolderService private readonly _newSessionFolderService: IAgentHostNewSessionFolderService,
 		@IWorkspaceTrustManagementService private readonly _workspaceTrustManagementService: IWorkspaceTrustManagementService,
+		@IAgentHostImportConversationStore private readonly _importConversationStore: IAgentHostImportConversationStore,
 	) {
 		super();
 
@@ -369,6 +371,14 @@ export class AgentHostUntitledProvisionalSessionService extends Disposable imple
 		const config = oldEntry.config;
 		const newBackendSession = this._toBackendUri(newSessionResource, provider);
 
+		// If a conversation was imported ("Continue in…") into this session, seed
+		// it as real editable history on the rebound (real) session. The stash was
+		// moved from the untitled resource to `newSessionResource` at graduation.
+		// Carry the source session's model so the imported session resumes on the
+		// same model instead of the host default (the normal per-turn model path
+		// is skipped for imports, which materialize eagerly at create time).
+		const imported = this._importConversationStore.take(newSessionResource);
+
 		let created: URI;
 		try {
 			created = await this._agentHostService.createSession({
@@ -376,6 +386,7 @@ export class AgentHostUntitledProvisionalSessionService extends Disposable imple
 				session: newBackendSession,
 				workingDirectory,
 				config,
+				...(imported ? { model: imported.model, importConversation: { turns: imported.turns, model: imported.model } } : {}),
 			});
 		} catch (err) {
 			this._logService.warn(`[AgentHostProvisional] Failed to create rebound provisional: ${err instanceof Error ? err.message : String(err)}`);
