@@ -10,6 +10,7 @@ import { Color } from '../../../../base/common/color.js';
 import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { resolveAmdNodeModulePath } from '../../../../amdX.js';
 import { editorBackground, editorForeground, editorSelectionBackground, editorInactiveSelection } from '../../../../platform/theme/common/colorRegistry.js';
+import { isHighContrast } from '../../../../platform/theme/common/theme.js';
 import { editorActiveLineNumber, editorGutter, editorLineNumbers, editorLineHighlight, editorLineHighlightBorder, editorInactiveLineHighlight, editorCursorForeground, editorCursorBackground, editorMultiCursorPrimaryForeground, editorMultiCursorPrimaryBackground, editorMultiCursorSecondaryForeground, editorMultiCursorSecondaryBackground } from '../../../common/core/editorColorRegistry.js';
 import { EditorOption, TextEditorCursorBlinkingStyle, TextEditorCursorStyle } from '../../../common/config/editorOptions.js';
 import { TokenizationRegistry } from '../../../common/languages.js';
@@ -224,6 +225,9 @@ export class EditorViewGpu extends ViewPart {
 			// 0-based view line of the primary cursor, drawn with the active color.
 			activeLine: this._activeLineNumber - 1,
 			selections: this._selections,
+			// `roundedSelection` mirrors the DOM `SelectionsOverlay`; the CSS
+			// forces the radius off in high-contrast themes, so we do the same.
+			roundedSelection: options.get(EditorOption.roundedSelection) && !isHighContrast(this._context.theme.type),
 			...this._highlightColors(),
 			...this._cursorConfig(),
 		};
