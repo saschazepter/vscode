@@ -143,6 +143,7 @@ suite('parseQuotas', () => {
 				resetAt: undefined,
 				entitlement: 0,
 				quotaRemaining: undefined,
+				creditsUsed: undefined,
 			},
 			completions: {
 				percentRemaining: 100,
@@ -152,6 +153,7 @@ suite('parseQuotas', () => {
 				resetAt: undefined,
 				entitlement: 0,
 				quotaRemaining: undefined,
+				creditsUsed: undefined,
 			},
 			premiumChat: {
 				percentRemaining: 97.4,
@@ -161,6 +163,7 @@ suite('parseQuotas', () => {
 				resetAt: undefined,
 				entitlement: 3900,
 				quotaRemaining: undefined,
+				creditsUsed: undefined,
 			},
 			additionalUsageEnabled: true,
 			additionalUsageCount: 0,
