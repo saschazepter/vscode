@@ -23,13 +23,6 @@ import assert from 'assert';
 import { promises as fs } from 'fs';
 import { tmpdir } from 'os';
 import { CopilotClient, RuntimeConnection, approveAll, type CopilotSession, type SessionEvent, type SessionFsFileInfo, type SessionFsProvider } from '@github/copilot-sdk';
-
-/**
- * Directory entry shape returned by {@link SessionFsProvider.readdirWithTypes}.
- * Mirrors the SDK's `SessionFsReaddirWithTypesEntry`, which is not re-exported
- * from the package root.
- */
-type SessionFsReaddirWithTypesEntry = { name: string; type: 'file' | 'directory' };
 import { FileAccess } from '../../../../../base/common/network.js';
 import { delimiter, dirname, join } from '../../../../../base/common/path.js';
 import { URI } from '../../../../../base/common/uri.js';
@@ -39,6 +32,13 @@ import { MessageKind, ResponsePartKind, TurnState, type ResponsePart, type Turn 
 import { buildSessionEventLogFromTurns } from '../../../node/copilot/buildSessionEvents.js';
 import { DiskSessionFsProvider } from '../../../node/copilot/diskSessionFsProvider.js';
 import { resolveGitHubToken } from './realSdkTestHelpers.js';
+
+/**
+ * Directory entry shape returned by {@link SessionFsProvider.readdirWithTypes}.
+ * Mirrors the SDK's `SessionFsReaddirWithTypesEntry`, which is not re-exported
+ * from the package root.
+ */
+type SessionFsReaddirWithTypesEntry = { name: string; type: 'file' | 'directory' };
 
 const REAL_SDK_ENABLED = process.env['AGENT_HOST_REAL_SDK'] === '1';
 

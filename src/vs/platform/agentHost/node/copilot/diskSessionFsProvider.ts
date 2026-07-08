@@ -38,6 +38,11 @@ export class DiskSessionFsProvider implements SessionFsProvider {
 		// Normalize separators and strip any leading root (`/`, `\`, or a drive
 		// like `C:`) so the path is always resolved *within* the base directory.
 		const normalized = sessionFsPath.replace(/\\/g, '/').replace(/^[a-zA-Z]:/, '').replace(/^\/+/, '');
+		// Defensively reject parent-traversal segments so a runtime-supplied path
+		// can never resolve outside the base directory.
+		if (normalized.split('/').some(segment => segment === '..')) {
+			throw new Error(`Invalid SessionFs path '${sessionFsPath}'`);
+		}
 		return join(this._baseDir, normalized);
 	}
 

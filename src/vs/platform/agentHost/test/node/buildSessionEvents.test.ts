@@ -109,6 +109,26 @@ suite('buildSessionEventsFromTurns — reverse of mapSessionEvents', () => {
 		assert.deepStrictEqual(project(reconstructed), project(turns));
 	});
 
+	test('preserves interleaved markdown/reasoning order by splitting assistant messages', async () => {
+		const id = generateUuid();
+		const turns: Turn[] = [userTurn(id, 'q', [markdown('A'), reasoning('R'), markdown('B')])];
+
+		const events = buildSessionEventsFromTurns(turns, { sessionId });
+
+		// Interleaved reasoning/markdown must not merge into one assistant.message
+		// (which the reverse mapper would reorder as reasoning-then-content).
+		assert.deepStrictEqual(events.map(e => e.type), [
+			'session.start',
+			'user.message',
+			'assistant.message',
+			'assistant.message',
+			'assistant.message',
+		]);
+
+		const { turns: reconstructed } = await mapSessionEvents(session, undefined, events);
+		assert.deepStrictEqual(project(reconstructed), project(turns));
+	});
+
 	test('round-trips a completed tool call interleaved with assistant text preserving order and identity', async () => {
 		const id = generateUuid();
 		const toolCallId = generateUuid();

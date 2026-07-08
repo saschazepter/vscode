@@ -198,8 +198,18 @@ export function buildSessionEventsFromTurns(turns: readonly Turn[], options: IBu
 
 		for (const part of turn.responseParts) {
 			if (part.kind === ResponsePartKind.Markdown) {
+				// Flush pending reasoning first: the reverse mapper emits reasoning
+				// before content within a single assistant.message, so interleaved
+				// reasoning/markdown must be split into separate messages to keep
+				// the original stream order.
+				if (reasoning) {
+					flushAssistantMessage();
+				}
 				markdown += part.content;
 			} else if (part.kind === ResponsePartKind.Reasoning) {
+				if (markdown) {
+					flushAssistantMessage();
+				}
 				reasoning += part.content;
 			} else if (part.kind === ResponsePartKind.ToolCall && part.toolCall.status === ToolCallStatus.Completed) {
 				// Flush accumulated assistant text before the tool call so the
