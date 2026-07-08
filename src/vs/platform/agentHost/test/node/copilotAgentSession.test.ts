@@ -1730,6 +1730,46 @@ suite('CopilotAgentSession', () => {
 			assert.strictEqual((await resultPromise).kind, 'reject');
 		});
 
+		test('shell tool: tool.execution_start arriving before the confirmation fires still emits start-then-confirmation with no not-needed ready (SDK >= 1.0.6 ordering, start-wins race)', async () => {
+			// The confirmation is fired from `handlePermissionRequest` only after
+			// its internal `await`s resolve, so `tool.execution_start` can arrive
+			// first (start-wins race). The emitted AHP sequence must be identical
+			// to the confirmation-wins ordering: `ChatToolCallStart` then the
+			// confirmation, with NO intermediate not-needed ready (which would
+			// otherwise briefly flip the tool to "running").
+			const { session, runtime, mockSession, signals, waitForSignal } = await createAgentSession(disposables);
+
+			// Permission fires first and begins awaiting; do not await it.
+			const resultPromise = runtime.handlePermissionRequest({
+				kind: 'shell',
+				toolCallId: 'tc-shell-startwins',
+				fullCommandText: 'gh search code "x"',
+			});
+
+			// tool.execution_start arrives while the permission handler is still
+			// mid-await (before it fires the confirmation).
+			mockSession.fire('tool.execution_start', {
+				toolCallId: 'tc-shell-startwins',
+				toolName: 'bash',
+				arguments: { command: 'gh search code "x"' },
+			} as SessionEventPayload<'tool.execution_start'>['data']);
+
+			await waitForSignal(s => s.kind === 'pending_confirmation');
+
+			// Exactly one start, exactly one confirmation, start before it, and
+			// crucially NO not-needed ready.
+			const startSignals = signals.filter(s => isAction(s, ActionType.ChatToolCallStart));
+			assert.strictEqual(startSignals.length, 1);
+			const pendingConfirmations = signals.filter(s => s.kind === 'pending_confirmation');
+			assert.strictEqual(pendingConfirmations.length, 1);
+			assert.ok(signals.indexOf(startSignals[0]) < signals.indexOf(pendingConfirmations[0]), 'ChatToolCallStart must precede the confirmation');
+			const notNeededReady = signals.filter(s => isAction(s, ActionType.ChatToolCallReady) && (s.action as ChatToolCallReadyAction).confirmed === ToolCallConfirmationReason.NotNeeded);
+			assert.strictEqual(notNeededReady.length, 0, 'no not-needed ready may precede the confirmation in the start-wins race');
+
+			session.respondToPermissionRequest('tc-shell-startwins', false);
+			assert.strictEqual((await resultPromise).kind, 'reject');
+		});
+
 		test('auto-approves sandboxed-by-default shell command without prompting', async () => {
 			const { runtime, signals } = await createAgentSession(disposables, {
 				rootValues: { [AgentHostSandboxConfigKey.Sandbox]: { [AgentHostSandboxKey.Enabled]: AgentSandboxEnabledValue.On } },
