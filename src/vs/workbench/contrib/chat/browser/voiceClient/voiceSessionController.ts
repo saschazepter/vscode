@@ -1028,7 +1028,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// If this response is for a session the user isn't currently looking
 			// at, don't play it now: buffer it until that session is focused and
 			// notify with a short audio cue instead.
-			if (this._shouldDeferResponse(e.codingSessionId)) {
+			const defer = this._shouldDeferResponse(e.codingSessionId);
+			if (e.isFirstChunk || e.isFinal) {
+				this.logService.info(`[voice] audio_response codingSessionId=${e.codingSessionId ?? '<none>'} focused=${this._focusedSessionId ?? '<none>'} isFirstChunk=${e.isFirstChunk} isFinal=${e.isFinal} suppress=${this._suppressIncomingAudio} defer=${defer}`);
+			}
+			if (defer) {
 				this._deferResponse(e.codingSessionId!, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
 			} else {
 				this._enqueueAudio(e.codingSessionId, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
@@ -1901,14 +1905,20 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * Refresh the cached focused session and flush any response that was held
 	 * for the session that just became focused.
 	 */
+	/**
+	 * The session the user is currently looking at, read live from the
+	 * last-focused chat widget (the same source that fires
+	 * `onDidChangeFocusedSession`). Reading live - rather than trusting a value
+	 * cached on the change event - protects the defer/flush decision from a
+	 * missed or out-of-order focus event, which would otherwise leave a response
+	 * buffered forever or drop it into the wrong session.
+	 */
+	private _getFocusedSessionId(): string | undefined {
+		return this.chatWidgetService.lastFocusedWidget?.viewModel?.sessionResource?.toString();
+	}
+
 	private _onFocusedSessionChanged(): void {
-		// Read focus from the same source that fires `onDidChangeFocusedSession`
-		// (the last-focused chat widget) so the cached focus and the change
-		// event never disagree. Using the view-pane command here would be
-		// inconsistent: it can point at a different widget than the one whose
-		// focus/session actually changed, which would leave a deferred response
-		// buffered forever (never flushed) and the controller stuck listening.
-		const focused = this.chatWidgetService.lastFocusedWidget?.viewModel?.sessionResource?.toString();
+		const focused = this._getFocusedSessionId();
 		this._focusedSessionId = focused;
 		if (focused) {
 			this._flushDeferredResponse(focused);
@@ -1927,7 +1937,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (this._deferredResponses.has(sessionId)) {
 			return true;
 		}
-		return this._focusedSessionId !== undefined && this._focusedSessionId !== sessionId;
+		// Refresh from the live focus so a stale cache can't misroute the
+		// decision (e.g. when the focus event was missed while voice was busy).
+		const focused = this._getFocusedSessionId();
+		this._focusedSessionId = focused;
+		return focused !== undefined && focused !== sessionId;
 	}
 
 	private _deferResponse(sessionId: string, audio: string, isFirstChunk: boolean, isFinal: boolean, transcript: string | undefined): void {
@@ -1939,6 +1953,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this._deferredResponses.set(sessionId, buffer);
 			this._markPendingResponse(sessionId, true);
 			this._playResponseReceivedCue();
+			this.logService.info(`[voice] deferring response for unfocused session=${sessionId}; playing cue + pending indicator`);
 		}
 		buffer.push({ audio, isFirstChunk, isFinal, transcript });
 	}
@@ -1951,6 +1966,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (!buffer || buffer.length === 0) {
 			return;
 		}
+		this.logService.info(`[voice] flushing ${buffer.length} buffered chunk(s) for now-focused session=${sessionId}`);
 
 		// Clear any speculative auto-listen that engaged while the response was
 		// held; otherwise the controller can sit in listening mode and the
@@ -2197,6 +2213,17 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * sessions that are not agent sessions.
 	 */
 	private _checkSessionStateChanges(): void {
+		// Safety net: if the focus-change event was missed while voice was busy,
+		// flush any buffered response for the session now shown to the user so it
+		// never stays stuck as a pending indicator with no playback.
+		if (this._deferredResponses.size > 0) {
+			const focused = this._getFocusedSessionId();
+			if (focused && this._deferredResponses.has(focused)) {
+				this.logService.info(`[voice] flushing deferred response via safety-net for focused=${focused}`);
+				this._flushDeferredResponse(focused);
+			}
+		}
+
 		const sessions = this.agentSessionsService.model.sessions.filter(s => !s.isArchived());
 		const stateChanges: { sessionId: string; currentState: string; label: string; detail?: string; lastResponseSummary?: string }[] = [];
 		const processedResources = new Set<string>();
