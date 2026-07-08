@@ -109,10 +109,21 @@ export interface IRealSdkProviderConfig {
 	readonly codexSdkRoot?: string;
 	/**
 	 * Provider implements `config.isolation: 'worktree'` and resolves the
-	 * working directory to a `.worktrees/...` path on materialization.
-	 * Claude has not landed worktree isolation yet (Phase 12 in roadmap).
+	 * working directory to a `.worktrees/...` path on materialization. Now
+	 * shared across all agents (Copilot, Codex, Claude) via the host-owned
+	 * worktree isolation controller.
 	 */
 	readonly supportsWorktreeIsolation: boolean;
+	/**
+	 * Provider routes shell commands through the host-managed custom terminal
+	 * tool (gated by {@link CopilotCliConfigKey.EnableCustomTerminalTool}),
+	 * which exposes a terminal resource whose `cwd` / `pwd` output can be
+	 * asserted. Currently true only for Copilot — Codex and Claude run shell
+	 * commands inside their own SDK subprocess and never surface a host
+	 * terminal resource, so the worktree suite verifies isolation via the
+	 * resolved working directory alone for them.
+	 */
+	readonly supportsHostTerminalTool: boolean;
 	/**
 	 * Provider exposes a subagent tool (`task` / `Task`) that produces
 	 * `ToolResultSubagentContent` and routes inner tool calls to a child
@@ -788,15 +799,21 @@ export function defineSharedRealSdkTests(config: IRealSdkProviderConfig): void {
 			await client.call('initialize', { channel: ROOT_STATE_URI, protocolVersions: [PROTOCOL_VERSION], clientId: `real-sdk-worktree-${config.provider}` });
 			await client.call('authenticate', { channel: ROOT_STATE_URI, resource: 'https://api.github.com', token: resolveGitHubToken() });
 
-			// The host's custom terminal tool is opt-in (default off). This test
-			// asserts on the host-managed terminal's cwd / `pwd` output, so the
-			// shell tool must route through the host terminal manager. Enable it
-			// before the session materializes on the first turn dispatch.
-			client.dispatch({
-				channel: ROOT_STATE_URI,
-				clientSeq: 0,
-				action: { type: ActionType.RootConfigChanged, config: { [CopilotCliConfigKey.EnableCustomTerminalTool]: true } },
-			});
+			// The host's custom terminal tool is opt-in (default off) and only
+			// Copilot routes shell commands through it. When the provider
+			// supports it, this test additionally asserts on the host-managed
+			// terminal's cwd / `pwd` output, so enable it before the session
+			// materializes on the first turn dispatch. Codex / Claude run shell
+			// commands inside their own SDK subprocess and never surface a host
+			// terminal resource, so they verify isolation via the resolved
+			// working directory alone.
+			if (config.supportsHostTerminalTool) {
+				client.dispatch({
+					channel: ROOT_STATE_URI,
+					clientSeq: 0,
+					action: { type: ActionType.RootConfigChanged, config: { [CopilotCliConfigKey.EnableCustomTerminalTool]: true } },
+				});
+			}
 
 			const sessionUri = URI.from({ scheme: config.scheme, path: `/${generateUuid()}` }).toString();
 			await client.call('createSession', {
@@ -856,6 +873,14 @@ export function defineSharedRealSdkTests(config: IRealSdkProviderConfig): void {
 
 			const responseParts = client.receivedNotifications(n => isActionNotification(n, 'chat/responsePart'));
 			assert.ok(responseParts.length > 0, 'should have received at least one response part after session refresh');
+
+			// The remaining assertions verify the agent's shell subprocess runs
+			// in the resolved worktree via the host-managed terminal tool. Only
+			// Copilot routes shell commands through it; for Codex / Claude the
+			// working-directory check above is sufficient.
+			if (!config.supportsHostTerminalTool) {
+				return;
+			}
 
 			client.clearReceived();
 			dispatchTurn(client, addedSummary.resource, 'turn-wt-terminal', 'Run the shell command: pwd', 3);

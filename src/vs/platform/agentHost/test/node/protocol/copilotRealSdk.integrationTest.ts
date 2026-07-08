@@ -46,6 +46,7 @@ const COPILOT_CONFIG: IRealSdkProviderConfig = {
 	exitPlanModeToolName: 'exit_plan_mode',
 	enabled: REAL_SDK_ENABLED,
 	supportsWorktreeIsolation: true,
+	supportsHostTerminalTool: true,
 	supportsSubagents: true,
 	supportsPlanMode: true,
 };

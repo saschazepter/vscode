@@ -64,9 +64,13 @@ const CLAUDE_CONFIG: IRealSdkProviderConfig = {
 	exitPlanModeToolName: 'ExitPlanMode',
 	enabled: REAL_SDK_ENABLED && !!CLAUDE_SDK_ROOT,
 	claudeSdkRoot: CLAUDE_SDK_ROOT,
-	// Claude has not landed worktree isolation yet (deferred to Phase 12).
-	// The shared suite skips that test when the flag is false.
-	supportsWorktreeIsolation: false,
+	// Worktree isolation is now shared across agents via the host-owned
+	// worktree isolation controller.
+	supportsWorktreeIsolation: true,
+	// Claude runs shell commands (`Bash`) inside its own SDK subprocess, not
+	// the host-managed custom terminal tool, so the worktree suite verifies
+	// isolation via the resolved working directory alone.
+	supportsHostTerminalTool: false,
 	supportsSubagents: true,
 	// Plan mode is wired (`ExitPlanMode` interactive tool exists) but the
 	// shared test's Copilot-flavoured prompt doesn't reliably drive Claude
