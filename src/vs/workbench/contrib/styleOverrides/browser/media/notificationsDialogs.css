@@ -35,6 +35,7 @@
 
 .style-override .monaco-dialog-box:not(.align-vertical) .dialog-message-row .dialog-message-container {
 	padding-left: 8px;
+	padding-right: 20px;
 }
 
 .style-override .monaco-dialog-box .dialog-message-row .dialog-message-container .dialog-message {
