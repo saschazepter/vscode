@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable, DisposableMap, DisposableStore } from '../../../../../../base/common/lifecycle.js';
-import { autorun } from '../../../../../../base/common/observable.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { AgentSession } from '../../../../../../platform/agentHost/common/agentService.js';
 import { fromAgentHostUri } from '../../../../../../platform/agentHost/common/agentHostUri.js';
@@ -16,7 +15,6 @@ import { IWorkbenchEnvironmentService } from '../../../../../services/environmen
 import { IChatWidget, IChatWidgetService } from '../../chat.js';
 import { ChatMode, IChatMode, IChatModes } from '../../../common/chatModes.js';
 import { ChatModeKind } from '../../../common/constants.js';
-import type { IChatModeChangeEvent } from '../../widget/input/chatInputPart.js';
 import { IAgentHostUntitledProvisionalSessionService } from './agentHostUntitledProvisionalSessionService.js';
 
 const AGENT_HOST_SESSION_SCHEME_PREFIX = 'agent-host-';
@@ -62,21 +60,13 @@ export class AgentHostModeSynchronizer extends Disposable implements IWorkbenchC
 		}
 
 		const store = new DisposableStore();
-		store.add(widget.input.onDidChangeCurrentChatMode(e => this._onWidgetModeChanged(widget, e)));
+		store.add(widget.input.onDidChangeCurrentChatMode(() => this._onWidgetModeChanged(widget)));
 		store.add(widget.onDidChangeViewModel(() => this._syncWidgetFromBackend(widget)));
-		store.add(autorun(reader => {
-			const modes = widget.input.currentChatModesObs.read(reader);
-			reader.store.add(modes.onDidChange(() => this._syncWidgetFromBackend(widget)));
-		}));
 		this._widgetListeners.set(widget, store);
 		this._syncWidgetFromBackend(widget);
 	}
 
-	private _onWidgetModeChanged(widget: IChatWidget, e: IChatModeChangeEvent): void {
-		if (!e.isUserInitiated) {
-			return;
-		}
-
+	private _onWidgetModeChanged(widget: IChatWidget): void {
 		if (this._updatingWidgets.has(widget)) {
 			return;
 		}
@@ -112,13 +102,10 @@ export class AgentHostModeSynchronizer extends Disposable implements IWorkbenchC
 		}
 
 		const agentUri = this._readSelectedAgent(sessionResource);
-		if (agentUri === undefined) {
-			return;
-		}
 		void this._applyMode(widget, sessionResource, agentUri);
 	}
 
-	private async _applyMode(widget: IChatWidget, sessionResource: URI, agentUri: string): Promise<void> {
+	private async _applyMode(widget: IChatWidget, sessionResource: URI, agentUri: string | undefined): Promise<void> {
 		const modes = widget.input.currentChatModesObs.get();
 		await modes.waitForPendingUpdates();
 
@@ -126,7 +113,8 @@ export class AgentHostModeSynchronizer extends Disposable implements IWorkbenchC
 			return;
 		}
 
-		const mode = this._findMode(modes, agentUri);
+		const modeId = agentUri ?? ChatMode.Agent.id;
+		const mode = this._findMode(modes, modeId);
 		if (!mode || widget.input.currentModeObs.get().id === mode.id) {
 			return;
 		}

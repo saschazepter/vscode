@@ -13,7 +13,6 @@ import { CommandsRegistry } from '../../../../../platform/commands/common/comman
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
-import { IStorageService } from '../../../../../platform/storage/common/storage.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ChatContextKeyExprs, ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { IChatEditingSession } from '../../common/editing/chatEditingService.js';
@@ -318,7 +317,6 @@ async function runNewChatAction(
 	const viewsService = accessor.get(IViewsService);
 	const configurationService = accessor.get(IConfigurationService);
 	const chatSessionsService = accessor.get(IChatSessionsService);
-	const storageService = accessor.get(IStorageService);
 
 	const { editingSession, chatWidget: widget } = context ?? {};
 	if (!widget) {
@@ -335,7 +333,7 @@ async function runNewChatAction(
 	await editingSession?.stop();
 
 	// Create a new session, preserving the session type (or using the specified one)
-	await clearChatSessionPreservingType(widget, viewsService, sessionType, configurationService, chatSessionsService, storageService);
+	await clearChatSessionPreservingType(widget, viewsService, sessionType, configurationService, chatSessionsService);
 
 	widget.attachmentModel.clear(true);
 	widget.focusInput();

@@ -16,8 +16,8 @@ import { IConfigurationService } from '../../../../../../platform/configuration/
 import { IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IKeybindingService } from '../../../../../../platform/keybinding/common/keybinding.js';
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
-import { IStorageService } from '../../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
+import { IsSessionsWindowContext } from '../../../../../common/contextkeys.js';
 import { IChatEntitlementService } from '../../../../../services/chat/common/chatEntitlementService.js';
 import { IChatSessionsService } from '../../../common/chatSessionsService.js';
 import { ILanguageModelsService } from '../../../common/languageModels.js';
@@ -35,6 +35,8 @@ import { IGitService } from '../../../../git/common/gitService.js';
  */
 export class DelegationSessionPickerActionItem extends SessionTypePickerActionItem {
 
+	private readonly _isSessionsWindow: boolean;
+
 	constructor(
 		action: MenuItemAction,
 		chatSessionPosition: 'sidebar' | 'editor',
@@ -50,10 +52,10 @@ export class DelegationSessionPickerActionItem extends SessionTypePickerActionIt
 		@IChatEntitlementService chatEntitlementService: IChatEntitlementService,
 		@ILanguageModelsService languageModelsService: ILanguageModelsService,
 		@IConfigurationService configurationService: IConfigurationService,
-		@IStorageService storageService: IStorageService,
 		@IGitService private readonly gitService: IGitService,
 	) {
-		super(action, chatSessionPosition, delegate, pickerOptions, actionWidgetService, keybindingService, contextKeyService, chatSessionsService, commandService, openerService, telemetryService, chatEntitlementService, languageModelsService, configurationService, storageService);
+		super(action, chatSessionPosition, delegate, pickerOptions, actionWidgetService, keybindingService, contextKeyService, chatSessionsService, commandService, openerService, telemetryService, chatEntitlementService, languageModelsService, configurationService);
+		this._isSessionsWindow = IsSessionsWindowContext.getValue(contextKeyService) === true;
 	}
 
 	protected override _run(sessionTypeItem: ISessionTypeItem): void {
