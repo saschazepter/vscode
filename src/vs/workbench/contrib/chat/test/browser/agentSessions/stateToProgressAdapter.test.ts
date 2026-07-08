@@ -1544,6 +1544,31 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(termData.terminalCommandState?.exitCode, 0);
 		});
 
+		test('falls back to tool success when shell_exit has no exit code', () => {
+			const tc = createCompletedToolCall({
+				_meta: { toolKind: 'terminal' },
+				toolInput: 'pwd',
+				content: [
+					{ type: ToolResultContentType.Text, text: '/repo\n' },
+					{ type: ToolResultContentType.ShellExit, cwd: URI.file('/repo').toString() },
+				],
+				success: true,
+			});
+
+			const turn = createTurn({
+				responseParts: [{ kind: ResponsePartKind.ToolCall, toolCall: tc } as ToolCallResponsePart],
+			});
+
+			const history = turnsToHistory(URI.file('/'), [turn], 'p');
+			const response = history[1];
+			assert.strictEqual(response.type, 'response');
+			if (response.type !== 'response') { return; }
+			const serialized = response.parts[0] as IChatToolInvocationSerialized;
+			assert.strictEqual(serialized.toolSpecificData?.kind, 'terminal');
+			const termData = serialized.toolSpecificData as { kind: 'terminal'; terminalCommandState?: { exitCode: number } };
+			assert.strictEqual(termData.terminalCommandState?.exitCode, 0);
+		});
+
 		test('running tool call with terminal content block sets terminalCommandUri', () => {
 			const tc = createToolCallState({
 				_meta: { toolKind: 'terminal' },
