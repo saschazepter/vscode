@@ -79,13 +79,11 @@ export interface IAgentSideEffectsOptions {
 	readonly copilotApiService?: ICopilotApiService;
 	/**
 	 * Host-owned worktree isolation hook, awaited before the agent's first send
-	 * so the session's worktree is created before the agent materializes. The
-	 * agent then adopts the created worktree as its working directory at
-	 * materialize time via {@link IAgentConfigurationService.getResolvedWorkingDirectory},
-	 * so nothing is threaded back through `sendMessage`. A no-op for folder
-	 * sessions and after the first send. Provided by {@link AgentService}.
+	 * so the session's worktree is created (and the agent's resolved cwd points at
+	 * it) before the agent materializes. A no-op for folder sessions and after the
+	 * first send. Provided by {@link AgentService}.
 	 */
-	readonly ensureWorktreeBeforeSend?: (params: { session: ProtocolURI; chat: ProtocolURI; turnId: string; prompt: string }) => Promise<void>;
+	readonly resolveWorktreeBeforeSend?: (params: { session: ProtocolURI; chat: ProtocolURI; turnId: string; prompt: string }) => Promise<URI | undefined>;
 	/**
 	 * Called after each top-level session turn completes so git state can be
 	 * refreshed and published via `SessionMetaChanged`. Subagent turns are
@@ -1360,12 +1358,12 @@ export class AgentSideEffects extends Disposable {
 
 		const chatUri = URI.parse(chat);
 
-		// Host-owned worktree isolation: create the session's worktree before the
-		// agent materializes, so the agent runs in the worktree without ever
-		// knowing about it. A no-op for folder sessions and after the first send.
-		// The agent adopts the created worktree at materialize time via
-		// IAgentConfigurationService.getResolvedWorkingDirectory.
-		await this._options.ensureWorktreeBeforeSend?.({ session: options.sessionChannel, chat, turnId, prompt: message.text });
+		// Host-owned worktree isolation: resolve (create) the session's worktree
+		// before the agent materializes, so the agent runs in the worktree without
+		// ever knowing about it. Returns the resolved worktree (handed to the agent
+		// as its working directory below); undefined for folder sessions and after
+		// the first send.
+		const resolvedWorkingDirectory = await this._options.resolveWorktreeBeforeSend?.({ session: options.sessionChannel, chat, turnId, prompt: message.text });
 
 		const selectionUpdates: Promise<void>[] = [];
 		if (message.model) {
@@ -1379,7 +1377,7 @@ export class AgentSideEffects extends Disposable {
 
 		await Promise.all(selectionUpdates);
 
-		await agent.chats.sendMessage(chatUri, message.text, message.attachments, turnId, senderClientId).catch(err => {
+		await agent.chats.sendMessage(chatUri, message.text, message.attachments, turnId, senderClientId, resolvedWorkingDirectory).catch(err => {
 			const errCode = (err as { code?: number })?.code;
 			this._logService.error(`[AgentSideEffects] sendMessage failed for session=${turnChannel}: code=${errCode}, message=${err instanceof Error ? err.message : String(err)}, type=${err?.constructor?.name}`, err);
 			this._stateManager.dispatchServerAction(turnChannel, {

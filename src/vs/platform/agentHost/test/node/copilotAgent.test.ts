@@ -588,18 +588,6 @@ function createTestAgent(disposables: Pick<DisposableStore, 'add'>, options?: { 
 	return createTestAgentContext(disposables, options).agent;
 }
 
-/**
- * Stubs the worktree the host resolves for a session, which the agent pulls at
- * materialize time via {@link IAgentConfigurationService.getResolvedWorkingDirectory}.
- * In production the host's first-send hook creates the worktree before the
- * agent materializes; the tests inject it directly instead of spinning up the
- * whole worktree controller.
- */
-function stubResolvedWorkingDirectory(agent: CopilotAgent, worktree: URI): void {
-	const configurationService = (agent as unknown as { _configurationService: IAgentConfigurationService })._configurationService;
-	configurationService.getResolvedWorkingDirectory = () => worktree;
-}
-
 type CopilotCreateSessionOptions = Parameters<CopilotClient['createSession']>[0];
 
 function createAgentSessionThroughAgent(agent: CopilotAgent, instantiationService: IInstantiationService, options?: { readonly mockSession?: MockCopilotSession; readonly activeClientToolSet?: ActiveClientToolSet; readonly snapshot?: IActiveClientSnapshot }): { readonly session: CopilotAgentSession; readonly createOptions: () => CopilotCreateSessionOptions | undefined } {
@@ -3729,14 +3717,9 @@ suite('CopilotAgent', () => {
 				copilotClient: client,
 			});
 
-			// Stub the host-resolved worktree the agent pulls at materialize time
-			// (mirroring AgentSideEffects, which creates the worktree via the host
-			// hook before the first send). `undefined` for the folder case.
-			if (resolvedWorkingDirectory) {
-				stubResolvedWorkingDirectory(agent, resolvedWorkingDirectory);
-			}
-
-			// Capture the customization anchor handed to `_createAgentSession`.
+			// Capture the customization anchor handed to `_createAgentSession`. The
+			// host pushes the resolved working directory (the worktree) into the first
+			// `sendMessage`, mirroring AgentSideEffects.
 			let anchor: URI | undefined;
 			const agentInternals = agent as unknown as {
 				_createAgentSession: (launchPlan: CopilotSessionLaunchPlan, customizationDirectory: URI | undefined, activeClient: unknown, channelUri?: URI) => CopilotAgentSession;
@@ -3751,7 +3734,7 @@ suite('CopilotAgent', () => {
 				await agent.authenticate('https://api.github.com', 'token');
 				const result = await agent.createSession({ session: AgentSession.uri('copilotcli', 'anchor-session'), workingDirectory: originalFolder });
 				assert.strictEqual(result.provisional, true);
-				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello');
+				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', undefined, undefined, undefined, resolvedWorkingDirectory);
 			} finally {
 				await disposeAgent(agent);
 			}
@@ -3799,10 +3782,8 @@ suite('CopilotAgent', () => {
 			});
 
 			// The active-client claim anchors the provisional plugin controller to
-			// the ORIGINAL folder first; the host creates the worktree before the
-			// first send (stubbed here), so this exercises the re-anchor at
-			// materialization, where the agent pulls the resolved worktree.
-			stubResolvedWorkingDirectory(agent, worktree);
+			// the ORIGINAL folder first; the host pushes the worktree into the first
+			// send, so this exercises the re-anchor at materialization.
 			try {
 				await agent.authenticate('https://api.github.com', 'token');
 				const result = await agent.createSession({
@@ -3811,7 +3792,7 @@ suite('CopilotAgent', () => {
 					activeClient: { clientId: 'c1', tools: [] },
 				});
 				assert.strictEqual(result.provisional, true);
-				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello');
+				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', undefined, undefined, undefined, worktree);
 			} finally {
 				await disposeAgent(agent);
 			}
@@ -3960,9 +3941,6 @@ suite('CopilotAgent', () => {
 				return originalCreateAgentSession.call(agent, launchPlan, customizationDirectory, activeClient, channelUri);
 			};
 
-			// The host creates the worktree before the first send (stubbed here);
-			// the agent pulls it at materialize time.
-			stubResolvedWorkingDirectory(agent, worktreeFolder);
 			try {
 				await agent.authenticate('https://api.github.com', 'token');
 				const result = await agent.createSession({
@@ -3971,7 +3949,7 @@ suite('CopilotAgent', () => {
 					agent: { uri: repoAgentFile.toString() },
 				});
 				assert.strictEqual(result.provisional, true);
-				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello');
+				await agent.chats.sendMessage(defaultChatUri(result.session), 'hello', undefined, undefined, undefined, worktreeFolder);
 
 				// `_readSessionMetadata` reads back the exact agent field the
 				// resume path consumes, so asserting it stands in for restore.

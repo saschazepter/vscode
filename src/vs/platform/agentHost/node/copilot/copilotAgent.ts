@@ -1377,8 +1377,8 @@ export class CopilotAgent extends Disposable implements IAgent {
 			const { session, chat } = this._resolveChatTarget(chatUri);
 			return this._disposeChat(session, chat);
 		},
-		sendMessage: (chatUri: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string): Promise<void> => {
-			return this._sendMessage(chatUri, prompt, attachments, turnId, senderClientId);
+		sendMessage: (chatUri: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string, workingDirectory?: URI): Promise<void> => {
+			return this._sendMessage(chatUri, prompt, attachments, turnId, senderClientId, workingDirectory);
 		},
 		abort: (chatUri: URI): Promise<void> => {
 			return this._abortSession(chatUri);
@@ -1573,7 +1573,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 	 * `SessionConfigChanged` actions that arrived after `createSession` are
 	 * honoured without bespoke forwarding.
 	 */
-	private async _materializeProvisional(sessionId: string): Promise<CopilotAgentSession> {
+	private async _materializeProvisional(sessionId: string, resolvedWorkingDirectory?: URI): Promise<CopilotAgentSession> {
 		const provisional = this._provisionalSessions.get(sessionId);
 		if (!provisional) {
 			throw new Error(`Cannot materialize unknown provisional session: ${sessionId}`);
@@ -1581,11 +1581,10 @@ export class CopilotAgent extends Disposable implements IAgent {
 		const client = await this._ensureClient();
 		const sessionUri = provisional.sessionUri;
 
-		// Adopt the host-resolved worktree (worktree isolation) so the SDK
-		// subprocess spawns in the worktree. Falls back to the folder / scratch
-		// dir captured at create time for folder / workspace-less sessions. The
-		// agent stays unaware of worktrees.
-		const resolvedWorkingDirectory = this._configurationService.getResolvedWorkingDirectory(sessionUri.toString());
+		// The host hands us the resolved working directory (an isolated worktree for
+		// worktree isolation) on the first send; use it so the SDK subprocess spawns
+		// in the worktree. Falls back to the folder / scratch dir captured at create
+		// time for folder / workspace-less sessions.
 		const workingDirectory = resolvedWorkingDirectory ?? provisional.workingDirectory;
 		// The customization anchor follows the working directory: once a worktree
 		// is created the agent must discover skills/instructions/agents from the
@@ -1765,7 +1764,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		}
 	}
 
-	private async _sendMessage(chat: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string): Promise<void> {
+	private async _sendMessage(chat: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string, workingDirectory?: URI): Promise<void> {
 		const context = this._getChatContext(chat);
 		// Additional (non-default) chats are backed by their own SDK
 		// chat hosted on the owning session entry, keyed by the chat URI.
@@ -1784,12 +1783,12 @@ export class CopilotAgent extends Disposable implements IAgent {
 			await this._activeClients.get(context.session)?.pluginController.retryFailedClientSyncIfNeeded();
 
 			// First message on a provisional session: materialize the SDK
-			// session, worktree, and on-disk metadata before continuing. The host
-			// has already created the worktree (if any) via its first-send hook;
-			// materialize adopts it from the configuration service.
+			// session, worktree, and on-disk metadata before continuing. The
+			// prompt is forwarded so a worktree-isolated session can derive
+			// its branch-name hint from the user's first message.
 			let entry: CopilotAgentSession | undefined;
 			if (this._provisionalSessions.has(context.sessionId)) {
-				entry = await this._materializeProvisional(context.sessionId);
+				entry = await this._materializeProvisional(context.sessionId, workingDirectory);
 			} else {
 				entry = this._getChatContext(chat).target;
 			}

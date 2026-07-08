@@ -78,17 +78,6 @@ export interface IAgentConfigurationService {
 	isWorkingDirectoryPending(session: ProtocolURI): boolean;
 
 	/**
-	 * The dedicated working directory the host resolved for a session — the
-	 * isolated worktree created on the first send — or `undefined` for folder /
-	 * workspace-less sessions and before the worktree exists. Agents adopt this
-	 * as their working directory just before materializing their subprocess (so
-	 * it spawns in the worktree), falling back to the folder captured at create
-	 * time when it is `undefined`. This keeps agents unaware of worktrees while
-	 * still running in them. Pairs with {@link isWorkingDirectoryPending}.
-	 */
-	getResolvedWorkingDirectory(session: ProtocolURI): URI | undefined;
-
-	/**
 	 * Merges a partial config patch into a session's values via a
 	 * {@link ActionType.SessionConfigChanged} action. Keys not present in
 	 * `patch` are left untouched. The patch is applied atomically through
@@ -217,10 +206,6 @@ export class AgentConfigurationService extends Disposable implements IAgentConfi
 
 	isWorkingDirectoryPending(session: ProtocolURI): boolean {
 		return this._worktree?.isWorkingDirectoryPending(AgentSession.id(session)) ?? false;
-	}
-
-	getResolvedWorkingDirectory(session: ProtocolURI): URI | undefined {
-		return this._worktree?.getResolvedWorktree(AgentSession.id(session));
 	}
 
 	updateSessionConfig(session: ProtocolURI, patch: Record<string, unknown>): void {
