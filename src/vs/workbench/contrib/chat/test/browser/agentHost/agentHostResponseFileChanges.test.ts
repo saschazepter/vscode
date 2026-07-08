@@ -12,6 +12,7 @@ import { mock } from '../../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { IAgentConnection } from '../../../../../../platform/agentHost/common/agentService.js';
 import { buildTurnChangesetUri } from '../../../../../../platform/agentHost/common/changesetUri.js';
+import { fromAgentHostUri } from '../../../../../../platform/agentHost/common/agentHostUri.js';
 import { IAgentSubscription } from '../../../../../../platform/agentHost/common/state/agentSubscription.js';
 import { ChangesetStatus, StateComponents, type ChangesetState, type SessionState } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { IEditSessionEntryDiff } from '../../../common/editing/chatEditingService.js';
@@ -22,14 +23,20 @@ class FakeAgentConnection extends mock<IAgentConnection>() {
 
 	private readonly _emitters = new Map<string, Emitter<unknown>>();
 	private readonly _values = new Map<string, unknown>();
+	private readonly _subscriptionCounts = new Map<string, number>();
 
 	setState(resource: string, value: unknown): void {
 		this._values.set(resource, value);
 		this._emitters.get(resource)?.fire(value);
 	}
 
+	getSubscriptionCount(resource: string): number {
+		return this._subscriptionCounts.get(resource) ?? 0;
+	}
+
 	override getSubscription<T extends StateComponents>(_kind: T, resource: URI, _owner: string): IReference<IAgentSubscription<never>> {
 		const key = resource.toString();
+		this._subscriptionCounts.set(key, (this._subscriptionCounts.get(key) ?? 0) + 1);
 		let emitter = this._emitters.get(key);
 		if (!emitter) {
 			emitter = new Emitter<unknown>();
@@ -87,10 +94,34 @@ suite('AgentHostResponseFileChangesProvider', () => {
 		} satisfies ChangesetState);
 
 		const { latest } = observe(provider, ds);
-		assert.deepStrictEqual(latest().map(d => ({ added: d.added, removed: d.removed, modified: d.modifiedURI.path })), [
-			{ added: 3, removed: 1, modified: '/repo/a.ts' },
-			{ added: 5, removed: 0, modified: '/repo/b.ts' },
+		assert.deepStrictEqual(latest().map(d => ({
+			added: d.added,
+			removed: d.removed,
+			modified: d.modifiedURI.path,
+			// The RHS diff content is the frozen after-turn snapshot, not the live file.
+			after: d.modifiedSnapshotURI && fromAgentHostUri(d.modifiedSnapshotURI).authority,
+		})), [
+			{ added: 3, removed: 1, modified: '/repo/a.ts', after: 'a-after' },
+			{ added: 5, removed: 0, modified: '/repo/b.ts', after: 'b-after' },
 		]);
+	});
+
+	test('keeps the changeset subscription when session state updates', () => {
+		const ds = store.add(new DisposableStore());
+		const conn = new FakeAgentConnection();
+		const provider = ds.add(new AgentHostResponseFileChangesProvider(conn, authority, () => backendSession));
+
+		conn.setState(backendSession.toString(), sessionStateWithTurnSupport());
+		conn.setState(turnChangesetUri('t1'), { status: ChangesetStatus.Ready, files: [] } satisfies ChangesetState);
+		observe(provider, ds);
+		const subscriptionCountBeforeUpdate = conn.getSubscriptionCount(turnChangesetUri('t1'));
+
+		conn.setState(backendSession.toString(), sessionStateWithTurnSupport());
+
+		assert.deepStrictEqual([
+			subscriptionCountBeforeUpdate,
+			conn.getSubscriptionCount(turnChangesetUri('t1')),
+		], [1, 1]);
 	});
 
 	test('returns empty when the agent does not advertise a turn changeset', () => {

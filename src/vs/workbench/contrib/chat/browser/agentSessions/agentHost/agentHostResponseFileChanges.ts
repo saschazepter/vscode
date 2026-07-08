@@ -4,7 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../../../base/common/lifecycle.js';
-import { constObservable, derived, IObservable, observableFromEvent } from '../../../../../../base/common/observable.js';
+import { constObservable, derived, derivedOpts, IObservable, observableFromEvent } from '../../../../../../base/common/observable.js';
+import { isEqual } from '../../../../../../base/common/resources.js';
 import { isDefined } from '../../../../../../base/common/types.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { IAgentConnection } from '../../../../../../platform/agentHost/common/agentService.js';
@@ -64,7 +65,7 @@ export class AgentHostResponseFileChangesProvider extends Disposable implements 
 		// the summary stays empty (and self-hidden) for them.
 		const sessionStateObs = this._subscribe<SessionState>(StateComponents.Session, constObservable(backendSession));
 
-		const turnChangesetUriObs = derived(reader => {
+		const turnChangesetUriObs = derivedOpts<URI | undefined>({ equalsFn: isEqual }, reader => {
 			const sessionState = sessionStateObs.read(reader).read(reader);
 			if (!sessionState || sessionState instanceof Error) {
 				return undefined;
@@ -123,9 +124,19 @@ export class AgentHostResponseFileChangesProvider extends Disposable implements 
 			? toAgentHostUri(normalized.beforeContentUri, this._connectionAuthority)
 			: modifiedURI;
 
+		// The frozen after-turn snapshot, when the changeset provides one. Lets
+		// consumers show this turn's diff (before-snapshot -> after-snapshot)
+		// rather than before-snapshot -> live file (which includes later turns).
+		// Distinct from the checkpoint-ref readability fix (#323932): that made
+		// these blobs readable; this line decides *which* snapshot to diff against.
+		const modifiedSnapshotURI = normalized.afterContentUri
+			? toAgentHostUri(normalized.afterContentUri, this._connectionAuthority)
+			: undefined;
+
 		return {
 			originalURI,
 			modifiedURI,
+			modifiedSnapshotURI,
 			added: file.edit.diff?.added ?? 0,
 			removed: file.edit.diff?.removed ?? 0,
 			quitEarly: false,
