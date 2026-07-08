@@ -838,7 +838,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			return this._disposeChat(session, chat);
 		},
 		sendMessage: (chatUri, prompt, workingDirectory, attachments, turnId, senderClientId) => {
-			return this._sendMessage(chatUri, prompt, attachments, turnId, senderClientId, workingDirectory);
+			return this._sendMessage(chatUri, prompt, workingDirectory, attachments, turnId, senderClientId);
 		},
 		abort: chatUri => {
 			return this._abortSession(chatUri);
@@ -974,11 +974,6 @@ export class ClaudeAgent extends Disposable implements IAgent {
 
 		const canUseTool = this._makeCanUseTool(sessionId);
 
-		// The host hands us the resolved working directory (an isolated worktree
-		// for worktree isolation, or the picked folder) on the first send; pass it
-		// into `materialize`, which locks the SDK subprocess `cwd`. Undefined for
-		// workspace-less sessions, which keep the `workspace` captured at create
-		// time.
 		try {
 			await session.materialize({ transport, canUseTool, isResume: false, workingDirectory, serverToolHost: this._serverToolHost });
 		} catch (err) {
@@ -1762,7 +1757,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		})();
 	}
 
-	private async _sendMessage(chat: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, _senderClientId?: string, workingDirectory?: URI): Promise<void> {
+	private async _sendMessage(chat: URI, prompt: string, workingDirectory: URI | undefined, attachments?: readonly MessageAttachment[], turnId?: string, _senderClientId?: string): Promise<void> {
 		// `IAgent.sendMessage` declares `turnId?` but every production caller in
 		// `AgentSideEffects` supplies one. Generate a fallback so the
 		// session-side `QueuedRequest.turnId: string` invariant holds even if a
