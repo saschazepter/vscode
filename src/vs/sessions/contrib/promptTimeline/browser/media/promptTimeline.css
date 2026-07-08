@@ -22,6 +22,9 @@
 	--prompt-timeline-rail-width: 36px;
 	/* Minimum clear space guaranteed between the message content and the rail marks. */
 	--prompt-timeline-content-gap: 24px;
+	/* Gutter reserved for the transcript's native scrollbar (its ~10px width + a small gap) so the
+	 * marks sit to its left and it stays grabbable. */
+	--prompt-timeline-scrollbar-gutter: 16px;
 }
 
 /* Reserve room on the transcript's right edge so message content clears the rail's marks.
