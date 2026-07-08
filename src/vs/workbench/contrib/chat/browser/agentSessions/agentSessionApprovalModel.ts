@@ -38,7 +38,7 @@ export interface IAgentSessionApprovalInfo {
 	readonly since: Date;
 	/**
 	 * The question carousel awaiting answers, present only for
-	 * {@link AgentSessionApprovalKind.Question} approvals produced by the
+	 * {@link AgentSessionApprovalKind.QuestionCarousel} approvals produced by the
 	 * ask-questions tool. Consumers that can render the carousel widget (e.g. the
 	 * blocked-sessions list) use this to show the tool's own UI inline.
 	 */
