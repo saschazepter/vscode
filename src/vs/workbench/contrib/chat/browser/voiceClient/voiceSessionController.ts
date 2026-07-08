@@ -25,7 +25,7 @@ import { IVoicePlaybackService } from '../../common/voicePlaybackService.js';
 import { IAgentSessionsService } from '../agentSessions/agentSessionsService.js';
 import { AgentSessionStatus } from '../agentSessions/agentSessionsModel.js';
 import { IChatService, IChatToolInvocation, ToolConfirmKind, IChatModelReference } from '../../common/chatService/chatService.js';
-import { IChatWidgetService } from '../chat.js';
+import { IChatWidget, IChatWidgetService } from '../chat.js';
 import { IChatModel } from '../../common/model/chatModel.js';
 import { ChatAgentLocation } from '../../common/constants.js';
 import { IWorkbenchEnvironmentService } from '../../../../services/environment/common/environmentService.js';
@@ -212,6 +212,17 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	// --- Deferred responses for non-focused sessions ---
 	/** Session resource string currently focused/visible in the chat pane. */
 	private _focusedSessionId: string | undefined;
+	/**
+	 * Session resource string most recently *shown* to the user in any chat
+	 * widget - updated on focus AND on a widget's view-model swap. `chatWidgetService`
+	 * only reports focus for the DOM-focused widget, so opening a session from the
+	 * sessions list (which reveals it in the chat view pane without moving DOM
+	 * focus off the list) leaves `lastFocusedWidget` pointing at the previously
+	 * viewed session. That stale focus makes the first click fail to flush a
+	 * buffered response or re-narrate a pending confirmation (it only works on the
+	 * second click, once the widget finally takes focus). Tracking the last-shown
+	 * session across all widgets closes that gap. */
+	private _lastShownSessionId: string | undefined;
 	/** Buffered audio for responses that arrived while their session was not
 	 *  focused. Flushed to playback when the session becomes focused. */
 	private readonly _deferredResponses = new Map<string, { audio: string; isFirstChunk: boolean; isFinal: boolean; transcript: string | undefined }[]>();
@@ -327,6 +338,18 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// arrive for a session the user isn't currently looking at, and flush
 		// them once that session becomes focused.
 		this._register(this.chatWidgetService.onDidChangeFocusedSession(() => this._onFocusedSessionChanged()));
+
+		// `onDidChangeFocusedSession` only fires for the DOM-focused widget, so a
+		// session opened into a non-focused widget (e.g. revealed in the chat view
+		// pane from the sessions list while focus stays on the list) is missed.
+		// Watch every widget's view-model so we also react when a session is
+		// *shown* without taking focus - this is what makes a pending confirmation
+		// narrate / a buffered response flush on the first click rather than the
+		// second.
+		for (const widget of this.chatWidgetService.getAllWidgets()) {
+			this._trackWidgetSession(widget);
+		}
+		this._register(this.chatWidgetService.onDidAddWidget(widget => this._trackWidgetSession(widget)));
 
 		// Set up the tool dispatch delegate — uses command bridge for widget ops
 		this.voiceToolDispatchService.setDelegate({
@@ -1215,6 +1238,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._suppressIncomingAudio = false;
 		this._clearDeferredResponses();
 		this._liveReplyKey = undefined;
+		this._lastShownSessionId = undefined;
 		this._prevSessionStates.clear();
 		for (const t of this._userCancelledSessions.values()) { clearTimeout(t); }
 		this._userCancelledSessions.clear();
@@ -2043,10 +2067,8 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		const focused = this._getFocusedSessionId();
 		this._focusedSessionId = focused;
 		if (focused) {
-			this._flushDeferredResponse(focused);
-			// The user is now looking at this session, so any pending-response
-			// indicator for it (confirmation awaiting input) is resolved.
-			this._clearConfirmationIndicator(focused);
+			this._activateShownSession(URI.parse(focused));
+			return;
 		}
 		// Re-send + flush context on focus change so the backend's notion of the
 		// active session (is_active) tracks focus promptly rather than waiting
@@ -2056,14 +2078,90 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	/**
+	 * Track a chat widget's view-model so we notice when a session is shown in it,
+	 * even if that widget never takes DOM focus (so `onDidChangeFocusedSession`
+	 * stays silent). Opening a session from the sessions list reveals it in the
+	 * chat view pane this way.
+	 */
+	private _trackWidgetSession(widget: IChatWidget): void {
+		this._register(widget.onDidChangeViewModel(e => this._onSessionShown(e.currentSessionResource)));
+		// Seed from the widget's current view-model. When a session opens in a
+		// freshly-created widget, its view-model is often already set by the time
+		// we subscribe above, so the initial `onDidChangeViewModel` never fires
+		// and the shown session would otherwise be missed (leaving a buffered
+		// response stuck until the stale focus path happens to catch up).
+		this._onSessionShown(widget.viewModel?.sessionResource);
+	}
+
+	/**
+	 * A session became visible in a chat widget (opened/revealed). Treat it like a
+	 * focus change: mark it active, flush any buffered response, clear its pending
+	 * indicator, and re-send context so the backend re-narrates a confirmation it
+	 * had downgraded while the session was unfocused.
+	 */
+	private _onSessionShown(resource: URI | undefined): void {
+		const key = resource?.toString();
+		if (!key || key === this._lastShownSessionId) {
+			return;
+		}
+		this.logService.info(`[voice] session shown=${key}; flushing/re-sending context`);
+		this._activateShownSession(resource!);
+	}
+
+	/**
+	 * Make a shown/focused session the active one: flush its buffered response,
+	 * clear its pending indicator, and re-send context so the backend narrates a
+	 * pending confirmation/response immediately.
+	 *
+	 * If the session awaits confirmation but its model isn't resident yet, we also
+	 * kick off a load so the confirmation detail becomes available. We still send
+	 * context immediately - `_buildSessionContext` holds a confirmation whose
+	 * detail isn't ready as `thinking`, so the backend narrates exactly once (with
+	 * the detail) rather than a detail-less "I don't see an approval" followed by
+	 * the real one.
+	 */
+	private _activateShownSession(resource: URI): void {
+		const key = resource.toString();
+		this._lastShownSessionId = key;
+		this._flushDeferredResponse(key);
+		this._clearConfirmationIndicator(key);
+		if (this._confirmationDetailPending(resource)) {
+			this._ensureModelLoaded(resource);
+		}
+		this._sendContext();
+		this.voiceClientService.flushSessionContext();
+	}
+
+	/**
+	 * True when a session is awaiting confirmation but its confirmation detail is
+	 * not yet available (model not loaded, or the pending-confirmation part hasn't
+	 * rendered). Used to avoid narrating a detail-less confirmation on the first
+	 * context send followed by the detailed one moments later.
+	 */
+	private _confirmationDetailPending(resource: URI): boolean {
+		const session = this.agentSessionsService.model.sessions.find(s => !s.isArchived() && isEqual(s.resource, resource));
+		if (!session || session.status !== AgentSessionStatus.NeedsInput) {
+			return false;
+		}
+		const model = this.chatService.getSession(resource);
+		if (!model) {
+			return true;
+		}
+		const info = this._getAgentStateInfo(model);
+		return info.state !== 'waiting_for_confirmation' || !info.detail;
+	}
+
+	/**
 	 * The session the user is actively working with for the purpose of routing
 	 * voice audio: the explicitly targeted session if one is set, otherwise the
-	 * focused one. This mirrors how `_buildSessionContext` computes the backend's
-	 * `is_active` session, so playback and the backend agree on which session is
-	 * "active" and everything else is a background narration.
+	 * session most recently shown to the user (across all widgets, so an opened
+	 * session that hasn't taken DOM focus still counts), falling back to the raw
+	 * focused widget. This mirrors how `_buildSessionContext` computes the
+	 * backend's `is_active` session, so playback and the backend agree on which
+	 * session is "active" and everything else is a background narration.
 	 */
 	private _getActiveSessionId(): string | undefined {
-		return this._targetSession.get()?.toString() ?? this._getFocusedSessionId();
+		return this._targetSession.get()?.toString() ?? this._lastShownSessionId ?? this._getFocusedSessionId();
 	}
 
 	/**
@@ -2465,12 +2563,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private _checkSessionStateChanges(): void {
 		// Safety net: if the focus-change event was missed while voice was busy,
 		// flush any buffered response for the session now shown to the user so it
-		// never stays stuck as a pending indicator with no playback. The flush
-		// itself matches the buffered key robustly (exact + URI equality).
+		// never stays stuck as a pending indicator with no playback. Use the
+		// active session (last-shown / focused) rather than only the raw focused
+		// widget, which can lag when a session is opened without taking DOM focus.
+		// The flush itself matches the buffered key robustly (exact + URI equality).
 		if (this._deferredResponses.size > 0) {
-			const focused = this._getFocusedSessionId();
-			if (focused) {
-				this._flushDeferredResponse(focused);
+			const active = this._getActiveSessionId();
+			if (active) {
+				this._flushDeferredResponse(active);
 			}
 		}
 
@@ -2630,10 +2730,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		});
 
 		// Prefer an explicit target session, but fall back to the currently
-		// focused session so the backend always has a single active session to
-		// act on. Without this, when several sessions await confirmation the
-		// backend has no active session and asks the user which one to use.
-		const targetSessionId = this._targetSession.get()?.toString() ?? this._getFocusedSessionId();
+		// active (last-shown / focused) session so the backend always has a
+		// single active session to act on. Without this, when several sessions
+		// await confirmation the backend has no active session and asks the user
+		// which one to use.
+		const targetSessionId = this._getActiveSessionId();
 
 		const sessionList = sessions.map(s => {
 			const model = this.chatService.getSession(s.resource);
@@ -2653,6 +2754,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 						fallbackState = prev.state;
 					}
 				}
+				// A confirmation whose model isn't resident has no detail yet.
+				// Report `thinking` (hold) so the backend doesn't narrate a
+				// detail-less confirmation ("I don't see an approval") now and the
+				// real one moments later; the autorun re-narrates once with detail
+				// after the model loads. Ensure that load is in flight.
+				if (fallbackState === 'waiting_for_confirmation') {
+					this._ensureModelLoaded(s.resource);
+					fallbackState = 'thinking';
+				}
 				const scoped = this._reportedAgentState(fallbackState, isActive);
 				return {
 					id: sessionIdStr,
@@ -2661,7 +2771,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				};
 			}
 			const stateInfo = this._getAgentStateInfo(model);
-			const scoped = this._reportedAgentState(stateInfo.state, isActive);
+			// A confirmation whose detail hasn't rendered yet is held as
+			// `thinking` for the same reason as the no-model case above: narrate
+			// exactly once, with the detail, rather than a detail-less one first.
+			const detailPending = stateInfo.state === 'waiting_for_confirmation' && !stateInfo.detail;
+			const scoped = detailPending
+				? { state: 'thinking', hideConfirmationDetail: true }
+				: this._reportedAgentState(stateInfo.state, isActive);
 			return {
 				id: s.resource.toString(),
 				is_active: isActive,
