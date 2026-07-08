@@ -4,9 +4,14 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as cp from 'child_process';
+import * as fsPromises from 'fs/promises';
+import { cp as copyFile } from '@vscode/fs-copyfile';
+import { CancellationToken } from '../../../base/common/cancellation.js';
+import * as path from '../../../base/common/path.js';
 import { URI } from '../../../base/common/uri.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
 import { generateUuid } from '../../../base/common/uuid.js';
+import { Disposable } from '../../../base/common/lifecycle.js';
 import { INativeEnvironmentService } from '../../environment/common/environment.js';
 import { IFileService } from '../../files/common/files.js';
 import { ILogService } from '../../log/common/log.js';
@@ -14,9 +19,10 @@ import { FileEditKind, type ISessionFileDiff, type ISessionGitState } from '../c
 import { buildGitBlobUri } from './gitDiffContent.js';
 import { EMPTY_TREE_OBJECT, getBranchCompletions, IAgentHostGitService, IComputeSessionFileDiffsOptions, IPullOptions, IPushOptions } from '../common/agentHostGitService.js';
 import { LRUCache } from '../../../base/common/map.js';
-import { SequencerByKey } from '../../../base/common/async.js';
+import { Limiter, SequencerByKey } from '../../../base/common/async.js';
+import { AgentHostWorkspaceFiles } from './agentHostWorkspaceFiles.js';
 
-export class AgentHostGitService implements IAgentHostGitService {
+export class AgentHostGitService extends Disposable implements IAgentHostGitService {
 	declare readonly _serviceBrand: undefined;
 
 	/**
@@ -24,12 +30,16 @@ export class AgentHostGitService implements IAgentHostGitService {
 	 */
 	private readonly _repositoryRoots = new LRUCache<string, URI>(100);
 	private readonly _repositoryRootSequencer = new SequencerByKey<string>();
+	private readonly _workspaceFiles: AgentHostWorkspaceFiles;
 
 	constructor(
 		@IFileService private readonly _fileService: IFileService,
 		@INativeEnvironmentService private readonly _environmentService: INativeEnvironmentService,
 		@ILogService private readonly _logService: ILogService,
-	) { }
+	) {
+		super();
+		this._workspaceFiles = this._register(new AgentHostWorkspaceFiles(_logService));
+	}
 
 	async getCurrentBranch(workingDirectory: URI): Promise<string | undefined> {
 		return (await this._runGit(workingDirectory, ['branch', '--show-current']))?.trim()
@@ -115,6 +125,35 @@ export class AgentHostGitService implements IAgentHostGitService {
 		// 'origin/main', without --no-track git would set the new branch's
 		// upstream to origin/main, which would mis-attribute pushes/pulls).
 		await this._runGit(repositoryRoot, ['-c', 'checkout.workers=0', 'worktree', 'add', '--no-track', '-b', branchName, worktree.fsPath, resolvedStartPoint], { timeout: 180_000, throwOnError: true });
+	}
+
+	async copyWorktreeIncludeFiles(repositoryRoot: URI, worktree: URI, includeGlobs: readonly string[]): Promise<void> {
+		try {
+			const worktreeIncludePaths = await this._getWorktreeIncludePaths(repositoryRoot, includeGlobs);
+			if (worktreeIncludePaths.length === 0) {
+				return;
+			}
+
+			const startTime = performance.now();
+			const limiter = new Limiter<void>(15);
+			const results = await Promise.allSettled(worktreeIncludePaths.map(sourcePath => limiter.queue(async () => {
+				const targetPath = path.join(worktree.fsPath, path.relative(repositoryRoot.fsPath, sourcePath));
+				await fsPromises.mkdir(path.dirname(targetPath), { recursive: true });
+				await copyFile(sourcePath, targetPath, { force: true, recursive: true, verbatimSymlinks: true });
+			})));
+
+			const failedOperations = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+			this._logService.info(`[AgentHostGitService][copyWorktreeIncludeFiles] Copied ${worktreeIncludePaths.length - failedOperations.length}/${worktreeIncludePaths.length} folder(s)/file(s) to worktree ${worktree.fsPath}. [${(performance.now() - startTime).toFixed(2)}ms]`);
+
+			if (failedOperations.length > 0) {
+				this._logService.warn(`[AgentHostGitService][copyWorktreeIncludeFiles] Failed to copy ${failedOperations.length} folder(s)/file(s) to worktree ${worktree.fsPath}.`);
+				for (const error of failedOperations) {
+					this._logService.warn(`[AgentHostGitService][copyWorktreeIncludeFiles] ${error.reason}`);
+				}
+			}
+		} catch (error) {
+			this._logService.warn(`[AgentHostGitService][copyWorktreeIncludeFiles] Failed to copy folder(s)/file(s) to worktree ${worktree.fsPath}: ${error}`);
+		}
 	}
 
 	async addExistingWorktree(repositoryRoot: URI, worktree: URI, branchName: string): Promise<void> {
@@ -328,6 +367,69 @@ export class AgentHostGitService implements IAgentHostGitService {
 		const remoteBranch = `origin/${branch}`;
 		const output = await this._runGit(repositoryRoot, ['show-ref', '--verify', '--quiet', `refs/remotes/${remoteBranch}`]);
 		return output !== undefined ? remoteBranch : undefined;
+	}
+
+	private async _getWorktreeIncludePaths(repositoryRoot: URI, includeGlobs: readonly string[]): Promise<string[]> {
+		if (includeGlobs.length === 0) {
+			return [];
+		}
+
+		const repositoryRootPath = repositoryRoot.fsPath;
+		const allFiles = await this._workspaceFiles.getFiles(repositoryRoot, CancellationToken.None, {
+			includeGlobs,
+			disregardIgnoreFiles: true,
+			disregardParentIgnoreFiles: true,
+			disregardGlobalIgnoreFiles: true,
+		});
+		const nonIgnoredFiles = await this._workspaceFiles.getFiles(repositoryRoot, CancellationToken.None, {
+			includeGlobs,
+			disregardDotIgnoreFiles: true,
+			disregardGlobalIgnoreFiles: true,
+		});
+		const gitIgnoredFiles = new Set(allFiles.map(uri => uri.fsPath));
+		for (const uri of nonIgnoredFiles) {
+			gitIgnoredFiles.delete(uri.fsPath);
+		}
+		if (gitIgnoredFiles.size === 0) {
+			return [];
+		}
+
+		const filePatternBases = new Set<string>();
+		for (const pattern of includeGlobs) {
+			const segments = pattern.split(/[\/\\]/);
+			const fixedSegments: string[] = [];
+			for (const segment of segments) {
+				if (/[*?{}[\]]/.test(segment)) {
+					break;
+				}
+				fixedSegments.push(segment);
+			}
+			filePatternBases.add(path.join(repositoryRootPath, ...fixedSegments));
+		}
+
+		const gitIgnoredPaths = new Set(gitIgnoredFiles);
+		for (const filePath of gitIgnoredFiles) {
+			let dir = path.dirname(filePath);
+			while (dir !== repositoryRootPath && !gitIgnoredPaths.has(dir)) {
+				gitIgnoredPaths.add(dir);
+				if (filePatternBases.has(dir)) {
+					break;
+				}
+				dir = path.dirname(dir);
+			}
+		}
+
+		let lastTopmost: string | undefined;
+		const pathsToCopy: string[] = [];
+		for (const candidate of Array.from(gitIgnoredPaths).sort()) {
+			if (lastTopmost && (candidate === lastTopmost || candidate.startsWith(lastTopmost + path.sep))) {
+				continue;
+			}
+			pathsToCopy.push(candidate);
+			lastTopmost = candidate;
+		}
+
+		return pathsToCopy;
 	}
 
 	async showBlob(workingDirectory: URI, ref: string, repoRelativePath: string): Promise<VSBuffer | undefined> {

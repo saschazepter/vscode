@@ -151,6 +151,7 @@ class TestAgentHostGitService implements IAgentHostGitService {
 		this.addedWorktrees.push({ repositoryRoot, worktree, branchName, startPoint });
 		this.existingBranches.add(branchName);
 	}
+	async copyWorktreeIncludeFiles(): Promise<void> { }
 	async addExistingWorktree(repositoryRoot: URI, worktree: URI, branchName: string): Promise<void> {
 		this.addedExistingWorktrees.push({ repositoryRoot, worktree, branchName });
 	}
