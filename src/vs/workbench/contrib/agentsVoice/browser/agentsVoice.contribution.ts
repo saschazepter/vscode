@@ -392,9 +392,7 @@ registerAction2(class extends Action2 {
 
 		const devices = await navigator.mediaDevices.enumerateDevices();
 
-		// `enumerateDevices` can return the same physical microphone multiple times: once with its
-		// real `deviceId` and again under the special `default`/`communications` aliases (which share
-		// the same `groupId`). Skip those aliases and dedupe by `groupId` so each mic appears once.
+		// Skip the `default`/`communications` aliases and dedupe by `groupId` so each physical mic appears once.
 		const seenGroups = new Set<string>();
 		const audioInputs = devices.filter(d => {
 			if (d.kind !== 'audioinput' || d.deviceId === 'default' || d.deviceId === 'communications') {
