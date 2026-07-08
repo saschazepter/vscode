@@ -2355,6 +2355,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		const sessions = this.agentSessionsService.model.sessions.filter(s => !s.isArchived());
 		const stateChanges: { sessionId: string; currentState: string; label: string; detail?: string; lastResponseSummary?: string }[] = [];
 		const processedResources = new Set<string>();
+		const waitingSessionIds = new Set<string>();
 
 		for (const s of sessions) {
 			processedResources.add(s.resource.toString());
@@ -2406,6 +2407,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			if (currentState !== 'unknown') {
 				this._prevSessionStates.set(sessionId, { state: currentState, detail: detail ?? '' });
 			}
+			if (currentState === 'waiting_for_confirmation') {
+				waitingSessionIds.add(sessionId);
+			}
 		}
 
 		// Also check regular (non-agent) chat sessions
@@ -2431,7 +2435,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			if (currentState !== 'unknown') {
 				this._prevSessionStates.set(key, { state: currentState, detail: detail ?? '' });
 			}
+			if (currentState === 'waiting_for_confirmation') {
+				waitingSessionIds.add(key);
+			}
 		}
+
+		// Keep the sessions-list pending indicator in sync for confirmations that
+		// arrive on sessions detected here (e.g. remote/unloaded sessions surfaced
+		// via onDidChangeSessions or the periodic poll rather than the autorun).
+		this._reconcileConfirmationIndicators(waitingSessionIds);
 
 		if (stateChanges.length > 0) {
 			this.logService.info(`[voice] onDidChangeSessions detected ${stateChanges.length} state change(s): ${stateChanges.map(c => `${c.label}: ${c.currentState}`).join(', ')}`);
@@ -2455,6 +2467,32 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				);
 			}
 		}
+	}
+
+	/**
+	 * Scope confirmations to the active session before reporting to the backend.
+	 *
+	 * Only the active (focused/target) session's `waiting_for_confirmation` state
+	 * is reported as such; any OTHER session awaiting confirmation is downgraded
+	 * to `thinking` (and its confirmation detail dropped). This does two things:
+	 *
+	 *  1. The backend only ever sees a single confirmation, so it never asks the
+	 *     user "which one do you want me to approve?".
+	 *  2. When the user focuses a session that was awaiting confirmation while
+	 *     unfocused, `_buildSessionContext` starts reporting it as
+	 *     `waiting_for_confirmation`. The backend observes the fresh
+	 *     `thinking -> waiting_for_confirmation` transition and narrates the
+	 *     confirmation at that moment (the "read it out on focus" behaviour).
+	 *
+	 * The sessions-list pending indicator for the unfocused confirmation is
+	 * driven separately from client-observed state (_reconcileConfirmationIndicators),
+	 * so it stays accurate even though the backend isn't told about it.
+	 */
+	private _reportedAgentState(realState: string, isActive: boolean): { state: string; hideConfirmationDetail: boolean } {
+		if (realState === 'waiting_for_confirmation' && !isActive) {
+			return { state: 'thinking', hideConfirmationDetail: true };
+		}
+		return { state: realState, hideConfirmationDetail: false };
 	}
 
 	private _buildSessionContext(): IVoiceSessionContext {
@@ -2493,18 +2531,20 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 						fallbackState = prev.state;
 					}
 				}
+				const scoped = this._reportedAgentState(fallbackState, isActive);
 				return {
 					id: sessionIdStr,
 					is_active: isActive,
-					agent_state: fallbackState,
+					agent_state: scoped.state,
 				};
 			}
 			const stateInfo = this._getAgentStateInfo(model);
+			const scoped = this._reportedAgentState(stateInfo.state, isActive);
 			return {
 				id: s.resource.toString(),
 				is_active: isActive,
-				agent_state: stateInfo.state,
-				...(stateInfo.detail ? { agent_state_detail: stateInfo.detail } : {}),
+				agent_state: scoped.state,
+				...(!scoped.hideConfirmationDetail && stateInfo.detail ? { agent_state_detail: stateInfo.detail } : {}),
 				...(stateInfo.last_response_summary ? { last_response_summary: stateInfo.last_response_summary } : {}),
 			};
 		});
@@ -2522,11 +2562,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				const lastActive = chatModel.lastMessageDate;
 				if (lastActive < oneHourAgo) { continue; }
 			}
+			const isActive = key === targetSessionId;
+			const scoped = this._reportedAgentState(stateInfo.state, isActive);
 			sessionList.push({
 				id: key,
-				is_active: key === targetSessionId,
-				agent_state: stateInfo.state,
-				...(stateInfo.detail ? { agent_state_detail: stateInfo.detail } : {}),
+				is_active: isActive,
+				agent_state: scoped.state,
+				...(!scoped.hideConfirmationDetail && stateInfo.detail ? { agent_state_detail: stateInfo.detail } : {}),
 				...(stateInfo.last_response_summary ? { last_response_summary: stateInfo.last_response_summary } : {}),
 			});
 		}
