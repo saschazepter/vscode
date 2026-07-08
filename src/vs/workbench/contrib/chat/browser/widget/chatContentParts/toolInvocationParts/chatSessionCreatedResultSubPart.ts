@@ -25,7 +25,8 @@ import '../media/chatSessionCreatedResult.css';
  * a compact secondary button (labelled with the session title) that opens it.
  * The link comes from the tool call's structured {@link IChatSessionCreatedData}
  * (not the model's prose), so it is always present and clickable. Clicking opens
- * the session via the `agent-host-session://` opener registered in the Agents window.
+ * the session through the `agent-host-session://` opener — registered in the
+ * Agents window and (for editor-window chat) by the workbench.
  */
 export class ChatSessionCreatedResultSubPart extends BaseChatToolInvocationSubPart {
 
