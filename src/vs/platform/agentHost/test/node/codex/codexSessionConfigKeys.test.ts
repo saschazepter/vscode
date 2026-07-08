@@ -95,6 +95,9 @@ suite('codexSessionConfigKeys', () => {
 		assert.deepStrictEqual({
 			// The visible schema is reduced to Mode + one permissions preset + Permissions.
 			schemaProperties: Object.keys(defaulted.schema.properties).sort(),
+			// Codex drops "Autopilot" (no native equivalent — it would duplicate
+			// "Interactive"), so the Mode picker offers only interactive + plan.
+			modeEnum: defaulted.schema.properties[SessionConfigKey.Mode].enum,
 			defaultedValues: {
 				mode: defaulted.values[SessionConfigKey.Mode],
 				preset: defaulted.values[CodexSessionConfigKey.PermissionsPreset],
@@ -103,6 +106,7 @@ suite('codexSessionConfigKeys', () => {
 			fullAccessPreset: fullAccess.values[CodexSessionConfigKey.PermissionsPreset],
 		}, {
 			schemaProperties: [SessionConfigKey.Mode, CodexSessionConfigKey.PermissionsPreset, SessionConfigKey.Permissions].sort(),
+			modeEnum: ['interactive', 'plan'],
 			defaultedValues: { mode: 'interactive', preset: 'default' },
 			fullAccessPreset: 'full-access',
 		});

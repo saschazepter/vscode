@@ -219,6 +219,44 @@ suite('codexMapAppServerEvents', () => {
 		assert.deepStrictEqual((start as { _meta?: Record<string, unknown> })._meta, { toolKind: 'terminal' });
 	});
 
+	test('commandExecution unwraps the OS shell wrapper for display (start + completed)', () => {
+		const state = createCodexSessionMapState();
+		const started = mapItemStarted(state, {
+			item: {
+				type: 'commandExecution', id: 'cmd_wrap',
+				command: '/bin/zsh -lc \'touch ~/foo\'', cwd: '/tmp', processId: null,
+				source: 'agent' as never, status: 'inProgress' as never,
+				commandActions: [], aggregatedOutput: null,
+				exitCode: null, durationMs: null,
+			} as never,
+			threadId: 'thr_1', turnId: 'turn_a', startedAtMs: 0,
+		});
+		const delta = started[1] as { content: string };
+		const ready = started[2] as { invocationMessage: string; toolInput: string };
+		const completed = mapItemCompleted(state, {
+			item: {
+				type: 'commandExecution', id: 'cmd_wrap',
+				command: '/bin/zsh -lc \'touch ~/foo\'', cwd: '/tmp', processId: null,
+				source: 'agent' as never, status: 'completed' as never,
+				commandActions: [], aggregatedOutput: '',
+				exitCode: 0, durationMs: 4,
+			} as never,
+			threadId: 'thr_1', turnId: 'turn_a', completedAtMs: 0,
+		});
+		const complete = completed[0] as { result: { pastTenseMessage: string } };
+		assert.deepStrictEqual({
+			delta: delta.content,
+			invocationMessage: ready.invocationMessage,
+			toolInput: ready.toolInput,
+			pastTenseMessage: complete.result.pastTenseMessage,
+		}, {
+			delta: 'touch ~/foo',
+			invocationMessage: 'touch ~/foo',
+			toolInput: 'touch ~/foo',
+			pastTenseMessage: 'Ran `touch ~/foo`',
+		});
+	});
+
 	test('item/commandExecution/outputDelta streams running tool content', () => {
 		const state = createCodexSessionMapState();
 		mapItemStarted(state, {

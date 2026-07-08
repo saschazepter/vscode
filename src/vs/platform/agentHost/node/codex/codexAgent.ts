@@ -17,7 +17,7 @@ import { IInstantiationService } from '../../../instantiation/common/instantiati
 import { localize } from '../../../../nls.js';
 import { ILogService } from '../../../log/common/log.js';
 import { IProductService } from '../../../product/common/productService.js';
-import { createSchema, platformSessionSchema, schemaProperty, type SessionMode } from '../../common/agentHostSchema.js';
+import { createSchema, platformSessionSchema, schemaProperty, type ISchemaProperty, type SessionMode } from '../../common/agentHostSchema.js';
 import { createPricingMetaFromBilling, normalizeCAPIBilling } from '../../common/agentModelPricing.js';
 import { getReasoningEffortDescription, getReasoningEffortLabel } from '../../common/reasoningEffort.js';
 import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentHostCodexForceReviewDeniedEnvVar, AgentSession, AgentSignal, CODEX_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, type AgentProvider } from '../../common/agentService.js';
@@ -43,7 +43,7 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { PendingRequestRegistry } from '../../common/pendingRequestRegistry.js';
 import { CodexAppServerClient, JsonRpcError, transportFromChildProcess, type ICodexAppServerClient, type ServerRequestHandlerResult } from './codexAppServerClient.js';
 import { ICodexProxyService, type ICodexProxyHandle } from './codexProxyService.js';
-import { createCodexSessionMapState, extractUserInputText, mapAgentMessageDelta, mapCommandExecutionOutputDelta, mapFileChangeOutputDelta, mapFileChangePatchUpdated, mapItemCompleted, mapItemStarted, mapMcpToolCallProgress, mapReasoningSummaryPartAdded, mapReasoningSummaryTextDelta, mapReasoningTextDelta, mapTokenUsageUpdated, mapTurnCompleted, mapTurnStarted, resetCodexTurnMapState, type ICodexSessionMapState } from './codexMapAppServerEvents.js';
+import { createCodexSessionMapState, extractUserInputText, mapAgentMessageDelta, mapCommandExecutionOutputDelta, mapFileChangeOutputDelta, mapFileChangePatchUpdated, mapItemCompleted, mapItemStarted, mapMcpToolCallProgress, mapReasoningSummaryPartAdded, mapReasoningSummaryTextDelta, mapReasoningTextDelta, mapTokenUsageUpdated, mapTurnCompleted, mapTurnStarted, resetCodexTurnMapState, unwrapShellInvocation, type ICodexSessionMapState } from './codexMapAppServerEvents.js';
 import { resolveCodexInput } from './codexPromptResolver.js';
 import { buildUserInputRequest, emptyUserInputResponse, userInputResponseFromAnswers } from './codexUserInputMapper.js';
 import { replayThreadToTurns } from './codexReplayMapper.js';
@@ -152,6 +152,25 @@ const MCP_TOOL_APPROVAL_ANSWER_DECLINE = '__codex_mcp_decline__';
  */
 const CODEX_RESPONSES_ENDPOINT = '/responses';
 
+/**
+ * Codex's Agent Mode schema, derived from the platform-generic Mode schema but
+ * with "Autopilot" removed. Codex has only two native collaboration modes —
+ * `plan` and `default` (see {@link ModeKind}) — so "Autopilot" would map to
+ * `default`, identical to "Interactive", and offering it in the picker would be
+ * a no-op duplicate. Labels and descriptions are sliced by index so they stay
+ * in sync with the platform schema.
+ */
+function createCodexModeSchema(): ISchemaProperty<SessionMode> {
+	const base = platformSessionSchema.definition[SessionConfigKey.Mode].protocol;
+	const kept = (base.enum ?? []).flatMap((value, index) => value === 'autopilot' ? [] : [index]);
+	return schemaProperty<SessionMode>({
+		...base,
+		enum: kept.map(index => base.enum![index]),
+		enumLabels: base.enumLabels && kept.map(index => base.enumLabels![index]),
+		enumDescriptions: base.enumDescriptions && kept.map(index => base.enumDescriptions![index]),
+	});
+}
+
 const codexSessionConfigSchema = createSchema({
 	[CodexSessionConfigKey.PermissionsPreset]: schemaProperty<CodexPermissionsPreset>({
 		type: 'string',
@@ -232,7 +251,7 @@ const codexSessionConfigSchema = createSchema({
 		default: 'medium',
 		sessionMutable: true,
 	}),
-	[SessionConfigKey.Mode]: platformSessionSchema.definition[SessionConfigKey.Mode],
+	[SessionConfigKey.Mode]: createCodexModeSchema(),
 	[CodexSessionConfigKey.Personality]: schemaProperty<Personality>({
 		type: 'string',
 		title: localize('codex.sessionConfig.personality', "Personality"),
@@ -1531,6 +1550,11 @@ export class CodexAgent extends Disposable implements IAgent {
 			return 'decline';
 		}
 		const command = params.command ?? '';
+		// Peel the OS shell wrapper (`/bin/zsh -lc '…'`) off for display so the
+		// approval card matches the terminal pill, but keep the raw command as
+		// the accept-for-session memo key so it stays byte-identical to what
+		// Codex re-sends on the next request for the same command.
+		const displayCommand = unwrapShellInvocation(command);
 		// Accept-for-session memo: if the user previously accepted this
 		// exact command for the session, auto-accept without prompting.
 		if (command && session.acceptedForSession.has(command)) {
@@ -1545,8 +1569,8 @@ export class CodexAgent extends Disposable implements IAgent {
 				type: ActionType.ChatToolCallReady,
 				turnId: entry.turnId,
 				toolCallId: entry.toolCallId,
-				invocationMessage: command,
-				toolInput: command,
+				invocationMessage: displayCommand,
+				toolInput: displayCommand,
 				confirmationTitle,
 			});
 		});
