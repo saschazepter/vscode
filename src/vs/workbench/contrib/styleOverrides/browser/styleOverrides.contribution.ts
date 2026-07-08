@@ -27,6 +27,7 @@ import './media/shadows.css';
 import './media/statusBar.css';
 import './media/tabs.css';
 import './media/titlebar.css';
+import './media/notificationsDialogs.css';
 
 interface IStyleOverrideModule {
 	readonly id: string;
@@ -68,7 +69,8 @@ const STYLE_OVERRIDE_MODULES: readonly IStyleOverrideModule[] = [
 	{ id: 'shadows' },
 	{ id: 'statusBar' },
 	{ id: 'tabs' },
-	{ id: 'titlebar' }
+	{ id: 'titlebar' },
+	{ id: 'notificationsDialogs' },
 ];
 
 /**
