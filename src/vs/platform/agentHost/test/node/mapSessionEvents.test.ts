@@ -132,7 +132,7 @@ suite('mapSessionEvents — history replay', () => {
 		if (part.toolCall.status !== ToolCallStatus.Completed) { return; }
 		assert.deepStrictEqual(part.toolCall.content, [
 			{ type: ToolResultContentType.Text, text: 'hi\n' },
-			{ type: ToolResultContentType.ShellExit, exitCode: 0, cwd: URI.file('/repo').toString(), outputPreview: 'hi\n' },
+			{ type: ToolResultContentType.TerminalComplete, exitCode: 0, cwd: URI.file('/repo').toString(), preview: 'hi\n' },
 		]);
 	});
 
@@ -161,7 +161,7 @@ suite('mapSessionEvents — history replay', () => {
 		assert.strictEqual(part.toolCall.status, ToolCallStatus.Completed);
 		if (part.toolCall.status !== ToolCallStatus.Completed) { return; }
 		assert.strictEqual(part.toolCall.success, true);
-		assert.ok(part.toolCall.content?.some(content => content.type === ToolResultContentType.ShellExit && content.exitCode === 127));
+		assert.ok(part.toolCall.content?.some(content => content.type === ToolResultContentType.TerminalComplete && content.exitCode === 127));
 		assert.ok(!part.toolCall.content?.some(content => content.type === ToolResultContentType.Terminal));
 	});
 

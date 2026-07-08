@@ -1165,7 +1165,7 @@ export const enum ToolResultContentType {
 	Resource = 'resource',
 	FileEdit = 'fileEdit',
 	Terminal = 'terminal',
-	ShellExit = 'shellExit',
+	TerminalComplete = 'terminalComplete',
 	Subagent = 'subagent',
 }
 
@@ -1234,20 +1234,34 @@ export interface ToolResultTerminalContent {
 }
 
 /**
- * Shell command exit metadata emitted by a shell tool.
+ * Record of a command executed by a terminal-style tool (e.g. a shell tool),
+ * appended to the tool result when the command exits.
+ *
+ * This records the command's exit, not the terminal's — the terminal may
+ * keep running afterwards.
+ *
+ * When live output was exposed through a terminal channel (a
+ * {@link ToolResultTerminalContent} block in the same tool result),
+ * {@link resource} identifies that channel; otherwise this block stands alone
+ * as the retained command result.
  *
  * @category Tool Result Content
  */
-export interface ToolResultShellExitContent {
-	type: ToolResultContentType.ShellExit;
-	/** Exit code from the completed shell command, if reported by the runtime */
+export interface ToolResultTerminalCompleteContent {
+	type: ToolResultContentType.TerminalComplete;
+	/**
+	 * URI of the `ahp-terminal:` channel that carried live output for this
+	 * command, if one was exposed.
+	 */
+	resource?: URI;
+	/** Exit code from the completed command, if reported by the runtime */
 	exitCode?: number;
-	/** Working directory where the shell command was executed */
+	/** Working directory where the command was executed */
 	cwd?: URI;
-	/** Output preview associated with the shell command, if available */
-	outputPreview?: string;
-	/** Whether `outputPreview` is known to be incomplete or truncated */
-	outputTruncated?: boolean;
+	/** Preview of the command's output, if available */
+	preview?: string;
+	/** Whether `preview` is known to be incomplete or truncated */
+	truncated?: boolean;
 }
 
 /**
@@ -1279,7 +1293,7 @@ export interface ToolResultSubagentContent {
  * `ToolResultResourceContent` for lazy-loading large results,
  * `ToolResultFileEditContent` for file edit diffs,
  * `ToolResultTerminalContent` for live terminal output,
- * `ToolResultShellExitContent` for shell command exit metadata, and
+ * `ToolResultTerminalCompleteContent` for terminal-style completion metadata, and
  * `ToolResultSubagentContent` for tool-spawned worker chats (AHP extensions).
  *
  * @category Tool Result Content
@@ -1290,5 +1304,5 @@ export type ToolResultContent =
 	| ToolResultResourceContent
 	| ToolResultFileEditContent
 	| ToolResultTerminalContent
-	| ToolResultShellExitContent
+	| ToolResultTerminalCompleteContent
 	| ToolResultSubagentContent;
