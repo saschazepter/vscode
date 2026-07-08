@@ -276,9 +276,9 @@ class LiveBrowserPillActionViewItem extends BaseActionViewItem {
 
 /**
  * The preview pill: renders the primary previewable file as a resource label
- * (file icon + name) with a "preview" description. When more than one previewable
- * file exists, a separator and a dropdown chevron are shown; the chevron lists
- * every previewable file. Activating the label opens the primary file's preview.
+ * (file icon + name). When more than one previewable file exists, a separator
+ * and a dropdown chevron are shown; the chevron lists every previewable file.
+ * Activating the label opens the primary file's preview.
  */
 class PreviewPillActionViewItem extends BaseActionViewItem {
 
@@ -299,10 +299,6 @@ class PreviewPillActionViewItem extends BaseActionViewItem {
 		this.element = container;
 		container.classList.add('chat-turn-pill-preview');
 
-		// The whole pill is one unified control: a primary resource label (file
-		// icon + name + "preview") on the left, an in-pill separator, and a dropdown
-		// chevron on the right. The inner buttons are transparent so the pill reads
-		// as a single element; each is an independent, tab-focusable button.
 		const primary = this._primary = this._register(new Button(container, { ...TRANSPARENT_BUTTON_STYLES }));
 		primary.element.classList.add('chat-turn-pill-preview-primary');
 		const label = this._register(this._resourceLabels.create(primary.element));
@@ -331,7 +327,7 @@ class PreviewPillActionViewItem extends BaseActionViewItem {
 			const primaryFile = files.at(0);
 			if (primaryFile) {
 				label.setResource(
-					{ resource: primaryFile.uri, name: basename(primaryFile.uri), description: localize('chatTurnPills.preview.description', "preview") },
+					{ resource: primaryFile.uri, name: basename(primaryFile.uri) },
 					{ fileKind: FileKind.FILE },
 				);
 				const tooltip = localize('chatTurnPills.preview.tooltipOne', "Open Preview: {0}", basename(primaryFile.uri));
@@ -357,9 +353,9 @@ class PreviewPillActionViewItem extends BaseActionViewItem {
  * - **Changes** — `<n> Files +ins -del` for the turn. Activating it opens the
  *   changes.
  * - **Preview** — shown when the turn created or edited a markdown or HTML file.
- *   Rendered as a resource label (file icon + name) with a "preview" description
- *   for the primary file. Activating it opens that file as a markdown preview or
- *   in the integrated browser; when several exist, a dropdown lists them all.
+ *   Rendered as a resource label for the primary file. Activating it opens that
+ *   file as a markdown preview or in the integrated browser; when several exist,
+ *   a dropdown lists them all.
  * - **Live Browser** — shown when the turn made a browser tool call that carries
  *   a URL. Rendered as `<browser-icon> Live Browser`; activating it opens the
  *   integrated browser at the turn's last browser URL.
