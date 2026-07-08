@@ -391,7 +391,23 @@ registerAction2(class extends Action2 {
 		const storageService = accessor.get(IStorageService);
 
 		const devices = await navigator.mediaDevices.enumerateDevices();
-		const audioInputs = devices.filter(d => d.kind === 'audioinput' && d.deviceId !== 'default');
+
+		// `enumerateDevices` can return the same physical microphone multiple times: once with its
+		// real `deviceId` and again under the special `default`/`communications` aliases (which share
+		// the same `groupId`). Skip those aliases and dedupe by `groupId` so each mic appears once.
+		const seenGroups = new Set<string>();
+		const audioInputs = devices.filter(d => {
+			if (d.kind !== 'audioinput' || d.deviceId === 'default' || d.deviceId === 'communications') {
+				return false;
+			}
+			if (d.groupId && seenGroups.has(d.groupId)) {
+				return false;
+			}
+			if (d.groupId) {
+				seenGroups.add(d.groupId);
+			}
+			return true;
+		});
 
 		if (audioInputs.length === 0) {
 			quickInputService.pick([{ label: nls.localize('noMicrophones', "No microphones found") }]);
