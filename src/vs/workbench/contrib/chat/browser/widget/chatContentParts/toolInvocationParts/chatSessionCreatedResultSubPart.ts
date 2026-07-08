@@ -8,7 +8,6 @@ import { Button } from '../../../../../../../base/browser/ui/button/button.js';
 import { Codicon } from '../../../../../../../base/common/codicons.js';
 import { ThemeIcon } from '../../../../../../../base/common/themables.js';
 import { URI } from '../../../../../../../base/common/uri.js';
-import { localize } from '../../../../../../../nls.js';
 import { IInstantiationService } from '../../../../../../../platform/instantiation/common/instantiation.js';
 import { IMarkdownRenderer } from '../../../../../../../platform/markdown/browser/markdownRenderer.js';
 import { IOpenerService } from '../../../../../../../platform/opener/common/opener.js';
@@ -21,13 +20,12 @@ import { ChatToolProgressSubPart } from './chatToolProgressPart.js';
 import '../media/chatSessionCreatedResult.css';
 
 /**
- * Renders the standard tool-call progress row for a completed `create_session`
- * agent-host tool call, followed by a "Session Created" confirmation and a
- * compact secondary button (labelled with the session title) that opens it.
+ * Renders the standard tool-call progress row for a completed `create_session` /
+ * `create_chat` agent-host tool call, followed by a muted confirmation label and
+ * a compact secondary button (labelled with the session title) that opens it.
  * The link comes from the tool call's structured {@link IChatSessionCreatedData}
  * (not the model's prose), so it is always present and clickable. Clicking opens
- * the created session via the `agent-host-session://` opener registered in the
- * Agents window.
+ * the session via the `agent-host-session://` opener registered in the Agents window.
  */
 export class ChatSessionCreatedResultSubPart extends BaseChatToolInvocationSubPart {
 
@@ -46,7 +44,7 @@ export class ChatSessionCreatedResultSubPart extends BaseChatToolInvocationSubPa
 
 		this.domNode = dom.$('.chat-open-session-result');
 
-		// Keep the normal "Used create_session" tool row visible.
+		// Keep the normal "create_session" tool row visible.
 		const progressPart = this._register(instantiationService.createInstance(ChatToolProgressSubPart, toolInvocation, context, renderer, undefined));
 		dom.append(this.domNode, progressPart.domNode);
 
@@ -57,7 +55,7 @@ export class ChatSessionCreatedResultSubPart extends BaseChatToolInvocationSubPa
 			...defaultButtonStyles,
 			secondary: true,
 			supportIcons: true,
-			title: localize('chat.openSessionTooltip', "Open session: {0}", this.data.label),
+			title: this.data.label,
 		}));
 		button.element.classList.add('chat-open-session-button');
 		button.label = `$(${Codicon.agent.id}) ${this.data.label}`;

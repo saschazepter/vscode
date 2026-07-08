@@ -20,8 +20,7 @@
 }
 
 .chat-open-session-title {
-	font-weight: 600;
-	color: var(--vscode-foreground);
+	color: var(--vscode-descriptionForeground);
 }
 
 .chat-open-session-result .monaco-button.chat-open-session-button {
@@ -32,5 +31,6 @@
 }
 
 .chat-open-session-result .monaco-button.chat-open-session-button .codicon {
-	margin-right: 3px;
+	margin-left: 0;
+	margin-right: 4px;
 }
