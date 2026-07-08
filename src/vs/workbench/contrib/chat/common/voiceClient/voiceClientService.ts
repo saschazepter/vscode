@@ -160,6 +160,16 @@ export interface IVoiceClientService {
 	sendPttAudioChunk(audio: string): void;
 	sendPttEnd(): void;
 	/**
+	 * Barge-in monitoring: while the assistant speaks in hands-free mode, the
+	 * client streams raw mic audio (`barge_in_start`/`barge_in_audio_chunk`/
+	 * `barge_in_stop`) so the backend can detect the user talking over it and
+	 * emit `speech_started`. This audio is NOT a turn and must not be
+	 * transcribed as user input.
+	 */
+	sendBargeInStart(): void;
+	sendBargeInAudioChunk(audio: string): void;
+	sendBargeInStop(): void;
+	/**
 	 * Send a per-press post-mortem diagnostic payload for tail-loss
 	 * investigation. Fired ~500ms after `pttUp` by the mic service.
 	 * `metrics` is an opaque object echoed straight into a structured

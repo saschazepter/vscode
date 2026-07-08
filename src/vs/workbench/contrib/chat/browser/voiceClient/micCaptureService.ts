@@ -93,6 +93,13 @@ export interface IMicCaptureService {
 	readonly onPttEnd: Event<void>;
 
 	/**
+	 * Fired during barge-in monitoring with base64 raw PCM16 chunks (see
+	 * `startMonitor`). Separate from `onPttAudioChunk` so it isn't treated as
+	 * turn input.
+	 */
+	readonly onMonitorAudioChunk: Event<string>;
+
+	/**
 	 * Fired after the diagnostic window closes (~1s after `pttUp`) with
 	 * per-press telemetry. Always fires AFTER `onPttEnd` for normal
 	 * presses. Used for tail-loss diagnosis; safe to ignore for normal
@@ -129,6 +136,16 @@ export interface IMicCaptureService {
 	 */
 	abortPtt(): void;
 
+	/**
+	 * Stream raw mic audio for barge-in detection during assistant playback,
+	 * without opening a PTT turn. Emitted via `onMonitorAudioChunk` and NOT
+	 * subject to AEC suppression. Acquires the mic if not already capturing.
+	 */
+	startMonitor(window: Window & typeof globalThis): Promise<void>;
+
+	/** Stop barge-in monitoring. Releases the mic only if no PTT press is active. */
+	stopMonitor(): void;
+
 	// --- Mute / AEC suppression ---
 	isMuted: boolean;
 
@@ -159,6 +176,7 @@ export class MicCaptureService extends Disposable implements IMicCaptureService 
 	private _suppressUntilTs = 0;
 	private _pttAcquiring = false;
 	private _pttReleasedDuringAcquire = false;
+	private _monitoring = false;
 
 	// --- Hardware mute detection. ---
 	// A hardware microphone kill switch (e.g. on Framework laptops) leaves
@@ -207,6 +225,9 @@ export class MicCaptureService extends Disposable implements IMicCaptureService 
 
 	private readonly _onPttEnd = this._register(new Emitter<void>());
 	readonly onPttEnd: Event<void> = this._onPttEnd.event;
+
+	private readonly _onMonitorAudioChunk = this._register(new Emitter<string>());
+	readonly onMonitorAudioChunk: Event<string> = this._onMonitorAudioChunk.event;
 
 	private readonly _onPttDiagnostic = this._register(new Emitter<IPttDiagnostic>());
 	readonly onPttDiagnostic: Event<IPttDiagnostic> = this._onPttDiagnostic.event;
@@ -331,6 +352,37 @@ export class MicCaptureService extends Disposable implements IMicCaptureService 
 		this._scheduleDiagnosticFire();
 	}
 
+	async startMonitor(window: Window & typeof globalThis): Promise<void> {
+		this._window = window;
+		if (this._monitoring) { return; }
+		this._monitoring = true;
+		// Reuse an open PTT pipeline; otherwise acquire the mic. Acquisition
+		// failure disables monitoring silently (best-effort, not core flow).
+		if (!this._isCapturing) {
+			try {
+				await this.startCapture(window);
+			} catch (err) {
+				this._monitoring = false;
+				this.logService.warn('[mic] barge-in monitor could not acquire microphone', err);
+				return;
+			}
+			// Monitoring may have been cancelled while acquiring; release the
+			// freshly-opened mic so it isn't left running unused.
+			if (!this._monitoring && !this._pttHeld && !this._pttStreaming) {
+				this.stopCapture();
+			}
+		}
+	}
+
+	stopMonitor(): void {
+		if (!this._monitoring) { return; }
+		this._monitoring = false;
+		// Only release the mic if no push-to-talk press is relying on it.
+		if (!this._pttHeld && !this._pttStreaming) {
+			this.stopCapture();
+		}
+	}
+
 	async startCapture(window: Window & typeof globalThis): Promise<void> {
 		this._window = window;
 		if (this._isCapturing) { return; }
@@ -425,6 +477,16 @@ export class MicCaptureService extends Disposable implements IMicCaptureService 
 				if (isPostReleaseCallback) { this._diagPostReleaseSkippedByMute++; }
 				return;
 			}
+
+			// Barge-in monitor: stream raw audio during playback (not a turn,
+			// not AEC-gated) so the backend can detect the user talking over
+			// the assistant. Echo is handled by `echoCancellation` + backend VAD.
+			if (this._monitoring) {
+				const monitorData = e.inputBuffer.getChannelData(0);
+				const monitorSamples = new Float32Array(monitorData);
+				this._onMonitorAudioChunk.fire(encodeRawPcm16Base64(monitorSamples, this._window!));
+			}
+
 			if (nowTs < this._suppressUntilTs) {
 				if (isDrainCallback) { this._diagDrainSkippedBySuppression++; }
 				if (isPostReleaseCallback) { this._diagPostReleaseSkippedBySuppression++; }
@@ -514,6 +576,7 @@ export class MicCaptureService extends Disposable implements IMicCaptureService 
 		this._pttHeld = false;
 		this._pttStreaming = false;
 		this._pttReleasedDuringAcquire = false;
+		this._monitoring = false;
 	}
 
 	override dispose(): void {
