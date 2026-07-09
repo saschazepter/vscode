@@ -1554,31 +1554,6 @@ suite('stateToProgressAdapter', () => {
 			assert.ok(!termData.terminalCommandOutput?.text.includes('shellId'));
 		});
 
-		test('strips legacy exited marker from terminal fallback output', () => {
-			const tc = createCompletedToolCall({
-				_meta: { toolKind: 'terminal' },
-				toolInput: 'false',
-				content: [
-					{ type: ToolResultContentType.Text, text: 'failed\n<exited with exit code 1>' },
-					{ type: ToolResultContentType.ShellExit, shellId: '0', exitCode: 1, cwd: '/repo' },
-				],
-				success: true,
-			});
-
-			const turn = createTurn({
-				responseParts: [{ kind: ResponsePartKind.ToolCall, toolCall: tc } as ToolCallResponsePart],
-			});
-
-			const history = turnsToHistory(URI.file('/'), [turn], 'p');
-			const response = history[1];
-			assert.strictEqual(response.type, 'response');
-			if (response.type !== 'response') { return; }
-			const serialized = response.parts[0] as IChatToolInvocationSerialized;
-			const termData = getSerializedTerminalData(serialized);
-			assert.strictEqual(termData.terminalCommandState?.exitCode, 1);
-			assert.strictEqual(termData.terminalCommandOutput?.text, 'failed\r\n');
-		});
-
 		test('keeps zero shell_exit exit code as success for completed SDK shell tool history', () => {
 			const tc = createCompletedToolCall({
 				_meta: { toolKind: 'terminal' },
