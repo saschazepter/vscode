@@ -126,6 +126,14 @@ export const AgentHostCodexAgentEnabledEnvVar = 'VSCODE_AGENT_HOST_CODEX_AGENT_E
 export const AgentHostByokModelsEnabledEnvVar = 'VSCODE_AGENT_HOST_BYOK_MODELS_ENABLED';
 
 /**
+ * Overrides the grace period (in milliseconds) before an idle, fully
+ * unsubscribed session is released from memory. Defaults to 30_000. Primarily a
+ * test hook so real-SDK integration tests can force a prompt release without
+ * waiting the full production grace; production does not set it.
+ */
+export const AgentHostSessionReleaseGraceMsEnvVar = 'VSCODE_AGENT_HOST_SESSION_RELEASE_GRACE_MS';
+
+/**
  * Resolves the effective enable state for a Claude/Codex provider from the
  * env-var value forwarded by the starter. Recognized values (case- and
  * whitespace-insensitive):

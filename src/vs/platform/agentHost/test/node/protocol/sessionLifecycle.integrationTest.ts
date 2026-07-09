@@ -11,6 +11,7 @@ import type { SessionAddedParams, SessionRemovedParams } from '../../../common/s
 import { PROTOCOL_VERSION } from '../../../common/state/protocol/version/registry.js';
 import type { ListSessionsResult } from '../../../common/state/sessionProtocol.js';
 import { buildDefaultChatUri, ResponsePartKind, ROOT_STATE_URI, SessionStatus, type MarkdownResponsePart, type ISessionWithDefaultChat, type ToolCallResponsePart } from '../../../common/state/sessionState.js';
+import { AgentHostSessionReleaseGraceMsEnvVar } from '../../../common/agentService.js';
 import { PRE_EXISTING_SESSION_URI } from '../mockAgent.js';
 import {
 	createAndSubscribeSession,
@@ -27,9 +28,14 @@ suite('Protocol WebSocket — Session Lifecycle', function () {
 	let server: IServerHandle;
 	let client: TestProtocolClient;
 
+	// Short idle-release grace so the release/restore test exercises a real
+	// release promptly. Safe on the shared server because the mock agent's
+	// releaseSession is cheap (no real SDK disconnect).
+	const RELEASE_GRACE_MS = 200;
+
 	suiteSetup(async function () {
 		this.timeout(15_000);
-		server = await startServer();
+		server = await startServer({ env: { [AgentHostSessionReleaseGraceMsEnvVar]: String(RELEASE_GRACE_MS) } });
 	});
 
 	suiteTeardown(function () {
@@ -142,11 +148,12 @@ suite('Protocol WebSocket — Session Lifecycle', function () {
 		const before = await fetchSessionWithChat(client, preExistingUri);
 		assert.ok(before.turns.length >= 1, 'session should restore turns on first subscribe');
 
-		// Drop every subscriber; the server evicts the idle session (dropping
-		// cached state and releasing the provider's SDK resources).
+		// Drop every subscriber; after the release grace elapses the server
+		// evicts the idle session (dropping cached state and releasing the
+		// provider's SDK resources).
 		client.notify('unsubscribe', { channel: chatUri });
 		client.notify('unsubscribe', { channel: preExistingUri });
-		await timeout(200);
+		await timeout(RELEASE_GRACE_MS + 500);
 
 		// Re-subscribing rehydrates the session from the preserved durable data
 		// — the turns must match the pre-eviction view.

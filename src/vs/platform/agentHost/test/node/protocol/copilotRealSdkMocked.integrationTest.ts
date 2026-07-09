@@ -13,6 +13,7 @@ import { tmpdir } from 'os';
 import { timeout } from '../../../../../base/common/async.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { buildDefaultChatUri, ResponsePartKind, type ISessionWithDefaultChat } from '../../../common/state/sessionState.js';
+import { AgentHostSessionReleaseGraceMsEnvVar } from '../../../common/agentService.js';
 import { createRealSession, dispatchTurn, IRealSdkProviderConfig } from './realSdkTestHelpers.js';
 import { fetchSessionWithChat, isActionNotification, IServerHandle, startRealServer, TestProtocolClient } from './testHelpers.js';
 
@@ -93,6 +94,58 @@ suite('Protocol WebSocket — Real Copilot SDK, Mocked LLM (Copilot-specific)', 
 		assert.ok(markdownText.trim().length > 0, `expected non-empty assistant markdown; got: ${JSON.stringify(markdownText)}`);
 		assert.match(markdownText, new RegExp(`\\b${probeToken}\\b`, 'i'), `expected probe token in assistant markdown; got: ${JSON.stringify(markdownText)}`);
 	});
+});
+
+/**
+ * Idle-session release exercised end to end against the real Copilot SDK
+ * (mock LLM). Uses a dedicated server with a short
+ * {@link AgentHostSessionReleaseGraceMsEnvVar} grace so the release fires
+ * promptly after the last subscriber drops (production defaults to 30s). Kept
+ * in its own suite/server so the short grace can't perturb the timing of the
+ * other real-SDK suites.
+ */
+suite('Protocol WebSocket — Real Copilot SDK, Mocked LLM (idle release)', function () {
+
+	// Short enough that a post-unsubscribe wait reliably outlasts it, long
+	// enough that the intra-test subscribe calls in createRealSession don't race it.
+	const RELEASE_GRACE_MS = 500;
+
+	let server: IServerHandle;
+	let client: TestProtocolClient;
+	const createdSessions: string[] = [];
+	const tempDirs: string[] = [];
+
+	suiteSetup(async function () {
+		this.timeout(120_000);
+		server = await startRealServer({ mockLlm: true, env: { [AgentHostSessionReleaseGraceMsEnvVar]: String(RELEASE_GRACE_MS) } });
+	});
+
+	suiteTeardown(function () {
+		server?.process.kill();
+	});
+
+	setup(async function () {
+		this.timeout(120_000);
+		client = new TestProtocolClient(server.port);
+		await client.connect();
+	});
+
+	teardown(async function () {
+		for (const session of createdSessions) {
+			try {
+				await client.call('disposeSession', { session }, 5000);
+			} catch { /* best-effort */ }
+		}
+		createdSessions.length = 0;
+		client.close();
+
+		for (const dir of tempDirs) {
+			try {
+				await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+			} catch { /* best-effort */ }
+		}
+		tempDirs.length = 0;
+	});
 
 	test('releases an idle session and resumes it losslessly on re-subscribe (mock LLM)', async function () {
 		this.timeout(180_000);
@@ -122,14 +175,16 @@ suite('Protocol WebSocket — Real Copilot SDK, Mocked LLM (Copilot-specific)', 
 		assert.match(assistantMarkdown(before.turns, 'turn-release-1'), new RegExp(`\\b${firstProbe}\\b`, 'i'), 'first turn should have completed before release');
 
 		// Drop every subscriber. The parent-session unsubscribe is sent last so it
-		// triggers idle-session eviction on the server: the cached protocol state
-		// is dropped AND the provider releases the live SDK session
-		// (session.disconnect), while the on-disk session log is preserved.
+		// arms idle-session eviction on the server; after the short release grace
+		// elapses the cached protocol state is dropped AND the provider releases
+		// the live SDK session (session.disconnect), while the on-disk session log
+		// is preserved.
 		for (const channel of [buildDefaultChatUri(sessionUri), sessionUri]) {
 			client.notify('unsubscribe', { channel });
 		}
-		// The release is sequenced inside the provider; give it time to run.
-		await timeout(1000);
+		// Wait comfortably past the release grace so the release actually fires
+		// (and its sequenced SDK disconnect completes) before we re-subscribe.
+		await timeout(RELEASE_GRACE_MS + 2000);
 
 		// Re-subscribe: the server restores the session from disk and the provider
 		// resumes the SDK session on demand. The restored transcript must match

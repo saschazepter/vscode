@@ -20,7 +20,7 @@ import { FileChangeType, FileOperationError, FileOperationResult, FileSystemProv
 import { InstantiationService } from '../../instantiation/common/instantiationService.js';
 import { ServiceCollection } from '../../instantiation/common/serviceCollection.js';
 import { ILogService } from '../../log/common/log.js';
-import { AgentProvider, AgentSession, AgentSignal, IAgent, IAgentChatDataChange, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentHostAuthTokenRequest, IAgentMaterializeSessionEvent, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSpawnChatEvent, AuthenticateParams, AuthenticateResult, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../common/agentService.js';
+import { AgentProvider, AgentSession, AgentSignal, AgentHostSessionReleaseGraceMsEnvVar, IAgent, IAgentChatDataChange, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentHostAuthTokenRequest, IAgentMaterializeSessionEvent, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSpawnChatEvent, AuthenticateParams, AuthenticateResult, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../common/agentService.js';
 import { ISessionDataService, SESSION_ATTACHMENTS_DIRNAME } from '../common/sessionDataService.js';
 import { parseChangesetUri } from '../common/changesetUri.js';
 import { ActionType, ActionEnvelope, AuthRequiredReason, INotification, type ChatAction, type IRootConfigChangedAction, type SessionAction, type TerminalAction, type ClientAnnotationsAction } from '../common/state/sessionActions.js';
@@ -90,6 +90,24 @@ const SESSION_GC_GRACE_MS = 30_000;
  * envelope replay buffer for the same reason.
  */
 const RESOURCE_WATCH_GRACE_MS = 30_000;
+
+/**
+ * Grace period before an idle session (one with turns, no remaining
+ * subscribers) is released from memory via {@link AgentService._maybeEvictIdleSession}.
+ * Deferring the release aligns it with the client disconnect-grace window: a
+ * client that disconnects and quickly reconnects (or a rapid unsubscribe/
+ * re-subscribe) reuses the live provider SDK session instead of forcing an
+ * immediate {@link IAgent.releaseSession} (SDK `disconnect`) followed by a
+ * resume-from-disk. Releasing synchronously on every last-unsubscribe churns
+ * the shared provider runtime and races concurrent session operations.
+ *
+ * Overridable via {@link AgentHostSessionReleaseGraceMsEnvVar} (test hook).
+ */
+const SESSION_RELEASE_GRACE_MS = (() => {
+	const raw = process.env[AgentHostSessionReleaseGraceMsEnvVar];
+	const parsed = raw !== undefined ? parseInt(raw, 10) : NaN;
+	return Number.isFinite(parsed) && parsed >= 0 ? parsed : 30_000;
+})();
 
 /**
  * Session-database metadata key under which the orchestrator persists its own
@@ -233,6 +251,15 @@ export class AgentService extends Disposable implements IAgentService {
 	 * whenever any client subscribes again or the timer fires.
 	 */
 	private readonly _pendingSessionGc = this._register(new DisposableResourceMap<IDisposable>());
+
+	/**
+	 * Pending {@link _maybeEvictIdleSession} timers, keyed by session URI. A
+	 * timer is armed when an idle session (with turns) loses its last subscriber
+	 * — see {@link unsubscribe}. Cleared when any client subscribes again
+	 * ({@link addSubscriber}) or the timer fires. Deferring the release avoids
+	 * churning the provider SDK session on rapid disconnect/reconnect cycles.
+	 */
+	private readonly _pendingSessionRelease = this._register(new DisposableResourceMap<IDisposable>());
 
 	/**
 	 * Active resource watches keyed by the channel URI string
@@ -733,6 +760,7 @@ export class AgentService extends Disposable implements IAgentService {
 		// timer would still fire and dispose the just-revived session
 		// before the follow-up `subscribe` arrives.
 		this._cancelPendingSessionGc(session);
+		this._cancelPendingSessionRelease(session);
 
 		this._logService.trace(`[AgentService] createSession: provider=${provider.id} model=${config?.model?.id ?? '(default)'}`);
 		this._sessionToProvider.set(session.toString(), provider.id);
@@ -1404,8 +1432,9 @@ export class AgentService extends Disposable implements IAgentService {
 		}
 		set.add(clientId);
 		// A new subscriber means the session is being observed again; cancel
-		// any pending GC armed while it had no subscribers.
+		// any pending GC or idle-release armed while it had no subscribers.
 		this._cancelPendingSessionGc(resource);
+		this._cancelPendingSessionRelease(resource);
 		// 0→1 transition — covers both the full subscribe path AND the
 		// handshake fast-path used by `ProtocolServerHandler` when state is
 		// already cached. The coordinator decides whether the URI is one
@@ -1437,7 +1466,20 @@ export class AgentService extends Disposable implements IAgentService {
 		if (this._maybeScheduleSessionGc(resource)) {
 			return;
 		}
-		this._maybeEvictIdleSession(resource);
+		// Defer the idle-session release behind a grace window rather than
+		// releasing synchronously. A client that reconnects (or re-subscribes)
+		// within the window cancels this via {@link _cancelPendingSessionRelease}
+		// and keeps the live provider SDK session, avoiding a disconnect/resume
+		// churn cycle that races concurrent session operations on the shared
+		// provider runtime. A zero grace releases on the next tick.
+		this._pendingSessionRelease.set(resource, disposableTimeout(() => {
+			this._pendingSessionRelease.deleteAndDispose(resource);
+			this._maybeEvictIdleSession(resource);
+		}, SESSION_RELEASE_GRACE_MS));
+	}
+
+	private _cancelPendingSessionRelease(resource: URI): void {
+		this._pendingSessionRelease.deleteAndDispose(resource);
 	}
 
 	/**
