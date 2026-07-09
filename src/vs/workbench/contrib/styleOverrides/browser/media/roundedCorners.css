@@ -148,7 +148,7 @@
  * `modified-in-monaco-diff-editor` class lives on the `.monaco-editor` root, so
  * target the slider as a descendant.
  */
-.style-override .monaco-diff-editor:has(> .diffOverview) .modified-in-monaco-diff-editor .monaco-scrollable-element > .scrollbar > .slider {
+.style-override .monaco-diff-editor:has(> .diffOverview) .modified-in-monaco-diff-editor .monaco-scrollable-element > .scrollbar.vertical > .slider {
 	border-radius: var(--vscode-cornerRadius-small) 0 0 var(--vscode-cornerRadius-small) !important;
 }
 
