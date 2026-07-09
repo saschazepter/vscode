@@ -236,6 +236,41 @@ Sysroot/asset download `429: Too Many Requests`, network resets, etc. are infras
 
 ---
 
+## Relationship to the Copilot CLI e2e harness
+
+This system is a lighter-weight adaptation of the `copilot-agent-runtime` CLI e2e replay harness (`test/cli/e2e/`) — it borrows the record/replay-proxy idea from it (the proxy's `x-should-retry: false` and auto-mode handling deliberately mirror that harness). The main differences:
+
+| | This (agent-host) | Copilot CLI e2e |
+|---|---|---|
+| **System under test** | The agent host server, driven over the AHP WebSocket / JSON-RPC protocol | The Copilot CLI itself, driven through a real PTY / xterm terminal emulator (the full TUI) |
+| **Assertions** | On AHP protocol notifications | On rendered terminal output (`app.expect(…)`, tool-call UI, menus, tab-completion) |
+| **Providers** | Multi-provider (Claude / Copilot / Codex) via one shared parameterized suite | Copilot CLI only |
+| **Response matching** | Sequence-based per `(method, path)` — no body matching | Normalized **request-body** matching (canonicalized to chat-completions), reports a `mismatchReason` on miss |
+| **Fixtures** | One minimal YAML per `(provider, test)` | A directory of named YAML snapshots per scenario |
+| **Runner / record** | Mocha (Electron) via `test-integration.sh`; record with `AGENT_HOST_REPLAY_RECORD=1` | vitest; `SKIP_CACHE` / `STRICT_CAPTURES`, plus asciinema session recording |
+| **Scope** | A focused set of protocol behaviors | Broad: MCP, plugins, permissions, resume, auto-mode, TUI, … |
+
+Practical upshot: the CLI harness matches on request *content* (tolerant of call-order changes, but more setup), while this one matches on call *sequence* (simpler, but sensitive to non-deterministic ordering — see the subagent notes in [Troubleshooting](#troubleshooting)).
+
+### Fixture shape & subagents
+
+The deepest difference is the **unit of storage**, and it's why subagents behave differently:
+
+- **CLI harness** stores a list of **`conversations`**, each the *full* message history, and matches an incoming request against them by **normalized content** (canonicalized to OpenAI chat-completions: `role`/`tool_calls`/`tool`). Every conversation — the parent and each (possibly nested) subagent — is its **own entry**, matched by *what it contains*, not by arrival order. Subagent interleaving is therefore a non-issue, and subagent ids are normalized to a `${agent_id}` placeholder.
+
+  ```yaml
+  models: [claude-sonnet-4.5]
+  conversations:
+    - messages: [ …parent conversation… ]
+    - messages: [ …subagent conversation… ]   # separate entry, content-matched
+  ```
+
+- **This harness** stores a flat list of **`exchanges`** (request→response pairs) bucketed only by `(method, path)` and matched by **sequence position**; the request is a review-only summary, not matched. Parent and subagent turns land in the *same* `/v1/messages` bucket, so their arrival order must be deterministic — which is exactly why the subagent tests here are the most fragile and some run record-only (`subagentFixturesStale`).
+
+So: **content-keyed conversations vs. sequence-keyed exchanges.** That single choice is the biggest reason the CLI harness replays subagents robustly where this one needs re-records or gating — and it's the natural direction to evolve this harness if subagent replay coverage becomes important.
+
+---
+
 ## Design notes / FAQ
 
 - **Why sequence matching instead of body matching?** Request bodies carry volatile fields (dates, request ids) and the whole point of replay is that recorded responses drive the agent deterministically — so the Nth call to an endpoint is always the same call. Body matching would be brittle for no gain.
