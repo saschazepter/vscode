@@ -13,6 +13,7 @@ import type { IByokLmChatRequest, IByokLmChatResult, IByokLmModelInfo } from '..
 import type { ModelSelection } from '../../common/state/protocol/state.js';
 import { ByokLmBridgeRegistry, IByokLmBridgeRegistry } from '../../node/byokLmBridgeRegistry.js';
 import { ByokLmProxyService, IByokLmProxyService, type IByokLmProxyHandle } from '../../node/copilot/byokLmProxyService.js';
+import { IAgentConfigurationService } from '../../node/agentConfigurationService.js';
 import { CopilotSessionLauncher, getCopilotReasoningEffort, resolveByokSessionConfig } from '../../node/copilot/copilotSessionLauncher.js';
 
 /**
@@ -213,6 +214,70 @@ suite('CopilotSessionLauncher BYOK proxy lifecycle', () => {
 		const third = await resolve();
 		assert.strictEqual(proxy.starts, 2, 'a fresh bind is minted after disposal');
 		assert.notStrictEqual(third.providers![0].bearerToken, first.providers![0].bearerToken, 'the fresh bind carries a new nonce');
+
+		store.dispose();
+	});
+});
+
+/**
+ * Covers the always-on SDK capabilities the launcher stamps onto every session
+ * config. Pins `enableSessionStore: true` (the SDK session-store opt-in) on both
+ * the create and resume paths, since it is set unconditionally in the shared
+ * `_buildSessionConfig` rather than gated on a setting.
+ */
+suite('CopilotSessionLauncher session config', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	/** Config service whose root reads all resolve to `undefined` (schema defaults). */
+	function fakeConfigurationService(): IAgentConfigurationService {
+		return {
+			_serviceBrand: undefined,
+			onDidRootConfigChange: () => ({ dispose() { } }),
+			getRootValue: () => undefined,
+		} as unknown as IAgentConfigurationService;
+	}
+
+	function createLauncher(store: DisposableStore): CopilotSessionLauncher {
+		const services = new ServiceCollection();
+		services.set(ILogService, new NullLogService());
+		services.set(IAgentConfigurationService, fakeConfigurationService());
+		services.set(IByokLmBridgeRegistry, new ByokLmBridgeRegistry());
+		// The remaining dependencies (terminal manager, file service, proxy) are
+		// unused by `_buildSessionConfig` when there are no plugins/tools and the
+		// custom terminal tool is off, so they resolve to `undefined` under the
+		// non-strict InstantiationService.
+		const instantiationService = store.add(new InstantiationService(services));
+		return instantiationService.createInstance(CopilotSessionLauncher);
+	}
+
+	const emptyRuntime = {
+		createClientSdkTools: () => [],
+		createServerSdkTools: () => [],
+	} as unknown as Parameters<CopilotSessionLauncher['launch']>[1];
+
+	const snapshot = { tools: [], plugins: [], mcpServers: {} };
+
+	function buildConfig(launcher: CopilotSessionLauncher, plan: unknown): Promise<{ enableSessionStore?: boolean }> {
+		return (launcher as unknown as { _buildSessionConfig(p: unknown, r: unknown): Promise<{ enableSessionStore?: boolean }> })._buildSessionConfig(plan, emptyRuntime);
+	}
+
+	test('enables the SDK session store on both create and resume configs', async () => {
+		const store = new DisposableStore();
+		const launcher = createLauncher(store);
+
+		const createPlan = { kind: 'create', sessionId: 'sess-1', snapshot };
+		const resumePlan = { kind: 'resume', sessionId: 'sess-1', snapshot, workingDirectory: undefined, fallback: { model: undefined } };
+
+		const [createConfig, resumeConfig] = await Promise.all([
+			buildConfig(launcher, createPlan),
+			buildConfig(launcher, resumePlan),
+		]);
+
+		assert.deepStrictEqual(
+			[createConfig.enableSessionStore, resumeConfig.enableSessionStore],
+			[true, true]
+		);
 
 		store.dispose();
 	});

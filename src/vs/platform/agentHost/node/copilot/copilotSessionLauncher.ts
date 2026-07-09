@@ -613,6 +613,15 @@ export class CopilotSessionLauncher implements ICopilotSessionLauncher {
 			// it, `rpc.plan.read()` returns `path: null` and the SDK
 			// never emits `exit_plan_mode.requested`.
 			infiniteSessions: { enabled: true },
+			// Enable the SDK's session store so the runtime persists session
+			// content (turns, plan/todos, checkpoints, session files) to its
+			// SQLite store. This is the persistence prerequisite for reading a
+			// child session's content back from an orchestrating session.
+			// Hardcoded on like the other always-on capabilities above (rather
+			// than a user setting) because it is local-only persistence with no
+			// user-visible behavior — mirrors the GitHub App's
+			// `with_enable_session_store(true)`. See microsoft/vscode-internalbacklog#8366.
+			enableSessionStore: true,
 			// Per-session remote export: the client-level `--remote` flag
 			// (enableRemoteSessions) enables the CLI capability, but each
 			// session must opt in via `remoteSession` to actually export
