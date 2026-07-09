@@ -25,6 +25,13 @@ interface IResourceCacheEntry {
 	readonly resource: string;
 	readonly scopes: readonly string[];
 	readonly token: IAuthorizationTokenResponse;
+	/**
+	 * Fallback identity (the IdP login account) for sessions built from this cached token. A resource
+	 * token usually has no `id_token` of its own, so the session adopts this IdP identity — keeping it
+	 * aligned with what account enumeration reports. Sourced from the IdP session, a *different* token
+	 * response than {@link IResourceCacheEntry.token}.
+	 */
+	readonly account: vscode.AuthenticationSessionAccountInformation;
 	readonly created_at: number;
 }
 
@@ -107,6 +114,15 @@ export function XaaifyAuthProvider<TBase extends Ctor<DynamicAuthProvider>>(Base
 		override async getSessions(scopes: readonly string[] | undefined, options: vscode.AuthenticationProviderSessionOptions): Promise<vscode.AuthenticationSession[]> {
 			const resource = options.resource;
 			const audience = options.audience;
+			// Account-enumeration call (e.g. IAuthenticationService.getAccounts → getSessions with no
+			// scopes/resource/audience). Without a resource we can't mint a resource-scoped token, but the
+			// stable account for XAA IS the IdP identity. Delegate to the base provider, whose no-scope
+			// path returns the tracked IdP session(s) so getAccounts() reflects the signed-in user instead
+			// of being structurally empty. The base no-scope path only reads its token store, so — as the
+			// getSessions contract requires — this does not prompt.
+			if (!scopes && !resource && !audience) {
+				return super.getSessions(scopes, options);
+			}
 			if (!resource || !scopes || !audience) {
 				return [];
 			}
@@ -114,7 +130,7 @@ export function XaaifyAuthProvider<TBase extends Ctor<DynamicAuthProvider>>(Base
 			const key = cacheKey(resource, scopes);
 			const entry = this._resourceTokens.get(key);
 			if (entry && !isExpired(entry)) {
-				return [toSession(entry.token, entry.scopes)];
+				return [toSession(entry.token, entry.scopes, entry.account)];
 			}
 			if (entry) {
 				// Expired — drop and try to silently re-mint below.
@@ -134,7 +150,7 @@ export function XaaifyAuthProvider<TBase extends Ctor<DynamicAuthProvider>>(Base
 				if (!minted) {
 					return [];
 				}
-				return [toSession(minted.token, minted.scopes)];
+				return [toSession(minted.token, minted.scopes, minted.account)];
 			} catch (err) {
 				// Silent path: log and fall back to "no session" so the caller decides whether
 				// to escalate to createSession (which is allowed to interact).
@@ -171,7 +187,7 @@ export function XaaifyAuthProvider<TBase extends Ctor<DynamicAuthProvider>>(Base
 				// silent=false — guard defensively anyway.
 				throw new Error('Failed to mint a resource access token for the enterprise-managed MCP server.');
 			}
-			return toSession(minted.token, minted.scopes);
+			return toSession(minted.token, minted.scopes, minted.account);
 		}
 
 		/**
@@ -269,6 +285,11 @@ export function XaaifyAuthProvider<TBase extends Ctor<DynamicAuthProvider>>(Base
 				resource,
 				scopes,
 				token: resourceToken,
+				// Fallback identity for sessions built from this token: used when the resource token has no
+				// id_token of its own (the usual case), so the session adopts the IdP login identity and
+				// stays aligned with account enumeration. Sourced from the IdP session — a different token
+				// response than `resourceToken`.
+				account: idpSession.account,
 				created_at: Date.now(),
 			};
 			this._resourceTokens.set(cacheKey(resource, scopes), entry);
@@ -356,29 +377,34 @@ export function XaaifyAuthProvider<TBase extends Ctor<DynamicAuthProvider>>(Base
 	};
 }
 
-function toSession(token: IAuthorizationTokenResponse, scopes: readonly string[]): vscode.AuthenticationSession {
-	let claims: IAuthorizationJWTClaims | undefined;
+/**
+ * Builds a {@link vscode.AuthenticationSession} from a token response. Identity is taken from the
+ * session's OWN `id_token` when present — that is the identity assertion returned with the very tokens
+ * we're handing back. `fallbackAccount` (the IdP login identity, from a *different* token response) is
+ * used only when this token carries no `id_token` of its own, which is the usual case for resource-scoped
+ * tokens and keeps such sessions aligned with account enumeration (`getAccounts`). We never derive identity
+ * from the `access_token`: unlike the base DynamicAuthProvider, an XAA access token is a bearer credential
+ * for the resource server, opaque to us by design, so mining it for identity yields the wrong account.
+ * Exported for testing.
+ */
+export function toSession(token: IAuthorizationTokenResponse, scopes: readonly string[], fallbackAccount?: vscode.AuthenticationSessionAccountInformation): vscode.AuthenticationSession {
+	let account: vscode.AuthenticationSessionAccountInformation | undefined;
 	if (token.id_token) {
 		try {
-			claims = getClaimsFromJWT(token.id_token);
+			const claims: IAuthorizationJWTClaims = getClaimsFromJWT(token.id_token);
+			account = {
+				id: claims.sub || 'unknown',
+				label: claims.preferred_username || claims.name || claims.email || 'XAA',
+			};
 		} catch {
-			// ignore
+			// ignore — the id_token wasn't a decodable JWT
 		}
 	}
-	if (!claims) {
-		try {
-			claims = getClaimsFromJWT(token.access_token);
-		} catch {
-			// ignore
-		}
-	}
+	account ??= fallbackAccount ?? { id: 'unknown', label: 'XAA' };
 	return {
 		id: stringHash(token.access_token, 0).toString(),
 		accessToken: token.access_token,
-		account: {
-			id: claims?.sub || 'unknown',
-			label: claims?.preferred_username || claims?.name || claims?.email || 'XAA',
-		},
+		account,
 		scopes: [...scopes],
 		idToken: token.id_token,
 	};

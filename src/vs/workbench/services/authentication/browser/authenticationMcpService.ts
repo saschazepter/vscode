@@ -341,12 +341,7 @@ export class AuthenticationMcpService extends Disposable implements IAuthenticat
 	 */
 	async selectSession(providerId: string, mcpServerId: string, mcpServerName: string, scopes: string[], availableSessions: AuthenticationSession[]): Promise<AuthenticationSession> {
 		const allAccounts = await this._authenticationService.getAccounts(providerId);
-		const seenSessionAccountLabels = new Set<string>();
-		const accountsFromAvailableSessions = availableSessions
-			.map(session => session.account)
-			.filter(account => !seenSessionAccountLabels.has(account.label) && seenSessionAccountLabels.add(account.label));
-		const accounts = allAccounts.length ? allAccounts : accountsFromAvailableSessions;
-		if (!accounts.length) {
+		if (!allAccounts.length) {
 			throw new Error('No accounts available');
 		}
 		const disposables = new DisposableStore();
@@ -365,7 +360,7 @@ export class AuthenticationMcpService extends Disposable implements IAuthenticat
 
 		// Add the additional accounts that have been logged into the provider but are
 		// don't have a session yet.
-		accounts.forEach(account => {
+		allAccounts.forEach(account => {
 			if (!accountsWithSessions.has(account.label)) {
 				items.push({ label: account.label, account });
 			}
