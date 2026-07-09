@@ -15,7 +15,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { DisposableStore, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
-import { autorun, constObservable } from '../../../../base/common/observable.js';
+import { autorun, constObservable, observableValue } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
 import { EditorContextKeys } from '../../../../editor/common/editorContextKeys.js';
@@ -502,12 +502,16 @@ export function renderForm(
 
 	const sessionTypeBinder = createSessionTypeBinder(state, sessionTypeProvider, disposables);
 
-	// Interim: bring in the shared SessionTypePicker rendered into the harness
-	// chip slot. Fed an always-undefined session for now, so it resolves no
-	// folder session types and renders hidden/inert. Selection wiring is in
-	// place so it drives the form once a folder-driven source lands. Until
-	// then, `sessionTypeBinder` continues to seed state.providerId/sessionTypeId.
+	// The picker lists session types for the currently selected folder. The
+	// binder still seeds state.providerId/sessionTypeId (and drives the chat
+	// input delegate) for now; the picker becomes authoritative in a later step.
+	const folderObs = observableValue<URI | undefined>('automationFolder', state.folderUri);
 	const sessionTypePicker = disposables.add(instantiationService.createInstance(SessionTypePicker, constObservable<ISession | undefined>(undefined)));
+	sessionTypePicker.setFolderSource(folderObs, {
+		initialPick: state.providerId && state.sessionTypeId
+			? { providerId: state.providerId, sessionTypeId: state.sessionTypeId }
+			: undefined,
+	});
 	disposables.add(sessionTypePicker.onDidSelectSessionType(pick => {
 		if (!pick) {
 			return;
@@ -525,12 +529,14 @@ export function renderForm(
 
 	disposables.add(workspacePicker.onDidSelectWorkspace(uri => {
 		state.folderUri = uri;
+		folderObs.set(uri, undefined);
 		sessionTypeBinder.setFolder(uri);
 		revalidate();
 	}));
 
 	if (!state.folderUri && workspacePicker.selectedFolderUri) {
 		state.folderUri = workspacePicker.selectedFolderUri;
+		folderObs.set(state.folderUri, undefined);
 		sessionTypeBinder.setFolder(state.folderUri);
 	}
 
