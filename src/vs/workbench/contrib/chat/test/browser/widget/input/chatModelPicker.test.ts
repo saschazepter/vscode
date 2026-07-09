@@ -11,7 +11,7 @@ import { MarkdownString } from '../../../../../../../base/common/htmlContent.js'
 import { ActionListItemKind, IActionListItem } from '../../../../../../../platform/actionWidget/browser/actionList.js';
 import { IActionWidgetDropdownAction } from '../../../../../../../platform/actionWidget/browser/actionWidgetDropdown.js';
 import { StateType } from '../../../../../../../platform/update/common/update.js';
-import { buildModelPickerItems, getControlModelsForEntitlement, getModelPickerAccessibilityProvider } from '../../../../browser/widget/input/chatModelPicker.js';
+import { buildModelPickerItems, getControlModelsForEntitlement, getModelPickerAccessibilityProvider, getModelPickerIcon } from '../../../../browser/widget/input/chatModelPicker.js';
 import { getModelProviderIcon } from '../../../../browser/widget/input/modelProviderIcons.js';
 import { filterModelsForSession } from '../../../../browser/widget/input/chatModelSelectionLogic.js';
 import { ChatAgentLocation, ChatModeKind } from '../../../../common/constants.js';
@@ -73,6 +73,13 @@ suite('model provider icons', () => {
 			'chat-model-provider-generic',
 			'chat-model-provider-generic',
 		]);
+	});
+
+	test('uses status icon instead of provider-specific icon', () => {
+		const model = createModel('gpt-5.6-terra', 'GPT-5.6 Terra');
+		const modelWithWarning = { ...model, metadata: { ...model.metadata, statusIcon: Codicon.warning } };
+
+		assert.strictEqual(getModelPickerIcon(modelWithWarning).id, Codicon.warning.id);
 	});
 });
 
