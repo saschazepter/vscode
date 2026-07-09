@@ -58,18 +58,7 @@ jobs:
         condition: and(succeeded(), ne(variables['NPM_REGISTRY'], 'none'))
         displayName: Setup NPM Registry
 
-      - pwsh: |
-          npm config set registry "$env:NPM_REGISTRY"
-          $NpmrcPath = (npm config get userconfig)
-          Write-Host "##vso[task.setvariable variable=NPMRC_PATH]$NpmrcPath"
-        condition: and(succeeded(), ne(variables['NPM_REGISTRY'], 'none'))
-        displayName: Setup NPM
-
-      - task: npmAuthenticate@0
-        inputs:
-          workingFile: $(NPMRC_PATH)
-        condition: and(succeeded(), ne(variables['NPM_REGISTRY'], 'none'))
-        displayName: Setup NPM Authentication
+      - template: ./common/setup-npm.yml@self
 
       - pwsh: |
           npm ci
