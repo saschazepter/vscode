@@ -31,6 +31,7 @@ import { IChatRequestViewModel, IChatResponseViewModel, IChatViewModel, isReques
 import { ChatAccessibilityProvider } from '../accessibility/chatAccessibilityProvider.js';
 import { ChatTreeItem, IChatAccessibilityService, IChatCodeBlockInfo, IChatFileTreeInfo, IChatListItemRendererOptions } from '../chat.js';
 import { CodeBlockPart } from './chatContentParts/codeBlockPart.js';
+import { ChatCollapsibleContentPart } from './chatContentParts/chatCollapsibleContentPart.js';
 import { ChatListDelegate, ChatListItemRenderer, IChatListItemTemplate, IChatRendererDelegate } from './chatListRenderer.js';
 import { ChatEditorOptions } from './chatOptions.js';
 import { ChatPendingDragController } from './chatPendingDragAndDrop.js';
@@ -38,6 +39,10 @@ import { ChatPendingDragController } from './chatPendingDragAndDrop.js';
 export interface IChatListWidgetStyles {
 	listForeground?: string;
 	listBackground?: string;
+}
+
+export function shouldSuppressPersistedAutoScroll(lastUserToggleTime: number, now: number, suppressWindow: number): boolean {
+	return lastUserToggleTime !== 0 && now - lastUserToggleTime <= suppressWindow;
 }
 
 export interface IChatListWidgetOptions {
@@ -187,6 +192,8 @@ export class ChatListWidget extends Disposable {
 	private _suppressAutoScroll: boolean = false;
 	private _settingChangeCounter: number = 0;
 	private _visibleChangeCount: number = 0;
+	private _lastUserToggleTime: number = 0;
+	private static readonly userToggleSuppressWindow = 250;
 
 	private readonly _container: HTMLElement;
 	private readonly _scrollDownButton: Button;
@@ -454,6 +461,10 @@ export class ChatListWidget extends Disposable {
 		// Set initial at-bottom state (scrollLock defaults to true)
 		this.updateScrollDownButtonVisibility();
 
+		this._register(dom.addDisposableListener(this._container, ChatCollapsibleContentPart.userToggleEvent, () => {
+			this._lastUserToggleTime = performance.now();
+		}));
+
 		// Handle context menu internally
 		this._register(this._tree.onContextMenu(e => {
 			this.handleContextMenu(e);
@@ -661,6 +672,10 @@ export class ChatListWidget extends Disposable {
 	 */
 	private _updateElementHeight(element: ChatTreeItem, height?: number): void {
 		if (this._tree.hasElement(element) && this._visible) {
+			if (shouldSuppressPersistedAutoScroll(this._lastUserToggleTime, performance.now(), ChatListWidget.userToggleSuppressWindow)) {
+				this._tree.updateElementHeight(element, height);
+				return;
+			}
 			this._withPersistedAutoScroll(() => {
 				this._tree.updateElementHeight(element, height);
 			});

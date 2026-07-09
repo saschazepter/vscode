@@ -238,6 +238,14 @@ export function shouldRenderInitialProgressiveContentImmediately(isComplete: boo
 	return !isComplete && hasMarkdownParts && !hasRenderData;
 }
 
+export function shouldStartNewCollapsedThinkingGroup(displayMode: ThinkingDisplayMode, existingGroup: 'reasoning' | 'items', incomingGroup: 'reasoning' | 'items'): boolean {
+	return displayMode === ThinkingDisplayMode.Collapsed && existingGroup !== incomingGroup;
+}
+
+export function shouldCreateGroupedThinkingPart(collapsedToolsMode: CollapsedToolsDisplayMode, separatedFromReasoning: boolean): boolean {
+	return collapsedToolsMode === CollapsedToolsDisplayMode.Always || separatedFromReasoning;
+}
+
 const forceVerboseLayoutTracing = false
 	// || Boolean("TRUE") // causes a linter warning so that it cannot be pushed
 	;
@@ -2250,6 +2258,16 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		return undefined;
 	}
 
+	private getLastThinkingPartForGroupedItem(context: IChatContentPartRenderContext, templateData: IChatListItemTemplate): { part: ChatThinkingContentPart | undefined; separatedFromReasoning: boolean } {
+		const lastThinking = this.getLastThinkingPart(templateData.renderedParts);
+		const displayMode = getEffectiveThinkingDisplayMode(this.configService, this.contextKeyService);
+		if (lastThinking?.hasReasoningContent() && shouldStartNewCollapsedThinkingGroup(displayMode, 'reasoning', 'items')) {
+			this.finalizeCurrentThinkingPart(context, templateData);
+			return { part: undefined, separatedFromReasoning: true };
+		}
+		return { part: lastThinking, separatedFromReasoning: false };
+	}
+
 	/**
 	 * Determines if a thinking part at the given content index is "look-ahead complete".
 	 * A thinking part is look-ahead complete if there are subsequent parts that will NOT
@@ -2715,10 +2733,10 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		// handling for when we want to put tool invocations inside a thinking part
 		const collapsedToolsMode = this.configService.getValue<CollapsedToolsDisplayMode>('chat.agent.thinking.collapsedTools');
 		if (isResponseVM(context.element) && collapsedToolsMode !== CollapsedToolsDisplayMode.Off) {
-			const lastThinking = this.getLastThinkingPart(templateData.renderedParts);
+			const { part: lastThinking, separatedFromReasoning } = this.getLastThinkingPartForGroupedItem(context, templateData);
 
 			// create thinking part if it doesn't exist yet
-			if (!lastThinking && !IChatToolInvocation.isEffectivelyHidden(toolInvocation) && this.shouldPinPart(toolInvocation, context.element) && collapsedToolsMode === CollapsedToolsDisplayMode.Always) {
+			if (!lastThinking && !IChatToolInvocation.isEffectivelyHidden(toolInvocation) && this.shouldPinPart(toolInvocation, context.element) && shouldCreateGroupedThinkingPart(collapsedToolsMode, separatedFromReasoning)) {
 				const thinkingPart = this.renderThinkingPart({
 					kind: 'thinking',
 				}, context, templateData);
@@ -2981,7 +2999,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 					? localize('hook.thinking.warning', "Used {0}, but received a warning", hookPart.toolDisplayName)
 					: localize('hook.thinking.warningGeneric', "Tool call received a warning"));
 
-			let thinkingPart = this.getLastThinkingPart(templateData.renderedParts);
+			let { part: thinkingPart } = this.getLastThinkingPartForGroupedItem(context, templateData);
 			if (!thinkingPart) {
 				// Create a thinking part if one doesn't exist yet (e.g. hook arrives before/with its tool in the same turn)
 				const newThinking = this.renderThinkingPart({ kind: 'thinking' }, context, templateData);
@@ -3386,8 +3404,8 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		if (isResponseVM(context.element) && collapsedToolsMode !== CollapsedToolsDisplayMode.Off && this.shouldPinPart(content, context.element)) {
 			// Stable id per part so the thinking part can dedup if it sees us twice.
 			const partId = `externalEdit-${content.uri.toString()}-${content.undoStopId ?? ''}`;
-			const lastThinking = this.getLastThinkingPart(templateData.renderedParts);
-			if (!lastThinking && collapsedToolsMode === CollapsedToolsDisplayMode.Always) {
+			const { part: lastThinking, separatedFromReasoning } = this.getLastThinkingPartForGroupedItem(context, templateData);
+			if (!lastThinking && shouldCreateGroupedThinkingPart(collapsedToolsMode, separatedFromReasoning)) {
 				const thinkingPart = this.renderThinkingPart({ kind: 'thinking' }, context, templateData);
 				if (thinkingPart instanceof ChatThinkingContentPart) {
 					// New thinking part owns the edit pill via eagerDisposable.
@@ -3513,8 +3531,8 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			}
 
 			// create thinking part if it doesn't exist yet
-			const lastThinking = this.getLastThinkingPart(templateData.renderedParts);
-			if (!lastThinking && markdownPart?.domNode && this.shouldPinPart(markdown, context.element) && collapsedToolsMode === CollapsedToolsDisplayMode.Always && isComplete) {
+			const { part: lastThinking, separatedFromReasoning } = this.getLastThinkingPartForGroupedItem(context, templateData);
+			if (!lastThinking && markdownPart?.domNode && this.shouldPinPart(markdown, context.element) && shouldCreateGroupedThinkingPart(collapsedToolsMode, separatedFromReasoning) && isComplete) {
 				const thinkingPart = this.renderThinkingPart({
 					kind: 'thinking',
 				}, context, templateData);
@@ -3566,6 +3584,10 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		// (i.e., there are subsequent parts that won't be pinned to this thinking part)
 		const element = isResponseVM(context.element) ? context.element : undefined;
 		const streamingCompleted = this.isThinkingLookAheadComplete(context, element);
+		const lastThinkingPart = this.getLastThinkingPart(templateData.renderedParts);
+		if (lastThinkingPart?.hasGroupedItems() && shouldStartNewCollapsedThinkingGroup(getEffectiveThinkingDisplayMode(this.configService, this.contextKeyService), 'items', 'reasoning')) {
+			this.finalizeCurrentThinkingPart(context, templateData);
+		}
 
 		// if array, we do a naive part by part rendering for now
 		if (Array.isArray(content.value)) {
