@@ -466,6 +466,30 @@ suite('AgentHostGitService - worktree helpers (real git)', () => {
 		}
 	});
 
+	(hasGit ? test : test.skip)('addWorktree prefers origin start point when local branch is stale', async () => {
+		const dir = initRepo();
+		const fs = await import('fs/promises');
+		cp.execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: dir, env, stdio: 'pipe' });
+		cp.execFileSync('git', ['checkout', '-q', '-b', 'upstream', 'main'], { cwd: dir, env, stdio: 'pipe' });
+		await fs.writeFile(join(dir, 'upstream.txt'), 'upstream');
+		cp.execFileSync('git', ['add', '.'], { cwd: dir, env, stdio: 'pipe' });
+		cp.execFileSync('git', ['commit', '-q', '-m', 'upstream'], { cwd: dir, env, stdio: 'pipe' });
+		cp.execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: dir, env, stdio: 'pipe' });
+		cp.execFileSync('git', ['checkout', '-q', 'main'], { cwd: dir, env, stdio: 'pipe' });
+
+		const wtPath = join(dir, '..', `wt-${Date.now()}`);
+		try {
+			await svc!.addWorktree(URI.file(dir), URI.file(wtPath), 'agents/test-origin-start-point', 'main');
+			const stat = await fs.stat(join(wtPath, 'upstream.txt'));
+			assert.ok(stat.isFile(), 'worktree should start from origin/main, not stale local main');
+			assert.throws(() => cp.execFileSync('git', ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], { cwd: wtPath, env, stdio: 'pipe' }), /fatal:/);
+		} finally {
+			try { await svc!.removeWorktree(URI.file(dir), URI.file(wtPath)); } catch { /* best-effort cleanup */ }
+			rmDirWithRetry(wtPath);
+			try { cp.execFileSync('git', ['branch', '-D', 'agents/test-origin-start-point'], { cwd: dir, env, stdio: 'ignore' }); } catch { /* best-effort cleanup */ }
+		}
+	});
+
 	(hasGit ? test : test.skip)('copyWorktreeIncludeFiles copies matched git-ignored files, collapsing wholly-ignored folders', async () => {
 		const dir = initRepo();
 		const fs = await import('fs/promises');
