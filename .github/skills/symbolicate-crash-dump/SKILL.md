@@ -46,7 +46,9 @@ Match the symbol source to the build that produced the crash:
 | Insiders / Stable (internal Electron) | [microsoft/vscode-electron-prebuilt releases](https://github.com/microsoft/vscode-electron-prebuilt/releases) |
 | Code - OSS (OSS Electron) | [electron/electron releases](https://github.com/electron/electron/releases) |
 
-Download the symbol zip matching the Electron version, platform, and architecture (e.g. `insiders-symbols-v19.1.8-darwin-x64.zip`).
+The releases are tagged by **Electron version**, not VS Code version, so first find the Electron version the crashed VS Code build shipped. It's the `target=` in that version's `.npmrc` (e.g. `git show 1.128.0:.npmrc`), which mirrors the `electron` devDependency in `package.json`. Then pick the matching symbol zip by **quality, platform, and architecture** — e.g. a Stable Windows x64 crash on Electron 42.5.0 needs `stable-symbols-v42.5.0-win32-x64.zip` (use `insiders-symbols-…` for Insiders).
+
+> **These zips are small and selective.** A `*-symbols-*.zip` typically contains only a handful of first-party modules — `electron.exe.sym`, `libEGL.dll.sym`, `libGLESv2.dll.sym` on Windows (and the equivalents elsewhere). Many modules that show up in a backtrace — notably `runtime.node` and any OS/third-party DLL — are **not** in these zips. `runtime.node` frames often cannot be symbolicated at all from public symbols; when the crash is in a third-party module, attribute it by module name rather than expecting method names on every frame (see [Reading the result](#reading-the-result)).
 
 ### 3. Copy the `.sym` files into the electron-minidump cache
 
@@ -56,21 +58,31 @@ The cache lives at:
 "$(npm root -g)/electron-minidump/cache/breakpad_symbols"
 ```
 
-Unzip the downloaded symbols, then, for each required module, copy the `.sym` file into the matching module/hash subdirectory in the cache. **Verify the folder hashes match** before copying — the cache already contains empty hash subdirectories that must line up with the ones from the symbol zip.
-
-Example (Electron Framework symbols on macOS x64):
+Breakpad keys symbols by `<module>.pdb/<debug-id>/<module>.sym`, and the `<debug-id>` **must match exactly** between the dump and the symbol zip — a same-version zip built from a different pipeline run will have a different id and won't be used. After the initial pass, the cache already contains an (empty) directory for each required module whose name and hash you must match:
 
 ```bash
-# Unzip somewhere, e.g. ~/insiders-symbols/
-# Confirm the cache has a matching (empty) hash subdirectory:
-ls "$(npm root -g)/electron-minidump/cache/breakpad_symbols/Electron Framework"
-
-# Copy the .sym for the matching hash into the cache:
-cp "~/insiders-symbols/Electron Framework/<hash>/Electron Framework.sym" \
-   "$(npm root -g)/electron-minidump/cache/breakpad_symbols/Electron Framework/<hash>"
+CACHE="$(npm root -g)/electron-minidump/cache/breakpad_symbols"
+# The debug-id electron-minidump wants for a given module:
+ls "$CACHE/electron.exe.pdb"     # e.g. DD081533CD7E33A44C4C44205044422E1
 ```
 
-Repeat for any other modules the initial pass reported as missing method names.
+Unzip the downloaded symbols and confirm the same module/hash exists in the zip before copying it in. The zip's internal layout is also `<module>.pdb/<debug-id>/<module>.sym`.
+
+Example (Windows: the shipped main binary is `Code.exe`, but its symbols come from `electron.exe.sym`):
+
+```bash
+# Unzip somewhere, e.g. ~/stable-symbols/
+unzip stable-symbols-v42.5.0-win32-x64.zip -d ~/stable-symbols
+
+# Only copy if the debug-id matches what the cache expects:
+HASH=DD081533CD7E33A44C4C44205044422E1
+cp "~/stable-symbols/symbols/electron.exe.pdb/$HASH/electron.exe.sym" \
+   "$CACHE/electron.exe.pdb/$HASH/"
+```
+
+On macOS the analogous module is `Electron Framework` (`Electron Framework/<hash>/Electron Framework.sym`). Repeat for any other module the initial pass reported as missing method names — but only when the zip actually contains a matching-hash `.sym` for it.
+
+> **If no matching-hash symbols exist**, you cannot get method names for that module — this is common for officially-shipped Stable/Insiders builds whose exact `electron.exe`/`Code.exe` hash isn't in any public prebuilt zip, and for `runtime.node`. Fall back to attributing the crash by module and process (see [Reading the result](#reading-the-result)); that is usually enough to identify a third-party culprit.
 
 ### 4. Re-run symbolication
 
@@ -150,4 +162,5 @@ Native crashes in a remote server's extension host use core dumps and `gdb` inst
 
 - Keep `crash-file.dmp` and `symbolicated-output.log` out of the repo — they are throwaway artifacts.
 - The cache path is dynamic; always resolve it with `$(npm root -g)` rather than hardcoding a home directory.
-- If method names are still missing after adding symbols, double-check the Electron version, platform (`darwin`/`linux`), and arch (`x64`/`arm64`) of the symbol zip match the crashed build.
+- Breakpad matches symbols by exact debug-id, not by version name. If method names are still missing after adding symbols, confirm the `.sym` you copied has the exact hash the cache directory expects, and double-check the quality (`stable`/`insiders`), platform (`win32`/`darwin`/`linux`), and arch (`x64`/`arm64`) of the symbol zip.
+- Not every frame can be symbolicated. `runtime.node` and third-party/OS modules frequently have no public symbols; identifying the crashing module and process is usually enough to reach a root cause.
