@@ -245,6 +245,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * multiple chat widgets are rendered at once. `undefined` in the main window.
 	 */
 	private _activeSessionShown: string | undefined;
+	/**
+	 * True once an embedder has driven the active session via
+	 * `setActiveSessionShown` (the Agents window). In this mode the focused-widget
+	 * / last-shown heuristics are disabled because they are unreliable when many
+	 * chat widgets render simultaneously; the embedder's override is the sole
+	 * source of truth for the active/shown session.
+	 */
+	private _externalActiveSessionMode = false;
 	/** Buffered audio for responses that arrived while their session was not
 	 *  focused. Flushed to playback when the session becomes focused. */
 	private readonly _deferredResponses = new Map<string, { audio: string; isFirstChunk: boolean; isFinal: boolean; transcript: string | undefined }[]>();
@@ -2108,6 +2116,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	private _onFocusedSessionChanged(): void {
+		// When an embedder (the Agents window) authoritatively drives the active
+		// session via `setActiveSessionShown`, chat-widget focus is not a reliable
+		// signal there (multiple widgets render at once and DOM focus stays on the
+		// sessions list), so ignore focus-based activation entirely.
+		if (this._externalActiveSessionMode) {
+			return;
+		}
 		const focused = this._getFocusedSessionId();
 		this._focusedSessionId = focused;
 		if (focused) {
@@ -2144,6 +2159,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * had downgraded while the session was unfocused.
 	 */
 	private _onSessionShown(resource: URI | undefined): void {
+		// See `_onFocusedSessionChanged`: when the active session is driven
+		// externally, per-widget view-model swaps are not the source of truth. In
+		// the Agents window multiple chat widgets (including background/preview
+		// slots) render at once, so reacting here would flush a deferred response
+		// for a session that isn't actually focused and thrash the active session.
+		if (this._externalActiveSessionMode) {
+			return;
+		}
 		const key = resource?.toString();
 		if (!key || key === this._lastShownSessionId) {
 			return;
@@ -2205,10 +2228,18 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * session is "active" and everything else is a background narration.
 	 */
 	private _getActiveSessionId(): string | undefined {
+		if (this._externalActiveSessionMode) {
+			// The embedder is authoritative: use only an explicit transcription
+			// target or the externally-declared active session. Never fall back to
+			// the focused/last-shown heuristics, which are polluted by the other
+			// (background/preview) chat widgets rendered at the same time.
+			return this._targetSession.get()?.toString() ?? this._activeSessionShown;
+		}
 		return this._targetSession.get()?.toString() ?? this._activeSessionShown ?? this._lastShownSessionId ?? this._getFocusedSessionId();
 	}
 
 	setActiveSessionShown(resource: URI | undefined): void {
+		this._externalActiveSessionMode = true;
 		const key = resource?.toString();
 		if (key === this._activeSessionShown) {
 			return;
