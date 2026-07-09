@@ -232,7 +232,7 @@ export function mapTurnStarted(
 		{
 			type: ActionType.ChatTurnStarted,
 			turnId: params.turn.id,
-			timestamp: Date.now(),
+			timestamp: typeof params.turn.startedAt === 'number' ? params.turn.startedAt * 1000 : Date.now(),
 			message: { text: userText, origin: { kind: MessageKind.User } },
 		},
 	];
@@ -752,6 +752,7 @@ export function mapTurnCompleted(
 	state.itemToToolCall.clear();
 	const turnId = params.turn.id;
 	const status = params.turn.status;
+	const timestamp = typeof params.turn.completedAt === 'number' ? params.turn.completedAt * 1000 : undefined;
 	const orphanedToolCallActions: (SessionAction | ChatAction)[] = orphanedToolCalls.map(entry => ({
 		type: ActionType.ChatToolCallComplete,
 		turnId: entry.turnId,
@@ -770,6 +771,7 @@ export function mapTurnCompleted(
 			{
 				type: ActionType.ChatError,
 				turnId,
+				...(timestamp !== undefined ? { timestamp } : {}),
 				error: {
 					errorType: 'CodexError',
 					...extractForwardedErrorInfo(errMessage),
@@ -778,13 +780,14 @@ export function mapTurnCompleted(
 			{
 				type: ActionType.ChatTurnComplete,
 				turnId,
+				...(timestamp !== undefined ? { timestamp } : {}),
 			},
 		];
 	}
 	if (status === 'interrupted') {
-		return [...orphanedToolCallActions, { type: ActionType.ChatTurnCancelled, turnId }];
+		return [...orphanedToolCallActions, { type: ActionType.ChatTurnCancelled, turnId, ...(timestamp !== undefined ? { timestamp } : {}) }];
 	}
-	return [...orphanedToolCallActions, { type: ActionType.ChatTurnComplete, turnId }];
+	return [...orphanedToolCallActions, { type: ActionType.ChatTurnComplete, turnId, ...(timestamp !== undefined ? { timestamp } : {}) }];
 }
 
 /**
