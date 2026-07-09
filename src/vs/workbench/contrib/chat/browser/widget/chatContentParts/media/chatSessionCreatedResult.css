@@ -11,14 +11,6 @@
 	gap: 6px;
 }
 
-.chat-open-session-result > .codicon {
-	color: var(--vscode-descriptionForeground);
-}
-
-.chat-open-session-label {
-	color: var(--vscode-descriptionForeground);
-}
-
 .chat-open-session-result .monaco-button.chat-open-session-button {
 	width: fit-content;
 	max-width: 100%;

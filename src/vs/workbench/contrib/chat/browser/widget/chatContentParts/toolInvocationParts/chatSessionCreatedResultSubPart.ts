@@ -5,7 +5,6 @@
 
 import * as dom from '../../../../../../../base/browser/dom.js';
 import { Button } from '../../../../../../../base/browser/ui/button/button.js';
-import { renderIcon } from '../../../../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { Codicon } from '../../../../../../../base/common/codicons.js';
 import { ThemeIcon } from '../../../../../../../base/common/themables.js';
 import { URI } from '../../../../../../../base/common/uri.js';
@@ -19,13 +18,13 @@ import { BaseChatToolInvocationSubPart } from './chatToolInvocationSubPart.js';
 import '../media/chatSessionCreatedResult.css';
 
 /**
- * Renders a single compact line for a completed `create_session` / `create_chat`
- * tool call: the past-tense label ("Created session" / "Created chat") followed
- * by a secondary button — labelled with the session title — that opens it. The
- * link comes from the tool call's structured {@link IChatSessionCreatedData}
- * (not the model's prose), so it is always present and clickable. Clicking opens
- * the session through the `agent-host-session://` opener — registered in the
- * Agents window and (for editor-window chat) by the workbench.
+ * Renders the "Open Session" pill for a completed `create_session` /
+ * `create_chat` tool call: a single secondary button — carrying the agent icon
+ * and the session title — that opens the created session. The link comes from
+ * the tool call's structured {@link IChatSessionCreatedData} (not the model's
+ * prose), so it is always present and clickable. Clicking opens the session
+ * through the `agent-host-session://` opener — registered in the Agents window
+ * and (for editor-window chat) by the workbench.
  */
 export class ChatSessionCreatedResultSubPart extends BaseChatToolInvocationSubPart {
 
@@ -42,8 +41,6 @@ export class ChatSessionCreatedResultSubPart extends BaseChatToolInvocationSubPa
 		super(toolInvocation);
 
 		this.domNode = dom.$('.chat-open-session-result');
-		dom.append(this.domNode, renderIcon(Codicon.agent));
-		dom.append(this.domNode, dom.$('span.chat-open-session-label', undefined, this.data.heading));
 
 		const button = this._register(new Button(this.domNode, {
 			...defaultButtonStyles,
@@ -52,7 +49,7 @@ export class ChatSessionCreatedResultSubPart extends BaseChatToolInvocationSubPa
 			title: this.data.label,
 		}));
 		button.element.classList.add('chat-open-session-button');
-		button.label = this.data.label;
+		button.label = `$(${Codicon.agent.id}) ${this.data.label}`;
 		this._register(button.onDidClick(() => {
 			this.openerService.open(URI.parse(this.data.openLink), { fromUserGesture: true, allowContributedOpeners: true });
 		}));

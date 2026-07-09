@@ -1130,8 +1130,6 @@ export interface IChatSessionCreatedData {
 	readonly openLink: string;
 	/** Label for the button (e.g. the session title / prompt). */
 	readonly label: string;
-	/** Confirmation heading (e.g. "Session Created" or "Chat Created"). */
-	readonly heading: string;
 }
 
 export interface IChatModifiedFilesConfirmationData {
