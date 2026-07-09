@@ -18,7 +18,7 @@ import { isEqual } from '../../../../../../base/common/resources.js';
 import { ScrollbarVisibility } from '../../../../../../base/common/scrollable.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { localize } from '../../../../../../nls.js';
-import { MenuWorkbenchToolBar } from '../../../../../../platform/actions/browser/toolbar.js';
+import { IWorkbenchToolBarOptions, MenuWorkbenchToolBar } from '../../../../../../platform/actions/browser/toolbar.js';
 import { MenuId } from '../../../../../../platform/actions/common/actions.js';
 import { CommandsRegistry, ICommandService } from '../../../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
@@ -75,6 +75,7 @@ import { IVoiceSessionController } from '../../voiceClient/voiceSessionControlle
 import { IAgentTitleBarStatusService } from '../../agentSessions/experiments/agentTitleBarStatusService.js';
 import { IVoicePlaybackService } from '../../../common/voicePlaybackService.js';
 import { IWorkbenchEnvironmentService } from '../../../../../services/environment/common/environmentService.js';
+import { WORKBENCH_MENU_MOTION_CLASS, workbenchMenuCloseAnimation } from '../../../../../browser/actions/menuMotion.js';
 
 interface IChatViewPaneState extends Partial<IChatModelInputState> {
 	/**
@@ -1566,5 +1567,12 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			sessionResource: this._widget.viewModel.sessionResource,
 			$mid: MarshalledId.ChatViewContext
 		} : undefined;
+	}
+
+	protected override getToolbarOptions(): Partial<IWorkbenchToolBarOptions> {
+		return {
+			dropdownMenuClassName: WORKBENCH_MENU_MOTION_CLASS,
+			dropdownMenuCloseAnimation: workbenchMenuCloseAnimation
+		};
 	}
 }

@@ -1,0 +1,51 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.style-override.monaco-enable-motion .context-view.workbench-menu-motion {
+	animation: workbench-menu-motion-open 250ms cubic-bezier(0.22, 1, 0.36, 1) both;
+	transform-origin: top left;
+	will-change: transform, opacity;
+}
+
+.style-override.monaco-enable-motion .context-view.workbench-menu-motion.right {
+	transform-origin: top right;
+}
+
+.style-override.monaco-enable-motion .context-view.workbench-menu-motion.top {
+	transform-origin: bottom left;
+}
+
+.style-override.monaco-enable-motion .context-view.workbench-menu-motion.top.right {
+	transform-origin: bottom right;
+}
+
+.style-override.monaco-enable-motion .context-view.workbench-menu-motion.workbench-menu-motion-closing {
+	animation: workbench-menu-motion-close 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
+	pointer-events: none;
+}
+
+@keyframes workbench-menu-motion-open {
+	0% {
+		opacity: 0;
+		transform: scale(0.97);
+	}
+
+	100% {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+@keyframes workbench-menu-motion-close {
+	0% {
+		opacity: 1;
+		transform: scale(1);
+	}
+
+	100% {
+		opacity: 0;
+		transform: scale(0.99);
+	}
+}

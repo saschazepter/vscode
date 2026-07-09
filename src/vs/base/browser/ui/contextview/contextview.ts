@@ -50,11 +50,18 @@ export interface IDelegate {
 	canRelayout?: boolean; // default: true
 	onDOMEvent?(e: Event, activeElement: HTMLElement): void;
 	onHide?(data?: unknown): void;
+	closeAnimation?: IContextViewCloseAnimation;
 
 	/**
 	 * context views with higher layers are rendered higher in z-index order
 	 */
 	layer?: number; // Default: 0
+}
+
+export interface IContextViewCloseAnimation {
+	readonly className: string;
+	readonly duration: number;
+	readonly requiredAncestorClasses?: readonly string[];
 }
 
 export interface IContextViewProvider {
@@ -112,6 +119,7 @@ export class ContextView extends Disposable {
 	private delegate: IDelegate | null = null;
 	private toDisposeOnClean: IDisposable = Disposable.None;
 	private toDisposeOnSetContainer: IDisposable = Disposable.None;
+	private hidingContextView: { readonly disposable: IDisposable; readonly toDispose: IDisposable; readonly className: string } | undefined;
 	private shadowRoot: ShadowRoot | null = null;
 	private shadowRootHostElement: HTMLElement | null = null;
 
@@ -182,8 +190,10 @@ export class ContextView extends Disposable {
 	}
 
 	show(delegate: IDelegate): void {
+		this.completeHideAnimation();
+
 		if (this.isVisible()) {
-			this.hide();
+			this.hide(undefined, true);
 		}
 
 		// Show static box
@@ -259,23 +269,74 @@ export class ContextView extends Disposable {
 		this.view.style.width = 'initial';
 	}
 
-	hide(data?: unknown): void {
+	hide(data?: unknown, skipAnimation = false): void {
+		this.completeHideAnimation();
+
 		const delegate = this.delegate;
 		this.delegate = null;
 
-		if (delegate?.onHide) {
-			delegate.onHide(data);
+		if (!delegate) {
+			return;
 		}
 
 		const toDispose = this.toDisposeOnClean;
 		this.toDisposeOnClean = Disposable.None;
-		toDispose.dispose();
 
+		delegate.onHide?.(data);
+
+		const closeAnimation = delegate.closeAnimation;
+		if (!skipAnimation && closeAnimation && closeAnimation.duration > 0 && this.hasRequiredAncestorClasses(closeAnimation.requiredAncestorClasses)) {
+			this.view.classList.add(closeAnimation.className);
+			const timeout = setTimeout(() => this.completeHideAnimation(), closeAnimation.duration);
+			this.hidingContextView = {
+				disposable: toDisposable(() => clearTimeout(timeout)),
+				toDispose,
+				className: closeAnimation.className
+			};
+			return;
+		}
+
+		toDispose.dispose();
 		DOM.hide(this.view);
 	}
 
 	private isVisible(): boolean {
 		return !!this.delegate;
+	}
+
+	private completeHideAnimation(): void {
+		const hidingContextView = this.hidingContextView;
+		if (!hidingContextView) {
+			return;
+		}
+
+		this.hidingContextView = undefined;
+		hidingContextView.disposable.dispose();
+		this.view.classList.remove(hidingContextView.className);
+		hidingContextView.toDispose.dispose();
+		DOM.hide(this.view);
+	}
+
+	private hasRequiredAncestorClasses(classNames: readonly string[] | undefined): boolean {
+		if (!classNames?.length) {
+			return true;
+		}
+
+		for (let candidate: HTMLElement | null = this.view; candidate;) {
+			const current: HTMLElement = candidate;
+			if (classNames.every(className => current.classList.contains(className))) {
+				return true;
+			}
+
+			if (current.parentElement) {
+				candidate = current.parentElement;
+			} else {
+				const root = current.getRootNode();
+				candidate = root instanceof ShadowRoot && DOM.isHTMLElement(root.host) ? root.host : null;
+			}
+		}
+
+		return false;
 	}
 
 	private onDOMEvent(e: UIEvent, onCapture: boolean): void {
@@ -290,6 +351,7 @@ export class ContextView extends Disposable {
 
 	override dispose(): void {
 		this.hide();
+		this.completeHideAnimation();
 
 		super.dispose();
 	}
@@ -334,4 +396,51 @@ const SHADOW_ROOT_CSS = /* css */ `
 	:host-context(.linux:lang(zh-Hant)) { font-family: system-ui, "Ubuntu", "Droid Sans", "Source Han Sans TC", "Source Han Sans TW", "Source Han Sans", sans-serif; }
 	:host-context(.linux:lang(ja)) { font-family: system-ui, "Ubuntu", "Droid Sans", "Source Han Sans J", "Source Han Sans JP", "Source Han Sans", sans-serif; }
 	:host-context(.linux:lang(ko)) { font-family: system-ui, "Ubuntu", "Droid Sans", "Source Han Sans K", "Source Han Sans JR", "Source Han Sans", "UnDotum", "FBaekmuk Gulim", sans-serif; }
+
+	:host-context(.style-override.monaco-enable-motion) .context-view.workbench-menu-motion {
+		animation: workbench-menu-motion-open 250ms cubic-bezier(0.22, 1, 0.36, 1) both;
+		transform-origin: top left;
+		will-change: transform, opacity;
+	}
+
+	:host-context(.style-override.monaco-enable-motion) .context-view.workbench-menu-motion.right {
+		transform-origin: top right;
+	}
+
+	:host-context(.style-override.monaco-enable-motion) .context-view.workbench-menu-motion.top {
+		transform-origin: bottom left;
+	}
+
+	:host-context(.style-override.monaco-enable-motion) .context-view.workbench-menu-motion.top.right {
+		transform-origin: bottom right;
+	}
+
+	:host-context(.style-override.monaco-enable-motion) .context-view.workbench-menu-motion.workbench-menu-motion-closing {
+		animation: workbench-menu-motion-close 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
+		pointer-events: none;
+	}
+
+	@keyframes workbench-menu-motion-open {
+		0% {
+			opacity: 0;
+			transform: scale(0.97);
+		}
+
+		100% {
+			opacity: 1;
+			transform: scale(1);
+		}
+	}
+
+	@keyframes workbench-menu-motion-close {
+		0% {
+			opacity: 1;
+			transform: scale(1);
+		}
+
+		100% {
+			opacity: 0;
+			transform: scale(0.99);
+		}
+	}
 `;

@@ -20,6 +20,7 @@ import { IChatModel } from '../../../common/model/chatModel.js';
 import { ActionViewItem, IActionViewItemOptions } from '../../../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { IAction } from '../../../../../../base/common/actions.js';
 import { AgentSessionsPicker } from '../../agentSessions/agentSessionsPicker.js';
+import { WORKBENCH_MENU_MOTION_CLASS, workbenchMenuCloseAnimation } from '../../../../../browser/actions/menuMotion.js';
 
 export interface IChatViewTitleDelegate {
 	focusChat(): void;
@@ -105,13 +106,17 @@ export class ChatViewTitleControl extends Disposable {
 				return undefined;
 			},
 			hiddenItemStrategy: HiddenItemStrategy.NoHide,
-			menuOptions: { shouldForwardArgs: true }
+			menuOptions: { shouldForwardArgs: true },
+			dropdownMenuClassName: WORKBENCH_MENU_MOTION_CLASS,
+			dropdownMenuCloseAnimation: workbenchMenuCloseAnimation
 		}));
 
 		// Actions toolbar on the right
 		this.actionsToolbar = this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, elements.actionsToolbar, MenuId.ChatViewSessionTitleToolbar, {
 			menuOptions: { shouldForwardArgs: true },
-			hiddenItemStrategy: HiddenItemStrategy.NoHide
+			hiddenItemStrategy: HiddenItemStrategy.NoHide,
+			dropdownMenuClassName: WORKBENCH_MENU_MOTION_CLASS,
+			dropdownMenuCloseAnimation: workbenchMenuCloseAnimation
 		}));
 
 		// Title controls

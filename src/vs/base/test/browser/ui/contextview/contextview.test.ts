@@ -38,4 +38,39 @@ suite('ContextView', () => {
 		contextView.dispose();
 		container.remove();
 	});
+
+	test('hide() delays render disposal for close animations', () => {
+		const container = $('.container');
+		container.classList.add('style-override', 'monaco-enable-motion');
+		const contextView = new ContextView(container, ContextViewDOMPosition.ABSOLUTE);
+
+		let disposeCount = 0;
+		const delegate: IDelegate = {
+			getAnchor: () => ({ x: 0, y: 0 }),
+			render: () => ({
+				dispose: () => {
+					disposeCount++;
+				}
+			}),
+			closeAnimation: {
+				className: 'closing',
+				duration: 100,
+				requiredAncestorClasses: ['style-override', 'monaco-enable-motion']
+			}
+		};
+
+		contextView.show(delegate);
+		contextView.hide();
+
+		assert.deepStrictEqual({
+			disposeCount,
+			hasClosingClass: contextView.getViewElement().classList.contains('closing')
+		}, {
+			disposeCount: 0,
+			hasClosingClass: true
+		});
+
+		contextView.dispose();
+		container.remove();
+	});
 });
