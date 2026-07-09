@@ -446,7 +446,11 @@ export class ChatView extends AbstractChatView {
 			const connected = this.voiceSessionController.isConnected.read(reader);
 			const voiceState = this.voiceSessionController.voiceState.read(reader);
 			const active = this._isActiveObs.read(reader);
-			if (connected && active && (voiceState === 'listening' || voiceState === 'speaking')) {
+			const targetSession = this.voiceSessionController.targetSession.read(reader);
+			// The Sessions window renders multiple session slots at once; only glow
+			// the active slot, and never a slot the backend is targeting elsewhere.
+			const targetedElsewhere = !!targetSession && !!this._currentChatResource && !isEqual(targetSession, this._currentChatResource);
+			if (connected && active && !targetedElsewhere && (voiceState === 'listening' || voiceState === 'speaking')) {
 				startGlowAnimation();
 			} else {
 				stopGlowAnimation();
