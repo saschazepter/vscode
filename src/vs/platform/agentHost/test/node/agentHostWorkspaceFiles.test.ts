@@ -80,37 +80,6 @@ suite('AgentHostWorkspaceFiles', () => {
 		assert.ok(!names.some(p => p.endsWith('/ignored.txt')), `ignored.txt should not be listed: ${names.join(',')}`);
 	});
 
-	test('can disregard ignore files when requested', async () => {
-		const dir = createTempDir();
-		writeFileSync(join(dir, '.gitignore'), 'ignored.txt\n');
-		writeFileSync(join(dir, 'ignored.txt'), 'i');
-
-		const files = disposables.add(new AgentHostWorkspaceFiles(new NullLogService()));
-		const result = await files.getFiles(URI.file(dir), CancellationToken.None, {
-			disregardIgnoreFiles: true,
-			disregardParentIgnoreFiles: true,
-			disregardGlobalIgnoreFiles: true,
-		});
-		const names = result.map(uri => uri.path);
-
-		assert.ok(names.some(p => p.endsWith('/ignored.txt')), `ignored.txt should be listed when ignore files are disregarded: ${names.join(',')}`);
-	});
-
-	test('filters results to the provided include globs', async () => {
-		const dir = createTempDir();
-		writeFileSync(join(dir, 'keep.txt'), 'k');
-		writeFileSync(join(dir, 'drop.log'), 'd');
-
-		const files = disposables.add(new AgentHostWorkspaceFiles(new NullLogService()));
-		const result = await files.getFiles(URI.file(dir), CancellationToken.None, {
-			includeGlobs: ['*.txt'],
-		});
-		const names = result.map(uri => uri.path);
-
-		assert.ok(names.some(p => p.endsWith('/keep.txt')));
-		assert.ok(!names.some(p => p.endsWith('/drop.log')), `drop.log should be filtered out: ${names.join(',')}`);
-	});
-
 	test('excludes the .git directory', async () => {
 		const dir = createTempDir();
 		writeFileSync(join(dir, 'a.txt'), 'a');

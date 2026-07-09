@@ -23,14 +23,6 @@ interface ICacheEntry {
 	expiresAt: number;
 }
 
-export interface IAgentHostWorkspaceFilesOptions {
-	readonly includeGlobs?: readonly string[];
-	readonly disregardIgnoreFiles?: boolean;
-	readonly disregardParentIgnoreFiles?: boolean;
-	readonly disregardGlobalIgnoreFiles?: boolean;
-	readonly disregardDotIgnoreFiles?: boolean;
-}
-
 /**
  * Enumerates files under a working directory using ripgrep, with results
  * cached per working directory for a short TTL.
@@ -75,19 +67,19 @@ export class AgentHostWorkspaceFiles extends Disposable {
 	 *
 	 * Only `file://` URIs are supported. Other schemes return an empty list.
 	 */
-	async getFiles(workingDirectory: URI, token: CancellationToken, options?: IAgentHostWorkspaceFilesOptions): Promise<readonly URI[]> {
+	async getFiles(workingDirectory: URI, token: CancellationToken): Promise<readonly URI[]> {
 		if (workingDirectory.scheme !== Schemas.file) {
 			return [];
 		}
 
-		const key = this._getCacheKey(workingDirectory, options);
+		const key = workingDirectory.toString();
 		const now = Date.now();
 		const existing = this._cache.get(key);
 		let shared: Promise<readonly URI[]>;
 		if (existing && existing.expiresAt > now) {
 			shared = existing.promise;
 		} else {
-			shared = this._enumerate(workingDirectory, options);
+			shared = this._enumerate(workingDirectory);
 			const entry: ICacheEntry = { promise: shared, expiresAt: now + CACHE_TTL_MS };
 			this._cache.set(key, entry);
 			// If enumeration fails, drop the cache entry so the next caller retries.
@@ -123,40 +115,14 @@ export class AgentHostWorkspaceFiles extends Disposable {
 		});
 	}
 
-	private _getCacheKey(workingDirectory: URI, options?: IAgentHostWorkspaceFilesOptions): string {
-		return JSON.stringify({
-			workingDirectory: workingDirectory.toString(),
-			includeGlobs: options?.includeGlobs ?? [],
-			disregardIgnoreFiles: options?.disregardIgnoreFiles ?? false,
-			disregardParentIgnoreFiles: options?.disregardParentIgnoreFiles ?? false,
-			disregardGlobalIgnoreFiles: options?.disregardGlobalIgnoreFiles ?? false,
-			disregardDotIgnoreFiles: options?.disregardDotIgnoreFiles ?? false,
-		});
-	}
-
-	private async _enumerate(workingDirectory: URI, options?: IAgentHostWorkspaceFilesOptions): Promise<readonly URI[]> {
+	private async _enumerate(workingDirectory: URI): Promise<readonly URI[]> {
 		const resolvedRgDiskPath = await rgDiskPath();
 		return new Promise<readonly URI[]>(resolve => {
 			const cwd = workingDirectory.fsPath;
-			// Mirror the workbench's `ripgrepFileSearch.ts` file-search args as
-			// closely as possible while keeping this helper's smaller surface.
-			const args = ['--files', '--hidden', '--no-require-git', '--glob', '!.git'];
-			for (const includeGlob of options?.includeGlobs ?? []) {
-				args.push('-g', includeGlob);
-			}
-			if (options?.disregardIgnoreFiles) {
-				args.push('--no-ignore');
-			} else if (options?.disregardParentIgnoreFiles) {
-				args.push('--no-ignore-parent');
-			}
-			args.push('--follow');
-			args.push('--no-config');
-			if (options?.disregardDotIgnoreFiles) {
-				args.push('--no-ignore-dot');
-			}
-			if (options?.disregardGlobalIgnoreFiles) {
-				args.push('--no-ignore-global');
-			}
+			// Mirror the workbench's `ripgrepFileSearch.ts` invocation: pass
+			// `--no-config` so a user's global `~/.ripgreprc` cannot change
+			// enumeration results (or enable preprocessors etc.).
+			const args = ['--files', '--hidden', '--no-require-git', '--follow', '--no-config', '--glob', '!.git'];
 
 			let child: cp.ChildProcessWithoutNullStreams;
 			try {

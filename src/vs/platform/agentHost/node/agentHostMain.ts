@@ -169,7 +169,7 @@ async function startAgentHost(): Promise<void> {
 		diServices.set(IAgentHostFileMonitorService, fileMonitorService);
 		diServices.set(IWindowsMxcTerminalSandboxRuntime, instantiationService.createInstance(WindowsMxcTerminalSandboxRuntime));
 		diServices.set(ISandboxHelperService, new SandboxHelperService());
-		const gitService = disposables.add(instantiationService.createInstance(AgentHostGitService));
+		const gitService = instantiationService.createInstance(AgentHostGitService);
 		diServices.set(IAgentHostGitService, gitService);
 		// Checkpoint service depends on session data + git services, so
 		// construct it AFTER both are registered. Consumed by CopilotAgent
