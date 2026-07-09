@@ -2357,9 +2357,12 @@ export class CopilotAgentSession extends Disposable {
 				toolInput: request.command,
 				confirmationTitle,
 			},
-			// Omit `permissionKind: 'shell'` to bypass shell rules, while the
-			// sandbox-bypass flag also disables global and session auto-approval.
-			requestSandboxBypass: true,
+			// Intentionally omit `permissionKind: 'shell'`: that would route this
+			// through the shell rule-based auto-approver and silently approve
+			// common safe commands (`pwd`, `ls`, etc.) without prompting.
+			// Mirrors the workbench's sandbox-aware analyzer, which forces
+			// `isAutoApproveAllowed: false` whenever `requiresUnsandboxConfirmation`
+			// is set.
 			parentToolCallId,
 		});
 

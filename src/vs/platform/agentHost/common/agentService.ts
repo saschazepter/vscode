@@ -1136,19 +1136,21 @@ export interface IAgentActionSignal {
  * A tool has finished collecting parameters and needs the host to decide
  * whether it should run (or, mid-execution, re-confirm). The host applies
  * auto-approval logic over {@link permissionKind} / {@link permissionPath}
- * (see `SessionPermissionManager.getAutoApproval`). The host dispatches
- * `ChatToolCallReady` only when the decision changes client-visible state.
+ * (see `SessionPermissionManager.getAutoApproval`) and then dispatches the
+ * appropriate `ChatToolCallReady` action — with confirmation options
+ * baked in when the user must approve, or with `confirmed: NotNeeded` when
+ * the host auto-approved.
  *
  * Kept as a non-action signal because the host owns this approval policy;
  * the agent only describes the tool call and the kind of permission being
- * requested. The {@link state} field carries candidate protocol fields for
- * any resulting `ChatToolCallReady` action.
+ * requested. The {@link state} field carries the protocol-shaped tool-call
+ * state and is dispatched verbatim into the action.
  */
 export interface IAgentToolPendingConfirmationSignal {
 	readonly kind: 'pending_confirmation';
 	/** Target chat channel URI containing the tool call. */
 	readonly chat: URI;
-	/** Protocol-shaped candidate state for a resulting `ChatToolCallReady`. */
+	/** Protocol-shaped pending-confirmation state, dispatched verbatim into `ChatToolCallReady`. */
 	readonly state: ToolCallPendingConfirmationState;
 	/** Host-only auto-approval kind (not part of the dispatched action). */
 	readonly permissionKind?: 'shell' | 'write' | 'mcp' | 'read' | 'url' | 'custom-tool' | 'hook' | 'memory' | 'extension-management' | 'extension-permission-access';

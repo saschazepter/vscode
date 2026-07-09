@@ -1863,37 +1863,6 @@ suite('CopilotAgentSession', () => {
 			assert.strictEqual(result.kind, 'approve-once');
 		});
 
-		test('unsandboxed command confirmations bypass all auto-approval', async () => {
-			const { session, runtime, waitForSignal } = await createAgentSession(disposables);
-			const resultPromise = runtime.requestUnsandboxedCommandConfirmation({
-				toolCallId: 'tc-unsandboxed',
-				toolName: 'bash',
-				shellExecutable: '/bin/bash',
-				command: 'npm test',
-				reason: 'The sandbox blocked the test runner',
-			});
-
-			const signal = await waitForSignal(signal => signal.kind === 'pending_confirmation');
-			assert.strictEqual(signal.kind, 'pending_confirmation');
-			if (signal.kind !== 'pending_confirmation') {
-				throw new Error('Expected pending_confirmation signal');
-			}
-			assert.deepStrictEqual({
-				permissionKind: signal.permissionKind,
-				requestSandboxBypass: signal.requestSandboxBypass,
-				toolCallId: signal.state.toolCallId,
-				toolInput: signal.state.toolInput,
-			}, {
-				permissionKind: undefined,
-				requestSandboxBypass: true,
-				toolCallId: 'tc-unsandboxed',
-				toolInput: 'npm test',
-			});
-
-			assert.ok(session.respondToPermissionRequest('tc-unsandboxed', true));
-			assert.strictEqual(await resultPromise, true);
-		});
-
 		test('per-request sandbox: applies the configured policy under default approvals', async () => {
 			const { session, mockSession } = await createAgentSession(disposables, {
 				rootValues: { [AgentHostSandboxConfigKey.Sandbox]: { [AgentHostSandboxKey.Enabled]: AgentSandboxEnabledValue.On } },
