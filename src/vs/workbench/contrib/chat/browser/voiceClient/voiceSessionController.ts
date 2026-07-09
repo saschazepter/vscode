@@ -274,23 +274,23 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private _liveReplyKey: string | undefined;
 
 	/**
-	 * Per-session record of the last *buffered* (deferred) reply we replayed on
-	 * focus: its transcript and when it was flushed. When a deferred reply is
-	 * flushed, the backend sometimes ALSO re-narrates the same reply a moment
-	 * later (it re-emits the reply for the session that just became active), which
-	 * would double-read it. We drop a subsequent live reply for the same session
-	 * ONLY when its transcript matches this one within
-	 * `RENARRATION_DEDUPE_WINDOW_MS` - so a genuinely new reply (different text) is
-	 * never suppressed. */
-	private readonly _recentlyFlushedResponse = new Map<string, { transcript: string; at: number }>();
+	 * Per-session record of the reply we most recently read for a session (played
+	 * live or flushed from the deferred buffer): its transcript and when it was
+	 * read. The backend re-emits a session's reply when that session becomes
+	 * active (on focus), which would double-read it. We drop a subsequent reply
+	 * for the same session ONLY when its transcript matches this one within
+	 * `RENARRATION_DEDUPE_WINDOW_MS` - so a genuinely new reply (different text)
+	 * always plays, and so does a later identical reply once the window lapses. */
+	private readonly _recentlyReadResponse = new Map<string, { transcript: string; at: number }>();
 	/** Sessions whose in-flight backend re-narration we are dropping (multi-chunk
 	 *  safety so continuation chunks are dropped too, not just the first). */
 	private readonly _droppingRenarration = new Set<string>();
 	private static readonly RENARRATION_DEDUPE_WINDOW_MS = 6000;
 
 	/**
-	 * Last reply transcript heard per session. On activation it arms
-	 * `_recentlyFlushedResponse` so matching backend re-reads drop as stale.
+	 * Last reply transcript heard per session (persistent, unlike the windowed
+	 * `_recentlyReadResponse`). On activation it arms `_recentlyReadResponse` so a
+	 * backend re-read of a reply we heard earlier is dropped as a re-narration.
 	 */
 	private readonly _lastHeardTranscriptById = new Map<string, string>();
 
@@ -1174,13 +1174,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			}
 			if (defer) {
 				this._deferResponse(codingSessionId!, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
-			} else if (this._isDuplicateRenarration(codingSessionId, e.transcript, e.isFirstChunk, e.isFinal)) {
-				// Backend re-narrated a reply we just replayed from the deferred
-				// buffer on focus. Drop it so the user never hears it twice.
-				this.logService.trace(`[voice] dropping duplicate re-narration for session=${codingSessionId} isFirstChunk=${e.isFirstChunk} isFinal=${e.isFinal}`);
-			} else if (this._isStaleRenarration(codingSessionId, e.isFirstChunk, e.isFinal)) {
-				// Drop unsolicited on-focus re-narration of an idle session's old reply.
-				this.logService.trace(`[voice] dropping stale re-narration for now-active idle session=${codingSessionId} isFirstChunk=${e.isFirstChunk} isFinal=${e.isFinal}`);
+			} else if (this._isRenarration(codingSessionId, e.transcript, e.isFirstChunk, e.isFinal)) {
+				// Backend re-narrated a reply we already read for this session
+				// (matched by content). Drop it so the user never hears it twice.
+				this.logService.trace(`[voice] dropping re-narration for session=${codingSessionId} isFirstChunk=${e.isFirstChunk} isFinal=${e.isFinal}`);
 			} else {
 				// A fresh reply that plays live supersedes any older buffered
 				// response for the same session; drop the stale buffer and its
@@ -1192,11 +1189,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._enqueueAudio(codingSessionId, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
 				if (e.isFinal) {
 					this._liveReplyKey = undefined;
-					// Remember this heard reply so later on-focus re-reads drop as stale.
+					// Record this heard reply so an immediate backend re-narration
+					// of it (on activation) is dropped as a re-read, and so later
+					// on-focus re-reads of it are deduped by content.
 					if (codingSessionId && e.transcript) {
 						const heard = this._normalizeTranscript(e.transcript);
 						if (heard) {
 							this._lastHeardTranscriptById.set(codingSessionId, heard);
+							this._recentlyReadResponse.set(codingSessionId, { transcript: heard, at: Date.now() });
 						}
 					}
 				}
@@ -1338,7 +1338,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._uiResourceByBackendId.clear();
 		this._liveReplyKey = undefined;
 		this._lastShownSessionId = undefined;
-		this._recentlyFlushedResponse.clear();
+		this._recentlyReadResponse.clear();
 		this._droppingRenarration.clear();
 		this._lastHeardTranscriptById.clear();
 		this._forceThinkingOnce.clear();
@@ -2270,10 +2270,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 		// In embedder-driven mode, arm dedupe with the last heard reply so matching
 		// on-focus re-reads drop; new replies and confirmations still narrate.
-		if (this._externalActiveSessionMode && !this._recentlyFlushedResponse.has(key)) {
+		if (this._externalActiveSessionMode && !this._recentlyReadResponse.has(key)) {
 			const heard = this._lastHeardTranscriptById.get(key);
 			if (heard) {
-				this._recentlyFlushedResponse.set(key, { transcript: heard, at: Date.now() });
+				this._recentlyReadResponse.set(key, { transcript: heard, at: Date.now() });
 			}
 		}
 		// Split resident confirmations across deltas: flip `is_active` while
@@ -2458,15 +2458,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 		this.logService.trace(`[voice] flushing ${buffer.length} buffered chunk(s) for now-focused session=${key}`);
 		// Record that we just replayed a buffered reply for this session, along
-		// with its transcript, so a *duplicate* backend re-narration (same text)
-		// arriving shortly after is dropped rather than double-read. A genuinely
-		// new reply (different text) is never suppressed. See
-		// _recentlyFlushedResponse.
+		// with its transcript, so a backend re-narration (same text) arriving
+		// shortly after is dropped rather than double-read. A genuinely new reply
+		// (different text) is never suppressed. See _recentlyReadResponse.
 		const flushedTranscript = this._normalizeTranscript(
 			buffer.map(c => c.transcript ?? '').join(' ')
 		);
 		if (flushedTranscript) {
-			this._recentlyFlushedResponse.set(key, { transcript: flushedTranscript, at: Date.now() });
+			this._recentlyReadResponse.set(key, { transcript: flushedTranscript, at: Date.now() });
 			this._lastHeardTranscriptById.set(key, flushedTranscript);
 		}
 
@@ -2499,15 +2498,20 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	/**
-	 * True when an incoming live-play response is a duplicate re-narration of a
-	 * reply we just replayed from the deferred buffer for the same session. The
-	 * backend inconsistently re-emits a session's reply when that session becomes
-	 * active (on focus), which would otherwise be read a second time right after
-	 * the buffered replay. We treat a fresh response (isFirstChunk) for a session
-	 * flushed within RENARRATION_DEDUPE_WINDOW_MS as such a duplicate, and drop the
-	 * whole response (including its continuation chunks) until its final chunk.
+	 * True when an incoming reply is a re-narration of a reply we recently read
+	 * for this session (played live or flushed from the deferred buffer). The
+	 * backend re-emits a session's reply when that session becomes active (on
+	 * focus), which would otherwise be read a second time. We drop it ONLY when
+	 * its transcript matches what we recently read AND arrives within
+	 * RENARRATION_DEDUPE_WINDOW_MS - so a genuinely new reply (different text)
+	 * always plays, and so does a later identical reply once the window lapses.
+	 * The whole response (including continuation chunks) is dropped until final.
+	 *
+	 * This is purely content-based: it never suppresses a reply just because the
+	 * session was heard before, which is what let the backend's server-side
+	 * deferral of a NEW reply (delivered as an on-focus narration) be swallowed.
 	 */
-	private _isDuplicateRenarration(sessionId: string | undefined, transcript: string | undefined, isFirstChunk: boolean, isFinal: boolean): boolean {
+	private _isRenarration(sessionId: string | undefined, transcript: string | undefined, isFirstChunk: boolean, isFinal: boolean): boolean {
 		if (!sessionId) {
 			return false;
 		}
@@ -2521,80 +2525,29 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (!isFirstChunk) {
 			return false;
 		}
-		const flushed = this._recentlyFlushedResponse.get(sessionId);
-		if (flushed === undefined) {
-			return false;
-		}
-		if (Date.now() - flushed.at > VoiceSessionController.RENARRATION_DEDUPE_WINDOW_MS) {
-			this._recentlyFlushedResponse.delete(sessionId);
-			return false;
-		}
-		// Only drop when the incoming reply is the SAME text we just replayed.
-		// A genuinely new reply (different text) for the same session must still
-		// play, so we never suppress on the time window alone.
-		const incoming = this._normalizeTranscript(transcript ?? '');
-		if (!incoming || !(flushed.transcript === incoming || flushed.transcript.startsWith(incoming))) {
-			// Different (or unknown) content: this is a new reply. Retire the
-			// marker so we don't accidentally match a later chunk, and play it.
-			this._recentlyFlushedResponse.delete(sessionId);
-			return false;
-		}
-		// This first chunk is the duplicate re-narration. Consume the marker
-		// (one-shot) and, for a multi-chunk re-narration, keep dropping until final.
-		this._recentlyFlushedResponse.delete(sessionId);
-		if (this._liveReplyKey === sessionId) {
-			this._liveReplyKey = undefined;
-		}
-		if (!isFinal) {
-			this._droppingRenarration.add(sessionId);
-		}
-		return true;
-	}
-
-	/**
-	 * Drops stale on-focus replays in the sessions window. Solicited replies,
-	 * pending confirmations, and buffered background replies still play.
-	 */
-	private _isStaleRenarration(sessionId: string | undefined, isFirstChunk: boolean, isFinal: boolean): boolean {
-		if (!this._externalActiveSessionMode || !sessionId) {
-			return false;
-		}
-		// Continuation of a stale narration we're already dropping.
-		if (!isFirstChunk) {
-			if (this._droppingRenarration.has(sessionId)) {
-				if (isFinal) {
-					this._droppingRenarration.delete(sessionId);
-				}
-				return true;
-			}
-			return false;
-		}
-		// Only the focused session's own narration can be a stale replay.
-		if (this._getActiveSessionId() !== sessionId) {
-			return false;
-		}
-		// Solicited reply: let it play.
+		// A solicited reply the user is actively awaiting always plays.
 		if (this._awaitingReplyAudio && this._awaitingReplyForSession === sessionId) {
 			return false;
 		}
-		// First narration for this session: let it play. The backend defers a
-		// background session's narration until the session becomes active, so its
-		// reply legitimately arrives right as/after we focus - that is the single
-		// on-focus read the user expects, not a re-read. Only a session whose
-		// reply we have already heard (recorded in `_lastHeardTranscriptById` when
-		// a reply finishes playing or is flushed from the deferred buffer) can
-		// produce a stale re-narration. Without this guard the first delivery is
-		// swallowed and the state machine never advances to speaking/auto-listen,
-		// leaving the mic indicator gone and nothing read.
-		if (!this._lastHeardTranscriptById.has(sessionId)) {
+		const recent = this._recentlyReadResponse.get(sessionId);
+		if (recent === undefined) {
 			return false;
 		}
-		// Pending confirmations should narrate on focus.
-		const model = this.chatService.getSession(URI.parse(sessionId));
-		if (model && this._getAgentStateInfo(model).state === 'waiting_for_confirmation') {
+		if (Date.now() - recent.at > VoiceSessionController.RENARRATION_DEDUPE_WINDOW_MS) {
+			this._recentlyReadResponse.delete(sessionId);
 			return false;
 		}
-		// Drop unsolicited prior output and its continuation chunks.
+		// Only drop when the incoming reply is the SAME text we recently read.
+		// A genuinely new reply (different text) for the same session must still
+		// play, so we never suppress on the time window alone.
+		const incoming = this._normalizeTranscript(transcript ?? '');
+		if (!incoming || !(recent.transcript === incoming || recent.transcript.startsWith(incoming))) {
+			return false;
+		}
+		// This first chunk is the re-narration; keep dropping its continuation
+		// chunks (if any) until final. The marker is left in place so repeated
+		// re-narrations within the window are also dropped; it expires by time or
+		// is overwritten when a new reply is read.
 		if (this._liveReplyKey === sessionId) {
 			this._liveReplyKey = undefined;
 		}
