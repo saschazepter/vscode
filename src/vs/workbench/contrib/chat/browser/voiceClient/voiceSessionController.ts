@@ -283,6 +283,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private readonly _droppingRenarration = new Set<string>();
 	private static readonly RENARRATION_DEDUPE_WINDOW_MS = 6000;
 
+	/**
+	 * Per-session record of the last reply transcript the user actually HEARD
+	 * (played live or flushed from the deferred buffer). Used to guard against
+	 * the backend re-narrating a session's already-heard reply when that session
+	 * becomes active again on focus: on activation we arm `_recentlyFlushedResponse`
+	 * with this transcript so a matching backend re-read is dropped rather than
+	 * replaying stale content. A genuinely new reply (different text) still plays.
+	 */
+	private readonly _lastHeardTranscriptById = new Map<string, string>();
+
 
 	// --- Session audio cache for replay ---
 	private readonly _sessionAudioCache = new Map<string, Float32Array>();
@@ -1151,6 +1161,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._enqueueAudio(e.codingSessionId, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
 				if (e.isFinal) {
 					this._liveReplyKey = undefined;
+					// Remember what the user just heard for this session so a later
+					// backend re-narration on focus (switching back to it) is
+					// recognized as stale and dropped rather than replayed.
+					if (e.codingSessionId && e.transcript) {
+						const heard = this._normalizeTranscript(e.transcript);
+						if (heard) {
+							this._lastHeardTranscriptById.set(e.codingSessionId, heard);
+						}
+					}
 				}
 			}
 			// On the final chunk we have the complete assistant transcript to persist.
@@ -1291,6 +1310,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._lastShownSessionId = undefined;
 		this._recentlyFlushedResponse.clear();
 		this._droppingRenarration.clear();
+		this._lastHeardTranscriptById.clear();
 		this._prevSessionStates.clear();
 		for (const t of this._userCancelledSessions.values()) { clearTimeout(t); }
 		this._userCancelledSessions.clear();
@@ -2195,6 +2215,19 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (this._confirmationDetailPending(resource)) {
 			this._ensureModelLoaded(resource);
 		}
+		// Guard against the backend re-narrating this session's already-heard
+		// reply now that it becomes active on focus. Unless we just flushed a
+		// fresh buffered reply (which arms its own dedupe with the NEW text),
+		// arm the re-narration dedupe with the last reply the user heard for this
+		// session so a matching backend re-read is dropped instead of replaying
+		// stale content. A genuinely new reply (different text) still plays, and
+		// a pending confirmation (different text) still narrates.
+		if (!this._recentlyFlushedResponse.has(key)) {
+			const heard = this._lastHeardTranscriptById.get(key);
+			if (heard) {
+				this._recentlyFlushedResponse.set(key, { transcript: heard, at: Date.now() });
+			}
+		}
 		this._sendContext();
 		this.voiceClientService.flushSessionContext();
 	}
@@ -2244,6 +2277,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (key === this._activeSessionShown) {
 			return;
 		}
+		this.logService.info(`[voice] setActiveSessionShown=${key ?? '<none>'} (was ${this._activeSessionShown ?? '<none>'})`);
 		this._activeSessionShown = key;
 		if (resource) {
 			// Route audio to this session immediately: flush any buffered
@@ -2359,6 +2393,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		);
 		if (flushedTranscript) {
 			this._recentlyFlushedResponse.set(key, { transcript: flushedTranscript, at: Date.now() });
+			this._lastHeardTranscriptById.set(key, flushedTranscript);
 		}
 
 		// Exit any active listening / auto-listen so playback can take over.
@@ -3021,6 +3056,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					}
 				} else {
 					this._eagerModelRefs.set(key, ref);
+					// The model is now resident, so its confirmation state and
+					// detail are finally readable. If nothing else re-evaluates
+					// state, the pending `waiting_for_confirmation` would only
+					// ship to the backend on the next unrelated context send
+					// (potentially minutes later), delaying its narration when
+					// the user switches to the session. Re-check and flush now so
+					// the confirmation narrates immediately.
+					this._checkSessionStateChanges();
+					this._sendContext();
+					this.voiceClientService.flushSessionContext();
 				}
 			} else {
 				// Load failed; stop suppressing the coarse idle for this session.
