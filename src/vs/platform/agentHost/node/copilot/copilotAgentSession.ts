@@ -3750,7 +3750,7 @@ export class CopilotAgentSession extends Disposable {
 					owner: 'amunger';
 					comment: 'Agent Host emission of instructionsCollected. Carries the subset of the local shape that can be honestly (or close-analogously) computed from the SDK\'s InstructionSource list; other fields are intentionally omitted (see source comment).';
 				};
-				this._telemetryService.publicLog2<AgentHostInstructionsCollectedEvent, AgentHostInstructionsCollectedClassification>('instructionsCollected', {
+				this._telemetryService.publicLog2<AgentHostInstructionsCollectedEvent, AgentHostInstructionsCollectedClassification>('agentHost.instructionsCollected', {
 					provider: this.sessionUri.scheme,
 					agentSessionId: AgentSession.id(this.sessionUri),
 					isSubagentSession: isSubagentSession(this.sessionUri),
