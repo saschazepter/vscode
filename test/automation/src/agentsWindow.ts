@@ -632,23 +632,6 @@ export class AgentsWindow {
 	}
 
 	/**
-	 * Returns the session type (agent) currently preselected in the new-session
-	 * homepage picker, e.g. "Copilot", "Claude", "Local". Reads the picker
-	 * trigger's visible text, falling back to its aria-label. Use to assert the
-	 * last user-selected session type is restored when a new session is opened.
-	 */
-	async getSelectedSessionType(timeoutMs: number = 30_000): Promise<string> {
-		await this.code.waitForElement(SESSION_TYPE_PICKER_VISIBLE, undefined, Math.ceil(timeoutMs / 100));
-		const page = this.code.driver.currentPage;
-		const trigger = page.locator(SESSION_TYPE_PICKER_VISIBLE).first();
-		const text = ((await trigger.textContent()) ?? '').trim();
-		if (text) {
-			return text;
-		}
-		return ((await trigger.getAttribute('aria-label')) ?? '').trim();
-	}
-
-	/**
 	 * Open the combined model configuration dropdown (Thinking Effort / Context
 	 * Size) by clicking the active session model picker's configuration button.
 	 * The button is only visible when the selected model advertises configurable

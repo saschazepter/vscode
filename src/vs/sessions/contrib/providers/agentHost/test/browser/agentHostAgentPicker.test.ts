@@ -91,6 +91,14 @@ suite('agentHostAgentPicker', () => {
 			return resolveAgentHostAgent(sessionAgents, undefined, storedUri);
 		}
 
+		// Mirrors `_initAgent` for an ESTABLISHED (non-untitled) session: the
+		// per-scheme stored seed is deliberately NOT consulted (`storedUri`
+		// undefined), so the session keeps its own persisted agent rather than
+		// inheriting the shared new-session default.
+		function seedEstablishedSession(sessionAgents: readonly AgentCustomization[], sessionAgentUri: string | undefined): AgentCustomization | undefined {
+			return resolveAgentHostAgent(sessionAgents, sessionAgentUri, undefined);
+		}
+
 		test('a new Copilot Agent Host session restores the last selected custom agent', () => {
 			const storage = createStorage();
 			selectAgent(storage, SCHEME, beta);
@@ -107,10 +115,11 @@ suite('agentHostAgentPicker', () => {
 		test('an established (non-untitled) session is not seeded from the stored agent', () => {
 			const storage = createStorage();
 			selectAgent(storage, SCHEME, beta);
-			// `_initAgent` only reads the stored URI for untitled sessions; an
-			// established session passes `storedUri: undefined`, so it keeps its own
-			// persisted agent rather than inheriting the shared seed.
-			assert.strictEqual(resolveAgentHostAgent(agents, undefined, undefined), undefined);
+			// The stored seed exists and WOULD apply to a new untitled session...
+			assert.deepStrictEqual(seedNewUntitledSession(storage, SCHEME, agents), beta);
+			// ...but an established session ignores it and keeps its own agent
+			// (here: the default Agent, i.e. no session-level selection).
+			assert.strictEqual(seedEstablishedSession(agents, undefined), undefined);
 		});
 
 		test('a stored agent that is no longer available is ignored', () => {
