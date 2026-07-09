@@ -500,6 +500,8 @@ class FileElementTemplate {
 		} else {
 			this._checkbox.enable();
 		}
+		// enable()/disable() reset the tabIndex; keep the checkbox out of the tree's tab order
+		this._checkbox.domNode.tabIndex = -1;
 		this._localDisposables.add(this._checkbox.onChange(() => {
 			element.setChecked(this._checkbox.checked);
 		}));
@@ -600,6 +602,8 @@ class TextEditElementTemplate {
 		} else {
 			this._checkbox.enable();
 		}
+		// enable()/disable() reset the tabIndex; keep the checkbox out of the tree's tab order
+		this._checkbox.domNode.tabIndex = -1;
 
 		let value = '';
 		value += element.prefix;
