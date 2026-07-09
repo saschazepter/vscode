@@ -49,13 +49,13 @@ export class ChatSessionCreatedResultSubPart extends BaseChatToolInvocationSubPa
 			title: this.data.label,
 		}));
 		button.element.classList.add('chat-open-session-button');
-		button.label = `$(${Codicon.agent.id}) ${this.data.label}`;
+		button.label = `$(${this.getIcon().id}) ${this.data.label}`;
 		this._register(button.onDidClick(() => {
 			this.openerService.open(URI.parse(this.data.openLink), { fromUserGesture: true, allowContributedOpeners: true });
 		}));
 	}
 
 	protected override getIcon(): ThemeIcon {
-		return Codicon.agent;
+		return this.data.isChat ? Codicon.commentDiscussion : Codicon.agent;
 	}
 }

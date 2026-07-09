@@ -1130,6 +1130,8 @@ export interface IChatSessionCreatedData {
 	readonly openLink: string;
 	/** Label for the button (e.g. the session title / prompt). */
 	readonly label: string;
+	/** Whether this is a `create_chat` result (vs `create_session`); selects the pill icon. */
+	readonly isChat?: boolean;
 }
 
 export interface IChatModifiedFilesConfirmationData {

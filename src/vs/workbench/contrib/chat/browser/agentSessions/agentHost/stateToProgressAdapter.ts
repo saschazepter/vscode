@@ -1116,7 +1116,7 @@ function buildSessionCreatedToolData(tc: ToolCallState): IChatSessionCreatedData
 	}
 	const backend = parseOpenSessionLinkUri(openLink)!;
 	const label = createSessionTitleFromArgs(tc.toolInput) ?? (backend.path.replace(/^\//, '') || backend.toString());
-	return { kind: 'sessionCreated', openLink, label };
+	return { kind: 'sessionCreated', openLink, label, isChat };
 }
 
 /**
