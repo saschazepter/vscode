@@ -15,7 +15,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { DisposableStore, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
-import { autorun } from '../../../../base/common/observable.js';
+import { autorun, constObservable } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
 import { EditorContextKeys } from '../../../../editor/common/editorContextKeys.js';
@@ -35,7 +35,8 @@ import { IProductService } from '../../../../platform/product/common/productServ
 import { defaultCheckboxStyles, defaultInputBoxStyles, defaultSelectBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { hasNativeContextMenu } from '../../../../platform/window/common/window.js';
 import { WorkspacePicker } from '../../chat/browser/sessionWorkspacePicker.js';
-import { ISessionWorkspaceBrowseAction, SESSION_WORKSPACE_GROUP_LOCAL } from '../../../services/sessions/common/session.js';
+import { SessionTypePicker } from '../../chat/browser/sessionTypePicker.js';
+import { ISession, ISessionWorkspaceBrowseAction, SESSION_WORKSPACE_GROUP_LOCAL } from '../../../services/sessions/common/session.js';
 import { IGitService } from '../../../../workbench/contrib/git/common/gitService.js';
 import { AutomationInterval } from '../../../../workbench/contrib/chat/common/automations/automation.js';
 import { IShowAutomationDialogOptions } from '../../../../workbench/contrib/chat/common/automations/automationDialogService.js';
@@ -92,27 +93,9 @@ interface IRenderFormHandle {
 	readonly getModelId: () => string | undefined;
 }
 
+
 const AUTOMATIONS_HARNESS_CHIP_ACTION_ID = 'workbench.action.chat.renderAutomationsHarnessChip';
 const AUTOMATIONS_ISOLATION_GROUP_ACTION_ID = 'workbench.action.chat.renderAutomationsIsolationGroup';
-
-function createAutomationHarnessChip(): HTMLElement {
-	const harnessChip = $('span.automation-form-harness-chip');
-	DOM.append(harnessChip, renderIcon(Codicon.copilot));
-	DOM.append(harnessChip, $('span.automation-form-harness-label', undefined, localize('automation.form.harness', "Copilot CLI")));
-	return harnessChip;
-}
-
-class AutomationHarnessChipActionViewItem extends BaseActionViewItem {
-	constructor(action: IAction, options?: IBaseActionViewItemOptions) {
-		super(undefined, action, options);
-	}
-
-	override render(container: HTMLElement): void {
-		super.render(container);
-		DOM.clearNode(container);
-		DOM.append(container, createAutomationHarnessChip());
-	}
-}
 
 class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 	private readonly renderDisposables = this._register(new DisposableStore());
@@ -277,6 +260,28 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 			}
 		}));
 		this.branchRepoDisposable.value = watcher;
+	}
+}
+
+/**
+ * Hosts the shared {@link SessionTypePicker} inside the chat input's secondary
+ * toolbar, in the slot previously occupied by the hardcoded harness chip. The
+ * picker instance is owned by the dialog (registered on its disposables); this
+ * view item only renders it into the toolbar container.
+ */
+class AutomationSessionTypePickerActionViewItem extends BaseActionViewItem {
+	constructor(
+		action: IAction,
+		private readonly picker: SessionTypePicker,
+		options?: IBaseActionViewItemOptions,
+	) {
+		super(undefined, action, options);
+	}
+
+	override render(container: HTMLElement): void {
+		super.render(container);
+		DOM.clearNode(container);
+		this.picker.render(container);
 	}
 }
 
@@ -497,6 +502,21 @@ export function renderForm(
 
 	const sessionTypeBinder = createSessionTypeBinder(state, sessionTypeProvider, disposables);
 
+	// Interim: bring in the shared SessionTypePicker rendered into the harness
+	// chip slot. Fed an always-undefined session for now, so it resolves no
+	// folder session types and renders hidden/inert. Selection wiring is in
+	// place so it drives the form once a folder-driven source lands. Until
+	// then, `sessionTypeBinder` continues to seed state.providerId/sessionTypeId.
+	const sessionTypePicker = disposables.add(instantiationService.createInstance(SessionTypePicker, constObservable<ISession | undefined>(undefined)));
+	disposables.add(sessionTypePicker.onDidSelectSessionType(pick => {
+		if (!pick) {
+			return;
+		}
+		state.providerId = pick.providerId;
+		state.sessionTypeId = pick.sessionTypeId;
+		revalidate();
+	}));
+
 	const workspacePicker = disposables.add(instantiationService.createInstance(AutomationsWorkspacePicker));
 
 	if (state.folderUri) {
@@ -549,7 +569,7 @@ export function renderForm(
 		workspacePickerInput: workspacePicker,
 		secondaryToolbarActionViewItemProvider: (action, itemOptions) => {
 			if (action.id === AUTOMATIONS_HARNESS_CHIP_ACTION_ID) {
-				return new AutomationHarnessChipActionViewItem(action, itemOptions);
+				return new AutomationSessionTypePickerActionViewItem(action, sessionTypePicker, itemOptions);
 			}
 			if (action.id === AUTOMATIONS_ISOLATION_GROUP_ACTION_ID) {
 				const actionWidgetService = instantiationService.invokeFunction(accessor => accessor.get(IActionWidgetService));
