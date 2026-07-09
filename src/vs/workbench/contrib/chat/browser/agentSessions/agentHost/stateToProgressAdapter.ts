@@ -1111,10 +1111,10 @@ function buildSessionCreatedToolData(tc: ToolCallState): IChatSessionCreatedData
 	const output = getToolOutputText(tc);
 	const match = output?.match(/agent-host-session:\/\/[^\s)<>;"']+/);
 	const openLink = match?.[0];
-	if (!openLink || !parseOpenSessionLinkUri(openLink)) {
+	const backend = openLink ? parseOpenSessionLinkUri(openLink) : undefined;
+	if (!openLink || !backend) {
 		return undefined;
 	}
-	const backend = parseOpenSessionLinkUri(openLink)!;
 	const label = createSessionTitleFromArgs(tc.toolInput) ?? (backend.path.replace(/^\//, '') || backend.toString());
 	return { kind: 'sessionCreated', openLink, label, isChat };
 }

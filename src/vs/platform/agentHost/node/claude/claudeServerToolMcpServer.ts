@@ -59,8 +59,8 @@ export async function buildServerToolMcpServer(
 		jsonSchemaToZodRawShape(def.inputSchema),
 		async args => {
 			try {
-				const text = host.executeTool(sessionUri, def.name, args);
-				return { content: [{ type: 'text' as const, text: await text }] };
+				const text = await host.executeTool(sessionUri, def.name, args);
+				return { content: [{ type: 'text' as const, text }] };
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				return { content: [{ type: 'text' as const, text: message }], isError: true };
