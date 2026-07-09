@@ -137,12 +137,8 @@ export class ChatView extends AbstractChatView {
 	private readonly _isActiveObs = observableValue<boolean>(this, true);
 
 	/**
-	 * Per-view mirror of `agentsVoice.contribution`'s `agentsVoiceInitiatedHere`
-	 * key. Bound on this view's own scoped context service (parent of the chat
-	 * widget's), driven solely by whether this view is the active slot while voice
-	 * is connected/connecting. This keeps the post-connect voice controls (Stop,
-	 * Disconnect, Settings) anchored to the session the user is viewing, without
-	 * the multi-widget thrash of a global recompute across every chat widget.
+	 * Per-view mirror of `agentsVoiceInitiatedHere`, scoped above the chat widget.
+	 * Keeps post-connect voice controls anchored to the active session view.
 	 */
 	private readonly _voiceInitiatedHereKey: IContextKey<boolean>;
 
@@ -210,11 +206,10 @@ export class ChatView extends AbstractChatView {
 			}
 		}));
 
-		// Voice mode transcript overlay + audio-reactive glow on the chat input.
+		// Voice transcript overlay + input glow.
 		this._setupVoiceOverlay();
 
-		// Anchor the post-connect voice controls to this view only while it is the
-		// active slot and voice is connected/connecting.
+		// Anchor post-connect voice controls to this active voice view.
 		this._register(autorun(reader => {
 			const active = this._isActiveObs.read(reader);
 			const voiceActive = this.voiceSessionController.isConnected.read(reader)
@@ -372,11 +367,8 @@ export class ChatView extends AbstractChatView {
 	//#region Voice overlay
 
 	/**
-	 * Sets up the voice mode transcript overlay and audio-reactive glow on this
-	 * view's chat input, mirroring the main-window `ChatViewPane`. The overlay is
-	 * only shown while voice mode is connected and this view is the active
-	 * session; the transcript is hidden when the voice backend is targeting a
-	 * different session so it is never misrouted.
+	 * Sets up this view's transcript overlay and input glow, mirroring `ChatViewPane`.
+	 * Shows only while voice is connected and targeting this active session.
 	 */
 	private _setupVoiceOverlay(): void {
 		const inputContainerEl = this._widget.inputPart.inputContainerElement;

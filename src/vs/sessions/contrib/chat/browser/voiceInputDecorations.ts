@@ -28,22 +28,19 @@ export interface IVoiceInputDecorationsServices {
 }
 
 export interface IVoiceInputDecorationsOptions {
-	/** The input container that receives the audio-reactive glow and hosts the transcript overlay. */
+	/** Input container for glow and transcript overlay. */
 	readonly inputContainer: HTMLElement;
-	/** Whether this surface is the active/visible one; decorations only render when active. */
+	/** Whether this surface is active/visible. */
 	readonly isActive: IObservable<boolean>;
-	/** Resource identifying this surface, compared against the voice backend's target to avoid misrouting. */
+	/** Surface resource, compared with the voice target to avoid misrouting. */
 	readonly getCurrentResource: () => URI | undefined;
 }
 
 /**
- * Sets up the voice mode transcript overlay and audio-reactive glow on a chat
- * input container. Shared by the Agents window's active-session `ChatView` and
- * the new-session composer so both surfaces render identical voice decorations.
+ * Adds the voice transcript overlay and audio-reactive glow to a chat input.
+ * Shared by the active-session `ChatView` and new-session composer.
  *
- * The overlay/glow are only shown while voice mode is connected and this surface
- * is active; they are suppressed when the voice backend is targeting a different
- * session so the transcript is never misrouted.
+ * Decorations show only while this surface is active and voice targets it.
  */
 export function setupVoiceInputDecorations(services: IVoiceInputDecorationsServices, options: IVoiceInputDecorationsOptions): IDisposable {
 	const { voiceSessionController, ttsPlaybackService, micCaptureService, configurationService, keybindingService } = services;
@@ -63,7 +60,7 @@ export function setupVoiceInputDecorations(services: IVoiceInputDecorationsServi
 	transcriptOverlayNode.style.display = 'none';
 	inputContainerEl.append(transcriptOverlayNode);
 
-	// --- Audio-reactive glow (matches main-window behavior) ---
+	// --- Audio-reactive glow ---
 	const win = dom.getWindow(inputContainerEl);
 	let animFrameId: number | undefined;
 	const glowDataArrayRef: { value: Uint8Array | undefined } = { value: undefined };
@@ -105,8 +102,7 @@ export function setupVoiceInputDecorations(services: IVoiceInputDecorationsServi
 		const active = isActive.read(reader);
 		const targetSession = voiceSessionController.targetSession.read(reader);
 		const current = getCurrentResource();
-		// The Sessions window renders multiple session slots at once; only glow
-		// the active slot, and never a slot the backend is targeting elsewhere.
+		// Glow only the active slot targeted by the backend.
 		const targetedElsewhere = !!targetSession && !!current && !isEqual(targetSession, current);
 		if (connected && active && !targetedElsewhere && (voiceState === 'listening' || voiceState === 'speaking')) {
 			startGlowAnimation();
@@ -127,8 +123,7 @@ export function setupVoiceInputDecorations(services: IVoiceInputDecorationsServi
 		const current = getCurrentResource();
 		const visible = turns.filter(t => t.text.length > 0 || (t.speaker === 'user' && t.isPartial));
 
-		// Only the active surface renders the transcript, and never a transcript
-		// the backend is targeting at a different session.
+		// Render transcripts only on the active backend target.
 		const targetedElsewhere = !!targetSession && !!current && !isEqual(targetSession, current);
 		if (!connected || !active || targetedElsewhere) {
 			transcriptOverlayNode.style.display = 'none';

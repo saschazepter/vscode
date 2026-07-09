@@ -4,21 +4,18 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * Shared audio-reactive glow math for the voice-mode input decorations. Both the
- * main window's `ChatViewPane` and the Agents (Sessions) window surfaces render an
- * identical glow on the chat input container while voice mode is active; this
- * module is the single source of truth for the (tricky, easy-to-drift) intensity
- * and box-shadow computation so the two callers cannot diverge. Callers still own
- * their own animation loop, target selection, and gating.
+ * Shared audio-reactive glow math for voice-mode input decorations. The main
+ * window's `ChatViewPane` and the Agents window surfaces render an identical
+ * glow; this is the single source of truth for the easy-to-drift intensity and
+ * box-shadow math. Callers own their own animation loop, target, and gating.
  */
 
 export type VoiceGlowState = 'idle' | 'listening' | 'processing' | 'speaking' | 'error';
 
 /**
- * Reduce an analyser's frequency data to a normalized [0, 1] intensity. When no
- * analyser is available (e.g. before capture/playback starts) a small resting
- * intensity keeps the glow gently visible. `dataArray` is reused across frames;
- * pass a ref-cell so it can be lazily (re)allocated to match the bin count.
+ * Reduce an analyser's frequency data to a normalized [0, 1] intensity. Returns
+ * a small resting value when no analyser is available (before capture/playback).
+ * `dataArray` is a ref-cell reused across frames, lazily sized to the bin count.
  */
 export function readVoiceGlowIntensity(analyser: AnalyserNode | null, dataArray: { value: Uint8Array | undefined }): number {
 	if (!analyser) {
@@ -41,10 +38,8 @@ export interface IVoiceGlowStyle {
 }
 
 /**
- * Compute the border color and box-shadow for the voice glow. Blue while
- * listening (more flashy/audio-reactive when the transcript is hidden), purple
- * while speaking (subtle). Identical to the previous inline computation shared by
- * both windows.
+ * Compute the glow border color and box-shadow. Blue while listening (flashier
+ * when the transcript is hidden), purple while speaking.
  */
 export function computeVoiceGlowStyle(voiceState: VoiceGlowState, intensity: number, transcriptHidden: boolean): IVoiceGlowStyle {
 	// Blue when listening, purple when speaking.
@@ -54,7 +49,7 @@ export function computeVoiceGlowStyle(voiceState: VoiceGlowState, intensity: num
 	let shadowSpread: number;
 	let shadowAlpha: number;
 	if (flashy) {
-		// Flashy, audio-reactive glow while the user is speaking (no transcript visible).
+		// Flashy audio-reactive glow while speaking with no transcript visible.
 		borderAlpha = 0.6 + intensity * 0.4;
 		shadowSpread = 6 + intensity * 20;
 		shadowAlpha = 0.25 + intensity * 0.55;

@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-/* Voice transcript overlay shown inside the chat input container while voice mode is active. Mirrors the main-window overlay in chatViewPane.css. */
+/* Voice transcript overlay inside the chat input, mirroring chatViewPane.css. */
 
 @keyframes sessionsVoiceTextPulse {
 	0%,
@@ -23,7 +23,7 @@
 	right: 0;
 	bottom: 36px;
 	z-index: 10;
-	/* Let clicks pass through to the input editor unless there is scrollable transcript content */
+	/* Let clicks pass through to the input editor unless transcript is scrollable */
 	pointer-events: none;
 	background: var(--vscode-input-background, transparent);
 	border-radius: inherit;
@@ -62,11 +62,10 @@
 	white-space: pre-wrap;
 }
 
-/* Voice mode icon glow on the new-session composer toolbar. The shared chat.css
-rules only match the chat widget's `.chat-input-container`; the composer uses
-its own `.new-chat-input-area`, so mirror the blue-listening / purple-speaking
-glow here. `voice-active` / `voice-listening` are toggled on the input
-container by setupVoiceInputDecorations. */
+/* Voice icon glow on the new-session composer toolbar. chat.css only targets the
+chat widget's `.chat-input-container`; the composer uses `.new-chat-input-area`,
+so mirror the blue-listening / purple-speaking glow here. `voice-active` /
+`voice-listening` are toggled by setupVoiceInputDecorations. */
 @keyframes sessionsVoiceIconGlow {
 	0%,
 	100% {

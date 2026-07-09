@@ -359,8 +359,8 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 			}
 		}));
 		const titleToolbarContainer = DOM.append(titleRow, $('.session-title-toolbar'));
-		// Shown when a voice response arrived while this session wasn't focused and
-		// is being held until it is (mirrors the main window's sessions viewer).
+		// Shown when a voice response arrived while this session was unfocused and
+		// is held until it is (mirrors the main window's sessions viewer).
 		const pendingVoiceIndicator = DOM.append(titleRow, $('.session-pending-voice-indicator'));
 		// The list opens a session on click and on Gesture `tap` (touch).
 		// DOM event propagation stops only cover mouse/pointer events; the
@@ -423,8 +423,8 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 			}), { groupId: 'sessions-list' }));
 		}
 
-		// Pending voice response indicator - shown when a voice response arrived
-		// while this session wasn't focused and is being held until it is.
+		// Pending voice response indicator: a response arrived while this session
+		// was unfocused and is held until it is.
 		const pendingVoiceResource = element.resource;
 		template.pendingVoiceIndicator.className = 'session-pending-voice-indicator ' + ThemeIcon.asClassName(Codicon.unmute);
 		template.elementDisposables.add(this.hoverService.setupManagedHover(
