@@ -769,6 +769,77 @@ export function setup(logger: Logger) {
 		});
 	});
 
+	describe('Agents Window (model restore)', () => {
+		// Uses the Local Agent Host (Copilot Agent running in the Agent Host)
+		// rather than the plain copilot-chat "Local" session, because agent-host
+		// session types own their own model pool — the exact surface the
+		// per-type model restore fix targets (shouldRestorePerTypeModelOnSessionSwitch /
+		// shouldSuppressModelPersistenceOnSessionSwitch / shouldWaitForSessionModel).
+
+		// A non-default, picker-enabled model advertised by the mock server.
+		const RESTORE_MODEL_NAME = MODEL_CONFIG_MODEL_NAME;
+		const RESTORE_1_ID = 'smoke-agents-model-restore-1';
+		const RESTORE_1_REPLY = 'MOCKED_AGENTS_MODEL_RESTORE_1';
+		const RESTORE_2_ID = 'smoke-agents-model-restore-2';
+		const RESTORE_2_REPLY = 'MOCKED_AGENTS_MODEL_RESTORE_2';
+
+		const agentHost = setupAgentHostSuite(logger, {
+			serverLabel: 'AgentHost model restore',
+			registerScenarios: ({ ScenarioBuilder, registerScenario }) => {
+				registerScenario(RESTORE_1_ID, new ScenarioBuilder().emit(RESTORE_1_REPLY).build());
+				registerScenario(RESTORE_2_ID, new ScenarioBuilder().emit(RESTORE_2_REPLY).build());
+			},
+			settings: {},
+		});
+
+		it('restores the selected model when a new Local Agent Host session is opened', async function () {
+			this.timeout(5 * 60 * 1000);
+
+			const app = this.app as Application;
+			const aw = app.workbench.agentsWindow;
+
+			try {
+				// Prime the Local Agent Host CLI model list and leave a fresh
+				// new-session view with 'Local Agent Host' selected.
+				await warmUpAgentHostModel(app, logger, 'Agents Window (model restore)');
+
+				// Session 1: create the active session, then pick a non-default model.
+				const requestsBefore = agentHost.mockServer.requestCount();
+				await aw.submitNewSessionPrompt(`hello world [scenario:${RESTORE_1_ID}]`);
+				await aw.waitForAssistantText(RESTORE_1_REPLY, 120_000);
+				assert.ok(
+					agentHost.mockServer.requestCount() > requestsBefore,
+					'expected the mock LLM server to have received a request from the Local Agent Host session'
+				);
+
+				await aw.selectModel(RESTORE_MODEL_NAME);
+				await aw.waitForSelectedModel(RESTORE_MODEL_NAME);
+
+				// Session 2: open a brand-new Local Agent Host session. The agent-host
+				// session type owns its own model pool, so the per-type persisted model
+				// must be restored into the new session's picker (this is the "open a
+				// new chat session restores the last selected model" half of the fix —
+				// a regression here previously reset it to Auto/default).
+				await aw.startNewSession();
+				await aw.waitForNewSessionView();
+				await aw.selectSessionType('Local Agent Host');
+				await aw.submitNewSessionPrompt(`hello world [scenario:${RESTORE_2_ID}]`);
+				await aw.waitForAssistantText(RESTORE_2_REPLY, 120_000);
+
+				await aw.waitForSelectedModel(RESTORE_MODEL_NAME);
+				const restored = await aw.getSelectedModelName();
+				assert.ok(
+					restored.includes(RESTORE_MODEL_NAME),
+					`Expected the new Local Agent Host session to restore the selected model '${RESTORE_MODEL_NAME}', got '${restored}'.`
+				);
+			} catch (error) {
+				logger.log(`[Agents Window/model-restore] FAILURE: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+				await dumpFailureDiagnostics(app, logger, 'Agents Window (model restore)', { sendButtonSelector: AGENTS_SEND_BUTTON_SELECTOR });
+				throw error;
+			}
+		});
+	});
+
 	describe('Agents Window (local AgentHost)', () => {
 
 		const agentHost = setupAgentHostSuite(logger, {

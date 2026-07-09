@@ -605,6 +605,50 @@ export class AgentsWindow {
 	}
 
 	/**
+	 * Returns the model currently selected in the active session's model picker.
+	 * Reads the picker name button's accessible name (aria-label, e.g.
+	 * "Models, <modelName>") because at a narrow width the button collapses to an
+	 * icon-only layout with no visible model name. The leading "Models," group
+	 * label is stripped so the caller gets just the model name.
+	 */
+	async getSelectedModelName(timeoutMs: number = 30_000): Promise<string> {
+		const page = this.code.driver.currentPage;
+		const nameButton = page.locator(`${ACTIVE_SESSION_MODEL_PICKER_NAME}:visible`).first();
+		await nameButton.waitFor({ state: 'visible', timeout: timeoutMs });
+		const label = (await nameButton.getAttribute('aria-label')) ?? '';
+		return label.replace(/^\s*Models,\s*/i, '').trim();
+	}
+
+	/**
+	 * Waits until the active session's model picker reflects a selected model
+	 * whose name contains `modelName` (matched against the picker name button's
+	 * aria-label). Use to assert a model was restored after switching into a
+	 * session, which happens asynchronously as the model list loads.
+	 */
+	async waitForSelectedModel(modelName: string, timeoutMs: number = 30_000): Promise<void> {
+		const page = this.code.driver.currentPage;
+		await page.locator(`${ACTIVE_SESSION_MODEL_PICKER_NAME}[aria-label*="${modelName}"]:visible`).first()
+			.waitFor({ state: 'visible', timeout: timeoutMs });
+	}
+
+	/**
+	 * Returns the session type (agent) currently preselected in the new-session
+	 * homepage picker, e.g. "Copilot", "Claude", "Local". Reads the picker
+	 * trigger's visible text, falling back to its aria-label. Use to assert the
+	 * last user-selected session type is restored when a new session is opened.
+	 */
+	async getSelectedSessionType(timeoutMs: number = 30_000): Promise<string> {
+		await this.code.waitForElement(SESSION_TYPE_PICKER_VISIBLE, undefined, Math.ceil(timeoutMs / 100));
+		const page = this.code.driver.currentPage;
+		const trigger = page.locator(SESSION_TYPE_PICKER_VISIBLE).first();
+		const text = ((await trigger.textContent()) ?? '').trim();
+		if (text) {
+			return text;
+		}
+		return ((await trigger.getAttribute('aria-label')) ?? '').trim();
+	}
+
+	/**
 	 * Open the combined model configuration dropdown (Thinking Effort / Context
 	 * Size) by clicking the active session model picker's configuration button.
 	 * The button is only visible when the selected model advertises configurable
