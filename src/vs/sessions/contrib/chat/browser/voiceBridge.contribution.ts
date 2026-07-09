@@ -14,6 +14,7 @@ import { IChatWidgetService } from '../../../../workbench/contrib/chat/browser/c
 import { IVoiceSessionController } from '../../../../workbench/contrib/chat/browser/voiceClient/voiceSessionController.js';
 import { ISessionsService } from '../../../services/sessions/browser/sessionsService.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
+import { INewChatVoiceTargetService, NEW_CHAT_VOICE_SENTINEL } from './newChatVoice.js';
 
 /**
  * Bridges the shared {@link IVoiceSessionController} to the Agents (Sessions)
@@ -39,6 +40,7 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 		@ISessionsService private readonly sessionsService: ISessionsService,
 		@ISessionsManagementService private readonly sessionsManagementService: ISessionsManagementService,
+		@INewChatVoiceTargetService private readonly newChatVoiceTargetService: INewChatVoiceTargetService,
 	) {
 		super();
 
@@ -63,8 +65,20 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 		// frequently stale; prefer the active session's widget and only fall back
 		// to the focused widget when there is no active session.
 		this._commandDisposables.add(CommandsRegistry.registerCommand('_chat.voice.acceptInput', (_accessor, text: string) => {
+			if (!text) {
+				return;
+			}
+			// If a new-session composer is the voice target (no session exists yet),
+			// submit through it so the transcribed request creates the session.
+			// This takes priority over `lastFocusedWidget`, which can still point at
+			// a previously-opened session's chat widget on the welcome screen.
+			const composer = this._activeComposerTarget();
+			if (composer) {
+				composer.sendQuery(text);
+				return;
+			}
 			const widget = this._activeSessionWidget() ?? this.chatWidgetService.lastFocusedWidget;
-			if (text && widget?.viewModel) {
+			if (widget?.viewModel) {
 				if (widget.viewModel.editing) {
 					// When editing an old message, populate the active input editor
 					// so the user can review before submitting.
@@ -77,11 +91,17 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 
 		// Report the currently shown session's chat resource. Mirrors the main
 		// window's use of its single pane's shown session (not DOM focus): in the
-		// Agents window the shown session is the active session.
+		// Agents window the shown session is the active session. When no session
+		// exists yet but a new-session composer is mounted, report the composer
+		// sentinel so the controller routes input to it instead of spinning up a
+		// bare, unconfigured chat session.
 		this._commandDisposables.add(CommandsRegistry.registerCommand('_chat.voice.getCurrentSession', (): string | undefined => {
-			const activeChat = this.sessionsService.activeSession.get()?.activeChat.get()?.resource;
+			const activeChat = this._createdActiveChatResource();
 			if (activeChat) {
 				return activeChat.toString();
+			}
+			if (this._activeComposerTarget()) {
+				return NEW_CHAT_VOICE_SENTINEL.toString();
 			}
 			return this.chatWidgetService.lastFocusedWidget?.viewModel?.sessionResource?.toString();
 		}));
@@ -91,6 +111,12 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 		this._commandDisposables.add(CommandsRegistry.registerCommand('_chat.voice.switchToSession', async (_accessor, resourceStr: string): Promise<boolean> => {
 			if (!resourceStr) {
 				return false;
+			}
+			// The composer sentinel has no session to open; just focus the composer.
+			if (resourceStr === NEW_CHAT_VOICE_SENTINEL.toString()) {
+				const composer = this._activeComposerTarget();
+				composer?.focus();
+				return !!composer;
 			}
 			let resource: URI;
 			try {
@@ -125,10 +151,30 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 		}));
 	}
 
-	/** The chat widget backing the currently active session, if any. */
+	/**
+	 * The active session's chat resource, but only once the session has actually
+	 * been created. A draft new-session (welcome composer) also surfaces as the
+	 * active session with an `activeChat`, so gating on {@link IActiveSession.isCreated}
+	 * is what distinguishes a real session from the composer.
+	 */
+	private _createdActiveChatResource(): URI | undefined {
+		const active = this.sessionsService.activeSession.get();
+		return active?.isCreated.get() ? active.activeChat.get()?.resource : undefined;
+	}
+
+	/** The chat widget backing the currently active (created) session, if any. */
 	private _activeSessionWidget() {
-		const resource = this.sessionsService.activeSession.get()?.activeChat.get()?.resource;
+		const resource = this._createdActiveChatResource();
 		return resource ? this.chatWidgetService.getWidgetBySessionResource(resource) : undefined;
+	}
+
+	/**
+	 * The new-session composer to route voice input through, but only while no
+	 * session has been created yet — once a real session exists, voice targets
+	 * its chat widget instead.
+	 */
+	private _activeComposerTarget() {
+		return this._createdActiveChatResource() ? undefined : this.newChatVoiceTargetService.activeComposer.get();
 	}
 }
 
@@ -162,7 +208,9 @@ class SessionsVoiceInitiatedContribution extends Disposable implements IWorkbenc
 		this._register(autorun(reader => {
 			this.voiceSessionController.isConnected.read(reader);
 			this.voiceSessionController.isConnecting.read(reader);
-			this.sessionsService.activeSession.read(reader)?.activeChat.read(reader);
+			const active = this.sessionsService.activeSession.read(reader);
+			active?.isCreated.read(reader);
+			active?.activeChat.read(reader);
 			this._apply();
 		}));
 		// Widgets can be created after voice connects (opening a session slot).
@@ -171,7 +219,10 @@ class SessionsVoiceInitiatedContribution extends Disposable implements IWorkbenc
 
 	private _apply(): void {
 		const voiceActive = this.voiceSessionController.isConnected.get() || this.voiceSessionController.isConnecting.get();
-		const activeResource = this.sessionsService.activeSession.get()?.activeChat.get()?.resource;
+		// Only a created session has a chat widget; a draft new-session (welcome
+		// composer) manages its own `agentsVoiceInitiatedHere` key instead.
+		const active = this.sessionsService.activeSession.get();
+		const activeResource = active?.isCreated.get() ? active.activeChat.get()?.resource : undefined;
 		for (const widget of this.chatWidgetService.getAllWidgets()) {
 			const widgetResource = widget.viewModel?.sessionResource;
 			const isActiveWidget = voiceActive && !!activeResource && !!widgetResource && isEqual(widgetResource, activeResource);
