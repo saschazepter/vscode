@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from '../../../../base/common/uri.js';
+import { extUriBiasedIgnorePathCase } from '../../../../base/common/resources.js';
 import type { Mutable } from '../../../../base/common/types.js';
 import { localize } from '../../../../nls.js';
 import type { IAgentCreateSessionConfig, IAgentModelInfo, IAgentSessionMetadata } from '../../common/agentService.js';
@@ -441,7 +442,13 @@ function sessionMatchesWorkspace(session: IAgentSessionMetadata, workspace: stri
 		return true;
 	}
 	const parsed = parseWorkspaceUri(workspace);
-	return !!parsed && parsed.toString() === dir.toString();
+	if (!parsed) {
+		return false;
+	}
+	// Use parent-child matching so sessions whose working directory is a
+	// subdirectory of the workspace (e.g. a git worktree created under
+	// `.copilot/worktrees/`) are still associated with that workspace.
+	return extUriBiasedIgnorePathCase.isEqualOrParent(dir, parsed);
 }
 
 /** Applies the {@link IListSessionsArgs} filters to a set of sessions. */
