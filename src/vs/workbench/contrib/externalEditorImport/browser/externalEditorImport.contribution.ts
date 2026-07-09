@@ -151,3 +151,29 @@ registerAction2(class extends Action2 {
 		await runExternalEditorImport(source, importService, notificationService, progressService);
 	}
 });
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'workbench.action.importFromCursor',
+			title: localize2('externalImport.cursorAction', "Import Settings and Extensions from Cursor"),
+			category: Categories.Preferences,
+			f1: true,
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const importService = accessor.get(IExternalEditorImportService);
+		const notificationService = accessor.get(INotificationService);
+		const progressService = accessor.get(IProgressService);
+
+		const sources = await importService.detectSources(CancellationToken.None);
+		const source = sources.find(candidate => candidate.id === 'cursor');
+		if (!source) {
+			notificationService.info(localize('externalImport.cursor.none', "Cursor with importable customizations was not found on this machine."));
+			return;
+		}
+
+		await runExternalEditorImport(source, importService, notificationService, progressService);
+	}
+});

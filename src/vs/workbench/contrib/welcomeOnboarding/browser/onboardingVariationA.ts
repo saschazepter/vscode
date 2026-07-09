@@ -48,7 +48,7 @@ import {
 	parseGheInstanceInput,
 } from '../common/onboardingTypes.js';
 import { IOnboardingService } from '../common/onboardingService.js';
-import { IExternalEditorImportService, IExternalEditorImportPreview, IExternalEditorSource } from '../../externalEditorImport/common/externalEditorImport.js';
+import { IExternalEditorImportService, IExternalEditorSource } from '../../externalEditorImport/common/externalEditorImport.js';
 
 type OnboardingStepViewClassification = {
 	owner: 'cwebster-99';
@@ -77,6 +77,14 @@ type OnboardingActionEvent = {
 };
 
 type EnterpriseSignInUiState = 'options' | 'instance' | 'progress';
+type ImportCategoryKey = 'settings' | 'keybindings' | 'snippets' | 'extensions';
+
+interface IImportRow {
+	readonly key: ImportCategoryKey;
+	readonly label: string;
+	readonly icon: ThemeIcon;
+	readonly available: boolean;
+}
 
 assertDefined(product.defaultChatAgent, 'Onboarding requires a default chat agent product configuration.');
 const defaultChat = product.defaultChatAgent;
@@ -130,9 +138,8 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 	private selectedKeymapId = 'vscode';
 	private _detectedEditorIds: Set<string> | undefined;
 	private _importSource: IExternalEditorSource | undefined;
-	private readonly _importSelection = { settings: true, keybindings: true, snippets: true, extensions: true };
+	private _importInProgress = false;
 	private _importCompleted = false;
-	private _importPreviewPromise: Promise<IExternalEditorImportPreview> | undefined;
 	private _userSignedIn = false;
 	private selectedAiMode: AiCollaborationMode = AiCollaborationMode.Balanced;
 	private enterpriseSignInUiState: EnterpriseSignInUiState = 'options';
@@ -363,9 +370,6 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			if (leavingStep === OnboardingStepId.Personalize) {
 				this._applyKeymap(this.selectedKeymapId);
 			}
-			if (leavingStep === OnboardingStepId.ImportFromEditor) {
-				this._runImport();
-			}
 			this.currentStepIndex++;
 			this._renderStep();
 			this._renderProgress();
@@ -490,6 +494,10 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 				this.nextButton.className = 'onboarding-a-btn onboarding-a-btn-primary';
 				this.nextButton.textContent = localize('onboarding.next', "Continue");
 			}
+			this.nextButton.disabled = this._importInProgress;
+		}
+		if (this.backButton) {
+			this.backButton.disabled = this._importInProgress;
 		}
 		if (this.footerLeft) {
 			if (this._isLastStep()) {
@@ -1099,149 +1107,135 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			return;
 		}
 
+		const rows = this._getImportRows(source).filter(row => row.available);
 		const wrapper = append(container, $('.onboarding-a-import'));
-
 		const group = append(wrapper, $('.onboarding-a-import-group'));
+		group.setAttribute('role', 'group');
+		group.setAttribute('aria-label', localize('onboarding.import.cardLabel', "Import available customizations from {0}", source.label));
 
 		const groupHeader = append(group, $('.onboarding-a-import-group-header'));
-		const groupIcon = append(groupHeader, $('span.onboarding-a-import-group-icon'));
-		groupIcon.setAttribute('aria-hidden', 'true');
-		groupIcon.appendChild(renderIcon(Codicon.window));
-		const groupLabel = append(groupHeader, $('span.onboarding-a-import-group-label'));
+		const groupIdentity = append(groupHeader, $('.onboarding-a-import-group-identity'));
+		const groupText = append(groupIdentity, $('.onboarding-a-import-group-text'));
+		const groupLabel = append(groupText, $('span.onboarding-a-import-group-label'));
 		groupLabel.textContent = source.label;
+		const groupDescription = append(groupText, $('span.onboarding-a-import-group-description'));
+		groupDescription.textContent = localize(
+			'onboarding.import.groupDescription',
+			"Import your extensions and settings from {0}.",
+			source.label
+		);
 
-		const list = append(group, $('.onboarding-a-import-list'));
-		list.setAttribute('role', 'group');
-		list.setAttribute('aria-label', localize('onboarding.import.listLabel', "Customizations to import from {0}", source.label));
+		const actions = append(groupHeader, $('.onboarding-a-import-actions'));
+		const importButton = this._registerStepFocusable(append(actions, $<HTMLButtonElement>('button.onboarding-a-btn.onboarding-a-btn-secondary.onboarding-a-import-action')));
+		importButton.type = 'button';
+		const importButtonIcon = append(importButton, $('span.onboarding-a-import-action-icon'));
+		importButtonIcon.setAttribute('aria-hidden', 'true');
+		const importButtonLabel = append(importButton, $('span.onboarding-a-import-action-label'));
+		const setImportButtonState = (state: 'idle' | 'running' | 'done') => {
+			clearNode(importButtonIcon);
+			importButton.disabled = state !== 'idle';
+			importButtonIcon.hidden = state !== 'done';
+			switch (state) {
+				case 'idle':
+					importButtonLabel.textContent = localize('onboarding.import.cta', "Import");
+					importButton.setAttribute('aria-label', localize('onboarding.import.cta.aria', "Import customizations from {0}", source.label));
+					break;
+				case 'running':
+					importButtonLabel.textContent = localize('onboarding.import.cta.inProgress', "Importing...");
+					importButton.setAttribute('aria-label', localize('onboarding.import.cta.inProgress.aria', "Importing customizations from {0}", source.label));
+					break;
+				case 'done':
+					importButtonIcon.appendChild(renderIcon(Codicon.check));
+					importButtonLabel.textContent = localize('onboarding.import.cta.done', "Imported");
+					importButton.setAttribute('aria-label', localize('onboarding.import.cta.done.aria', "Imported customizations from {0}", source.label));
+					break;
+			}
+		};
+		setImportButtonState(this._importCompleted ? 'done' : 'idle');
 
-		interface IImportRow { key: 'settings' | 'keybindings' | 'snippets' | 'extensions'; label: string; icon: ThemeIcon; available: boolean }
-		const rows: IImportRow[] = [
+		const categories = append(group, $('.onboarding-a-import-categories'));
+		categories.setAttribute('aria-label', localize('onboarding.import.categoriesLabel', "Available customizations from {0}", source.label));
+		for (const row of rows) {
+			const category = append(categories, $('.onboarding-a-import-category'));
+			const iconEl = append(category, $('span.onboarding-a-import-category-icon'));
+			iconEl.setAttribute('aria-hidden', 'true');
+			iconEl.appendChild(renderIcon(row.icon));
+			append(category, $('span.onboarding-a-import-category-label')).textContent = row.label;
+		}
+
+		this.stepDisposables.add(addDisposableListener(importButton, EventType.CLICK, () => {
+			if (this._importInProgress || this._importCompleted) {
+				return;
+			}
+			const importStepIndex = this.currentStepIndex;
+			setImportButtonState('running');
+			void this._runImport().then(async succeeded => {
+				if (!this._isShowing) {
+					return;
+				}
+				if (!succeeded) {
+					setImportButtonState('idle');
+					return;
+				}
+				setImportButtonState('done');
+				await new Promise<void>(resolve => setTimeout(resolve, 600));
+				if (!this._isShowing) {
+					return;
+				}
+				if (this.currentStepIndex !== importStepIndex || this.steps[this.currentStepIndex] !== OnboardingStepId.ImportFromEditor) {
+					return;
+				}
+				this._logAction('next');
+				this._nextStep();
+			});
+		}));
+	}
+
+	private _getImportRows(source: IExternalEditorSource): IImportRow[] {
+		return [
 			{ key: 'settings', label: localize('onboarding.import.settings', "Settings"), icon: Codicon.settingsGear, available: source.hasSettings },
 			{ key: 'keybindings', label: localize('onboarding.import.keybindings', "Keyboard Shortcuts"), icon: Codicon.keyboard, available: source.hasKeybindings },
 			{ key: 'snippets', label: localize('onboarding.import.snippets', "Snippets"), icon: Codicon.code, available: source.hasSnippets },
 			{ key: 'extensions', label: localize('onboarding.import.extensions', "Extensions"), icon: Codicon.extensions, available: source.hasExtensions },
 		];
-
-		for (const row of rows) {
-			if (!row.available) {
-				this._importSelection[row.key] = false;
-				continue;
-			}
-
-			const card = append(list, $('.onboarding-a-import-item'));
-			const header = append(card, $('.onboarding-a-import-item-header'));
-
-			const toggle = this._registerStepFocusable(append(header, $<HTMLButtonElement>('button.onboarding-a-import-toggle')));
-			toggle.type = 'button';
-			toggle.setAttribute('role', 'checkbox');
-			toggle.setAttribute('aria-checked', this._importSelection[row.key] ? 'true' : 'false');
-			toggle.setAttribute('aria-label', row.label);
-
-			const check = append(toggle, $('span.onboarding-a-import-check'));
-			check.setAttribute('aria-hidden', 'true');
-			const iconEl = append(toggle, $('span.onboarding-a-import-icon'));
-			iconEl.setAttribute('aria-hidden', 'true');
-			iconEl.appendChild(renderIcon(row.icon));
-			const labelEl = append(toggle, $('span.onboarding-a-import-label'));
-			labelEl.textContent = row.label;
-
-			const updateChecked = () => {
-				const checked = this._importSelection[row.key];
-				card.classList.toggle('selected', checked);
-				toggle.setAttribute('aria-checked', checked ? 'true' : 'false');
-				clearNode(check);
-				if (checked) {
-					check.appendChild(renderIcon(Codicon.check));
-				}
-			};
-			updateChecked();
-
-			this.stepDisposables.add(addDisposableListener(toggle, EventType.CLICK, () => {
-				this._importSelection[row.key] = !this._importSelection[row.key];
-				this._logAction('toggleImport', OnboardingStepId.ImportFromEditor, row.key);
-				updateChecked();
-			}));
-
-			// Expandable preview of the concrete items that would be imported.
-			const previewId = `onboarding-a-import-preview-${row.key}`;
-			const expand = this._registerStepFocusable(append(header, $<HTMLButtonElement>('button.onboarding-a-import-expand')));
-			expand.type = 'button';
-			expand.setAttribute('aria-expanded', 'false');
-			expand.setAttribute('aria-controls', previewId);
-			expand.setAttribute('aria-label', localize('onboarding.import.previewLabel', "Preview {0} to import", row.label));
-			const chevron = append(expand, $('span.onboarding-a-import-chevron'));
-			chevron.setAttribute('aria-hidden', 'true');
-			chevron.appendChild(renderIcon(Codicon.chevronDown));
-
-			const preview = append(card, $('.onboarding-a-import-preview'));
-			preview.id = previewId;
-			preview.setAttribute('role', 'region');
-			preview.hidden = true;
-
-			let loaded = false;
-			this.stepDisposables.add(addDisposableListener(expand, EventType.CLICK, () => {
-				const expanded = expand.getAttribute('aria-expanded') === 'true';
-				const next = !expanded;
-				expand.setAttribute('aria-expanded', next ? 'true' : 'false');
-				expand.classList.toggle('expanded', next);
-				preview.hidden = !next;
-				if (next && !loaded) {
-					loaded = true;
-					this._logAction('previewImport', OnboardingStepId.ImportFromEditor, row.key);
-					this._populateImportPreview(source, row.key, row.label, preview);
-				}
-			}));
-		}
 	}
 
-	private async _populateImportPreview(source: IExternalEditorSource, key: 'settings' | 'keybindings' | 'snippets' | 'extensions', label: string, container: HTMLElement): Promise<void> {
-		clearNode(container);
-		const message = append(container, $('.onboarding-a-import-preview-message'));
-		message.textContent = localize('onboarding.import.preview.loading', "Loading…");
-
-		let items: readonly string[];
-		try {
-			if (!this._importPreviewPromise) {
-				this._importPreviewPromise = this.externalEditorImportService.preview(source);
-			}
-			const preview = await this._importPreviewPromise;
-			items = preview[key];
-		} catch {
-			clearNode(container);
-			append(container, $('.onboarding-a-import-preview-message')).textContent = localize('onboarding.import.preview.error', "Couldn't load a preview of {0}.", label);
-			return;
-		}
-
-		clearNode(container);
-		if (items.length === 0) {
-			append(container, $('.onboarding-a-import-preview-message')).textContent = localize('onboarding.import.preview.empty', "Nothing new to bring over — you already have these.");
-			return;
-		}
-
-		const itemsEl = append(container, $<HTMLUListElement>('ul.onboarding-a-import-preview-items'));
-		for (const item of items) {
-			append(itemsEl, $<HTMLLIElement>('li.onboarding-a-import-preview-item')).textContent = item;
-		}
-	}
-
-	private async _runImport(): Promise<void> {
+	private async _runImport(): Promise<boolean> {
 		const source = this._importSource;
-		if (!source || this._importCompleted) {
-			return;
-		}
-		if (!this._importSelection.settings && !this._importSelection.keybindings && !this._importSelection.snippets && !this._importSelection.extensions) {
-			return; // nothing selected
+		if (!source || this._importCompleted || this._importInProgress) {
+			return false;
 		}
 
-		this._importCompleted = true;
+		this._importInProgress = true;
+		this._updateButtonStates();
 		this._logAction('import', OnboardingStepId.ImportFromEditor, source.id);
 		try {
-			await this.externalEditorImportService.import(source, { ...this._importSelection });
+			const result = await this.externalEditorImportService.import(source, { settings: true, keybindings: true, snippets: true, extensions: true });
+			const importedAnything = result.settingsImported > 0 || result.keybindingsImported || result.snippetsImported > 0 || result.extensionsInstalled > 0;
+			if (result.extensionsFailed > 0 || !importedAnything) {
+				if (result.extensionsFailed > 0) {
+					this.notificationService.notify({
+						severity: Severity.Warning,
+						message: localize('onboarding.import.partialError', "Some customizations could not be imported from {0}. You can try again later from the Command Palette.", source.label),
+					});
+				} else {
+					this.notificationService.info(localize('onboarding.import.nothing', "Nothing new to import from {0}.", source.label));
+				}
+				return false;
+			}
+			this._importCompleted = true;
+			this.accessibilityService.alert(localize('onboarding.import.done.alert', "Imported customizations from {0}", source.label));
+			return true;
 		} catch {
+			this._importCompleted = false;
 			this.notificationService.notify({
 				severity: Severity.Warning,
 				message: localize('onboarding.import.error', "Some customizations could not be imported from {0}. You can try again later from the Command Palette.", source.label),
 			});
+			return false;
+		} finally {
+			this._importInProgress = false;
+			this._updateButtonStates();
 		}
 	}
 
