@@ -319,8 +319,12 @@
 	white-space: nowrap;
 }
 
-.interactive-item-container .chat-footer-details.hidden {
-	display: none !important;
+.interactive-item-container.interactive-response .chat-footer-toolbar .chat-footer-details.hidden {
+	display: none;
+}
+
+.interactive-item-container.interactive-request:not(.show-verbose-details) .value .chat-request-timestamp {
+	display: none;
 }
 
 .interactive-item-container .value {

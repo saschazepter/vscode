@@ -795,6 +795,11 @@ configurationRegistry.registerConfiguration({
 			default: true,
 			description: nls.localize('chat.contextUsage.enabled', "Show the context window usage indicator in the chat input."),
 		},
+		[ChatConfiguration.Verbose]: {
+			type: 'boolean',
+			default: false,
+			description: nls.localize('chat.verbose', "Show request timestamps and elapsed response time."),
+		},
 		[ChatConfiguration.ChatPersistentProgressEnabled]: {
 			type: 'boolean',
 			default: product.quality !== 'stable',

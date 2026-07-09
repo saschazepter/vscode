@@ -882,18 +882,15 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}
 		templateData.footerToolbar.context = element;
 
-		const responseDetails = isResponseVM(element)
-			? formatChatResponseDetails(element.result?.details, element.model.elapsedMs)
-			: '';
-		if (responseDetails) {
+		const updateResponseDetails = () => {
+			const responseDetails = isResponseVM(element)
+				? formatChatResponseDetails(element.result?.details, this.configService.getValue<boolean>(ChatConfiguration.Verbose) ? element.model.elapsedMs : undefined)
+				: '';
 			templateData.footerDetailsContainer.textContent = responseDetails;
 			templateData.footerDetailsContainer.ariaLabel = responseDetails;
-			templateData.footerDetailsContainer.classList.remove('hidden');
-		} else {
-			templateData.footerDetailsContainer.textContent = '';
-			templateData.footerDetailsContainer.removeAttribute('aria-label');
-			templateData.footerDetailsContainer.classList.add('hidden');
-		}
+			templateData.footerDetailsContainer.classList.toggle('hidden', !responseDetails);
+		};
+		updateResponseDetails();
 
 		ChatContextKeys.responseHasError.bindTo(templateData.contextKeyService).set(isResponseVM(element) && !!element.errorDetails);
 		const isFiltered = !!(isResponseVM(element) && element.errorDetails?.responseIsFiltered);
@@ -911,9 +908,15 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		// so child content parts can use CSS descendant selectors instead of each subscribing individually.
 		const updateContainerCheckmarks = () => templateData.rowContainer.classList.toggle('show-checkmarks', !!this.configService.getValue<boolean>(AccessibilityWorkbenchSettingId.ShowChatCheckmarks));
 		updateContainerCheckmarks();
+		const updateVerboseDetails = () => templateData.rowContainer.classList.toggle('show-verbose-details', !!this.configService.getValue<boolean>(ChatConfiguration.Verbose));
+		updateVerboseDetails();
 		templateData.elementDisposables.add(this.configService.onDidChangeConfiguration(e => {
 			if (e.affectsConfiguration(AccessibilityWorkbenchSettingId.ShowChatCheckmarks)) {
 				updateContainerCheckmarks();
+			}
+			if (e.affectsConfiguration(ChatConfiguration.Verbose)) {
+				updateVerboseDetails();
+				updateResponseDetails();
 			}
 		}));
 
