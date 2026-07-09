@@ -23,6 +23,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../../pla
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
 import { IEditorOptions } from '../../../../../platform/editor/common/editor.js';
+import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { EditorPane } from '../../../../browser/parts/editor/editorPane.js';
 import { IEditorOpenContext } from '../../../../common/editor.js';
 import { IEditorGroup } from '../../../../services/editor/common/editorGroupsService.js';
@@ -61,7 +62,7 @@ import { agentIcon, instructionsIcon, promptIcon, skillIcon, hookIcon, pluginIco
 import { CHAT_AUTOMATIONS_ENABLED_SETTING } from '../../common/automations/automationsEnabled.js';
 import { ChatModelsWidget } from '../chatManagement/chatModelsWidget.js';
 import { PromptsType, Target } from '../../common/promptSyntax/promptTypes.js';
-import { IPromptsService, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
+import { IPromptsService, IPromptPath, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { IHeaderAttribute, IValue, ParsedPromptFile } from '../../common/promptSyntax/promptFileParser.js';
 import { AGENT_MD_FILENAME } from '../../common/promptSyntax/config/promptFileLocations.js';
 import { getAttributeDefinition, getTarget } from '../../common/promptSyntax/languageProviders/promptFileAttributes.js';
@@ -93,9 +94,11 @@ import { EmbeddedExtensionToolsDetail } from './embeddedExtensionToolsDetail.js'
 import { ICustomizationHarnessService } from '../../common/customizationHarnessService.js';
 import { ChatConfiguration } from '../../common/constants.js';
 import { AICustomizationWelcomePage } from './aiCustomizationWelcomePage.js';
+import { createSkillFileUri, getPromptMigrationInfo, migratePromptFileToSkill, pickSkillSourceFolder } from './promptMigration.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { showNoFoldersDialog } from '../promptSyntax/pickers/askForPromptSourceFolder.js';
+import { isAgentHostTarget } from '../../common/chatSessionsService.js';
 
 const $ = DOM.$;
 
@@ -264,6 +267,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private splitViewContainer!: HTMLElement;
 	private splitView!: SplitView<number>;
 	private sidebarContainer!: HTMLElement;
+	private sectionsListContainer: HTMLElement | undefined;
 	private sectionsList!: WorkbenchList<ISectionItem>;
 	private contentContainer!: HTMLElement;
 	private listWidget!: AICustomizationListWidget;
@@ -337,6 +341,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 	// Welcome page
 	private welcomePage: AICustomizationWelcomePage | undefined;
+	private promptFilesToMigrate: readonly IPromptPath[] = [];
+	private promptMigrationRefreshSequence = 0;
 
 	private readonly editorDisposables = this._register(new DisposableStore());
 	private _editorContentChanged = false;
@@ -346,6 +352,11 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private homeButton: HTMLElement | undefined;
 	private homeButtonIcon: HTMLElement | undefined;
 	private homeButtonLabel: HTMLElement | undefined;
+	private migrationShortcutContainer: HTMLElement | undefined;
+	private migrationShortcutButton: HTMLButtonElement | undefined;
+	private migrationShortcutCount: HTMLElement | undefined;
+	private sidebarWidth = 0;
+	private sidebarHeight = 0;
 
 	private readonly inEditorContextKey: IContextKey<boolean>;
 	private readonly sectionContextKey: IContextKey<string>;
@@ -371,6 +382,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 		@IFileService private readonly fileService: IFileService,
 		@INotificationService private readonly notificationService: INotificationService,
+		@IDialogService private readonly dialogService: IDialogService,
 		@ICustomizationHarnessService private readonly harnessService: ICustomizationHarnessService,
 		@IViewsService private readonly viewsService: IViewsService,
 		@ILabelService private readonly labelService: ILabelService,
@@ -459,11 +471,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			layout: (width, _, height) => {
 				this.sidebarContainer.style.width = `${width}px`;
 				if (height !== undefined) {
-					// Subtract sidebar-content padding (4px each side = 8px) and the
-					// header row height. Without subtracting the header the sections
-					// list overflows and the bottom items are clipped.
-					const headerHeight = this.sidebarHeaderContainer?.offsetHeight ?? 0;
-					this.sectionsList.layout(Math.max(0, height - 8 - headerHeight), width);
+					this.layoutSidebar(width, height);
 				}
 			},
 		}, savedWidth, undefined, true);
@@ -559,6 +567,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// Update the list widget if it exists
 		if (this.sectionsList) {
 			this.sectionsList.splice(0, this.sectionsList.length, this.sections);
+			this.layoutSidebar(this.sidebarWidth, this.sidebarHeight);
 		}
 
 		// Rebuild welcome cards to reflect new visible sections
@@ -578,7 +587,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.createSidebarHeader(sidebarContent);
 
 		// Main sections list container (takes remaining space)
-		const sectionsListContainer = DOM.append(sidebarContent, $('.sidebar-sections-list'));
+		const sectionsListContainer = this.sectionsListContainer = DOM.append(sidebarContent, $('.sidebar-sections-list'));
 
 		this.sectionsList = this.editorDisposables.add(this.instantiationService.createInstance(
 			WorkbenchList<ISectionItem>,
@@ -645,6 +654,27 @@ export class AICustomizationManagementEditor extends EditorPane {
 			}
 		}));
 
+		this.createSidebarMigrationShortcut(sidebarContent);
+	}
+
+	private layoutSidebar(width: number, height: number): void {
+		this.sidebarWidth = width;
+		this.sidebarHeight = height;
+		if (!this.sectionsListContainer) {
+			return;
+		}
+
+		// Subtract sidebar-content padding (4px each side = 8px), the fixed header,
+		// and the optional migration row so the sections list only occupies the
+		// space it needs and the migration entry can sit directly beneath it.
+		const headerHeight = this.sidebarHeaderContainer?.offsetHeight ?? 0;
+		const migrationHeight = this.migrationShortcutContainer?.style.display !== 'none'
+			? (this.migrationShortcutContainer?.offsetHeight ?? 0)
+			: 0;
+		const availableListHeight = Math.max(0, height - 8 - headerHeight - migrationHeight);
+		const listHeight = Math.min(availableListHeight, this.sections.length * 26);
+		this.sectionsListContainer.style.height = `${listHeight}px`;
+		this.sectionsList.layout(listHeight, width);
 	}
 
 	private createSidebarHeader(sidebarContent: HTMLElement): void {
@@ -690,6 +720,29 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.homeButton.title = localize('homeButtonTooltip', "Back to overview");
 	}
 
+	private createSidebarMigrationShortcut(sidebarContent: HTMLElement): void {
+		const container = this.migrationShortcutContainer = DOM.append(sidebarContent, $('.sidebar-migration-shortcut'));
+		container.style.display = 'none';
+
+		const button = this.migrationShortcutButton = DOM.append(container, $('button.sidebar-migration-button')) as HTMLButtonElement;
+		button.type = 'button';
+		button.setAttribute('aria-label', localize('migrationShortcutAriaLabel', "Migrate prompt files to skills"));
+		this.editorDisposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), button, localize('migrationShortcutTooltip', "Convert deprecated prompt files to skills")));
+
+		const icon = DOM.append(button, $('span.sidebar-migration-icon'));
+		icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.warning));
+		icon.setAttribute('aria-hidden', 'true');
+
+		const label = DOM.append(button, $('span.sidebar-migration-label'));
+		label.textContent = localize('migrationShortcutLabel', "Prompts");
+
+		this.migrationShortcutCount = DOM.append(button, $('span.sidebar-migration-count'));
+
+		this.editorDisposables.add(DOM.addDisposableListener(button, 'click', () => {
+			void this.migratePromptFiles();
+		}));
+	}
+
 	private createWelcomePage(parent: HTMLElement): void {
 		this.welcomePage = this.editorDisposables.add(new AICustomizationWelcomePage(
 			parent,
@@ -701,6 +754,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 					if (this.input) {
 						this.group.closeEditor(this.input);
 					}
+				},
+				migratePromptFiles: () => {
+					void this.migratePromptFiles();
 				},
 				prefillChat: async (query, options) => {
 					try {
@@ -733,6 +789,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.getActiveHarnessLabel(),
 		));
 		this.welcomePage.rebuildCards(new Set(this.sections.map(s => s.id)));
+		this.welcomePage.setPromptMigrationInfo(getPromptMigrationInfo(this.promptFilesToMigrate));
 	}
 
 	private createBackArrowButton(onClick?: () => void): HTMLButtonElement {
@@ -758,6 +815,13 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		// Welcome page (shown when no section is selected)
 		this.createWelcomePage(contentInner);
+		this.editorDisposables.add(this.promptsService.onDidChangeSlashCommands(() => {
+			void this.refreshPromptMigrationInfo();
+		}));
+		this.editorDisposables.add(autorun(reader => {
+			this.harnessService.activeHarness.read(reader);
+			void this.refreshPromptMigrationInfo();
+		}));
 
 		// Container for prompts-based content (Agents, Skills, Instructions, Prompts)
 		this.promptsContentContainer = DOM.append(contentInner, $('.prompts-content-container'));
@@ -925,6 +989,149 @@ export class AICustomizationManagementEditor extends EditorPane {
 		if (this.isPromptsSection(this.selectedSection)) {
 			void this.listWidget.setSection(this.selectedSection);
 		}
+
+		void this.refreshPromptMigrationInfo();
+	}
+
+	private async refreshPromptMigrationInfo(): Promise<void> {
+		const activeHarnessId = this.harnessService.activeHarness.get();
+		const refreshSequence = ++this.promptMigrationRefreshSequence;
+
+		if (!isAgentHostTarget(activeHarnessId)) {
+			this.setPromptFilesToMigrate([]);
+			return;
+		}
+
+		try {
+			const promptFiles = await this.promptsService.listPromptFiles(PromptsType.prompt, CancellationToken.None);
+			if (refreshSequence !== this.promptMigrationRefreshSequence || activeHarnessId !== this.harnessService.activeHarness.get()) {
+				return;
+			}
+
+			this.setPromptFilesToMigrate(promptFiles.filter(file => file.storage === PromptsStorage.local || file.storage === PromptsStorage.user));
+		} catch (error) {
+			if (refreshSequence === this.promptMigrationRefreshSequence) {
+				this.setPromptFilesToMigrate([]);
+			}
+			onUnexpectedError(error);
+		}
+	}
+
+	private setPromptFilesToMigrate(promptFiles: readonly IPromptPath[]): void {
+		this.promptFilesToMigrate = promptFiles;
+		const migrationInfo = getPromptMigrationInfo(promptFiles);
+		this.welcomePage?.setPromptMigrationInfo(migrationInfo);
+		this.updateSidebarMigrationShortcut(migrationInfo);
+	}
+
+	private updateSidebarMigrationShortcut(migrationInfo: ReturnType<typeof getPromptMigrationInfo>): void {
+		if (!this.migrationShortcutContainer || !this.migrationShortcutButton || !this.migrationShortcutCount) {
+			return;
+		}
+
+		if (!migrationInfo) {
+			this.migrationShortcutContainer.style.display = 'none';
+			this.layoutSidebar(this.sidebarWidth, this.sidebarHeight);
+			return;
+		}
+
+		this.migrationShortcutContainer.style.display = '';
+		this.migrationShortcutCount.textContent = String(migrationInfo.totalPromptCount);
+		this.migrationShortcutButton.setAttribute(
+			'aria-label',
+			localize('migrationShortcutAriaLabelWithCount', "Prompts, {0} deprecated prompt files need migration", migrationInfo.totalPromptCount),
+		);
+		this.layoutSidebar(this.sidebarWidth, this.sidebarHeight);
+	}
+
+	private async migratePromptFiles(): Promise<void> {
+		if (this.promptFilesToMigrate.length === 0) {
+			return;
+		}
+
+		const migrationInfo = getPromptMigrationInfo(this.promptFilesToMigrate);
+		const confirmResult = await this.dialogService.confirm({
+			type: 'question',
+			message: localize('promptMigrationConfirmMessage', "Convert prompt files to skills?"),
+			detail: migrationInfo && migrationInfo.workspacePromptCount > 0 && migrationInfo.userPromptCount > 0
+				? localize('promptMigrationConfirmDetailWorkspaceAndUser', "This converts {0} workspace prompt files and {1} global prompt files into skills for the active harness and removes the original prompt files.", migrationInfo.workspacePromptCount, migrationInfo.userPromptCount)
+				: migrationInfo && migrationInfo.workspacePromptCount > 0
+					? localize('promptMigrationConfirmDetailWorkspace', "This converts {0} workspace prompt files into skills for the active harness and removes the original prompt files.", migrationInfo.workspacePromptCount)
+					: localize('promptMigrationConfirmDetailUser', "This converts {0} global prompt files into skills for the active harness and removes the original prompt files.", migrationInfo?.userPromptCount ?? this.promptFilesToMigrate.length),
+			primaryButton: localize('promptMigrationConfirmButton', "Convert to Skills"),
+		});
+		if (!confirmResult.confirmed) {
+			return;
+		}
+
+		const skillSourceFolders = await this.itemsModel.getActiveItemSource().fetchSourceFolders(PromptsType.skill);
+		if (skillSourceFolders.length === 0) {
+			this.notificationService.error(localize('promptMigrationNoSkillFolders', "No skill folders are configured for the active harness."));
+			return;
+		}
+
+		const reservedSkillNames = new Map<string, Set<string>>();
+		const unsupportedHeaderKeys = new Set<string>();
+		let convertedCount = 0;
+
+		for (const promptFile of this.promptFilesToMigrate) {
+			const skillSourceFolder = pickSkillSourceFolder(promptFile, skillSourceFolders);
+			if (!skillSourceFolder) {
+				continue;
+			}
+
+			const content = (await this.fileService.readFile(promptFile.uri)).value.toString();
+			const migratedPrompt = migratePromptFileToSkill(promptFile, content);
+			const reservedNamesForFolder = reservedSkillNames.get(skillSourceFolder.uri.toString()) ?? new Set<string>();
+			reservedSkillNames.set(skillSourceFolder.uri.toString(), reservedNamesForFolder);
+			const skillName = await this.getAvailableMigratedSkillName(skillSourceFolder.uri, migratedPrompt.skillName, reservedNamesForFolder);
+			const migratedSkill = skillName === migratedPrompt.skillName ? migratedPrompt : migratePromptFileToSkill(promptFile, content, skillName);
+			for (const key of migratedSkill.unsupportedHeaderKeys) {
+				unsupportedHeaderKeys.add(key);
+			}
+
+			const skillFileUri = createSkillFileUri(skillSourceFolder.uri, skillName);
+			await this.fileService.createFolder(skillSourceFolder.uri);
+			await this.fileService.createFolder(dirname(skillFileUri));
+			await this.fileService.writeFile(skillFileUri, VSBuffer.fromString(migratedSkill.content));
+			await this.fileService.del(promptFile.uri);
+			convertedCount++;
+		}
+
+		if (convertedCount === 0) {
+			this.notificationService.warn(localize('promptMigrationNoFilesConverted', "No prompt files were converted."));
+			return;
+		}
+
+		await this.refreshPromptMigrationInfo();
+
+		const unsupportedKeysLabel = Array.from(unsupportedHeaderKeys).sort().join(', ');
+		if (unsupportedKeysLabel.length > 0) {
+			this.notificationService.info(localize(
+				'promptMigrationConvertedWithReview',
+				"Converted {0} prompt files to skills. Review migrated skills that used unsupported prompt headers: {1}.",
+				convertedCount,
+				unsupportedKeysLabel,
+			));
+		} else {
+			this.notificationService.info(localize('promptMigrationConverted', "Converted {0} prompt files to skills.", convertedCount));
+		}
+
+		this.selectSection(AICustomizationManagementSection.Skills);
+	}
+
+	private async getAvailableMigratedSkillName(skillSourceFolder: URI, baseSkillName: string, reservedNames: Set<string>): Promise<string> {
+		let candidate = baseSkillName;
+		let counter = 2;
+		while (reservedNames.has(candidate) || await this.fileService.exists(createSkillFileUri(skillSourceFolder, candidate))) {
+			const suffix = `-${counter++}`;
+			const maxBaseLength = Math.max(1, 64 - suffix.length);
+			const trimmedBaseName = baseSkillName.slice(0, maxBaseLength).replace(/-+$/g, '');
+			candidate = `${trimmedBaseName}${suffix}`;
+		}
+
+		reservedNames.add(candidate);
+		return candidate;
 	}
 
 	private isPromptsSection(section: AICustomizationManagementSection | undefined): section is AICustomizationManagementSection {
