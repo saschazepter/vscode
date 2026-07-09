@@ -21,6 +21,7 @@ import { TestInstantiationService } from '../../../../../../platform/instantiati
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { TestConfigurationService } from '../../../../../../platform/configuration/test/common/testConfigurationService.js';
 import { IAgentHostService } from '../../../../../../platform/agentHost/common/agentService.js';
+import { AGENT_HOST_ENABLED_CONTEXT_KEY } from '../../../../../../platform/agentHost/common/agentHostEnablementService.js';
 import { IAgentSubscription } from '../../../../../../platform/agentHost/common/state/agentSubscription.js';
 import type { IRootConfigChangedAction, ClientAnnotationsAction, INotification, SessionAction, TerminalAction } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
 import { StateComponents, type ComponentToState } from '../../../../../../platform/agentHost/common/state/sessionState.js';
@@ -523,7 +524,7 @@ suite('workbench.action.chat.openAgentSessionSettings', () => {
 			.find((i): i is IMenuItem => isIMenuItem(i) && i.command.id === ACTION_ID);
 		assert.ok(item, 'agent sessions context menu item is registered');
 
-		const base = { [ChatContextKeys.enabled.key]: true, 'config.chat.agentHost.enabled': true };
+		const base = { [ChatContextKeys.enabled.key]: true, [AGENT_HOST_ENABLED_CONTEXT_KEY.key]: true };
 		assert.strictEqual(evalWhen(item.when, { ...base, [ChatContextKeys.agentSessionType.key]: 'agent-host-copilotcli' }), true);
 		assert.strictEqual(evalWhen(item.when, { ...base, [ChatContextKeys.agentSessionType.key]: 'remote-copilotcli' }), false);
 		assert.strictEqual(evalWhen(item.when, { ...base, [ChatContextKeys.agentSessionType.key]: 'copilotcli' }), false);

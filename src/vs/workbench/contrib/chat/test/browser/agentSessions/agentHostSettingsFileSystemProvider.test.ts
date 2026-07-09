@@ -19,6 +19,7 @@ import { NullLogService, ILogService } from '../../../../../../platform/log/comm
 import { ServiceCollection } from '../../../../../../platform/instantiation/common/serviceCollection.js';
 import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { IAgentHostService } from '../../../../../../platform/agentHost/common/agentService.js';
+import { AGENT_HOST_ENABLED_CONTEXT_KEY } from '../../../../../../platform/agentHost/common/agentHostEnablementService.js';
 import { IAgentSubscription } from '../../../../../../platform/agentHost/common/state/agentSubscription.js';
 import type { IRootConfigChangedAction, ClientAnnotationsAction, INotification, SessionAction, TerminalAction } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
 import { ROOT_STATE_URI, type ConfigPropertySchema, type RootState } from '../../../../../../platform/agentHost/common/state/sessionState.js';
@@ -307,15 +308,15 @@ suite('workbench.action.chat.openAgentHostSettings', () => {
 
 		assert.strictEqual(evalWhen(item.when, {
 			[ChatContextKeys.enabled.key]: true,
-			'config.chat.agentHost.enabled': true,
+			[AGENT_HOST_ENABLED_CONTEXT_KEY.key]: true,
 		}), true);
 		assert.strictEqual(evalWhen(item.when, {
 			[ChatContextKeys.enabled.key]: false,
-			'config.chat.agentHost.enabled': true,
+			[AGENT_HOST_ENABLED_CONTEXT_KEY.key]: true,
 		}), false);
 		assert.strictEqual(evalWhen(item.when, {
 			[ChatContextKeys.enabled.key]: true,
-			'config.chat.agentHost.enabled': false,
+			[AGENT_HOST_ENABLED_CONTEXT_KEY.key]: false,
 		}), false);
 	});
 
@@ -324,7 +325,7 @@ suite('workbench.action.chat.openAgentHostSettings', () => {
 			.find((i): i is IMenuItem => isIMenuItem(i) && i.command.id === ACTION_ID);
 		assert.ok(item, 'agent sessions context menu item is registered');
 
-		const base = { [ChatContextKeys.enabled.key]: true, 'config.chat.agentHost.enabled': true };
+		const base = { [ChatContextKeys.enabled.key]: true, [AGENT_HOST_ENABLED_CONTEXT_KEY.key]: true };
 		assert.strictEqual(evalWhen(item.when, { ...base, [ChatContextKeys.agentSessionType.key]: 'agent-host-copilotcli' }), true);
 		assert.strictEqual(evalWhen(item.when, { ...base, [ChatContextKeys.agentSessionType.key]: 'remote-copilotcli' }), false);
 		assert.strictEqual(evalWhen(item.when, { ...base, [ChatContextKeys.agentSessionType.key]: 'copilotcli' }), false);
