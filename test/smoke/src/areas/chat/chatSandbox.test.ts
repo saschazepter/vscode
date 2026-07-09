@@ -12,7 +12,10 @@ import { dumpFailureDiagnostics, getCopilotSmokeTestEnv, getMockLlmServerPath, i
 
 const WARMUP_SCENARIO_ID = 'smoke-chat-sandbox-warmup';
 const WARMUP_REPLY = 'MOCKED_CHAT_SANDBOX_WARMUP';
+const HOST_TMP_REPLY = 'MOCKED_CHAT_SANDBOX_HOST_TMP_COMPLETE';
 const SANDBOX_SCENARIO_ID = 'smoke-chat-sandbox';
+const TMPDIR_SCENARIO_ID = 'smoke-chat-sandbox-tmpdir';
+const HOST_TMP_SCENARIO_ID = 'smoke-chat-sandbox-host-tmp';
 const NETWORK_SCENARIO_ID = 'smoke-chat-sandbox-network';
 const NETWORK_ALLOWED_SCENARIO_ID = 'smoke-chat-sandbox-network-allowed';
 const HOME_READ_SCENARIO_ID = 'smoke-chat-sandbox-home-read';
@@ -20,10 +23,11 @@ const HOME_READ_ALLOWED_SCENARIO_ID = 'smoke-chat-sandbox-home-read-allowed';
 const CHAT_RESPONSE_TIMEOUT = 120_000;
 const NETWORK_BLOCKED_PATTERN = /ECONNREFUSED|EPERM|EACCES|ENETUNREACH|EHOSTUNREACH|ENETDOWN|EAI_AGAIN/;
 const SANDBOX_EXIT_CODE_PATTERN = /SANDBOX_EXIT_CODE=(\d+)/;
+const TMPDIR_EXIT_CODE_PATTERN = /TMPDIR_EXIT_CODE=(\d+)/;
 const HOME_READ_BLOCKED_EXIT_CODE_PATTERN = /HOME_READ_BLOCKED_EXIT_CODE=(\d+)/;
 const HOME_READ_ALLOWED_EXIT_CODE_PATTERN = /HOME_READ_ALLOWED_EXIT_CODE=(\d+)/;
 
-function terminalCommandScenario(command: string) {
+function terminalCommandScenario(command: string, finalReply?: string) {
 	return {
 		type: 'multi-turn',
 		turns: [
@@ -42,7 +46,13 @@ function terminalCommandScenario(command: string) {
 					},
 				],
 			},
-			{ kind: 'echo-last-tool-result' },
+			// A fixed reply is useful when a blocked command does not produce stable
+			// rendered tool output. Since this is the second scenario turn, it is sent
+			// only after run_in_terminal completes and can be used as a synchronization
+			// signal before asserting side effects outside the chat UI.
+			finalReply
+				? { kind: 'content', chunks: [{ content: finalReply }] }
+				: { kind: 'echo-last-tool-result' },
 		],
 	};
 }
@@ -53,6 +63,10 @@ function terminalCommandOutcomeMatcher(...outcomes: Array<string | RegExp>): Reg
 		: outcome.source
 	);
 	return new RegExp(`"(?:output|content)":[\\s\\S]*(?:${sources.join('|')})`);
+}
+
+function quoteShellArgument(value: string): string {
+	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function appendUserSettings(userDataPath: string, settings: Record<string, unknown>): void {
@@ -99,6 +113,7 @@ export function setup(logger: Logger): void {
 		let networkAllowedReply: string;
 		let homeFilePath: string;
 		let homeFileContents: string;
+		let hostTempFilePath: string;
 
 		before(async function () {
 			const { startServer, ScenarioBuilder, registerScenario } = require(getMockLlmServerPath());
@@ -109,10 +124,18 @@ export function setup(logger: Logger): void {
 			const homeFileName = `.vscode-chat-sandbox-smoke-${process.pid}-${Date.now()}.txt`;
 			homeFilePath = path.join(os.homedir(), homeFileName);
 			fs.writeFileSync(homeFilePath, homeFileContents);
+			const tempFileName = `.vscode-chat-sandbox-tmp-${process.pid}-${Date.now()}.txt`;
+			hostTempFilePath = path.join(os.tmpdir(), tempFileName);
+			fs.rmSync(hostTempFilePath, { force: true });
 
 			registerScenario('text-only', new ScenarioBuilder().emit('OK').build());
 			registerScenario(WARMUP_SCENARIO_ID, new ScenarioBuilder().emit(WARMUP_REPLY).build());
 			registerScenario(SANDBOX_SCENARIO_ID, terminalCommandScenario(`echo ${sandboxReply}; status=$?; printf 'SANDBOX_EXIT_CODE=%s\n' "$status"; exit "$status"`));
+			registerScenario(TMPDIR_SCENARIO_ID, terminalCommandScenario(`echo test > "$TMPDIR/${tempFileName}"; status=$?; printf 'TMPDIR_EXIT_CODE=%s\n' "$status"; exit "$status"`));
+			// A denied host-temp write has no stable cross-platform output marker. Use a
+			// fixed second-turn reply to know the tool finished, then verify denial by
+			// checking from the smoke-test process that the host file was not created.
+			registerScenario(HOST_TMP_SCENARIO_ID, terminalCommandScenario(`host_tmp=${quoteShellArgument(hostTempFilePath)}; echo test > "$host_tmp"`, HOST_TMP_REPLY));
 
 			mockServer = await startServer(0, { logger: (message: string) => logger.log(`[mock-llm] ${message}`), verbose: true });
 			const encodedNetworkAllowedReply = Buffer.from(networkAllowedReply).toString('base64');
@@ -161,6 +184,8 @@ export function setup(logger: Logger): void {
 		});
 
 		after(async function () {
+			fs.rmSync(homeFilePath, { force: true });
+			fs.rmSync(hostTempFilePath, { force: true });
 			await mockServer?.close();
 		});
 
@@ -196,6 +221,54 @@ export function setup(logger: Logger): void {
 			} catch (error) {
 				logger.log(`[Chat Sandbox/execution] FAILURE: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
 				await dumpFailureDiagnostics(app, logger, `Chat Sandbox (${process.platform}) execution`);
+				throw error;
+			}
+		});
+
+		/*
+		 * Input: Ask chat to run `echo test > "$TMPDIR/test.txt"` in the sandbox-provided temp directory.
+		 * Expected result: The output contains `TMPDIR_EXIT_CODE=0`.
+		 */
+		it('allows writing to the sandbox TMPDIR', async function () {
+			const app = this.app as Application;
+
+			try {
+				const requestsBefore = mockServer.requestCount();
+				await app.workbench.chat.sendMessage(`Run the terminal TMPDIR sandbox probe [scenario:${TMPDIR_SCENARIO_ID}]`);
+
+				const responseText = await app.workbench.chat.waitForResponseText(TMPDIR_EXIT_CODE_PATTERN, CHAT_RESPONSE_TIMEOUT);
+				logger.log(`[Chat Sandbox/TMPDIR] response: ${responseText}`);
+				assert.ok(mockServer.requestCount() > requestsBefore, 'expected the mock LLM server to receive the TMPDIR sandbox scenario');
+				const exitCodeMatch = TMPDIR_EXIT_CODE_PATTERN.exec(responseText);
+				assert.ok(exitCodeMatch, 'expected the terminal result to include the TMPDIR probe exit codes');
+				assert.strictEqual(Number(exitCodeMatch[1]), 0, 'expected the sandbox TMPDIR to be writable');
+			} catch (error) {
+				logger.log(`[Chat Sandbox/TMPDIR] FAILURE: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+				await dumpFailureDiagnostics(app, logger, `Chat Sandbox (${process.platform}) TMPDIR`);
+				throw error;
+			}
+		});
+
+		/*
+		 * Input: Ask chat to run `echo test > test.txt` in the host OS temp directory instead of $TMPDIR.
+		 * Expected result: The output contains `MOCKED_CHAT_SANDBOX_HOST_TMP_COMPLETE` after the command
+		 * finishes, and no file is created in the host temp directory.
+		 */
+		it('blocks writing to the host temp directory', async function () {
+			const app = this.app as Application;
+
+			try {
+				const requestsBefore = mockServer.requestCount();
+				await app.workbench.chat.sendMessage(`Run the host temp directory sandbox probe [scenario:${HOST_TMP_SCENARIO_ID}]`);
+
+				const responseText = await app.workbench.chat.waitForResponseText(HOST_TMP_REPLY, CHAT_RESPONSE_TIMEOUT);
+				logger.log(`[Chat Sandbox/host tmp] response: ${responseText}`);
+				assert.ok(mockServer.requestCount() > requestsBefore, 'expected the mock LLM server to receive the host temp sandbox scenario');
+				assert.ok(responseText.includes(HOST_TMP_REPLY), 'expected the host temp command to complete');
+				assert.strictEqual(fs.existsSync(hostTempFilePath), false, `expected the sandbox to prevent creating ${hostTempFilePath}`);
+			} catch (error) {
+				logger.log(`[Chat Sandbox/host tmp] FAILURE: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+				await dumpFailureDiagnostics(app, logger, `Chat Sandbox (${process.platform}) host temp`);
 				throw error;
 			}
 		});
