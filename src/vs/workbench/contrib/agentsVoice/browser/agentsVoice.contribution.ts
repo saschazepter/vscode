@@ -514,26 +514,26 @@ configurationRegistry.registerConfiguration({
 		},
 		'agents.voice.handsFree': {
 			type: 'boolean',
-			description: nls.localize('agents.voice.handsFree', "When enabled, voice mode automatically re-enters listening after the assistant finishes speaking, so you can hold a hands-free back-and-forth conversation. When disabled, you start each turn manually. This controls only the auto-listen loop; how a turn ends is controlled by `agents.voice.turn.autoEndMode`."),
+			markdownDescription: nls.localize('agents.voice.handsFree', "When enabled, voice mode automatically re-enters listening after the assistant finishes speaking, so you can hold a hands-free back-and-forth conversation. When disabled, you start each turn manually. This controls only the auto-listen loop; how a turn ends is controlled by `agents.voice.turn.autoEndMode`."),
 			default: true,
 			scope: ConfigurationScope.APPLICATION,
 		},
 		'agents.voice.turn.autoEndMode': {
 			type: 'string',
 			enum: ['off', 'vad', 'phrase', 'both'],
-			enumDescriptions: [
+			markdownEnumDescriptions: [
 				nls.localize('agents.voice.turn.autoEndMode.off', "Never end the turn automatically; it ends only when you release (or, in toggle mode, tap again) push-to-talk."),
 				nls.localize('agents.voice.turn.autoEndMode.vad', "End the turn automatically after a period of trailing silence (see `agents.voice.turn.silenceMs`)."),
 				nls.localize('agents.voice.turn.autoEndMode.phrase', "End the turn automatically when a stop phrase is spoken (see `agents.voice.turn.stopPhrases`)."),
 				nls.localize('agents.voice.turn.autoEndMode.both', "End the turn automatically on either trailing silence or a spoken stop phrase."),
 			],
-			description: nls.localize('agents.voice.turn.autoEndMode', "Controls whether and how the voice backend ends a held turn on its own. The backend is the single source of truth for turn-ending: `vad` ends on trailing silence (`agents.voice.turn.silenceMs`), `phrase` ends on a spoken stop phrase (`agents.voice.turn.stopPhrases`), `both` enables either, and `off` requires you to end the turn manually."),
+			markdownDescription: nls.localize('agents.voice.turn.autoEndMode', "Controls whether and how the voice backend ends a held turn on its own. The backend is the single source of truth for turn-ending: `vad` ends on trailing silence (`agents.voice.turn.silenceMs`), `phrase` ends on a spoken stop phrase (`agents.voice.turn.stopPhrases`), `both` enables either, and `off` requires you to end the turn manually."),
 			default: 'vad',
 			scope: ConfigurationScope.APPLICATION,
 		},
 		'agents.voice.turn.silenceMs': {
 			type: 'number',
-			description: nls.localize('agents.voice.turn.silenceMs', "Trailing silence in milliseconds before the backend ends the turn. Applies only when `agents.voice.turn.autoEndMode` is `vad` or `both`; ignored otherwise. The backend clamps this to its supported range (currently 200-5000 ms) and is the source of truth."),
+			markdownDescription: nls.localize('agents.voice.turn.silenceMs', "Trailing silence in milliseconds before the backend ends the turn. Applies only when `agents.voice.turn.autoEndMode` is `vad` or `both`; ignored otherwise. The backend clamps this to its supported range (currently 200-5000 ms) and is the source of truth."),
 			default: 800,
 			minimum: 200,
 			maximum: 5000,
@@ -542,7 +542,7 @@ configurationRegistry.registerConfiguration({
 		'agents.voice.turn.stopPhrases': {
 			type: 'array',
 			items: { type: 'string' },
-			description: nls.localize('agents.voice.turn.stopPhrases', "Phrases that end the turn when spoken at the end of an utterance. Applies only when `agents.voice.turn.autoEndMode` is `phrase` or `both`; ignored otherwise. The backend strips the matched phrase from the transcript before it reaches the agent."),
+			markdownDescription: nls.localize('agents.voice.turn.stopPhrases', "Phrases that end the turn when spoken at the end of an utterance. Applies only when `agents.voice.turn.autoEndMode` is `phrase` or `both`; ignored otherwise. The backend strips the matched phrase from the transcript before it reaches the agent."),
 			default: ['send it'],
 			scope: ConfigurationScope.APPLICATION,
 		},
