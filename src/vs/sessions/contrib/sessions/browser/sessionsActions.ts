@@ -910,7 +910,7 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
  * Base class for the compact "New" pill button rendered in the sessions UI (sidebar header,
  * titlebar, session header). Subclasses provide the command id, label and hover/aria text.
  */
-export abstract class CompactNewButtonActionViewItem extends BaseActionViewItem {
+abstract class CompactNewButtonActionViewItem extends BaseActionViewItem {
 
 	constructor(
 		action: IAction,
