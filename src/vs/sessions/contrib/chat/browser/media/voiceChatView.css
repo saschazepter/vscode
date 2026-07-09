@@ -61,3 +61,41 @@
 	color: var(--vscode-descriptionForeground);
 	white-space: pre-wrap;
 }
+
+/* Voice mode icon glow on the new-session composer toolbar. The shared chat.css
+rules only match the chat widget's `.chat-input-container`; the composer uses
+its own `.new-chat-input-area`, so mirror the blue-listening / purple-speaking
+glow here. `voice-active` / `voice-listening` are toggled on the input
+container by setupVoiceInputDecorations. */
+@keyframes sessionsVoiceIconGlow {
+	0%,
+	100% {
+		box-shadow: 0 0 4px var(--sessions-voice-icon-glow-color);
+	}
+
+	50% {
+		box-shadow: 0 0 9px var(--sessions-voice-icon-glow-color);
+	}
+}
+
+/* Blue when listening */
+.new-chat-input-area.voice-active.voice-listening .action-label.codicon-voice-mode {
+	--sessions-voice-icon-glow-color: rgba(88, 166, 255, 0.65);
+	color: var(--vscode-charts-blue, #58a6ff) !important;
+	border-radius: 50%;
+}
+
+.monaco-workbench.monaco-enable-motion .new-chat-input-area.voice-active.voice-listening .action-label.codicon-voice-mode {
+	animation: sessionsVoiceIconGlow 1.4s ease-in-out infinite;
+}
+
+/* Purple when speaking */
+.new-chat-input-area.voice-active:not(.voice-listening) .action-label.codicon-voice-mode {
+	--sessions-voice-icon-glow-color: rgba(163, 113, 247, 0.65);
+	color: var(--vscode-charts-purple, #a371f7) !important;
+	border-radius: 50%;
+}
+
+.monaco-workbench.monaco-enable-motion .new-chat-input-area.voice-active:not(.voice-listening) .action-label.codicon-voice-mode {
+	animation: sessionsVoiceIconGlow 1.4s ease-in-out infinite;
+}
