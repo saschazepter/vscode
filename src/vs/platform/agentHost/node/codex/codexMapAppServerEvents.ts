@@ -232,6 +232,7 @@ export function mapTurnStarted(
 		{
 			type: ActionType.ChatTurnStarted,
 			turnId: params.turn.id,
+			timestamp: Date.now(),
 			message: { text: userText, origin: { kind: MessageKind.User } },
 		},
 	];

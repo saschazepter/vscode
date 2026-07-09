@@ -116,6 +116,7 @@ export namespace IChatRequestVariableData {
 export interface IChatRequestModel {
 	readonly id: string;
 	readonly timestamp: number;
+	readonly requestTimestamp: number | undefined;
 	readonly version: number;
 	readonly modeInfo?: IChatRequestModeInfo;
 	readonly session: IChatModel;
@@ -320,6 +321,7 @@ export interface IChatResponseModel {
 	addUndoStop(undoStop: IChatUndoStop): void;
 	setVote(vote: ChatAgentVoteDirection): void;
 	setUsage(usage: IChatUsage): void;
+	setElapsedMs(elapsedMs: number): void;
 	setEditApplied(edit: IChatTextEditGroup, editCount: number): boolean;
 	resolveInlineReference(resolveId: string, resolvedReference: IChatContentInlineReference): boolean;
 	updateContent(progress: IChatProgressResponseContent | IChatTextEdit | IChatNotebookEdit | IChatTask | IChatExternalToolInvocationUpdate, quiet?: boolean): void;
@@ -363,7 +365,8 @@ export interface IChatRequestModelParameters {
 	session: ChatModel;
 	message: IParsedChatRequest;
 	variableData: IChatRequestVariableData;
-	timestamp: number;
+	timestamp?: number;
+	fallbackTimestamp?: number;
 	attempt?: number;
 	modeInfo?: IChatRequestModeInfo;
 	confirmation?: string;
@@ -384,6 +387,7 @@ export class ChatRequestModel implements IChatRequestModel {
 	public response: ChatResponseModel | undefined;
 	public shouldBeRemovedOnSend: IChatRequestDisablement | undefined;
 	public readonly timestamp: number;
+	public readonly requestTimestamp: number | undefined;
 	public readonly message: IParsedChatRequest;
 	public readonly isCompleteAddedRequest: boolean;
 	public readonly modelId?: string;
@@ -452,7 +456,8 @@ export class ChatRequestModel implements IChatRequestModel {
 		this._session = params.session;
 		this.message = params.message;
 		this._variableData = params.variableData;
-		this.timestamp = params.timestamp;
+		this.requestTimestamp = params.timestamp;
+		this.timestamp = params.timestamp ?? params.fallbackTimestamp ?? Date.now();
 		this._attempt = params.attempt ?? 0;
 		this.modeInfo = params.modeInfo;
 		this._confirmation = params.confirmation;
@@ -1462,6 +1467,10 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 		this._onDidChange.fire(defaultChatResponseModelChangeReason);
 	}
 
+	setElapsedMs(elapsedMs: number): void {
+		this._elapsedMs = Math.max(0, elapsedMs);
+	}
+
 	private isSameUsage(usage: IChatUsage): boolean {
 		const currentUsage = this._usageObs.get();
 		return !!currentUsage
@@ -1482,7 +1491,7 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 		}
 
 		// Compute elapsed generation time before setting terminal state
-		this._elapsedMs = Math.max(0, Date.now() - this.confirmationAdjustedTimestamp.get());
+		this._elapsedMs ??= Math.max(0, Date.now() - this.confirmationAdjustedTimestamp.get());
 
 		// Canceled sessions can be considered 'Complete'
 		const state = !!this._result?.errorDetails && this._result.errorDetails.code !== 'canceled' ? ResponseModelState.Failed : ResponseModelState.Complete;
@@ -1505,6 +1514,7 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 			}
 		}
 
+		this._elapsedMs ??= Math.max(0, Date.now() - this.confirmationAdjustedTimestamp.get());
 		this._modelState.set({ value: ResponseModelState.Cancelled, completedAt: Date.now() }, undefined);
 		this._onDidChange.fire({ reason: 'completedRequest' });
 	}
@@ -1551,7 +1561,7 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 		}
 	}
 
-	toJSON(): ISerializableChatResponseData {
+	toJSON(): Omit<ISerializableChatResponseData, 'timestamp'> {
 		const modelState = this._modelState.get();
 		const pendingConfirmation = this.isPendingConfirmation.get();
 
@@ -1566,7 +1576,7 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 			usedContext: this.usedContext,
 			contentReferences: this.contentReferences,
 			codeCitations: this.codeCitations,
-			timestamp: this._timestamp,
+			responseTimestamp: this._timestamp,
 			timeSpentWaiting: (pendingConfirmation ? Date.now() - pendingConfirmation.startedWaitingAt : 0) + this._timeSpentWaitingAccumulator,
 			promptTokens: this.usage?.promptTokens,
 			completionTokens: this.completionTokenCount,
@@ -1574,7 +1584,7 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 			promptTokenDetails: this.usage?.promptTokenDetails,
 			copilotCredits: this.usage?.copilotCredits,
 			elapsedMs: this.elapsedMs ?? (this.completedAt ? Math.max(0, this.completedAt - this.confirmationAdjustedTimestamp.get()) : undefined),
-		} satisfies WithDefinedProps<ISerializableChatResponseData>;
+		} satisfies WithDefinedProps<Omit<ISerializableChatResponseData, 'timestamp'>>;
 	}
 }
 
@@ -1663,6 +1673,7 @@ interface ISerializableChatResponseData {
 	modelState?: ResponseModelStateT;
 	vote?: ChatAgentVoteDirection;
 	timestamp?: number;
+	responseTimestamp?: number;
 	slashCommand?: IChatAgentCommand;
 	/** For backward compat: should be optional */
 	usedContext?: IChatUsedContext;
@@ -2461,8 +2472,8 @@ export class ChatModel extends Disposable implements IChatModel {
 
 		this._disableBackgroundKeepAlive = initialModelProps.disableBackgroundKeepAlive ?? false;
 
-		this._requests = initialData ? this._deserialize(initialData) : [];
 		this._timestamp = (isValidFullData && initialData.creationDate) || Date.now();
+		this._requests = initialData ? this._deserialize(initialData) : [];
 		this._customTitle = isValidFullData ? initialData.customTitle : undefined;
 
 		// Initialize input model from serialized data (undefined for new chats)
@@ -2615,11 +2626,13 @@ export class ChatModel extends Disposable implements IChatModel {
 
 		// Old messages don't have variableData, or have it in the wrong (non-array) shape
 		const variableData: IChatRequestVariableData = this.reviveVariableData(raw.variableData);
+		const requestTimestamp = typeof raw.timestamp === 'number' && raw.timestamp > 0 ? raw.timestamp : undefined;
 		const request = new ChatRequestModel({
 			session: this,
 			message: parsedRequest,
 			variableData,
-			timestamp: raw.timestamp ?? -1,
+			timestamp: requestTimestamp,
+			fallbackTimestamp: this._timestamp,
 			restoredId: raw.requestId,
 			confirmation: raw.confirmation,
 			editedFileEvents: raw.editedFileEvents,
@@ -2663,7 +2676,7 @@ export class ChatModel extends Disposable implements IChatModel {
 				requestId: request.id,
 				modelState,
 				vote: raw.vote,
-				timestamp: raw.timestamp,
+				timestamp: typeof raw.responseTimestamp === 'number' && raw.responseTimestamp > 0 ? raw.responseTimestamp : requestTimestamp,
 				result,
 				followups: raw.followups,
 				restoredId: raw.responseId,
@@ -2823,16 +2836,23 @@ export class ChatModel extends Disposable implements IChatModel {
 		id?: string,
 		isSystemInitiated?: boolean,
 		systemInitiatedLabel?: string,
-		terminalExecutionId?: string
+		terminalExecutionId?: string,
+		timestamp?: number | null,
 	): ChatRequestModel {
 		const editedFileEvents = [...this.currentEditedFileEvents.values()];
 		this.currentEditedFileEvents.clear();
+		const requestTimestamp = timestamp === undefined
+			? Date.now()
+			: typeof timestamp === 'number' && Number.isFinite(timestamp) && timestamp > 0
+				? timestamp
+				: undefined;
 		const request = new ChatRequestModel({
 			restoredId: id,
 			session: this,
 			message,
 			variableData,
-			timestamp: Date.now(),
+			timestamp: requestTimestamp,
+			fallbackTimestamp: this._timestamp,
 			attempt,
 			modeInfo,
 			confirmation,
@@ -2999,7 +3019,7 @@ export class ChatModel extends Disposable implements IChatModel {
 						: undefined,
 					shouldBeRemovedOnSend: r.shouldBeRemovedOnSend,
 					agent: agentJson,
-					timestamp: r.timestamp,
+					timestamp: r.requestTimestamp,
 					confirmation: r.confirmation,
 					editedFileEvents: r.editedFileEvents,
 					modelId: r.modelId,

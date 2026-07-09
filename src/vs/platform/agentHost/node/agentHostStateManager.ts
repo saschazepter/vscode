@@ -1130,6 +1130,14 @@ export class AgentHostStateManager extends Disposable {
 	// ---- Internal -----------------------------------------------------------
 
 	private _applyAndEmit(channel: URI, action: StateAction, origin: ActionOrigin | undefined): unknown {
+		if ((action.type === ActionType.ChatTurnStarted
+			|| action.type === ActionType.ChatTurnComplete
+			|| action.type === ActionType.ChatTurnCancelled
+			|| action.type === ActionType.ChatError)
+			&& action.timestamp === undefined) {
+			action = { ...action, timestamp: Date.now() };
+		}
+
 		let resultingState: unknown = undefined;
 		// Apply to state
 		if (isRootAction(action)) {

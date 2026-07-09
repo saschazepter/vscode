@@ -829,7 +829,9 @@ export class ChatService extends Disposable implements IChatService {
 					undefined,
 					message.id,
 					message.isSystemInitiated,
-					message.systemInitiatedLabel
+					message.systemInitiatedLabel,
+					undefined,
+					message.timestamp ?? null,
 				);
 			} else {
 				// response
@@ -842,6 +844,9 @@ export class ChatService extends Disposable implements IChatService {
 							...(message.details ? { details: message.details } : {}),
 							...(message.errorDetails ? { errorDetails: message.errorDetails } : {}),
 						});
+					}
+					if (lastRequest.response && typeof message.elapsedMs === 'number') {
+						lastRequest.response.setElapsedMs(message.elapsedMs);
 					}
 				}
 			}
@@ -884,7 +889,7 @@ export class ChatService extends Disposable implements IChatService {
 
 			// Handle server-initiated requests (e.g. consumed queued messages).
 			if (providedSession.onDidStartServerRequest) {
-				disposables.add(providedSession.onDidStartServerRequest(({ prompt, variableData, isSystemInitiated, systemInitiatedLabel }) => {
+				disposables.add(providedSession.onDidStartServerRequest(({ prompt, variableData, timestamp, isSystemInitiated, systemInitiatedLabel }) => {
 					// Complete any in-flight request
 					if (lastRequest?.response && !lastRequest.response.isComplete) {
 						lastRequest.response.complete();
@@ -907,7 +912,9 @@ export class ChatService extends Disposable implements IChatService {
 						undefined, // userSelectedTools
 						undefined, // id
 						isSystemInitiated,
-						systemInitiatedLabel
+						systemInitiatedLabel,
+						undefined, // terminalExecutionId
+						timestamp,
 					);
 
 					// Reset progress tracking for the new turn

@@ -1363,6 +1363,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		actions.push({
 			type: ActionType.ChatTurnStarted,
 			turnId: newHostTurnId,
+			timestamp: Date.now(),
 			message: steering.message,
 			queuedMessageId: steering.id,
 		});

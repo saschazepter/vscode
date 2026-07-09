@@ -8,6 +8,7 @@ import { URI } from '../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { buildPlanReviewProgressContent, getWorkingProgressRelevantParts, shouldHideChatUserIdentity, shouldRenderInitialProgressiveContentImmediately, shouldScheduleInitialHeightChange } from '../../../browser/widget/chatListRenderer.js';
 import { IChatToolInvocationSerialized, ToolConfirmKind } from '../../../common/chatService/chatService.js';
+import { formatChatRequestTimestamp, formatChatResponseDetails } from '../../../common/chatProgressFormatting.js';
 import { IChatRendererContent } from '../../../common/model/chatViewModel.js';
 import { ToolDataSource } from '../../../common/tools/languageModelToolsService.js';
 
@@ -70,6 +71,50 @@ suite('ChatListRenderer', () => {
 				false,
 				true,
 				true,
+			]);
+		});
+	});
+
+	suite('formatChatResponseDetails', () => {
+		test('formats persisted response metadata for the footer', () => {
+			assert.deepStrictEqual([
+				formatChatResponseDetails('GPT-5.6 Sol \u2022 1.5 credits', 83_000),
+				formatChatResponseDetails('GPT-5.6 Sol', undefined),
+				formatChatResponseDetails('Auto', 900),
+				formatChatResponseDetails(undefined, 2_000),
+			], [
+				'1m 23s \u2022 GPT-5.6 Sol \u2022 1.5 credits',
+				'GPT-5.6 Sol',
+				'Auto',
+				'2s',
+			]);
+		});
+	});
+
+	suite('formatChatRequestTimestamp', () => {
+		test('formats valid persisted timestamps and rejects legacy placeholders', () => {
+			const timestamp = Date.UTC(2026, 6, 8, 23, 18, 41);
+			const formatted = formatChatRequestTimestamp(timestamp);
+			assert.deepStrictEqual({
+				hasText: !!formatted?.text,
+				hasFullText: !!formatted?.fullText,
+				dateTime: formatted?.dateTime,
+				invalid: formatChatRequestTimestamp(-1),
+			}, {
+				hasText: true,
+				hasFullText: true,
+				dateTime: '2026-07-08T23:18:41.000Z',
+				invalid: undefined,
+			});
+		});
+
+		test('uses relative days after 24 hours', () => {
+			assert.deepStrictEqual([
+				formatChatRequestTimestamp(Date.now() - 25 * 60 * 60 * 1000)?.text,
+				formatChatRequestTimestamp(Date.now() - 49 * 60 * 60 * 1000)?.text,
+			], [
+				'1 day ago',
+				'2 days ago',
 			]);
 		});
 	});

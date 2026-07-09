@@ -277,6 +277,7 @@ export type IChatSessionHistoryItem = {
 	command?: string;
 	variableData?: IChatRequestVariableData;
 	modelId?: string;
+	timestamp?: number;
 	modeInstructions?: IChatRequestModeInstructions;
 	isSystemInitiated?: boolean;
 	systemInitiatedLabel?: string;
@@ -285,6 +286,7 @@ export type IChatSessionHistoryItem = {
 	parts: IChatProgress[];
 	participant: string;
 	details?: string;
+	elapsedMs?: number;
 	/**
 	 * Error details for a failed response. Rendered as a proper chat error
 	 * (including the quota-exceeded upgrade affordance), mirroring the live
@@ -298,6 +300,7 @@ export type IChatSessionRequestHistoryItem = Extract<IChatSessionHistoryItem, { 
 export interface IChatSessionServerRequest {
 	readonly prompt: string;
 	readonly variableData?: IChatRequestVariableData;
+	readonly timestamp?: number;
 	readonly isSystemInitiated?: boolean;
 	readonly systemInitiatedLabel?: string;
 }

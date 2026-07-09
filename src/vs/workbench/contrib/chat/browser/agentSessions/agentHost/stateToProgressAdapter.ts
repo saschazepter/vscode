@@ -494,6 +494,7 @@ export function turnsToHistory(backendSession: URI, turns: readonly Turn[], part
 			prompt: turn.message.text,
 			participant: participantId,
 			modelId,
+			...(typeof turn.timestamp === 'number' ? { timestamp: turn.timestamp } : {}),
 			variableData,
 			...(isSystemInitiated ? {
 				isSystemInitiated: true,
@@ -555,7 +556,7 @@ export function turnsToHistory(backendSession: URI, turns: readonly Turn[], part
 				?? { message: `Error: (${turn.error.errorType}) ${turn.error.message}` };
 		}
 
-		history.push({ type: 'response', parts, participant: participantId, details, ...(errorDetails ? { errorDetails } : {}) });
+		history.push({ type: 'response', parts, participant: participantId, details, elapsedMs: turn.elapsedMs, ...(errorDetails ? { errorDetails } : {}) });
 	}
 	return history;
 }

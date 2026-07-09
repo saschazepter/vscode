@@ -100,6 +100,7 @@ function endTurn(
 	state: ChatState,
 	turnId: string,
 	turnState: TurnState,
+	completedAt: number,
 	terminalStatus?: SessionStatus.Error,
 	error?: { errorType: string; message: string; stack?: string },
 ): ChatState {
@@ -131,6 +132,8 @@ function endTurn(
 
 	const turn: Turn = {
 		id: active.id,
+		timestamp: active.timestamp,
+		elapsedMs: typeof active.timestamp === 'number' ? Math.max(0, completedAt - active.timestamp) : undefined,
 		message: active.message,
 		responseParts,
 		usage: active.usage,
@@ -259,6 +262,7 @@ export function chatReducer(state: ChatState, action: ChatAction, log?: (msg: st
 				...state,
 				activeTurn: {
 					id: action.turnId,
+					timestamp: action.timestamp ?? Date.now(),
 					message: action.message,
 					responseParts: [],
 					usage: undefined,
@@ -305,13 +309,13 @@ export function chatReducer(state: ChatState, action: ChatAction, log?: (msg: st
 			};
 
 		case ActionType.ChatTurnComplete:
-			return endTurn(state, action.turnId, TurnState.Complete);
+			return endTurn(state, action.turnId, TurnState.Complete, action.timestamp ?? Date.now());
 
 		case ActionType.ChatTurnCancelled:
-			return endTurn(state, action.turnId, TurnState.Cancelled);
+			return endTurn(state, action.turnId, TurnState.Cancelled, action.timestamp ?? Date.now());
 
 		case ActionType.ChatError:
-			return endTurn(state, action.turnId, TurnState.Error, SessionStatus.Error, action.error);
+			return endTurn(state, action.turnId, TurnState.Error, action.timestamp ?? Date.now(), SessionStatus.Error, action.error);
 
 		case ActionType.ChatActivityChanged:
 			return { ...state, activity: action.activity };

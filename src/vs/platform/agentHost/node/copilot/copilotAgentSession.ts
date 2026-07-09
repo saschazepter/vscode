@@ -742,6 +742,7 @@ export class CopilotAgentSession extends Disposable {
 		this._emitAction({
 			type: ActionType.ChatTurnStarted,
 			turnId: newTurnId,
+			timestamp: Date.now(),
 			message: steering.message,
 			queuedMessageId: steering.id,
 		});
@@ -2635,6 +2636,7 @@ export class CopilotAgentSession extends Disposable {
 			this._emitAction({
 				type: ActionType.ChatTurnStarted,
 				turnId,
+				timestamp: Date.now(),
 				message: {
 					text: notification.messageText,
 					origin: { kind: MessageKind.SystemNotification },

@@ -55,6 +55,32 @@ suite('chatReducer – summaryStatus with tool call confirmations and input requ
 
 	ensureNoDisposablesAreLeakedInTestSuite();
 
+	test('preserves turn start timestamp after completion', () => {
+		const timestamp = 1_752_012_321_000;
+		let state = chatReducer(makeChat(), {
+			type: ActionType.ChatTurnStarted,
+			turnId: 'turn-1',
+			timestamp,
+			message: { text: 'hello', origin: { kind: MessageKind.User } },
+		});
+		const activeTimestamp = state.activeTurn?.timestamp;
+		state = chatReducer(state, {
+			type: ActionType.ChatTurnComplete,
+			turnId: 'turn-1',
+			timestamp: timestamp + 2_500,
+		});
+
+		assert.deepStrictEqual({
+			activeTimestamp,
+			completedTimestamp: state.turns[0].timestamp,
+			elapsedMs: state.turns[0].elapsedMs,
+		}, {
+			activeTimestamp: 1_752_012_321_000,
+			completedTimestamp: timestamp,
+			elapsedMs: 2_500,
+		});
+	});
+
 	test('Chat status is InputNeeded when a tool call is PendingConfirmation', () => {
 		let state = withActiveTurnAndToolCall(makeChat());
 

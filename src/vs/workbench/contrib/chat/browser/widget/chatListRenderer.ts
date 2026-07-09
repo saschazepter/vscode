@@ -61,6 +61,7 @@ import { getExplicitFileOrImageAttachmentSummary, IChatRequestVariableEntry, isE
 import { getStickyScrollTargetItem, IChatChangesSummaryPart, IChatCodeCitations, IChatErrorDetailsPart, IChatReferences, IChatRendererContent, IChatRequestViewModel, IChatResponseViewModel, IChatViewModel, IChatWorkingProgress, isRequestVM, isResponseVM, IChatPendingDividerViewModel, isPendingDividerVM, IChatTurnPillsPart } from '../../common/model/chatViewModel.js';
 import { getNWords } from '../../common/model/chatWordCounter.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, CollapsedToolsDisplayMode, ThinkingDisplayMode } from '../../common/constants.js';
+import { formatChatRequestTimestamp, formatChatResponseDetails } from '../../common/chatProgressFormatting.js';
 import { ClickAnimation } from '../../../../../base/browser/ui/animations/animations.js';
 import { MarkHelpfulActionId } from '../actions/chatTitleActions.js';
 import { ChatTreeItem, IChatCodeBlockInfo, IChatFileTreeInfo, IChatListItemRendererOptions, IChatWidgetService } from '../chat.js';
@@ -881,11 +882,16 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}
 		templateData.footerToolbar.context = element;
 
-		// Render result details in footer if available
-		if (isResponseVM(element) && element.result?.details) {
-			templateData.footerDetailsContainer.textContent = element.result.details;
+		const responseDetails = isResponseVM(element)
+			? formatChatResponseDetails(element.result?.details, element.model.elapsedMs)
+			: '';
+		if (responseDetails) {
+			templateData.footerDetailsContainer.textContent = responseDetails;
+			templateData.footerDetailsContainer.ariaLabel = responseDetails;
 			templateData.footerDetailsContainer.classList.remove('hidden');
 		} else {
+			templateData.footerDetailsContainer.textContent = '';
+			templateData.footerDetailsContainer.removeAttribute('aria-label');
 			templateData.footerDetailsContainer.classList.add('hidden');
 		}
 
@@ -957,6 +963,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				}
 				const reqData = this.templateDataByRequestId.get(requestId);
 				const resData = this.responseTemplateDataByRequestId.get(requestId);
+				reqData?.rowContainer.classList.toggle('group-hovered', hovered);
 				reqData?.checkpointContainer.classList.toggle('group-hovered', hovered);
 				resData?.rowContainer.classList.toggle('group-hovered', hovered);
 			};
@@ -1676,6 +1683,17 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				templateData.value.appendChild(newPart.domNode);
 			}
 			templateData.elementDisposables.add(newPart);
+		}
+
+		if (!element.pendingKind && !element.confirmation && this.rendererOptions.renderStyle !== 'minimal' && templateData.value.childElementCount > 0) {
+			const timestamp = formatChatRequestTimestamp(element.requestTimestamp);
+			if (timestamp) {
+				const timestampElement = dom.append(templateData.value, $('time.chat-request-timestamp', {
+					datetime: timestamp.dateTime,
+					'aria-label': localize('chatRequestSentAt', "Sent {0}", timestamp.fullText),
+				}, timestamp.text));
+				templateData.elementDisposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), timestampElement, timestamp.fullText));
+			}
 		}
 	}
 

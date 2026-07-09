@@ -744,6 +744,7 @@ export class AgentSideEffects extends Disposable {
 		this._stateManager.dispatchServerAction(subagentChatUri, {
 			type: ActionType.ChatTurnStarted,
 			turnId,
+			timestamp: Date.now(),
 			message: { text: '', origin: { kind: MessageKind.User } },
 		});
 
@@ -1274,6 +1275,7 @@ export class AgentSideEffects extends Disposable {
 		this._stateManager.dispatchServerAction(session, {
 			type: ActionType.ChatTurnStarted,
 			turnId,
+			timestamp: Date.now(),
 			message: msg.message,
 			queuedMessageId: msg.id,
 		});

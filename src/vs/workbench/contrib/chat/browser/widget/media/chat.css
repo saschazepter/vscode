@@ -3762,6 +3762,21 @@ have to be updated for changes to the rules above, or to support more deeply nes
 		width: fit-content;
 	}
 
+	.interactive-item-container.interactive-request .chat-request-timestamp {
+		color: var(--vscode-descriptionForeground);
+		font-size: var(--vscode-fontSize-label3);
+		line-height: var(--vscode-fontSize-label3);
+		opacity: 0.7;
+		visibility: visible;
+		transition: opacity 0.1s ease-in-out, visibility 0s linear 0s;
+	}
+
+	.interactive-item-container.interactive-request:not(.group-hovered) .chat-request-timestamp {
+		opacity: 0;
+		visibility: hidden;
+		transition: opacity 0.1s ease-in-out, visibility 0s linear 0.1s;
+	}
+
 	.interactive-item-container.interactive-request .chat-attached-context {
 		max-width: 100%;
 		width: fit-content;
@@ -4233,6 +4248,12 @@ have to be updated for changes to the rules above, or to support more deeply nes
 
 		.checkpoint-container {
 			opacity: 1;
+		}
+
+		.chat-request-timestamp {
+			opacity: 0.7;
+			visibility: visible;
+			transition: opacity 0.1s ease-in-out, visibility 0s linear 0s;
 		}
 	}
 

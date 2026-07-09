@@ -389,6 +389,8 @@ suite('stateToProgressAdapter', () => {
 		test('request history includes restored model id', () => {
 			const turn = createTurn({
 				message: message('Use restored model'),
+				timestamp: 1_752_012_321_000,
+				elapsedMs: 2_500,
 			});
 
 			const lookup = makeLookup('agent-host-copilot:', {}, 'gpt-5');
@@ -400,8 +402,10 @@ suite('stateToProgressAdapter', () => {
 				prompt: 'Use restored model',
 				participant: 'participant-1',
 				modelId: 'agent-host-copilot:gpt-5',
+				timestamp: 1_752_012_321_000,
 				variableData: undefined,
 			});
+			assert.strictEqual(history[1].type === 'response' ? history[1].elapsedMs : undefined, 2_500);
 		});
 
 		test('terminal tool call in history has correct terminal data', () => {

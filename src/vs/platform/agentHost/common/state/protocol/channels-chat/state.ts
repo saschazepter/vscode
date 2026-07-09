@@ -496,6 +496,10 @@ export const enum MessageAttachmentKind {
 export interface Turn {
 	/** Turn identifier */
 	id: string;
+	/** Milliseconds timestamp when this turn started. */
+	timestamp?: number;
+	/** Elapsed turn time in milliseconds. */
+	elapsedMs?: number;
 	/** The message that initiated the turn */
 	message: Message;
 	/**
@@ -521,6 +525,8 @@ export interface Turn {
 export interface ActiveTurn {
 	/** Turn identifier */
 	id: string;
+	/** Milliseconds timestamp when this turn started. */
+	timestamp?: number;
 	/** The message that initiated the turn */
 	message: Message;
 	/**
