@@ -10,11 +10,12 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/c
 import { NullLogService } from '../../../log/common/log.js';
 import type { IAgentCreateSessionConfig, IAgentModelInfo, IAgentSessionMetadata } from '../../common/agentService.js';
 import { SessionStatus } from '../../common/state/protocol/channels-session/state.js';
-import { buildDefaultChatUri, withSessionGitState, withSessionGitHubState } from '../../common/state/sessionState.js';
+import { buildChatUri, buildDefaultChatUri, withSessionGitState, withSessionGitHubState } from '../../common/state/sessionState.js';
 import { AgentHostStateManager } from '../../node/agentHostStateManager.js';
 import {
 	applyCreateChatTool,
 	applyDeleteSessionTool,
+	applySendMessageTool,
 	createChatToolName,
 	createSessionServerToolGroup,
 	createSessionToolName,
@@ -23,9 +24,11 @@ import {
 	getCreateSessionArgs,
 	getCurrentSessionToolName,
 	getDeleteSessionArgs,
+	getSendMessageArgs,
 	filterSessions,
 	getListSessionsArgs,
 	listSessionsToolName,
+	sendMessageToolName,
 	sessionServerToolDefinitions,
 	sessionToolRequiresConfirmation,
 	serializeSessions,
@@ -58,9 +61,10 @@ suite('SessionServerTools', () => {
 	}
 
 	test('definitions and confirmation', () => {
-		assert.deepStrictEqual(sessionServerToolDefinitions.map(d => d.name), [listSessionsToolName, getCurrentSessionToolName, createSessionToolName, createChatToolName, deleteSessionToolName]);
+		assert.deepStrictEqual(sessionServerToolDefinitions.map(d => d.name), [listSessionsToolName, getCurrentSessionToolName, createSessionToolName, createChatToolName, sendMessageToolName, deleteSessionToolName]);
 		assert.strictEqual(sessionToolRequiresConfirmation(createSessionToolName), true);
 		assert.strictEqual(sessionToolRequiresConfirmation(createChatToolName), true);
+		assert.strictEqual(sessionToolRequiresConfirmation(sendMessageToolName), true);
 		assert.strictEqual(sessionToolRequiresConfirmation(deleteSessionToolName), true);
 		assert.strictEqual(sessionToolRequiresConfirmation(listSessionsToolName), false);
 		assert.strictEqual(sessionToolRequiresConfirmation(getCurrentSessionToolName), false);
@@ -275,6 +279,33 @@ suite('SessionServerTools', () => {
 		assert.strictEqual(createdChat?.chat.toString(), result.chat);
 		assert.strictEqual(prompted?.chat.toString(), result.chat);
 		assert.strictEqual(prompted?.prompt, 'do it');
+	});
+
+	test('send_message targets the default chat / a specific chat, refuses the current chat, and validates', async () => {
+		const prompts: { session: URI; chat: URI; prompt: string }[] = [];
+		const accessor = createAccessor({
+			listSessions: async () => [sessionMeta('s1', SessionStatus.Idle, workspace), sessionMeta('s2', SessionStatus.Idle, workspace)],
+			onPrompt: (session, chat, prompt) => { prompts.push({ session, chat, prompt }); },
+		});
+		const currentChannel = buildDefaultChatUri('copilot:/s1');
+
+		// Explicit session -> owning session's default chat.
+		const toSession = await applySendMessageTool(accessor, { session: 'copilot:/s2', message: 'hi' }, currentChannel);
+		assert.strictEqual(prompts.at(-1)?.session.toString(), 'copilot:/s2');
+		assert.strictEqual(prompts.at(-1)?.chat.toString(), buildDefaultChatUri('copilot:/s2'));
+		assert.strictEqual(prompts.at(-1)?.prompt, 'hi');
+		assert.ok(toSession.includes('agent-host-session://copilot/s2'));
+
+		// A create_chat open link -> that specific chat channel.
+		await applySendMessageTool(accessor, { session: 'agent-host-session://copilot/s2?chat=c9', message: 'yo' }, currentChannel);
+		assert.strictEqual(prompts.at(-1)?.chat.toString(), buildChatUri('copilot:/s2', 'c9'));
+
+		// Refuses messaging the exact current chat channel (self-loop guard).
+		await assert.rejects(() => applySendMessageTool(accessor, { session: 'copilot:/s1', message: 'loop' }, currentChannel), /current chat/);
+		// Unknown session and missing session/message are rejected.
+		await assert.rejects(() => applySendMessageTool(accessor, { session: 'copilot:/nope', message: 'x' }, currentChannel), /known session/);
+		assert.throws(() => getSendMessageArgs({ message: 'x' }, []), /session/);
+		assert.throws(() => getSendMessageArgs({ session: 'copilot:/s2' }, []), /message/);
 	});
 
 	test('get_current_session returns the current session link + metadata', async () => {

@@ -9,7 +9,7 @@ import { localize } from '../../../../nls.js';
 import type { IAgentCreateSessionConfig, IAgentModelInfo, IAgentSessionMetadata } from '../../common/agentService.js';
 import { SessionStatus } from '../../common/state/protocol/channels-session/state.js';
 import { buildChatUri, buildDefaultChatUri, parseChatUri, readSessionGitState, readSessionGitHubState, type ToolDefinition, type StringOrMarkdown, type URI as ProtocolURI } from '../../common/state/sessionState.js';
-import { buildOpenSessionLinkUri, CREATE_CHAT_TOOL_NAME, CREATE_SESSION_TOOL_NAME, parseOpenSessionLinkUri } from '../../common/openSessionLink.js';
+import { buildOpenSessionLinkUri, CREATE_CHAT_TOOL_NAME, CREATE_SESSION_TOOL_NAME, parseOpenSessionLinkChatId, parseOpenSessionLinkUri, SEND_MESSAGE_TOOL_NAME } from '../../common/openSessionLink.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import type { AgentHostStateManager } from '../agentHostStateManager.js';
 import type { IServerToolDisplay, IServerToolDisplayResult, IServerToolGroup } from './agentServerToolHost.js';
@@ -18,6 +18,7 @@ export const listSessionsToolName = 'list_sessions';
 export const getCurrentSessionToolName = 'get_current_session';
 export const createSessionToolName = CREATE_SESSION_TOOL_NAME;
 export const createChatToolName = CREATE_CHAT_TOOL_NAME;
+export const sendMessageToolName = SEND_MESSAGE_TOOL_NAME;
 export const deleteSessionToolName = 'delete_session';
 
 /**
@@ -33,7 +34,10 @@ const maxSessionSpawnDepth = 3;
 const maxCreatedSessions = 25;
 const maxCreatedChats = 25;
 
-const sessionConfirmationToolNames: ReadonlySet<string> = new Set([createSessionToolName, createChatToolName, deleteSessionToolName]);
+/** Process-wide backstop against runaway `send_message` fan-out. */
+const maxSentMessages = 50;
+
+const sessionConfirmationToolNames: ReadonlySet<string> = new Set([createSessionToolName, createChatToolName, sendMessageToolName, deleteSessionToolName]);
 
 /** Whether the given session server tool requires user confirmation before it runs. */
 export function sessionToolRequiresConfirmation(toolName: string): boolean {
@@ -94,6 +98,15 @@ const deleteSessionInputSchema: ToolDefinition['inputSchema'] = {
 	required: ['session'],
 };
 
+const sendMessageInputSchema: ToolDefinition['inputSchema'] = {
+	type: 'object',
+	properties: {
+		session: { type: 'string', description: 'The session or chat to message: a session URI from `list_sessions`, or an `agent-host-session://` link (from `create_session`/`create_chat`; a `create_chat` link targets that specific chat).' },
+		message: { type: 'string', description: 'The message to send.' },
+	},
+	required: ['session', 'message'],
+};
+
 /** Protocol tool definitions for the session-management server tools. */
 export const sessionServerToolDefinitions: ToolDefinition[] = [
 	{
@@ -122,6 +135,13 @@ export const sessionServerToolDefinitions: ToolDefinition[] = [
 		title: 'Create Chat',
 		description: 'Add a new chat to an existing session and start it with an initial prompt. Omit `session` to add the chat to the current session; otherwise pass a session URI from `list_sessions`. Optionally pass a `model` to use for the chat (defaults to the session\'s model). The UI shows a "Chat Created" confirmation with a button to open the session, so reply with a single short sentence and do NOT print the session URL or tell the user to click a button.',
 		inputSchema: createChatInputSchema,
+		annotations: { readOnlyHint: false },
+	},
+	{
+		name: sendMessageToolName,
+		title: 'Send Message',
+		description: 'Send a message to an existing session or chat, starting a new turn there. Provide a session URI from `list_sessions` or an `agent-host-session://` link (a `create_chat` link targets that specific chat). The message is delivered asynchronously — this tool does not wait for or return the reply. The UI shows a confirmation with a button to open the target, so reply with a single short sentence and do NOT print the URL or tell the user to click a button.',
+		inputSchema: sendMessageInputSchema,
 		annotations: { readOnlyHint: false },
 	},
 	{
@@ -591,6 +611,59 @@ export function formatCreateChatResult(result: ICreateChatResult): string {
 	return `Chat created (${result.openLink}). Reply with one short sentence confirming the chat was created; do not print the URL or mention a button.`;
 }
 
+interface ISendMessageArgs {
+	readonly session?: unknown;
+	readonly message?: unknown;
+}
+
+export interface IResolvedSendMessageArgs {
+	/** The owning backend session URI of the target chat. */
+	readonly session: URI;
+	/** The chat channel to deliver the message on (default chat, or a specific chat when the link carried one). */
+	readonly chat: URI;
+	/** The chat id when a specific chat was targeted (from a `create_chat` link). */
+	readonly chatId?: string;
+	readonly message: string;
+}
+
+/**
+ * Validates and resolves send-message arguments. When the `session` input is a
+ * `create_chat` open link (carrying a chat id), the message is targeted at that
+ * specific chat rather than the session's default chat.
+ */
+export function getSendMessageArgs(rawArgs: unknown, sessions: readonly IAgentSessionMetadata[]): IResolvedSendMessageArgs {
+	const args = (rawArgs ?? {}) as ISendMessageArgs;
+	const message = getRequiredString(args.message, 'message', sendMessageToolName);
+	const sessionInput = getRequiredString(args.session, 'session', sendMessageToolName);
+	const session = resolveKnownSession(sessionInput, sessions);
+	if (!session) {
+		throw new Error(`Invalid ${sendMessageToolName} input: session must match the URI of a known session (see list_sessions).`);
+	}
+	const chatId = parseOpenSessionLinkChatId(sessionInput);
+	const chat = URI.parse(chatId ? buildChatUri(session.toString(), chatId) : buildDefaultChatUri(session.toString()));
+	return { session, chat, message, ...(chatId !== undefined ? { chatId } : {}) };
+}
+
+/**
+ * Sends a message to an existing session/chat, starting a new turn there.
+ * Refuses to target {@link currentChannel} (the chat channel the tool runs on)
+ * to avoid a session trivially messaging itself in a loop.
+ */
+export async function applySendMessageTool(accessor: ISessionServerToolAccessor, rawArgs: unknown, currentChannel?: ProtocolURI): Promise<string> {
+	const sessions = await accessor.listSessions();
+	const { session, chat, chatId, message } = getSendMessageArgs(rawArgs, sessions);
+	if (currentChannel && chat.toString() === URI.parse(currentChannel).toString()) {
+		throw new Error(`Invalid ${sendMessageToolName} input: refusing to send a message to the current chat.`);
+	}
+	await accessor.startPrompt(session, chat, message);
+	return formatSendMessageResult(buildOpenSessionLinkUri(session, chatId));
+}
+
+/** Builds the model-facing `send_message` result. */
+export function formatSendMessageResult(openLink: string): string {
+	return `Message sent (${openLink}). Reply with one short sentence confirming the message was sent; do not print the URL or mention a button.`;
+}
+
 /** Serializes the current session's metadata + open link as the `get_current_session` result. */
 export function serializeCurrentSession(currentSession: URI, sessions: readonly IAgentSessionMetadata[]): string {
 	const meta = sessions.find(s => s.session.toString() === currentSession.toString());
@@ -673,6 +746,12 @@ function getSessionToolDisplay(toolName: string, _args: unknown, result?: IServe
 				invocationMessage: localize('toolInvoke.createChat', "Creating chat"),
 				pastTenseMessage: localize('toolComplete.createChat', "Created chat"),
 			};
+		case sendMessageToolName:
+			return {
+				displayName: localize('toolName.sendMessage', "Send Message"),
+				invocationMessage: localize('toolInvoke.sendMessage', "Sending message"),
+				pastTenseMessage: localize('toolComplete.sendMessage', "Sent message"),
+			};
 		case getCurrentSessionToolName:
 			return {
 				displayName: localize('toolName.getCurrentSession', "Get Current Session"),
@@ -702,6 +781,7 @@ function getSessionToolDisplay(toolName: string, _args: unknown, result?: IServe
 export function createSessionServerToolGroup(accessor?: ISessionServerToolAccessor): IServerToolGroup {
 	let createdSessionCount = 0;
 	let createdChatCount = 0;
+	let sentMessageCount = 0;
 	const group: IServerToolGroup = {
 		definitions: sessionServerToolDefinitions,
 		requiresConfirmation(toolName: string): boolean {
@@ -734,6 +814,14 @@ export function createSessionServerToolGroup(accessor?: ISessionServerToolAccess
 					const result = await applyCreateChatTool(accessor, rawArgs, currentSessionUri(sessionUri));
 					createdChatCount++;
 					return formatCreateChatResult(result);
+				}
+				case sendMessageToolName: {
+					if (sentMessageCount >= maxSentMessages) {
+						throw new Error(`Refusing to send more than ${maxSentMessages} messages from server tools in this process.`);
+					}
+					const result = await applySendMessageTool(accessor, rawArgs, sessionUri);
+					sentMessageCount++;
+					return result;
 				}
 				case deleteSessionToolName:
 					return applyDeleteSessionTool(accessor, rawArgs, currentSessionUri(sessionUri));
