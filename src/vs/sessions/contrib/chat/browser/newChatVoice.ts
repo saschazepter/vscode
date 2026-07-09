@@ -24,20 +24,23 @@ import { ISessionsService } from '../../../services/sessions/browser/sessionsSer
 import { setupVoiceInputDecorations } from './voiceInputDecorations.js';
 
 /**
- * Stable resource that identifies the new-session composer as the voice backend's
- * target while no session exists yet. `_chat.voice.getCurrentSession` returns this
- * so the controller routes transcribed input through the composer (creating the
- * session) instead of falling back to a bare, unconfigured chat session.
+ * Stable resource for targeting the new-session composer before a session exists.
+ * This keeps dictation on the composer so it creates a configured session.
  */
 export const NEW_CHAT_VOICE_SENTINEL = URI.from({ scheme: 'sessions-voice', authority: 'new-chat', path: '/composer' });
 
-/** The subset of the new-session composer that voice mode drives. */
+/** New-session composer APIs used by voice mode. */
 export interface INewChatVoiceComposer {
-	/** Fires when the composer input gains focus, so it becomes the active voice target. */
+	/** Fires when the composer input gains focus. */
 	readonly onDidFocus: Event<void>;
-	/** Set the input to `text` and submit it, creating the session. */
+	/**
+	 * When true, this remains a voice target even with an active session.
+	 * Otherwise, it targets only before any session exists.
+	 */
+	readonly routesWhileSessionActive?: boolean;
+	/** Set `text` and submit, creating the session. */
 	sendQuery(text: string): void;
-	/** Set the input to `text` without submitting. */
+	/** Set `text` without submitting. */
 	prefillInput(text: string): void;
 	/** Focus the composer input. */
 	focus(): void;
@@ -46,16 +49,15 @@ export interface INewChatVoiceComposer {
 export const INewChatVoiceTargetService = createDecorator<INewChatVoiceTargetService>('newChatVoiceTargetService');
 
 /**
- * Tracks the currently active new-session composer so the voice command bridge
- * can route transcribed input to it while no session exists yet.
+ * Tracks the active new-session composer for voice command routing.
  */
 export interface INewChatVoiceTargetService {
 	readonly _serviceBrand: undefined;
-	/** The most recently focused/registered composer, if any is mounted. */
+	/** The most recent focused/registered mounted composer. */
 	readonly activeComposer: IObservable<INewChatVoiceComposer | undefined>;
-	/** Register a composer as a potential voice target; disposing removes it. */
+	/** Register a composer as a voice target; dispose to remove it. */
 	registerComposer(composer: INewChatVoiceComposer): IDisposable;
-	/** Promote `composer` to the active voice target (e.g. on focus). */
+	/** Promote `composer` to the active voice target. */
 	setActive(composer: INewChatVoiceComposer): void;
 }
 
@@ -72,7 +74,7 @@ export class NewChatVoiceTargetService extends Disposable implements INewChatVoi
 		return toDisposable(() => {
 			this._composers.delete(composer);
 			if (this._activeComposer.get() === composer) {
-				// Fall back to any remaining composer (last inserted), else none.
+				// Fall back to the last remaining composer.
 				const remaining = [...this._composers];
 				this._activeComposer.set(remaining.length ? remaining[remaining.length - 1] : undefined, undefined);
 			}
@@ -89,10 +91,8 @@ export class NewChatVoiceTargetService extends Disposable implements INewChatVoi
 registerSingleton(INewChatVoiceTargetService, NewChatVoiceTargetService, InstantiationType.Delayed);
 
 // --- Voice toolbar menu for the new-session composer ---
-// The composer uses a hand-built toolbar (not the standard ChatWidget), so the
-// shared voice actions registered against `MenuId.ChatExecute` never appear here.
-// Re-surface the same commands in a dedicated menu whose visibility is driven by
-// the global voice state keys plus the composer-scoped `agentsVoiceInitiatedHere`.
+// The composer has a custom toolbar, so `MenuId.ChatExecute` voice actions do
+// not appear here. Re-surface them with composer-scoped visibility.
 
 export const SessionsNewChatVoiceMenu = new MenuId('SessionsNewChatVoiceMenu');
 
@@ -139,19 +139,17 @@ MenuRegistry.appendMenuItem(SessionsNewChatVoiceMenu, {
 });
 
 export interface INewChatVoiceControllerOptions {
-	/** Container the voice toolbar (mic/stop/settings/disconnect) is appended to. */
+	/** Container for the voice toolbar. */
 	readonly toolbarContainer: HTMLElement;
-	/** Input container that receives the audio-reactive glow + transcript overlay. */
+	/** Input container for glow and transcript overlay. */
 	readonly inputContainer: HTMLElement;
-	/** The composer voice drives. */
+	/** Composer driven by voice. */
 	readonly composer: INewChatVoiceComposer;
 }
 
 /**
- * Wires voice mode into a new-session composer: renders the voice toolbar,
- * binds the composer-scoped `agentsVoiceInitiatedHere` key while the composer is
- * the voice target, sets up the input glow/transcript, and registers the
- * composer with {@link INewChatVoiceTargetService} for command-bridge routing.
+ * Wires voice mode into a new-session composer: toolbar, scoped keys,
+ * glow/transcript, and {@link INewChatVoiceTargetService} routing.
  */
 export class NewChatVoiceController extends Disposable {
 
@@ -172,14 +170,11 @@ export class NewChatVoiceController extends Disposable {
 		this._register(targetService.registerComposer(options.composer));
 		this._register(options.composer.onDidFocus(() => targetService.setActive(options.composer)));
 
-		// Scoped context so the voice toolbar's gating is local to this composer
-		// and does not leak to other surfaces.
+		// Keep voice toolbar gating scoped to this composer.
 		const scopedContextKeyService = this._register(contextKeyService.createScoped(options.toolbarContainer));
-		// True while this composer is a valid voice surface (mounted, focused, and
-		// no real session created yet). Drives whether the mic button appears.
+		// True when this composer can show the mic button.
 		const voiceSurfaceKey = scopedContextKeyService.createKey<boolean>('newChatVoiceSurface', false);
-		// True while voice is active *and* this composer is the surface — gates the
-		// post-connect Stop/Disconnect/Settings controls, mirroring the chat widget.
+		// True when voice is active on this composer.
 		const initiatedHereKey = scopedContextKeyService.createKey<boolean>('agentsVoiceInitiatedHere', false);
 		const scopedInstantiationService = this._register(instantiationService.createChild(new ServiceCollection([IContextKeyService, scopedContextKeyService])));
 
@@ -187,15 +182,13 @@ export class NewChatVoiceController extends Disposable {
 			hiddenItemStrategy: HiddenItemStrategy.NoHide,
 		}));
 
-		// This composer is the voice surface while it is the active composer and no
-		// session has been created yet (the welcome/new-session screen). A draft
-		// new-session still surfaces as `activeSession` with an `activeChat`, so we
-		// must gate on `isCreated`, not merely on the presence of an active chat.
+		// Target the active composer before a session exists, or when it opts in
+		// while a session is active. Gate on `isCreated` to exclude drafts.
 		const isVoiceSurface = derived(reader => {
 			const active = sessionsService.activeSession.read(reader);
 			const hasCreatedSession = !!active && active.isCreated.read(reader);
 			const isActiveComposer = targetService.activeComposer.read(reader) === options.composer;
-			return !hasCreatedSession && isActiveComposer;
+			return (options.composer.routesWhileSessionActive || !hasCreatedSession) && isActiveComposer;
 		});
 		const isVoiceTarget = derived(reader => {
 			const voiceActive = voiceSessionController.isConnected.read(reader) || voiceSessionController.isConnecting.read(reader);

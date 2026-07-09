@@ -291,6 +291,13 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 			placeholder?: string;
 			renderSessionTypePickerInControls?: boolean;
 			supportsBackground?: boolean;
+			/**
+			 * Keep this composer a valid voice target even while a created session
+			 * is active. Used by the in-session "new chat" composer so dictation
+			 * creates a parallel chat instead of routing to the parent session's
+			 * chat widget. The welcome composer leaves this unset.
+			 */
+			voiceRoutesWhileSessionActive?: boolean;
 		},
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IModelService private readonly modelService: IModelService,
@@ -634,9 +641,8 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 
 		dom.append(toolbar, dom.$('.sessions-chat-toolbar-spacer'));
 
-		// Voice mode controls (mic / stop / settings / disconnect). The composer
-		// uses a hand-built toolbar, so these are surfaced via a dedicated menu
-		// rather than the shared `MenuId.ChatExecute` used by the chat widget.
+		// Voice controls (mic/stop/settings/disconnect). The hand-built toolbar
+		// can't use the shared `MenuId.ChatExecute`, so a dedicated menu is used.
 		const voiceContainer = dom.append(toolbar, dom.$('.sessions-chat-voice-toolbar'));
 		this._register(this.instantiationService.createInstance(NewChatVoiceController, {
 			toolbarContainer: voiceContainer,
@@ -831,6 +837,11 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		this._editor?.focus();
 	}
 
+	/** See {@link INewChatVoiceComposer.routesWhileSessionActive}. */
+	get routesWhileSessionActive(): boolean {
+		return this.options.voiceRoutesWhileSessionActive === true;
+	}
+
 	prefillInput(text: string): void {
 		const editor = this._editor;
 		const model = editor?.getModel();
@@ -844,9 +855,8 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 	}
 
 	sendQuery(text: string): void {
-		// A submit is already in flight (e.g. a rapid second voice transcript
-		// arriving before the session is created); don't clobber the in-flight
-		// text or double-submit.
+		// A submit is already in flight (e.g. a rapid second transcript before the
+		// session is created); don't clobber the in-flight text or double-submit.
 		if (this._sending) {
 			return;
 		}

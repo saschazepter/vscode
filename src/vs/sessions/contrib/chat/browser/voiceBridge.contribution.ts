@@ -17,14 +17,11 @@ import { ISessionsManagementService } from '../../../services/sessions/common/se
 import { INewChatVoiceTargetService, NEW_CHAT_VOICE_SENTINEL } from './newChatVoice.js';
 
 /**
- * Bridges the shared {@link IVoiceSessionController} to the Agents (Sessions)
- * window chat surfaces. The controller drives the chat exclusively through the
- * `_chat.voice.*` commands; in the main VS Code window these are registered by
- * `ChatViewPane`. The Agents window hosts chats through {@link ISessionsService}
- * instead, so it registers its own bridge here.
+ * Bridges {@link IVoiceSessionController} to Agents window chat surfaces.
+ * The shared controller uses `_chat.voice.*` commands; Agents hosts chats
+ * through {@link ISessionsService}, so it registers them here.
  *
- * The commands are only registered while `agents.voice.enabled` is set, matching
- * the main-window behavior, and are wired to the sessions model:
+ * Commands are registered only while `agents.voice.enabled` is set:
  * - `_chat.voice.acceptInput` injects transcribed text into the focused chat widget.
  * - `_chat.voice.getCurrentSession` reports the active session's chat resource.
  * - `_chat.voice.switchToSession` activates the session that owns a chat resource.
@@ -59,19 +56,14 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 			return;
 		}
 
-		// Inject transcribed text into the active session's chat widget. Unlike
-		// the main window (a single chat pane), the Agents window keeps DOM focus
-		// on the sessions list while showing a chat, so `lastFocusedWidget` is
-		// frequently stale; prefer the active session's widget and only fall back
-		// to the focused widget when there is no active session.
+		// Prefer the active session widget; Agents often leaves DOM focus on the
+		// sessions list, making `lastFocusedWidget` stale.
 		this._commandDisposables.add(CommandsRegistry.registerCommand('_chat.voice.acceptInput', (_accessor, text: string) => {
 			if (!text) {
 				return;
 			}
-			// If a new-session composer is the voice target (no session exists yet),
-			// submit through it so the transcribed request creates the session.
-			// This takes priority over `lastFocusedWidget`, which can still point at
-			// a previously-opened session's chat widget on the welcome screen.
+			// Route through the new-session composer so dictation creates the
+			// session instead of using a stale `lastFocusedWidget`.
 			const composer = this._activeComposerTarget();
 			if (composer) {
 				composer.sendQuery(text);
@@ -80,8 +72,7 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 			const widget = this._activeSessionWidget() ?? this.chatWidgetService.lastFocusedWidget;
 			if (widget?.viewModel) {
 				if (widget.viewModel.editing) {
-					// When editing an old message, populate the active input editor
-					// so the user can review before submitting.
+					// Let the user review edited input before submitting.
 					widget.input.setValue(text, false);
 				} else {
 					widget.acceptInput(text, { preserveFocus: true });
@@ -89,30 +80,26 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 			}
 		}));
 
-		// Report the currently shown session's chat resource. Mirrors the main
-		// window's use of its single pane's shown session (not DOM focus): in the
-		// Agents window the shown session is the active session. When no session
-		// exists yet but a new-session composer is mounted, report the composer
-		// sentinel so the controller routes input to it instead of spinning up a
-		// bare, unconfigured chat session.
+		// Report the shown session (the active Agents session), not DOM focus.
+		// Before a session exists, report the composer sentinel so dictation uses it.
 		this._commandDisposables.add(CommandsRegistry.registerCommand('_chat.voice.getCurrentSession', (): string | undefined => {
+			// Composer targets take priority over the parent session chat widget.
+			if (this._activeComposerTarget()) {
+				return NEW_CHAT_VOICE_SENTINEL.toString();
+			}
 			const activeChat = this._createdActiveChatResource();
 			if (activeChat) {
 				return activeChat.toString();
 			}
-			if (this._activeComposerTarget()) {
-				return NEW_CHAT_VOICE_SENTINEL.toString();
-			}
 			return this.chatWidgetService.lastFocusedWidget?.viewModel?.sessionResource?.toString();
 		}));
 
-		// Activate the session that owns the given chat resource so its response
-		// becomes visible to the user.
+		// Reveal the session that owns the given chat resource.
 		this._commandDisposables.add(CommandsRegistry.registerCommand('_chat.voice.switchToSession', async (_accessor, resourceStr: string): Promise<boolean> => {
 			if (!resourceStr) {
 				return false;
 			}
-			// The composer sentinel has no session to open; just focus the composer.
+			// The composer sentinel has no session; focus the composer.
 			if (resourceStr === NEW_CHAT_VOICE_SENTINEL.toString()) {
 				const composer = this._activeComposerTarget();
 				composer?.focus();
@@ -125,7 +112,7 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 				return false;
 			}
 
-			// A chat resource maps to its owning session (and specific chat).
+			// Chat resources map to their owning session and chat.
 			const owner = this.sessionsManagementService.getSessionForChatResource(resource);
 			if (owner) {
 				await this.sessionsService.openSession(owner.session.resource, { preserveFocus: true });
@@ -135,7 +122,7 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 				return true;
 			}
 
-			// Otherwise treat the resource as a session resource.
+			// Otherwise, treat it as a session resource.
 			const session = this.sessionsManagementService.getSession(resource);
 			if (session) {
 				await this.sessionsService.openSession(session.resource, { preserveFocus: true });
@@ -152,10 +139,8 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 	}
 
 	/**
-	 * The active session's chat resource, but only once the session has actually
-	 * been created. A draft new-session (welcome composer) also surfaces as the
-	 * active session with an `activeChat`, so gating on {@link IActiveSession.isCreated}
-	 * is what distinguishes a real session from the composer.
+	 * The active chat resource, only after its session exists.
+	 * {@link IActiveSession.isCreated} distinguishes it from the welcome composer.
 	 */
 	private _createdActiveChatResource(): URI | undefined {
 		const active = this.sessionsService.activeSession.get();
@@ -169,29 +154,31 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 	}
 
 	/**
-	 * The new-session composer to route voice input through, but only while no
-	 * session has been created yet — once a real session exists, voice targets
-	 * its chat widget instead.
+	 * The new-session composer voice should target.
+	 * Welcome composers stop targeting once a session exists; in-session composers
+	 * can opt in via {@link INewChatVoiceComposer.routesWhileSessionActive}.
 	 */
 	private _activeComposerTarget() {
-		return this._createdActiveChatResource() ? undefined : this.newChatVoiceTargetService.activeComposer.get();
+		const composer = this.newChatVoiceTargetService.activeComposer.get();
+		if (!composer) {
+			return undefined;
+		}
+		if (composer.routesWhileSessionActive || !this._createdActiveChatResource()) {
+			return composer;
+		}
+		return undefined;
 	}
 }
 
 registerWorkbenchContribution2(SessionsVoiceBridgeContribution.ID, SessionsVoiceBridgeContribution, WorkbenchPhase.AfterRestored);
 
 /**
- * Authoritatively tells the shared voice controller which session is active in
- * the Agents window, so voice audio routing (`is_active`, response deferral, and
- * flushing a buffered response when a session is revealed) follows the session
- * the user is actually viewing.
+ * Tells the shared voice controller which Agents session is active, so routing,
+ * response deferral, and buffered playback follow the visible session.
  *
- * The controller normally infers the active session from chat-widget focus, but
- * the Agents window renders multiple chat widgets at once and DOM focus stays on
- * the sessions list, so that heuristic thrashes. Here we forward the single
- * authoritative {@link ISessionsService.activeSession} instead. A draft
- * new-session (welcome composer) is not a created session, so it reports
- * `undefined` (no active real session) rather than a stale prior one.
+ * Agents can render multiple chat widgets while DOM focus stays on the sessions
+ * list, so forward {@link ISessionsService.activeSession}. Draft composers report
+ * `undefined` to avoid reusing a stale session.
  */
 class SessionsVoiceActiveSessionContribution extends Disposable implements IWorkbenchContribution {
 
@@ -216,13 +203,9 @@ class SessionsVoiceActiveSessionContribution extends Disposable implements IWork
 registerWorkbenchContribution2(SessionsVoiceActiveSessionContribution.ID, SessionsVoiceActiveSessionContribution, WorkbenchPhase.AfterRestored);
 
 /**
- * Keeps hands-free voice listening anchored to the session the user is dictating
- * into. When the active session changes while the microphone is listening, the
- * turn is only stopped if dictation is actually in progress (so it isn't
- * misrouted to the newly focused session); otherwise listening follows the user
- * into the new session. This mirrors the main-window `ChatViewPane` behavior
- * (see microsoft/vscode#325134), adapted to the Agents window's active-session
- * model.
+ * Keeps hands-free listening anchored to the dictation session.
+ * If the active session changes mid-dictation, stop to avoid misrouting;
+ * otherwise follow the new session, mirroring `ChatViewPane`.
  */
 class SessionsVoiceListeningContribution extends Disposable implements IWorkbenchContribution {
 
@@ -249,7 +232,7 @@ class SessionsVoiceListeningContribution extends Disposable implements IWorkbenc
 			}
 
 			if (voiceState !== 'listening') {
-				// Allow the next dictation to re-capture the owning session.
+				// Let the next dictation capture its session.
 				listeningSession = undefined;
 				return;
 			}
@@ -257,10 +240,7 @@ class SessionsVoiceListeningContribution extends Disposable implements IWorkbenc
 			if (!listeningSession) {
 				listeningSession = targetSession ?? currentSession;
 			} else if (!targetSession && currentSession && !isEqual(currentSession, listeningSession)) {
-				// User switched to a different session while listening. Only stop
-				// when there's dictation in progress, so it isn't misrouted to the
-				// newly focused session. If nothing has been recorded yet, keep
-				// listening and follow the new session.
+				// Stop only mid-dictation; otherwise follow the new session.
 				const activelyDictating = turns.some(t => t.speaker === 'user' && t.isPartial && t.text.trim().length > 0);
 				if (activelyDictating) {
 					voiceSessionController.stopListening();
