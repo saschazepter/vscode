@@ -114,6 +114,21 @@ export interface IVoiceSessionController {
 	newSessionAsTarget(): void;
 
 	/**
+	 * Authoritatively declare the session currently shown/active in the UI, for
+	 * audio routing purposes (`is_active`, response deferral, and flushing a
+	 * buffered response when a session is revealed).
+	 *
+	 * The main window infers the active session from chat-widget focus, but the
+	 * Agents (sessions) window renders multiple chat widgets simultaneously, so
+	 * DOM focus and per-widget view-model swaps can't reliably identify which
+	 * session the user is actually viewing. The sessions window calls this when
+	 * its active session changes so routing follows that session rather than a
+	 * stale focused widget or a thrashing last-shown heuristic. Passing
+	 * `undefined` clears the override and restores focus-based detection.
+	 */
+	setActiveSessionShown(resource: URI | undefined): void;
+
+	/**
 	 * Submit user feedback along with full diagnostic data (transcript history,
 	 * client state, environment info). Returns success/failure.
 	 */
@@ -223,6 +238,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * second click, once the widget finally takes focus). Tracking the last-shown
 	 * session across all widgets closes that gap. */
 	private _lastShownSessionId: string | undefined;
+	/**
+	 * Authoritative override of the active/shown session, set by the Agents
+	 * (sessions) window (see `setActiveSessionShown`). Takes precedence over the
+	 * `_lastShownSessionId` / focused-widget heuristics that are unreliable when
+	 * multiple chat widgets are rendered at once. `undefined` in the main window.
+	 */
+	private _activeSessionShown: string | undefined;
 	/** Buffered audio for responses that arrived while their session was not
 	 *  focused. Flushed to playback when the session becomes focused. */
 	private readonly _deferredResponses = new Map<string, { audio: string; isFirstChunk: boolean; isFinal: boolean; transcript: string | undefined }[]>();
@@ -2183,7 +2205,24 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * session is "active" and everything else is a background narration.
 	 */
 	private _getActiveSessionId(): string | undefined {
-		return this._targetSession.get()?.toString() ?? this._lastShownSessionId ?? this._getFocusedSessionId();
+		return this._targetSession.get()?.toString() ?? this._activeSessionShown ?? this._lastShownSessionId ?? this._getFocusedSessionId();
+	}
+
+	setActiveSessionShown(resource: URI | undefined): void {
+		const key = resource?.toString();
+		if (key === this._activeSessionShown) {
+			return;
+		}
+		this._activeSessionShown = key;
+		if (resource) {
+			// Route audio to this session immediately: flush any buffered
+			// response, clear its pending indicator, and re-send context so the
+			// backend's `is_active` tracks it now rather than on the next poll.
+			this._activateShownSession(resource);
+		} else {
+			this._sendContext();
+			this.voiceClientService.flushSessionContext();
+		}
 	}
 
 	/**

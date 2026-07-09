@@ -181,6 +181,41 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 registerWorkbenchContribution2(SessionsVoiceBridgeContribution.ID, SessionsVoiceBridgeContribution, WorkbenchPhase.AfterRestored);
 
 /**
+ * Authoritatively tells the shared voice controller which session is active in
+ * the Agents window, so voice audio routing (`is_active`, response deferral, and
+ * flushing a buffered response when a session is revealed) follows the session
+ * the user is actually viewing.
+ *
+ * The controller normally infers the active session from chat-widget focus, but
+ * the Agents window renders multiple chat widgets at once and DOM focus stays on
+ * the sessions list, so that heuristic thrashes. Here we forward the single
+ * authoritative {@link ISessionsService.activeSession} instead. A draft
+ * new-session (welcome composer) is not a created session, so it reports
+ * `undefined` (no active real session) rather than a stale prior one.
+ */
+class SessionsVoiceActiveSessionContribution extends Disposable implements IWorkbenchContribution {
+
+	static readonly ID = 'sessions.voiceActiveSession';
+
+	constructor(
+		@IVoiceSessionController private readonly voiceSessionController: IVoiceSessionController,
+		@ISessionsService private readonly sessionsService: ISessionsService,
+	) {
+		super();
+
+		this._register(autorun(reader => {
+			const active = this.sessionsService.activeSession.read(reader);
+			const resource = active?.isCreated.read(reader)
+				? active.activeChat.read(reader)?.resource
+				: undefined;
+			this.voiceSessionController.setActiveSessionShown(resource);
+		}));
+	}
+}
+
+registerWorkbenchContribution2(SessionsVoiceActiveSessionContribution.ID, SessionsVoiceActiveSessionContribution, WorkbenchPhase.AfterRestored);
+
+/**
  * Keeps hands-free voice listening anchored to the session the user is dictating
  * into. When the active session changes while the microphone is listening, the
  * turn is only stopped if dictation is actually in progress (so it isn't
