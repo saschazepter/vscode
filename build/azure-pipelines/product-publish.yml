@@ -54,6 +54,23 @@ jobs:
       - pwsh: Write-Host "##vso[build.addbuildtag]🚀"
         displayName: Add build tag
 
+      - pwsh: node build/setup-npm-registry.ts $env:NPM_REGISTRY build
+        condition: and(succeeded(), ne(variables['NPM_REGISTRY'], 'none'))
+        displayName: Setup NPM Registry
+
+      - pwsh: |
+          npm config set registry "$env:NPM_REGISTRY"
+          $NpmrcPath = (npm config get userconfig)
+          Write-Host "##vso[task.setvariable variable=NPMRC_PATH]$NpmrcPath"
+        condition: and(succeeded(), ne(variables['NPM_REGISTRY'], 'none'))
+        displayName: Setup NPM
+
+      - task: npmAuthenticate@0
+        inputs:
+          workingFile: $(NPMRC_PATH)
+        condition: and(succeeded(), ne(variables['NPM_REGISTRY'], 'none'))
+        displayName: Setup NPM Authentication
+
       - pwsh: |
           npm ci
         workingDirectory: build
