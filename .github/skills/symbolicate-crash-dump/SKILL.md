@@ -87,9 +87,10 @@ Example (Windows: the shipped main binary is `Code.exe`, but its symbols come fr
 # Unzip somewhere, e.g. ~/stable-symbols/
 unzip stable-symbols-v42.5.0-win32-x64.zip -d ~/stable-symbols
 
-# Only copy if the debug-id matches what the cache expects:
+# Only copy if the debug-id matches what the cache expects.
+# Keep the tilde outside quotes so it expands to your home directory:
 HASH=DD081533CD7E33A44C4C44205044422E1
-cp "~/stable-symbols/symbols/electron.exe.pdb/$HASH/electron.exe.sym" \
+cp ~/stable-symbols/symbols/electron.exe.pdb/"$HASH"/electron.exe.sym \
    "$CACHE/electron.exe.pdb/$HASH/"
 ```
 
@@ -130,7 +131,7 @@ The process type tells you whether this is the main process, a renderer/window, 
 strings -a crash-file.dmp | grep -oiE "utility-sub-type=[a-zA-Z0-9._-]+|node\.mojom\.[A-Za-z]+|--type=[a-z-]+" | sort -u
 ```
 
-| Signal | Process |
+| Marker | Process |
 |--------|---------|
 | `node.mojom.NodeService` / `utility-sub-type=node.mojom.NodeService` | Extension host (Node utility process) |
 | `--type=renderer` | A workbench window (renderer) |
