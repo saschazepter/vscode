@@ -1427,14 +1427,7 @@ export class LanguageModelsService implements ILanguageModelsService {
 		const allGroups = this._languageModelsConfigurationService.getLanguageModelsProviderGroups();
 		let group: ILanguageModelsProviderGroup | undefined;
 
-		// First find the group that actually *defines* this model via the
-		// model→group map. Several groups can share the same `vendor` (e.g.
-		// multiple `customendpoint` providers), and they can even declare models
-		// with the same bare `id` (e.g. two providers both exposing `gpt-5.5`).
-		// Resolving by the full model identifier — instead of the bare
-		// `metadata.id` — ensures the config is written to the group the model
-		// actually belongs to, rather than whichever group of that vendor happens
-		// to list that `id` first. See #322872 and #325069.
+		// Resolve the owning provider group via the full model identifier to avoid collisions across same-vendor groups (#322872/#325069).
 		const vendorGroups = this._modelsGroups.get(metadata.vendor);
 		const containingGroup = vendorGroups?.find(vg => vg.modelIdentifiers.includes(modelId) && vg.group)?.group;
 		if (containingGroup) {
