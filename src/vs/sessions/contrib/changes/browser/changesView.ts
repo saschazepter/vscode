@@ -14,13 +14,13 @@ import { ActionRunner, IAction, Separator, SubmenuAction, toAction } from '../..
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { autorun, derived, derivedObservableWithCache, IObservable, observableFromEvent, observableValue } from '../../../../base/common/observable.js';
+import { autorun, constObservable, derived, derivedObservableWithCache, IObservable, ISettableObservable, observableFromEvent, observableValue } from '../../../../base/common/observable.js';
 import { CountBadge } from '../../../../base/browser/ui/countBadge/countBadge.js';
 import { ProgressBar } from '../../../../base/browser/ui/progressbar/progressbar.js';
 import { basename, isEqual } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize, localize2 } from '../../../../nls.js';
-import { MenuWorkbenchButtonBar, WorkbenchButtonBar } from '../../../../platform/actions/browser/buttonbar.js';
+import { MenuWorkbenchButtonBar, WorkbenchButtonBar, IButtonConfigProvider } from '../../../../platform/actions/browser/buttonbar.js';
 import { getActionBarActions } from '../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
@@ -117,6 +117,22 @@ interface IChangesButtonBarWidget extends IDisposable {
 	readonly hasActions: boolean;
 }
 
+/**
+ * Tab-bar width (px) below which the Create Pull Request bar collapses its
+ * labelled buttons to icon-only, freeing horizontal room for the tabs.
+ */
+const CHANGES_ACTIONS_BAR_COMPACT_WIDTH = 500;
+
+type IChangesButtonConfig = ReturnType<IButtonConfigProvider>;
+
+/** Collapses a labelled+icon button configuration to icon-only when {@link compact}. */
+function withCompactButtonConfig(config: IChangesButtonConfig, compact: boolean): IChangesButtonConfig {
+	if (compact && config?.showIcon && config.showLabel) {
+		return { ...config, showLabel: false, customLabel: undefined, customLabelObs: undefined };
+	}
+	return config;
+}
+
 class ChangesMenuWorkbenchButtonBarWidget extends Disposable implements IChangesButtonBarWidget {
 
 	private readonly _onDidChangeActions = this._register(new Emitter<void>());
@@ -128,6 +144,7 @@ class ChangesMenuWorkbenchButtonBarWidget extends Disposable implements IChanges
 	constructor(
 		container: HTMLElement,
 		hasGitOperationInProgressObs: IObservable<boolean>,
+		compactObs: IObservable<boolean>,
 		@IMenuService menuService: IMenuService,
 		@IChangesViewService changesViewService: IChangesViewService,
 		@IContextKeyService contextKeyService: IContextKeyService,
@@ -161,6 +178,7 @@ class ChangesMenuWorkbenchButtonBarWidget extends Disposable implements IChanges
 			const hasGitOperationInProgress = hasGitOperationInProgressObs.read(reader);
 			const sessionResource = changesViewService.activeSessionResourceObs.read(reader);
 			const outgoingChanges = outgoingChangesObs.read(reader) ?? 0;
+			const compact = compactObs.read(reader);
 
 			const buttonBar = new MenuWorkbenchButtonBar(
 				container,
@@ -170,7 +188,7 @@ class ChangesMenuWorkbenchButtonBarWidget extends Disposable implements IChanges
 					menuOptions: sessionResource
 						? { arg: sessionResource }
 						: { shouldForwardArgs: true },
-					buttonConfigProvider: (action) => this._getButtonConfiguration(action, outgoingChanges, hasGitOperationInProgress, runningLabelObs)
+					buttonConfigProvider: (action) => withCompactButtonConfig(this._getButtonConfiguration(action, outgoingChanges, hasGitOperationInProgress, runningLabelObs), compact)
 				},
 				menuService, contextKeyService, contextMenuService, keybindingService, telemetryService, hoverService
 			);
@@ -271,6 +289,7 @@ class ChangesWorkbenchButtonBarWidget extends Disposable implements IChangesButt
 
 	constructor(
 		container: HTMLElement,
+		compactObs: IObservable<boolean>,
 		@IMenuService menuService: IMenuService,
 		@IChangesViewService changesViewService: IChangesViewService,
 		@IContextKeyService contextKeyService: IContextKeyService,
@@ -280,13 +299,14 @@ class ChangesWorkbenchButtonBarWidget extends Disposable implements IChangesButt
 
 		const menu = this._register(menuService.createMenu(MenuId.AgentsChangesToolbar, contextKeyService));
 
+		let compact = false;
 		const buttonBar = this._buttonBar = this._register(instantiationService.createInstance(
 			WorkbenchButtonBar,
 			container,
 			{
 				telemetrySource: 'changesView',
 				buttonConfigProvider: (_action, index) => {
-					return { showIcon: true, showLabel: index === 0 };
+					return { showIcon: true, showLabel: index === 0 && !compact };
 				}
 			}
 		));
@@ -359,6 +379,8 @@ class ChangesWorkbenchButtonBarWidget extends Disposable implements IChangesButt
 				return;
 			}
 
+			compact = compactObs.read(reader);
+
 			const operationActionGroups = operationActionGroupsObs.read(reader);
 			const menuActions = menuActionsObs.read(reader);
 
@@ -422,6 +444,9 @@ export class ChangesActionsBar extends Disposable {
 			return activeSession ? isAgentHostProviderId(activeSession.providerId) : false;
 		});
 
+		const compactObs = observableValue<boolean>(this, false);
+		this._observeCompactWidth(container, compactObs);
+
 		let currentWidget: IChangesButtonBarWidget | undefined;
 		const updateVisibility = () => {
 			const status = sessionsService.activeSession.get()?.status.get();
@@ -433,8 +458,8 @@ export class ChangesActionsBar extends Disposable {
 			dom.clearNode(container);
 
 			const widget = isAgentHostSessionObs.read(reader)
-				? instantiationService.createInstance(ChangesWorkbenchButtonBarWidget, container)
-				: instantiationService.createInstance(ChangesMenuWorkbenchButtonBarWidget, container, hasGitOperationInProgressObs);
+				? instantiationService.createInstance(ChangesWorkbenchButtonBarWidget, container, compactObs)
+				: instantiationService.createInstance(ChangesMenuWorkbenchButtonBarWidget, container, hasGitOperationInProgressObs, compactObs);
 			reader.store.add(widget);
 			currentWidget = widget;
 			reader.store.add(widget.onDidChangeActions(() => updateVisibility()));
@@ -446,18 +471,52 @@ export class ChangesActionsBar extends Disposable {
 			updateVisibility();
 		}));
 	}
+
+	/**
+	 * Collapses the button labels to icon-only when the editor tabs title is narrow.
+	 * No-op in the classic changes-editor header (no tab-bar ancestor to observe).
+	 */
+	private _observeCompactWidth(container: HTMLElement, compactObs: ISettableObservable<boolean>): void {
+		const targetWindow = dom.getWindow(container);
+		const store = this._register(new DisposableStore());
+
+		// The editor-actions toolbar (which hosts this bar) may not be attached to
+		// the tab-bar DOM on the first animation frame, so retry finding the ancestor
+		// across a few frames before giving up. Fall back to the editor group container
+		// (the single-tab control has no `.tabs-and-actions-container`).
+		const trySetup = (attemptsLeft: number): void => {
+			const tabBar = (container.closest('.tabs-and-actions-container') ?? container.closest('.editor-group-container')) as HTMLElement | null;
+			if (!tabBar) {
+				if (attemptsLeft > 0) {
+					store.add(dom.scheduleAtNextAnimationFrame(targetWindow, () => trySetup(attemptsLeft - 1)));
+				}
+				return;
+			}
+			const update = () => {
+				const width = tabBar.clientWidth;
+				compactObs.set(width > 0 && width < CHANGES_ACTIONS_BAR_COMPACT_WIDTH, undefined);
+			};
+			const observer = store.add(new dom.DisposableResizeObserver('changesActionsBarCompact', update, targetWindow));
+			store.add(observer.observe(tabBar));
+			update();
+		};
+
+		store.add(dom.scheduleAtNextAnimationFrame(targetWindow, () => trySetup(10)));
+	}
 }
 
 // --- Editor header menus (single-pane): the Changes editor declares
 // Menus.SessionsEditorHeaderPrimary (Branch Changes picker + diff stats, left) and
 // Menus.SessionsEditorHeaderSecondary (diff/code-review/view-mode actions, right), and
 // the editor group renders them. The Create Pull Request bar (ChangesActionsBar) is
-// hosted in the sessions title bar (Menus.TitleBarSessionMenu). The custom action view
-// items below are registered globally by menu id so the toolbars render them.
+// hosted in the editor tabs title (Menus.SessionsEditorTitle); its custom action view
+// item is provided by the Changes editor pane (SessionChangesEditor.getActionViewItem).
+// The custom action view items below are registered globally by menu id so the
+// header toolbars render them.
 
 export const CHANGES_HEADER_ACTIONS_ID = 'workbench.changesView.headerActions';
 
-/** Renders the {@link ChangesActionsBar} widget as the Create Pull Request title-bar action item. */
+/** Renders the {@link ChangesActionsBar} widget as the Create Pull Request editor tabs title action item. */
 export class ChangesActionsBarActionViewItem extends BaseActionViewItem {
 	constructor(
 		action: IAction,
@@ -507,11 +566,6 @@ class ChangesEditorHeaderContribution extends Disposable implements IWorkbenchCo
 				return undefined;
 			}
 			return instantiationService.createInstance(ChangesDiffStatsActionItem, action, options);
-		}, onDidRegister.event));
-
-		// Create Pull Request button bar, hosted in the title bar (right, session actions area).
-		this._register(actionViewItemService.register(Menus.TitleBarSessionMenu, CHANGES_HEADER_ACTIONS_ID, (action, options, instantiationService) => {
-			return instantiationService.createInstance(ChangesActionsBarActionViewItem, action, options);
 		}, onDidRegister.event));
 
 		onDidRegister.fire();
@@ -1474,8 +1528,8 @@ export class ChangesViewPane extends ViewPane {
 			const isAgentHostSession = isAgentHostSessionObs.read(reader);
 
 			const widget = isAgentHostSession
-				? this.scopedInstantiationService.createInstance(ChangesWorkbenchButtonBarWidget, this.actionsContainer!)
-				: this.scopedInstantiationService.createInstance(ChangesMenuWorkbenchButtonBarWidget, this.actionsContainer!, this.hasGitOperationInProgressObs);
+				? this.scopedInstantiationService.createInstance(ChangesWorkbenchButtonBarWidget, this.actionsContainer!, constObservable(false))
+				: this.scopedInstantiationService.createInstance(ChangesMenuWorkbenchButtonBarWidget, this.actionsContainer!, this.hasGitOperationInProgressObs, constObservable(false));
 			reader.store.add(widget);
 		}));
 	}
