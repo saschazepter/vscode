@@ -6,12 +6,11 @@
 import * as cp from 'child_process';
 import * as fsPromises from 'fs/promises';
 import { cp as copyFile } from '@vscode/fs-copyfile';
-import { CancellationToken } from '../../../base/common/cancellation.js';
 import * as path from '../../../base/common/path.js';
 import { URI } from '../../../base/common/uri.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
+import { parse } from '../../../base/common/glob.js';
 import { generateUuid } from '../../../base/common/uuid.js';
-import { Disposable } from '../../../base/common/lifecycle.js';
 import { INativeEnvironmentService } from '../../environment/common/environment.js';
 import { IFileService } from '../../files/common/files.js';
 import { ILogService } from '../../log/common/log.js';
@@ -20,9 +19,8 @@ import { buildGitBlobUri } from './gitDiffContent.js';
 import { EMPTY_TREE_OBJECT, getBranchCompletions, IAgentHostGitService, IComputeSessionFileDiffsOptions, IPullOptions, IPushOptions } from '../common/agentHostGitService.js';
 import { LRUCache } from '../../../base/common/map.js';
 import { Limiter, SequencerByKey } from '../../../base/common/async.js';
-import { AgentHostWorkspaceFiles } from './agentHostWorkspaceFiles.js';
 
-export class AgentHostGitService extends Disposable implements IAgentHostGitService {
+export class AgentHostGitService implements IAgentHostGitService {
 	declare readonly _serviceBrand: undefined;
 
 	/**
@@ -30,16 +28,12 @@ export class AgentHostGitService extends Disposable implements IAgentHostGitServ
 	 */
 	private readonly _repositoryRoots = new LRUCache<string, URI>(100);
 	private readonly _repositoryRootSequencer = new SequencerByKey<string>();
-	private readonly _workspaceFiles: AgentHostWorkspaceFiles;
 
 	constructor(
 		@IFileService private readonly _fileService: IFileService,
 		@INativeEnvironmentService private readonly _environmentService: INativeEnvironmentService,
 		@ILogService private readonly _logService: ILogService,
-	) {
-		super();
-		this._workspaceFiles = this._register(new AgentHostWorkspaceFiles(_logService));
-	}
+	) { }
 
 	async getCurrentBranch(workingDirectory: URI): Promise<string | undefined> {
 		return (await this._runGit(workingDirectory, ['branch', '--show-current']))?.trim()
@@ -127,9 +121,9 @@ export class AgentHostGitService extends Disposable implements IAgentHostGitServ
 		await this._runGit(repositoryRoot, ['-c', 'checkout.workers=0', 'worktree', 'add', '--no-track', '-b', branchName, worktree.fsPath, resolvedStartPoint], { timeout: 180_000, throwOnError: true });
 	}
 
-	async copyWorktreeIncludeFiles(repositoryRoot: URI, worktree: URI, includeGlobs: readonly string[]): Promise<void> {
+	async copyWorktreeIncludeFiles(repositoryRoot: URI, worktree: URI, globs: readonly string[]): Promise<void> {
 		try {
-			const worktreeIncludePaths = await this._getWorktreeIncludePaths(repositoryRoot, includeGlobs);
+			const worktreeIncludePaths = await this._getWorktreeIncludePaths(repositoryRoot, globs);
 			if (worktreeIncludePaths.length === 0) {
 				return;
 			}
@@ -369,67 +363,95 @@ export class AgentHostGitService extends Disposable implements IAgentHostGitServ
 		return output !== undefined ? remoteBranch : undefined;
 	}
 
-	private async _getWorktreeIncludePaths(repositoryRoot: URI, includeGlobs: readonly string[]): Promise<string[]> {
-		if (includeGlobs.length === 0) {
+	private async _getWorktreeIncludePaths(repositoryRoot: URI, globs: readonly string[]): Promise<string[]> {
+		if (globs.length === 0) {
 			return [];
 		}
 
-		const repositoryRootPath = repositoryRoot.fsPath;
-		const allFiles = await this._workspaceFiles.getFiles(repositoryRoot, CancellationToken.None, {
-			includeGlobs,
-			disregardIgnoreFiles: true,
-			disregardParentIgnoreFiles: true,
-			disregardGlobalIgnoreFiles: true,
-		});
-		const nonIgnoredFiles = await this._workspaceFiles.getFiles(repositoryRoot, CancellationToken.None, {
-			includeGlobs,
-			disregardDotIgnoreFiles: true,
-			disregardGlobalIgnoreFiles: true,
-		});
-		const gitIgnoredFiles = new Set(allFiles.map(uri => uri.fsPath));
-		for (const uri of nonIgnoredFiles) {
-			gitIgnoredFiles.delete(uri.fsPath);
-		}
-		if (gitIgnoredFiles.size === 0) {
+		// List the git-ignored (but untracked) files: `--others` selects
+		// untracked files, `--ignored` restricts to those matched by an exclude
+		// source, and `--exclude-standard` uses the standard sources (.gitignore,
+		// .git/info/exclude, core.excludesFile). `-z` NUL-separates entries so
+		// paths containing spaces or other special characters survive intact.
+		//
+		// The `--directory` variant additionally collapses a *wholly*-ignored
+		// directory (one containing no tracked files) into a single `dir/`
+		// entry. It is enumerated in parallel and used below to copy such
+		// directories as one recursive unit rather than file-by-file.
+		const baseArgs = ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'];
+		const [filesOutput, directoryOutput] = await Promise.all([
+			this._runGit(repositoryRoot, baseArgs, { timeout: 30_000 }),
+			this._runGit(repositoryRoot, [...baseArgs, '--directory', '--no-empty-directory'], { timeout: 30_000 }),
+		]);
+		if (!filesOutput) {
 			return [];
 		}
 
-		const filePatternBases = new Set<string>();
-		for (const pattern of includeGlobs) {
-			const segments = pattern.split(/[\/\\]/);
-			const fixedSegments: string[] = [];
-			for (const segment of segments) {
-				if (/[*?{}[\]]/.test(segment)) {
-					break;
+		// git emits repository-relative, forward-slash paths.
+		const ignoredFiles = filesOutput.split('\x00').filter(entry => entry.length > 0);
+		if (ignoredFiles.length === 0) {
+			return [];
+		}
+
+		// Keep only the ignored files that match one of the configured
+		// `git.worktreeIncludeFiles` glob patterns (VS Code glob semantics),
+		// and — in the same pass — tally which wholly-ignored directories
+		// contain an *unmatched* ignored file (and therefore cannot be
+		// collapsed). `git ls-files --directory` reports a wholly-ignored
+		// directory as a single `dir/` entry and never nests these entries
+		// (it stops descending once a directory is wholly ignored), so each
+		// file has at most one containing directory and no de-duplication of
+		// the directory set is required.
+		const matchers = globs.map(pattern => parse(pattern));
+		const wholeDirectories = new Set((directoryOutput ?? '')
+			.split('\x00').filter(entry => entry.endsWith('/')));
+
+		const matchedFiles: string[] = [];
+		const nonCollapsibleDirectories = new Set<string>();
+		for (const file of ignoredFiles) {
+			if (matchers.some(matcher => matcher(file))) {
+				matchedFiles.push(file);
+			} else if (wholeDirectories.size > 0) {
+				const containingDirectory = findContainingDirectory(file, wholeDirectories);
+				if (containingDirectory !== undefined) {
+					nonCollapsibleDirectories.add(containingDirectory);
 				}
-				fixedSegments.push(segment);
-			}
-			filePatternBases.add(path.join(repositoryRootPath, ...fixedSegments));
-		}
-
-		const gitIgnoredPaths = new Set(gitIgnoredFiles);
-		for (const filePath of gitIgnoredFiles) {
-			let dir = path.dirname(filePath);
-			while (dir !== repositoryRootPath && !gitIgnoredPaths.has(dir)) {
-				gitIgnoredPaths.add(dir);
-				if (filePatternBases.has(dir)) {
-					break;
-				}
-				dir = path.dirname(dir);
 			}
 		}
-
-		let lastTopmost: string | undefined;
-		const pathsToCopy: string[] = [];
-		for (const candidate of Array.from(gitIgnoredPaths).sort()) {
-			if (lastTopmost && (candidate === lastTopmost || candidate.startsWith(lastTopmost + path.sep))) {
-				continue;
-			}
-			pathsToCopy.push(candidate);
-			lastTopmost = candidate;
+		if (matchedFiles.length === 0) {
+			return [];
 		}
 
-		return pathsToCopy;
+		// Collapse matched files into their containing directory when the whole
+		// directory can be copied as a single recursive unit — i.e. it is
+		// wholly ignored (so it has no tracked files a recursive copy would
+		// clobber) and every ignored file it contains matched a glob (so
+		// nothing unwanted is copied, tracked by `nonCollapsibleDirectories` above).
+		// This turns a large tree such as `node_modules/` into one copy instead
+		// of one per file, while a partially-matched or partially-tracked
+		// directory falls back to its individual matched files. `--directory`
+		// with `--no-empty-directory` never reports an empty directory, so every
+		// entry in `wholeDirectories` is known to contain at least one ignored file.
+		const collapsedDirectories = new Set<string>();
+		for (const dir of wholeDirectories) {
+			if (!nonCollapsibleDirectories.has(dir)) {
+				collapsedDirectories.add(dir);
+			}
+		}
+
+		// Emit the collapsed directories plus every matched file not already
+		// covered by one of them.
+		const includePaths: string[] = [...collapsedDirectories];
+		for (const file of matchedFiles) {
+			if (
+				collapsedDirectories.size === 0 ||
+				findContainingDirectory(file, collapsedDirectories) === undefined
+			) {
+				includePaths.push(file);
+			}
+		}
+
+		return includePaths.map(entry => path.join(repositoryRoot.fsPath, entry));
 	}
 
 	async showBlob(workingDirectory: URI, ref: string, repoRelativePath: string): Promise<VSBuffer | undefined> {
@@ -687,6 +709,26 @@ export class AgentHostGitService extends Disposable implements IAgentHostGitServ
 			child.on('exit', () => clearTimeout(timer));
 		});
 	}
+}
+
+/**
+ * Returns the shallowest directory from `directories` that contains `file`, or
+ * `undefined` if none does. `file` is a repository-relative, forward-slash path
+ * and every entry in `directories` is expected to end with a trailing `/` (as
+ * produced by `git ls-files --directory`). Walking the path's `/` boundaries
+ * and probing the set is O(path depth) per file, avoiding an O(directories)
+ * scan for each file.
+ */
+function findContainingDirectory(file: string, directories: ReadonlySet<string>): string | undefined {
+	let index = file.indexOf('/');
+	while (index !== -1) {
+		const prefix = file.slice(0, index + 1);
+		if (directories.has(prefix)) {
+			return prefix;
+		}
+		index = file.indexOf('/', index + 1);
+	}
+	return undefined;
 }
 
 /**

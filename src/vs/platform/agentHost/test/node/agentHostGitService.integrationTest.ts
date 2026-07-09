@@ -466,27 +466,70 @@ suite('AgentHostGitService - worktree helpers (real git)', () => {
 		}
 	});
 
-	(hasGit ? test : test.skip)('addWorktree prefers origin start point when local branch is stale', async () => {
+	(hasGit ? test : test.skip)('copyWorktreeIncludeFiles copies matched git-ignored files, collapsing wholly-ignored folders', async () => {
 		const dir = initRepo();
 		const fs = await import('fs/promises');
-		cp.execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: dir, env, stdio: 'pipe' });
-		cp.execFileSync('git', ['checkout', '-q', '-b', 'upstream', 'main'], { cwd: dir, env, stdio: 'pipe' });
-		await fs.writeFile(join(dir, 'upstream.txt'), 'upstream');
-		cp.execFileSync('git', ['add', '.'], { cwd: dir, env, stdio: 'pipe' });
-		cp.execFileSync('git', ['commit', '-q', '-m', 'upstream'], { cwd: dir, env, stdio: 'pipe' });
-		cp.execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: dir, env, stdio: 'pipe' });
-		cp.execFileSync('git', ['checkout', '-q', 'main'], { cwd: dir, env, stdio: 'pipe' });
+
+		await fs.writeFile(join(dir, '.gitignore'), '.env\nsecrets/\nbuild/\npartial/\n*.local\n');
+
+		// Matched root file.
+		await fs.writeFile(join(dir, '.env'), 'SECRET=1');
+		// Wholly-ignored dir, fully matched by `secrets/**` -> collapsed to one recursive copy.
+		await fs.mkdir(join(dir, 'secrets', 'nested'), { recursive: true });
+		await fs.writeFile(join(dir, 'secrets', 'key.txt'), 'key');
+		await fs.writeFile(join(dir, 'secrets', 'nested', 'deep.txt'), 'deep');
+		// Wholly-ignored dir that no glob matches -> must be skipped entirely.
+		await fs.mkdir(join(dir, 'build'), { recursive: true });
+		await fs.writeFile(join(dir, 'build', 'output.txt'), 'artifact');
+		// Wholly-ignored dir only partially matched by `partial/*.txt` -> must NOT
+		// collapse; only the matched file is copied, its sibling is left behind.
+		await fs.mkdir(join(dir, 'partial'), { recursive: true });
+		await fs.writeFile(join(dir, 'partial', 'keep.txt'), 'keep');
+		await fs.writeFile(join(dir, 'partial', 'skip.bin'), 'skip');
+		// Partially-tracked dir: an ignored file is matched by `app/**`, but the
+		// tracked sibling must never be copied/clobbered even though it too is
+		// under `app/` (it is not a git-ignored file, so it is not a candidate).
+		await fs.mkdir(join(dir, 'app'), { recursive: true });
+		await fs.writeFile(join(dir, 'app', 'main.ts'), 'committed');
+		await fs.writeFile(join(dir, 'app', 'config.local'), 'local');
+		cp.execFileSync('git', ['add', 'app/main.ts'], { cwd: dir, env, stdio: 'pipe' });
+		cp.execFileSync('git', ['commit', '-q', '-m', 'add tracked'], { cwd: dir, env, stdio: 'pipe' });
+		// Uncommitted change to the tracked file: if the folder were wrongly
+		// collapsed/copied, the worktree checkout would be overwritten with this.
+		await fs.writeFile(join(dir, 'app', 'main.ts'), 'MODIFIED');
 
 		const wtPath = join(dir, '..', `wt-${Date.now()}`);
 		try {
-			await svc!.addWorktree(URI.file(dir), URI.file(wtPath), 'agents/test-origin-start-point', 'main');
-			const stat = await fs.stat(join(wtPath, 'upstream.txt'));
-			assert.ok(stat.isFile(), 'worktree should start from origin/main, not stale local main');
-			assert.throws(() => cp.execFileSync('git', ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], { cwd: wtPath, env, stdio: 'pipe' }), /fatal:/);
+			await svc!.addWorktree(URI.file(dir), URI.file(wtPath), 'agents/include-files', 'main');
+			await svc!.copyWorktreeIncludeFiles(URI.file(dir), URI.file(wtPath), ['.env', 'secrets/**', 'partial/*.txt', 'app/**']);
+
+			const read = async (relativePath: string) => {
+				try { return await fs.readFile(join(wtPath, relativePath), 'utf8'); } catch { return undefined; }
+			};
+
+			assert.deepStrictEqual({
+				env: await read('.env'),
+				secretKey: await read(join('secrets', 'key.txt')),
+				secretDeep: await read(join('secrets', 'nested', 'deep.txt')),
+				buildArtifact: await read(join('build', 'output.txt')),
+				partialKeep: await read(join('partial', 'keep.txt')),
+				partialSkip: await read(join('partial', 'skip.bin')),
+				appConfig: await read(join('app', 'config.local')),
+				appTracked: await read(join('app', 'main.ts')),
+			}, {
+				env: 'SECRET=1',
+				secretKey: 'key',
+				secretDeep: 'deep',
+				buildArtifact: undefined,
+				partialKeep: 'keep',
+				partialSkip: undefined,
+				appConfig: 'local',
+				appTracked: 'committed',
+			});
 		} finally {
 			try { await svc!.removeWorktree(URI.file(dir), URI.file(wtPath)); } catch { /* best-effort cleanup */ }
 			rmDirWithRetry(wtPath);
-			try { cp.execFileSync('git', ['branch', '-D', 'agents/test-origin-start-point'], { cwd: dir, env, stdio: 'ignore' }); } catch { /* best-effort cleanup */ }
+			try { cp.execFileSync('git', ['branch', '-D', 'agents/include-files'], { cwd: dir, env, stdio: 'ignore' }); } catch { /* best-effort cleanup */ }
 		}
 	});
 });

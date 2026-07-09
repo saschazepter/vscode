@@ -463,7 +463,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 	 */
 	private readonly _provisionalSessions = new Map<string, IProvisionalSession>();
 	private readonly _createdWorktrees = new Map<string, ICreatedWorktree>();
-	private readonly _worktreeIncludeCopyOperations = new Map<string, Promise<void>>();
 	/**
 	 * Per-session announcement (markdown string) that should be emitted as
 	 * a synthetic streaming `delta` event the first time {@link sendMessage}
@@ -2305,7 +2304,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 			return;
 		}
 		const { branchName, worktreePath, repositoryRoot } = meta;
-		await this._waitForWorktreeIncludeCopy(sessionId);
 
 		// Skip if the worktree directory is already gone — nothing to clean.
 		try {
@@ -3265,22 +3263,12 @@ export class CopilotAgent extends Disposable implements IAgent {
 			return;
 		}
 		try {
-			await this._waitForWorktreeIncludeCopy(sessionId);
 			await this._gitService.removeWorktree(worktree.repositoryRoot, worktree.worktree);
 		} catch (error) {
 			this._logService.warn(`[Copilot:${sessionId}] Failed to remove worktree '${worktree.worktree.fsPath}': ${error instanceof Error ? error.message : String(error)}`);
 		} finally {
 			this._createdWorktrees.delete(sessionId);
 		}
-	}
-
-	private async _waitForWorktreeIncludeCopy(sessionId: string): Promise<void> {
-		const copyOperation = this._worktreeIncludeCopyOperations.get(sessionId);
-		if (!copyOperation) {
-			return;
-		}
-
-		await copyOperation;
 	}
 
 	// ---- session metadata persistence --------------------------------------
