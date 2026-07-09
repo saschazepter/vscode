@@ -123,7 +123,9 @@ suite('SessionServerTools', () => {
 	test('getCreateSessionArgs accepts an absolute filesystem path as workspace', () => {
 		const resolved = getCreateSessionArgs({ workspace: '/Users/me/work/repo', prompt: 'hi' }, [], []);
 		assert.strictEqual(resolved.workspace.scheme, 'file');
-		assert.strictEqual(resolved.workspace.fsPath, '/Users/me/work/repo');
+		// Compare `path` (always forward-slash) rather than `fsPath`, which is
+		// platform-specific (backslashes on Windows).
+		assert.strictEqual(resolved.workspace.path, '/Users/me/work/repo');
 	});
 
 	test('getCreateSessionArgs throws on invalid input', () => {
