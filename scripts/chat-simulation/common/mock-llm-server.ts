@@ -472,23 +472,14 @@ const ALL_MODELS: MockModel[] = [
 ];
 
 /**
- * Ids of models that are currently HIDDEN from the advertised model list.
- *
- * Tests use this to simulate a model becoming temporarily unavailable — e.g. a
- * model the user picked in the model picker that is no longer advertised after a
- * window reload — and later becoming available again. Mutated in-process via the
- * handle's {@link MockLlmServerHandle.setHiddenModelIds}, or over the wire via
- * `POST /_control/models` (so a value set before a window reload still applies
- * when the reloaded client re-fetches `/models`). Reset to empty each time a
- * server starts (see {@link _startServer}).
+ * Ids of models currently HIDDEN from the advertised model list, so a test can
+ * simulate a model becoming temporarily unavailable (e.g. after a window
+ * reload) and later available again. Mutated over the wire via
+ * `POST /_control/models`; reset to empty each time a server starts.
  */
 let hiddenModelIds = new Set<string>();
 
-/**
- * The advertised model list with any {@link hiddenModelIds} filtered out. All
- * model-list endpoints (`GET /models`, `GET /models/{id}`, `POST /models/session`)
- * go through this so the "available models" the client sees stay consistent.
- */
+/** The advertised model list with any {@link hiddenModelIds} filtered out. */
 function getVisibleModels(): MockModel[] {
 	return hiddenModelIds.size === 0 ? ALL_MODELS : ALL_MODELS.filter(m => !hiddenModelIds.has(m.id));
 }
@@ -688,8 +679,8 @@ function handleRequest(req: import('http').IncomingMessage, res: import('http').
 	if (path === '/health') { res.writeHead(200); res.end('ok'); return; }
 
 	// -- Test control: mutate the advertised model list ---------------
-	// POST /_control/models  { hidden: string[] }  → hide (or re-show) models so
-	// tests can simulate a model becoming temporarily unavailable across a window
+	// POST /_control/models  { hidden: string[] }  → hide (or re-show) models so a
+	// test can simulate a model becoming temporarily unavailable across a window
 	// reload and later available again. The value persists in-process, so a client
 	// that reloads and re-fetches `/models` sees the updated set.
 	if (path === '/_control/models' && req.method === 'POST') {
@@ -1877,15 +1868,6 @@ interface MockLlmServerHandle {
 	 * default so perf/mem-leak harnesses don't retain request bodies.
 	 */
 	getRequests(): CapturedRequest[];
-	/**
-	 * Hide the given model ids from the advertised model list so tests can
-	 * simulate a model becoming temporarily unavailable (e.g. after a window
-	 * reload). Pass an empty array to re-show all models. Equivalent to the
-	 * `POST /_control/models` endpoint but callable in-process on the handle.
-	 */
-	setHiddenModelIds(ids: string[]): void;
-	/** Return the currently hidden model ids (see {@link setHiddenModelIds}). */
-	getHiddenModelIds(): string[];
 }
 
 /**
@@ -1924,9 +1906,8 @@ function _startServer(port = 0, options?: StartServerOptions): Promise<MockLlmSe
 	return new Promise((resolve, reject) => {
 		let reqCount = 0;
 		let completions = 0;
-		// Start each server with a clean (fully-visible) model list. `hiddenModelIds`
-		// is module-level state shared by the request handlers, so reset it here so a
-		// prior suite's hidden set can't leak into a freshly started server.
+		// Start each server with a clean (fully-visible) model list; `hiddenModelIds`
+		// is module-level state so reset it so a prior suite's set can't leak in.
 		hiddenModelIds = new Set<string>();
 		let requestWaiters: Array<() => boolean> = [];
 		let completionWaiters: Array<() => boolean> = [];
@@ -1994,8 +1975,6 @@ function _startServer(port = 0, options?: StartServerOptions): Promise<MockLlmSe
 					});
 				}),
 				getRequests: () => capturedRequests.slice(),
-				setHiddenModelIds: (ids: string[]) => { hiddenModelIds = new Set(ids); },
-				getHiddenModelIds: () => [...hiddenModelIds],
 			});
 		});
 		server.on('error', reject);
