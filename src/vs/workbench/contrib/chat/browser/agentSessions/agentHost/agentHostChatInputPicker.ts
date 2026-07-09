@@ -36,6 +36,7 @@ import type { IChatWidget } from '../../chat.js';
 import { ChatConfiguration, ChatPermissionLevel, isChatPermissionLevel } from '../../../common/constants.js';
 import { maybeConfirmElevatedPermissionLevel } from '../../../common/chatPermissionWarnings.js';
 import { isUntitledChatSession } from '../../../common/model/chatUri.js';
+import { withChatInputPickerMotion } from '../../widget/input/chatInputPickerActionItem.js';
 import { IAgentHostSessionWorkingDirectoryResolver } from './agentHostSessionWorkingDirectoryResolver.js';
 import { IAgentHostNewSessionFolderService } from './agentHostNewSessionFolderService.js';
 import { IAgentHostUntitledProvisionalSessionService } from './agentHostUntitledProvisionalSessionService.js';
@@ -212,6 +213,11 @@ export function isWellKnownAutoApproveSchema(schema: SessionConfigPropertySchema
  *
  * `Permissions` has no chip — it is surfaced through other UI — but is
  * included so the generic lane does not invent a chip for it.
+ *
+ * `WorktreeBranchPrefix` likewise has no chip: it is a carrier value seeded by
+ * the client (from `git.branchPrefix`) and consumed by the agent for worktree
+ * isolation, never edited by the user. Including it here keeps the generic lane
+ * from surfacing it as a chip in the chat input.
  */
 export const WELL_KNOWN_PICKER_PROPERTIES: ReadonlySet<string> = new Set<string>([
 	SessionConfigKey.Mode,
@@ -219,6 +225,8 @@ export const WELL_KNOWN_PICKER_PROPERTIES: ReadonlySet<string> = new Set<string>
 	SessionConfigKey.Isolation,
 	SessionConfigKey.Branch,
 	SessionConfigKey.Permissions,
+	SessionConfigKey.WorktreeBranchPrefix,
+	SessionConfigKey.WorktreeIncludeFiles,
 	ClaudeSessionConfigKey.PermissionMode,
 ]);
 
@@ -587,8 +595,8 @@ export class AgentHostChatInputPicker extends Disposable {
 				getWidgetAriaLabel: () => localize('agentHostChatInputPicker.ariaLabel', "{0} Picker", ctx.schema.title),
 			},
 			actionItems.length > FILTER_THRESHOLD || ctx.schema.enumDynamic
-				? { showFilter: true, filterPlaceholder: localize('agentHostChatInputPicker.filter', "Filter...") }
-				: undefined,
+				? withChatInputPickerMotion({ showFilter: true, filterPlaceholder: localize('agentHostChatInputPicker.filter', "Filter...") })
+				: withChatInputPickerMotion(undefined),
 		);
 	}
 
