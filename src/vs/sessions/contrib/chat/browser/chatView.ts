@@ -9,7 +9,7 @@ import { MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { autorun, observableValue } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { IContextKey, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -136,6 +136,16 @@ export class ChatView extends AbstractChatView {
 	/** Observable mirror of {@link _isActive} so the voice overlay can react. */
 	private readonly _isActiveObs = observableValue<boolean>(this, true);
 
+	/**
+	 * Per-view mirror of `agentsVoice.contribution`'s `agentsVoiceInitiatedHere`
+	 * key. Bound on this view's own scoped context service (parent of the chat
+	 * widget's), driven solely by whether this view is the active slot while voice
+	 * is connected/connecting. This keeps the post-connect voice controls (Stop,
+	 * Disconnect, Settings) anchored to the session the user is viewing, without
+	 * the multi-widget thrash of a global recompute across every chat widget.
+	 */
+	private readonly _voiceInitiatedHereKey: IContextKey<boolean>;
+
 	constructor(
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IContextKeyService contextKeyService: IContextKeyService,
@@ -156,6 +166,9 @@ export class ChatView extends AbstractChatView {
 		const scopedInstantiationService = this._register(instantiationService.createChild(
 			new ServiceCollection([IContextKeyService, scopedContextKeyService])
 		));
+
+		// Matches `AGENTS_VOICE_INITIATED_HERE` in agentsVoice.contribution.ts.
+		this._voiceInitiatedHereKey = scopedContextKeyService.createKey<boolean>('agentsVoiceInitiatedHere', false);
 
 		this._widget = this._register(scopedInstantiationService.createInstance(
 			ChatWidget,
@@ -199,6 +212,15 @@ export class ChatView extends AbstractChatView {
 
 		// Voice mode transcript overlay + audio-reactive glow on the chat input.
 		this._setupVoiceOverlay();
+
+		// Anchor the post-connect voice controls to this view only while it is the
+		// active slot and voice is connected/connecting.
+		this._register(autorun(reader => {
+			const active = this._isActiveObs.read(reader);
+			const voiceActive = this.voiceSessionController.isConnected.read(reader)
+				|| this.voiceSessionController.isConnecting.read(reader);
+			this._voiceInitiatedHereKey.set(active && voiceActive);
+		}));
 	}
 
 	override dispose(): void {

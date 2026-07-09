@@ -181,59 +181,6 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 registerWorkbenchContribution2(SessionsVoiceBridgeContribution.ID, SessionsVoiceBridgeContribution, WorkbenchPhase.AfterRestored);
 
 /**
- * Context key mirror of `agentsVoice.contribution`'s per-widget
- * `agentsVoiceInitiatedHere` key. The shared voice actions (Stop, Disconnect,
- * Settings, Connecting) only appear in the chat widget whose scoped context has
- * this key set, and it is normally set by `startVoiceInChat` on
- * `IChatWidgetService.lastFocusedWidget`. In the Agents window DOM focus stays
- * on the sessions list, so `lastFocusedWidget` is unreliable and the post-connect
- * voice controls fail to appear. This contribution deterministically binds the
- * key to the active session's chat widget while voice is connected/connecting,
- * so the controls follow the session the user is viewing.
- */
-class SessionsVoiceInitiatedContribution extends Disposable implements IWorkbenchContribution {
-
-	static readonly ID = 'sessions.voiceInitiated';
-
-	/** Matches `AGENTS_VOICE_INITIATED_HERE` in agentsVoice.contribution.ts. */
-	private static readonly _INITIATED_HERE_KEY = 'agentsVoiceInitiatedHere';
-
-	constructor(
-		@IVoiceSessionController private readonly voiceSessionController: IVoiceSessionController,
-		@ISessionsService private readonly sessionsService: ISessionsService,
-		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
-	) {
-		super();
-
-		this._register(autorun(reader => {
-			this.voiceSessionController.isConnected.read(reader);
-			this.voiceSessionController.isConnecting.read(reader);
-			const active = this.sessionsService.activeSession.read(reader);
-			active?.isCreated.read(reader);
-			active?.activeChat.read(reader);
-			this._apply();
-		}));
-		// Widgets can be created after voice connects (opening a session slot).
-		this._register(this.chatWidgetService.onDidAddWidget(() => this._apply()));
-	}
-
-	private _apply(): void {
-		const voiceActive = this.voiceSessionController.isConnected.get() || this.voiceSessionController.isConnecting.get();
-		// Only a created session has a chat widget; a draft new-session (welcome
-		// composer) manages its own `agentsVoiceInitiatedHere` key instead.
-		const active = this.sessionsService.activeSession.get();
-		const activeResource = active?.isCreated.get() ? active.activeChat.get()?.resource : undefined;
-		for (const widget of this.chatWidgetService.getAllWidgets()) {
-			const widgetResource = widget.viewModel?.sessionResource;
-			const isActiveWidget = voiceActive && !!activeResource && !!widgetResource && isEqual(widgetResource, activeResource);
-			widget.scopedContextKeyService.createKey(SessionsVoiceInitiatedContribution._INITIATED_HERE_KEY, isActiveWidget);
-		}
-	}
-}
-
-registerWorkbenchContribution2(SessionsVoiceInitiatedContribution.ID, SessionsVoiceInitiatedContribution, WorkbenchPhase.AfterRestored);
-
-/**
  * Keeps hands-free voice listening anchored to the session the user is dictating
  * into. When the active session changes while the microphone is listening, the
  * turn is only stopped if dictation is actually in progress (so it isn't
