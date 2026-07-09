@@ -554,20 +554,25 @@ export class XtermTerminal extends Disposable implements IXtermTerminal, IDetach
 	}
 
 	/**
-	 * Builds the xterm.js `scrollbar` option. The vertical scrollbar is narrower
-	 * when the Modern UI Update experiment is enabled so it matches the rest of the
-	 * modernized workbench scrollbars. Returns `undefined` when the overview ruler
-	 * is disabled (e.g. detached terminals) to keep xterm's default behavior.
+	 * The width, in pixels, of the vertical scrollbar. Narrower under the Modern
+	 * UI Update experiment so it matches the modernized workbench scrollbars.
+	 */
+	get scrollbarWidth(): number {
+		return this._configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true
+			? TerminalScrollbarWidth.ModernUI
+			: TerminalScrollbarWidth.Default;
+	}
+
+	/**
+	 * Builds the xterm.js `scrollbar` option using {@link scrollbarWidth}. Returns
+	 * `undefined` when the overview ruler is disabled (e.g. detached terminals).
 	 */
 	private _getScrollbarOptions(): { width: number; overviewRuler: { showTopBorder: boolean } } | undefined {
 		if (this._disableOverviewRuler) {
 			return undefined;
 		}
-		const width = this._configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true
-			? TerminalScrollbarWidth.ModernUI
-			: TerminalScrollbarWidth.Default;
 		return {
-			width,
+			width: this.scrollbarWidth,
 			overviewRuler: {
 				showTopBorder: true,
 			},
