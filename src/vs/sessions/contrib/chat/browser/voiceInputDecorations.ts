@@ -17,6 +17,7 @@ import { IKeybindingService } from '../../../../platform/keybinding/common/keybi
 import { IMicCaptureService } from '../../../../workbench/contrib/chat/browser/voiceClient/micCaptureService.js';
 import { ITtsPlaybackService } from '../../../../workbench/contrib/chat/browser/voiceClient/ttsPlaybackService.js';
 import { IVoiceSessionController } from '../../../../workbench/contrib/chat/browser/voiceClient/voiceSessionController.js';
+import { computeVoiceGlowStyle, readVoiceGlowIntensity } from '../../../../workbench/contrib/chat/browser/voiceClient/voiceGlow.js';
 
 export interface IVoiceInputDecorationsServices {
 	readonly voiceSessionController: IVoiceSessionController;
@@ -65,7 +66,7 @@ export function setupVoiceInputDecorations(services: IVoiceInputDecorationsServi
 	// --- Audio-reactive glow (matches main-window behavior) ---
 	const win = dom.getWindow(inputContainerEl);
 	let animFrameId: number | undefined;
-	let glowDataArray: Uint8Array | undefined;
+	const glowDataArrayRef: { value: Uint8Array | undefined } = { value: undefined };
 	const startGlowAnimation = () => {
 		if (animFrameId !== undefined) {
 			return;
@@ -77,42 +78,12 @@ export function setupVoiceInputDecorations(services: IVoiceInputDecorationsServi
 			const analyser = ttsPlaybackService.analyserNode
 				?? (voiceState === 'listening' ? micCaptureService.analyserNode : null)
 				?? null;
-			let intensity: number;
-			if (!analyser) {
-				intensity = 0.3;
-			} else {
-				if (!glowDataArray || glowDataArray.length !== analyser.frequencyBinCount) {
-					glowDataArray = new Uint8Array(analyser.frequencyBinCount);
-				}
-				analyser.getByteFrequencyData(glowDataArray as Uint8Array<ArrayBuffer>);
-				let sum = 0;
-				for (let i = 0; i < glowDataArray.length; i++) {
-					sum += glowDataArray[i];
-				}
-				intensity = Math.min(1, (sum / glowDataArray.length) / 80);
-			}
+			const intensity = readVoiceGlowIntensity(analyser, glowDataArrayRef);
 
-			// Blue when listening, purple when speaking.
-			const rgb = voiceState === 'speaking' ? '163,113,247' : '88,166,255';
 			const transcriptHidden = configurationService.getValue<boolean>('agents.voice.showTranscript') === false;
-			let borderAlpha: number;
-			let shadowSpread: number;
-			let shadowAlpha: number;
-			if (voiceState === 'listening' && transcriptHidden) {
-				borderAlpha = 0.6 + intensity * 0.4;
-				shadowSpread = 6 + intensity * 20;
-				shadowAlpha = 0.25 + intensity * 0.55;
-			} else {
-				borderAlpha = 0.4 + intensity * 0.5;
-				shadowSpread = 4 + intensity * 12;
-				shadowAlpha = 0.15 + intensity * 0.35;
-			}
-			inputContainerEl.style.borderColor = `rgba(${rgb},${borderAlpha})`;
-			if (voiceState === 'listening' && transcriptHidden) {
-				inputContainerEl.style.boxShadow = `0 0 ${shadowSpread}px rgba(${rgb},${shadowAlpha}), 0 0 ${shadowSpread * 2}px rgba(${rgb},${shadowAlpha * 0.3}), inset 0 0 ${shadowSpread * 0.5}px rgba(${rgb},${shadowAlpha * 0.4})`;
-			} else {
-				inputContainerEl.style.boxShadow = `0 0 ${shadowSpread}px rgba(${rgb},${shadowAlpha}), inset 0 0 ${shadowSpread * 0.4}px rgba(${rgb},${shadowAlpha * 0.3})`;
-			}
+			const { borderColor, boxShadow } = computeVoiceGlowStyle(voiceState, intensity, transcriptHidden);
+			inputContainerEl.style.borderColor = borderColor;
+			inputContainerEl.style.boxShadow = boxShadow;
 			inputContainerEl.classList.add('voice-active');
 			inputContainerEl.classList.toggle('voice-listening', voiceState === 'listening');
 		};

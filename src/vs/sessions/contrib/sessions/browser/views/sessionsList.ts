@@ -46,6 +46,7 @@ import { Action, ActionRunner, IAction, Separator, SubmenuAction } from '../../.
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { HoverStyle } from '../../../../../base/browser/ui/hover/hover.js';
 import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.js';
+import { getDefaultHoverDelegate } from '../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { ISessionsManagementService, IActiveSession } from '../../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsService } from '../../../../services/sessions/browser/sessionsService.js';
 import { ISessionsListModelService, SessionSortMode } from '../../../../services/sessions/browser/sessionsListModelService.js';
@@ -330,11 +331,9 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 		private readonly sessionsProvidersService: ISessionsProvidersService,
 		// TEMPORARY — see the note on the `IAgentSessionsService` import above (#320480).
 		private readonly agentSessionsService: IAgentSessionsService,
+		private readonly _voicePlaybackService: IVoicePlaybackService,
 	) {
-		this._voicePlaybackService = this.instantiationService.invokeFunction(accessor => accessor.get(IVoicePlaybackService));
 	}
-
-	private readonly _voicePlaybackService: IVoicePlaybackService;
 
 	renderTemplate(container: HTMLElement): ISessionItemTemplate {
 		const disposables = new DisposableStore();
@@ -428,7 +427,11 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 		// while this session wasn't focused and is being held until it is.
 		const pendingVoiceResource = element.resource;
 		template.pendingVoiceIndicator.className = 'session-pending-voice-indicator ' + ThemeIcon.asClassName(Codicon.unmute);
-		template.pendingVoiceIndicator.title = localize('pendingVoiceResponse', "Voice response ready");
+		template.elementDisposables.add(this.hoverService.setupManagedHover(
+			getDefaultHoverDelegate('mouse'),
+			template.pendingVoiceIndicator,
+			localize('pendingVoiceResponse', "Voice response ready"),
+		));
 		template.elementDisposables.add(autorun(reader => {
 			this._voicePlaybackService.pendingResponseVersion.read(reader);
 			template.pendingVoiceIndicator.classList.toggle('visible', this._voicePlaybackService.hasPendingResponse(pendingVoiceResource));
@@ -1649,6 +1652,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 		}));
 		// TEMPORARY (#320480): see the note on the `IAgentSessionsService` import.
 		const agentSessionsService = instantiationService.invokeFunction(accessor => accessor.get(IAgentSessionsService));
+		const voicePlaybackService = instantiationService.invokeFunction(accessor => accessor.get(IVoicePlaybackService));
 		const sessionRenderer = new SessionItemRenderer(
 			{ grouping: this.options.grouping, isPinned: s => this.isSessionPinned(s), isRead: s => this.isSessionRead(s), visibleSessions: this._sessionsService.visibleSessions, getMultiSelectedSessions: s => this.getMultiSelectedSessions(s), isInChatsSection: s => this._chatsSectionSessionIds.has(s.resource.toString()), showHover: true, approvalRowMaxLines: DEFAULT_APPROVAL_ROW_MAX_LINES, toolbarActions: true },
 			approvalModel,
@@ -1658,6 +1662,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 			hoverService,
 			sessionsProvidersService,
 			agentSessionsService,
+			voicePlaybackService,
 		);
 
 		const showMoreRenderer = new SessionShowMoreRenderer();
@@ -3301,6 +3306,7 @@ export class SessionsFlatList extends Disposable {
 		@IMarkdownRendererService markdownRendererService: IMarkdownRendererService,
 		@IHoverService hoverService: IHoverService,
 		@ISessionsProvidersService sessionsProvidersService: ISessionsProvidersService,
+		@IVoicePlaybackService voicePlaybackService: IVoicePlaybackService,
 	) {
 		super();
 
@@ -3334,6 +3340,7 @@ export class SessionsFlatList extends Disposable {
 			hoverService,
 			sessionsProvidersService,
 			agentSessionsService,
+			voicePlaybackService,
 		);
 
 		this._delegate = new SessionsTreeDelegate(approvalModel, () => false, this.options.approvalRowMaxLines ?? DEFAULT_APPROVAL_ROW_MAX_LINES);

@@ -2303,7 +2303,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				}
 				this._confirmationActivateTimer = setTimeout(() => {
 					this._confirmationActivateTimer = undefined;
-					this._forceThinkingOnce.delete(key);
+					// Clear the whole one-shot set, not just this key: a rapid
+					// switch between two resident confirmation sessions preempts
+					// (clearTimeout) the earlier timer, so its own delete never
+					// runs. Since the set is populated only here and the timer is
+					// one-shot, clearing it wholesale avoids a stuck key that would
+					// otherwise be forced to report `thinking` indefinitely.
+					this._forceThinkingOnce.clear();
 					// Only ship the transition if this session is still active.
 					if (this._getActiveSessionId() === key) {
 						this._sendContext();
