@@ -114,6 +114,33 @@ export interface IAgentHostSkillContentReadReport {
 	pluginVersion: string | undefined;
 }
 
+export interface IAgentHostRepoInfoReport {
+	/** The session id (becomes `conversationId`). */
+	conversationId: string;
+	/** Normalized remote fetch URL (e.g. `https://github.com/owner/repo`). */
+	remoteUrl: string | undefined;
+	/** Repo identity — the `owner/repo` NWO. */
+	repoId: string | undefined;
+	/** Repo host type; the AH only resolves GitHub remotes. */
+	repoType: 'github';
+	/** The Branch Changes baseline commit (merge base of HEAD and the base branch). */
+	headCommitHash: string | undefined;
+	/** Current branch name (dropped from the internal-MSFT sink, matching the extension). */
+	headBranchName: string | undefined;
+	/** JSON array of changed file paths (dropped from the internal-MSFT sink). */
+	fileRelativePaths: string | undefined;
+	/** Raw unified `git diff` patch (AH shape; `undefined` when there are no changes or the patch is too large). */
+	diffsJSON: string | undefined;
+	/** Capture outcome. */
+	result: 'success' | 'noChanges' | 'diffTooLarge';
+	/** Whether this is the session's active repository — always `'true'` in the single-repo AH. */
+	isActiveRepository: 'true' | 'false';
+	/** Number of changed files. */
+	changedFileCount: number;
+	/** Size in bytes of the diff patch. */
+	diffSizeBytes: number;
+}
+
 export interface IAgentHostToolCallStalledEvent {
 	provider: string;
 	agentSessionId: string;
@@ -373,6 +400,51 @@ export class AgentHostTelemetryReporter {
 		});
 		restricted.sendEnhancedGHTelemetryEvent('skillContentRead', plaintextProps);
 		restricted.sendInternalMSFTTelemetryEvent('skillContentRead', plaintextProps);
+	}
+
+	/**
+	 * Mirrors the Copilot extension's restricted `request.repoInfo` event (`repoInfoTelemetry.ts`) —
+	 * repo identity plus the branch/uncommitted diff for the session's working tree. The extension
+	 * emits it per request (begin + end) per repo from the VS Code git-extension API; the agent host
+	 * gathers the equivalent host-side via `IAgentHostGitService` and emits once per turn for the
+	 * single session working tree (main agent only), so `repoCount=1`/`repoIndex=0`/
+	 * `isActiveRepository='true'` and only the `begin` location. `diffsJSON` carries the raw unified
+	 * `git diff` patch (a documented AH shape), not the extension's per-file JSON array;
+	 * `workspaceFileCount` is dropped (0). Internal MSFT drops the branch name and file paths,
+	 * matching the extension. No-ops without the restricted surface.
+	 */
+	reportRepoInfo(report: IAgentHostRepoInfoReport): void {
+		const restricted = this._restricted;
+		if (!restricted) {
+			return;
+		}
+		const measurements = {
+			workspaceFileCount: 0,
+			changedFileCount: report.changedFileCount,
+			diffSizeBytes: report.diffSizeBytes,
+			repoIndex: 0,
+			repoCount: 1,
+		};
+		// Fields shared by both sinks. Internal MSFT additionally drops `headBranchName` and
+		// `fileRelativePaths` (matches the extension's `msftProperties`), so multiplex each set
+		// separately rather than stripping post-multiplex (a long value may span numbered keys).
+		const sharedProps = {
+			conversationId: report.conversationId,
+			location: 'begin',
+			remoteUrl: report.remoteUrl,
+			repoId: report.repoId,
+			repoType: report.repoType,
+			headCommitHash: report.headCommitHash,
+			diffsJSON: report.diffsJSON,
+			result: report.result,
+			isActiveRepository: report.isActiveRepository,
+		};
+		restricted.sendEnhancedGHTelemetryEvent('request.repoInfo', multiplexProperties({
+			...sharedProps,
+			headBranchName: report.headBranchName,
+			fileRelativePaths: report.fileRelativePaths,
+		}), measurements);
+		restricted.sendInternalMSFTTelemetryEvent('request.repoInfo', multiplexProperties(sharedProps), measurements);
 	}
 
 	turnCompleted(report: IAgentHostTurnCompletedReport): void {

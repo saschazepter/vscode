@@ -45,6 +45,7 @@ import { CopilotSessionWrapper } from './copilotSessionWrapper.js';
 import { clientToolNamesFromSnapshot, type CopilotSessionLaunchPlan, type IActiveClientSnapshot, type ICopilotSessionLauncher, type ICopilotSessionRuntime } from './copilotSessionLauncher.js';
 import { ActiveClientToolSet } from '../activeClientState.js';
 import { AgentHostTelemetryReporter } from '../agentHostTelemetryReporter.js';
+import { AgentHostRepoInfoTelemetry } from '../agentHostRepoInfoTelemetry.js';
 import { PendingRequestRegistry } from '../../common/pendingRequestRegistry.js';
 import { buildCopilotSystemNotification } from './copilotSystemNotification.js';
 import { parseLeadingSlashCommand } from './copilotSlashCommandCompletionProvider.js';
@@ -423,6 +424,8 @@ class CopilotTurn {
 	parallelToolCallsTotal = 0;
 	/** Model of the most recent round, reported as the turn's model. */
 	lastModel: string | undefined;
+	/** Whether the restricted `request.repoInfo` event has been emitted for this turn (once-per-turn guard). */
+	repoInfoReported = false;
 
 	constructor(readonly id: string, readonly ordinal: number, readonly senderClientId: string | undefined) { }
 
@@ -651,6 +654,7 @@ export class CopilotAgentSession extends Disposable {
 
 	/** Stateless reporter used to emit restricted GH/MSFT telemetry for this session's model calls. */
 	private readonly _telemetryReporter: AgentHostTelemetryReporter;
+	private readonly _repoInfoTelemetry: AgentHostRepoInfoTelemetry;
 
 	constructor(
 		options: ICopilotAgentSessionOptions,
@@ -675,7 +679,7 @@ export class CopilotAgentSession extends Disposable {
 		this._serverToolHost = options.serverToolHost;
 		this._platform = options.platform ?? process.platform;
 		this._telemetryReporter = new AgentHostTelemetryReporter(this._telemetryService);
-
+		this._repoInfoTelemetry = this._instantiationService.createInstance(AgentHostRepoInfoTelemetry, this._telemetryReporter);
 		this._appliedSnapshot = options.clientSnapshot ?? { tools: [], plugins: [], mcpServers: {} };
 		this._clientToolNames = clientToolNamesFromSnapshot(this._appliedSnapshot);
 		// Share the agent's live ActiveClientToolSet when provided so client
@@ -2780,6 +2784,12 @@ export class CopilotAgentSession extends Disposable {
 				this._telemetryReporter.assistantMessageReceived(this.sessionUri.toString(), e.data.serviceRequestId, this._appliedSnapshot.tools);
 				// Restricted `conversation.messageText` (source=model): the model's raw response text.
 				this._telemetryReporter.modelMessageText(this.sessionUri.toString(), e.data.content, this._turnOrdinal, e.data.serviceRequestId);
+				// Restricted `request.repoInfo`: gather the working-tree repo identity + branch diff once
+				// per turn (at the first model-call boundary, ~the extension's `begin`), fire-and-forget.
+				if (this._currentTurn && !this._currentTurn.repoInfoReported) {
+					this._currentTurn.repoInfoReported = true;
+					void this._repoInfoTelemetry.report(this.sessionUri.toString(), this._workingDirectory);
+				}
 				// Accumulate the per-turn tool-call aggregate for the restricted `toolCallDetails` event.
 				// Every main-agent `assistant.message` is one model-call round (matches the extension's
 				// `numRequests = toolCallRounds.length`, which counts the final tool-free response round

@@ -176,6 +176,20 @@ export interface IAgentHostGitService {
 	computeSessionFileDiffs(workingDirectory: URI, options: IComputeSessionFileDiffsOptions): Promise<readonly ISessionFileDiff[] | undefined>;
 
 	/**
+	 * Returns a unified diff **patch** (`git diff --patch`) of the working
+	 * tree against the Branch Changes baseline (the merge base of the current
+	 * branch and {@link IComputeSessionFileDiffsOptions.baseBranch}, or `HEAD`
+	 * when no base branch is available). Covers committed-on-branch and
+	 * working-tree changes to tracked files; untracked file *content* is not
+	 * included (their paths still surface via {@link computeSessionFileDiffs}).
+	 *
+	 * Returns `undefined` when {@link workingDirectory} is not a git work
+	 * tree. Used for restricted `request.repoInfo` telemetry, which reports
+	 * the raw patch as its diff payload.
+	 */
+	getSessionDiffPatch(workingDirectory: URI, options: { readonly baseBranch?: string }): Promise<string | undefined>;
+
+	/**
 	 * Resolves the commit-ish the **Branch Changes** baseline is measured from:
 	 * the merge-base of `HEAD` and `baseBranch` (preferring the
 	 * `origin/<baseBranch>` remote-tracking ref when it exists), falling back to

@@ -60,6 +60,7 @@ class TestGitService implements IAgentHostGitService {
 		this.calls.push('computeSessionFileDiffs');
 		return this.diffs;
 	}
+	async getSessionDiffPatch(): Promise<string | undefined> { return undefined; }
 	async showBlob(): Promise<undefined> { return undefined; }
 	async captureWorkingTreeAsTree(): Promise<undefined> { return undefined; }
 	async commitTree(): Promise<undefined> { return undefined; }

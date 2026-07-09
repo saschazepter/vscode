@@ -277,6 +277,18 @@ export class AgentHostGitService implements IAgentHostGitService {
 		return parseGitDiffRawNumstat(rawDiffOutput, repositoryRoot, options.sessionUri, mergeBaseCommit);
 	}
 
+	async getSessionDiffPatch(workingDirectory: URI, options: { readonly baseBranch?: string }): Promise<string | undefined> {
+		const repositoryRoot = await this.getRepositoryRoot(workingDirectory);
+		if (!repositoryRoot) {
+			return undefined;
+		}
+		const mergeBaseCommit = await this._resolveBranchMergeBaseCommit(repositoryRoot, options.baseBranch);
+		// Unified patch of committed-on-branch and working-tree changes to tracked files
+		// against the baseline. Untracked file content is not included here (their paths
+		// still surface via `computeSessionFileDiffs`), avoiding the temp-index overhead.
+		return this._runGit(repositoryRoot, ['diff', '--patch', '--diff-filter=ADMR', mergeBaseCommit, '--']);
+	}
+
 	async resolveBranchBaselineCommit(workingDirectory: URI, baseBranch?: string): Promise<string | undefined> {
 		const repositoryRoot = await this.getRepositoryRoot(workingDirectory);
 		if (!repositoryRoot) {
