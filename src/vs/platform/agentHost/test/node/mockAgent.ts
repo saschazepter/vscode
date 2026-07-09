@@ -49,6 +49,8 @@ export class MockAgent implements IAgent {
 	readonly onDidSessionProgress = this._onDidSessionProgress.event;
 	private readonly _onDidSendMessage = new Emitter<IMockSendMessageCall>();
 	readonly onDidSendMessage = this._onDidSendMessage.event;
+	private readonly _onDidRespondToPermissionRequest = new Emitter<{ requestId: string; approved: boolean }>();
+	readonly onDidRespondToPermissionRequest = this._onDidRespondToPermissionRequest.event;
 	private readonly _models = observableValue<readonly IAgentModelInfo[]>(this, []);
 	readonly models = this._models;
 
@@ -170,7 +172,9 @@ export class MockAgent implements IAgent {
 	}
 
 	respondToPermissionRequest(requestId: string, approved: boolean): void {
-		this.respondToPermissionCalls.push({ requestId, approved });
+		const response = { requestId, approved };
+		this.respondToPermissionCalls.push(response);
+		this._onDidRespondToPermissionRequest.fire(response);
 	}
 
 	respondToUserInputRequest(): void {
@@ -328,6 +332,7 @@ export class MockAgent implements IAgent {
 	dispose(): void {
 		this._onDidSessionProgress.dispose();
 		this._onDidSendMessage.dispose();
+		this._onDidRespondToPermissionRequest.dispose();
 		this._onDidCustomizationsChange.dispose();
 	}
 }

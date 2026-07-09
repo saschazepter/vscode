@@ -214,6 +214,13 @@ suite('AgentSideEffects', () => {
 		await Event.toPromise(Event.filter(agent.onDidSendMessage, () => agent.sendMessageCalls.length >= count));
 	}
 
+	async function waitForPermissionResponses(count: number): Promise<void> {
+		if (agent.respondToPermissionCalls.length >= count) {
+			return;
+		}
+		await Event.toPromise(Event.filter(agent.onDidRespondToPermissionRequest, () => agent.respondToPermissionCalls.length >= count));
+	}
+
 	setup(async () => {
 		fileService = disposables.add(new FileService(new NullLogService()));
 		const memFs = disposables.add(new InMemoryFileSystemProvider());
@@ -1915,6 +1922,56 @@ suite('AgentSideEffects', () => {
 				'tool call should advance to PendingConfirmation for permission-gated tool_ready');
 		});
 
+		test('user confirmation still transitions a running tool to PendingConfirmation', async () => {
+			setupSession();
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+			const envelopes: ActionEnvelope[] = [];
+			disposables.add(stateManager.onDidEmitEnvelope(e => envelopes.push(e)));
+
+			agent.fireProgress({
+				kind: 'action', resource: URI.parse(defaultChatUri),
+				action: {
+					type: ActionType.ChatToolCallStart, turnId: 'turn-1',
+					toolCallId: 'tc-reconfirm', toolName: 'shell', displayName: 'Shell', contributor: undefined,
+				},
+			});
+			agent.fireProgress({
+				kind: 'action', resource: URI.parse(defaultChatUri),
+				action: {
+					type: ActionType.ChatToolCallReady, turnId: 'turn-1',
+					toolCallId: 'tc-reconfirm', invocationMessage: 'Run command', toolInput: 'rm -rf /',
+					confirmed: ToolCallConfirmationReason.NotNeeded,
+				},
+			});
+			agent.fireProgress({
+				kind: 'pending_confirmation', chat: URI.parse(defaultChatUri),
+				state: {
+					status: ToolCallStatus.PendingConfirmation,
+					toolCallId: 'tc-reconfirm', toolName: 'shell', displayName: 'Shell',
+					invocationMessage: 'Run command outside the sandbox', toolInput: 'rm -rf /',
+					confirmationTitle: 'Run command?',
+				},
+				requestSandboxBypass: true,
+			});
+
+			const state = await waitForState(stateManager, () => {
+				const current = stateManager.getSessionState(sessionUri.toString());
+				const part = current?.activeTurn?.responseParts[0];
+				return part?.kind === ResponsePartKind.ToolCall && part.toolCall.status === ToolCallStatus.PendingConfirmation ? current : undefined;
+			});
+			const part = state.activeTurn?.responseParts[0];
+			assert.deepStrictEqual({
+				readyActionCount: envelopes.filter(envelope => envelope.action.type === ActionType.ChatToolCallReady).length,
+				status: part?.kind === ResponsePartKind.ToolCall ? part.toolCall.status : undefined,
+				invocationMessage: part?.kind === ResponsePartKind.ToolCall ? part.toolCall.invocationMessage : undefined,
+			}, {
+				readyActionCount: 2,
+				status: ToolCallStatus.PendingConfirmation,
+				invocationMessage: 'Run command outside the sandbox',
+			});
+		});
+
 		test('tool_ready for an additional chat is emitted on that chat channel', async () => {
 			setupSession();
 			const chatUri = buildChatUri(sessionUri.toString(), 'peer');
@@ -2131,7 +2188,7 @@ suite('AgentSideEffects', () => {
 			// (auto-approved because read is inside the working directory).
 			// _handleToolReady is async (awaits getAutoApproval -> realpath),
 			// so wait for the approval to settle deterministically.
-			await waitForState(stateManager, () => agent.respondToPermissionCalls.length > 0 || undefined);
+			await waitForPermissionResponses(1);
 			assert.deepStrictEqual(agent.respondToPermissionCalls, [
 				{ requestId: 'tc-orphan', approved: true },
 			], 'pending_confirmation without active turn should still be processed and auto-approved');
@@ -2265,7 +2322,7 @@ suite('AgentSideEffects', () => {
 				permissionKind: 'write', permissionPath: '/workspace/.env',
 			});
 
-			await waitForState(stateManager, () => agent.respondToPermissionCalls.length > 0 || undefined);
+			await waitForPermissionResponses(1);
 			// .env would normally be blocked, but session-level auto-approve overrides
 			assert.deepStrictEqual(agent.respondToPermissionCalls, [
 				{ requestId: 'tc-bypass-1', approved: true },
@@ -2276,6 +2333,8 @@ suite('AgentSideEffects', () => {
 			setupSessionWithConfig('autoApprove');
 			startTurn('turn-1');
 			disposables.add(sideEffects.registerProgressListener(agent));
+			const envelopes: ActionEnvelope[] = [];
+			disposables.add(stateManager.onDidEmitEnvelope(e => envelopes.push(e)));
 
 			agent.fireProgress({
 				kind: 'action', resource: URI.parse(defaultChatUri),
@@ -2289,7 +2348,7 @@ suite('AgentSideEffects', () => {
 				kind: 'action', resource: URI.parse(defaultChatUri),
 				action: {
 					type: ActionType.ChatToolCallReady, turnId: 'turn-1',
-					toolCallId: 'tc-bypass-shell-1', invocationMessage: 'Run rm -rf /', toolInput: undefined,
+					toolCallId: 'tc-bypass-shell-1', invocationMessage: 'Run rm -rf /', toolInput: 'rm -rf /',
 					confirmed: ToolCallConfirmationReason.NotNeeded,
 				},
 			});
@@ -2299,21 +2358,147 @@ suite('AgentSideEffects', () => {
 				state: {
 					status: ToolCallStatus.PendingConfirmation,
 					toolCallId: 'tc-bypass-shell-1', toolName: '', displayName: '',
-					invocationMessage: 'Run rm -rf /', toolInput: 'rm -rf /',
-					confirmationTitle: undefined, edits: undefined,
+					invocationMessage: 'Delete the root directory', toolInput: 'rm -rf /',
+					confirmationTitle: 'Run in terminal?', edits: undefined,
+				},
+				permissionKind: 'shell', permissionPath: undefined,
+			});
+			await waitForPermissionResponses(1);
+			const state = stateManager.getSessionState(sessionUri.toString());
+			const toolCallPart = state?.activeTurn?.responseParts.find(part => part.kind === ResponsePartKind.ToolCall && part.toolCall.toolCallId === 'tc-bypass-shell-1');
+			assert.deepStrictEqual({
+				permissionCalls: agent.respondToPermissionCalls,
+				readyActionCount: envelopes.filter(envelope => envelope.action.type === ActionType.ChatToolCallReady).length,
+				invocationMessage: toolCallPart?.kind === ResponsePartKind.ToolCall ? toolCallPart.toolCall.invocationMessage : undefined,
+			}, {
+				permissionCalls: [{ requestId: 'tc-bypass-shell-1', approved: true }],
+				readyActionCount: 1,
+				invocationMessage: 'Run rm -rf /',
+			});
+		});
+
+		test('auto-approved sub-permissions do not replace running tool state', async () => {
+			setupSessionWithConfig('autoApprove');
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+			const envelopes: ActionEnvelope[] = [];
+			disposables.add(stateManager.onDidEmitEnvelope(e => envelopes.push(e)));
+
+			agent.fireProgress({
+				kind: 'action', resource: URI.parse(defaultChatUri),
+				action: {
+					type: ActionType.ChatToolCallStart, turnId: 'turn-1',
+					toolCallId: 'tc-shell-changed', toolName: 'shell', displayName: 'Shell', contributor: undefined,
+					_meta: { toolKind: undefined, language: undefined },
+				},
+			});
+			agent.fireProgress({
+				kind: 'action', resource: URI.parse(defaultChatUri),
+				action: {
+					type: ActionType.ChatToolCallReady, turnId: 'turn-1',
+					toolCallId: 'tc-shell-changed', invocationMessage: 'Run echo one', toolInput: 'echo one',
+					confirmed: ToolCallConfirmationReason.NotNeeded,
+				},
+			});
+
+			agent.fireProgress({
+				kind: 'pending_confirmation', chat: URI.parse(defaultChatUri),
+				state: {
+					status: ToolCallStatus.PendingConfirmation,
+					toolCallId: 'tc-shell-changed', toolName: '', displayName: '',
+					invocationMessage: 'Run echo two', toolInput: 'echo two',
+					confirmationTitle: 'Run in terminal?', edits: undefined,
+				},
+				permissionKind: 'shell', permissionPath: undefined,
+			});
+			agent.fireProgress({
+				kind: 'pending_confirmation', chat: URI.parse(defaultChatUri),
+				state: {
+					status: ToolCallStatus.PendingConfirmation,
+					toolCallId: 'tc-shell-changed', toolName: '', displayName: '',
+					invocationMessage: 'Run echo three', toolInput: 'echo three',
+					confirmationTitle: 'Run in terminal?', edits: undefined,
 				},
 				permissionKind: 'shell', permissionPath: undefined,
 			});
 
-			await waitForState(stateManager, () => agent.respondToPermissionCalls.length > 0 || undefined);
-			// Dangerous command would normally be blocked, but session-level
-			// bypass auto-approve overrides.
-			assert.deepStrictEqual(agent.respondToPermissionCalls, [
-				{ requestId: 'tc-bypass-shell-1', approved: true },
-			]);
+			await waitForPermissionResponses(2);
+			const state = stateManager.getSessionState(sessionUri.toString());
+			const toolCallPart = state?.activeTurn?.responseParts.find(part => part.kind === ResponsePartKind.ToolCall && part.toolCall.toolCallId === 'tc-shell-changed');
+			assert.deepStrictEqual({
+				permissionCalls: agent.respondToPermissionCalls,
+				readyActionCount: envelopes.filter(envelope => envelope.action.type === ActionType.ChatToolCallReady).length,
+				invocationMessage: toolCallPart?.kind === ResponsePartKind.ToolCall ? toolCallPart.toolCall.invocationMessage : undefined,
+				toolInput: toolCallPart?.kind === ResponsePartKind.ToolCall && toolCallPart.toolCall.status === ToolCallStatus.Running ? toolCallPart.toolCall.toolInput : undefined,
+			}, {
+				permissionCalls: [
+					{ requestId: 'tc-shell-changed', approved: true },
+					{ requestId: 'tc-shell-changed', approved: true },
+				],
+				readyActionCount: 1,
+				invocationMessage: 'Run echo one',
+				toolInput: 'echo one',
+			});
 		});
 
-		test('does NOT auto-approve a shell command that opted out of the sandbox, even in bypass mode', () => {
+		test('auto-approved initial readiness is applied before the provider resumes', async () => {
+			setupSessionWithConfig('autoApprove');
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+			const envelopes: ActionEnvelope[] = [];
+			disposables.add(stateManager.onDidEmitEnvelope(e => envelopes.push(e)));
+			disposables.add(agent.onDidRespondToPermissionRequest(({ requestId }) => {
+				agent.fireProgress({
+					kind: 'action', resource: URI.parse(defaultChatUri),
+					action: {
+						type: ActionType.ChatToolCallComplete,
+						turnId: 'turn-1',
+						toolCallId: requestId,
+						result: { success: true, pastTenseMessage: 'Wrote file' },
+					},
+				});
+			}));
+
+			agent.fireProgress({
+				kind: 'action', resource: URI.parse(defaultChatUri),
+				action: {
+					type: ActionType.ChatToolCallStart, turnId: 'turn-1',
+					toolCallId: 'tc-reentrant', toolName: 'write', displayName: 'Write', contributor: undefined,
+				},
+			});
+			agent.fireProgress({
+				kind: 'pending_confirmation', chat: URI.parse(defaultChatUri),
+				state: {
+					status: ToolCallStatus.PendingConfirmation,
+					toolCallId: 'tc-reentrant', toolName: 'write', displayName: 'Write',
+					invocationMessage: 'Write file', toolInput: '{"path":"file.ts"}',
+					confirmationTitle: 'Write file?',
+				},
+				permissionKind: 'write', permissionPath: '/workspace/file.ts',
+			});
+
+			const state = await waitForState(stateManager, () => {
+				const current = stateManager.getSessionState(sessionUri.toString());
+				const part = current?.activeTurn?.responseParts[0];
+				return part?.kind === ResponsePartKind.ToolCall && part.toolCall.status === ToolCallStatus.Completed ? current : undefined;
+			});
+			const part = state.activeTurn?.responseParts[0];
+			assert.deepStrictEqual({
+				permissionCalls: agent.respondToPermissionCalls,
+				actionTypes: envelopes.map(envelope => envelope.action.type),
+				status: part?.kind === ResponsePartKind.ToolCall ? part.toolCall.status : undefined,
+			}, {
+				permissionCalls: [{ requestId: 'tc-reentrant', approved: true }],
+				actionTypes: [
+					ActionType.ChatToolCallStart,
+					ActionType.ChatToolCallReady,
+					ActionType.ChatToolCallComplete,
+				],
+				status: ToolCallStatus.Completed,
+			});
+		});
+
+		test('does NOT auto-approve a shell command that opted out of the sandbox, even in bypass mode', async () => {
 			setupSessionWithConfig('autoApprove');
 			startTurn('turn-1');
 			disposables.add(sideEffects.registerProgressListener(agent));
@@ -2339,11 +2524,21 @@ suite('AgentSideEffects', () => {
 				requestSandboxBypass: true,
 			});
 
-			// A read-only command like `cat` (or even session-level bypass)
-			// would normally auto-approve, but opting out of the sandbox is an
-			// elevation of privilege the user must confirm, so no auto-approval
-			// response is sent.
-			assert.deepStrictEqual(agent.respondToPermissionCalls, []);
+			const state = await waitForState(stateManager, () => {
+				const current = stateManager.getSessionState(sessionUri.toString());
+				const part = current?.activeTurn?.responseParts[0];
+				return part?.kind === ResponsePartKind.ToolCall && part.toolCall.status === ToolCallStatus.PendingConfirmation ? current : undefined;
+			});
+			const part = state.activeTurn?.responseParts[0];
+			assert.deepStrictEqual({
+				permissionCalls: agent.respondToPermissionCalls,
+				options: part?.kind === ResponsePartKind.ToolCall && part.toolCall.status === ToolCallStatus.PendingConfirmation
+					? part.toolCall.options?.map(option => option.id)
+					: undefined,
+			}, {
+				permissionCalls: [],
+				options: ['allow-once', 'skip'],
+			});
 		});
 
 		test('marks pending client tool approval for client-side auto-approval in bypass mode', async () => {
@@ -2477,7 +2672,7 @@ suite('AgentSideEffects', () => {
 				permissionKind: 'write', permissionPath: '/workspace/.env',
 			});
 
-			await waitForState(stateManager, () => agent.respondToPermissionCalls.length > 0 || undefined);
+			await waitForPermissionResponses(1);
 			// Should now be auto-approved after config change
 			assert.deepStrictEqual(agent.respondToPermissionCalls, [
 				{ requestId: 'tc-mid-1', approved: true },
@@ -2493,6 +2688,8 @@ suite('AgentSideEffects', () => {
 			setupSession(URI.file('/workspace').toString());
 			startTurn('turn-1');
 			disposables.add(sideEffects.registerProgressListener(agent));
+			const envelopes: ActionEnvelope[] = [];
+			disposables.add(stateManager.onDidEmitEnvelope(e => envelopes.push(e)));
 
 			agent.fireProgress({
 				kind: 'action', resource: URI.parse(defaultChatUri),
@@ -2522,11 +2719,18 @@ suite('AgentSideEffects', () => {
 				permissionKind: 'write', permissionPath: '/workspace/src/app.ts',
 			});
 
-			await waitForState(stateManager, () => agent.respondToPermissionCalls.length > 0 || undefined);
-			// Auto-approved writes call respondToPermissionRequest directly
-			assert.deepStrictEqual(agent.respondToPermissionCalls, [
-				{ requestId: 'tc-auto-1', approved: true },
-			]);
+			await waitForPermissionResponses(1);
+			const state = stateManager.getSessionState(sessionUri.toString());
+			const toolCallPart = state?.activeTurn?.responseParts.find(part => part.kind === ResponsePartKind.ToolCall && part.toolCall.toolCallId === 'tc-auto-1');
+			assert.deepStrictEqual({
+				permissionCalls: agent.respondToPermissionCalls,
+				readyActionCount: envelopes.filter(envelope => envelope.action.type === ActionType.ChatToolCallReady).length,
+				invocationMessage: toolCallPart?.kind === ResponsePartKind.ToolCall ? toolCallPart.toolCall.invocationMessage : undefined,
+			}, {
+				permissionCalls: [{ requestId: 'tc-auto-1', approved: true }],
+				readyActionCount: 1,
+				invocationMessage: 'Write file',
+			});
 		});
 
 		test('blocks writes to .env files', () => {
@@ -2719,7 +2923,7 @@ suite('AgentSideEffects', () => {
 				permissionKind: 'read', permissionPath: '/workspace/src/app.ts',
 			});
 
-			await waitForState(stateManager, () => agent.respondToPermissionCalls.length > 0 || undefined);
+			await waitForPermissionResponses(1);
 			assert.deepStrictEqual(agent.respondToPermissionCalls, [
 				{ requestId: 'tc-read-1', approved: true },
 			]);
@@ -3409,7 +3613,7 @@ suite('AgentSideEffects', () => {
 				permissionKind: 'read', permissionPath: '/workspace/src/app.ts',
 			});
 
-			await waitForState(stateManager, () => agent.respondToPermissionCalls.length > 0 || undefined);
+			await waitForPermissionResponses(1);
 			assert.deepStrictEqual(agent.respondToPermissionCalls, [
 				{ requestId: 'inner-read-1', approved: true },
 			]);
@@ -3470,7 +3674,7 @@ suite('AgentSideEffects', () => {
 				permissionKind: 'write', permissionPath: '/tmp/foo',
 			});
 
-			await waitForState(stateManager, () => agent.respondToPermissionCalls.length > 0 || undefined);
+			await waitForPermissionResponses(1);
 			assert.deepStrictEqual(agent.respondToPermissionCalls, [
 				{ requestId: 'inner-write-1', approved: true },
 			]);
@@ -3750,7 +3954,7 @@ suite('AgentSideEffects', () => {
 				permissionKind: 'custom-tool', permissionPath: undefined,
 			});
 
-			await waitForState(stateManager, () => agent.respondToPermissionCalls.length > 0 || undefined);
+			await waitForPermissionResponses(1);
 			assert.deepStrictEqual(agent.respondToPermissionCalls, [
 				{ requestId: 'tc-perm-3', approved: true },
 			]);
@@ -3817,7 +4021,7 @@ suite('AgentSideEffects', () => {
 				permissionKind: 'custom-tool', permissionPath: undefined,
 			});
 
-			await waitForState(stateManager, () => agent.respondToPermissionCalls.length > 0 || undefined);
+			await waitForPermissionResponses(1);
 			assert.deepStrictEqual(agent.respondToPermissionCalls, [
 				{ requestId: 'inner-perm-1', approved: true },
 			]);

@@ -913,9 +913,8 @@ export class AgentSideEffects extends Disposable {
 
 	/**
 	 * Handles a `pending_confirmation` signal end-to-end: checks for
-	 * auto-approval via the permission manager, and if not auto-approved,
-	 * dispatches the `ChatToolCallReady` action with confirmation options
-	 * for the client.
+	 * auto-approval via the permission manager and dispatches
+	 * `ChatToolCallReady` only when the client-visible state must change.
 	 */
 	private async _handleToolReady(e: IAgentToolPendingConfirmationSignal, sessionKey: ProtocolURI, turnId: string, agent: IAgent): Promise<void> {
 		const approvalEvent = {
@@ -939,10 +938,15 @@ export class AgentSideEffects extends Disposable {
 			effective = { ...e, state: { ...e.state, _meta: { ...toolCall?._meta, ...e.state._meta, ...toToolCallMeta({ autoApproveBySetting: true }) } } };
 		} else if (autoApproval !== undefined) {
 			this._toolCallAgents.delete(`${sessionKey}:${e.state.toolCallId}`);
+			if (toolCall?.status === ToolCallStatus.Streaming) {
+				const autoApproved = { ...e, state: { ...e.state, confirmationTitle: undefined } };
+				this._stateManager.dispatchServerAction(
+					sessionKey,
+					this._permissionManager.createToolReadyAction(autoApproved, sessionKey, turnId)
+				);
+			}
 			agent.respondToPermissionRequest(e.state.toolCallId, true);
-			// Strip confirmationTitle so createToolReadyAction emits the
-			// auto-approved (no-options) action.
-			effective = { ...e, state: { ...e.state, confirmationTitle: undefined } };
+			return;
 		} else if (effective.state.confirmationTitle) {
 			// Make sure the agent is registered for the eventual `ChatToolCallConfirmed` response.
 			this._toolCallAgents.set(`${sessionKey}:${e.state.toolCallId}`, agent.id);

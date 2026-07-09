@@ -1086,7 +1086,6 @@ export function getPermissionDisplay(request: ITypedPermissionRequest, workingDi
 } {
 	const path = str(request.path) ?? str(request.fileName);
 	const fullCommandText = str(request.fullCommandText);
-	const intention = str(request.intention);
 	const serverName = str(request.serverName);
 	const toolName = str(request.toolName);
 
@@ -1103,7 +1102,7 @@ export function getPermissionDisplay(request: ITypedPermissionRequest, workingDi
 			const cleanedCommand = typeof shellParams?.command === 'string' ? shellParams.command : fullCommandText;
 			return {
 				confirmationTitle: shellConfirmationTitle,
-				invocationMessage: intention ?? getInvocationMessage(CopilotToolName.Bash, getToolDisplayName(CopilotToolName.Bash), cleanedCommand ? { command: cleanedCommand } : undefined),
+				invocationMessage: getInvocationMessage(CopilotToolName.Bash, getToolDisplayName(CopilotToolName.Bash), cleanedCommand ? { command: cleanedCommand } : undefined),
 				toolInput: cleanedCommand,
 				permissionKind: 'shell',
 				permissionPath: path,

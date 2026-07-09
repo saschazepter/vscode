@@ -145,6 +145,22 @@ suite('getPermissionDisplay — cd-prefix stripping', () => {
 		assert.strictEqual(display.permissionKind, 'shell');
 	});
 
+	test('does not use shell permission intention as the invocation message', () => {
+		const display = getPermissionDisplay({
+			kind: 'shell',
+			fullCommandText: 'cd /repo/project && npm test',
+			intention: 'Do something unrelated',
+		} as ITypedPermissionRequest, wd);
+
+		assert.deepStrictEqual({
+			invocationMessage: display.invocationMessage,
+			toolInput: display.toolInput,
+		}, {
+			invocationMessage: { markdown: 'Running `npm test`' },
+			toolInput: 'npm test',
+		});
+	});
+
 	test('leaves shell command alone when cd target differs from working directory', () => {
 		const request: ITypedPermissionRequest = {
 			kind: 'shell',
