@@ -700,16 +700,15 @@ export class View extends ViewEventHandler {
 
 				if (this._viewLines.shouldRender()) {
 					if (this._editorViewGpu) {
-						// editorView mode: the @vscode/editor-view canvas renders
-						// the text, so skip the DOM view-lines work entirely (the
-						// per-line DOM build in `renderText` is the expensive
-						// part). We still consume the render flag so the frame
-						// loop doesn't keep re-scheduling.
-						this._viewLines.onDidRender();
+						// `editorView` mode: keep ViewLines bookkeeping (scrolling /
+						// horizontal reveal / max-line-width) without DOM text paint.
+						// The GPU view part supplies real glyph-measured widths so
+						// the bookkeeping matches the painted text.
+						this._viewLines.renderTextInEditorView(viewportData, this._editorViewGpu);
 					} else {
 						this._viewLines.renderText(viewportData);
-						this._viewLines.onDidRender();
 					}
+					this._viewLines.onDidRender();
 				}
 
 				if (this._viewLinesGpu?.shouldRender()) {

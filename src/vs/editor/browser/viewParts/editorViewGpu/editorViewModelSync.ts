@@ -62,6 +62,15 @@ export class EditorViewModelSync {
 		return this._fullReload;
 	}
 
+	/**
+	 * Whether {@link takePlan} would produce any work. O(1) and allocation-free, so
+	 * callers can cheaply skip a redundant sync (e.g. measurement getters that may
+	 * run several times per frame) without paying `takePlan`'s array churn.
+	 */
+	public get hasPendingChanges(): boolean {
+		return this._fullReload || this._contentDirty.size > 0 || this._tokenDirty.size > 0 || this._structural.length > 0;
+	}
+
 	/** Queue a full `setLines` rebuild, discarding any pending incremental work. */
 	public scheduleFullReload(): void {
 		this._fullReload = true;

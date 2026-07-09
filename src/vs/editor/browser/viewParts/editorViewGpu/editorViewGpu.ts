@@ -20,6 +20,7 @@ import type { ViewContext } from '../../../common/viewModel/viewContext.js';
 import type { RenderingContext, RestrictedRenderingContext } from '../../view/renderingContext.js';
 import { ViewPart } from '../../view/viewPart.js';
 import { EditorViewModelSync } from './editorViewModelSync.js';
+import type { IEditorViewLineWidthProvider } from '../viewLines/viewLines.js';
 
 /**
  * Which editor surfaces the `@vscode/editor-view` (Rust/WASM) renderer draws
@@ -94,7 +95,7 @@ export const EDITOR_VIEW_GPU_CAPABILITIES: EditorViewGpuCapabilities = {
  * It is only constructed when `editor.experimentalGpuAcceleration` is set to
  * `'editorView'`; with any other value nothing here runs.
  */
-export class EditorViewGpu extends ViewPart {
+export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvider {
 
 	/** Guard against pathological documents while this is a proof of concept. */
 	private static readonly MAX_LINES = 20_000;
@@ -489,6 +490,11 @@ export class EditorViewGpu extends ViewPart {
 	 * lazily at render time rather than in the event handlers.
 	 */
 	private _syncModel(): void {
+		if (!this._sync.hasPendingChanges) {
+			// Nothing to apply — cheap guard so the per-frame measurement getters
+			// (which may each call this) don't churn through `takePlan` allocations.
+			return;
+		}
 		const plan = this._sync.takePlan();
 		if (plan.fullReload) {
 			this._editorView!.setLines(this._gatherLines());
@@ -562,6 +568,43 @@ export class EditorViewGpu extends ViewPart {
 
 	public render(ctx: RestrictedRenderingContext): void {
 		this._present();
+	}
+
+	// --- horizontal metrics (IEditorViewLineWidthProvider) -------------------
+	//
+	// `ViewLines.renderTextInEditorView` runs in the render phase *before* our
+	// `render()` → `_present()`, so ensure the model mirror is current before
+	// measuring. `_syncModel` reads the final view-model state and is idempotent
+	// (a subsequent `_present` in the same frame takes an empty plan), so calling
+	// it here does not double-apply edits.
+
+	/**
+	 * Max full-line width (CSS px) across the inclusive 1-based line range, from
+	 * the renderer's real glyph advances, or `undefined` if it isn't ready.
+	 */
+	public getMaxLineWidth(startLineNumber: number, endLineNumber: number): number | undefined {
+		if (!this._editorView) {
+			return undefined;
+		}
+		this._syncModel();
+		const lineCount = this._context.viewModel.getLineCount();
+		const start = Math.max(0, Math.min(startLineNumber, lineCount) - 1);
+		const end = Math.max(0, Math.min(endLineNumber, lineCount) - 1);
+		return this._editorView.maxLineWidth(start, end);
+	}
+
+	/**
+	 * Horizontal offset (CSS px, from line start) of a 1-based `column` on a
+	 * 1-based `lineNumber`, from the renderer's real glyph advances, or
+	 * `undefined` if it isn't ready. View coordinates are 1-based; the renderer
+	 * is 0-based (matching the cursor/selection conversions elsewhere here).
+	 */
+	public getColumnOffset(lineNumber: number, column: number): number | undefined {
+		if (!this._editorView) {
+			return undefined;
+		}
+		this._syncModel();
+		return this._editorView.columnOffset(lineNumber - 1, column - 1);
 	}
 
 	// --- events --------------------------------------------------------------

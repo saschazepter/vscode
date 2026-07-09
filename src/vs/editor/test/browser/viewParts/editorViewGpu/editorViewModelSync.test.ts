@@ -269,6 +269,35 @@ suite('EditorViewModelSync', () => {
 		assert.deepStrictEqual(plan, { fullReload: false, structural: [], contentLines: [], tokenLines: [] });
 	});
 
+	test('hasPendingChanges tracks whether takePlan would do work', () => {
+		const sync = new EditorViewModelSync(1000);
+		// Starts dirty (initial full reload).
+		assert.strictEqual(sync.hasPendingChanges, true);
+		sync.takePlan();
+		// Clean after consuming the plan; a redundant sync would be a no-op.
+		assert.strictEqual(sync.hasPendingChanges, false);
+
+		const sim = new Sim(['a', 'b', 'c']);
+		sim.sync();
+		assert.strictEqual(sim.planner().hasPendingChanges, false);
+
+		// Each kind of pending work flips the flag; consuming it clears it.
+		sim.change(2, 1);
+		assert.strictEqual(sim.planner().hasPendingChanges, true);
+		sim.planner().takePlan();
+		assert.strictEqual(sim.planner().hasPendingChanges, false);
+
+		sim.tokens(1, 1);
+		assert.strictEqual(sim.planner().hasPendingChanges, true);
+		sim.planner().takePlan();
+		assert.strictEqual(sim.planner().hasPendingChanges, false);
+
+		sim.insert(1, 1);
+		assert.strictEqual(sim.planner().hasPendingChanges, true);
+		sim.planner().takePlan();
+		assert.strictEqual(sim.planner().hasPendingChanges, false);
+	});
+
 	test('randomized edit sequences keep the mirror in sync with the reference', () => {
 		// Deterministic LCG so failures reproduce.
 		let seed = 0x9e3779b9;
