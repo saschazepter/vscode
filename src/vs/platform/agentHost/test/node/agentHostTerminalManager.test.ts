@@ -47,6 +47,13 @@ class TestTerminalDataHandler {
 	readonly dispatched: StateAction[] = [];
 	content: TerminalContentPart[] = [];
 	cwd = '/home/user';
+	/**
+	 * Output captured for each completed command at the moment its
+	 * CommandFinished event is handled — mirrors the `output` field of
+	 * AgentHostTerminalManager's onCommandFinished event, which is what the
+	 * shell tools surface to the model.
+	 */
+	readonly finishedOutputs: string[] = [];
 	private readonly _terminalQueryFilterState: ITerminalQueryFilterState = { pendingData: '' };
 
 	constructor(
@@ -56,18 +63,25 @@ class TestTerminalDataHandler {
 
 	/** Simulates AgentHostTerminalManager._handlePtyData */
 	handlePtyData(rawData: string): string {
-		const parseResult = this.tracker.parser.parse(rawData);
-		const cleanedData = removeServerHandledTerminalQueries(parseResult.cleanedData, this._terminalQueryFilterState);
+		let cleanedForClient = '';
 
-		for (const event of parseResult.events) {
-			this._handleOsc633Event(event);
+		// Process cleaned-data and events in stream order so that output which
+		// arrives before a CommandFinished marker is appended to the command
+		// before the finished event snapshots it — see _handlePtyData.
+		for (const segment of this.tracker.parser.parseSegments(rawData)) {
+			if (segment.kind === 'event') {
+				this._handleOsc633Event(segment.event);
+				continue;
+			}
+
+			const cleanedData = removeServerHandledTerminalQueries(segment.data, this._terminalQueryFilterState);
+			if (cleanedData.length > 0) {
+				this._appendToContent(cleanedData);
+				cleanedForClient += cleanedData;
+			}
 		}
 
-		if (cleanedData.length > 0) {
-			this._appendToContent(cleanedData);
-		}
-
-		return cleanedData;
+		return cleanedForClient;
 	}
 
 	private _handleOsc633Event(event: Osc633Event): void {
@@ -124,6 +138,7 @@ class TestTerminalDataHandler {
 						part.isComplete = true;
 						part.exitCode = event.exitCode;
 						part.durationMs = durationMs;
+						this.finishedOutputs.push(part.output);
 						break;
 					}
 				}
@@ -706,5 +721,26 @@ suite('AgentHostTerminalManager – command detection integration', () => {
 		const cmdParts = handler.content.filter(p => p.type === 'command');
 		assert.strictEqual(cmdParts.length, 1);
 		assert.strictEqual(cmdParts[0].type === 'command' && cmdParts[0].output, 'line1\r\nline2\r\nline3\r\n');
+	});
+
+	test('output and CommandFinished arriving in one PTY read are attributed to the command', () => {
+		// A fast command (e.g. `echo`) frequently emits its output and the
+		// CommandExecuted/CommandFinished markers in a single PTY read. The
+		// output that precedes the CommandFinished marker must be attributed to
+		// the command before the finished event snapshots it, otherwise it is
+		// lost from the command result (regression for the flaky agent-host
+		// sandbox smoke test, where the shell tool returned an empty output).
+		const handler = createHandler();
+
+		handler.handlePtyData(
+			`${osc633('E;echo\\x20hi;test-nonce')}${osc633('C')}hi\r\n${osc633('D;0')}`
+		);
+
+		const cmdParts = handler.content.filter(p => p.type === 'command');
+		assert.strictEqual(cmdParts.length, 1);
+		assert.strictEqual(cmdParts[0].type === 'command' && cmdParts[0].output, 'hi\r\n');
+		// The output captured at CommandFinished time must include the stdout,
+		// mirroring the onCommandFinished event surfaced to the shell tools.
+		assert.deepStrictEqual(handler.finishedOutputs, ['hi\r\n']);
 	});
 });
