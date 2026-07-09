@@ -1427,24 +1427,28 @@ export class LanguageModelsService implements ILanguageModelsService {
 		const allGroups = this._languageModelsConfigurationService.getLanguageModelsProviderGroups();
 		let group: ILanguageModelsProviderGroup | undefined;
 
-		// First try to find a group that already has config for this model.
-		group = allGroups.find(g => g.vendor === metadata.vendor && g.settings?.[metadata.id] !== undefined);
-
-		// Otherwise find the group that actually *defines* this model. Several
-		// groups can share the same `vendor` (e.g. multiple `customendpoint`
-		// providers like DeepSeek and MyCustom), so matching by vendor alone would
-		// write the config to the first group of that vendor — not the one the
-		// model belongs to. Resolve via the model→group map instead. See #322872.
-		if (!group) {
-			const vendorGroups = this._modelsGroups.get(metadata.vendor);
-			const containingGroup = vendorGroups?.find(vg => vg.modelIdentifiers.includes(modelId) && vg.group)?.group;
-			if (containingGroup) {
-				group = allGroups.find(g => g.vendor === containingGroup.vendor && g.name === containingGroup.name) ?? containingGroup;
-			}
+		// First find the group that actually *defines* this model via the
+		// model→group map. Several groups can share the same `vendor` (e.g.
+		// multiple `customendpoint` providers), and they can even declare models
+		// with the same bare `id` (e.g. two providers both exposing `gpt-5.5`).
+		// Resolving by the full model identifier — instead of the bare
+		// `metadata.id` — ensures the config is written to the group the model
+		// actually belongs to, rather than whichever group of that vendor happens
+		// to list that `id` first. See #322872 and #325069.
+		const vendorGroups = this._modelsGroups.get(metadata.vendor);
+		const containingGroup = vendorGroups?.find(vg => vg.modelIdentifiers.includes(modelId) && vg.group)?.group;
+		if (containingGroup) {
+			group = allGroups.find(g => g.vendor === containingGroup.vendor && g.name === containingGroup.name) ?? containingGroup;
 		}
 
-		// As a last resort (model not yet resolved into any group), fall back to
-		// any group for this vendor.
+		// Legacy fallback: the model was not resolved into any group (e.g. config
+		// present but the provider has not resolved its models yet). Match by
+		// vendor + existing settings for the bare id.
+		if (!group) {
+			group = allGroups.find(g => g.vendor === metadata.vendor && g.settings?.[metadata.id] !== undefined);
+		}
+
+		// As a last resort, fall back to any group for this vendor.
 		if (!group) {
 			group = allGroups.find(g => g.vendor === metadata.vendor);
 		}
