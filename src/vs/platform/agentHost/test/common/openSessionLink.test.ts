@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { URI } from '../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
-import { buildOpenSessionLinkUri, isCreateChatTool, isCreateSessionTool, parseOpenSessionLinkUri } from '../../common/openSessionLink.js';
+import { buildOpenSessionLinkUri, isCreateChatTool, isCreateSessionTool, parseOpenSessionLinkChatId, parseOpenSessionLinkUri } from '../../common/openSessionLink.js';
 
 suite('openSessionLink', () => {
 
@@ -32,6 +32,14 @@ suite('openSessionLink', () => {
 		const backend = 'copilotcli:/abc-123';
 		const parsed = parseOpenSessionLinkUri(buildOpenSessionLinkUri(backend));
 		assert.strictEqual(parsed?.toString(), URI.parse(backend).toString());
+	});
+
+	test('carries an optional chat id', () => {
+		const link = buildOpenSessionLinkUri('copilotcli:/abc-123', 'chat-9');
+		assert.strictEqual(link, 'agent-host-session://copilotcli/abc-123?chat=chat-9');
+		assert.strictEqual(parseOpenSessionLinkUri(link)?.toString(), URI.parse('copilotcli:/abc-123').toString());
+		assert.strictEqual(parseOpenSessionLinkChatId(link), 'chat-9');
+		assert.strictEqual(parseOpenSessionLinkChatId(buildOpenSessionLinkUri('copilotcli:/abc-123')), undefined);
 	});
 
 	test('returns undefined for non-session-link URIs', () => {

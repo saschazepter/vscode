@@ -44,13 +44,14 @@ export function isCreateChatTool(toolName: string): boolean {
 }
 
 /** Builds an {@link AGENT_HOST_SESSION_LINK_SCHEME} link for a backend session URI. */
-export function buildOpenSessionLinkUri(backendSession: URI | string): string {
+export function buildOpenSessionLinkUri(backendSession: URI | string, chatId?: string): string {
 	const provider = AgentSession.provider(backendSession);
 	const rawId = AgentSession.id(backendSession);
 	if (!provider) {
 		throw new Error(`Cannot build open-session link: missing provider in ${backendSession.toString()}`);
 	}
-	return URI.from({ scheme: AGENT_HOST_SESSION_LINK_SCHEME, authority: provider, path: `/${rawId}` }).toString();
+	const base = URI.from({ scheme: AGENT_HOST_SESSION_LINK_SCHEME, authority: provider, path: `/${rawId}` }).toString();
+	return chatId ? `${base}?chat=${encodeURIComponent(chatId)}` : base;
 }
 
 /**
@@ -67,4 +68,17 @@ export function parseOpenSessionLinkUri(uri: URI | string): URI | undefined {
 		return undefined;
 	}
 	return AgentSession.uri(parsed.authority, rawId);
+}
+
+/**
+ * Recovers the target chat id carried by an {@link AGENT_HOST_SESSION_LINK_SCHEME}
+ * link (from `create_chat`), or `undefined` when the link targets a whole session.
+ */
+export function parseOpenSessionLinkChatId(uri: URI | string): string | undefined {
+	const parsed = typeof uri === 'string' ? URI.parse(uri) : uri;
+	if (parsed.scheme !== AGENT_HOST_SESSION_LINK_SCHEME) {
+		return undefined;
+	}
+	const match = /(?:^|&)chat=([^&]+)/.exec(parsed.query);
+	return match ? decodeURIComponent(match[1]) : undefined;
 }

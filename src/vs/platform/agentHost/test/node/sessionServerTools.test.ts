@@ -265,7 +265,8 @@ suite('SessionServerTools', () => {
 		});
 		const result = await applyCreateChatTool(accessor, { session: 'copilot:/s1', prompt: 'do it', title: 'T', model: 'gpt-4o' });
 		assert.strictEqual(result.session, 'copilot:/s1');
-		assert.strictEqual(result.openLink, 'agent-host-session://copilot/s1');
+		const chatId = URI.parse(result.chat).authority;
+		assert.strictEqual(result.openLink, `agent-host-session://copilot/s1?chat=${chatId}`);
 		assert.strictEqual(createdChat?.session.toString(), 'copilot:/s1');
 		assert.strictEqual(createdChat?.options?.title, 'T');
 		assert.strictEqual(createdChat?.options?.model?.id, 'gpt-4o');

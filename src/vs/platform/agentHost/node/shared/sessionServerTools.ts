@@ -529,7 +529,7 @@ interface ICreateChatArgs {
 export interface ICreateChatResult {
 	readonly session: string;
 	readonly chat: string;
-	/** Clickable {@link AGENT_HOST_SESSION_LINK_SCHEME} URI that opens the owning session. */
+	/** Clickable {@link AGENT_HOST_SESSION_LINK_SCHEME} URI that opens the created chat. */
 	readonly openLink: string;
 }
 
@@ -579,10 +579,11 @@ export function getCreateChatArgs(rawArgs: unknown, sessions: readonly IAgentSes
 export async function applyCreateChatTool(accessor: ISessionServerToolAccessor, rawArgs: unknown, currentSession?: URI): Promise<ICreateChatResult> {
 	const sessions = await accessor.listSessions();
 	const args = getCreateChatArgs(rawArgs, sessions, accessor.getModels(), currentSession);
-	const chat = URI.parse(buildChatUri(args.session.toString(), generateUuid()));
+	const chatId = generateUuid();
+	const chat = URI.parse(buildChatUri(args.session.toString(), chatId));
 	await accessor.createChat(args.session, chat, { title: args.title, model: args.model });
 	await accessor.startPrompt(args.session, chat, args.prompt);
-	return { session: args.session.toString(), chat: chat.toString(), openLink: buildOpenSessionLinkUri(args.session) };
+	return { session: args.session.toString(), chat: chat.toString(), openLink: buildOpenSessionLinkUri(args.session, chatId) };
 }
 
 /** Builds the model-facing `create_chat` result. */
