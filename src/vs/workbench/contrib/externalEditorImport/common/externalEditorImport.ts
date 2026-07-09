@@ -29,6 +29,17 @@ export interface IExternalEditorSource {
 	readonly hasSnippets: boolean;
 	/** Whether an extensions manifest was found. */
 	readonly hasExtensions: boolean;
+	/**
+	 * Whether a color theme could be resolved for the source editor. Equivalent to
+	 * `colorThemeId !== undefined`; callers can use this to avoid prompting the user to pick a theme.
+	 */
+	readonly hasTheme: boolean;
+	/**
+	 * The VS Code built-in color theme that most closely matches the source editor's currently
+	 * selected theme (by kind: light, dark, or high contrast), or `undefined` when none could be
+	 * determined. Applied during a settings import unless the user already chose a theme.
+	 */
+	readonly colorThemeId: string | undefined;
 }
 
 /**

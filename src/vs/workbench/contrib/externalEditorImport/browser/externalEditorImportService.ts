@@ -14,6 +14,7 @@ import { areSameExtensions } from '../../../../platform/extensionManagement/comm
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IJSONEditingService, IJSONValue } from '../../../services/configuration/common/jsonEditing.js';
+import { IWorkbenchEnvironmentService } from '../../../services/environment/common/environmentService.js';
 import { IPathService } from '../../../services/path/common/pathService.js';
 import { IUserDataProfileService } from '../../../services/userDataProfile/common/userDataProfile.js';
 import { IExternalEditorImportPreview, IExternalEditorImportResult, IExternalEditorImportSelection, IExternalEditorImportService, IExternalEditorSource } from '../common/externalEditorImport.js';
@@ -30,6 +31,13 @@ interface IKnownEditorDescriptor {
 	readonly appDataFolder: string;
 	/** Home-relative segments of the extensions directory, e.g. `.cursor/extensions`. */
 	readonly extensionsDirSegments: readonly string[];
+	/**
+	 * Keys in the source editor's `globalStorage/storage.json` that hold the label of the
+	 * user's currently selected color theme. Forks such as Cursor persist the active theme
+	 * here (under their own namespace) rather than in `settings.json`, so we consult these to
+	 * recover the user's real theme choice. Checked in order; the first string value wins.
+	 */
+	readonly themeStateNameKeys?: readonly string[];
 }
 
 const KNOWN_EDITORS: readonly IKnownEditorDescriptor[] = [
@@ -38,8 +46,37 @@ const KNOWN_EDITORS: readonly IKnownEditorDescriptor[] = [
 		label: 'Cursor',
 		appDataFolder: 'Cursor',
 		extensionsDirSegments: ['.cursor', 'extensions'],
+		themeStateNameKeys: ['glass.theme.settingsId'],
 	},
 ];
+
+/**
+ * The base kind of a color theme, mirroring VS Code's UI theme types.
+ */
+type ColorThemeKind = 'light' | 'dark' | 'hc-dark' | 'hc-light';
+
+/**
+ * The closest VS Code built-in default theme for each color theme kind. Used to map a source
+ * editor's selected theme — which is frequently a proprietary theme VS Code does not ship — onto
+ * an equivalent theme that always exists here.
+ */
+const DEFAULT_THEME_BY_KIND: Record<ColorThemeKind, string> = {
+	'light': 'Light Modern',
+	'dark': 'Dark Modern',
+	'hc-dark': 'Dark High Contrast',
+	'hc-light': 'Light High Contrast',
+};
+
+/**
+ * VS Code base theme identifiers (`uiTheme`) as persisted in `globalStorage/storage.json`, mapped
+ * to their color theme kind.
+ */
+const BASE_THEME_TO_KIND: Record<string, ColorThemeKind> = {
+	'vs': 'light',
+	'vs-dark': 'dark',
+	'hc-black': 'hc-dark',
+	'hc-light': 'hc-light',
+};
 
 /**
  * Settings keys (or prefixes) that should never be imported because they are
@@ -50,6 +87,37 @@ const SETTINGS_KEY_BLOCKLIST_PREFIXES: readonly string[] = [
 	'cursorai.',
 	'aicontext.',
 ];
+
+/**
+ * Settings keys that express a color theme preference. These are handled specially rather than
+ * bulk-imported: forks frequently rely on OS-driven auto-detection or a proprietary theme that has
+ * no VS Code equivalent, so instead of copying them verbatim we resolve the source's effective
+ * theme and pin the closest VS Code built-in theme. See {@link resolveColorThemeId}.
+ */
+const THEME_SETTING_KEYS: readonly string[] = [
+	'workbench.colorTheme',
+	'workbench.preferredDarkColorTheme',
+	'workbench.preferredLightColorTheme',
+	'workbench.preferredHighContrastColorTheme',
+	'workbench.preferredHighContrastLightColorTheme',
+	'window.autoDetectColorScheme',
+];
+
+const COLOR_THEME_SETTING_KEY = 'workbench.colorTheme';
+
+/**
+ * Some source editors (notably Cursor) ship their own forks of Microsoft extensions under a
+ * different publisher — e.g. Cursor publishes the Remote extensions under `anysphere.*`. Those
+ * identifiers do not exist on the VS Code Marketplace, so importing them verbatim always fails and
+ * surfaces a spurious warning even though the genuine extension is installable. Map the known forks
+ * onto their Marketplace equivalents so the real extension gets installed instead. Keys are
+ * lowercased source extension ids.
+ */
+const EXTENSION_ID_REMAP: ReadonlyMap<string, string> = new Map([
+	['anysphere.remote-ssh', 'ms-vscode-remote.remote-ssh'],
+	['anysphere.remote-wsl', 'ms-vscode-remote.remote-wsl'],
+	['anysphere.remote-containers', 'ms-vscode-remote.remote-containers'],
+]);
 
 export class ExternalEditorImportService extends Disposable implements IExternalEditorImportService {
 
@@ -62,13 +130,21 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		@IUserDataProfileService private readonly userDataProfileService: IUserDataProfileService,
 		@IExtensionGalleryService private readonly extensionGalleryService: IExtensionGalleryService,
 		@IExtensionManagementService private readonly extensionManagementService: IExtensionManagementService,
+		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService,
 		@ILogService private readonly logService: ILogService,
 	) {
 		super();
 	}
 
 	async detectSources(token?: CancellationToken): Promise<IExternalEditorSource[]> {
-		const home = await this.pathService.userHome();
+		// Detection reads the local machine's application-data directory. In a remote window the
+		// workbench file system operates against the remote host, so local detection would either
+		// find nothing or inspect the wrong machine. Skip it entirely in that case.
+		if (this.environmentService.remoteAuthority) {
+			return [];
+		}
+
+		const home = await this.pathService.userHome({ preferLocal: true });
 		const appDataHome = this.getApplicationDataHome(home);
 		if (!appDataHome) {
 			return [];
@@ -94,6 +170,7 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 			]);
 
 			if (hasSettings || hasKeybindings || hasSnippets || hasExtensions) {
+				const colorThemeId = hasSettings ? await this.resolveColorThemeId(editor, userDataUri, settingsUri) : undefined;
 				sources.push({
 					id: editor.id,
 					label: editor.label,
@@ -103,6 +180,8 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 					hasKeybindings,
 					hasSnippets,
 					hasExtensions,
+					hasTheme: !!colorThemeId,
+					colorThemeId,
 				});
 			}
 		}
@@ -185,10 +264,14 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		const existingSettings = await this.readJsonObject(this.userDataProfileService.currentProfile.settingsResource) ?? {};
 		const keys: string[] = [];
 		for (const key of Object.keys(sourceSettings)) {
-			if (Object.prototype.hasOwnProperty.call(existingSettings, key) || this.isBlockedSettingKey(key)) {
+			// Theme keys are represented by the resolved color theme (added below), not copied verbatim.
+			if (Object.prototype.hasOwnProperty.call(existingSettings, key) || this.isBlockedSettingKey(key) || this.isThemeSettingKey(key)) {
 				continue;
 			}
 			keys.push(key);
+		}
+		if (this.willApplyColorTheme(source, existingSettings)) {
+			keys.push(COLOR_THEME_SETTING_KEY);
 		}
 		return keys;
 	}
@@ -281,11 +364,18 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 
 		const edits: IJSONValue[] = [];
 		for (const key of Object.keys(sourceSettings)) {
-			// Never overwrite settings the user already has, and skip source-specific keys.
-			if (Object.prototype.hasOwnProperty.call(existingSettings, key) || this.isBlockedSettingKey(key)) {
+			// Never overwrite settings the user already has, skip source-specific keys, and defer
+			// theme keys — they are applied via the resolved color theme below.
+			if (Object.prototype.hasOwnProperty.call(existingSettings, key) || this.isBlockedSettingKey(key) || this.isThemeSettingKey(key)) {
 				continue;
 			}
 			edits.push({ path: [key], value: sourceSettings[key] });
+		}
+
+		// Pin the source editor's effective color theme (mapped to the closest VS Code built-in),
+		// unless the user already chose one.
+		if (this.willApplyColorTheme(source, existingSettings)) {
+			edits.push({ path: [COLOR_THEME_SETTING_KEY], value: source.colorThemeId });
 		}
 
 		if (edits.length === 0) {
@@ -305,6 +395,122 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		return SETTINGS_KEY_BLOCKLIST_PREFIXES.some(prefix => key.startsWith(prefix));
 	}
 
+	private isThemeSettingKey(key: string): boolean {
+		return THEME_SETTING_KEYS.includes(key);
+	}
+
+	/**
+	 * Whether importing would pin a resolved color theme, i.e. the source had a detectable theme
+	 * and the user has not already chosen one.
+	 */
+	private willApplyColorTheme(source: IExternalEditorSource, existingSettings: Record<string, unknown>): boolean {
+		return !!source.colorThemeId && !Object.prototype.hasOwnProperty.call(existingSettings, COLOR_THEME_SETTING_KEY);
+	}
+
+	/**
+	 * Resolves the source editor's effective color theme to the closest VS Code built-in theme.
+	 *
+	 * Resolution order:
+	 * 1. An explicit `workbench.colorTheme` in the source's `settings.json` is used as-is.
+	 * 2. Otherwise the source's persisted theme state (`globalStorage/storage.json`) is consulted —
+	 *    forks such as Cursor store the active theme there under their own namespace. Its kind
+	 *    (light/dark/high-contrast) is mapped to the matching VS Code default theme.
+	 * 3. Otherwise the `preferred*ColorTheme` / `window.autoDetectColorScheme` settings are used to
+	 *    infer a kind.
+	 *
+	 * Returns `undefined` when no theme preference can be determined.
+	 */
+	private async resolveColorThemeId(editor: IKnownEditorDescriptor, userDataUri: URI, settingsUri: URI): Promise<string | undefined> {
+		const settings = await this.readJsonObject(settingsUri);
+
+		// 1. Explicit theme in settings.json wins.
+		const explicit = settings?.[COLOR_THEME_SETTING_KEY];
+		if (typeof explicit === 'string' && explicit) {
+			return explicit;
+		}
+
+		// 2. The fork's persisted theme state (the user's real selected theme).
+		const kindFromState = await this.readThemeKindFromState(editor, userDataUri);
+		if (kindFromState) {
+			return DEFAULT_THEME_BY_KIND[kindFromState];
+		}
+
+		// 3. Fall back to preferred-theme / auto-detect settings.
+		const kindFromSettings = settings ? this.inferKindFromSettings(settings) : undefined;
+		return kindFromSettings ? DEFAULT_THEME_BY_KIND[kindFromSettings] : undefined;
+	}
+
+	private async readThemeKindFromState(editor: IKnownEditorDescriptor, userDataUri: URI): Promise<ColorThemeKind | undefined> {
+		const state = await this.readJsonObject(URI.joinPath(userDataUri, 'globalStorage', 'storage.json'));
+		if (!state) {
+			return undefined;
+		}
+
+		// Prefer the fork-specific key holding the selected theme's label (e.g. "Cursor Light"),
+		// since it reflects the user's explicit choice even when the base-theme cache is stale.
+		for (const key of editor.themeStateNameKeys ?? []) {
+			const value = state[key];
+			if (typeof value === 'string') {
+				const kind = this.inferKindFromThemeName(value);
+				if (kind) {
+					return kind;
+				}
+			}
+		}
+
+		// Fall back to the standard base-theme cache (`theme` = uiTheme id).
+		const baseTheme = state['theme'];
+		if (typeof baseTheme === 'string') {
+			return BASE_THEME_TO_KIND[baseTheme];
+		}
+		return undefined;
+	}
+
+	/**
+	 * Infers a color theme kind from a human-readable theme label such as "Cursor Light" or
+	 * "Default High Contrast". Returns `undefined` when the name gives no clear signal.
+	 */
+	private inferKindFromThemeName(name: string): ColorThemeKind | undefined {
+		const normalized = name.toLowerCase();
+		const isHighContrast = normalized.includes('high contrast') || /\bhc\b/.test(normalized);
+		const isLight = normalized.includes('light');
+		const isDark = normalized.includes('dark');
+		if (isHighContrast) {
+			return isLight ? 'hc-light' : 'hc-dark';
+		}
+		if (isLight) {
+			return 'light';
+		}
+		if (isDark) {
+			return 'dark';
+		}
+		return undefined;
+	}
+
+	/**
+	 * Infers a color theme kind from the source settings' `preferred*ColorTheme` names. Used only
+	 * when the persisted theme state does not resolve a kind.
+	 */
+	private inferKindFromSettings(settings: Record<string, unknown>): ColorThemeKind | undefined {
+		const preferredHcDark = settings['workbench.preferredHighContrastColorTheme'];
+		const preferredHcLight = settings['workbench.preferredHighContrastLightColorTheme'];
+		const preferredDark = settings['workbench.preferredDarkColorTheme'];
+		const preferredLight = settings['workbench.preferredLightColorTheme'];
+		if (typeof preferredHcDark === 'string') {
+			return 'hc-dark';
+		}
+		if (typeof preferredHcLight === 'string') {
+			return 'hc-light';
+		}
+		if (typeof preferredDark === 'string') {
+			return 'dark';
+		}
+		if (typeof preferredLight === 'string') {
+			return 'light';
+		}
+		return undefined;
+	}
+
 	// =====================================================================
 	// Keybindings
 	// =====================================================================
@@ -316,22 +522,30 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		}
 
 		const targetResource = this.userDataProfileService.currentProfile.keybindingsResource;
-		const existingKeybindings = await this.readJsonArray(targetResource) ?? [];
+		const targetExists = await this.safeExists(targetResource);
+		const existingKeybindings = targetExists ? await this.readJsonArray(targetResource) : [];
 
-		const merged = [...existingKeybindings];
-		for (const entry of sourceKeybindings) {
-			const isDuplicate = existingKeybindings.some(existing => this.deepEqual(existing, entry));
-			if (!isDuplicate) {
-				merged.push(entry);
-			}
+		// The target file exists but could not be parsed. Rewriting it would discard the user's
+		// keybindings, so bail out rather than risk data loss.
+		if (targetExists && !existingKeybindings) {
+			this.logService.warn('[externalEditorImport] Existing keybindings.json could not be parsed; skipping keybindings import');
+			return false;
 		}
 
-		if (merged.length === existingKeybindings.length) {
+		const newEntries = sourceKeybindings.filter(entry => !existingKeybindings!.some(existing => this.deepEqual(existing, entry)));
+		if (newEntries.length === 0) {
 			return false;
 		}
 
 		try {
-			await this.fileService.writeFile(targetResource, VSBuffer.fromString(JSON.stringify(merged, null, '\t')));
+			if (!targetExists) {
+				// No existing file to preserve, so create it with the new entries directly.
+				await this.fileService.writeFile(targetResource, VSBuffer.fromString(JSON.stringify(newEntries, null, '\t')));
+			} else {
+				// Append via JSONC-aware editing so the user's comments and formatting are preserved.
+				const edits: IJSONValue[] = newEntries.map(value => ({ path: [-1], value }));
+				await this.jsonEditingService.write(targetResource, edits, true);
+			}
 			return true;
 		} catch (error) {
 			this.logService.error('[externalEditorImport] Failed to import keybindings', error);
@@ -408,8 +622,11 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 			return { installed: 0, failed: toQuery.length };
 		}
 
+		// Extensions that could not be resolved in the gallery (e.g. not published on the
+		// Marketplace) count as failures so callers can report an accurate outcome.
+		const unresolved = toQuery.length - galleryExtensions.length;
 		if (galleryExtensions.length === 0) {
-			return { installed: 0, failed: 0 };
+			return { installed: 0, failed: unresolved };
 		}
 
 		const installExtensionInfos: InstallExtensionInfo[] = galleryExtensions.map(extension => ({
@@ -419,11 +636,11 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 
 		try {
 			const results = await this.extensionManagementService.installGalleryExtensions(installExtensionInfos);
-			const failed = results.filter(result => !result.local).length;
-			return { installed: results.length - failed, failed };
+			const installFailed = results.filter(result => !result.local).length;
+			return { installed: results.length - installFailed, failed: unresolved + installFailed };
 		} catch (error) {
 			this.logService.error('[externalEditorImport] Failed to install extensions', error);
-			return { installed: 0, failed: installExtensionInfos.length };
+			return { installed: 0, failed: unresolved + installExtensionInfos.length };
 		}
 	}
 
@@ -437,16 +654,21 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		const seen = new Set<string>();
 		for (const entry of manifest) {
 			const identifier = (entry as { identifier?: { id?: unknown; uuid?: unknown } } | null)?.identifier;
-			const id = identifier?.id;
-			if (typeof id !== 'string' || !id) {
+			const rawId = identifier?.id;
+			if (typeof rawId !== 'string' || !rawId) {
 				continue;
 			}
+			// Remap known source-editor forks (e.g. Cursor's `anysphere.*` Remote extensions) to
+			// their VS Code Marketplace equivalents. When remapped, the fork's uuid no longer
+			// applies and must be dropped so the identifier is matched by id instead.
+			const remapped = EXTENSION_ID_REMAP.get(rawId.toLowerCase());
+			const id = remapped ?? rawId;
 			const key = id.toLowerCase();
 			if (seen.has(key)) {
 				continue;
 			}
 			seen.add(key);
-			const uuid = identifier?.uuid;
+			const uuid = remapped ? undefined : identifier?.uuid;
 			identifiers.push({ id, uuid: typeof uuid === 'string' ? uuid : undefined });
 		}
 

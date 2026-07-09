@@ -51,7 +51,19 @@ export async function runExternalEditorImport(
 	}
 
 	if (parts.length === 0) {
-		notificationService.info(localize('externalImport.nothing', "Nothing new to import from {0} \u2014 your customizations are already up to date.", source.label));
+		if (result.extensionsFailed > 0) {
+			notificationService.notify({
+				severity: Severity.Warning,
+				message: localize('externalImport.failed', "Some customizations from {0} could not be imported. You can try again later from the Command Palette.", source.label),
+			});
+		} else {
+			notificationService.info(localize('externalImport.nothing', "Nothing new to import from {0} \u2014 your customizations are already up to date.", source.label));
+		}
+	} else if (result.extensionsFailed > 0) {
+		notificationService.notify({
+			severity: Severity.Warning,
+			message: localize('externalImport.donePartial', "Imported {0} from {1}. Some extensions could not be imported.", parts.join(', '), source.label),
+		});
 	} else {
 		notificationService.info(localize('externalImport.done', "Imported {0} from {1}.", parts.join(', '), source.label));
 	}

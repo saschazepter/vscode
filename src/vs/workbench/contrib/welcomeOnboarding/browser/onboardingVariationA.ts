@@ -77,7 +77,7 @@ type OnboardingActionEvent = {
 };
 
 type EnterpriseSignInUiState = 'options' | 'instance' | 'progress';
-type ImportCategoryKey = 'settings' | 'keybindings' | 'snippets' | 'extensions';
+type ImportCategoryKey = 'theme' | 'settings' | 'keybindings' | 'snippets' | 'extensions';
 
 interface IImportRow {
 	readonly key: ImportCategoryKey;
@@ -183,8 +183,8 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		try {
 			const sources = await this.externalEditorImportService.detectSources();
 			const source = sources[0];
-			if (!source || this._isShowing) {
-				return; // nothing to import, or the modal is already showing
+			if (!source) {
+				return; // nothing to import
 			}
 
 			// Skip the step entirely when there is nothing new to bring over (i.e. the user
@@ -192,21 +192,42 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			// (no gallery lookups) so it does not delay showing the modal; the richer
 			// preview shown in the step UI is computed lazily.
 			const hasSomethingNew = await this.externalEditorImportService.hasImportableChanges(source);
-			if (this._isShowing) {
-				return; // the modal started showing while we were checking
-			}
 			if (!hasSomethingNew) {
 				return; // nothing different to bring over — skip the step
 			}
 
 			this._importSource = source;
-			if (!this.steps.includes(OnboardingStepId.ImportFromEditor)) {
-				const signInIndex = this.steps.indexOf(OnboardingStepId.SignIn);
-				const insertAt = signInIndex >= 0 ? signInIndex + 1 : 0;
-				this.steps.splice(insertAt, 0, OnboardingStepId.ImportFromEditor);
-			}
+			this._insertImportStep();
 		} catch {
 			// Detection failed — the step simply will not be shown
+		}
+	}
+
+	/**
+	 * Inserts the import step right after Sign In. Detection runs asynchronously and can finish
+	 * after the modal is already showing, so this is safe to call at any time: when the modal is
+	 * visible the step is only inserted if the user has not yet moved past the insertion point,
+	 * and the progress indicator is refreshed to reflect the added step.
+	 */
+	private _insertImportStep(): void {
+		if (this.steps.includes(OnboardingStepId.ImportFromEditor)) {
+			return;
+		}
+
+		const signInIndex = this.steps.indexOf(OnboardingStepId.SignIn);
+		const insertAt = signInIndex >= 0 ? signInIndex + 1 : 0;
+
+		// If the modal is already showing and the user has advanced to or past the insertion
+		// point, inserting would shift the step they are currently viewing. Leave the steps
+		// untouched in that case.
+		if (this._isShowing && this.currentStepIndex >= insertAt) {
+			return;
+		}
+
+		this.steps.splice(insertAt, 0, OnboardingStepId.ImportFromEditor);
+
+		if (this._isShowing) {
+			this._renderProgress();
 		}
 	}
 
@@ -1185,6 +1206,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 				if (this.currentStepIndex !== importStepIndex || this.steps[this.currentStepIndex] !== OnboardingStepId.ImportFromEditor) {
 					return;
 				}
+				this._skipRedundantThemeStep();
 				this._logAction('next');
 				this._nextStep();
 			});
@@ -1193,6 +1215,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 
 	private _getImportRows(source: IExternalEditorSource): IImportRow[] {
 		return [
+			{ key: 'theme', label: localize('onboarding.import.theme', "Theme"), icon: Codicon.symbolColor, available: source.hasTheme },
 			{ key: 'settings', label: localize('onboarding.import.settings', "Settings"), icon: Codicon.settingsGear, available: source.hasSettings },
 			{ key: 'keybindings', label: localize('onboarding.import.keybindings', "Keyboard Shortcuts"), icon: Codicon.keyboard, available: source.hasKeybindings },
 			{ key: 'snippets', label: localize('onboarding.import.snippets', "Snippets"), icon: Codicon.code, available: source.hasSnippets },
@@ -1212,17 +1235,22 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		try {
 			const result = await this.externalEditorImportService.import(source, { settings: true, keybindings: true, snippets: true, extensions: true });
 			const importedAnything = result.settingsImported > 0 || result.keybindingsImported || result.snippetsImported > 0 || result.extensionsInstalled > 0;
-			if (result.extensionsFailed > 0 || !importedAnything) {
-				if (result.extensionsFailed > 0) {
-					this.notificationService.notify({
-						severity: Severity.Warning,
-						message: localize('onboarding.import.partialError', "Some customizations could not be imported from {0}. You can try again later from the Command Palette.", source.label),
-					});
-				} else {
-					this.notificationService.info(localize('onboarding.import.nothing', "Nothing new to import from {0}.", source.label));
-				}
+
+			// Some items may not be importable — most commonly source-specific extensions that are
+			// not on the Marketplace. That must not block the flow: surface a warning and continue.
+			if (result.extensionsFailed > 0) {
+				this.notificationService.notify({
+					severity: Severity.Warning,
+					message: localize('onboarding.import.partialError', "Some customizations could not be imported from {0}. You can try again later from the Command Palette.", source.label),
+				});
+			}
+
+			// Only stay on the step when there was genuinely nothing to bring over.
+			if (!importedAnything && result.extensionsFailed === 0) {
+				this.notificationService.info(localize('onboarding.import.nothing', "Nothing new to import from {0}.", source.label));
 				return false;
 			}
+
 			this._importCompleted = true;
 			this.accessibilityService.alert(localize('onboarding.import.done.alert', "Imported customizations from {0}", source.label));
 			return true;
@@ -1237,6 +1265,28 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			this._importInProgress = false;
 			this._updateButtonStates();
 		}
+	}
+
+	/**
+	 * The source editor's selected color theme is brought over as part of its settings, so the
+	 * theme picker in the Personalize step is redundant after a successful import. Removes that
+	 * step when it would only offer theme selection — that is, when the source had a theme and
+	 * there is no keyboard-mapping section to show for another detected editor — and the user has
+	 * not yet reached it.
+	 */
+	private _skipRedundantThemeStep(): void {
+		if (!this._importSource?.hasTheme) {
+			return; // no theme preference was imported, so the picker is still useful
+		}
+		if (this._hasOtherEditors()) {
+			return; // keep the step for its keyboard-mapping section
+		}
+		const personalizeIndex = this.steps.indexOf(OnboardingStepId.Personalize);
+		if (personalizeIndex <= this.currentStepIndex) {
+			return; // not present, or already reached
+		}
+		this.steps.splice(personalizeIndex, 1);
+		this._renderProgress();
 	}
 
 	// =====================================================================
