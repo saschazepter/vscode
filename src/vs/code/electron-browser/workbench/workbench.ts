@@ -154,6 +154,7 @@
 			const contentTop = layoutInfo.titleBarHeight;
 			const contentBottom = layoutInfo.statusBarHeight;
 			const contentHeight = `calc(100% - ${contentTop + contentBottom}px)`;
+			const activityHeight = modernUI ? `calc(100% - ${contentTop + contentBottom + floatingMargin}px)` : contentHeight;
 
 			if (layoutInfo.auxiliaryBarWidth === Number.MAX_SAFE_INTEGER) {
 				// if auxiliary bar is maximized, it goes as wide as the
@@ -194,7 +195,7 @@
 				const activityDiv = document.createElement('div');
 				activityDiv.style.position = 'absolute';
 				activityDiv.style.width = `${layoutInfo.activityBarWidth}px`;
-				activityDiv.style.height = contentHeight;
+				activityDiv.style.height = activityHeight;
 				activityDiv.style.top = `${contentTop}px`;
 				if (layoutInfo.sideBarSide === 'left') {
 					activityDiv.style.left = '0';
@@ -202,9 +203,6 @@
 					activityDiv.style.right = '0';
 				}
 				activityDiv.style.backgroundColor = modernUI ? 'transparent' : `${colorInfo.activityBarBackground}`;
-				if (modernUI) {
-					activityDiv.style.marginBottom = `${floatingMargin}px`;
-				}
 				splash.appendChild(activityDiv);
 
 				if (!modernUI && colorInfo.activityBarBorder) {
@@ -328,13 +326,13 @@
 				}
 				applyFloatingCardStyles(editorDiv, colorInfo.editorBackground);
 				splash.appendChild(editorDiv);
+			}
 
-				if (layoutInfo.partBounds?.panel) {
-					const panelDiv = document.createElement('div');
-					setPartBounds(panelDiv, layoutInfo.partBounds.panel);
-					applyFloatingCardStyles(panelDiv, colorInfo.panelBackground ?? colorInfo.editorBackground);
-					splash.appendChild(panelDiv);
-				}
+			if (modernUI && layoutInfo.partBounds?.panel) {
+				const panelDiv = document.createElement('div');
+				setPartBounds(panelDiv, layoutInfo.partBounds.panel);
+				applyFloatingCardStyles(panelDiv, colorInfo.panelBackground ?? colorInfo.editorBackground);
+				splash.appendChild(panelDiv);
 			}
 
 			// part: statusbar
