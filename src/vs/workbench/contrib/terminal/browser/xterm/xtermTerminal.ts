@@ -58,7 +58,7 @@ const enum TerminalScrollbarWidth {
 	/** Default xterm.js vertical scrollbar width. */
 	Default = 14,
 	/** Narrower scrollbar used when the Modern UI Update experiment is enabled. */
-	ModernUI = 8
+	ModernUI = 10
 }
 
 const enum TextBlinkConstants {
