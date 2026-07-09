@@ -523,8 +523,10 @@ suite('SessionServerTools', () => {
 		const worktreePath = URI.parse('file:///workspace/app/.copilot/worktrees/agents/feature-branch');
 		const worktreeSession = sessionMeta('wt', SessionStatus.Idle, worktreePath);
 
-		// The tool's workspace filter uses exact matching, which should also
-		// accept child paths (worktrees are children of the workspace).
+		// The tool's workspace filter uses parent-child matching (via
+		// extUriBiasedIgnorePathCase.isEqualOrParent), so a session whose
+		// working directory is a subdirectory of the workspace (a worktree)
+		// is still attributed to that workspace.
 		const filtered = filterSessions([worktreeSession], getListSessionsArgs({ workspace: workspace.toString() }));
 		assert.strictEqual(filtered.length, 1, `Expected worktree session to match workspace filter, got ${filtered.length} results`);
 	});
