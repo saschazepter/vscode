@@ -39,6 +39,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../../pla
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { GITHUB_REMOTE_FILE_SCHEME, ISession, ISessionWorkspace, SessionStatus } from '../../../../services/sessions/common/session.js';
 import { AgentSessionApprovalModel, agentSessionApprovalId, IAgentSessionApprovalInfo } from '../../../../../workbench/contrib/chat/browser/agentSessions/agentSessionApprovalModel.js';
+import { IVoicePlaybackService } from '../../../../../workbench/contrib/chat/common/voicePlaybackService.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { IMarkdownRendererService } from '../../../../../platform/markdown/browser/markdownRenderer.js';
 import { Action, ActionRunner, IAction, Separator, SubmenuAction } from '../../../../../base/common/actions.js';
@@ -280,6 +281,7 @@ interface ISessionItemTemplate {
 	readonly title: HighlightedLabel;
 	readonly titleContainer: HTMLElement;
 	readonly titleToolbar: MenuWorkbenchToolBar | undefined;
+	readonly pendingVoiceIndicator: HTMLElement;
 	readonly detailsRow: HTMLElement;
 	readonly approvalRow: HTMLElement;
 	readonly approvalLabel: HTMLElement;
@@ -328,7 +330,11 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 		private readonly sessionsProvidersService: ISessionsProvidersService,
 		// TEMPORARY — see the note on the `IAgentSessionsService` import above (#320480).
 		private readonly agentSessionsService: IAgentSessionsService,
-	) { }
+	) {
+		this._voicePlaybackService = this.instantiationService.invokeFunction(accessor => accessor.get(IVoicePlaybackService));
+	}
+
+	private readonly _voicePlaybackService: IVoicePlaybackService;
 
 	renderTemplate(container: HTMLElement): ISessionItemTemplate {
 		const disposables = new DisposableStore();
@@ -354,6 +360,9 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 			}
 		}));
 		const titleToolbarContainer = DOM.append(titleRow, $('.session-title-toolbar'));
+		// Shown when a voice response arrived while this session wasn't focused and
+		// is being held until it is (mirrors the main window's sessions viewer).
+		const pendingVoiceIndicator = DOM.append(titleRow, $('.session-pending-voice-indicator'));
 		// The list opens a session on click and on Gesture `tap` (touch).
 		// DOM event propagation stops only cover mouse/pointer events; the
 		// list's tap handler reads from `Gesture` directly, bypassing
@@ -384,7 +393,7 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 			}));
 		}
 
-		return { container, statusIcon, title, titleContainer, titleToolbar, detailsRow, approvalRow, approvalLabel, approvalButtonContainer, contextKeyService, disposables, elementDisposables };
+		return { container, statusIcon, title, titleContainer, titleToolbar, pendingVoiceIndicator, detailsRow, approvalRow, approvalLabel, approvalButtonContainer, contextKeyService, disposables, elementDisposables };
 	}
 
 	renderElement(node: ITreeNode<SessionListItem, FuzzyScore>, _index: number, template: ISessionItemTemplate): void {
@@ -414,6 +423,16 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 				persistence: { hideOnHover: false },
 			}), { groupId: 'sessions-list' }));
 		}
+
+		// Pending voice response indicator - shown when a voice response arrived
+		// while this session wasn't focused and is being held until it is.
+		const pendingVoiceResource = element.resource;
+		template.pendingVoiceIndicator.className = 'session-pending-voice-indicator ' + ThemeIcon.asClassName(Codicon.unmute);
+		template.pendingVoiceIndicator.title = localize('pendingVoiceResponse', "Voice response ready");
+		template.elementDisposables.add(autorun(reader => {
+			this._voicePlaybackService.pendingResponseVersion.read(reader);
+			template.pendingVoiceIndicator.classList.toggle('visible', this._voicePlaybackService.hasPendingResponse(pendingVoiceResource));
+		}));
 
 		// Toolbar context
 		if (template.titleToolbar) {

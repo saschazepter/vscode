@@ -57,9 +57,13 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 			return;
 		}
 
-		// Inject transcribed text into the focused chat widget.
+		// Inject transcribed text into the active session's chat widget. Unlike
+		// the main window (a single chat pane), the Agents window keeps DOM focus
+		// on the sessions list while showing a chat, so `lastFocusedWidget` is
+		// frequently stale; prefer the active session's widget and only fall back
+		// to the focused widget when there is no active session.
 		this._commandDisposables.add(CommandsRegistry.registerCommand('_chat.voice.acceptInput', (_accessor, text: string) => {
-			const widget = this.chatWidgetService.lastFocusedWidget ?? this._activeSessionWidget();
+			const widget = this._activeSessionWidget() ?? this.chatWidgetService.lastFocusedWidget;
 			if (text && widget?.viewModel) {
 				if (widget.viewModel.editing) {
 					// When editing an old message, populate the active input editor
@@ -71,13 +75,15 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 			}
 		}));
 
-		// Report the currently active chat's session resource.
+		// Report the currently shown session's chat resource. Mirrors the main
+		// window's use of its single pane's shown session (not DOM focus): in the
+		// Agents window the shown session is the active session.
 		this._commandDisposables.add(CommandsRegistry.registerCommand('_chat.voice.getCurrentSession', (): string | undefined => {
-			const focused = this.chatWidgetService.lastFocusedWidget?.viewModel?.sessionResource;
-			if (focused) {
-				return focused.toString();
+			const activeChat = this.sessionsService.activeSession.get()?.activeChat.get()?.resource;
+			if (activeChat) {
+				return activeChat.toString();
 			}
-			return this.sessionsService.activeSession.get()?.activeChat.get()?.resource.toString();
+			return this.chatWidgetService.lastFocusedWidget?.viewModel?.sessionResource?.toString();
 		}));
 
 		// Activate the session that owns the given chat resource so its response
@@ -127,6 +133,54 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 }
 
 registerWorkbenchContribution2(SessionsVoiceBridgeContribution.ID, SessionsVoiceBridgeContribution, WorkbenchPhase.AfterRestored);
+
+/**
+ * Context key mirror of `agentsVoice.contribution`'s per-widget
+ * `agentsVoiceInitiatedHere` key. The shared voice actions (Stop, Disconnect,
+ * Settings, Connecting) only appear in the chat widget whose scoped context has
+ * this key set, and it is normally set by `startVoiceInChat` on
+ * `IChatWidgetService.lastFocusedWidget`. In the Agents window DOM focus stays
+ * on the sessions list, so `lastFocusedWidget` is unreliable and the post-connect
+ * voice controls fail to appear. This contribution deterministically binds the
+ * key to the active session's chat widget while voice is connected/connecting,
+ * so the controls follow the session the user is viewing.
+ */
+class SessionsVoiceInitiatedContribution extends Disposable implements IWorkbenchContribution {
+
+	static readonly ID = 'sessions.voiceInitiated';
+
+	/** Matches `AGENTS_VOICE_INITIATED_HERE` in agentsVoice.contribution.ts. */
+	private static readonly _INITIATED_HERE_KEY = 'agentsVoiceInitiatedHere';
+
+	constructor(
+		@IVoiceSessionController private readonly voiceSessionController: IVoiceSessionController,
+		@ISessionsService private readonly sessionsService: ISessionsService,
+		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
+	) {
+		super();
+
+		this._register(autorun(reader => {
+			this.voiceSessionController.isConnected.read(reader);
+			this.voiceSessionController.isConnecting.read(reader);
+			this.sessionsService.activeSession.read(reader)?.activeChat.read(reader);
+			this._apply();
+		}));
+		// Widgets can be created after voice connects (opening a session slot).
+		this._register(this.chatWidgetService.onDidAddWidget(() => this._apply()));
+	}
+
+	private _apply(): void {
+		const voiceActive = this.voiceSessionController.isConnected.get() || this.voiceSessionController.isConnecting.get();
+		const activeResource = this.sessionsService.activeSession.get()?.activeChat.get()?.resource;
+		for (const widget of this.chatWidgetService.getAllWidgets()) {
+			const widgetResource = widget.viewModel?.sessionResource;
+			const isActiveWidget = voiceActive && !!activeResource && !!widgetResource && isEqual(widgetResource, activeResource);
+			widget.scopedContextKeyService.createKey(SessionsVoiceInitiatedContribution._INITIATED_HERE_KEY, isActiveWidget);
+		}
+	}
+}
+
+registerWorkbenchContribution2(SessionsVoiceInitiatedContribution.ID, SessionsVoiceInitiatedContribution, WorkbenchPhase.AfterRestored);
 
 /**
  * Keeps hands-free voice listening anchored to the session the user is dictating
