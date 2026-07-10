@@ -80,14 +80,7 @@ export class SinglePaneDetailPanelStrategy extends SinglePaneLayoutStrategy {
 			void this._detailSequencer.queue(() => this._syncDetailTarget(target, generation)).catch(onUnexpectedError);
 		}));
 
-		// Reveal the Files detail whenever the empty Files placeholder is opened
-		// (becomes the active editor) — its content, the Files tree, lives in the
-		// detail. Keyed on the active-editor signal so it covers both the `+` Files
-		// action and selecting the Files tab, while the managed auto-ensure (which
-		// opens the placeholder *inactive* as a background tab) never triggers it,
-		// preserving the Editor-only default. Hiding the aux bar does not change the
-		// active editor, so the user's hide sticks. Skipped when the editor content
-		// is hidden (the whole side pane is closed) or during a session-switch restore.
+		// The empty Files placeholder's content (the Files tree) lives in the detail; keyed on active-editor so the inactive auto-ensured tab never reveals it.
 		this._register(this._editorService.onDidActiveEditorChange(() => {
 			if (this._editorService.activeEditor instanceof EmptyFileEditorInput
 				&& this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow)
