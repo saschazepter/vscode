@@ -77,6 +77,9 @@ export function getControlModelsForEntitlement(manifest: IModelsControlManifest,
 }
 
 export function getModelPickerIcon(model: ILanguageModelChatMetadataAndIdentifier, useGenericIcon = false): ThemeIcon {
+	if (model.metadata.statusIcon?.id === Codicon.warning.id || model.metadata.warningText) {
+		return Codicon.warning;
+	}
 	return model.metadata.statusIcon ?? getModelProviderIcon(model, useGenericIcon);
 }
 
