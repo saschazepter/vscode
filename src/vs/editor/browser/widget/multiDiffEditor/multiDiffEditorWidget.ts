@@ -69,11 +69,15 @@ export class MultiDiffEditorWidget extends Disposable {
 		// Apply the view model and the (optional) restored view state in a single
 		// transaction so the widget's automatic first-change navigation, which runs
 		// when the model is set, already sees the restored active item/collapsed
-		// state instead of navigating to (and focusing) the first file.
+		// state instead of navigating to (and focusing) the first file. Without a
+		// view state, clear any pending restoration state so the new model cannot
+		// inherit the previous model's collapsed/selection/scroll state.
 		transaction(tx => {
 			this._viewModel.set(viewModel, tx);
 			if (options?.viewState) {
 				this._widgetImpl.get().setViewState(options.viewState, tx);
+			} else {
+				this._widgetImpl.get().clearPendingRestorationState();
 			}
 		});
 	}

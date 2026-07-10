@@ -244,6 +244,11 @@ export class MultiDiffEditorWidgetImpl extends Disposable {
 				scrollHeight: totalHeight,
 				scrollWidth,
 			});
+
+			// A restored scroll offset applied before the model updated these
+			// dimensions would be clamped against a stale (often 0) scrollHeight, so
+			// apply it here once the dimensions are known.
+			this._applyPendingScrollState();
 		}));
 
 		_element.replaceChildren(this._elements.root);
@@ -298,7 +303,39 @@ export class MultiDiffEditorWidgetImpl extends Disposable {
 	}
 
 	public setScrollState(scrollState: { top?: number; left?: number }): void {
-		this._scrollableElement.setScrollPosition({ scrollLeft: scrollState.left, scrollTop: scrollState.top });
+		this._pendingScrollState = scrollState;
+		this._applyPendingScrollState();
+	}
+
+	/**
+	 * Applies a restored scroll offset once the scrollable dimensions can
+	 * accommodate it; retries on subsequent dimension updates until it sticks (so
+	 * a fresh/reloaded widget whose content height is not yet known does not clamp
+	 * the offset to 0). Consumed once it lands.
+	 */
+	private _applyPendingScrollState(): void {
+		const pending = this._pendingScrollState;
+		if (!pending) {
+			return;
+		}
+		this._scrollableElement.setScrollPosition({ scrollLeft: pending.left, scrollTop: pending.top });
+		const applied = this._scrollableElement.getScrollPosition();
+		const topLanded = pending.top === undefined || applied.scrollTop >= pending.top;
+		const leftLanded = pending.left === undefined || applied.scrollLeft >= pending.left;
+		if (topLanded && leftLanded) {
+			this._pendingScrollState = undefined;
+		}
+	}
+
+	/**
+	 * Clears any pending restoration state (documents, active item, scroll). Called
+	 * when a new model is installed without a view state, so it cannot inherit the
+	 * previous model's state for overlapping diff keys.
+	 */
+	public clearPendingRestorationState(): void {
+		this._lastDocStates = undefined;
+		this._lastActiveDiffItemKey = undefined;
+		this._pendingScrollState = undefined;
 	}
 
 	/**
@@ -368,6 +405,9 @@ export class MultiDiffEditorWidgetImpl extends Disposable {
 	 * first file and reset scroll), so the restored state wins. Consumed once.
 	 */
 	private _lastActiveDiffItemKey: string | undefined;
+
+	/** A restored scroll offset waiting for the scrollable dimensions to be known. */
+	private _pendingScrollState: { top?: number; left?: number } | undefined;
 
 	public setViewState(viewState: IMultiDiffEditorViewState, tx?: ITransaction): void {
 		this.setScrollState(viewState.scrollState);
