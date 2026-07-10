@@ -234,7 +234,9 @@ suite('codexMapAppServerEvents', () => {
 		});
 		const delta = started[1] as { content: string };
 		const ready = started[2] as { invocationMessage: string; toolInput: string };
-		const completed = mapItemCompleted(state, {
+		// A successful no-output command is deferred to coalesce a possible
+		// sandbox pre-flight re-run; with no re-run it flushes at turn end.
+		const deferred = mapItemCompleted(state, {
 			item: {
 				type: 'commandExecution', id: 'cmd_wrap',
 				command: '/bin/zsh -lc \'touch ~/foo\'', cwd: '/tmp', processId: null,
@@ -244,17 +246,97 @@ suite('codexMapAppServerEvents', () => {
 			} as never,
 			threadId: 'thr_1', turnId: 'turn_a', completedAtMs: 0,
 		});
-		const complete = completed[0] as { result: { pastTenseMessage: string } };
+		const flushed = mapTurnCompleted(state, {
+			threadId: 'thr_1',
+			turn: {
+				id: 'turn_a',
+				items: [], itemsView: { type: 'full' } as never,
+				status: 'completed' as never,
+				error: null, startedAt: null, completedAt: null, durationMs: null,
+			},
+		} as never);
+		const complete = flushed[0] as { result: { pastTenseMessage: string } };
 		assert.deepStrictEqual({
+			deferred,
 			delta: delta.content,
 			invocationMessage: ready.invocationMessage,
 			toolInput: ready.toolInput,
 			pastTenseMessage: complete.result.pastTenseMessage,
 		}, {
+			deferred: [],
 			delta: 'touch ~/foo',
 			invocationMessage: 'touch ~/foo',
 			toolInput: 'touch ~/foo',
 			pastTenseMessage: 'Ran `touch ~/foo`',
+		});
+	});
+
+	test('commandExecution coalesces a sandbox pre-flight with its approved re-run into one box', () => {
+		const state = createCodexSessionMapState();
+		// Pre-flight: codex runs the command in the sandbox first; it produces
+		// no output and completes successfully.
+		const preStarted = mapItemStarted(state, {
+			item: {
+				type: 'commandExecution', id: 'cmd_preflight',
+				command: 'curl -s https://example.com', cwd: '/tmp', processId: null,
+				source: 'agent' as never, status: 'inProgress' as never,
+				commandActions: [], aggregatedOutput: null, exitCode: null, durationMs: null,
+			} as never,
+			threadId: 'thr_1', turnId: 'turn_a', startedAtMs: 0,
+		});
+		const toolCallId = state.itemToToolCall.get('cmd_preflight')!.toolCallId;
+		const preCompleted = mapItemCompleted(state, {
+			item: {
+				type: 'commandExecution', id: 'cmd_preflight',
+				command: 'curl -s https://example.com', cwd: '/tmp', processId: null,
+				source: 'agent' as never, status: 'completed' as never,
+				commandActions: [], aggregatedOutput: '', exitCode: 0, durationMs: 4,
+			} as never,
+			threadId: 'thr_1', turnId: 'turn_a', completedAtMs: 0,
+		});
+		// Escalation: same command re-run under an approval prompt, new item id.
+		const escStarted = mapItemStarted(state, {
+			item: {
+				type: 'commandExecution', id: 'cmd_escalated',
+				command: 'curl -s https://example.com', cwd: '/tmp', processId: null,
+				source: 'agent' as never, status: 'inProgress' as never,
+				commandActions: [], aggregatedOutput: null, exitCode: null, durationMs: null,
+			} as never,
+			threadId: 'thr_1', turnId: 'turn_a', startedAtMs: 0,
+		});
+		const escCompleted = mapItemCompleted(state, {
+			item: {
+				type: 'commandExecution', id: 'cmd_escalated',
+				command: 'curl -s https://example.com', cwd: '/tmp', processId: null,
+				source: 'agent' as never, status: 'completed' as never,
+				commandActions: [], aggregatedOutput: 'Example Domain', exitCode: 0, durationMs: 40,
+			} as never,
+			threadId: 'thr_1', turnId: 'turn_a', completedAtMs: 0,
+		});
+		const startCount = (actions: readonly unknown[]) => actions.filter(a => (a as { type: ActionType }).type === ActionType.ChatToolCallStart).length;
+		assert.deepStrictEqual({
+			// exactly one box opened (pre-flight's), escalation reuses it
+			starts: startCount(preStarted) + startCount(escStarted),
+			// pre-flight completion deferred, escalation start emits nothing
+			preCompleted,
+			escStarted,
+			// single completion carries the escalation's real output
+			escComplete: escCompleted[0],
+		}, {
+			starts: 1,
+			preCompleted: [],
+			escStarted: [],
+			escComplete: {
+				type: ActionType.ChatToolCallComplete,
+				turnId: 'turn_a',
+				toolCallId,
+				result: {
+					success: true,
+					pastTenseMessage: 'Ran `curl -s https://example.com`',
+					content: [{ type: ToolResultContentType.Text, text: 'Example Domain' }],
+					error: undefined,
+				},
+			},
 		});
 	});
 
@@ -541,7 +623,7 @@ suite('codexMapAppServerEvents', () => {
 		assert.strictEqual(complete.result.error?.code, 'denied');
 	});
 
-	test('collabAgentToolCall spawnAgent start emits tool-call lifecycle carrying the prompt and model', () => {
+	test('collabAgentToolCall spawnAgent start renders compactly (no prompt dump — the peer chat shows it)', () => {
 		const state = createCodexSessionMapState();
 		const startActions = mapItemStarted(state, {
 			item: {
@@ -553,17 +635,38 @@ suite('codexMapAppServerEvents', () => {
 			threadId: 'thr_1', turnId: 'turn_a', startedAtMs: 0,
 		});
 		const toolCallId = state.itemToToolCall.get('collab_1')!.toolCallId;
+		// spawnAgent opens a read-only peer chat (the host attaches the
+		// subagent-discovery block to this tool call), so the raw prompt is
+		// deliberately NOT dumped into the tool box.
 		assert.deepStrictEqual({
 			actions: startActions,
 			entryToolName: state.itemToToolCall.get('collab_1')!.toolName,
 		}, {
 			actions: [
 				{ type: ActionType.ChatToolCallStart, turnId: 'turn_a', toolCallId, toolName: 'codex.spawnAgent', displayName: 'Spawn agent' },
-				{ type: ActionType.ChatToolCallDelta, turnId: 'turn_a', toolCallId, content: 'Investigate the failing test\n\nModel: gpt-5.5' },
-				{ type: ActionType.ChatToolCallReady, turnId: 'turn_a', toolCallId, invocationMessage: 'Spawning agent', toolInput: 'Investigate the failing test\n\nModel: gpt-5.5', confirmed: ToolCallConfirmationReason.NotNeeded },
+				{ type: ActionType.ChatToolCallReady, turnId: 'turn_a', toolCallId, invocationMessage: 'Spawning agent', confirmed: ToolCallConfirmationReason.NotNeeded },
 			],
 			entryToolName: 'codex.spawnAgent',
 		});
+	});
+
+	test('collabAgentToolCall sendInput start still carries the prompt (only spawnAgent is compacted)', () => {
+		const state = createCodexSessionMapState();
+		const startActions = mapItemStarted(state, {
+			item: {
+				type: 'collabAgentToolCall', id: 'collab_si', tool: 'sendInput',
+				status: 'inProgress', senderThreadId: 'thr_1', receiverThreadIds: ['sub_1'],
+				prompt: 'Also check the CHANGELOG', model: null,
+				reasoningEffort: null, agentsStates: {},
+			} as never,
+			threadId: 'thr_1', turnId: 'turn_a', startedAtMs: 0,
+		});
+		const toolCallId = state.itemToToolCall.get('collab_si')!.toolCallId;
+		assert.deepStrictEqual(startActions, [
+			{ type: ActionType.ChatToolCallStart, turnId: 'turn_a', toolCallId, toolName: 'codex.sendInput', displayName: 'Send input to agent' },
+			{ type: ActionType.ChatToolCallDelta, turnId: 'turn_a', toolCallId, content: 'Also check the CHANGELOG' },
+			{ type: ActionType.ChatToolCallReady, turnId: 'turn_a', toolCallId, invocationMessage: 'Sending input to agent', toolInput: 'Also check the CHANGELOG', confirmed: ToolCallConfirmationReason.NotNeeded },
+		]);
 	});
 
 	test('collabAgentToolCall spawnAgent completed renders the subagent result as tool output', () => {

@@ -9,7 +9,7 @@ import type { Personality } from './protocol/generated/Personality.js';
 import type { WebSearchMode } from './protocol/generated/WebSearchMode.js';
 import type { ModeKind } from './protocol/generated/ModeKind.js';
 import type { SandboxMode } from './protocol/generated/v2/SandboxMode.js';
-import { CodexSessionConfigKey, narrowCodexPermissionsPreset, presetForResolvedPermissions, resolveCodexPermissionsPreset, type CodexApprovalPolicy, type ICodexResolvedPermissions } from '../../common/codexSessionConfigKeys.js';
+import { CodexSessionConfigKey, CODEX_DEFAULT_PERMISSIONS_PRESET, narrowCodexPermissionsPreset, presetForResolvedPermissions, resolveCodexPermissionsPreset, type CodexApprovalPolicy, type ICodexResolvedPermissions } from '../../common/codexSessionConfigKeys.js';
 
 // Re-export the shared, protocol-free config-key surface so node callers can
 // keep importing everything from this module.
@@ -82,8 +82,19 @@ export function resolveCodexPermissions(
  * - an explicitly chosen preset is kept as-is;
  * - legacy axes that map exactly onto a preset are migrated to that preset
  *   (single source of truth) and the raw axes dropped;
- * - legacy axes with no equivalent preset (e.g. `read-only`) are preserved
- *   verbatim and no preset is surfaced, so the legacy fallback keeps applying.
+ * - legacy axes with a `workspace-write` or `danger-full-access` sandbox that
+ *   do NOT map exactly onto a preset are snapped to the preset whose sandbox
+ *   matches (`default` / `full-access`). This keeps the resolved axes in sync
+ *   with the preset the "Approvals" chip displays, so a legacy
+ *   `approvalPolicy = 'never'` + `workspace-write` session resolves to the
+ *   `default` preset's `on-request` policy (and actually prompts) instead of
+ *   silently running without approval while the chip claims "Default
+ *   Permissions". Snapping never grants more sandbox access than the legacy
+ *   value already had;
+ * - legacy axes with a `read-only` sandbox (which no preset expands to, and
+ *   which is more locked-down than any preset) are preserved verbatim and no
+ *   preset is surfaced, so restore never silently escalates them to
+ *   `workspace-write`.
  */
 export function migrateCodexPermissionValues(
 	config: Record<string, unknown> | undefined,
@@ -98,9 +109,22 @@ export function migrateCodexPermissionValues(
 	if (equivalentPreset) {
 		return { [CodexSessionConfigKey.PermissionsPreset]: equivalentPreset };
 	}
+	// `read-only` is more locked-down than any preset's sandbox and cannot be
+	// represented by one, so preserve the raw axes — surfacing a preset here
+	// would silently escalate the session to `workspace-write` on restore.
+	if (resolved.sandboxMode === 'read-only') {
+		return {
+			[CodexSessionConfigKey.ApprovalPolicy]: resolved.approvalPolicy,
+			[CodexSessionConfigKey.SandboxMode]: resolved.sandboxMode,
+		};
+	}
+	// Otherwise snap onto the preset whose sandbox matches so the displayed chip
+	// and the resolved axes stay consistent (`danger-full-access` → Full Access,
+	// any other non-exact `workspace-write` combo → Default Permissions).
 	return {
-		[CodexSessionConfigKey.ApprovalPolicy]: resolved.approvalPolicy,
-		[CodexSessionConfigKey.SandboxMode]: resolved.sandboxMode,
+		[CodexSessionConfigKey.PermissionsPreset]: resolved.sandboxMode === 'danger-full-access'
+			? 'full-access'
+			: CODEX_DEFAULT_PERMISSIONS_PRESET,
 	};
 }
 

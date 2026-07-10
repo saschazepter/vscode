@@ -127,6 +127,13 @@ suite('codexSessionConfigKeys', () => {
 			explicit: migrateCodexPermissionValues({ [CodexSessionConfigKey.PermissionsPreset]: 'auto-review' }, defaults),
 			// Legacy axes equal to a preset are migrated to it (raw axes dropped).
 			migrated: migrateCodexPermissionValues({ [CodexSessionConfigKey.SandboxMode]: 'workspace-write', [CodexSessionConfigKey.ApprovalPolicy]: 'on-request' }, defaults),
+			// A legacy `never` + `workspace-write` combo has no exact preset but is
+			// snapped onto `default` so the chip and the resolved (on-request) axes
+			// stay in sync instead of running without ever prompting.
+			snappedDefault: migrateCodexPermissionValues({ [CodexSessionConfigKey.SandboxMode]: 'workspace-write', [CodexSessionConfigKey.ApprovalPolicy]: 'never' }, defaults),
+			// A legacy off-preset `danger-full-access` combo is snapped onto
+			// `full-access` so the chip honestly reflects the full machine access.
+			snappedFullAccess: migrateCodexPermissionValues({ [CodexSessionConfigKey.SandboxMode]: 'danger-full-access', [CodexSessionConfigKey.ApprovalPolicy]: 'on-request' }, defaults),
 			// Legacy `read-only` axes are preserved verbatim with NO preset — the
 			// escalation the reviewer flagged.
 			preserved: migrateCodexPermissionValues({ [CodexSessionConfigKey.SandboxMode]: 'read-only' }, defaults),
@@ -136,6 +143,8 @@ suite('codexSessionConfigKeys', () => {
 			invert: { default: 'default', autoReview: 'auto-review', fullAccess: 'full-access', readOnly: undefined },
 			explicit: { [CodexSessionConfigKey.PermissionsPreset]: 'auto-review' },
 			migrated: { [CodexSessionConfigKey.PermissionsPreset]: 'default' },
+			snappedDefault: { [CodexSessionConfigKey.PermissionsPreset]: 'default' },
+			snappedFullAccess: { [CodexSessionConfigKey.PermissionsPreset]: 'full-access' },
 			preserved: { [CodexSessionConfigKey.ApprovalPolicy]: 'on-request', [CodexSessionConfigKey.SandboxMode]: 'read-only' },
 			empty: { [CodexSessionConfigKey.PermissionsPreset]: 'default' },
 		});

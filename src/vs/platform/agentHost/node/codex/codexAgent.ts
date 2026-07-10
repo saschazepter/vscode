@@ -80,6 +80,7 @@ import type { ThreadForkResponse } from './protocol/generated/v2/ThreadForkRespo
 import type { TurnCompletedNotification } from './protocol/generated/v2/TurnCompletedNotification.js';
 import type { TurnStartedNotification } from './protocol/generated/v2/TurnStartedNotification.js';
 import type { ItemStartedNotification } from './protocol/generated/v2/ItemStartedNotification.js';
+import type { ItemCompletedNotification } from './protocol/generated/v2/ItemCompletedNotification.js';
 import type { TurnStartParams } from './protocol/generated/v2/TurnStartParams.js';
 import type { UserInput } from './protocol/generated/v2/UserInput.js';
 import type { ListMcpServerStatusResponse } from './protocol/generated/v2/ListMcpServerStatusResponse.js';
@@ -484,6 +485,31 @@ interface ICodexSession {
 }
 
 /**
+ * A live Codex collab-agent (subagent) child thread. Codex runs each spawned
+ * subagent as its OWN app-server thread that emits a full item/turn event
+ * stream (`turn/started`, `item/*`, `turn/completed`) under the child thread
+ * id — it is NOT flattened onto the parent thread. We render that stream in a
+ * read-only peer chat (the "agent team" pattern, mirroring Copilot/Claude) by
+ * routing the child thread's notifications through the shared mappers with an
+ * isolated {@link ICodexSession} and firing each resulting action tagged with
+ * the parent `spawnAgent` tool call as its `parentToolCallId`, so the shared
+ * orchestrator ({@link AgentSideEffects}) lands them in the subagent chat.
+ */
+interface ICodexSubagent {
+	/** Caller-facing sessionId of the parent session that spawned this subagent. */
+	readonly parentSessionId: string;
+	/** Host-side toolCallId of the parent `spawnAgent` collab tool call (routing key). */
+	readonly toolCallId: string;
+	/**
+	 * Isolated session used to run the shared event mappers for the child
+	 * thread. Shares the parent's `sessionUri` and `acceptedForSession` memo so
+	 * side effects target the parent's working tree and the accept-for-session
+	 * decision spans parent + subagents, but keeps its own map/turn state.
+	 */
+	readonly session: ICodexSession;
+}
+
+/**
  * Connection state machine. The codex process is spawned lazily on first
  * need (Decision 6) and stays alive for the agent's lifetime.
  */
@@ -627,6 +653,14 @@ export class CodexAgent extends Disposable implements IAgent {
 	private readonly _sessions = new Map<string, ICodexSession>();
 	/** Inverse map: codex threadId → caller-facing sessionId, for routing codex notifications back to sessions. */
 	private readonly _sessionIdByThreadId = new Map<string, string>();
+	/**
+	 * Live subagent (collab-agent) child threads, keyed by the child codex
+	 * thread id. Populated when a parent session's `spawnAgent` collab tool
+	 * call completes (carrying the child `receiverThreadIds`); the child's
+	 * subsequent `turn/*` and `item/*` notifications route here instead of
+	 * {@link _sessionIdByThreadId}. Removed on the child's `turn/completed`.
+	 */
+	private readonly _subagentsByThreadId = new Map<string, ICodexSubagent>();
 	/**
 	 * Connection-global MCP server inventory reported by the codex
 	 * app-server (`mcpServerStatus/list` + `mcpServer/startupStatus/updated`).
@@ -783,21 +817,25 @@ export class CodexAgent extends Disposable implements IAgent {
 	 * Resolve the Codex security axes (approval policy, sandbox, reviewer) for a
 	 * live or restored session from its RAW persisted config values.
 	 *
-	 * Reading the raw values (rather than {@link _readSessionConfig}, which runs
-	 * `validateOrDefault`) is important: `validateOrDefault` always materializes
-	 * the default {@link CodexSessionConfigKey.PermissionsPreset}, which would
-	 * shadow a legacy session that persisted only the individual `sandboxMode` /
-	 * `approvalPolicy` axes — silently escalating e.g. a `read-only` session back
-	 * to `workspace-write` on resume. Using the raw values lets
-	 * {@link resolveCodexPermissions} honor those legacy axes when no explicit
-	 * preset was ever chosen.
+	 * The raw values are normalized through {@link migrateCodexPermissionValues}
+	 * (the same migration the restore path applies) before resolving, so the
+	 * axes we send to the app-server always match the preset the "Approvals" chip
+	 * displays. This matters for two legacy shapes:
+	 * - a session that persisted only `sandboxMode = 'read-only'` is preserved
+	 *   verbatim, so it is NOT silently escalated back to `workspace-write` on
+	 *   resume (the chip over-promises, but the session stays more locked down);
+	 * - a session that persisted `approvalPolicy = 'never'` + `workspace-write`
+	 *   (which the chip renders as "Default Permissions") is snapped onto the
+	 *   `default` preset's `on-request` policy so it actually prompts, instead of
+	 *   running commands unprompted while the chip claims it would ask.
 	 */
 	private _resolveSessionPermissions(session: ICodexSession): ICodexResolvedPermissions {
 		const rawValues = this._configurationService.getSessionConfigValues(session.sessionUri.toString());
-		return resolveCodexPermissions(rawValues, {
+		const defaults = {
 			approvalPolicy: codexSessionConfigDefaults[CodexSessionConfigKey.ApprovalPolicy],
 			sandboxMode: codexSessionConfigDefaults[CodexSessionConfigKey.SandboxMode],
-		});
+		};
+		return resolveCodexPermissions(migrateCodexPermissionValues(rawValues, defaults), defaults);
 	}
 
 	private _sandboxPolicy(session: ICodexSession, config: ReturnType<typeof codexSessionConfigSchema.validateOrDefault>, mode: SandboxMode): SandboxPolicy {
@@ -1086,8 +1124,8 @@ export class CodexAgent extends Disposable implements IAgent {
 		this._register(client.onNotification('item/reasoning/summaryTextDelta', params => this._dispatchByThread(params.threadId, s => mapReasoningSummaryTextDelta(s.mapState, this._withHostTurnId(s, params)))));
 		this._register(client.onNotification('item/reasoning/textDelta', params => this._dispatchByThread(params.threadId, s => mapReasoningTextDelta(s.mapState, this._withHostTurnId(s, params)))));
 		this._register(client.onNotification('thread/tokenUsage/updated', params => this._dispatchByThread(params.threadId, s => mapTokenUsageUpdated(this._withHostTurnId(s, params)))));
-		this._register(client.onNotification('item/completed', params => this._dispatchByThread(params.threadId, s => mapItemCompleted(s.mapState, this._withHostTurnId(s, params)))));
-		this._register(client.onNotification('turn/completed', params => this._dispatchByThread(params.threadId, s => this._handleTurnCompletedNotification(s, params))));
+		this._register(client.onNotification('item/completed', params => this._dispatchItemCompleted(params)));
+		this._register(client.onNotification('turn/completed', params => this._dispatchTurnCompleted(params)));
 		// Auto-review (guardian) surfacing. The guardian warning is shown as a
 		// system notification; a completed *denied* review is turned into a
 		// retroactive "Approve anyway" tool-call card. The review lifecycle is
@@ -1514,6 +1552,18 @@ export class CodexAgent extends Disposable implements IAgent {
 	}
 
 	private _dispatchByThread(threadId: string, mapFn: (s: ICodexSession) => ReturnType<typeof mapTurnStarted>): void {
+		// Collab-agent (subagent) child threads emit their own full event
+		// stream; route them to the isolated subagent session and fire each
+		// action tagged with the parent `spawnAgent` tool call so the shared
+		// orchestrator lands them in the read-only peer chat.
+		const subagent = this._subagentsByThreadId.get(threadId);
+		if (subagent) {
+			const actions = mapFn(subagent.session);
+			for (const action of actions) {
+				this._fireSubagent(subagent, action);
+			}
+			return;
+		}
 		const sessionId = this._sessionIdByThreadId.get(threadId);
 		const session = sessionId ? this._sessions.get(sessionId) : undefined;
 		if (!session) {
@@ -1525,6 +1575,170 @@ export class CodexAgent extends Disposable implements IAgent {
 		for (const action of actions) {
 			this._fire(session.sessionUri, action);
 		}
+	}
+
+	/**
+	 * `item/completed` dispatch. In addition to the normal per-thread mapping,
+	 * a parent session's completed `spawnAgent` collab tool call now carries
+	 * the child `receiverThreadIds`, so we register each spawned subagent and
+	 * emit a `subagent_started` signal (before mapping the completion, so the
+	 * shared orchestrator has attached the subagent-chat block to the parent
+	 * tool call by the time it completes).
+	 */
+	private _dispatchItemCompleted(params: ItemCompletedNotification): void {
+		const subagent = this._subagentsByThreadId.get(params.threadId);
+		if (subagent) {
+			const actions = mapItemCompleted(subagent.session.mapState, this._withHostTurnId(subagent.session, params));
+			for (const action of actions) {
+				this._fireSubagent(subagent, action);
+			}
+			return;
+		}
+		const sessionId = this._sessionIdByThreadId.get(params.threadId);
+		const session = sessionId ? this._sessions.get(sessionId) : undefined;
+		if (!session) {
+			this._logService.trace(`[Codex] Ignoring item/completed for untracked threadId=${params.threadId}; likely unclaimed prewarm`);
+			return;
+		}
+		// Detect subagent spawns BEFORE mapping the completion: the host
+		// toolCallId lives in the parent's itemToToolCall map (which the mapper
+		// may clear), and firing `subagent_started` first lets the orchestrator
+		// attach the read-only-chat block to the still-open parent tool call.
+		this._maybeRegisterSubagents(session, params);
+		const actions = mapItemCompleted(session.mapState, this._withHostTurnId(session, params));
+		for (const action of actions) {
+			this._fire(session.sessionUri, action);
+		}
+	}
+
+	/**
+	 * `turn/completed` dispatch. For a subagent child thread, route the turn's
+	 * flush/orphan actions to the peer chat but suppress its `ChatTurnComplete`
+	 * — the child chat's turn is closed cleanly (without the parent's
+	 * checkpoint/changeset/title side effects) by the `subagent_completed`
+	 * signal, which also tears down the child-thread tracking.
+	 */
+	private _dispatchTurnCompleted(params: TurnCompletedNotification): void {
+		const subagent = this._subagentsByThreadId.get(params.threadId);
+		if (subagent) {
+			const actions = this._handleTurnCompletedNotification(subagent.session, params);
+			for (const action of actions) {
+				if (action.type === ActionType.ChatTurnComplete) {
+					continue;
+				}
+				this._fireSubagent(subagent, action);
+			}
+			this._subagentsByThreadId.delete(params.threadId);
+			subagent.session.pendingCommandApprovals.denyAll('decline');
+			this._onDidSessionProgress.fire({
+				kind: 'subagent_completed',
+				chat: URI.parse(buildDefaultChatUri(subagent.session.sessionUri)),
+				toolCallId: subagent.toolCallId,
+			});
+			return;
+		}
+		this._dispatchByThread(params.threadId, s => this._handleTurnCompletedNotification(s, params));
+	}
+
+	/**
+	 * When a parent session's `spawnAgent` collab tool call completes it
+	 * carries the child thread id(s) in `receiverThreadIds`. Register an
+	 * isolated subagent session for each new child thread and emit a
+	 * `subagent_started` signal so the shared orchestrator opens the read-only
+	 * peer chat and attaches its discovery block to the parent tool call.
+	 */
+	private _maybeRegisterSubagents(session: ICodexSession, params: ItemCompletedNotification): void {
+		const item = params.item;
+		if (item.type !== 'collabAgentToolCall' || item.tool !== 'spawnAgent') {
+			return;
+		}
+		const entry = session.mapState.itemToToolCall.get(item.id);
+		if (!entry) {
+			return;
+		}
+		const parentChat = URI.parse(buildDefaultChatUri(session.sessionUri));
+		const model = item.model || undefined;
+		const taskDescription = item.prompt || undefined;
+		for (const childThreadId of item.receiverThreadIds) {
+			if (this._subagentsByThreadId.has(childThreadId)) {
+				continue;
+			}
+			const subSession = this._createSubagentSession(session, childThreadId);
+			this._subagentsByThreadId.set(childThreadId, {
+				parentSessionId: session.sessionId,
+				toolCallId: entry.toolCallId,
+				session: subSession,
+			});
+			this._onDidSessionProgress.fire({
+				kind: 'subagent_started',
+				chat: parentChat,
+				toolCallId: entry.toolCallId,
+				agentName: model ?? 'codex',
+				agentDisplayName: model ?? 'Subagent',
+				taskDescription,
+			});
+			this._logService.trace(`[Codex:${session.sessionId}] subagent spawned thread=${childThreadId} toolCall=${entry.toolCallId} model=${model ?? '(default)'}`);
+		}
+	}
+
+	/**
+	 * Build an isolated {@link ICodexSession} used to run the shared event
+	 * mappers for a subagent child thread. It shares the parent's `sessionUri`
+	 * (so side effects target the parent's working tree and the fired actions
+	 * resolve to the parent chat channel) and `acceptedForSession` memo (so the
+	 * accept-for-session decision spans parent + subagents), but has its own
+	 * fresh map/turn state and approval registry so the child's events don't
+	 * collide with the parent's.
+	 */
+	private _createSubagentSession(parent: ICodexSession, childThreadId: string): ICodexSession {
+		const clientToolSet = new ActiveClientToolSet();
+		return {
+			sessionId: parent.sessionId,
+			threadId: childThreadId,
+			sessionUri: parent.sessionUri,
+			workingDirectory: parent.workingDirectory,
+			managedWorkingDirectory: undefined,
+			mapState: createCodexSessionMapState(new Set(this._serverToolHost?.toolNames ?? []), clientToolSet),
+			pendingCommandApprovals: new PendingRequestRegistry<CommandExecutionApprovalDecision>(),
+			acceptedForSession: parent.acceptedForSession,
+			handledGuardianReviews: new Set<string>(),
+			pendingGuardianReviewCards: new Set<string>(),
+			pendingSteeringFlips: new Map<string, PendingMessage>(),
+			clientToolSet,
+			pendingClientToolCalls: new PendingRequestRegistry<ToolCallResult>(),
+			pendingUserInputs: new PendingRequestRegistry<ICodexUserInputResult>(),
+			materializedToolsSig: undefined,
+			firstTurnSent: true,
+			model: parent.model,
+			currentTurnId: undefined,
+			currentAppTurnId: undefined,
+			hostTurnIdByAppTurnId: new Map<string, string>(),
+			codexTurnIdByHostTurnId: new Map<string, string>(),
+			needsResume: false,
+			lastPromptText: '',
+			disposed: false,
+			materializePromise: undefined,
+			materializedEventFired: true,
+			prewarmTimer: undefined,
+			prewarmClaimed: true,
+			serverToolsAdvertised: true,
+			mcpController: undefined,
+		};
+	}
+
+	/**
+	 * Fire a subagent action tagged with the parent `spawnAgent` tool call.
+	 * The `resource` is the PARENT chat channel (the key the subagent chat is
+	 * registered under in the orchestrator); `parentToolCallId` routes the
+	 * action into the child's read-only peer chat.
+	 */
+	private _fireSubagent(subagent: ICodexSubagent, action: SessionAction | ChatAction): void {
+		this._onDidSessionProgress.fire({
+			kind: 'action',
+			resource: URI.parse(buildDefaultChatUri(subagent.session.sessionUri)),
+			action,
+			parentToolCallId: subagent.toolCallId,
+		});
 	}
 
 	/**
@@ -1549,15 +1763,15 @@ export class CodexAgent extends Disposable implements IAgent {
 		readonly command?: string | null;
 		readonly reason?: string | null;
 	}): Promise<CommandExecutionApprovalDecision> {
-		const sessionId = this._sessionIdByThreadId.get(params.threadId);
-		const session = sessionId ? this._sessions.get(sessionId) : undefined;
-		if (!session) {
+		const target = this._resolveApprovalTarget(params.threadId);
+		if (!target) {
 			this._logService.warn(`[Codex] commandExecution/requestApproval for unknown threadId=${params.threadId}; declining`);
 			return 'decline';
 		}
+		const session = target.session;
 		const entry = session.mapState.itemToToolCall.get(params.itemId);
 		if (!entry) {
-			this._logService.warn(`[Codex:${sessionId}] commandExecution/requestApproval for unknown itemId=${params.itemId}; declining`);
+			this._logService.warn(`[Codex:${session.sessionId}] commandExecution/requestApproval for unknown itemId=${params.itemId}; declining`);
 			return 'decline';
 		}
 		const command = params.command ?? '';
@@ -1576,7 +1790,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		// PendingConfirmation signal so a synchronous responder can't
 		// miss the registration.
 		const decision = await session.pendingCommandApprovals.registerAndFire(entry.toolCallId, () => {
-			this._fire(session.sessionUri, {
+			this._fireApproval(target, {
 				type: ActionType.ChatToolCallReady,
 				turnId: entry.turnId,
 				toolCallId: entry.toolCallId,
@@ -1619,19 +1833,19 @@ export class CodexAgent extends Disposable implements IAgent {
 	 * if the session or item is unknown.
 	 */
 	private async _requestItemApproval(threadId: string, itemId: string, confirmationTitle: string): Promise<CommandExecutionApprovalDecision> {
-		const sessionId = this._sessionIdByThreadId.get(threadId);
-		const session = sessionId ? this._sessions.get(sessionId) : undefined;
-		if (!session) {
+		const target = this._resolveApprovalTarget(threadId);
+		if (!target) {
 			this._logService.warn(`[Codex] approval request for unknown threadId=${threadId}; declining`);
 			return 'decline';
 		}
+		const session = target.session;
 		const entry = session.mapState.itemToToolCall.get(itemId);
 		if (!entry) {
-			this._logService.warn(`[Codex:${sessionId}] approval request for unknown itemId=${itemId}; declining`);
+			this._logService.warn(`[Codex:${session.sessionId}] approval request for unknown itemId=${itemId}; declining`);
 			return 'decline';
 		}
 		return session.pendingCommandApprovals.registerAndFire(entry.toolCallId, () => {
-			this._fire(session.sessionUri, {
+			this._fireApproval(target, {
 				type: ActionType.ChatToolCallReady,
 				turnId: entry.turnId,
 				toolCallId: entry.toolCallId,
@@ -1640,6 +1854,34 @@ export class CodexAgent extends Disposable implements IAgent {
 				confirmationTitle,
 			});
 		});
+	}
+
+	/**
+	 * Resolve the {@link ICodexSession} that owns a codex thread for an
+	 * approval request, plus the subagent wrapper when the thread is a
+	 * collab-agent child. A subagent tool call's pending-confirmation
+	 * `ChatToolCallReady` must be fired with the parent `spawnAgent` tool call
+	 * as its `parentToolCallId` (via {@link _fireApproval}) so it lands in the
+	 * child's read-only peer chat — where the matching `ChatToolCallStart`
+	 * lives — instead of on the parent session.
+	 */
+	private _resolveApprovalTarget(threadId: string): { readonly session: ICodexSession; readonly subagent?: ICodexSubagent } | undefined {
+		const subagent = this._subagentsByThreadId.get(threadId);
+		if (subagent) {
+			return { session: subagent.session, subagent };
+		}
+		const sessionId = this._sessionIdByThreadId.get(threadId);
+		const session = sessionId ? this._sessions.get(sessionId) : undefined;
+		return session ? { session } : undefined;
+	}
+
+	/** Fire an approval action to the parent session or the subagent peer chat. */
+	private _fireApproval(target: { readonly session: ICodexSession; readonly subagent?: ICodexSubagent }, action: SessionAction | ChatAction): void {
+		if (target.subagent) {
+			this._fireSubagent(target.subagent, action);
+		} else {
+			this._fire(target.session.sessionUri, action);
+		}
 	}
 
 	private _handleGuardianWarning(session: ICodexSession, params: GuardianWarningNotification): ChatAction[] {
@@ -2074,12 +2316,13 @@ export class CodexAgent extends Disposable implements IAgent {
 		// fork back to the Default preset. Fork callers typically pass an empty
 		// `config.config`; any explicit override there still wins.
 		const sourceConfigValues = this._configurationService.getSessionConfigValues(fork.session.toString());
+		const forkDefaults = {
+			approvalPolicy: codexSessionConfigDefaults[CodexSessionConfigKey.ApprovalPolicy],
+			sandboxMode: codexSessionConfigDefaults[CodexSessionConfigKey.SandboxMode],
+		};
 		const { approvalPolicy, sandboxMode, approvalsReviewer } = resolveCodexPermissions(
-			{ ...sourceConfigValues, ...config.config },
-			{
-				approvalPolicy: codexSessionConfigDefaults[CodexSessionConfigKey.ApprovalPolicy],
-				sandboxMode: codexSessionConfigDefaults[CodexSessionConfigKey.SandboxMode],
-			},
+			migrateCodexPermissionValues({ ...sourceConfigValues, ...config.config }, forkDefaults),
+			forkDefaults,
 		);
 		const forkResult = await conn.client.request<'thread/fork', ThreadForkResponse>('thread/fork', {
 			threadId: sourceThreadId,
@@ -2617,6 +2860,15 @@ export class CodexAgent extends Disposable implements IAgent {
 		session.pendingUserInputs.rejectAll(new CancellationError());
 		// Clear any buffered steering so its pending bubble doesn't leak.
 		this._drainPendingSteering(session);
+		// Tear down any live subagent child threads spawned by this session so
+		// their parked approvals unwind and their tracking doesn't leak. The
+		// orchestrator closes the peer chats as part of session teardown.
+		for (const [childThreadId, subagent] of this._subagentsByThreadId) {
+			if (subagent.parentSessionId === sessionId) {
+				subagent.session.pendingCommandApprovals.denyAll('decline');
+				this._subagentsByThreadId.delete(childThreadId);
+			}
+		}
 		const conn = this._connection;
 		if (conn.kind === 'ready' && session.threadId !== undefined) {
 			const threadId = session.threadId;
@@ -2712,9 +2964,14 @@ export class CodexAgent extends Disposable implements IAgent {
 	}
 
 	respondToPermissionRequest(requestId: string, approved: boolean): void {
-		// `requestId` is the host-side toolCallId; iterate sessions and
-		// resolve the first match. Mirrors the Claude/Copilot agents.
-		for (const session of this._sessions.values()) {
+		// `requestId` is the host-side toolCallId; iterate sessions (including
+		// live subagent child sessions, whose command approvals live on their
+		// own registry) and resolve the first match. Mirrors Claude/Copilot.
+		const sessions = [
+			...this._sessions.values(),
+			...[...this._subagentsByThreadId.values()].map(s => s.session),
+		];
+		for (const session of sessions) {
 			if (session.pendingCommandApprovals.respond(requestId, approved ? 'accept' : 'decline')) {
 				if (!approved) {
 					// Remember the decline so the tool's `item/completed` (which
@@ -3230,6 +3487,10 @@ export class CodexAgent extends Disposable implements IAgent {
 			s.pendingUserInputs.rejectAll(new CancellationError());
 			s.mcpController?.dispose();
 		}
+		for (const subagent of this._subagentsByThreadId.values()) {
+			subagent.session.pendingCommandApprovals.denyAll('decline');
+		}
+		this._subagentsByThreadId.clear();
 		this._sessions.clear();
 		this._sessionIdByThreadId.clear();
 		this._mcpInventory.clear();
