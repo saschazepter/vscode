@@ -112,8 +112,12 @@ export class ChatHelpfulnessBanner extends Disposable {
 		this.thanksRow.classList.toggle('hidden', !showThanks);
 		this.detailRow.classList.toggle('hidden', !showDetail);
 
-		this.yesButton.element.classList.toggle('selected', this.vote === ChatHelpfulnessVote.Yes);
-		this.noButton.element.classList.toggle('selected', this.vote === ChatHelpfulnessVote.No);
+		const yesSelected = this.vote === ChatHelpfulnessVote.Yes;
+		const noSelected = this.vote === ChatHelpfulnessVote.No;
+		this.yesButton.checked = yesSelected;
+		this.noButton.checked = noSelected;
+		this.yesButton.element.classList.toggle('selected', yesSelected);
+		this.noButton.element.classList.toggle('selected', noSelected);
 	}
 
 	/**
