@@ -63,8 +63,6 @@ export class SinglePaneManagedTabsStrategy extends SinglePaneLayoutStrategy {
 
 	/** Managed tab kinds the user explicitly closed; not re-ensured until the session changes or the side pane is reopened. */
 	private readonly _dismissedManagedTabs = new Set<'changes' | 'files'>();
-	/** True once the user activated the Files placeholder, committing it as a normal tab that is not auto-removed when a real file is open. Reset on session change / user close. */
-	private _filesTabUserCommitted = false;
 	private _lastSyncedSessionKey: string | undefined;
 	private _sidePaneWasVisible = false;
 	private _tabSyncGeneration = 0;
@@ -111,16 +109,6 @@ export class SinglePaneManagedTabsStrategy extends SinglePaneLayoutStrategy {
 		// A user-initiated close of a managed tab is remembered so the sync does not
 		// immediately re-create it.
 		this._register(this._editorService.onDidCloseEditor(e => this._handleManagedTabClosed(e.editor)));
-
-		// Activating the Files placeholder commits it as a normal tab so the sync no
-		// longer removes it when a real file is open (and the user selects/opens
-		// another tab). Ignore restore-driven activations; reset on session change /
-		// user close.
-		this._register(this._editorService.onDidActiveEditorChange(() => {
-			if (!this._ctx.isRestoringSessionLayout && this._editorService.activeEditor instanceof EmptyFileEditorInput) {
-				this._filesTabUserCommitted = true;
-			}
-		}));
 	}
 
 	/** Queue work on the shared docked-tab sequencer (used by the editor-area collapse strategy). */
@@ -161,8 +149,6 @@ export class SinglePaneManagedTabsStrategy extends SinglePaneLayoutStrategy {
 			// A new session has its own editors; drop any tabs captured while the
 			// previous session's editor area was hidden so they are not reopened here.
 			this._coordinator.collapsedEditors = undefined;
-			// The committed Files tab is per session.
-			this._filesTabUserCommitted = false;
 		}
 		this._lastSyncedSessionKey = sessionKey;
 		this._sidePaneWasVisible = sidePaneVisible;
@@ -229,11 +215,7 @@ export class SinglePaneManagedTabsStrategy extends SinglePaneLayoutStrategy {
 		// Only a workspace file collapses the Files placeholder; other editors
 		// (e.g. the integrated browser) keep it shown.
 		const hasWorkspaceFile = group.editors.some(editor => this._isWorkspaceFileEditor(editor));
-		// Once the user has opened/activated the Files tab it is committed as a
-		// normal tab, so it is kept even when a real file is open and the user
-		// selects/opens another tab. An auto-ensured, never-activated placeholder is
-		// still removed as redundant while a real file is open.
-		return { placeholder, shouldShow: this._filesTabUserCommitted || !editorVisible || !hasWorkspaceFile };
+		return { placeholder, shouldShow: !editorVisible || !hasWorkspaceFile };
 	}
 
 	/** Whether the editor shows a workspace file (a file-system resource), excluding managed placeholders. */
@@ -322,7 +304,6 @@ export class SinglePaneManagedTabsStrategy extends SinglePaneLayoutStrategy {
 		}
 		if (editor instanceof EmptyFileEditorInput) {
 			this._dismissedManagedTabs.add('files');
-			this._filesTabUserCommitted = false;
 		} else if (this._coordinator.getChangesEditorResource(editor) !== undefined) {
 			this._dismissedManagedTabs.add('changes');
 		}
