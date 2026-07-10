@@ -14,9 +14,10 @@ import { toToolCallMeta } from '../../common/meta/agentToolCallMeta.js';
 import { IFileEditRecord, ISessionDatabase } from '../../common/sessionDataService.js';
 import { MessageAttachmentKind, type MessageAttachment } from '../../common/state/protocol/state.js';
 import { MessageKind, ResponsePartKind, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildSubagentSessionUri, type AgentSelection, type Message, type ModelSelection, type ResponsePart, type StringOrMarkdown, type ToolCallCompletedState, type ToolResultContent, type Turn } from '../../common/state/sessionState.js';
-import { getInvocationMessage, getPastTenseMessage, getShellLanguage, getSubagentMetadata, getTaskCompleteMarkdown, getToolDisplayName, getToolInputString, getToolKind, isEditTool, isHiddenTool, isTaskCompleteTool, synthesizeSkillToolCall } from './copilotToolDisplay.js';
+import { getInvocationMessage, getPastTenseMessage, getShellIntention, getShellLanguage, getSubagentMetadata, getTaskCompleteMarkdown, getToolDisplayName, getToolInputString, getToolKind, isEditTool, isHiddenTool, isTaskCompleteTool, synthesizeSkillToolCall } from './copilotToolDisplay.js';
 import { buildSessionDbUri } from '../shared/fileEditTracker.js';
 import { getMediaMime } from '../../../../base/common/mime.js';
+import { buildCopilotSystemNotification } from './copilotSystemNotification.js';
 
 function tryStringify(value: unknown): string | undefined {
 	try {
@@ -47,12 +48,11 @@ export function appendSdkToolResultContent(content: ToolResultContent[], sdkCont
 		switch (sdkContent.type) {
 			case 'shell_exit':
 				content.push({
-					type: ToolResultContentType.ShellExit,
-					shellId: sdkContent.shellId,
+					type: ToolResultContentType.TerminalComplete,
 					exitCode: sdkContent.exitCode,
-					...(sdkContent.cwd !== undefined ? { cwd: sdkContent.cwd } : {}),
-					...(sdkContent.outputPreview !== undefined ? { outputPreview: sdkContent.outputPreview } : {}),
-					...(sdkContent.outputTruncated !== undefined ? { outputTruncated: sdkContent.outputTruncated } : {}),
+					...(sdkContent.cwd !== undefined ? { cwd: URI.file(sdkContent.cwd).toString() } : {}),
+					...(sdkContent.outputPreview !== undefined ? { preview: sdkContent.outputPreview } : {}),
+					...(sdkContent.outputTruncated !== undefined ? { truncated: sdkContent.outputTruncated } : {}),
 				});
 				break;
 		}
@@ -71,6 +71,8 @@ interface IToolStartInfo {
 	readonly toolInput?: string;
 	readonly toolKind?: 'terminal' | 'subagent' | 'search';
 	readonly language?: string;
+	/** Intention (why the command runs) for shell tools, from their `description` argument. */
+	readonly intention?: string;
 	readonly subagentAgentName?: string;
 	readonly subagentDescription?: string;
 	readonly parameters: Record<string, unknown> | undefined;
@@ -103,10 +105,10 @@ export interface IMapSessionEventsOptions {
 	readonly agent?: AgentSelection;
 }
 
-function newTurnBuilder(id: string, text: string, options?: { attachments?: MessageAttachment[]; model?: ModelSelection; agent?: AgentSelection }): ITurnBuilder {
+function newTurnBuilder(id: string, text: string, options?: { attachments?: MessageAttachment[]; model?: ModelSelection; agent?: AgentSelection; origin?: MessageKind }): ITurnBuilder {
 	const message: Message = {
 		text,
-		origin: { kind: MessageKind.User },
+		origin: { kind: options?.origin ?? MessageKind.User },
 		...(options?.attachments?.length ? { attachments: options.attachments } : {}),
 		...(options?.model ? { model: options.model } : {}),
 		...(options?.agent ? { agent: options.agent } : {}),
@@ -138,6 +140,7 @@ function makeToolStartInfo(toolName: string, rawArguments: unknown, parentToolCa
 		toolInput: getToolInputString(toolName, parameters, toolArgs),
 		toolKind,
 		language: toolKind === 'terminal' ? getShellLanguage(toolName) : undefined,
+		intention: getShellIntention(toolName, parameters),
 		subagentAgentName: subagentMeta?.agentName,
 		subagentDescription: subagentMeta?.description,
 		parameters,
@@ -258,6 +261,7 @@ export async function mapSessionEvents(
 	let parentBuilder: ITurnBuilder | undefined;
 	let parentTurnState = TurnState.Cancelled;
 	let parentTurnAborted = false;
+	let rootAssistantTurnActive = false;
 
 	const flushParent = (): void => {
 		if (!parentBuilder) {
@@ -307,6 +311,16 @@ export async function mapSessionEvents(
 
 	for (const e of events) {
 		switch (e.type) {
+			case 'assistant.turn_start':
+				if (!e.agentId) {
+					rootAssistantTurnActive = true;
+				}
+				break;
+			case 'assistant.turn_end':
+				if (!e.agentId) {
+					rootAssistantTurnActive = false;
+				}
+				break;
 			case 'session.model_change': {
 				currentModel = { id: e.data.newModel };
 				break;
@@ -399,6 +413,22 @@ export async function mapSessionEvents(
 				}
 				break;
 			}
+			case 'system.notification': {
+				const notification = buildCopilotSystemNotification(e);
+				if (!notification) {
+					break;
+				}
+				if (rootAssistantTurnActive && parentBuilder) {
+					parentBuilder.responseParts.push({
+						kind: ResponsePartKind.SystemNotification,
+						content: notification.messageText,
+					});
+				} else if (notification.startsTurn) {
+					flushParent();
+					parentBuilder = newTurnBuilder(e.id, notification.messageText, { origin: MessageKind.SystemNotification });
+				}
+				break;
+			}
 			case 'subagent.started': {
 				const d = e.data;
 				subagentInfoByToolCallId.set(d.toolCallId, {
@@ -483,9 +513,12 @@ export async function mapSessionEvents(
 				const parentToolCallId = resolveParentToolCallId(e.agentId, undefined);
 				if (parentToolCallId) {
 					subagentTurnStates.set(parentToolCallId, TurnState.Cancelled);
-				} else if (parentBuilder) {
-					parentTurnState = TurnState.Cancelled;
-					parentTurnAborted = true;
+				} else {
+					rootAssistantTurnActive = false;
+					if (parentBuilder) {
+						parentTurnState = TurnState.Cancelled;
+						parentTurnAborted = true;
+					}
 				}
 				break;
 			}
@@ -680,6 +713,7 @@ function makeCompletedToolCallPart(
 		toolCallId: d.toolCallId,
 		toolName: info.toolName,
 		displayName: info.displayName,
+		intention: info.intention,
 		invocationMessage: info.invocationMessage,
 		toolInput: info.toolInput,
 		success: d.success,

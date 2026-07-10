@@ -30,7 +30,7 @@ import { IDeleteChatOptions, ISendRequestOptions, ISessionChangeEvent, ISessionM
 import { ISessionOptionGroup } from '../../../chat/browser/newSession.js';
 import { IsolationMode } from './isolationPicker.js';
 import { ILanguageModelToolsService } from '../../../../../workbench/contrib/chat/common/tools/languageModelToolsService.js';
-import { isBuiltinChatMode, IChatMode } from '../../../../../workbench/contrib/chat/common/chatModes.js';
+import { ChatMode, IChatMode, IChatModeService, isBuiltinChatMode } from '../../../../../workbench/contrib/chat/common/chatModes.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../../base/common/cancellation.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../../../workbench/contrib/chat/common/languageModels.js';
@@ -52,7 +52,7 @@ import { structuralEquals } from '../../../../../base/common/equals.js';
 import { CopilotCLISessionType } from '../../agentHost/browser/baseAgentHostSessionsProvider.js';
 import { createChangesets } from './copilotChatSessionsChangesets.js';
 import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentity.js';
-import { IAgentHostEnablementService } from '../../../../services/agentHost/common/agentHostEnablementService.js';
+import { IAgentHostEnablementService } from '../../../../../platform/agentHost/common/agentHostEnablementService.js';
 
 /** Claude Code session type — local agent powered by Claude. */
 export const ClaudeCodeSessionType: ISessionType = {
@@ -315,6 +315,7 @@ class CopilotCLISession extends Disposable implements ICopilotChatSession {
 		@IGitService private readonly gitService: IGitService,
 		@IGitHubService private readonly gitHubService: IGitHubService,
 		@IStorageService private readonly storageService: IStorageService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
 	) {
 		super();
 		this.sessionId = toSessionId(providerId, resource);
@@ -499,6 +500,19 @@ class CopilotCLISession extends Disposable implements ICopilotChatSession {
 		};
 		if (this._isolationMode === 'worktree' && this._branch) {
 			config[SessionConfigKey.Branch] = this._branch;
+
+			// Forward the user's `git.branchPrefix` (resource-scoped to the
+			// repository) so the agent host prepends it to the worktree branch
+			// it creates. Omit when unset/empty to preserve the default naming.
+			const branchPrefix = this.configurationService.getValue<string>('git.branchPrefix', { resource: this._repoUri });
+			if (typeof branchPrefix === 'string' && branchPrefix.length > 0) {
+				config[SessionConfigKey.WorktreeBranchPrefix] = branchPrefix;
+			}
+
+			const worktreeIncludeFiles = this.configurationService.getValue<string[]>('git.worktreeIncludeFiles', { resource: this._repoUri });
+			if (Array.isArray(worktreeIncludeFiles) && worktreeIncludeFiles.length > 0) {
+				config[SessionConfigKey.WorktreeIncludeFiles] = worktreeIncludeFiles;
+			}
 		}
 		return config;
 	}
@@ -1496,6 +1510,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		@ILogService private readonly logService: ILogService,
 		@IGitHubService private readonly gitHubService: IGitHubService,
 		@ILabelService private readonly labelService: ILabelService,
+		@IChatModeService private readonly chatModeService: IChatModeService,
 		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
 	) {
 		super();
@@ -1736,6 +1751,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 				longContextCacheCost: modelMetadata?.longContextCacheCost,
 				longContextCacheWriteCost: modelMetadata?.longContextCacheWriteCost,
 				priceCategory: modelMetadata?.priceCategory,
+				promo: modelMetadata?.promo,
 				maxInputTokens: modelMetadata?.maxInputTokens ?? 0,
 				maxOutputTokens: modelMetadata?.maxOutputTokens ?? 0,
 				capabilities: modelMetadata?.capabilities ? {
@@ -1766,6 +1782,89 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 
 		this._ensureSessionCache();
 		this._findChatSession(sessionId)?.setModelId(modelId);
+	}
+
+	setMode(sessionId: string, modeId: string): void {
+		const setSessionMode = (session: ICopilotChatSession): void => {
+			let mode: IChatMode | undefined;
+			switch (modeId) {
+				case ChatModeKind.Agent:
+					mode = ChatMode.Agent;
+					break;
+				case ChatModeKind.Edit:
+					mode = ChatMode.Edit;
+					break;
+				case ChatModeKind.Ask:
+					mode = ChatMode.Ask;
+					break;
+				default: {
+					const modes = this.chatModeService.createModes(session.resource);
+					try {
+						mode = modes.findModeById(modeId) ?? modes.findModeByName(modeId);
+					} finally {
+						modes.dispose();
+					}
+					break;
+				}
+			}
+
+			if (mode) {
+				session.setMode(mode);
+			}
+		};
+
+		const newSession = this._newSessions.get(sessionId);
+		if (newSession) {
+			setSessionMode(newSession);
+			return;
+		}
+
+		this._ensureSessionCache();
+		const session = this._findChatSession(sessionId);
+		if (session) {
+			setSessionMode(session);
+		}
+	}
+
+	setPermissionLevel(sessionId: string, level: string): void {
+		const newSession = this._newSessions.get(sessionId);
+		if (newSession) {
+			if (isChatPermissionLevel(level)) {
+				newSession.setPermissionLevel(level);
+			}
+			return;
+		}
+
+		this._ensureSessionCache();
+		const session = this._findChatSession(sessionId);
+		if (session && isChatPermissionLevel(level)) {
+			session.setPermissionLevel(level);
+		}
+	}
+
+	setIsolationMode(sessionId: string, mode: string): void {
+		if (mode !== 'worktree' && mode !== 'workspace') {
+			return;
+		}
+		const newSession = this._newSessions.get(sessionId);
+		if (newSession) {
+			newSession.setIsolationMode(mode);
+			return;
+		}
+
+		this._ensureSessionCache();
+		this._findChatSession(sessionId)?.setIsolationMode(mode);
+	}
+
+	setBranch(sessionId: string, branch: string): void {
+		const newSession = this._newSessions.get(sessionId);
+		if (newSession) {
+			newSession.setBranch(branch);
+			return;
+		}
+
+		this._ensureSessionCache();
+		this._findChatSession(sessionId)?.setBranch(branch);
 	}
 
 	// -- Session Actions --
@@ -1928,10 +2027,10 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	}
 
 	private async _deleteAgentSessions(agentSessions: IAgentSession[]): Promise<void> {
-		const cliSessionItems: { resource: URI }[] = [];
+		const cliSessionItems: { resource: URI; label: string }[] = [];
 		for (const agentSession of agentSessions) {
 			if (agentSession.providerType === CopilotCLISessionType.id) {
-				cliSessionItems.push({ resource: agentSession.resource });
+				cliSessionItems.push({ resource: agentSession.resource, label: agentSession.label });
 			} else {
 				await this.chatService.removeHistoryEntry(agentSession.resource);
 			}

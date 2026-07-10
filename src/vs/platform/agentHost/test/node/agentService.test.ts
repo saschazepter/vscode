@@ -26,7 +26,7 @@ import { AgentSession, GITHUB_COPILOT_PROTECTED_RESOURCE, IRestoredSubagentSessi
 import { ISessionDatabase, ISessionDataService } from '../../common/sessionDataService.js';
 import { SessionDatabase } from '../../node/sessionDatabase.js';
 import { ActionType, ActionEnvelope } from '../../common/state/sessionActions.js';
-import { ChangesetStatus, CustomizationType, MessageAttachmentKind, MessageKind, SessionActiveClient, ResponsePartKind, ROOT_STATE_URI, SessionLifecycle, SessionStatus, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildChatUri, buildDefaultChatUri, buildSubagentChatUri, buildSubagentSessionUri, customizationId, isSubagentSession, parseChatUri, parseSubagentSessionUri, ChatOriginKind, type ChangesetState, type MarkdownResponsePart, type ToolCallCompletedState, type ToolCallResponsePart, type Turn } from '../../common/state/sessionState.js';
+import { ChangesetStatus, CustomizationType, MessageAttachmentKind, MessageKind, SessionActiveClient, ResponsePartKind, ROOT_STATE_URI, SessionLifecycle, SessionStatus, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildChatUri, buildDefaultChatUri, buildSubagentChatUri, buildSubagentSessionUri, customizationId, isSubagentSession, parseChatUri, parseSubagentSessionUri, ChatOriginKind, type ChangesetState, type ISessionWithDefaultChat, type MarkdownResponsePart, type ToolCallCompletedState, type ToolCallResponsePart, type Turn } from '../../common/state/sessionState.js';
 import { type MessageResourceAttachment } from '../../common/state/protocol/state.js';
 import { IProductService } from '../../../product/common/productService.js';
 import { AgentService } from '../../node/agentService.js';
@@ -956,6 +956,50 @@ suite('AgentService (node dispatcher)', () => {
 			);
 		});
 
+		test('listSessions overlays live workspace metadata over a stale provider snapshot', async () => {
+			class DelayedListAgent extends MockAgent {
+				readonly listStarted = new DeferredPromise<void>();
+				readonly releaseList = new DeferredPromise<void>();
+				override async listSessions() {
+					const snapshot = await super.listSessions();
+					this.listStarted.complete();
+					await this.releaseList.p;
+					return snapshot;
+				}
+			}
+
+			const agent = new DelayedListAgent('copilot');
+			disposables.add(toDisposable(() => agent.dispose()));
+			agent.resolvedWorkingDirectory = URI.file('/original');
+			service.registerProvider(agent);
+			const { session } = await agent.createSession();
+
+			const listing = service.listSessions();
+			await agent.listStarted.p;
+			service.stateManager.restoreSession({
+				resource: session.toString(),
+				provider: 'copilot',
+				title: 'Materialized',
+				status: SessionStatus.Idle,
+				createdAt: new Date(1000).toISOString(),
+				modifiedAt: new Date(2000).toISOString(),
+				project: { uri: URI.file('/project').toString(), displayName: 'project' },
+				workingDirectory: URI.file('/worktree').toString(),
+			}, []);
+			agent.releaseList.complete();
+
+			const listed = (await listing).find(item => item.session.toString() === session.toString());
+			assert.deepStrictEqual({
+				modifiedTime: listed?.modifiedTime,
+				project: listed?.project && { uri: listed.project.uri.path, displayName: listed.project.displayName },
+				workingDirectory: listed?.workingDirectory?.path,
+			}, {
+				modifiedTime: 2000,
+				project: { uri: '/project', displayName: 'project' },
+				workingDirectory: '/worktree',
+			});
+		});
+
 		test.skip('listSessions synthesizes the session changeset catalogue from persisted diffs for unopened sessions', async () => {
 			// Pre-seed a `'diffs'` blob in the in-memory DB. The agent's
 			// `listSessions()` returns the session metadata but the session
@@ -1298,6 +1342,7 @@ suite('AgentService (node dispatcher)', () => {
 				getRepositoryRoot: async () => undefined,
 				getWorktreeRoots: async () => [],
 				addWorktree: async () => { },
+				copyWorktreeIncludeFiles: async () => { },
 				addExistingWorktree: async () => { },
 				removeWorktree: async () => { },
 				branchExists: async () => false,
@@ -1397,6 +1442,7 @@ suite('AgentService (node dispatcher)', () => {
 				getRepositoryRoot: async () => undefined,
 				getWorktreeRoots: async () => [],
 				addWorktree: async () => { },
+				copyWorktreeIncludeFiles: async () => { },
 				addExistingWorktree: async () => { },
 				removeWorktree: async () => { },
 				branchExists: async () => false,
@@ -1854,6 +1900,37 @@ suite('AgentService (node dispatcher)', () => {
 			assert.strictEqual(mdPart.content, 'Hi there!');
 			assert.strictEqual(state!.turns[0].state, TurnState.Complete);
 		});
+
+		test('interleaves persisted host-injected local turns after their anchor on restore', async () => {
+			const db = new TestSessionDatabase();
+			const localService = disposables.add(new AgentService(new NullLogService(), fileService, createSessionDataService(db), { _serviceBrand: undefined } as IProductService, createNoopGitService()));
+			localService.registerProvider(copilotAgent);
+			const { session } = await copilotAgent.createSession();
+			const sessionResource = (await copilotAgent.listSessions())[0].session;
+			const defaultChatUri = buildDefaultChatUri(sessionResource.toString());
+
+			// SDK transcript reconstructs a single real turn keyed by the user
+			// envelope id (`msg-real`, per mapSessionEvents).
+			copilotAgent.sessionMessages = [
+				{ type: 'message', session, role: 'user', messageId: 'msg-real', content: 'Hello', toolRequests: [] },
+				{ type: 'message', session, role: 'assistant', messageId: 'msg-real-a', content: 'Hi there!', toolRequests: [] },
+			];
+
+			// A host-injected local turn anchored after the real turn, plus one
+			// with no anchor (precedes any real turn), plus an orphan whose
+			// anchor is absent from the SDK transcript (should be dropped).
+			const localTurn = (id: string, text: string) => ({ id, message: { text, origin: { kind: MessageKind.User } }, responseParts: [], usage: undefined, state: TurnState.Complete });
+			await db.insertLocalTurn({ turnId: 'local-head', chatUri: defaultChatUri, anchorTurnId: undefined, seq: 1, payload: JSON.stringify(localTurn('local-head', '!pwd')) });
+			await db.insertLocalTurn({ turnId: 'local-after', chatUri: defaultChatUri, anchorTurnId: 'msg-real', seq: 2, payload: JSON.stringify(localTurn('local-after', '!ls')) });
+			await db.insertLocalTurn({ turnId: 'local-orphan', chatUri: defaultChatUri, anchorTurnId: 'gone', seq: 3, payload: JSON.stringify(localTurn('local-orphan', '!echo')) });
+
+			await localService.restoreSession(sessionResource);
+
+			const state = localService.stateManager.getSessionState(sessionResource.toString());
+			// head (no anchor) first, then the real turn, then its anchored local; orphan dropped.
+			assert.deepStrictEqual(state!.turns.map(t => t.id), ['local-head', 'msg-real', 'local-after']);
+		});
+
 
 		test('restores the default chat\'s independently-renamed title', async () => {
 			const db = new TestSessionDatabase();
@@ -2654,6 +2731,60 @@ suite('AgentService (node dispatcher)', () => {
 			}, {
 				forkForwarded: false,
 				newTurnCount: 0,
+			});
+		});
+
+		test('fork at a host-injected local turn redirects the SDK boundary to the concrete anchor and carries the local turn into the new chat', async () => {
+			let receivedFork: IAgentCreateChatForkSource | undefined;
+			class MultiChatAgent extends MockAgent {
+				override async createChat(_session: URI, _chat: URI, options?: IAgentCreateChatOptions): Promise<void> {
+					receivedFork = options?.fork;
+				}
+			}
+			const db = new TestSessionDatabase();
+			const agent = disposables.add(new MultiChatAgent('copilot'));
+			const localService = disposables.add(new AgentService(new NullLogService(), fileService, createSessionDataService(db), { _serviceBrand: undefined } as IProductService, createNoopGitService()));
+			localService.registerProvider(agent);
+			const { session } = await agent.createSession();
+			const sessionResource = (await agent.listSessions())[0].session;
+			const defaultChatUri = buildDefaultChatUri(sessionResource.toString());
+
+			// SDK transcript reconstructs a single real turn keyed by the user
+			// message id; a host-injected local turn is persisted after it.
+			agent.sessionMessages = [
+				{ type: 'message', session, role: 'user', messageId: 'real-1', content: 'Hello', toolRequests: [] },
+				{ type: 'message', session, role: 'assistant', messageId: 'real-1-a', content: 'Hi', toolRequests: [] },
+			];
+			const localTurn: Turn = { id: 'local-1', state: TurnState.Complete, message: { text: '!echo hi', origin: { kind: MessageKind.User } }, responseParts: [], usage: undefined };
+			await db.insertLocalTurn({ turnId: 'local-1', chatUri: defaultChatUri, anchorTurnId: 'real-1', seq: 1, payload: JSON.stringify(localTurn) });
+
+			// Restore so the source chat interleaves [real-1, local-1] and the
+			// in-memory local index knows local-1 is a local turn.
+			await localService.restoreSession(sessionResource);
+			assert.deepStrictEqual(localService.stateManager.getSessionState(sessionResource.toString())?.turns.map(t => t.id), ['real-1', 'local-1']);
+
+			// Fork the default chat AT the local turn into a new peer chat.
+			const peerUri = URI.parse(buildChatUri(sessionResource, 'peer-1'));
+			await localService.createChat(sessionResource, peerUri, { fork: { source: URI.parse(defaultChatUri), turnId: 'local-1' } });
+
+			const peerTurns = localService.stateManager.getChatState(peerUri.toString())?.turns ?? [];
+			const forkedLocals = (await db.getLocalTurns()).filter(r => r.chatUri === peerUri.toString());
+			assert.deepStrictEqual({
+				// SDK fork boundary redirected from the local turn to its concrete anchor.
+				sdkForkTurnId: receivedFork?.turnId,
+				// New chat seeded with remapped copies of both turns.
+				peerTurnCount: peerTurns.length,
+				// The forked local turn is persisted under the new chat, anchored to
+				// the forked copy of the real turn.
+				forkedLocalCount: forkedLocals.length,
+				forkedLocalAnchor: forkedLocals[0]?.anchorTurnId,
+				anchorIsPeerFirstTurn: forkedLocals[0]?.anchorTurnId === peerTurns[0]?.id,
+			}, {
+				sdkForkTurnId: 'real-1',
+				peerTurnCount: 2,
+				forkedLocalCount: 1,
+				forkedLocalAnchor: peerTurns[0]?.id,
+				anchorIsPeerFirstTurn: true,
 			});
 		});
 
@@ -3492,80 +3623,151 @@ suite('AgentService (node dispatcher)', () => {
 			assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'active-turn session must not be evicted');
 		});
 
-		test('a restored idle session is NOT evicted when its last subscriber drops', async () => {
-			// Idle-session eviction is currently disabled; the cached state should
-			// remain in memory after the last subscriber drops.
-			service.registerProvider(copilotAgent);
-			const { session } = await copilotAgent.createSession();
-			const sessions = await copilotAgent.listSessions();
-			const sessionResource = sessions[0].session;
+		test('a restored idle session is evicted when its last subscriber drops', () => {
+			return runWithFakedTimers({ useFakeTimers: true }, async () => {
+				service.registerProvider(copilotAgent);
+				const { session } = await copilotAgent.createSession();
+				const sessions = await copilotAgent.listSessions();
+				const sessionResource = sessions[0].session;
 
-			copilotAgent.sessionMessages = [
-				{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Hello', toolRequests: [] },
-				{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: 'Hi', toolRequests: [] },
-			];
-			await service.restoreSession(sessionResource);
-			service.addSubscriber(sessionResource, 'client-1');
+				copilotAgent.sessionMessages = [
+					{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Hello', toolRequests: [] },
+					{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: 'Hi', toolRequests: [] },
+				];
+				await service.restoreSession(sessionResource);
+				service.addSubscriber(sessionResource, 'client-1');
 
-			service.unsubscribe(sessionResource, 'client-1');
+				service.unsubscribe(sessionResource, 'client-1');
+				// Release is deferred behind the grace window — still cached until it elapses.
+				assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'session stays cached during the release grace');
+				await new Promise(resolve => setTimeout(resolve, 30_000));
 
-			assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'restored idle session should stay cached while eviction is disabled');
+				assert.strictEqual(service.stateManager.getSessionState(sessionResource.toString()), undefined, 'restored idle session should be evicted after the grace');
+				assert.deepStrictEqual(
+					copilotAgent.releaseSessionCalls.map(u => u.toString()),
+					[sessionResource.toString()],
+					'provider releaseSession should be invoked for the evicted root',
+				);
+				assert.strictEqual(copilotAgent.disposeSessionCalls.length, 0, 'eviction must not destructively dispose the session');
+			});
 		});
 
-		test('restored session stays cached after all subscribers drop', async () => {
-			// With idle eviction disabled, the session state remains cached even
-			// after every subscriber drops.
-			service.registerProvider(copilotAgent);
-			const { session } = await copilotAgent.createSession();
-			const sessions = await copilotAgent.listSessions();
-			const sessionResource = sessions[0].session;
+		test('re-subscribing within the grace cancels the release', () => {
+			return runWithFakedTimers({ useFakeTimers: true }, async () => {
+				service.registerProvider(copilotAgent);
+				const { session } = await copilotAgent.createSession();
+				const sessions = await copilotAgent.listSessions();
+				const sessionResource = sessions[0].session;
 
-			copilotAgent.sessionMessages = [
-				{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Hello', toolRequests: [] },
-				{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: 'Hi', toolRequests: [] },
-			];
-			await service.restoreSession(sessionResource);
-			service.addSubscriber(sessionResource, 'client-1');
-			service.addSubscriber(sessionResource, 'client-2');
+				copilotAgent.sessionMessages = [
+					{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Hello', toolRequests: [] },
+					{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: 'Hi', toolRequests: [] },
+				];
+				await service.restoreSession(sessionResource);
+				service.addSubscriber(sessionResource, 'client-1');
 
-			service.unsubscribe(sessionResource, 'client-1');
-			assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'still subscribed by client-2');
+				service.unsubscribe(sessionResource, 'client-1');
+				// Reconnect within the grace window.
+				service.addSubscriber(sessionResource, 'client-2');
+				await new Promise(resolve => setTimeout(resolve, 30_000));
 
-			service.unsubscribe(sessionResource, 'client-2');
-			assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'session stays cached after all subscribers drop while eviction is disabled');
+				assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'session must stay cached when re-subscribed within the grace');
+				assert.strictEqual(copilotAgent.releaseSessionCalls.length, 0, 'releaseSession must not fire when the grace was cancelled');
+			});
 		});
 
-		test('subagent subscriber pins the parent session against eviction', async () => {
-			service.registerProvider(copilotAgent);
-			const { session } = await copilotAgent.createSession();
-			const sessions = await copilotAgent.listSessions();
-			const sessionResource = sessions[0].session;
+		test('an evicted idle session restores losslessly on re-subscribe', () => {
+			return runWithFakedTimers({ useFakeTimers: true }, async () => {
+				service.registerProvider(copilotAgent);
+				const { session } = await copilotAgent.createSession();
+				const sessions = await copilotAgent.listSessions();
+				const sessionResource = sessions[0].session;
 
-			copilotAgent.sessionMessages = [
-				{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Review', toolRequests: [] },
-				{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: '', toolRequests: [{ toolCallId: 'tc-sub', name: 'task' }] },
-				{ type: 'tool_start', session, toolCallId: 'tc-sub', toolName: 'task', displayName: 'Task', invocationMessage: 'Delegating', toolKind: 'subagent' as const, subagentDescription: 'Find files', subagentAgentName: 'explore' },
-				{ type: 'subagent_started', session, toolCallId: 'tc-sub', agentName: 'explore', agentDisplayName: 'Explore', agentDescription: 'Explores' },
-				{ type: 'tool_start', session, toolCallId: 'tc-inner', toolName: 'bash', displayName: 'Bash', invocationMessage: 'ls', parentToolCallId: 'tc-sub' },
-				{ type: 'tool_complete', session, toolCallId: 'tc-inner', result: { success: true, pastTenseMessage: 'ran', content: [{ type: ToolResultContentType.Text, text: 'a' }] }, parentToolCallId: 'tc-sub' },
-				{ type: 'tool_complete', session, toolCallId: 'tc-sub', result: { success: true, pastTenseMessage: 'done', content: [{ type: ToolResultContentType.Text, text: 'ok' }] } },
-				{ type: 'message', session, role: 'assistant', messageId: 'msg-3', content: 'Done', toolRequests: [] },
-			];
-			await service.restoreSession(sessionResource);
-			const childUri = URI.parse(buildSubagentSessionUri(sessionResource.toString(), 'tc-sub'));
-			await service.subscribe(childUri, 'client-child');
+				copilotAgent.sessionMessages = [
+					{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Hello', toolRequests: [] },
+					{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: 'Hi', toolRequests: [] },
+				];
+				await service.restoreSession(sessionResource);
+				service.addSubscriber(sessionResource, 'client-1');
+				const before = service.stateManager.getSessionState(sessionResource.toString());
+				assert.ok(before, 'session state present before eviction');
 
-			service.addSubscriber(sessionResource, 'client-parent');
+				service.unsubscribe(sessionResource, 'client-1');
+				await new Promise(resolve => setTimeout(resolve, 30_000));
+				assert.strictEqual(service.stateManager.getSessionState(sessionResource.toString()), undefined, 'session evicted after last subscriber drops');
 
-			// Parent drops — child still subscribed, parent must not be evicted
-			service.unsubscribe(sessionResource, 'client-parent');
-			assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'parent must stay while child is subscribed');
-			assert.ok(service.stateManager.getSessionState(childUri.toString()), 'child still present');
+				// Re-subscribe rehydrates from the preserved durable data.
+				await service.subscribe(sessionResource, 'client-2');
+				const after = service.stateManager.getSessionState(sessionResource.toString());
+				assert.ok(after, 'session restored on re-subscribe');
+				// Response-part ids are freshly generated on each reconstruction, so
+				// normalize them out before comparing the durable turn content.
+				const normalizeTurns = (turns: ISessionWithDefaultChat['turns']) =>
+					turns.map(turn => ({ ...turn, responseParts: turn.responseParts.map(part => ({ ...part, id: undefined })) }));
+				assert.deepStrictEqual(normalizeTurns(after.turns), normalizeTurns(before.turns), 'restored turns match the pre-eviction state');
+			});
+		});
 
-			// Child drops — with idle eviction disabled, both stay cached.
-			service.unsubscribe(childUri, 'client-child');
-			assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'parent stays cached after subagent drops while eviction is disabled');
-			assert.ok(service.stateManager.getSessionState(childUri.toString()), 'child stays cached after subagent drops while eviction is disabled');
+		test('restored session is evicted after all subscribers drop', () => {
+			return runWithFakedTimers({ useFakeTimers: true }, async () => {
+				service.registerProvider(copilotAgent);
+				const { session } = await copilotAgent.createSession();
+				const sessions = await copilotAgent.listSessions();
+				const sessionResource = sessions[0].session;
+
+				copilotAgent.sessionMessages = [
+					{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Hello', toolRequests: [] },
+					{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: 'Hi', toolRequests: [] },
+				];
+				await service.restoreSession(sessionResource);
+				service.addSubscriber(sessionResource, 'client-1');
+				service.addSubscriber(sessionResource, 'client-2');
+
+				service.unsubscribe(sessionResource, 'client-1');
+				await new Promise(resolve => setTimeout(resolve, 30_000));
+				assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'still subscribed by client-2');
+
+				service.unsubscribe(sessionResource, 'client-2');
+				await new Promise(resolve => setTimeout(resolve, 30_000));
+				assert.strictEqual(service.stateManager.getSessionState(sessionResource.toString()), undefined, 'evicted after last subscriber drops');
+			});
+		});
+
+		test('subagent subscriber pins the parent session against eviction', () => {
+			return runWithFakedTimers({ useFakeTimers: true }, async () => {
+				service.registerProvider(copilotAgent);
+				const { session } = await copilotAgent.createSession();
+				const sessions = await copilotAgent.listSessions();
+				const sessionResource = sessions[0].session;
+
+				copilotAgent.sessionMessages = [
+					{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Review', toolRequests: [] },
+					{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: '', toolRequests: [{ toolCallId: 'tc-sub', name: 'task' }] },
+					{ type: 'tool_start', session, toolCallId: 'tc-sub', toolName: 'task', displayName: 'Task', invocationMessage: 'Delegating', toolKind: 'subagent' as const, subagentDescription: 'Find files', subagentAgentName: 'explore' },
+					{ type: 'subagent_started', session, toolCallId: 'tc-sub', agentName: 'explore', agentDisplayName: 'Explore', agentDescription: 'Explores' },
+					{ type: 'tool_start', session, toolCallId: 'tc-inner', toolName: 'bash', displayName: 'Bash', invocationMessage: 'ls', parentToolCallId: 'tc-sub' },
+					{ type: 'tool_complete', session, toolCallId: 'tc-inner', result: { success: true, pastTenseMessage: 'ran', content: [{ type: ToolResultContentType.Text, text: 'a' }] }, parentToolCallId: 'tc-sub' },
+					{ type: 'tool_complete', session, toolCallId: 'tc-sub', result: { success: true, pastTenseMessage: 'done', content: [{ type: ToolResultContentType.Text, text: 'ok' }] } },
+					{ type: 'message', session, role: 'assistant', messageId: 'msg-3', content: 'Done', toolRequests: [] },
+				];
+				await service.restoreSession(sessionResource);
+				const childUri = URI.parse(buildSubagentSessionUri(sessionResource.toString(), 'tc-sub'));
+				await service.subscribe(childUri, 'client-child');
+
+				service.addSubscriber(sessionResource, 'client-parent');
+
+				// Parent drops — child still subscribed, parent must not be evicted
+				service.unsubscribe(sessionResource, 'client-parent');
+				await new Promise(resolve => setTimeout(resolve, 30_000));
+				assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'parent must stay while child is subscribed');
+				assert.ok(service.stateManager.getSessionState(childUri.toString()), 'child still present');
+
+				// Child drops — parent and child can now be evicted.
+				service.unsubscribe(childUri, 'client-child');
+				await new Promise(resolve => setTimeout(resolve, 30_000));
+				assert.strictEqual(service.stateManager.getSessionState(sessionResource.toString()), undefined, 'parent evicted after subagent drops');
+				assert.strictEqual(service.stateManager.getSessionState(childUri.toString()), undefined, 'child also evicted with parent');
+			});
 		});
 
 		test('nested subagent subscriber pins ancestor session against eviction', async () => {
@@ -3597,27 +3799,31 @@ suite('AgentService (node dispatcher)', () => {
 			assert.ok(service.stateManager.getSessionState(childUri.toString()), 'intermediate child still present');
 		});
 
-		test('depth-2 subagent unsubscribe does NOT evict the root session state', async () => {
-			// Idle-session eviction is currently disabled, so the root state
-			// should remain cached after the depth-2 subscriber drops.
-			service.registerProvider(copilotAgent);
-			const { session } = await copilotAgent.createSession();
-			const sessions = await copilotAgent.listSessions();
-			const sessionResource = sessions[0].session;
+		test('depth-2 subagent unsubscribe evicts the root session state', () => {
+			return runWithFakedTimers({ useFakeTimers: true }, async () => {
+				// Regression: when a depth-2 subagent URI unsubscribes the eviction
+				// must reach all the way to the root, not stop at the intermediate
+				// parent and leave root state cached indefinitely.
+				service.registerProvider(copilotAgent);
+				const { session } = await copilotAgent.createSession();
+				const sessions = await copilotAgent.listSessions();
+				const sessionResource = sessions[0].session;
 
-			copilotAgent.sessionMessages = [
-				{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'hi', toolRequests: [] },
-				{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: 'done', toolRequests: [] },
-			];
-			await service.restoreSession(sessionResource);
+				copilotAgent.sessionMessages = [
+					{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'hi', toolRequests: [] },
+					{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: 'done', toolRequests: [] },
+				];
+				await service.restoreSession(sessionResource);
 
-			// Simulate a client that only subscribed to the depth-2 URI.
-			const childUri = URI.parse(buildSubagentSessionUri(sessionResource, 'tc-sub'));
-			const nestedUri = URI.parse(buildSubagentSessionUri(childUri, 'tc-nested'));
-			service.addSubscriber(nestedUri, 'client-nested');
-			service.unsubscribe(nestedUri, 'client-nested');
+				// Simulate a client that only subscribed to the depth-2 URI.
+				const childUri = URI.parse(buildSubagentSessionUri(sessionResource, 'tc-sub'));
+				const nestedUri = URI.parse(buildSubagentSessionUri(childUri, 'tc-nested'));
+				service.addSubscriber(nestedUri, 'client-nested');
+				service.unsubscribe(nestedUri, 'client-nested');
+				await new Promise(resolve => setTimeout(resolve, 30_000));
 
-			assert.ok(service.stateManager.getSessionState(sessionResource.toString()), 'root state stays cached when no subscribers remain while eviction is disabled');
+				assert.strictEqual(service.stateManager.getSessionState(sessionResource.toString()), undefined, 'root state must be evicted when no subscribers remain');
+			});
 		});
 	});
 
