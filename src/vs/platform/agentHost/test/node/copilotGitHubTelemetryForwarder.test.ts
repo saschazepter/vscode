@@ -6,17 +6,15 @@
 import type { GitHubTelemetryNotification } from '@github/copilot-sdk';
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
-import { ITelemetryService, TelemetryLevel } from '../../../telemetry/common/telemetry.js';
-import type { IAgentHostRestrictedTelemetry, TelemetryMeasurements, TelemetryProps } from '../../node/agentHostRestrictedTelemetry.js';
+import { ITelemetryData, ITelemetryService, TelemetryLevel } from '../../../telemetry/common/telemetry.js';
 import { CopilotGitHubTelemetryForwarder } from '../../node/copilot/copilotGitHubTelemetryForwarder.js';
 
 interface CapturedEvent {
 	eventName: string;
-	properties: TelemetryProps | undefined;
-	measurements: TelemetryMeasurements | undefined;
+	data: ITelemetryData | undefined;
 }
 
-class TestTelemetryService implements ITelemetryService, IAgentHostRestrictedTelemetry {
+class TestTelemetryService implements ITelemetryService {
 	declare readonly _serviceBrand: undefined;
 
 	readonly telemetryLevel = TelemetryLevel.USAGE;
@@ -26,33 +24,22 @@ class TestTelemetryService implements ITelemetryService, IAgentHostRestrictedTel
 	readonly sqmId = 'sqmId';
 	readonly devDeviceId = 'devDeviceId';
 	readonly firstSessionDate = 'firstSessionDate';
-	readonly standard: CapturedEvent[] = [];
-	readonly restricted: CapturedEvent[] = [];
+	readonly events: CapturedEvent[] = [];
 
-	publicLog(): void { }
+	publicLog(eventName: string, data?: ITelemetryData): void {
+		this.events.push({ eventName, data });
+	}
 	publicLogError(): void { }
 	publicLog2(): void { }
 	publicLogError2(): void { }
 	setExperimentProperty(): void { }
 	setCommonProperty(): void { }
-	sendInternalMSFTTelemetryEvent(): void { }
-	setCopilotTrackingId(): void { }
-	setRestrictedTelemetryEndpoint(): void { }
-	setRestrictedTelemetryEnabled(): void { }
-
-	sendGHTelemetryEvent(eventName: string, properties?: TelemetryProps, measurements?: TelemetryMeasurements): void {
-		this.standard.push({ eventName, properties, measurements });
-	}
-
-	sendEnhancedGHTelemetryEvent(eventName: string, properties?: TelemetryProps, measurements?: TelemetryMeasurements): void {
-		this.restricted.push({ eventName, properties, measurements });
-	}
 }
 
 suite('CopilotGitHubTelemetryForwarder', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('forwards a standard event with its native name and data', () => {
+	test('forwards a standard event to VS Code telemetry', () => {
 		const telemetryService = new TestTelemetryService();
 		const forwarder = new CopilotGitHubTelemetryForwarder(() => false, telemetryService);
 
@@ -79,31 +66,28 @@ suite('CopilotGitHubTelemetryForwarder', () => {
 			},
 		});
 
-		assert.deepStrictEqual({
-			standard: telemetryService.standard,
-			restricted: telemetryService.restricted,
-		}, {
-			standard: [{
-				eventName: 'tool_call_executed',
-				properties: {
-					cli_version: '1.0.69',
-					os_platform: 'win32',
-					os_version: '11',
-					os_arch: 'x64',
-					node_version: '24.0.0',
-					is_staff: 'true',
-					tool_name: 'grep',
-					created_at: '2026-07-10T12:00:00Z',
-					model_call_id: 'model-call',
-					exp_assignment_context: 'experiment',
-					session_id: 'notification-session',
-					copilot_tracking_id: 'tracking-id',
-					'feature.featureA': 'enabled',
-				},
-				measurements: { duration_ms: 42 },
-			}],
-			restricted: [],
-		});
+		assert.deepStrictEqual(telemetryService.events, [{
+			eventName: 'copilotCli/tool_call_executed',
+			data: {
+				cli_version: '1.0.69',
+				os_platform: 'win32',
+				os_version: '11',
+				os_arch: 'x64',
+				node_version: '24.0.0',
+				is_staff: true,
+				tool_name: 'grep',
+				duration_ms: 42,
+				created_at: '2026-07-10T12:00:00Z',
+				model_call_id: 'model-call',
+				exp_assignment_context: 'experiment',
+				session_id: 'notification-session',
+				sdk_session_id: 'notification-session',
+				copilot_tracking_id: 'tracking-id',
+				kind: 'tool_call_executed',
+				restricted: false,
+				'feature.featureA': 'enabled',
+			},
+		}]);
 	});
 
 	test('gates restricted events on the restricted telemetry option', () => {
@@ -124,50 +108,18 @@ suite('CopilotGitHubTelemetryForwarder', () => {
 		restrictedTelemetryEnabled = true;
 		forwarder.forward(notification);
 
-		assert.deepStrictEqual({
-			standard: telemetryService.standard,
-			restricted: telemetryService.restricted,
-		}, {
-			standard: [],
-			restricted: [{
-				eventName: 'restricted_event',
-				properties: {
-					created_at: undefined,
-					model_call_id: undefined,
-					exp_assignment_context: undefined,
-					session_id: 'session',
-					copilot_tracking_id: undefined,
-					is_staff: undefined,
-				},
-				measurements: {},
-			}],
-		});
-	});
-
-	test('multiplexes oversized properties', () => {
-		const telemetryService = new TestTelemetryService();
-		const forwarder = new CopilotGitHubTelemetryForwarder(() => false, telemetryService);
-		const value = 'x'.repeat(8193);
-
-		forwarder.forward({
-			sessionId: 'session',
-			restricted: false,
-			event: {
-				kind: 'large_event',
-				properties: { large: value },
-				metrics: {},
+		assert.deepStrictEqual(telemetryService.events, [{
+			eventName: 'copilotCli/restricted_event',
+			data: {
+				created_at: undefined,
+				model_call_id: undefined,
+				exp_assignment_context: undefined,
+				session_id: 'session',
+				sdk_session_id: 'session',
+				copilot_tracking_id: undefined,
+				kind: 'restricted_event',
+				restricted: true,
 			},
-		});
-
-		assert.deepStrictEqual(telemetryService.standard[0].properties, {
-			large: value.slice(0, 8192),
-			large_02: 'x',
-			created_at: undefined,
-			model_call_id: undefined,
-			exp_assignment_context: undefined,
-			session_id: 'session',
-			copilot_tracking_id: undefined,
-			is_staff: undefined,
-		});
+		}]);
 	});
 });
