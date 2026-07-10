@@ -489,13 +489,13 @@ configurationRegistry.registerConfiguration({
 		},
 		'agents.voice.handsFree': {
 			type: 'boolean',
-			markdownDescription: nls.localize('agents.voice.handsFree', "When enabled, voice mode automatically re-enters listening after the assistant finishes speaking, so you can hold a hands-free back-and-forth conversation. When disabled, you start each turn manually. This controls only the auto-listen loop; how a turn ends is controlled by `agents.voice.turn.silenceMs` and `agents.voice.turn.stopPhrases`."),
+			markdownDescription: nls.localize('agents.voice.handsFree', "When enabled, voice mode automatically re-enters listening after the assistant finishes speaking, so you can hold a hands-free back-and-forth conversation. When disabled, you start each turn manually. This controls only the auto-listen loop; how a turn ends is controlled by {0} and {1}.", '`#agents.voice.turn.silenceMs#`', '`#agents.voice.turn.stopPhrases#`'),
 			default: true,
 			scope: ConfigurationScope.APPLICATION,
 		},
 		'agents.voice.turn.silenceMs': {
 			type: 'number',
-			markdownDescription: nls.localize('agents.voice.turn.silenceMs', "Trailing silence in milliseconds before the backend ends the turn automatically. Set to `-1` to disable ending the turn on silence, in which case the turn ends only via a stop phrase (`agents.voice.turn.stopPhrases`) or manually. When enabled, the backend clamps this to its supported range (currently 200-5000 ms) and is the source of truth."),
+			markdownDescription: nls.localize('agents.voice.turn.silenceMs', "Trailing silence in milliseconds before the backend ends the turn automatically. Set to `-1` to disable ending the turn on silence, in which case the turn ends only via a stop phrase ({0}) or manually. When enabled, the backend clamps this to its supported range (currently 200-5000 ms) and is the source of truth.", '`#agents.voice.turn.stopPhrases#`'),
 			default: 800,
 			minimum: -1,
 			maximum: 5000,
@@ -504,7 +504,7 @@ configurationRegistry.registerConfiguration({
 		'agents.voice.turn.stopPhrases': {
 			type: 'array',
 			items: { type: 'string' },
-			markdownDescription: nls.localize('agents.voice.turn.stopPhrases', "Phrases that end the turn when spoken at the end of an utterance. Leave empty to disable ending the turn on a stop phrase, in which case the turn ends only on trailing silence (`agents.voice.turn.silenceMs`) or manually. The backend strips the matched phrase from the transcript before it reaches the agent."),
+			markdownDescription: nls.localize('agents.voice.turn.stopPhrases', "Phrases that end the turn when spoken at the end of an utterance. Leave empty to disable ending the turn on a stop phrase, in which case the turn ends only on trailing silence ({0}) or manually. The backend strips the matched phrase from the transcript before it reaches the agent.", '`#agents.voice.turn.silenceMs#`'),
 			default: ['send it'],
 			scope: ConfigurationScope.APPLICATION,
 		},
