@@ -2189,7 +2189,7 @@ export class IssueReporterOverlay {
 		];
 
 		if (this.includeExtensionData && modelData.extensionData) {
-			sections.push(this.createDetails('Extension Data', this.createCodeBlock(modelData.extensionData)));
+			sections.push(this.createDetails('Extension Data', modelData.extensionData));
 		}
 
 		if (this.includeSystemInfo && (modelData.versionInfo || modelData.systemInfo || modelData.systemInfoWeb)) {
@@ -2617,6 +2617,10 @@ ${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).jo
 		if (this.recordingElapsedTimer !== undefined) {
 			getWindow(this.container).clearInterval(this.recordingElapsedTimer);
 		}
+		if (this.similarIssuesHandle !== undefined) {
+			clearTimeout(this.similarIssuesHandle);
+		}
+		this.similarIssuesRequest++;
 		this.reviewRenderDisposables.dispose();
 		this.similarIssuesDisposables.dispose();
 		this.descriptionGuidanceDisposables.dispose();
