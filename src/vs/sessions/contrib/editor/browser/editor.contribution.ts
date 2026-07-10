@@ -7,11 +7,11 @@ import { NewBrowserTabAction, NewChangesTabAction, NewFileTabAction, NewSearchTa
 import { localize2 } from '../../../../nls.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
-import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js';
-import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { Action2, isIMenuItem, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
@@ -452,3 +452,50 @@ class AddFileAsContextAction extends Action2 {
 }
 
 registerAction2(AddFileAsContextAction);
+
+/**
+ * In the single-pane layout the editor group renders its title actions from
+ * {@link Menus.SessionsEditorTitle} instead of the core {@link MenuId.EditorTitle},
+ * so extension-contributed `editor/title` actions would otherwise disappear. This
+ * contribution mirrors only the extension-contributed items (identified by the
+ * command's `source`, which the `commands` extension point sets) from
+ * {@link MenuId.EditorTitle} into {@link Menus.SessionsEditorTitle}, keeping them
+ * in sync as extensions register/unregister.
+ */
+export class EditorTitleMenuBridgeContribution extends Disposable implements IWorkbenchContribution {
+
+	static readonly ID = 'workbench.contrib.sessions.editorTitleMenuBridge';
+
+	private readonly _mirrored = this._register(new DisposableStore());
+
+	constructor(
+		@IAgentWorkbenchLayoutService layoutService: IAgentWorkbenchLayoutService,
+	) {
+		super();
+
+		if (!layoutService.isSinglePaneLayoutEnabled) {
+			return;
+		}
+
+		this._sync();
+		this._register(MenuRegistry.onDidChangeMenu(e => {
+			if (e.has(MenuId.EditorTitle)) {
+				this._sync();
+			}
+		}));
+	}
+
+	private _sync(): void {
+		this._mirrored.clear();
+
+		for (const item of MenuRegistry.getMenuItems(MenuId.EditorTitle)) {
+			// Only bridge actions contributed by extensions. Extension commands carry a
+			// `source` (set by the `commands` extension point); core items do not.
+			if (isIMenuItem(item) && item.command.source) {
+				this._mirrored.add(MenuRegistry.appendMenuItem(Menus.SessionsEditorTitle, item));
+			}
+		}
+	}
+}
+
+registerWorkbenchContribution2(EditorTitleMenuBridgeContribution.ID, EditorTitleMenuBridgeContribution, WorkbenchPhase.BlockStartup);
