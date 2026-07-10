@@ -118,7 +118,6 @@ suite('ExternalEditorImportService', () => {
 			hasKeybindings: false,
 			hasSnippets: false,
 			hasExtensions: false,
-			hasTheme: false,
 			colorThemeId: undefined,
 			...overrides,
 		};
@@ -162,10 +161,7 @@ suite('ExternalEditorImportService', () => {
 		const service = createService(existing, undefined, contents);
 		const sources = await service.detectSources();
 
-		assert.deepStrictEqual(
-			{ hasTheme: sources[0]?.hasTheme, colorThemeId: sources[0]?.colorThemeId },
-			{ hasTheme: true, colorThemeId: 'Monokai' },
-		);
+		assert.strictEqual(sources[0]?.colorThemeId, 'Monokai');
 	});
 
 	test('maps the selected theme from state storage to the closest VS Code theme', async () => {
@@ -182,10 +178,7 @@ suite('ExternalEditorImportService', () => {
 		const service = createService(existing, undefined, contents);
 		const sources = await service.detectSources();
 
-		assert.deepStrictEqual(
-			{ hasTheme: sources[0]?.hasTheme, colorThemeId: sources[0]?.colorThemeId },
-			{ hasTheme: true, colorThemeId: 'Light Modern' },
-		);
+		assert.strictEqual(sources[0]?.colorThemeId, 'Light Modern');
 	});
 
 	test('maps a high-contrast base theme from state storage', async () => {
@@ -215,10 +208,7 @@ suite('ExternalEditorImportService', () => {
 		const service = createService(existing, undefined, contents);
 		const sources = await service.detectSources();
 
-		assert.deepStrictEqual(
-			{ hasTheme: sources[0]?.hasTheme, colorThemeId: sources[0]?.colorThemeId },
-			{ hasTheme: false, colorThemeId: undefined },
-		);
+		assert.strictEqual(sources[0]?.colorThemeId, undefined);
 	});
 
 	test('reports no theme preference when the source settings set none', async () => {
@@ -232,7 +222,7 @@ suite('ExternalEditorImportService', () => {
 		const service = createService(existing, undefined, contents);
 		const sources = await service.detectSources();
 
-		assert.strictEqual(sources[0]?.hasTheme, false);
+		assert.strictEqual(sources[0]?.colorThemeId, undefined);
 	});
 
 	test('returns no sources when nothing is installed', async () => {
@@ -318,7 +308,7 @@ suite('ExternalEditorImportService', () => {
 		} as unknown as IJSONEditingService;
 
 		const service = createImportService({ files, jsonEditingService });
-		const result = await service.import(cursorSource({ hasSettings: true, hasTheme: true, colorThemeId: 'Light Modern' }), { settings: true });
+		const result = await service.import(cursorSource({ hasSettings: true, colorThemeId: 'Light Modern' }), { settings: true });
 
 		assert.strictEqual(result.settingsImported, 2);
 		assert.deepStrictEqual(writes.map(w => ({ resource: w.resource.toString(), values: w.values })), [{

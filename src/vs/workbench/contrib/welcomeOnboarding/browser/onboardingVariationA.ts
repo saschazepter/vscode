@@ -78,10 +78,7 @@ type OnboardingActionEvent = {
 };
 
 type EnterpriseSignInUiState = 'options' | 'instance' | 'progress';
-type ImportCategoryKey = 'theme' | 'settings' | 'keybindings' | 'snippets' | 'extensions';
-
 interface IImportRow {
-	readonly key: ImportCategoryKey;
 	readonly label: string;
 	readonly icon: ThemeIcon;
 	readonly available: boolean;
@@ -1136,7 +1133,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			return;
 		}
 
-		const rows = this._getImportRows(source).filter(row => row.available);
+		const rows = this._getImportRows().filter(row => row.available);
 		const wrapper = append(container, $('.onboarding-a-import'));
 		const group = append(wrapper, $('.onboarding-a-import-group'));
 		group.setAttribute('role', 'group');
@@ -1217,14 +1214,14 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		}));
 	}
 
-	private _getImportRows(source: IExternalEditorSource): IImportRow[] {
+	private _getImportRows(): IImportRow[] {
 		const preview = this._importPreview;
 		return [
-			{ key: 'theme', label: localize('onboarding.import.theme', "Theme"), icon: Codicon.symbolColor, available: preview?.settings.includes('workbench.colorTheme') ?? source.hasTheme },
-			{ key: 'settings', label: localize('onboarding.import.settings', "Settings"), icon: Codicon.settingsGear, available: !!preview?.settings.some(key => key !== 'workbench.colorTheme') },
-			{ key: 'keybindings', label: localize('onboarding.import.keybindings', "Keyboard Shortcuts"), icon: Codicon.keyboard, available: !!preview?.keybindings.length },
-			{ key: 'snippets', label: localize('onboarding.import.snippets', "Snippets"), icon: Codicon.code, available: !!preview?.snippets.length },
-			{ key: 'extensions', label: localize('onboarding.import.extensions', "Extensions"), icon: Codicon.extensions, available: !!preview?.extensions.length },
+			{ label: localize('onboarding.import.theme', "Theme"), icon: Codicon.symbolColor, available: !!preview?.settings.includes('workbench.colorTheme') },
+			{ label: localize('onboarding.import.settings', "Settings"), icon: Codicon.settingsGear, available: !!preview?.settings.some(key => key !== 'workbench.colorTheme') },
+			{ label: localize('onboarding.import.keybindings', "Keyboard Shortcuts"), icon: Codicon.keyboard, available: !!preview?.keybindings.length },
+			{ label: localize('onboarding.import.snippets', "Snippets"), icon: Codicon.code, available: !!preview?.snippets.length },
+			{ label: localize('onboarding.import.extensions', "Extensions"), icon: Codicon.extensions, available: !!preview?.extensions.length },
 		];
 	}
 
@@ -1289,7 +1286,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 	 * not yet reached it.
 	 */
 	private async _skipRedundantThemeStep(): Promise<void> {
-		if (!this._importSource?.hasTheme) {
+		if (!this._importSource?.colorThemeId) {
 			return; // no theme preference was imported, so the picker is still useful
 		}
 		await this._detectedEditorIdsPromise;

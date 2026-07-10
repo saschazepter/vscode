@@ -187,7 +187,6 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 					hasKeybindings,
 					hasSnippets,
 					hasExtensions,
-					hasTheme: !!colorThemeId,
 					colorThemeId,
 				});
 			}
