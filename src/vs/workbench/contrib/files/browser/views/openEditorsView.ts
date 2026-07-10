@@ -146,7 +146,6 @@ export class OpenEditorsView extends ViewPane {
 					case GroupModelChangeKind.EDITOR_PIN:
 					case GroupModelChangeKind.EDITOR_LABEL:
 						this.list.splice(index, 1, [new OpenEditor(e.editor!, group)]);
-						this.focusActiveEditor();
 						break;
 					case GroupModelChangeKind.EDITOR_OPEN:
 					case GroupModelChangeKind.EDITOR_MOVE:

@@ -70,6 +70,15 @@
 	background-color: color-mix(in srgb, var(--vscode-foreground) 18%, transparent) !important;
 }
 
+.style-override .part.editor .tabs-container > .tab.selected:not(.active) {
+	background-color: color-mix(in srgb, var(--vscode-foreground) 10%, transparent) !important;
+}
+
+.style-override .part.editor .tabs-container > .tab.selected:not(.active).tab-border-top > .tab-border-top-container {
+	display: block !important;
+	--tab-border-top-color: var(--vscode-tab-selectedBorderTop) !important;
+}
+
 .style-override.monaco-workbench .part.editor > .content .editor-group-container > .title .tabs-and-actions-container .tabs-container > .tab:not(.active):hover {
 	background-color: color-mix(in srgb, var(--vscode-foreground) 8%, transparent) !important;
 }
@@ -85,6 +94,10 @@
 
 .style-override.monaco-workbench.vs .part.editor .tabs-container > .tab.active {
 	background-color: color-mix(in srgb, var(--vscode-foreground) 10%, transparent) !important;
+}
+
+.style-override.monaco-workbench.vs .part.editor .tabs-container > .tab.selected:not(.active) {
+	background-color: color-mix(in srgb, var(--vscode-foreground) 6%, transparent) !important;
 }
 
 .style-override.monaco-workbench.vs .part.editor > .content .editor-group-container > .title .tabs-and-actions-container .tabs-container > .tab:not(.active):hover {
@@ -199,6 +212,10 @@
  */
 .style-override .part.editor > .content .editor-group-container > .title .tabs-container > .tab:not(.active) .tab-label a {
 	color: color-mix(in srgb, var(--vscode-foreground) 50%, transparent) !important;
+}
+
+.style-override .part.editor > .content .editor-group-container > .title .tabs-container > .tab.selected:not(.active) .tab-label a {
+	color: color-mix(in srgb, var(--vscode-foreground) 75%, transparent) !important;
 }
 
 .style-override .part.editor > .content .editor-group-container > .title .tabs-container > .tab.active .tab-label a {

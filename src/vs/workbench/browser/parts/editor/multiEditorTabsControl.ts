@@ -184,6 +184,7 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 		// Tabs Container
 		this.tabsContainer = $('.tabs-container', {
 			role: 'tablist',
+			'aria-multiselectable': 'true',
 			draggable: true
 		});
 		this._register(Gesture.addTarget(this.tabsContainer));
@@ -1746,7 +1747,7 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 
 		tabContainer.classList.toggle('active', isActive);
 		tabContainer.classList.toggle('selected', isSelected);
-		tabContainer.setAttribute('aria-selected', isActive ? 'true' : 'false');
+		tabContainer.setAttribute('aria-selected', isSelected ? 'true' : 'false');
 		tabContainer.tabIndex = isActive ? 0 : -1; // Only active tab can be focused into
 		tabActionBar.setFocusable(isActive);
 
@@ -2427,7 +2428,7 @@ registerThemingParticipant((theme, collector) => {
 			}
 
 			.monaco-workbench .part.editor > .content .editor-group-container > .title .tabs-container > .tab.active {
-				outline: 1px dotted;
+				outline: 1px dashed;
 				outline-offset: -5px;
 			}
 
