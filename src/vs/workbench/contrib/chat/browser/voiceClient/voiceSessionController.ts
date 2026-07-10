@@ -875,9 +875,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					// --- Helper: subscribe to a chat model's observables and detect state changes ---
 					const processModel = (model: IChatModel, resource: URI, label: string) => {
 						const sessionId = resource.toString();
-						// The model is now resident so its idle transition will carry a
-						// proper summary; drop any pending deferral/suppression.
-						this._pendingIdleNarration.delete(sessionId);
 						const lastReq = model.lastRequestObs.read(reader);
 						if (lastReq?.response) {
 							lastReq.response.isIncomplete.read(reader);
@@ -903,12 +900,20 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 						// Detect state changes
 						const info = this._getAgentStateInfo(model);
-						const currentState = info.state;
+						// Hold a summary-less idle while an eager reload is still
+						// replaying this session's response (see _effectiveResidentState),
+						// so the idle transition isn't consumed before the summary
+						// exists. Once we stop holding, the model is resident with a
+						// proper summary, so drop the pending idle deferral.
+						const currentState = this._effectiveResidentState(sessionId, info);
+						if (currentState === info.state) {
+							this._pendingIdleNarration.delete(sessionId);
+						}
 						const detail = info.detail;
 						const lastResponseSummary = info.last_response_summary;
 						// Capture the summary while the model is resident so a later
 						// completion reported after disposal can still narrate.
-						this._cacheResponseSummary(sessionId, currentState, lastResponseSummary);
+						this._cacheResponseSummary(sessionId, info.state, lastResponseSummary);
 
 						const prev = this._prevSessionStates.get(sessionId);
 						const isStateTransition = prev !== undefined && prev.state !== currentState && currentState !== 'unknown';
@@ -3062,13 +3067,18 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			let lastResponseSummary: string | undefined;
 			if (model) {
 				const info = this._getAgentStateInfo(model);
-				currentState = info.state;
+				// Hold a summary-less idle while an eager reload is still replaying
+				// (see _effectiveResidentState); once we stop holding the model is
+				// resident with a proper summary, so drop the pending idle deferral.
+				currentState = this._effectiveResidentState(sessionId, info);
 				detail = info.detail;
-				lastResponseSummary = info.last_response_summary;
+				lastResponseSummary = currentState === info.state ? info.last_response_summary : undefined;
 				// Capture the summary while resident so a later completion after
-				// disposal can still narrate; also drop any pending idle deferral.
-				this._cacheResponseSummary(sessionId, currentState, lastResponseSummary);
-				this._pendingIdleNarration.delete(sessionId);
+				// disposal can still narrate.
+				this._cacheResponseSummary(sessionId, info.state, info.last_response_summary);
+				if (currentState === info.state) {
+					this._pendingIdleNarration.delete(sessionId);
+				}
 			} else {
 				currentState = s.status === AgentSessionStatus.InProgress ? 'thinking'
 					: s.status === AgentSessionStatus.NeedsInput ? 'waiting_for_confirmation'
@@ -3271,15 +3281,20 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			const detailPending = stateInfo.state === 'waiting_for_confirmation' && !stateInfo.detail;
 			// One-shot: hold as `thinking` so `is_active` ships before the real state.
 			const forceThinking = this._forceThinkingOnce.has(s.resource.toString());
+			// Hold a summary-less idle while an eager reload is still replaying the
+			// response, so we don't ship (and consume) the idle before the summary
+			// is ready. See _effectiveResidentState.
+			const heldState = this._effectiveResidentState(s.resource.toString(), stateInfo);
 			const scoped = (detailPending || forceThinking)
 				? { state: 'thinking', hideConfirmationDetail: true }
-				: this._reportedAgentState(stateInfo.state, isActive);
+				: this._reportedAgentState(heldState, isActive);
+			const shipSummary = heldState === stateInfo.state ? stateInfo.last_response_summary : undefined;
 			return {
 				id: s.resource.toString(),
 				is_active: isActive,
 				agent_state: scoped.state,
 				...(!scoped.hideConfirmationDetail && stateInfo.detail ? { agent_state_detail: stateInfo.detail } : {}),
-				...(stateInfo.last_response_summary ? { last_response_summary: stateInfo.last_response_summary } : {}),
+				...(shipSummary ? { last_response_summary: shipSummary } : {}),
 			};
 		});
 
@@ -3395,6 +3410,30 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		} else if (state === 'thinking') {
 			this._lastResponseSummaryById.delete(sessionId);
 		}
+	}
+
+	/**
+	 * The state to report for a resident model, applying the idle-narration hold.
+	 *
+	 * When a completion is detected for an unfocused session we eagerly reload
+	 * its (disposed) model to recover ``last_response_summary``. That reloaded
+	 * model is briefly resident with an EMPTY response while its history is still
+	 * replaying, so reporting its bare ``idle`` now would ship a summary-less
+	 * completion (which the backend never narrates) AND consume the ``idle``
+	 * transition before the summary exists. While the eager load is still in
+	 * flight we therefore hold — report the prior state — so the ``idle`` isn't
+	 * shipped until it can carry the summary. The load always resolves (its
+	 * callback clears ``_eagerModelLoading``), so the hold can never last forever.
+	 */
+	private _effectiveResidentState(sessionId: string, stateInfo: { state: string; last_response_summary?: string }): string {
+		if (stateInfo.state === 'idle'
+			&& !stateInfo.last_response_summary
+			&& this._pendingIdleNarration.has(sessionId)
+			&& this._eagerModelLoading.has(sessionId)) {
+			const prev = this._prevSessionStates.get(sessionId);
+			return prev?.state ?? 'thinking';
+		}
+		return stateInfo.state;
 	}
 
 	private _getAgentStateInfo(model: IChatModel | undefined | null): { state: string; detail?: string; last_response_summary?: string } {
