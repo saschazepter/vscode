@@ -75,17 +75,17 @@ suite('model provider icons', () => {
 		]);
 	});
 
-	test('prefers warning icon', () => {
+	test('status icon wins, warning text keeps provider icon', () => {
 		const model = createModel('gpt-5.6-terra', 'GPT-5.6 Terra');
-		const modelWithWarning = { ...model, metadata: { ...model.metadata, statusIcon: Codicon.warning } };
-		const modelWithWarningText = { ...model, metadata: { ...model.metadata, statusIcon: Codicon.info, warningText: { degradation: 'Degraded' } } };
+		const modelWithStatusIcon = { ...model, metadata: { ...model.metadata, statusIcon: Codicon.info } };
+		const modelWithWarningText = { ...model, metadata: { ...model.metadata, warningText: { degradation: 'Degraded' } } };
 
 		assert.deepStrictEqual([
-			getModelPickerIcon(modelWithWarning).id,
+			getModelPickerIcon(modelWithStatusIcon).id,
 			getModelPickerIcon(modelWithWarningText).id,
 		], [
-			Codicon.warning.id,
-			Codicon.warning.id,
+			Codicon.info.id,
+			getModelProviderIcon(model).id,
 		]);
 	});
 });
