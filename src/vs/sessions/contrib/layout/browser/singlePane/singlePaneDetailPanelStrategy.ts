@@ -34,6 +34,7 @@ const enum DetailPanelTarget {
 	ChangesForced,
 	Files,
 	FilesForced,
+	FilesReveal,
 	Preserve
 }
 
@@ -42,7 +43,8 @@ const enum DetailPanelTarget {
  * reveals/hides the auxiliary bar accordingly. A created single-pane session
  * defaults to the Changes editor with the detail closed; a Changes/file editor
  * becoming active never force-reveals a hidden detail (except restoring it after
- * a transient browser-tab hide).
+ * a transient browser-tab hide). Opening the empty Files placeholder reveals the
+ * Files detail once (it represents the Files view); afterwards the user can hide it.
  */
 export class SinglePaneDetailPanelStrategy extends SinglePaneLayoutStrategy {
 
@@ -50,6 +52,8 @@ export class SinglePaneDetailPanelStrategy extends SinglePaneLayoutStrategy {
 	private readonly _detailSequencer = new Sequencer();
 	private _detailGeneration = 0;
 	private _hiddenByBrowser = false;
+	/** The active editor observed on the previous autorun run, for one-shot placeholder-activation detection. */
+	private _previousActiveEditor: EditorInput | undefined;
 
 	constructor(
 		ctx: ISinglePaneLayoutContext,
@@ -71,8 +75,13 @@ export class SinglePaneDetailPanelStrategy extends SinglePaneLayoutStrategy {
 
 		this._register(autorun(reader => {
 			const activeEditor = activeEditorObs.read(reader);
-			const target = this._computeDetailTarget(reader, activeEditor, mainPartEmptyObs, editorMaximizedObs);
-			const isChangesOrFilesTarget = target === DetailPanelTarget.Changes || target === DetailPanelTarget.ChangesForced || target === DetailPanelTarget.Files || target === DetailPanelTarget.FilesForced;
+			// One-shot: reveal the Files detail only when the placeholder *becomes*
+			// the active editor, not on every autorun run (e.g. an aux-bar visibility
+			// change), so the user can hide the detail afterwards.
+			const placeholderJustActivated = activeEditor instanceof EmptyFileEditorInput && this._previousActiveEditor !== activeEditor;
+			this._previousActiveEditor = activeEditor;
+			const target = this._computeDetailTarget(reader, activeEditor, placeholderJustActivated, mainPartEmptyObs, editorMaximizedObs);
+			const isChangesOrFilesTarget = target === DetailPanelTarget.Changes || target === DetailPanelTarget.ChangesForced || target === DetailPanelTarget.Files || target === DetailPanelTarget.FilesForced || target === DetailPanelTarget.FilesReveal;
 			this._changesOrFilesActiveContext!.set(isChangesOrFilesTarget);
 			auxBarVisibleObs.read(reader);
 			const generation = ++this._detailGeneration;
@@ -80,7 +89,7 @@ export class SinglePaneDetailPanelStrategy extends SinglePaneLayoutStrategy {
 		}));
 	}
 
-	private _computeDetailTarget(reader: IReader, activeEditor: EditorInput | undefined, mainPartEmptyObs: IObservable<boolean>, editorMaximizedObs: IObservable<boolean>): DetailPanelTarget {
+	private _computeDetailTarget(reader: IReader, activeEditor: EditorInput | undefined, placeholderJustActivated: boolean, mainPartEmptyObs: IObservable<boolean>, editorMaximizedObs: IObservable<boolean>): DetailPanelTarget {
 		const activeSession = this._sessionsService.activeSession.read(reader);
 		const isQuickChat = activeSession?.isQuickChat?.read(reader) ?? false;
 		const workspace = activeSession?.workspace.read(reader);
@@ -117,6 +126,15 @@ export class SinglePaneDetailPanelStrategy extends SinglePaneLayoutStrategy {
 
 		if (this._isChangesEditor(activeEditor)) {
 			return DetailPanelTarget.ChangesForced;
+		}
+
+		// The empty Files placeholder represents the Files view itself, so opening
+		// it reveals the Files detail even when it was hidden. The reveal is
+		// one-shot (only when the placeholder just became active); afterwards the
+		// user is free to hide the detail, and while it stays hidden the placeholder
+		// no longer re-reveals it (treated like a normal Files editor).
+		if (activeEditor instanceof EmptyFileEditorInput) {
+			return placeholderJustActivated ? DetailPanelTarget.FilesReveal : DetailPanelTarget.FilesForced;
 		}
 
 		if (this._isFileEditor(activeEditor, workspace)) {
@@ -184,22 +202,26 @@ export class SinglePaneDetailPanelStrategy extends SinglePaneLayoutStrategy {
 			case DetailPanelTarget.FilesForced:
 				await this._syncForcedDetailTarget(SESSIONS_FILES_CONTAINER_ID, auxBarVisible);
 				return;
+			case DetailPanelTarget.FilesReveal:
+				await this._syncForcedDetailTarget(SESSIONS_FILES_CONTAINER_ID, auxBarVisible, true);
+				return;
 			case DetailPanelTarget.Preserve:
 				this._hiddenByBrowser = false;
 				return;
 		}
 	}
 
-	private async _syncForcedDetailTarget(viewContainerId: string, auxBarVisible: boolean): Promise<void> {
+	private async _syncForcedDetailTarget(viewContainerId: string, auxBarVisible: boolean, forceReveal: boolean = false): Promise<void> {
 		if (!auxBarVisible) {
 			// The detail panel is hidden. A created session defaults to the Changes
 			// editor with the detail closed, and an explicit / per-session hide is
 			// respected — so a Changes/file editor becoming active never
-			// force-reveals the detail. The one exception is restoring the detail
-			// after a *transient* browser-tab hide (`_hiddenByBrowser`). Never reveal
-			// while the whole side pane is closed (the editor content is also hidden)
-			// or during a session-switch layout restore.
-			if (!this._hiddenByBrowser
+			// force-reveals the detail. The exceptions are restoring the detail
+			// after a *transient* browser-tab hide (`_hiddenByBrowser`) and opening
+			// the empty Files placeholder (`forceReveal`), which represents the Files
+			// view itself. Never reveal while the whole side pane is closed (the
+			// editor content is also hidden) or during a session-switch layout restore.
+			if ((!forceReveal && !this._hiddenByBrowser)
 				|| !this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow)
 				|| this._ctx.isRestoringSessionLayout) {
 				return;

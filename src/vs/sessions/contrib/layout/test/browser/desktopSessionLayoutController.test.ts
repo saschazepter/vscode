@@ -73,6 +73,13 @@ suite('LayoutController (desktop)', () => {
 		return store.add(harness.instaService.createInstance(TestSinglePaneController));
 	}
 
+	/** A stub real file editor whose resource lives under the session's `/repo` workspace folder. */
+	function makeWorkspaceFileEditor(path: string = '/repo/package.json'): FileEditorInput {
+		const fileEditor = Object.create(FileEditorInput.prototype) as FileEditorInput;
+		Object.defineProperty(fileEditor, 'resource', { value: URI.file(path) });
+		return fileEditor;
+	}
+
 	teardown(() => store.clear());
 	ensureNoDisposablesAreLeakedInTestSuite();
 
@@ -350,12 +357,12 @@ suite('LayoutController (desktop)', () => {
 			hiddenCalls: 1,
 		});
 
-		// A tab re-opens: the context key flips back on, but the detail is NOT
-		// force-revealed (a created session defaults to the editor with the detail closed).
+		// A real file tab re-opens: the context key flips back on, but the detail is
+		// NOT force-revealed (a created session defaults to the editor with the detail closed).
 		harness.setPartHiddenCalls = [];
 		harness.openedViewContainers = [];
 		harness.editorGroupsHaveContent = true;
-		harness.activeEditorInput = store.add(new EmptyFileEditorInput());
+		harness.activeEditorInput = makeWorkspaceFileEditor();
 		harness.onDidEditorsChange.fire();
 		harness.onDidActiveEditorChange.fire();
 		await timeout(0);
@@ -412,7 +419,7 @@ suite('LayoutController (desktop)', () => {
 		// A file tab becomes active: the detail must stay closed (no force-reveal).
 		harness.setPartHiddenCalls = [];
 		harness.openedViewContainers = [];
-		harness.activeEditorInput = store.add(new EmptyFileEditorInput());
+		harness.activeEditorInput = makeWorkspaceFileEditor();
 		harness.onDidActiveEditorChange.fire();
 		await timeout(0);
 
@@ -422,6 +429,100 @@ suite('LayoutController (desktop)', () => {
 		}, {
 			reveals: 0,
 			openedFiles: false,
+		});
+	});
+
+	test('[single-pane] reveals the Files detail when the empty Files placeholder is opened', async () => {
+		const controller = createSinglePaneController({ activateAux: true });
+		await timeout(0);
+
+		const session = makeSession(URI.parse('session:1'));
+		harness.activeSessionObs.set(session, undefined);
+		await timeout(0);
+
+		// Detail closed (the created-session default) with the editor visible.
+		harness.partVisibility.set(Parts.AUXILIARYBAR_PART, false);
+		harness.onDidChangePartVisibility.fire({ partId: Parts.AUXILIARYBAR_PART, visible: false });
+		harness.partVisibility.set(Parts.EDITOR_PART, true);
+		await timeout(0);
+
+		// Opening the empty Files placeholder reveals the Files detail (unlike a
+		// real file editor, which never force-reveals a hidden detail).
+		harness.setPartHiddenCalls = [];
+		harness.openedViewContainers = [];
+		harness.activeEditorInput = store.add(new EmptyFileEditorInput());
+		harness.onDidActiveEditorChange.fire();
+		await timeout(0);
+
+		assert.deepStrictEqual({
+			reveals: harness.setPartHiddenCalls.filter(c => c.part === Parts.AUXILIARYBAR_PART && c.hidden === false).length > 0,
+			openedFiles: harness.openedViewContainers.includes(SESSIONS_FILES_CONTAINER_ID),
+		}, {
+			reveals: true,
+			openedFiles: true,
+		});
+
+		// The placeholder must NOT reveal the detail during a session-switch restore
+		// or while the whole side pane (editor content) is closed.
+		harness.partVisibility.set(Parts.AUXILIARYBAR_PART, false);
+		harness.onDidChangePartVisibility.fire({ partId: Parts.AUXILIARYBAR_PART, visible: false });
+		harness.partVisibility.set(Parts.EDITOR_PART, false);
+		harness.onDidChangePartVisibility.fire({ partId: Parts.EDITOR_PART, visible: false });
+		await timeout(0);
+
+		let releaseRestore!: () => void;
+		const restoreGate = new Promise<void>(resolve => { releaseRestore = resolve; });
+		controller.runWithRestore(() => restoreGate);
+
+		harness.setPartHiddenCalls = [];
+		harness.openedViewContainers = [];
+		harness.activeEditorInput = store.add(new EmptyFileEditorInput());
+		harness.onDidActiveEditorChange.fire();
+		await timeout(0);
+
+		releaseRestore();
+		await restoreGate;
+
+		assert.strictEqual(
+			harness.setPartHiddenCalls.filter(c => c.part === Parts.AUXILIARYBAR_PART && c.hidden === false).length,
+			0,
+			'the placeholder must not reveal the detail while the side pane is closed / restoring');
+	});
+
+	test('[single-pane] lets the user hide the detail after the placeholder revealed it (one-shot reveal)', async () => {
+		createSinglePaneController({ activateAux: true });
+		await timeout(0);
+
+		const session = makeSession(URI.parse('session:1'));
+		harness.activeSessionObs.set(session, undefined);
+		await timeout(0);
+
+		// Detail closed, editor visible; opening the placeholder reveals the detail once.
+		harness.partVisibility.set(Parts.AUXILIARYBAR_PART, false);
+		harness.onDidChangePartVisibility.fire({ partId: Parts.AUXILIARYBAR_PART, visible: false });
+		harness.partVisibility.set(Parts.EDITOR_PART, true);
+		await timeout(0);
+
+		const placeholder = store.add(new EmptyFileEditorInput());
+		harness.activeEditorInput = placeholder;
+		harness.onDidActiveEditorChange.fire();
+		harness.partVisibility.set(Parts.AUXILIARYBAR_PART, true);
+		harness.onDidChangePartVisibility.fire({ partId: Parts.AUXILIARYBAR_PART, visible: true });
+		await timeout(0);
+
+		// The user now hides the detail. The placeholder is still the active editor,
+		// but the reveal was one-shot, so it must NOT be re-revealed.
+		harness.setPartHiddenCalls = [];
+		harness.partVisibility.set(Parts.AUXILIARYBAR_PART, false);
+		harness.onDidChangePartVisibility.fire({ partId: Parts.AUXILIARYBAR_PART, visible: false });
+		await timeout(0);
+
+		assert.deepStrictEqual({
+			reveals: harness.setPartHiddenCalls.filter(c => c.part === Parts.AUXILIARYBAR_PART && c.hidden === false).length,
+			auxVisible: harness.partVisibility.get(Parts.AUXILIARYBAR_PART),
+		}, {
+			reveals: 0,
+			auxVisible: false,
 		});
 	});
 
@@ -439,7 +540,7 @@ suite('LayoutController (desktop)', () => {
 		harness.partVisibility.set(Parts.EDITOR_PART, true);
 		await timeout(0);
 
-		// Hold a session-switch restore open. The restore makes the Files editor
+		// Hold a session-switch restore open. The restore makes a file editor
 		// active; that editor change must NOT reveal the detail.
 		let releaseRestore!: () => void;
 		const restoreGate = new Promise<void>(resolve => { releaseRestore = resolve; });
@@ -447,7 +548,7 @@ suite('LayoutController (desktop)', () => {
 
 		harness.setPartHiddenCalls = [];
 		harness.openedViewContainers = [];
-		harness.activeEditorInput = store.add(new EmptyFileEditorInput());
+		harness.activeEditorInput = makeWorkspaceFileEditor();
 		harness.onDidActiveEditorChange.fire();
 		await timeout(0);
 
@@ -463,7 +564,7 @@ suite('LayoutController (desktop)', () => {
 		await timeout(0);
 
 		harness.setPartHiddenCalls = [];
-		harness.activeEditorInput = store.add(new EmptyFileEditorInput());
+		harness.activeEditorInput = makeWorkspaceFileEditor();
 		harness.onDidActiveEditorChange.fire();
 		await timeout(0);
 
@@ -568,7 +669,7 @@ suite('LayoutController (desktop)', () => {
 		harness.onDidChangePartVisibility.fire({ partId: Parts.AUXILIARYBAR_PART, visible: true });
 		await timeout(0);
 
-		harness.activeEditorInput = store.add(new EmptyFileEditorInput());
+		harness.activeEditorInput = makeWorkspaceFileEditor();
 		harness.onDidActiveEditorChange.fire();
 		harness.activeSessionObs.set(sessionA, undefined);
 		harness.visibleSessionsObs.set([sessionA], undefined);
@@ -2492,6 +2593,61 @@ suite('LayoutController (desktop)', () => {
 		await settle();
 
 		assert.strictEqual(hasFilesTab(), true, 'a non-file editor must not remove the Files tab');
+	});
+
+	test('[managed tabs / add-tab] keeps the explicitly added Files tab open while a real file is open', async () => {
+		createSinglePaneController({ activateAux: true });
+		await settle();
+
+		harness.activeSessionObs.set(makeSession(URI.parse('session:1')), undefined);
+		await settle();
+
+		// A real file opens into a visible editor area, so the Files placeholder is
+		// removed as redundant.
+		const realEditor = store.add(new TestStubEditorInput(URI.file('/repo/a.ts')));
+		harness.activeGroupEditors.push(realEditor);
+		harness.activeEditorInput = realEditor;
+		harness.partVisibility.set(Parts.EDITOR_PART, true);
+		harness.onDidEditorsChange.fire();
+		harness.onDidActiveEditorChange.fire();
+		await settle();
+		assert.strictEqual(hasFilesTab(), false, 'the Files tab is removed while a real file is open');
+
+		// The user explicitly opens the Files tab via the `+` "Files" entry: it is
+		// added to the group and becomes the active editor. It must not be
+		// immediately removed as redundant.
+		const placeholder = store.add(new EmptyFileEditorInput());
+		harness.activeGroupEditors.push(placeholder);
+		harness.activeEditorInput = placeholder;
+		harness.onDidEditorsChange.fire();
+		harness.onDidActiveEditorChange.fire();
+		await settle();
+
+		assert.strictEqual(hasFilesTab(), true, 'the explicitly added Files tab stays open while it is active');
+
+		// The user switches to another tab (the real file). The committed Files tab
+		// must stay open — it is no longer auto-removed as redundant.
+		harness.activeEditorInput = realEditor;
+		harness.onDidActiveEditorChange.fire();
+		await settle();
+		assert.strictEqual(hasFilesTab(), true, 'the committed Files tab stays open when another tab is selected');
+
+		// The user opens yet another real file while the Files tab is active: the
+		// committed Files tab must stay open (opening a file does not close it).
+		const otherEditor = store.add(new TestStubEditorInput(URI.file('/repo/b.ts')));
+		harness.activeGroupEditors.push(otherEditor);
+		harness.activeEditorInput = otherEditor;
+		harness.onDidEditorsChange.fire();
+		harness.onDidActiveEditorChange.fire();
+		await settle();
+		assert.strictEqual(hasFilesTab(), true, 'the committed Files tab stays open when another file is opened');
+
+		// The user closes the Files tab: it is dismissed and not re-created.
+		harness.activeGroupEditors.splice(harness.activeGroupEditors.indexOf(placeholder), 1);
+		harness.onDidCloseEditor.fire({ editor: placeholder });
+		harness.onDidEditorsChange.fire();
+		await settle();
+		assert.strictEqual(hasFilesTab(), false, 'closing the committed Files tab keeps it closed');
 	});
 
 	test('[single-pane] closes non-managed tabs when the editor area hides and reopens them when shown', async () => {
