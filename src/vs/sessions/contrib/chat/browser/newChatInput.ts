@@ -42,6 +42,7 @@ import * as aria from '../../../../base/browser/ui/aria/aria.js';
 import { ContextMenuController } from '../../../../editor/contrib/contextmenu/browser/contextmenu.js';
 import { getSimpleEditorOptions } from '../../../../workbench/contrib/codeEditor/browser/simpleEditorOptions.js';
 import { NewChatContextAttachments } from './newChatContextAttachments.js';
+import { NewChatVoiceController } from './newChatVoice.js';
 import { SessionTypePicker } from './sessionTypePicker.js';
 import { IActiveSession } from '../../../services/sessions/common/sessionsManagement.js';
 import { MobileSessionTypePicker } from './mobile/mobileSessionTypePicker.js';
@@ -296,6 +297,13 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 			placeholder?: string;
 			renderSessionTypePickerInControls?: boolean;
 			supportsBackground?: boolean;
+			/**
+			 * Keep this composer a valid voice target even while a created session
+			 * is active. Used by the in-session "new chat" composer so dictation
+			 * creates a parallel chat instead of routing to the parent session's
+			 * chat widget. The welcome composer leaves this unset.
+			 */
+			voiceRoutesWhileSessionActive?: boolean;
 		},
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IModelService private readonly modelService: IModelService,
@@ -329,7 +337,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		// the same class regardless of construction-time viewport
 		// avoids a class-mismatch when the user resizes across the
 		// phone breakpoint after the chat input mounted.
-		this.sessionTypePicker = this._register(this.instantiationService.createInstance(MobileSessionTypePicker, this.options.session));
+		this.sessionTypePicker = this._register(this.instantiationService.createInstance(MobileSessionTypePicker, this.options.session, undefined));
 		this._register(this._contextAttachments.onDidChangeContext(() => {
 			this._updateDraftState();
 			this._updateSendButtonState();
@@ -670,6 +678,20 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 
 		dom.append(toolbar, dom.$('.sessions-chat-toolbar-spacer'));
 
+		// Voice controls (mic/stop/settings/disconnect). The hand-built toolbar
+		// can't use the shared `MenuId.ChatExecute`, so a dedicated menu is used.
+		// Keep the session picker usable when optional voice initialization fails.
+		const voiceContainer = dom.append(toolbar, dom.$('.sessions-chat-voice-toolbar'));
+		try {
+			this._register(this.instantiationService.createInstance(NewChatVoiceController, {
+				toolbarContainer: voiceContainer,
+				inputContainer: container,
+				composer: this,
+			}));
+		} catch (error) {
+			this.logService.error('Failed to create new-session voice controls:', error);
+		}
+
 		this._loadingSpinner = dom.append(toolbar, dom.$('.sessions-chat-loading-spinner'));
 		const loadingIcon = dom.append(this._loadingSpinner, renderIcon(ThemeIcon.modify(Codicon.loading, 'spin')));
 		loadingIcon.setAttribute('aria-hidden', 'true');
@@ -857,6 +879,11 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		this._editor?.focus();
 	}
 
+	/** See {@link INewChatVoiceComposer.routesWhileSessionActive}. */
+	get routesWhileSessionActive(): boolean {
+		return this.options.voiceRoutesWhileSessionActive === true;
+	}
+
 	prefillInput(text: string): void {
 		const editor = this._editor;
 		const model = editor?.getModel();
@@ -870,6 +897,11 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 	}
 
 	sendQuery(text: string): void {
+		// A submit is already in flight (e.g. a rapid second transcript before the
+		// session is created); don't clobber the in-flight text or double-submit.
+		if (this._sending) {
+			return;
+		}
 		const model = this._editor?.getModel();
 		if (model) {
 			model.setValue(text);
