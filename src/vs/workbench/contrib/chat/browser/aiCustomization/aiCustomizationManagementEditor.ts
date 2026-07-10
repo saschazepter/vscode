@@ -91,10 +91,10 @@ import { IExtension } from '../../../extensions/common/extensions.js';
 import { EmbeddedMcpServerDetail } from './embeddedMcpServerDetail.js';
 import { EmbeddedAgentPluginDetail } from './embeddedAgentPluginDetail.js';
 import { EmbeddedExtensionToolsDetail } from './embeddedExtensionToolsDetail.js';
-import { ICustomizationHarnessService } from '../../common/customizationHarnessService.js';
+import { ICustomizationHarnessService, type ICustomizationSourceFolder } from '../../common/customizationHarnessService.js';
 import { ChatConfiguration } from '../../common/constants.js';
 import { AICustomizationWelcomePage } from './aiCustomizationWelcomePage.js';
-import { createSkillFileUri, getPromptMigrationInfo, migratePromptFileToSkill, pickSkillSourceFolder } from './promptMigration.js';
+import { getPromptMigrationInfo, migratePromptFilesToSkills, type PromptMigrationSkillSourceFolders } from './promptMigration.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { showNoFoldersDialog } from '../promptSyntax/pickers/askForPromptSourceFolder.js';
@@ -183,6 +183,10 @@ interface ISectionItem {
 interface ISaveTargetQuickPickItem extends IQuickPickItem {
 	readonly target: 'workspace' | 'user' | 'cancel';
 	readonly folder?: URI;
+}
+
+interface IMigrationSkillTargetQuickPickItem extends IQuickPickItem {
+	readonly folder: ICustomizationSourceFolder;
 }
 
 interface IBuiltinPromptSaveRequest {
@@ -1069,37 +1073,44 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.notificationService.error(localize('promptMigrationNoSkillFolders', "No skill folders are configured for the active harness."));
 			return;
 		}
+		const skillSourceFoldersByStorage = await this.resolveMigrationSkillSourceFolders(skillSourceFolders, migrationInfo);
+		if (!skillSourceFoldersByStorage) {
+			return;
+		}
 
-		const reservedSkillNames = new Map<string, Set<string>>();
-		const unsupportedHeaderKeys = new Set<string>();
-		let convertedCount = 0;
+		const migrationResult = await migratePromptFilesToSkills(
+			this.promptFilesToMigrate,
+			skillSourceFoldersByStorage,
+			this.fileService,
+			onUnexpectedError,
+		);
+		const { convertedCount, failedPromptFileNames, unsupportedHeaderKeys } = migrationResult;
 
-		for (const promptFile of this.promptFilesToMigrate) {
-			const skillSourceFolder = pickSkillSourceFolder(promptFile, skillSourceFolders);
-			if (!skillSourceFolder) {
-				continue;
+		if (failedPromptFileNames.length > 0) {
+			const displayedFileNames = failedPromptFileNames.slice(0, 3);
+			const hiddenFileCount = failedPromptFileNames.length - displayedFileNames.length;
+			if (hiddenFileCount > 0) {
+				this.notificationService.error(localize(
+					'promptMigrationFilesFailedWithRemainder',
+					"Failed to migrate {0} prompt files: {1}, and {2} more.",
+					failedPromptFileNames.length,
+					displayedFileNames.join(', '),
+					hiddenFileCount,
+				));
+			} else {
+				this.notificationService.error(localize(
+					'promptMigrationFilesFailed',
+					"Failed to migrate {0} prompt files: {1}.",
+					failedPromptFileNames.length,
+					displayedFileNames.join(', '),
+				));
 			}
-
-			const content = (await this.fileService.readFile(promptFile.uri)).value.toString();
-			const migratedPrompt = migratePromptFileToSkill(promptFile, content);
-			const reservedNamesForFolder = reservedSkillNames.get(skillSourceFolder.uri.toString()) ?? new Set<string>();
-			reservedSkillNames.set(skillSourceFolder.uri.toString(), reservedNamesForFolder);
-			const skillName = await this.getAvailableMigratedSkillName(skillSourceFolder.uri, migratedPrompt.skillName, reservedNamesForFolder);
-			const migratedSkill = skillName === migratedPrompt.skillName ? migratedPrompt : migratePromptFileToSkill(promptFile, content, skillName);
-			for (const key of migratedSkill.unsupportedHeaderKeys) {
-				unsupportedHeaderKeys.add(key);
-			}
-
-			const skillFileUri = createSkillFileUri(skillSourceFolder.uri, skillName);
-			await this.fileService.createFolder(skillSourceFolder.uri);
-			await this.fileService.createFolder(dirname(skillFileUri));
-			await this.fileService.writeFile(skillFileUri, VSBuffer.fromString(migratedSkill.content));
-			await this.fileService.del(promptFile.uri);
-			convertedCount++;
 		}
 
 		if (convertedCount === 0) {
-			this.notificationService.warn(localize('promptMigrationNoFilesConverted', "No prompt files were converted."));
+			if (failedPromptFileNames.length === 0) {
+				this.notificationService.warn(localize('promptMigrationNoFilesConverted', "No prompt files were converted."));
+			}
 			return;
 		}
 
@@ -1120,18 +1131,50 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.selectSection(AICustomizationManagementSection.Skills);
 	}
 
-	private async getAvailableMigratedSkillName(skillSourceFolder: URI, baseSkillName: string, reservedNames: Set<string>): Promise<string> {
-		let candidate = baseSkillName;
-		let counter = 2;
-		while (reservedNames.has(candidate) || await this.fileService.exists(createSkillFileUri(skillSourceFolder, candidate))) {
-			const suffix = `-${counter++}`;
-			const maxBaseLength = Math.max(1, 64 - suffix.length);
-			const trimmedBaseName = baseSkillName.slice(0, maxBaseLength).replace(/-+$/g, '');
-			candidate = `${trimmedBaseName}${suffix}`;
+	private async resolveMigrationSkillSourceFolders(
+		skillSourceFolders: readonly ICustomizationSourceFolder[],
+		migrationInfo: ReturnType<typeof getPromptMigrationInfo>,
+	): Promise<PromptMigrationSkillSourceFolders | undefined> {
+		const sourceFoldersByStorage = new Map<PromptsStorage, ICustomizationSourceFolder>();
+
+		const localSkillSourceFolders = skillSourceFolders.filter(folder => folder.source === PromptsStorage.local);
+		if (localSkillSourceFolders.length > 0) {
+			if ((migrationInfo?.workspacePromptCount ?? 0) > 0 && localSkillSourceFolders.length > 1) {
+				const pickedLocalFolder = await this.pickMigrationWorkspaceSkillSourceFolder(localSkillSourceFolders);
+				if (!pickedLocalFolder) {
+					return undefined;
+				}
+				sourceFoldersByStorage.set(PromptsStorage.local, pickedLocalFolder);
+			} else {
+				sourceFoldersByStorage.set(PromptsStorage.local, localSkillSourceFolders[0]);
+			}
 		}
 
-		reservedNames.add(candidate);
-		return candidate;
+		for (const folder of skillSourceFolders) {
+			if (folder.source === PromptsStorage.user && !sourceFoldersByStorage.has(PromptsStorage.user)) {
+				sourceFoldersByStorage.set(PromptsStorage.user, folder);
+			}
+			if (folder.source === PromptsStorage.local && !sourceFoldersByStorage.has(PromptsStorage.local)) {
+				sourceFoldersByStorage.set(PromptsStorage.local, folder);
+			}
+		}
+
+		return sourceFoldersByStorage;
+	}
+
+	private async pickMigrationWorkspaceSkillSourceFolder(localSkillSourceFolders: readonly ICustomizationSourceFolder[]): Promise<ICustomizationSourceFolder | undefined> {
+		const picks: IMigrationSkillTargetQuickPickItem[] = localSkillSourceFolders.map(folder => ({
+			label: folder.label,
+			description: this.labelService.getUriLabel(folder.uri, { relative: true }),
+			folder,
+		}));
+
+		const selected = await this.quickInputService.pick(picks, {
+			canPickMany: false,
+			placeHolder: localize('promptMigrationPickWorkspaceSkillFolder', "Select a workspace skill folder for migrated prompts"),
+			matchOnDescription: true,
+		});
+		return selected?.folder;
 	}
 
 	private isPromptsSection(section: AICustomizationManagementSection | undefined): section is AICustomizationManagementSection {

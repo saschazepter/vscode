@@ -5,14 +5,19 @@
 
 import assert from 'assert';
 import { URI } from '../../../../../../base/common/uri.js';
+import { VSBuffer } from '../../../../../../base/common/buffer.js';
+import { Schemas } from '../../../../../../base/common/network.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
+import { FileService } from '../../../../../../platform/files/common/fileService.js';
+import { InMemoryFileSystemProvider } from '../../../../../../platform/files/common/inMemoryFilesystemProvider.js';
+import { NullLogService } from '../../../../../../platform/log/common/log.js';
 import { PromptFileSource, PromptsType } from '../../../common/promptSyntax/promptTypes.js';
 import { PromptsStorage, type IPromptPath } from '../../../common/promptSyntax/service/promptsService.js';
 import { ICustomizationSourceFolder } from '../../../common/customizationHarnessService.js';
-import { getPromptMigrationInfo, migratePromptFileToSkill, pickSkillSourceFolder } from '../../../browser/aiCustomization/promptMigration.js';
+import { createSkillFileUri, getPromptMigrationInfo, migratePromptFileToSkill, migratePromptFilesToSkills, pickSkillSourceFolder } from '../../../browser/aiCustomization/promptMigration.js';
 
 suite('promptMigration', () => {
-	ensureNoDisposablesAreLeakedInTestSuite();
+	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('counts workspace and user prompt files', () => {
 		const promptFiles: IPromptPath[] = [
@@ -80,5 +85,52 @@ suite('promptMigration', () => {
 		assert.ok(migrated.content.includes('argument-hint: "[diff]"'));
 		assert.ok(!migrated.content.includes('tools: [read_file, edit_file]'));
 		assert.ok(migrated.content.includes('## Steps'));
+	});
+
+	test('migrates prompt files and continues after per-file failures', async () => {
+		const promptFiles: IPromptPath[] = [
+			{
+				uri: URI.file('/workspace/.github/prompts/review.prompt.md'),
+				name: 'Review Prompt',
+				storage: PromptsStorage.local,
+				type: PromptsType.prompt,
+				source: PromptFileSource.GitHubWorkspace,
+			},
+			{
+				uri: URI.file('/home/test/.vscode/prompts/failing.prompt.md'),
+				name: 'Failing Prompt',
+				storage: PromptsStorage.user,
+				type: PromptsType.prompt,
+				source: PromptFileSource.UserData,
+			},
+		];
+		const skillRoots: ICustomizationSourceFolder[] = [
+			{ uri: URI.file('/workspace/.github/skills'), label: '.github/skills', source: PromptsStorage.local },
+			{ uri: URI.file('/home/test/.copilot/skills'), label: '~/.copilot/skills', source: PromptsStorage.user },
+		];
+
+		const fileService = store.add(new FileService(new NullLogService()));
+		const fileSystemProvider = store.add(new InMemoryFileSystemProvider());
+		store.add(fileService.registerProvider(Schemas.file, fileSystemProvider));
+		await fileService.writeFile(promptFiles[0].uri, VSBuffer.fromString(['---', 'name: "Review Prompt"', 'mode: code', '---', 'Review body'].join('\n')));
+
+		const migrationErrors: Error[] = [];
+		const skillRootsByStorage = new Map<PromptsStorage, ICustomizationSourceFolder>([
+			[PromptsStorage.local, skillRoots[0]],
+			[PromptsStorage.user, skillRoots[1]],
+		]);
+		const result = await migratePromptFilesToSkills(promptFiles, skillRootsByStorage, fileService, error => migrationErrors.push(error));
+		const migratedSkillUri = createSkillFileUri(skillRoots[0].uri, 'review-prompt');
+		const migratedSkillContent = (await fileService.readFile(migratedSkillUri)).value.toString();
+
+		assert.deepStrictEqual(result, {
+			convertedCount: 1,
+			failedPromptFileNames: ['failing.prompt.md'],
+			unsupportedHeaderKeys: ['mode'],
+		});
+		assert.ok(migratedSkillContent.includes('disable-model-invocation: true'));
+		assert.strictEqual(await fileService.exists(promptFiles[0].uri), false);
+		assert.strictEqual(await fileService.exists(promptFiles[1].uri), false);
+		assert.strictEqual(migrationErrors.length, 1);
 	});
 });

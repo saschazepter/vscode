@@ -37,8 +37,8 @@ import { Codicon } from '../../../../../base/common/codicons.js';
 import { IPathService } from '../../../../services/path/common/pathService.js';
 import { IWorkingCopyService } from '../../../../services/workingCopy/common/workingCopyService.js';
 import { IWebviewService } from '../../../../contrib/webview/browser/webview.js';
-import { IAICustomizationWorkspaceService, AICustomizationManagementSection } from '../../../../contrib/chat/common/aiCustomizationWorkspaceService.js';
-import { ICustomizationHarnessService, IHarnessDescriptor, createVSCodeHarnessDescriptor } from '../../../../contrib/chat/common/customizationHarnessService.js';
+import { IAICustomizationWorkspaceService, AICustomizationManagementSection, AICustomizationSource } from '../../../../contrib/chat/common/aiCustomizationWorkspaceService.js';
+import { ICustomizationHarnessService, ICustomizationItem, ICustomizationItemProvider, IHarnessDescriptor, createVSCodeHarnessDescriptor } from '../../../../contrib/chat/common/customizationHarnessService.js';
 import { IChatSessionsService } from '../../../../contrib/chat/common/chatSessionsService.js';
 import { getChatSessionType, LocalChatSessionUri } from '../../../../contrib/chat/common/model/chatUri.js';
 import { IPromptsService, AgentInstructionFileType, PromptsStorage, IAgentSkill, IChatPromptSlashCommand, IAgentInstructionFile } from '../../../../contrib/chat/common/promptSyntax/service/promptsService.js';
@@ -143,6 +143,27 @@ function createMockAgentHostCustomizationService(mcpServers: readonly FixtureAge
 		override getMcpServers() { return mcpServers; }
 		override addMcpServer() { }
 	}();
+}
+
+// Agent-host harnesses supply their customization items directly through an
+// item provider (bypassing the prompts-service discovery used by local
+// harnesses). Provide one backed by the fixture files so the agent-host
+// editor does not fall back to an empty source and log a warning.
+function createFixtureAgentHostItemProvider(files: readonly IFixtureFile[]): ICustomizationItemProvider {
+	return {
+		onDidChange: Event.None,
+		async provideChatSessionCustomizations(): Promise<ICustomizationItem[]> {
+			return files.map(file => ({
+				uri: file.uri,
+				type: file.type,
+				name: file.name ?? '',
+				description: file.description,
+				source: file.storage as AICustomizationSource,
+				extensionId: file.extensionId,
+				pluginUri: undefined,
+			}));
+		},
+	};
 }
 
 function toExtensionInfo(file: IFixtureFile): { identifier: ExtensionIdentifier; displayName?: string } | undefined {
@@ -1372,6 +1393,7 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 				icon: ThemeIcon.fromId(Codicon.server.id),
 				hiddenSections: [AICustomizationManagementSection.Prompts],
 				hideGenerateButton: true,
+				itemProvider: createFixtureAgentHostItemProvider(allFiles),
 			}],
 		}),
 	}),

@@ -71,7 +71,7 @@ The first sidebar entry is a static `Overview` navigation item. It is styled lik
 
 The Tools section can browse the Marketplace in the core workbench, where extension gallery browsing and installation are available. The Sessions window hides Tools Marketplace browsing and only shows the tool enablement list.
 
-When the active harness is an agent host (`agent-host-*` / `remote-*`), the overview can render a **Migrate** card. The card appears only when the core `IPromptsService` still discovers local/user `*.prompt.md` files, because those files are ignored by agent-host harnesses. The left sidebar also renders a bottom **Migrate Prompt Files** shortcut in that state so the flow is discoverable even when the overview is not visible. Choosing either entry converts those prompt files into skills under the harness-appropriate skill roots (for example `.github/skills` / `~/.copilot/skills` for Copilot, `.claude/skills` / `~/.claude/skills` for Claude), preserves manual invocation by setting `disable-model-invocation: true`, and removes the original prompt files.
+When the active harness is an agent host (`agent-host-*` / `remote-*`), the overview can render a **Migrate** card. The card appears only when the core `IPromptsService` still discovers local/user `*.prompt.md` files, because those files are ignored by agent-host harnesses. The left sidebar also renders a bottom **Migrate Prompt Files** shortcut in that state so the flow is discoverable even when the overview is not visible. Choosing either entry converts those prompt files into skills under the harness-appropriate skill roots (for example `.github/skills` / `~/.copilot/skills` for Copilot, `.claude/skills` / `~/.claude/skills` for Claude), preserves manual invocation by setting `disable-model-invocation: true`, and removes the original prompt files. If multiple workspace skill roots are available, migration prompts once to choose the workspace target and reuses that target for all migrated workspace prompts.
 
 ### IAICustomizationWorkspaceService
 
@@ -213,6 +213,8 @@ AHP Remote Server ────────────────────�
 - **`promptsServiceCustomizationItemProvider.ts`** — Adapts `IPromptsService` to `ICustomizationItemProvider`. Reads agents, skills, instructions, hooks, and prompts from the core service, expands instruction categories and hook entries, applies harness-specific filters (storage sources, workspace subpaths, instruction file patterns), and returns `ICustomizationItem[]` with `storage` set from the authoritative promptsService metadata. Used as the default item provider for harnesses that don't supply their own.
 
 - **`customizationHarnessService.ts`** (common layer) — Defines `ICustomizationItem`, `ICustomizationItemProvider`, `ICustomizationDisableProvider`, and `IHarnessDescriptor`. A harness descriptor optionally carries an `itemProvider`; when absent, the widget falls back to `PromptsServiceCustomizationItemProvider`.
+
+- **`promptMigration.ts`** — Shared prompt-file migration utilities used by the management editor: prompt-to-skill content conversion, source-folder selection, collision-safe skill naming, and the per-file migrate/write/delete workflow with partial-failure reporting.
 
 ### MCP server list active-session controls
 

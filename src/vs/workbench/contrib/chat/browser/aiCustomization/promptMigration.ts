@@ -5,6 +5,9 @@
 
 import { splitLinesIncludeSeparators } from '../../../../../base/common/strings.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { VSBuffer } from '../../../../../base/common/buffer.js';
+import { basename, dirname } from '../../../../../base/common/resources.js';
+import { IFileService } from '../../../../../platform/files/common/files.js';
 import { SKILL_FILENAME, VALID_SKILL_NAME_REGEX, getCleanPromptName } from '../../common/promptSyntax/config/promptFileLocations.js';
 import { ParsedPromptFile, PromptFileParser, PromptHeaderAttributes } from '../../common/promptSyntax/promptFileParser.js';
 import { IPromptPath, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
@@ -21,6 +24,14 @@ export interface IMigratedPromptFile {
 	readonly content: string;
 	readonly unsupportedHeaderKeys: readonly string[];
 }
+
+export interface IMigratedPromptFilesResult {
+	readonly convertedCount: number;
+	readonly failedPromptFileNames: readonly string[];
+	readonly unsupportedHeaderKeys: readonly string[];
+}
+
+export type PromptMigrationSkillSourceFolders = ReadonlyMap<PromptsStorage, ICustomizationSourceFolder>;
 
 const retainedPromptHeaderKeys = new Set([
 	PromptHeaderAttributes.name,
@@ -43,10 +54,7 @@ export function getPromptMigrationInfo(promptFiles: readonly IPromptPath[]): IPr
 	};
 }
 
-export function pickSkillSourceFolder(
-	promptFile: IPromptPath,
-	skillSourceFolders: readonly ICustomizationSourceFolder[],
-): ICustomizationSourceFolder | undefined {
+export function pickSkillSourceFolder(promptFile: IPromptPath, skillSourceFolders: readonly ICustomizationSourceFolder[]): ICustomizationSourceFolder | undefined {
 	return skillSourceFolders.find(folder => folder.source === promptFile.storage);
 }
 
@@ -82,6 +90,53 @@ export function migratePromptFileToSkill(promptFile: IPromptPath, content: strin
 	};
 }
 
+export async function migratePromptFilesToSkills(
+	promptFiles: readonly IPromptPath[],
+	skillSourceFoldersByStorage: PromptMigrationSkillSourceFolders,
+	fileService: IFileService,
+	onMigrationError?: (error: Error) => void,
+): Promise<IMigratedPromptFilesResult> {
+	const reservedSkillNames = new Map<string, Set<string>>();
+	const unsupportedHeaderKeys = new Set<string>();
+	const failedPromptFileNames: string[] = [];
+	let convertedCount = 0;
+
+	for (const promptFile of promptFiles) {
+		const skillSourceFolder = skillSourceFoldersByStorage.get(promptFile.storage);
+		if (!skillSourceFolder) {
+			continue;
+		}
+
+		try {
+			const content = (await fileService.readFile(promptFile.uri)).value.toString();
+			const migratedPrompt = migratePromptFileToSkill(promptFile, content);
+			const reservedNamesForFolder = reservedSkillNames.get(skillSourceFolder.uri.toString()) ?? new Set<string>();
+			reservedSkillNames.set(skillSourceFolder.uri.toString(), reservedNamesForFolder);
+			const skillName = await getAvailableMigratedSkillName(skillSourceFolder.uri, migratedPrompt.skillName, reservedNamesForFolder, fileService);
+			const migratedSkill = skillName === migratedPrompt.skillName ? migratedPrompt : migratePromptFileToSkill(promptFile, content, skillName);
+			for (const key of migratedSkill.unsupportedHeaderKeys) {
+				unsupportedHeaderKeys.add(key);
+			}
+
+			const skillFileUri = createSkillFileUri(skillSourceFolder.uri, skillName);
+			await fileService.createFolder(skillSourceFolder.uri);
+			await fileService.createFolder(dirname(skillFileUri));
+			await fileService.writeFile(skillFileUri, VSBuffer.fromString(migratedSkill.content));
+			await fileService.del(promptFile.uri);
+			convertedCount++;
+		} catch (error) {
+			failedPromptFileNames.push(basename(promptFile.uri));
+			onMigrationError?.(error instanceof Error ? error : new Error(String(error)));
+		}
+	}
+
+	return {
+		convertedCount,
+		failedPromptFileNames,
+		unsupportedHeaderKeys: Array.from(unsupportedHeaderKeys).sort(),
+	};
+}
+
 function getPromptBody(parsed: ParsedPromptFile, content: string): string {
 	const linesWithEol = splitLinesIncludeSeparators(content);
 	if (!parsed.body) {
@@ -111,7 +166,25 @@ function sanitizeSkillName(name: string): string {
 	return 'migrated-skill';
 }
 
-function trimSkillName(skillName: string, suffixLength: number): string {
+export function trimSkillName(skillName: string, suffixLength: number): string {
 	const maxBaseLength = Math.max(1, 64 - suffixLength);
 	return skillName.slice(0, maxBaseLength).replace(/-+$/g, '');
+}
+
+async function getAvailableMigratedSkillName(
+	skillSourceFolder: URI,
+	baseSkillName: string,
+	reservedNames: Set<string>,
+	fileService: IFileService,
+): Promise<string> {
+	let candidate = baseSkillName;
+	let counter = 2;
+	while (reservedNames.has(candidate) || await fileService.exists(createSkillFileUri(skillSourceFolder, candidate))) {
+		const suffix = `-${counter++}`;
+		const trimmedBaseName = trimSkillName(baseSkillName, suffix.length);
+		candidate = `${trimmedBaseName}${suffix}`;
+	}
+
+	reservedNames.add(candidate);
+	return candidate;
 }
