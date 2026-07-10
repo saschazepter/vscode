@@ -19,7 +19,7 @@ import { StorageScope, WillSaveStateReason } from '../../../../../platform/stora
 import { Parts } from '../../../../../workbench/services/layout/browser/layoutService.js';
 import { ViewContainerLocation } from '../../../../../workbench/common/views.js';
 import { ISessionFileChange, SessionStatus } from '../../../../services/sessions/common/session.js';
-import { SinglePaneChangesTabMissingContext, SinglePaneDetailChangesOrFilesActiveContext, SinglePaneFilesTabMissingContext } from '../../../../common/contextkeys.js';
+import { SinglePaneChangesTabMissingContext, HasDockedDetailsContext, SinglePaneFilesTabMissingContext } from '../../../../common/contextkeys.js';
 import { BrowserEditorInput } from '../../../../../workbench/contrib/browserView/common/browserEditorInput.js';
 import { FileEditorInput } from '../../../../../workbench/contrib/files/browser/editors/fileEditorInput.js';
 import { EmptyFileEditorInput } from '../../../editor/browser/emptyFileEditorInput.js';
@@ -287,7 +287,7 @@ suite('LayoutController (desktop)', () => {
 	test('[single-pane] restores the detail panel after a browser tab hides it', async () => {
 		createSinglePaneController({ activateAux: true });
 		await timeout(0);
-		const isChangesOrFilesActive = () => harness.contextKeyService.getContextKeyValue(SinglePaneDetailChangesOrFilesActiveContext.key);
+		const isChangesOrFilesActive = () => harness.contextKeyService.getContextKeyValue(HasDockedDetailsContext.key);
 
 		assert.strictEqual(isChangesOrFilesActive(), false, 'hidden target should clear the editor chevron context');
 
@@ -334,7 +334,7 @@ suite('LayoutController (desktop)', () => {
 	test('[single-pane] hides the detail panel when the main editor part is empty and keeps it closed on tab open', async () => {
 		createSinglePaneController({ activateAux: true });
 		await timeout(0);
-		const isChangesOrFilesActive = () => harness.contextKeyService.getContextKeyValue(SinglePaneDetailChangesOrFilesActiveContext.key);
+		const isChangesOrFilesActive = () => harness.contextKeyService.getContextKeyValue(HasDockedDetailsContext.key);
 
 		const session = makeSession(URI.parse('session:1'));
 		harness.activeSessionObs.set(session, undefined);
@@ -2188,7 +2188,7 @@ suite('LayoutController (desktop)', () => {
 			order: items[0].order,
 			hasToggled: !!items[0].command.toggled,
 			gatedOnEditorArea: when.includes(MainEditorAreaVisibleContext.key),
-			gatedOnChangesOrFilesTab: when.includes(SinglePaneDetailChangesOrFilesActiveContext.key),
+			gatedOnChangesOrFilesTab: when.includes(HasDockedDetailsContext.key),
 		}, {
 			icon: Codicon.listSelection.id,
 			// Conditional (hidden for tab types with no detail, e.g. browser and
