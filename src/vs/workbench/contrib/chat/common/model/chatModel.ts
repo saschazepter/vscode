@@ -127,6 +127,7 @@ export interface IChatRequestModel {
 	readonly locationData?: IChatLocationData;
 	readonly attachedContext?: IChatRequestVariableEntry[];
 	readonly isCompleteAddedRequest: boolean;
+	readonly isTerminalCommand: boolean;
 	readonly response?: IChatResponseModel;
 	readonly editedFileEvents?: IChatAgentEditedFileEvent[];
 	shouldBeRemovedOnSend: IChatRequestDisablement | undefined;
@@ -382,6 +383,8 @@ export interface IChatRequestModelParameters {
 	isSystemInitiated?: boolean;
 	systemInitiatedLabel?: string;
 	terminalExecutionId?: string;
+	/** Whether this request runs as a terminal command (agent host `!` prefix). */
+	isTerminalCommand?: boolean;
 }
 
 export class ChatRequestModel implements IChatRequestModel {
@@ -398,6 +401,7 @@ export class ChatRequestModel implements IChatRequestModel {
 	public readonly isSystemInitiated?: boolean;
 	public readonly systemInitiatedLabel?: string;
 	public readonly terminalExecutionId?: string;
+	public readonly isTerminalCommand: boolean;
 
 	private readonly _shouldBeBlocked = observableValue<boolean>(this, false);
 	public get shouldBeBlocked(): IObservable<boolean> {
@@ -473,6 +477,7 @@ export class ChatRequestModel implements IChatRequestModel {
 		this.isSystemInitiated = params.isSystemInitiated;
 		this.systemInitiatedLabel = params.systemInitiatedLabel;
 		this.terminalExecutionId = params.terminalExecutionId;
+		this.isTerminalCommand = params.isTerminalCommand ?? false;
 	}
 
 	adoptTo(session: ChatModel) {
@@ -2862,6 +2867,7 @@ export class ChatModel extends Disposable implements IChatModel {
 		isSystemInitiated?: boolean,
 		systemInitiatedLabel?: string,
 		terminalExecutionId?: string,
+		isTerminalCommand?: boolean,
 		timestamp?: number | null,
 	): ChatRequestModel {
 		const editedFileEvents = [...this.currentEditedFileEvents.values()];
@@ -2890,6 +2896,7 @@ export class ChatModel extends Disposable implements IChatModel {
 			isSystemInitiated,
 			systemInitiatedLabel,
 			terminalExecutionId,
+			isTerminalCommand,
 		});
 		request.response = new ChatResponseModel({
 			responseContent: [],
