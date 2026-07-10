@@ -39,6 +39,7 @@ function withActiveTurnAndToolCall(state: ChatState): ChatState {
 	state = chatReducer(state, {
 		type: ActionType.ChatTurnStarted,
 		turnId: 'turn-1',
+		startedAt: '2025-01-01T00:00:00.000Z',
 		message: { text: 'hello', origin: { kind: MessageKind.User } },
 	});
 	state = chatReducer(state, {
@@ -56,28 +57,67 @@ suite('chatReducer – summaryStatus with tool call confirmations and input requ
 	ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('preserves turn start timestamp after completion', () => {
-		const timestamp = 1_752_012_321_000;
 		let state = chatReducer(makeChat(), {
 			type: ActionType.ChatTurnStarted,
 			turnId: 'turn-1',
-			timestamp,
+			startedAt: '2025-01-01T00:00:00.000Z',
 			message: { text: 'hello', origin: { kind: MessageKind.User } },
 		});
-		const activeTimestamp = state.activeTurn?.timestamp;
+		const activeStartedAt = state.activeTurn?.startedAt;
+		const activeModifiedAt = state.modifiedAt;
 		state = chatReducer(state, {
 			type: ActionType.ChatTurnComplete,
 			turnId: 'turn-1',
-			timestamp: timestamp + 2_500,
+			endedAt: '2025-01-01T00:02:30.000Z',
 		});
 
 		assert.deepStrictEqual({
-			activeTimestamp,
-			completedTimestamp: state.turns[0].timestamp,
-			elapsedMs: state.turns[0].elapsedMs,
+			activeStartedAt,
+			activeModifiedAt,
+			completedStartedAt: state.turns[0].startedAt,
+			duration: state.turns[0].duration,
+			completedModifiedAt: state.modifiedAt,
 		}, {
-			activeTimestamp: 1_752_012_321_000,
-			completedTimestamp: timestamp,
-			elapsedMs: 2_500,
+			activeStartedAt: '2025-01-01T00:00:00.000Z',
+			activeModifiedAt: '2025-01-01T00:00:00.000Z',
+			completedStartedAt: '2025-01-01T00:00:00.000Z',
+			duration: 150_000,
+			completedModifiedAt: '2025-01-01T00:02:30.000Z',
+		});
+	});
+
+	test('rejects invalid turn lifecycle timestamps', () => {
+		const initial = makeChat();
+		const logs: string[] = [];
+		const afterInvalidStart = chatReducer(initial, {
+			type: ActionType.ChatTurnStarted,
+			turnId: 'turn-1',
+			startedAt: 'invalid',
+			message: { text: 'hello', origin: { kind: MessageKind.User } },
+		}, message => logs.push(message));
+		const active = chatReducer(initial, {
+			type: ActionType.ChatTurnStarted,
+			turnId: 'turn-1',
+			startedAt: '2025-01-01T00:00:00.000Z',
+			message: { text: 'hello', origin: { kind: MessageKind.User } },
+		});
+		const afterInvalidEnd = chatReducer(active, {
+			type: ActionType.ChatTurnComplete,
+			turnId: 'turn-1',
+			endedAt: 'invalid',
+		}, message => logs.push(message));
+
+		assert.deepStrictEqual({
+			startUnchanged: afterInvalidStart === initial,
+			endUnchanged: afterInvalidEnd === active,
+			logs,
+		}, {
+			startUnchanged: true,
+			endUnchanged: true,
+			logs: [
+				'Ignoring ChatTurnStarted with invalid startedAt: invalid',
+				'Ignoring ChatTurnComplete with invalid endedAt: invalid',
+			],
 		});
 	});
 

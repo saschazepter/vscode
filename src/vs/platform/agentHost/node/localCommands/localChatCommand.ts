@@ -161,7 +161,7 @@ export class AgentHostLocalCommands extends Disposable {
 			// reducer opened, optionally persist it as a local turn (so it
 			// survives reload and anchors fork/truncate), then let the owner
 			// drain any messages queued behind it.
-			this._stateManager.dispatchServerAction(request.turnChannel, { type: ActionType.ChatTurnComplete, turnId: request.turnId });
+			this._stateManager.dispatchServerAction(request.turnChannel, { type: ActionType.ChatTurnComplete, turnId: request.turnId, endedAt: new Date().toISOString() });
 			if (command.recordsLocalTurn) {
 				this._recordLocalTurn(request.turnChannel, request.turnId);
 			}

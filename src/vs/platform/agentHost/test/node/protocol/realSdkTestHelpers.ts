@@ -185,6 +185,7 @@ export function dispatchTurn(c: TestProtocolClient, session: string, turnId: str
 		action: {
 			type: ActionType.ChatTurnStarted,
 			turnId,
+			startedAt: '2025-01-01T00:00:00.000Z',
 			message: { text, origin: { kind: MessageKind.User } },
 		},
 	});
@@ -198,6 +199,7 @@ export function dispatchTurnWithAttachments(c: TestProtocolClient, session: stri
 		action: {
 			type: ActionType.ChatTurnStarted,
 			turnId,
+			startedAt: '2025-01-01T00:00:00.000Z',
 			message: { text, origin: { kind: MessageKind.User }, attachments: [...attachments] },
 		},
 	});

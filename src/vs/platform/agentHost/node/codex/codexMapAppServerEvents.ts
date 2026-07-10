@@ -232,7 +232,7 @@ export function mapTurnStarted(
 		{
 			type: ActionType.ChatTurnStarted,
 			turnId: params.turn.id,
-			timestamp: typeof params.turn.startedAt === 'number' ? params.turn.startedAt * 1000 : Date.now(),
+			startedAt: typeof params.turn.startedAt === 'number' ? new Date(params.turn.startedAt * 1000).toISOString() : new Date().toISOString(),
 			message: { text: userText, origin: { kind: MessageKind.User } },
 		},
 	];
@@ -752,7 +752,7 @@ export function mapTurnCompleted(
 	state.itemToToolCall.clear();
 	const turnId = params.turn.id;
 	const status = params.turn.status;
-	const timestamp = typeof params.turn.completedAt === 'number' ? params.turn.completedAt * 1000 : undefined;
+	const endedAt = typeof params.turn.completedAt === 'number' ? new Date(params.turn.completedAt * 1000).toISOString() : new Date().toISOString();
 	const orphanedToolCallActions: (SessionAction | ChatAction)[] = orphanedToolCalls.map(entry => ({
 		type: ActionType.ChatToolCallComplete,
 		turnId: entry.turnId,
@@ -771,7 +771,7 @@ export function mapTurnCompleted(
 			{
 				type: ActionType.ChatError,
 				turnId,
-				...(timestamp !== undefined ? { timestamp } : {}),
+				endedAt,
 				error: {
 					errorType: 'CodexError',
 					...extractForwardedErrorInfo(errMessage),
@@ -780,14 +780,14 @@ export function mapTurnCompleted(
 			{
 				type: ActionType.ChatTurnComplete,
 				turnId,
-				...(timestamp !== undefined ? { timestamp } : {}),
+				endedAt,
 			},
 		];
 	}
 	if (status === 'interrupted') {
-		return [...orphanedToolCallActions, { type: ActionType.ChatTurnCancelled, turnId, ...(timestamp !== undefined ? { timestamp } : {}) }];
+		return [...orphanedToolCallActions, { type: ActionType.ChatTurnCancelled, turnId, endedAt }];
 	}
-	return [...orphanedToolCallActions, { type: ActionType.ChatTurnComplete, turnId, ...(timestamp !== undefined ? { timestamp } : {}) }];
+	return [...orphanedToolCallActions, { type: ActionType.ChatTurnComplete, turnId, endedAt }];
 }
 
 /**

@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize } from '../../../../nls.js';
-import { fromNow, safeIntl } from '../../../../base/common/date.js';
+import { safeIntl } from '../../../../base/common/date.js';
 
 const dayInMilliseconds = 24 * 60 * 60 * 1000;
 
@@ -14,19 +14,18 @@ const chatRequestTimeFormatter = safeIntl.DateTimeFormat(undefined, {
 });
 
 const chatRequestFullDateTimeFormatter = safeIntl.DateTimeFormat(undefined, {
-	weekday: 'long',
 	year: 'numeric',
-	month: 'long',
+	month: 'numeric',
 	day: 'numeric',
 	hour: 'numeric',
 	minute: '2-digit',
-	second: '2-digit',
 });
 
 export interface IFormattedChatRequestTimestamp {
 	readonly text: string;
 	readonly fullText: string;
 	readonly dateTime: string;
+	readonly isRelative: boolean;
 }
 
 /**
@@ -49,20 +48,20 @@ export function formatChatRequestTimestamp(timestamp: number | undefined): IForm
 	}
 
 	const date = new Date(timestamp);
+	const age = Date.now() - timestamp;
+	const isRelative = age > dayInMilliseconds;
 	return {
-		text: Date.now() - timestamp > dayInMilliseconds
-			? fromNow(timestamp, true, true)
+		text: isRelative
+			? localize('chatTimestampDays', "{0}d", Math.floor(age / dayInMilliseconds))
 			: chatRequestTimeFormatter.value.format(date),
 		fullText: chatRequestFullDateTimeFormatter.value.format(date),
 		dateTime: date.toISOString(),
+		isRelative,
 	};
 }
 
-export function formatChatResponseDetails(details: string | undefined, elapsedMs: number | undefined): string {
-	const parts: string[] = [];
-	if (typeof elapsedMs === 'number' && elapsedMs >= 1000) {
-		parts.push(formatElapsedTime(elapsedMs));
-	}
+export function formatChatResponseDetails(details: string | undefined, timing: string | undefined): string {
+	const parts: string[] = timing ? [timing] : [];
 	if (details) {
 		parts.push(details);
 	}

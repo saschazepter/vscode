@@ -37,7 +37,7 @@ suite('codexMapAppServerEvents', () => {
 		assert.deepStrictEqual(actions, [{
 			type: ActionType.ChatTurnStarted,
 			turnId: 'turn_a',
-			timestamp: 1_752_012_321_000,
+			startedAt: '2025-07-08T22:05:21.000Z',
 			message: { text: 'hello', origin: { kind: MessageKind.User } },
 		}]);
 	});
@@ -61,7 +61,7 @@ suite('codexMapAppServerEvents', () => {
 	});
 
 	test('turn/started uses a current timestamp when Codex omits startedAt', () => {
-		const before = Date.now();
+		const before = new Date().toISOString();
 		const actions = mapTurnStarted(createCodexSessionMapState(), {
 			threadId: 'thr_1',
 			turn: {
@@ -76,8 +76,8 @@ suite('codexMapAppServerEvents', () => {
 			},
 		}, 'prompt');
 
-		const timestamp = actions[0].type === ActionType.ChatTurnStarted ? actions[0].timestamp : undefined;
-		assert.ok(typeof timestamp === 'number' && timestamp >= before && timestamp <= Date.now());
+		const startedAt = actions[0].type === ActionType.ChatTurnStarted ? actions[0].startedAt : undefined;
+		assert.ok(typeof startedAt === 'string' && startedAt >= before && startedAt <= new Date().toISOString());
 	});
 
 	test('item/started for agentMessage seeds a markdown part', () => {
@@ -604,7 +604,7 @@ suite('codexMapAppServerEvents', () => {
 				error: null, startedAt: 1_752_012_321, completedAt: 1_752_012_323.5, durationMs: 2500,
 			},
 		});
-		assert.deepStrictEqual(actions, [{ type: ActionType.ChatTurnComplete, turnId: 'turn_a', timestamp: 1_752_012_323_500 }]);
+		assert.deepStrictEqual(actions, [{ type: ActionType.ChatTurnComplete, turnId: 'turn_a', endedAt: '2025-07-08T22:05:23.500Z' }]);
 		assert.strictEqual(state.currentTurnId, undefined);
 	});
 
@@ -619,13 +619,16 @@ suite('codexMapAppServerEvents', () => {
 				error: null, startedAt: null, completedAt: null, durationMs: null,
 			},
 		});
-		assert.deepStrictEqual({ actions, remainingToolCalls: state.itemToToolCall.size }, {
+		const completeAction = actions[1] as { type: ActionType; turnId: string; endedAt: string };
+		const { endedAt: completeEndedAt, ...completeRest } = completeAction;
+		assert.deepStrictEqual({ actions: [actions[0], completeRest], remainingToolCalls: state.itemToToolCall.size }, {
 			actions: [
 				{ type: ActionType.ChatToolCallComplete, turnId: 'turn_a', toolCallId: 'tc_1', result: { success: false, pastTenseMessage: 'Stopped shell', content: [{ type: ToolResultContentType.Text, text: 'partial output' }], error: { message: 'Turn completed before the tool reported completion' } } },
 				{ type: ActionType.ChatTurnComplete, turnId: 'turn_a' },
 			],
 			remainingToolCalls: 0,
 		});
+		assert.ok(typeof completeEndedAt === 'string' && completeEndedAt.includes('T'));
 	});
 
 	test('turn/completed with status=failed emits ChatError + ChatTurnComplete', () => {

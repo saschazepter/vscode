@@ -280,6 +280,8 @@ export interface IChatResponseModel {
 	readonly timestamp: number;
 	/** Milliseconds timestamp when this chat response was completed or cancelled. */
 	readonly completedAt?: number;
+	/** Known completion timestamp for display. Undefined for legacy responses whose completion time was synthesized during restore. */
+	readonly completionTimestamp?: number;
 	/** The state of this response */
 	readonly state: ResponseModelState;
 	/** @internal */
@@ -1081,6 +1083,7 @@ export interface IChatResponseModelParameters {
 	shouldBeBlocked?: boolean;
 	restoredId?: string;
 	modelState?: ResponseModelStateT;
+	completionTimestamp?: number | null;
 	timeSpentWaiting?: number;
 	elapsedMs?: number;
 	/**
@@ -1112,6 +1115,7 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 	public readonly isCompleteAddedRequest: boolean;
 	private readonly _shouldBeBlocked = observableValue<boolean>(this, false);
 	private readonly _timestamp: number;
+	private _completionTimestamp: number | undefined;
 	private _timeSpentWaitingAccumulator: number;
 	private _elapsedMs: number | undefined;
 
@@ -1160,6 +1164,10 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 			return state.completedAt;
 		}
 		return undefined;
+	}
+
+	public get completionTimestamp(): number | undefined {
+		return this._completionTimestamp;
 	}
 
 	public get state(): ResponseModelState {
@@ -1301,6 +1309,9 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 		if (params.modelState) {
 			this._modelState.set(params.modelState, undefined);
 		}
+		this._completionTimestamp = params.completionTimestamp === null
+			? undefined
+			: params.completionTimestamp ?? (params.modelState && 'completedAt' in params.modelState ? params.modelState.completedAt : undefined);
 		this._timeSpentWaitingAccumulator = params.timeSpentWaiting || 0;
 		this._elapsedMs = params.elapsedMs;
 		this._vote = params.vote;
@@ -1481,7 +1492,15 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 			&& equals(currentUsage.promptTokenDetails, usage.promptTokenDetails);
 	}
 
-	complete(): void {
+	complete(completedAt = Date.now()): void {
+		this._complete(completedAt, completedAt);
+	}
+
+	completeWithoutTimestamp(): void {
+		this._complete(Date.now(), undefined);
+	}
+
+	private _complete(completedAt: number, completionTimestamp: number | undefined): void {
 		// No-op if it's already complete
 		if (this.isComplete) {
 			return;
@@ -1491,11 +1510,12 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 		}
 
 		// Compute elapsed generation time before setting terminal state
-		this._elapsedMs ??= Math.max(0, Date.now() - this.confirmationAdjustedTimestamp.get());
+		this._elapsedMs ??= Math.max(0, completedAt - this.confirmationAdjustedTimestamp.get());
 
 		// Canceled sessions can be considered 'Complete'
 		const state = !!this._result?.errorDetails && this._result.errorDetails.code !== 'canceled' ? ResponseModelState.Failed : ResponseModelState.Complete;
-		this._modelState.set({ value: state, completedAt: Date.now() }, undefined);
+		this._completionTimestamp = completionTimestamp;
+		this._modelState.set({ value: state, completedAt }, undefined);
 		this._onDidChange.fire({ reason: 'completedRequest' });
 	}
 
@@ -1514,8 +1534,10 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 			}
 		}
 
-		this._elapsedMs ??= Math.max(0, Date.now() - this.confirmationAdjustedTimestamp.get());
-		this._modelState.set({ value: ResponseModelState.Cancelled, completedAt: Date.now() }, undefined);
+		const completedAt = Date.now();
+		this._elapsedMs ??= Math.max(0, completedAt - this.confirmationAdjustedTimestamp.get());
+		this._completionTimestamp = completedAt;
+		this._modelState.set({ value: ResponseModelState.Cancelled, completedAt }, undefined);
 		this._onDidChange.fire({ reason: 'completedRequest' });
 	}
 
@@ -2675,6 +2697,9 @@ export class ChatModel extends Disposable implements IChatModel {
 				slashCommand: raw.slashCommand,
 				requestId: request.id,
 				modelState,
+				completionTimestamp: raw.modelState && 'completedAt' in raw.modelState && Number.isFinite(raw.modelState.completedAt) && raw.modelState.completedAt > 0
+					? raw.modelState.completedAt
+					: null,
 				vote: raw.vote,
 				timestamp: typeof raw.responseTimestamp === 'number' && raw.responseTimestamp > 0 ? raw.responseTimestamp : requestTimestamp,
 				result,

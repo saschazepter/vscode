@@ -1352,7 +1352,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		const appTurnId = session.currentAppTurnId;
 		const previousHostTurnId = session.currentTurnId ?? (appTurnId ? this._hostTurnId(session, appTurnId) : undefined);
 		if (previousHostTurnId) {
-			actions.push({ type: ActionType.ChatTurnComplete, turnId: previousHostTurnId });
+			actions.push({ type: ActionType.ChatTurnComplete, turnId: previousHostTurnId, endedAt: new Date().toISOString() });
 		}
 		const newHostTurnId = generateUuid();
 		if (appTurnId) {
@@ -1363,7 +1363,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		actions.push({
 			type: ActionType.ChatTurnStarted,
 			turnId: newHostTurnId,
-			timestamp: Date.now(),
+			startedAt: new Date().toISOString(),
 			message: steering.message,
 			queuedMessageId: steering.id,
 		});
@@ -1570,9 +1570,10 @@ export class CodexAgent extends Disposable implements IAgent {
 				this._fire(session.sessionUri, {
 					type: ActionType.ChatError,
 					turnId,
+					endedAt: new Date().toISOString(),
 					error: { errorType: 'CodexDisconnected', message: 'Codex app-server disconnected; session must restart.' },
 				});
-				this._fire(session.sessionUri, { type: ActionType.ChatTurnComplete, turnId });
+				this._fire(session.sessionUri, { type: ActionType.ChatTurnComplete, turnId, endedAt: new Date().toISOString() });
 			}
 		}
 		// Release resources. The proxy handle is refcounted and drops
@@ -1934,9 +1935,10 @@ export class CodexAgent extends Disposable implements IAgent {
 			this._fire(sessionUri, {
 				type: ActionType.ChatError,
 				turnId: effectiveTurnId,
+				endedAt: new Date().toISOString(),
 				error: { errorType: 'CodexMaterializeFailed', message },
 			});
-			this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId });
+			this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId, endedAt: new Date().toISOString() });
 			return;
 		}
 		// Codex registers client tools only at `thread/start`. If the thread
@@ -1953,9 +1955,10 @@ export class CodexAgent extends Disposable implements IAgent {
 				this._fire(sessionUri, {
 					type: ActionType.ChatError,
 					turnId: effectiveTurnId,
+					endedAt: new Date().toISOString(),
 					error: { errorType: 'CodexMaterializeFailed', message },
 				});
-				this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId });
+				this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId, endedAt: new Date().toISOString() });
 				return;
 			}
 		}
@@ -1970,12 +1973,13 @@ export class CodexAgent extends Disposable implements IAgent {
 				this._fire(sessionUri, {
 					type: ActionType.ChatError,
 					turnId: effectiveTurnId,
+					endedAt: new Date().toISOString(),
 					error: {
 						errorType: 'CodexResumeFailed',
 						message: err instanceof Error ? err.message : String(err),
 					},
 				});
-				this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId });
+				this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId, endedAt: new Date().toISOString() });
 				return;
 			}
 		}
@@ -2000,7 +2004,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			// stream emits ChatTurnComplete asynchronously.
 		} catch (err) {
 			if (err instanceof CancellationError) {
-				this._fire(sessionUri, { type: ActionType.ChatTurnCancelled, turnId: effectiveTurnId });
+				this._fire(sessionUri, { type: ActionType.ChatTurnCancelled, turnId: effectiveTurnId, endedAt: new Date().toISOString() });
 				return;
 			}
 			const message = err instanceof Error ? err.message : String(err);
@@ -2008,9 +2012,10 @@ export class CodexAgent extends Disposable implements IAgent {
 			this._fire(sessionUri, {
 				type: ActionType.ChatError,
 				turnId: effectiveTurnId,
+				endedAt: new Date().toISOString(),
 				error: { errorType: 'CodexTurnError', ...extractForwardedErrorInfo(message) },
 			});
-			this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId });
+			this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId, endedAt: new Date().toISOString() });
 		} finally {
 			// Best-effort temp-file cleanup. Image-on-localImage will be
 			// re-read by codex synchronously during the turn so this is

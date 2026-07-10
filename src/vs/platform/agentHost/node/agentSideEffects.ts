@@ -744,7 +744,7 @@ export class AgentSideEffects extends Disposable {
 		this._stateManager.dispatchServerAction(subagentChatUri, {
 			type: ActionType.ChatTurnStarted,
 			turnId,
-			timestamp: Date.now(),
+			startedAt: new Date().toISOString(),
 			message: { text: '', origin: { kind: MessageKind.User } },
 		});
 
@@ -812,6 +812,7 @@ export class AgentSideEffects extends Disposable {
 				this._stateManager.dispatchServerAction(subagent.chatUri, {
 					type: ActionType.ChatTurnCancelled,
 					turnId,
+					endedAt: new Date().toISOString(),
 				});
 				this._turnTracker.turnCompleted(subagent.chatUri, turnId, 'cancelled');
 			}
@@ -846,6 +847,7 @@ export class AgentSideEffects extends Disposable {
 			this._stateManager.dispatchServerAction(subagent.chatUri, {
 				type: ActionType.ChatTurnComplete,
 				turnId,
+				endedAt: new Date().toISOString(),
 			});
 		}
 		this._subagentChats.delete(parentChatURI, toolCallId);
@@ -983,6 +985,7 @@ export class AgentSideEffects extends Disposable {
 					this._stateManager.dispatchServerAction(channel, {
 						type: ActionType.ChatError,
 						turnId: action.turnId,
+						endedAt: new Date().toISOString(),
 						error: { errorType: 'noAgent', message: 'No agent found for session' },
 					});
 					return;
@@ -1275,7 +1278,7 @@ export class AgentSideEffects extends Disposable {
 		this._stateManager.dispatchServerAction(session, {
 			type: ActionType.ChatTurnStarted,
 			turnId,
-			timestamp: Date.now(),
+			startedAt: new Date().toISOString(),
 			message: msg.message,
 			queuedMessageId: msg.id,
 		});
@@ -1296,6 +1299,7 @@ export class AgentSideEffects extends Disposable {
 			this._stateManager.dispatchServerAction(session, {
 				type: ActionType.ChatError,
 				turnId,
+				endedAt: new Date().toISOString(),
 				error: { errorType: 'noAgent', message: 'No agent found for session' },
 			});
 			return;
@@ -1365,6 +1369,7 @@ export class AgentSideEffects extends Disposable {
 			this._stateManager.dispatchServerAction(turnChannel, {
 				type: ActionType.ChatError,
 				turnId,
+				endedAt: new Date().toISOString(),
 				error: buildSendFailedError(err),
 			});
 			this._turnTracker.turnCompleted(turnChannel, turnId, 'error');

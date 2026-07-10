@@ -100,7 +100,7 @@ function endTurn(
 	state: ChatState,
 	turnId: string,
 	turnState: TurnState,
-	completedAt: number,
+	endedAt: string,
 	terminalStatus?: SessionStatus.Error,
 	error?: { errorType: string; message: string; stack?: string },
 ): ChatState {
@@ -130,10 +130,15 @@ function endTurn(
 		};
 	});
 
+	const startedAt = Date.parse(active.startedAt);
+	const completedAt = Date.parse(endedAt);
+	const duration = Number.isFinite(startedAt) && Number.isFinite(completedAt)
+		? Math.max(0, completedAt - startedAt)
+		: undefined;
 	const turn: Turn = {
 		id: active.id,
-		timestamp: active.timestamp,
-		elapsedMs: typeof active.timestamp === 'number' ? Math.max(0, completedAt - active.timestamp) : undefined,
+		startedAt: active.startedAt,
+		duration,
 		message: active.message,
 		responseParts,
 		usage: active.usage,
@@ -145,7 +150,7 @@ function endTurn(
 		...state,
 		turns: [...state.turns, turn],
 		activeTurn: undefined,
-		modifiedAt: new Date(Date.now()).toISOString(),
+		modifiedAt: endedAt,
 	};
 	delete next.inputRequests;
 	return {
@@ -250,6 +255,10 @@ function updateResponsePart(
 
 // ─── Chat Reducer ────────────────────────────────────────────────────────────
 
+function isValidTimestamp(value: string): boolean {
+	return Number.isFinite(Date.parse(value));
+}
+
 /**
  * Pure reducer for chat state. Handles all {@link ChatAction} variants.
  */
@@ -258,11 +267,15 @@ export function chatReducer(state: ChatState, action: ChatAction, log?: (msg: st
 		// ── Turn Lifecycle ────────────────────────────────────────────────────
 
 		case ActionType.ChatTurnStarted: {
+			if (!isValidTimestamp(action.startedAt)) {
+				log?.(`Ignoring ChatTurnStarted with invalid startedAt: ${action.startedAt}`);
+				return state;
+			}
 			let next: ChatState = {
 				...state,
 				activeTurn: {
 					id: action.turnId,
-					timestamp: action.timestamp ?? Date.now(),
+					startedAt: action.startedAt,
 					message: action.message,
 					responseParts: [],
 					usage: undefined,
@@ -271,7 +284,7 @@ export function chatReducer(state: ChatState, action: ChatAction, log?: (msg: st
 			next = {
 				...next,
 				status: withStatusFlag(summaryStatus(next), SessionStatus.IsRead, false),
-				modifiedAt: new Date(Date.now()).toISOString(),
+				modifiedAt: action.startedAt,
 			};
 
 			// If this turn was auto-started from a pending message, remove it
@@ -309,13 +322,25 @@ export function chatReducer(state: ChatState, action: ChatAction, log?: (msg: st
 			};
 
 		case ActionType.ChatTurnComplete:
-			return endTurn(state, action.turnId, TurnState.Complete, action.timestamp ?? Date.now());
+			if (!isValidTimestamp(action.endedAt)) {
+				log?.(`Ignoring ChatTurnComplete with invalid endedAt: ${action.endedAt}`);
+				return state;
+			}
+			return endTurn(state, action.turnId, TurnState.Complete, action.endedAt);
 
 		case ActionType.ChatTurnCancelled:
-			return endTurn(state, action.turnId, TurnState.Cancelled, action.timestamp ?? Date.now());
+			if (!isValidTimestamp(action.endedAt)) {
+				log?.(`Ignoring ChatTurnCancelled with invalid endedAt: ${action.endedAt}`);
+				return state;
+			}
+			return endTurn(state, action.turnId, TurnState.Cancelled, action.endedAt);
 
 		case ActionType.ChatError:
-			return endTurn(state, action.turnId, TurnState.Error, action.timestamp ?? Date.now(), SessionStatus.Error, action.error);
+			if (!isValidTimestamp(action.endedAt)) {
+				log?.(`Ignoring ChatError with invalid endedAt: ${action.endedAt}`);
+				return state;
+			}
+			return endTurn(state, action.turnId, TurnState.Error, action.endedAt, SessionStatus.Error, action.error);
 
 		case ActionType.ChatActivityChanged:
 			return { ...state, activity: action.activity };

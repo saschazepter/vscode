@@ -1997,10 +1997,11 @@ suite('ChatService', () => {
 
 		test('restores request timestamps from remote session history', async () => {
 			const timestamp = 1_752_012_321_000;
+			const completedAt = timestamp + 2_500;
 			const { resource } = setupRemoteProvider({
 				history: [
 					{ type: 'request', prompt: 'hello', participant: remoteScheme, timestamp },
-					{ type: 'response', parts: [], participant: remoteScheme, elapsedMs: 2_500 },
+					{ type: 'response', parts: [], participant: remoteScheme, elapsedMs: 2_500, completedAt },
 				],
 			});
 
@@ -2013,10 +2014,14 @@ suite('ChatService', () => {
 				timestamp: ref.object.getRequests()[0].timestamp,
 				requestTimestamp: ref.object.getRequests()[0].requestTimestamp,
 				elapsedMs: ref.object.getRequests()[0].response?.elapsedMs,
+				completedAt: ref.object.getRequests()[0].response?.completedAt,
+				completionTimestamp: ref.object.getRequests()[0].response?.completionTimestamp,
 			}, {
 				timestamp,
 				requestTimestamp: timestamp,
 				elapsedMs: 2_500,
+				completedAt,
+				completionTimestamp: completedAt,
 			});
 		});
 
@@ -2035,9 +2040,11 @@ suite('ChatService', () => {
 			assert.deepStrictEqual({
 				hasCurrentRecencyFallback: request.timestamp >= before && request.timestamp <= Date.now(),
 				requestTimestamp: request.requestTimestamp,
+				completionTimestamp: request.response?.completionTimestamp,
 			}, {
 				hasCurrentRecencyFallback: true,
 				requestTimestamp: undefined,
+				completionTimestamp: undefined,
 			});
 		});
 

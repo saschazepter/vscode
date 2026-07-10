@@ -641,6 +641,7 @@ export class ClaudeSdkPipeline extends Disposable {
 							action: {
 								type: ActionType.ChatTurnComplete,
 								turnId: completed.turnId,
+								endedAt: new Date().toISOString(),
 							},
 						});
 					}

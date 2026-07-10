@@ -736,13 +736,14 @@ export class CopilotAgentSession extends Disposable {
 			this._emitAction({
 				type: ActionType.ChatTurnComplete,
 				turnId: previousTurnId,
+				endedAt: new Date().toISOString(),
 			});
 		}
 		const newTurnId = generateUuid();
 		this._emitAction({
 			type: ActionType.ChatTurnStarted,
 			turnId: newTurnId,
-			timestamp: Date.now(),
+			startedAt: new Date().toISOString(),
 			message: steering.message,
 			queuedMessageId: steering.id,
 		});
@@ -847,6 +848,7 @@ export class CopilotAgentSession extends Disposable {
 		this._emitAction({
 			type: ActionType.ChatTurnComplete,
 			turnId: turn.id,
+			endedAt: new Date().toISOString(),
 		});
 		this._currentTurn = undefined;
 	}
@@ -2636,7 +2638,7 @@ export class CopilotAgentSession extends Disposable {
 			this._emitAction({
 				type: ActionType.ChatTurnStarted,
 				turnId,
-				timestamp: Date.now(),
+				startedAt: new Date().toISOString(),
 				message: {
 					text: notification.messageText,
 					origin: { kind: MessageKind.SystemNotification },
@@ -3121,6 +3123,7 @@ export class CopilotAgentSession extends Disposable {
 			this._emitAction({
 				type: ActionType.ChatError,
 				turnId: this._turnId,
+				endedAt: new Date().toISOString(),
 				error: {
 					errorType: e.data.errorType,
 					message: stripProxyErrorMarker(e.data.message),

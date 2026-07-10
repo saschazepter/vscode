@@ -287,6 +287,7 @@ export type IChatSessionHistoryItem = {
 	participant: string;
 	details?: string;
 	elapsedMs?: number;
+	completedAt?: number;
 	/**
 	 * Error details for a failed response. Rendered as a proper chat error
 	 * (including the quota-exceeded upgrade affordance), mirroring the live

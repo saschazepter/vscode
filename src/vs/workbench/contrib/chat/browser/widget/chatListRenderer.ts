@@ -61,7 +61,7 @@ import { getExplicitFileOrImageAttachmentSummary, IChatRequestVariableEntry, isE
 import { getStickyScrollTargetItem, IChatChangesSummaryPart, IChatCodeCitations, IChatErrorDetailsPart, IChatReferences, IChatRendererContent, IChatRequestViewModel, IChatResponseViewModel, IChatViewModel, IChatWorkingProgress, isRequestVM, isResponseVM, IChatPendingDividerViewModel, isPendingDividerVM, IChatTurnPillsPart } from '../../common/model/chatViewModel.js';
 import { getNWords } from '../../common/model/chatWordCounter.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, CollapsedToolsDisplayMode, ThinkingDisplayMode } from '../../common/constants.js';
-import { formatChatRequestTimestamp, formatChatResponseDetails } from '../../common/chatProgressFormatting.js';
+import { formatChatRequestTimestamp, formatChatResponseDetails, formatElapsedTime } from '../../common/chatProgressFormatting.js';
 import { ClickAnimation } from '../../../../../base/browser/ui/animations/animations.js';
 import { MarkHelpfulActionId } from '../actions/chatTitleActions.js';
 import { ChatTreeItem, IChatCodeBlockInfo, IChatFileTreeInfo, IChatListItemRendererOptions, IChatWidgetService } from '../chat.js';
@@ -232,6 +232,68 @@ interface IItemHeightChangeParams {
 
 export function shouldScheduleInitialHeightChange(normalizedHeight: number, allocatedHeight: number | undefined): boolean {
 	return typeof allocatedHeight !== 'number' || normalizedHeight > allocatedHeight;
+}
+
+export function renderChatResponseDetails(container: HTMLElement, details: string | undefined, completedAt: number | undefined, elapsedMs: number | undefined, verbose: boolean): void {
+	dom.clearNode(container);
+
+	const completion = verbose ? formatChatRequestTimestamp(completedAt) : undefined;
+	const elapsed = completion && typeof elapsedMs === 'number' && elapsedMs >= 1000
+		? formatElapsedTime(elapsedMs)
+		: undefined;
+	const alternate = completion?.isRelative
+		? formatChatResponseDetails(elapsed, completion.fullText)
+		: elapsed;
+	const responseDetails = formatChatResponseDetails(details, completion?.text);
+
+	if (completion) {
+		const timing = dom.append(container, $('span.chat-response-timing'));
+		dom.append(timing, $('time.chat-response-completed-at', { datetime: completion.dateTime }, completion.text));
+		if (alternate) {
+			dom.append(timing, $('span.chat-response-alternate', undefined, alternate));
+		}
+		timing.classList.toggle('has-alternate', !!alternate);
+	}
+	if (completion && details) {
+		dom.append(container, $('span.chat-response-details-separator', { 'aria-hidden': 'true' }, '\u2022'));
+	}
+	if (details) {
+		dom.append(container, $('span.chat-response-model-details', undefined, details));
+	}
+
+	const accessibleTiming = completion
+		? localize('chatResponseCompletedAt', "Completed {0}", completion.fullText)
+		: undefined;
+	const accessibleElapsed = elapsed
+		? localize('chatResponseElapsed', "Elapsed time {0}", elapsed)
+		: undefined;
+	container.ariaLabel = [accessibleTiming, accessibleElapsed, details].filter(Boolean).join(', ');
+	container.classList.toggle('hidden', !responseDetails);
+	container.tabIndex = responseDetails ? 0 : -1;
+}
+
+export function renderChatRequestTimestamp(container: HTMLElement, timestamp: number | undefined): { readonly element: HTMLElement; readonly hoverText?: string } | undefined {
+	const formatted = formatChatRequestTimestamp(timestamp);
+	if (!formatted) {
+		return undefined;
+	}
+
+	if (!formatted.isRelative) {
+		const element = dom.append(container, $('time.chat-request-timestamp', {
+			datetime: formatted.dateTime,
+			'aria-label': localize('chatRequestSentAt', "Sent {0}", formatted.fullText),
+		}, formatted.text));
+		return { element, hoverText: formatted.fullText };
+	}
+
+	const element = dom.append(container, $('span.chat-request-timestamp', {
+		'aria-label': localize('chatRequestSentAt', "Sent {0}", formatted.fullText),
+		tabindex: 0,
+	}));
+	const timing = dom.append(element, $('span.chat-request-timing.has-alternate'));
+	dom.append(timing, $('time.chat-request-relative', { datetime: formatted.dateTime }, formatted.text));
+	dom.append(timing, $('time.chat-request-full-date', { datetime: formatted.dateTime }, formatted.fullText));
+	return { element };
 }
 
 export function shouldRenderInitialProgressiveContentImmediately(isComplete: boolean, hasMarkdownParts: boolean, hasRenderData: boolean): boolean {
@@ -675,6 +737,35 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		// Insert the details container into the toolbar's internal element structure
 		const footerDetailsContainer = dom.append(footerToolbar.getElement(), $('.chat-footer-details'));
 		footerDetailsContainer.tabIndex = 0;
+		let responseTimingBounds: DOMRect | undefined;
+		templateDisposables.add(dom.addDisposableListener(footerDetailsContainer, dom.EventType.MOUSE_OVER, e => {
+			const target = dom.isHTMLElement(e.target) ? e.target.closest('.chat-response-completed-at') : undefined;
+			if (!dom.isHTMLElement(target) || !footerDetailsContainer.contains(target)) {
+				return;
+			}
+			const bounds = target.getBoundingClientRect();
+			responseTimingBounds = bounds;
+			footerDetailsContainer.classList.add('chat-response-flip-reset');
+			footerDetailsContainer.classList.remove('chat-response-flip-active');
+			footerDetailsContainer.classList.toggle('chat-response-flip-down', e.clientY < bounds.top + bounds.height / 2);
+			void footerDetailsContainer.offsetWidth;
+			footerDetailsContainer.classList.remove('chat-response-flip-reset');
+			void footerDetailsContainer.offsetWidth;
+			footerDetailsContainer.classList.add('chat-response-flip-active');
+		}));
+		templateDisposables.add(dom.addDisposableListener(footerDetailsContainer, dom.EventType.MOUSE_MOVE, e => {
+			if (responseTimingBounds && (e.clientX < responseTimingBounds.left || e.clientX > responseTimingBounds.right || e.clientY < responseTimingBounds.top || e.clientY > responseTimingBounds.bottom)) {
+				responseTimingBounds = undefined;
+				footerDetailsContainer.classList.remove('chat-response-flip-active');
+			}
+		}));
+		templateDisposables.add(dom.addDisposableListener(footerDetailsContainer, dom.EventType.MOUSE_LEAVE, () => {
+			responseTimingBounds = undefined;
+			footerDetailsContainer.classList.remove('chat-response-flip-active');
+		}));
+		templateDisposables.add(dom.addDisposableListener(footerDetailsContainer, dom.EventType.FOCUS, () => {
+			footerDetailsContainer.classList.remove('chat-response-flip-active', 'chat-response-flip-down');
+		}));
 
 		const checkpointRestoreContainer = dom.append(rowContainer, $('.checkpoint-restore-container'));
 		dom.append(checkpointRestoreContainer, $('.checkpoint-line-left'));
@@ -883,12 +974,15 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		templateData.footerToolbar.context = element;
 
 		const updateResponseDetails = () => {
-			const responseDetails = isResponseVM(element)
-				? formatChatResponseDetails(element.result?.details, this.configService.getValue<boolean>(ChatConfiguration.Verbose) ? element.model.elapsedMs : undefined)
-				: '';
-			templateData.footerDetailsContainer.textContent = responseDetails;
-			templateData.footerDetailsContainer.ariaLabel = responseDetails;
-			templateData.footerDetailsContainer.classList.toggle('hidden', !responseDetails);
+			const detailsContainer = templateData.footerDetailsContainer;
+			const details = isResponseVM(element) ? element.result?.details : undefined;
+			renderChatResponseDetails(
+				detailsContainer,
+				details,
+				isResponseVM(element) ? element.model.completionTimestamp : undefined,
+				isResponseVM(element) ? element.model.elapsedMs : undefined,
+				isResponseVM(element) && this.configService.getValue<boolean>(ChatConfiguration.Verbose),
+			);
 		};
 		updateResponseDetails();
 
@@ -1689,13 +1783,39 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}
 
 		if (!element.pendingKind && !element.confirmation && this.rendererOptions.renderStyle !== 'minimal' && templateData.value.childElementCount > 0) {
-			const timestamp = formatChatRequestTimestamp(element.requestTimestamp);
-			if (timestamp) {
-				const timestampElement = dom.append(templateData.value, $('time.chat-request-timestamp', {
-					datetime: timestamp.dateTime,
-					'aria-label': localize('chatRequestSentAt', "Sent {0}", timestamp.fullText),
-				}, timestamp.text));
-				templateData.elementDisposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), timestampElement, timestamp.fullText));
+			const timestamp = renderChatRequestTimestamp(templateData.value, element.requestTimestamp);
+			if (timestamp?.hoverText) {
+				templateData.elementDisposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), timestamp.element, timestamp.hoverText));
+			} else if (timestamp) {
+				let requestTimingBounds: DOMRect | undefined;
+				templateData.elementDisposables.add(dom.addDisposableListener(timestamp.element, dom.EventType.MOUSE_OVER, e => {
+					const target = dom.isHTMLElement(e.target) ? e.target.closest('.chat-request-relative') : undefined;
+					if (!dom.isHTMLElement(target) || !timestamp.element.contains(target)) {
+						return;
+					}
+					const bounds = target.getBoundingClientRect();
+					requestTimingBounds = bounds;
+					timestamp.element.classList.add('chat-request-flip-reset');
+					timestamp.element.classList.remove('chat-request-flip-active');
+					timestamp.element.classList.toggle('chat-request-flip-down', e.clientY < bounds.top + bounds.height / 2);
+					void timestamp.element.offsetWidth;
+					timestamp.element.classList.remove('chat-request-flip-reset');
+					void timestamp.element.offsetWidth;
+					timestamp.element.classList.add('chat-request-flip-active');
+				}));
+				templateData.elementDisposables.add(dom.addDisposableListener(timestamp.element, dom.EventType.MOUSE_MOVE, e => {
+					if (requestTimingBounds && (e.clientX < requestTimingBounds.left || e.clientX > requestTimingBounds.right || e.clientY < requestTimingBounds.top || e.clientY > requestTimingBounds.bottom)) {
+						requestTimingBounds = undefined;
+						timestamp.element.classList.remove('chat-request-flip-active');
+					}
+				}));
+				templateData.elementDisposables.add(dom.addDisposableListener(timestamp.element, dom.EventType.MOUSE_LEAVE, () => {
+					requestTimingBounds = undefined;
+					timestamp.element.classList.remove('chat-request-flip-active');
+				}));
+				templateData.elementDisposables.add(dom.addDisposableListener(timestamp.element, dom.EventType.FOCUS, () => {
+					timestamp.element.classList.remove('chat-request-flip-active', 'chat-request-flip-down');
+				}));
 			}
 		}
 	}

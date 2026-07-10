@@ -449,6 +449,7 @@ suite('ProtocolServerHandler', () => {
 			action: {
 				type: ActionType.ChatTurnStarted,
 				turnId: 'turn-1',
+				startedAt: '2025-01-01T00:00:00.000Z',
 				message: { text: 'hello', origin: { kind: MessageKind.User } },
 			},
 		}));
@@ -973,6 +974,7 @@ suite('ProtocolServerHandler', () => {
 			stateManager.dispatchServerAction(defaultChatUri, {
 				type: ActionType.ChatTurnStarted,
 				turnId: 'turn-1',
+				startedAt: '2025-01-01T00:00:00.000Z',
 				message: { text: 'run it', origin: { kind: MessageKind.User } },
 			});
 			stateManager.dispatchServerAction(defaultChatUri, {
@@ -1035,6 +1037,7 @@ suite('ProtocolServerHandler', () => {
 			stateManager.dispatchServerAction(defaultChatUri, {
 				type: ActionType.ChatTurnStarted,
 				turnId: 'turn-1',
+				startedAt: '2025-01-01T00:00:00.000Z',
 				message: { text: 'run it', origin: { kind: MessageKind.User } },
 			});
 			stateManager.dispatchServerAction(defaultChatUri, {
@@ -1083,6 +1086,7 @@ suite('ProtocolServerHandler', () => {
 			stateManager.dispatchServerAction(defaultChatUri, {
 				type: ActionType.ChatTurnStarted,
 				turnId: 'turn-1',
+				startedAt: '2025-01-01T00:00:00.000Z',
 				message: { text: 'run it', origin: { kind: MessageKind.User } },
 			});
 			stateManager.dispatchServerAction(defaultChatUri, {
@@ -1125,6 +1129,7 @@ suite('ProtocolServerHandler', () => {
 			stateManager.dispatchServerAction(defaultChatUri, {
 				type: ActionType.ChatTurnStarted,
 				turnId: 'turn-1',
+				startedAt: '2025-01-01T00:00:00.000Z',
 				message: { text: 'run it', origin: { kind: MessageKind.User } },
 			});
 			stateManager.dispatchServerAction(defaultChatUri, {
@@ -1174,6 +1179,7 @@ suite('ProtocolServerHandler', () => {
 			stateManager.dispatchServerAction(defaultChatUri, {
 				type: ActionType.ChatTurnStarted,
 				turnId: 'turn-1',
+				startedAt: '2025-01-01T00:00:00.000Z',
 				message: { text: 'run it', origin: { kind: MessageKind.User } },
 			});
 			stateManager.dispatchServerAction(defaultChatUri, {
@@ -1232,6 +1238,7 @@ suite('ProtocolServerHandler', () => {
 			stateManager.dispatchServerAction(defaultChatUri, {
 				type: ActionType.ChatTurnStarted,
 				turnId: 'turn-1',
+				startedAt: '2025-01-01T00:00:00.000Z',
 				message: { text: 'run it', origin: { kind: MessageKind.User } },
 			});
 			stateManager.dispatchServerAction(defaultChatUri, {
@@ -1284,6 +1291,7 @@ suite('ProtocolServerHandler', () => {
 			stateManager.dispatchServerAction(defaultChatUri, {
 				type: ActionType.ChatTurnStarted,
 				turnId: 'turn-1',
+				startedAt: '2025-01-01T00:00:00.000Z',
 				message: { text: 'run it', origin: { kind: MessageKind.User } },
 			});
 			stateManager.dispatchServerAction(defaultChatUri, {
@@ -1337,6 +1345,7 @@ suite('ProtocolServerHandler', () => {
 			stateManager.dispatchServerAction(chatUri, {
 				type: ActionType.ChatTurnStarted,
 				turnId: 'turn-1',
+				startedAt: '2025-01-01T00:00:00.000Z',
 				message: { text: 'run it', origin: { kind: MessageKind.User } },
 			});
 			// Tool call stamped for a clientId that never connected (e.g. a
@@ -1376,6 +1385,7 @@ suite('ProtocolServerHandler', () => {
 			stateManager.dispatchServerAction(defaultChatUri, {
 				type: ActionType.ChatTurnStarted,
 				turnId: 'turn-1',
+				startedAt: '2025-01-01T00:00:00.000Z',
 				message: { text: 'run it', origin: { kind: MessageKind.User } },
 			});
 			stateManager.dispatchServerAction(defaultChatUri, {
@@ -1405,6 +1415,7 @@ suite('ProtocolServerHandler', () => {
 			stateManager.dispatchServerAction(defaultChatUri, {
 				type: ActionType.ChatTurnStarted,
 				turnId: 'turn-1',
+				startedAt: '2025-01-01T00:00:00.000Z',
 				message: { text: 'run it', origin: { kind: MessageKind.User } },
 			});
 			// First orphaned tool call (owner never connected) arms the grace timer.
@@ -1456,6 +1467,7 @@ suite('ProtocolServerHandler', () => {
 		stateManager.dispatchServerAction(defaultChatUri, {
 			type: ActionType.ChatTurnStarted,
 			turnId: 'turn-1',
+			startedAt: '2025-01-01T00:00:00.000Z',
 			message: { text: 'run it', origin: { kind: MessageKind.User } },
 		});
 		stateManager.dispatchServerAction(defaultChatUri, {
@@ -1510,6 +1522,7 @@ suite('ProtocolServerHandler', () => {
 		stateManager.dispatchServerAction(defaultChatUri, {
 			type: ActionType.ChatTurnStarted,
 			turnId: 'turn-1',
+			startedAt: '2025-01-01T00:00:00.000Z',
 			message: { text: 'run it', origin: { kind: MessageKind.User } },
 		});
 		stateManager.dispatchServerAction(defaultChatUri, {
@@ -1574,6 +1587,7 @@ suite('ProtocolServerHandler', () => {
 		stateManager.dispatchServerAction(defaultChatUri, {
 			type: ActionType.ChatTurnStarted,
 			turnId: 'turn-1',
+			startedAt: '2025-01-01T00:00:00.000Z',
 			message: { text: 'run it', origin: { kind: MessageKind.User } },
 		});
 		stateManager.dispatchServerAction(defaultChatUri, {

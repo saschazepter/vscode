@@ -212,6 +212,7 @@ suite('ChatModel', () => {
 	});
 
 	test('response details, elapsed time, and tokens roundtrip through serialization', () => {
+		const completedAt = 1_752_012_405_000;
 		const serializableData: ISerializableChatData3 = {
 			version: 3,
 			sessionId: 'test-session',
@@ -225,7 +226,7 @@ suite('ChatModel', () => {
 				timestamp: 1_752_012_321_000,
 				response: [{ value: 'response', isTrusted: false }],
 				result: { details: 'GPT-5.6 Sol' },
-				modelState: { value: ResponseModelState.Complete, completedAt: Date.now() },
+				modelState: { value: ResponseModelState.Complete, completedAt },
 				responseTimestamp: 1_752_012_322_000,
 				elapsedMs: 83_000,
 				completionTokens: 1_234,
@@ -245,6 +246,7 @@ suite('ChatModel', () => {
 			requestTimestamp: model.getRequests()[0].timestamp,
 			visibleRequestTimestamp: model.getRequests()[0].requestTimestamp,
 			responseTimestamp: response?.timestamp,
+			completionTimestamp: response?.completionTimestamp,
 			elapsedMs: response?.elapsedMs,
 			completionTokens: response?.completionTokenCount,
 			serializedDetails: serializedResponse.result?.details,
@@ -257,6 +259,7 @@ suite('ChatModel', () => {
 			requestTimestamp: 1_752_012_321_000,
 			visibleRequestTimestamp: 1_752_012_321_000,
 			responseTimestamp: 1_752_012_322_000,
+			completionTimestamp: completedAt,
 			elapsedMs: 83_000,
 			completionTokens: 1_234,
 			serializedDetails: 'GPT-5.6 Sol',

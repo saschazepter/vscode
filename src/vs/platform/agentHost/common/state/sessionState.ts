@@ -638,9 +638,10 @@ export function chatSummaryFromState(state: ChatState): ChatSummary {
 	return summary;
 }
 
-export function createActiveTurn(id: string, message: Message): ActiveTurn {
+export function createActiveTurn(id: string, message: Message, startedAt: string): ActiveTurn {
 	return {
 		id,
+		startedAt,
 		message,
 		responseParts: [],
 		usage: undefined,

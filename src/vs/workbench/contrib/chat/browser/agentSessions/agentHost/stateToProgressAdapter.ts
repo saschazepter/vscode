@@ -494,7 +494,7 @@ export function turnsToHistory(backendSession: URI, turns: readonly Turn[], part
 			prompt: turn.message.text,
 			participant: participantId,
 			modelId,
-			...(typeof turn.timestamp === 'number' ? { timestamp: turn.timestamp } : {}),
+			...(turn.startedAt !== undefined && Number.isFinite(Date.parse(turn.startedAt)) ? { timestamp: Date.parse(turn.startedAt) } : {}),
 			variableData,
 			...(isSystemInitiated ? {
 				isSystemInitiated: true,
@@ -556,7 +556,11 @@ export function turnsToHistory(backendSession: URI, turns: readonly Turn[], part
 				?? { message: `Error: (${turn.error.errorType}) ${turn.error.message}` };
 		}
 
-		history.push({ type: 'response', parts, participant: participantId, details, elapsedMs: turn.elapsedMs, ...(errorDetails ? { errorDetails } : {}) });
+		const startedAt = turn.startedAt === undefined ? undefined : Date.parse(turn.startedAt);
+		const completedAt = startedAt !== undefined && Number.isFinite(startedAt) && typeof turn.duration === 'number' && Number.isFinite(turn.duration) && turn.duration >= 0
+			? startedAt + turn.duration
+			: undefined;
+		history.push({ type: 'response', parts, participant: participantId, details, elapsedMs: turn.duration, completedAt, ...(errorDetails ? { errorDetails } : {}) });
 	}
 	return history;
 }

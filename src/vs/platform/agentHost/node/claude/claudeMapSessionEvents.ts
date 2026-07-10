@@ -469,6 +469,7 @@ function mapResult(
 			action: {
 				type: ActionType.ChatError,
 				turnId,
+				endedAt: new Date().toISOString(),
 				error: {
 					errorType: message.subtype,
 					...extractForwardedErrorInfo(errorText),

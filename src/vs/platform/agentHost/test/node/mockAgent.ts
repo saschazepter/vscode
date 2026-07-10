@@ -1011,12 +1011,12 @@ function _reasoning(session: URI, sessionStr: string, turnId: string, content: s
 
 /** Creates a {@link ActionType.ChatTurnComplete} signal. */
 function _idle(session: URI, sessionStr: string, turnId: string): IAgentActionSignal {
-	return _action(session, { type: ActionType.ChatTurnComplete, turnId });
+	return _action(session, { type: ActionType.ChatTurnComplete, turnId, endedAt: new Date().toISOString() });
 }
 
 /** Creates a {@link ActionType.ChatError} signal. */
 function _error(session: URI, sessionStr: string, turnId: string, errorType: string, message: string, stack?: string): IAgentActionSignal {
-	return _action(session, { type: ActionType.ChatError, turnId, error: { errorType, message, stack } });
+	return _action(session, { type: ActionType.ChatError, turnId, endedAt: new Date().toISOString(), error: { errorType, message, stack } });
 }
 
 /** Creates a {@link ActionType.SessionTitleChanged} signal. */
