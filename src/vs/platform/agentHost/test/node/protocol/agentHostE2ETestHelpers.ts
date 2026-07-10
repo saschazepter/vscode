@@ -175,14 +175,12 @@ export interface IAgentHostE2EProviderConfig {
 	 */
 	readonly shellPermissionReplayUnstableOnWindows?: boolean;
 	/**
-	 * When set, this provider reconstructs a reopened subagent transcript by
-	 * reading the bundled SDK's on-disk session storage (Claude reads the
-	 * `subagents/agent-*.jsonl` files the SDK subprocess wrote during the live
-	 * turn). On Windows those files are not reliably flushed/visible by the time
-	 * the session is reopened, so the subagent-reopen test can intermittently see
-	 * an empty transcript there. Gate that one test to POSIX for such providers;
-	 * macOS/Linux keep full coverage, and providers that rebuild from the
-	 * in-process event log (Copilot) are unaffected and stay enabled on Windows.
+	 * When set, the subagent-reopen ("replay path") test is skipped on Windows for
+	 * this provider, which rebuilds the reopened transcript from the bundled SDK's
+	 * on-disk `subagents/agent-*.jsonl` files — not reliably visible on Windows
+	 * right after the turn, so the transcript can come back empty. macOS/Linux keep
+	 * full coverage; providers that rebuild from the in-process event log (Copilot)
+	 * are unaffected and stay enabled on Windows.
 	 */
 	readonly subagentReplayUnstableOnWindows?: boolean;
 	/**
@@ -1140,12 +1138,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 				`Parent tool calls: ${JSON.stringify(parentStarts.map(a => a.toolName))}`);
 		});
 
-		// Reopening rebuilds the subagent transcript from persisted SDK state. For
-		// providers that read the bundled SDK's on-disk subagent files (Claude),
-		// those files are not reliably visible on Windows right after the turn, so
-		// the reopened transcript can come back empty there — gate to POSIX for
-		// those providers (macOS/Linux keep coverage; Copilot rebuilds from the
-		// in-process event log and stays enabled on Windows). See PR #325284.
+		// Windows-skipped for providers with on-disk subagent replay (see `subagentReplayUnstableOnWindows`).
 		((isWindows && config.subagentReplayUnstableOnWindows) ? test.skip : (config.supportsSubagents ? test : test.skip))('reopening a session keeps sub-agent messages out of the parent transcript (replay path)', async function () {
 			this.timeout(180_000);
 

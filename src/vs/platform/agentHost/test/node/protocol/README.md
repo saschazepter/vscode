@@ -177,6 +177,7 @@ Guidelines:
 | `supportsWorktreeIsolation` | Gates the worktree test. |
 | `supportsPlanMode` | Gates the plan-mode test. |
 | `shellPermissionReplayUnstableOnWindows` | Skips the shell-permission test on **Windows** for that provider (e.g. Codex's `exec_command` tool call isn't emitted by the Codex CLI on Windows). |
+| `subagentReplayUnstableOnWindows` | Skips the subagent-reopen ("replay path") test on **Windows** for that provider (e.g. Claude rebuilds the transcript from the SDK's on-disk `subagents/*.jsonl`, not reliably visible there right after the turn). |
 | `RECORD` (env) | The `can abort a running turn` test is record-only — replay serves the truncated response instantly, so there's no window to abort. |
 | `isWindows` | The worktree test is skipped on Windows (POSIX-shaped `.worktrees` paths + host-terminal `pwd`). |
 
