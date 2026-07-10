@@ -1255,12 +1255,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					this._liveReplyKey = undefined;
 					// Record this heard reply so an immediate backend re-narration
 					// of it (on activation) is dropped as a re-read, and so later
-					// on-focus re-reads of it are deduped by content.
-					if (codingSessionId && e.transcript) {
+					// on-focus re-reads of it are deduped by content. Untagged
+					// audio that plays live still belongs to the active session, so
+					// attribute it there; otherwise a later TAGGED re-narration of
+					// the same reply would not match and be read a second time.
+					const heardSessionId = codingSessionId ?? this._getActiveSessionId();
+					if (heardSessionId && e.transcript) {
 						const heard = this._normalizeTranscript(e.transcript);
 						if (heard) {
-							this._lastHeardTranscriptById.set(codingSessionId, heard);
-							this._recentlyReadResponse.set(codingSessionId, { transcript: heard, at: Date.now() });
+							this._lastHeardTranscriptById.set(heardSessionId, heard);
+							this._recentlyReadResponse.set(heardSessionId, { transcript: heard, at: Date.now() });
 						}
 					}
 				}

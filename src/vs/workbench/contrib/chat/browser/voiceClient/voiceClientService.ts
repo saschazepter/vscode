@@ -291,7 +291,7 @@ export class VoiceClientService extends Disposable implements IVoiceClientServic
 		};
 
 		ws.onclose = (evt: CloseEvent) => {
-			this._logService.warn('[voice] ws.onclose', { code: evt.code, reason: evt.reason, wasClean: evt.wasClean });
+			this._logService.trace(`[voice] ws.onclose code=${evt.code} reason=${evt.reason ?? ''} wasClean=${evt.wasClean}`);
 			if (this._ws === ws) {
 				if (evt.code === 1000 || evt.code === 1001) {
 					this._cleanup();
@@ -332,7 +332,7 @@ export class VoiceClientService extends Disposable implements IVoiceClientServic
 	}
 
 	disconnect(): void {
-		this._logService.warn('[voice] disconnect() called', new Error('disconnect trace').stack);
+		this._logService.trace('[voice] disconnect() called');
 		if (this._ws && this._ws.readyState < WebSocket.CLOSING) {
 			this._ws.close();
 		}
