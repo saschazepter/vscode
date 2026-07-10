@@ -104,6 +104,7 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 		shrink: 80 as const,
 		fit: 120 as const
 	};
+	private static readonly STYLE_OVERRIDE_COMPACT_PINNED_TAB_WIDTH = 28 as const;
 	private static readonly STYLE_OVERRIDE_PINNED_TAB_SPACING = 4 as const;
 
 	private static readonly DRAG_OVER_OPEN_TAB_THRESHOLD = 1500;
@@ -113,6 +114,7 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 
 	private titleContainer: HTMLElement | undefined;
 	private tabsAndActionsContainer: HTMLElement | undefined;
+	private stickyTabsBackground: HTMLElement | undefined;
 	private tabsContainer: HTMLElement | undefined;
 	private tabsScrollbar: ScrollableElement | undefined;
 	private addTabContainer: HTMLElement | undefined;
@@ -182,6 +184,8 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 		this.tabsAndActionsContainer = $('.tabs-and-actions-container');
 		this.titleContainer.appendChild(this.tabsAndActionsContainer);
 
+		this.stickyTabsBackground = $('.sticky-tabs-background', { 'aria-hidden': true });
+
 		// Tabs Container
 		this.tabsContainer = $('.tabs-container', {
 			role: 'tablist',
@@ -195,6 +199,7 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 		// Tabs Scrollbar
 		this.tabsScrollbar = this.createTabsScrollbar(this.tabsContainer);
 		this.tabsAndActionsContainer.appendChild(this.tabsScrollbar.getDomNode());
+		this.tabsScrollbar.getDomNode().appendChild(this.stickyTabsBackground);
 
 		// Tabs Container listeners
 		this.registerTabsContainerListeners(this.tabsContainer, this.tabsScrollbar);
@@ -1936,6 +1941,8 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 		const tabsWrapMultiLine = this.doLayoutTabsWrapping(dimensions);
 		if (!tabsWrapMultiLine) {
 			this.doLayoutTabsNonWrapping(options);
+		} else {
+			assertReturnsDefined(this.stickyTabsBackground).style.width = '0px';
 		}
 	}
 
@@ -2131,6 +2138,7 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 		} else {
 			tabsContainer.classList.remove('disable-sticky-tabs');
 		}
+		assertReturnsDefined(this.stickyTabsBackground).style.width = `${stickyTabsWidth}px`;
 
 		let activeTabPosX: number | undefined;
 		let activeTabWidth: number | undefined;
@@ -2215,11 +2223,12 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 	}
 
 	private getStickyTabWidth(pinnedTabSizing: IEditorPartOptions['pinnedTabSizing']): number {
-		const styleOverrideSpacing = this.parent.closest('.style-override') ? MultiEditorTabsControl.STYLE_OVERRIDE_PINNED_TAB_SPACING : 0;
+		const hasStyleOverride = Boolean(this.parent.closest('.style-override'));
+		const styleOverrideSpacing = hasStyleOverride ? MultiEditorTabsControl.STYLE_OVERRIDE_PINNED_TAB_SPACING : 0;
 
 		switch (pinnedTabSizing) {
 			case 'compact':
-				return MultiEditorTabsControl.TAB_WIDTH.compact + styleOverrideSpacing;
+				return (hasStyleOverride ? MultiEditorTabsControl.STYLE_OVERRIDE_COMPACT_PINNED_TAB_WIDTH : MultiEditorTabsControl.TAB_WIDTH.compact) + styleOverrideSpacing;
 			case 'shrink':
 				return MultiEditorTabsControl.TAB_WIDTH.shrink + styleOverrideSpacing;
 			default:

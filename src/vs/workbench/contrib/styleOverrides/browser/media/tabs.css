@@ -53,6 +53,7 @@
 	min-width: 16px;
 	max-width: 16px;
 	flex: 0 0 16px;
+	transform: translateX(-1px);
 }
 
 .style-override .part.editor .tabs-container > .tab.sticky-compact.has-icon > .tab-label::before {
@@ -78,10 +79,10 @@
 }
 
 .style-override .part.editor .tabs-container > .tab.sticky-compact {
-	width: 38px !important;
-	min-width: 38px !important;
-	max-width: 38px !important;
-	flex: 0 0 38px !important;
+	width: 28px !important;
+	min-width: 28px !important;
+	max-width: 28px !important;
+	flex: 0 0 28px !important;
 }
 
 /* Center tabs vertically and strip the bottom border so the pills float. */
@@ -114,6 +115,46 @@
 
 .style-override.monaco-workbench.vs .part.editor > .content .editor-group-container > .title .tabs-and-actions-container .tabs-container > .tab:not(.active):hover {
 	background-color: color-mix(in srgb, var(--vscode-foreground) 6%, transparent) !important;
+}
+
+/* Keep scrolling tabs from showing through compact pinned pills and their spacing. */
+.style-override .part.editor .tabs-container > .tab.sticky-compact {
+	background-color: color-mix(in srgb, var(--vscode-foreground) 5%, var(--vscode-editor-background)) !important;
+}
+
+.style-override .part.editor .tabs-and-actions-container > .monaco-scrollable-element > .sticky-tabs-background {
+	position: absolute;
+	top: 0;
+	left: 0;
+	z-index: 7;
+	width: 0;
+	height: var(--editor-group-tab-height);
+	background-color: var(--vscode-editor-background);
+	pointer-events: none;
+}
+
+.style-override.monaco-workbench .part.editor > .content .editor-group-container > .title > .tabs-and-actions-container > .monaco-scrollable-element .scrollbar {
+	z-index: 6;
+}
+
+.style-override .part.editor .tabs-container > .tab.sticky-compact.active {
+	background-color: color-mix(in srgb, var(--vscode-foreground) 18%, var(--vscode-editor-background)) !important;
+}
+
+.style-override.monaco-workbench .part.editor > .content .editor-group-container > .title .tabs-and-actions-container .tabs-container > .tab.sticky-compact:not(.active):hover {
+	background-color: color-mix(in srgb, var(--vscode-foreground) 8%, var(--vscode-editor-background)) !important;
+}
+
+.style-override.monaco-workbench.vs .part.editor .tabs-container > .tab.sticky-compact {
+	background-color: color-mix(in srgb, var(--vscode-foreground) 4%, var(--vscode-editor-background)) !important;
+}
+
+.style-override.monaco-workbench.vs .part.editor .tabs-container > .tab.sticky-compact.active {
+	background-color: color-mix(in srgb, var(--vscode-foreground) 10%, var(--vscode-editor-background)) !important;
+}
+
+.style-override.monaco-workbench.vs .part.editor > .content .editor-group-container > .title .tabs-and-actions-container .tabs-container > .tab.sticky-compact:not(.active):hover {
+	background-color: color-mix(in srgb, var(--vscode-foreground) 6%, var(--vscode-editor-background)) !important;
 }
 
 .style-override .part.editor .tabs-container > .tab .tab-border-top-container,
