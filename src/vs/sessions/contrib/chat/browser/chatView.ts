@@ -177,6 +177,9 @@ export class ChatView extends AbstractChatView {
 				rendererOptions: {
 					referencesExpandedWhenEmptyResponse: false,
 					progressMessageAtBottomOfResponse: mode => mode !== ChatModeKind.Ask,
+					// Wrap long lines in response code blocks so command/tool output pasted
+					// by the agent stays compact instead of overflowing horizontally.
+					codeBlockRenderOptions: { editorOptions: { wordWrap: 'on' } },
 				},
 				enableImplicitContext: true,
 				enableWorkingSet: 'implicit',
