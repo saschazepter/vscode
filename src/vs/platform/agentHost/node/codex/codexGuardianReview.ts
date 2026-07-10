@@ -172,17 +172,6 @@ function inlineCode(text: string): string {
 	return `${fence}${padding}${text}${padding}${fence}`;
 }
 
-/** Options for {@link formatGuardianDenialNotification}. */
-export interface IGuardianDenialNotificationOptions {
-	/**
-	 * Mark the notice as a simulated (dev/test) denial. When set, the header
-	 * reads "Auto-review denied (simulated)" to make clear the real reviewer
-	 * did not block the action. Only the force-review-denied harness sets this;
-	 * real denials leave it unset.
-	 */
-	readonly simulated?: boolean;
-}
-
 /**
  * Compose the durable denial notice for an auto-review denial, rendered as a
  * Markdown response part (which survives turn completion and, unlike a transient
@@ -192,15 +181,10 @@ export interface IGuardianDenialNotificationOptions {
  * anyway" card can be acted on. The notice is emitted as a blockquote so it
  * stays visually distinct from the model's own prose even when adjacent
  * Markdown parts are concatenated into one rendered block.
- *
- * When {@link IGuardianDenialNotificationOptions.simulated} is set the header is
- * marked "(simulated)" so a dev/test forced denial (the real reviewer actually
- * ALLOWED the action and the command already ran) is never mistaken for a real
- * block. Real denials leave this unset.
  */
-export function formatGuardianDenialNotification(summary: IGuardianActionSummary, rationale: string | null, options?: IGuardianDenialNotificationOptions): string {
+export function formatGuardianDenialNotification(summary: IGuardianActionSummary, rationale: string | null): string {
 	const detail = summary.detail?.trim();
-	const header = options?.simulated ? '**Auto-review denied (simulated)**' : '**Auto-review denied**';
+	const header = '**Auto-review denied**';
 	const lines: string[] = [
 		detail
 			? `⚠️ ${header} — ${summary.title}: ${inlineCode(detail)}`

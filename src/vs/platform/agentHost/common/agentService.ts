@@ -281,16 +281,6 @@ export const AgentHostCodexAgentCodexHomeEnvVar = 'CODEX_HOME';
 /** Forwarded extra args for `codex app-server` (JSON-encoded string[]). */
 export const AgentHostCodexAgentBinaryArgsEnvVar = 'VSCODE_AGENT_HOST_CODEX_APP_SERVER_ARGS';
 
-/**
- * Dev/test affordance: when set to a truthy value, the Codex agent host coerces
- * the next completed auto-review (guardian) into a denial so the denial-surfacing
- * UI can be exercised without provoking a real guardian denial. Real denials are
- * hard to trigger on demand because the primary model usually refuses unsafe
- * actions before they ever reach the reviewer. Not wired to any setting; intended
- * only for manual verification. See `CodexAgent._handleGuardianReviewCompleted`.
- */
-export const AgentHostCodexForceReviewDeniedEnvVar = 'VSCODE_AGENT_HOST_CODEX_FORCE_REVIEW_DENIED';
-
 // -- OpenTelemetry settings ------------------------------------------------------
 //
 // The `chat.agentHost.otel.*` namespace surfaces the same exporter knobs the CLI

@@ -138,12 +138,10 @@ suite('codexGuardianReview', () => {
 			[
 				formatGuardianDenialNotification({ title: 'Network access', detail: 'https://example.com' }, 'Blocked for safety.'),
 				formatGuardianDenialNotification({ title: 'Elevated permissions', detail: '' }, null),
-				formatGuardianDenialNotification({ title: 'Network access', detail: 'https://example.com' }, 'Simulated for UI verification.', { simulated: true }),
 			],
 			[
 				'\n\n> ⚠️ **Auto-review denied** — Network access: `https://example.com`\n>\n> Blocked for safety.\n',
 				'\n\n> ⚠️ **Auto-review denied** — Elevated permissions\n',
-				'\n\n> ⚠️ **Auto-review denied (simulated)** — Network access: `https://example.com`\n>\n> Simulated for UI verification.\n',
 			]
 		);
 	});

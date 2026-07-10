@@ -20,7 +20,7 @@ import { IProductService } from '../../../product/common/productService.js';
 import { createSchema, platformSessionSchema, schemaProperty, type ISchemaProperty, type SessionMode } from '../../common/agentHostSchema.js';
 import { createPricingMetaFromBilling, normalizeCAPIBilling } from '../../common/agentModelPricing.js';
 import { getReasoningEffortDescription, getReasoningEffortLabel } from '../../common/reasoningEffort.js';
-import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentHostCodexForceReviewDeniedEnvVar, AgentSession, AgentSignal, CODEX_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, type AgentProvider } from '../../common/agentService.js';
+import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentSession, AgentSignal, CODEX_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, type AgentProvider } from '../../common/agentService.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { ActionType, isChatAction, type SessionAction, type ChatAction } from '../../common/state/sessionActions.js';
@@ -638,15 +638,6 @@ export class CodexAgent extends Disposable implements IAgent {
 	private _connection: ConnectionState = { kind: 'idle' };
 	private _modelsRefreshPromise: Promise<void> | undefined;
 	private readonly _metadataStore: CodexSessionMetadataStore;
-
-	/**
-	 * Dev/test affordance gated on {@link AgentHostCodexForceReviewDeniedEnvVar}.
-	 * When enabled, {@link _handleGuardianReviewCompleted} coerces the next
-	 * completed auto-review into a denial so the denial-surfacing UI can be
-	 * verified without a real guardian denial (which the primary model normally
-	 * prevents by refusing unsafe actions before they reach the reviewer).
-	 */
-	private readonly _forceReviewDenied = !!process.env[AgentHostCodexForceReviewDeniedEnvVar];
 
 	/**
 	 * The agent host's server-tool host (feedback "comments" today, more in the
@@ -1655,35 +1646,6 @@ export class CodexAgent extends Disposable implements IAgent {
 			this._logService.trace(`[Codex] autoApprovalReview/completed for unknown threadId=${params.threadId}; ignoring`);
 			return;
 		}
-		// Dev/test affordance: when the force-denied env flag is set, rewrite an
-		// otherwise-approved review as a denial so the denial-surfacing UI below
-		// runs. Tracked per-review (not just from the env flag) so that a genuine
-		// denial arriving while the flag happens to be set is still treated as
-		// real — its "Approve anyway" round-trip must reach the app-server rather
-		// than being finalized as the synthetic no-op below.
-		let forcedThisReview = false;
-		if (this._forceReviewDenied && params.review.status !== 'denied' && params.review.status !== 'inProgress') {
-			// Real denials are hard to provoke on demand because the primary model
-			// refuses unsafe actions before they reach the reviewer, so this flag
-			// lets us exercise the notification + "Approve anyway" card. Crucially
-			// this is display-only: the real auto-reviewer already ALLOWED the
-			// action, so Codex ran the command — the flag cannot (and must not
-			// pretend to) block execution. Replace the pass-through rationale (which
-			// otherwise reads e.g. "low-risk allow decision" under a "denied"
-			// header, looking broken) with an honest explanation, and mark the
-			// notice "(simulated)" so it is never mistaken for a real block.
-			forcedThisReview = true;
-			const realStatus = params.review.status;
-			this._logService.warn(`[Codex:${sessionId}] ${AgentHostCodexForceReviewDeniedEnvVar} active — coercing review ${params.reviewId} (was ${realStatus}) to denied for UI verification`);
-			params = {
-				...params,
-				review: {
-					...params.review,
-					status: 'denied',
-					rationale: `Simulated denial for UI verification (${AgentHostCodexForceReviewDeniedEnvVar}). The real auto-reviewer returned "${realStatus}", so Codex already ran this command — this flag only exercises the denial-surfacing UI and never blocks execution. A genuine auto-review denial is enforced inside Codex, which refuses to run the command until it is explicitly approved.`,
-				},
-			};
-		}
 		if (params.review.status !== 'denied') {
 			return;
 		}
@@ -1720,7 +1682,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			part: {
 				kind: ResponsePartKind.Markdown,
 				id: generateUuid(),
-				content: formatGuardianDenialNotification(summary, params.review.rationale, { simulated: forcedThisReview }),
+				content: formatGuardianDenialNotification(summary, params.review.rationale),
 			},
 		});
 
@@ -1784,22 +1746,6 @@ export class CodexAgent extends Disposable implements IAgent {
 		// action within the turn — skip the round-trip.
 		if (session.currentTurnId !== turnId) {
 			this._logService.trace(`[Codex:${sessionId}] turn ended before guardian approval could be applied for reviewId=${params.reviewId}`);
-			return;
-		}
-
-		if (forcedThisReview) {
-			// The synthetic denial has no real pending action in the app-server, so
-			// there is nothing to approve; finalize the card as a successful no-op
-			// rather than attempting a round-trip the app-server would reject. Note
-			// this uses the per-review flag, not the env flag: a genuine denial that
-			// arrives while the env flag happens to be set is NOT synthetic and must
-			// still perform the real approveGuardianDeniedAction round-trip below.
-			this._fire(session.sessionUri, {
-				type: ActionType.ChatToolCallComplete,
-				turnId,
-				toolCallId,
-				result: { success: true, pastTenseMessage: 'Approved (simulated-denial verification - no real action to retry)' },
-			});
 			return;
 		}
 
