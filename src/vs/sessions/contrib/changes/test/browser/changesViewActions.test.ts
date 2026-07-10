@@ -9,7 +9,7 @@ import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { isIMenuItem, MenuRegistry } from '../../../../../platform/actions/common/actions.js';
 import { EditorContextKeys } from '../../../../../editor/common/editorContextKeys.js';
-import { ActiveEditorContext, AuxiliaryBarVisibleContext, IsSessionsWindowContext, MainEditorAreaVisibleContext } from '../../../../../workbench/common/contextkeys.js';
+import { ActiveEditorContext, AuxiliaryBarVisibleContext, IsAuxiliaryWindowContext, IsSessionsWindowContext, IsTopRightEditorGroupContext, MainEditorAreaVisibleContext } from '../../../../../workbench/common/contextkeys.js';
 import { Menus } from '../../../../browser/menus.js';
 import { DOCK_DETAIL_PANEL_SETTING } from '../../../../common/sessionConfig.js';
 import { ChangesContextKeys } from '../../common/changes.js';
@@ -151,24 +151,30 @@ suite('Changes View Actions', () => {
 		}]);
 	});
 
-	test('Create Pull Request anchor is contributed to the title bar session menu', () => {
-		const item = MenuRegistry.getMenuItems(Menus.TitleBarSessionMenu)
+	test('Create Pull Request anchor is contributed to the editor tabs title menu', () => {
+		const item = MenuRegistry.getMenuItems(Menus.SessionsEditorTitle)
 			.filter(isIMenuItem)
 			.find(item => item.command.id === CHANGES_HEADER_ACTIONS_ID);
 
-		assert.ok(item, 'expected the changes header actions anchor on the title bar session menu');
+		assert.ok(item, 'expected the changes header actions anchor on the editor tabs title menu');
 		const when = item.when?.serialize() ?? '';
 		assert.deepStrictEqual({
 			group: item.group,
 			order: item.order,
 			hasSessionsWindowGate: when.includes(IsSessionsWindowContext.key),
+			hasActiveEditorGate: when.includes(ActiveEditorContext.key) && when.includes(SessionChangesEditor.ID),
 			hasSinglePaneConfigGate: when.includes(`config.${DOCK_DETAIL_PANEL_SETTING}`),
+			hasAuxiliaryWindowGate: when.includes(IsAuxiliaryWindowContext.key),
+			hasTopRightEditorGroupGate: when.includes(IsTopRightEditorGroupContext.key),
 			hasChangesGate: when.includes(SessionHasChangesContext.key),
 		}, {
 			group: 'navigation',
 			order: 5,
 			hasSessionsWindowGate: true,
+			hasActiveEditorGate: true,
 			hasSinglePaneConfigGate: true,
+			hasAuxiliaryWindowGate: true,
+			hasTopRightEditorGroupGate: true,
 			hasChangesGate: true,
 		});
 	});
