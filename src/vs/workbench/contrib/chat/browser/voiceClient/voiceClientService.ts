@@ -551,7 +551,7 @@ export class VoiceClientService extends Disposable implements IVoiceClientServic
 			removes,
 			...(activeChanged && context.active_session ? { active_session: context.active_session } : {}),
 		}));
-		this._logService.trace(`[voice] _sendDelta upserts=[${upserts.map(u => `${String(u.id).slice(-8)}:${u.agent_state ?? '(no-state)'}${Object.prototype.hasOwnProperty.call(u, 'agent_state_detail') ? '+detail' : ''}`).join(', ')}] removes=${removes.length} activeChanged=${activeChanged}`);
+		this._logService.trace(`[voice] _sendDelta upserts=[${upserts.map(u => `${String(u.id).slice(-8)}:${u.agent_state ?? '(no-state)'}${Object.prototype.hasOwnProperty.call(u, 'agent_state_detail') ? '+detail' : ''}${Object.prototype.hasOwnProperty.call(u, 'last_response_summary') && u.last_response_summary ? '+summary' : ''}`).join(', ')}] removes=${removes.length} activeChanged=${activeChanged}`);
 	}
 
 	private _seedTracking(context: IVoiceSessionContext): void {
