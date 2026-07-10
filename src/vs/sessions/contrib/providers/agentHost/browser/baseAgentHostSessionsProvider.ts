@@ -2427,6 +2427,8 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 			.find((value): value is string => typeof value === 'string' && KNOWN_MODE_VALUES.has(value));
 		if (resolvedMode) {
 			remembered[SessionConfigKey.Mode] = resolvedMode;
+		} else {
+			delete remembered[SessionConfigKey.Mode];
 		}
 
 		// Worktree branch prefix, forwarded from `git.branchPrefix`. Seeded
