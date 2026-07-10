@@ -275,16 +275,14 @@ export class MainThreadMcp extends Disposable implements MainThreadMcpShape {
 			// Using `resource` (not the server launch URI) ensures the key matches what the prompt
 			// writes in $promptForResourceClientSecret, so prompted secrets survive window reload.
 			let resourceClientSecret: string | undefined;
-			let resourceClientSecretKey: string | undefined;
 			if (resourceClientId) {
-				resourceClientSecretKey = mcpOAuthClientSecretStorageKey(resource, resourceClientId);
 				try {
-					resourceClientSecret = await this._secretStorageService.get(resourceClientSecretKey);
+					resourceClientSecret = await this._secretStorageService.get(mcpOAuthClientSecretStorageKey(resource, resourceClientId));
 				} catch {
 					// Best-effort lookup; fall through.
 				}
 			}
-			return this._getSessionForProvider(id, server, xaaProviderId, xaaScopes, issuer, errorOnUserInteraction, resourceClientId, resource, audience, resourceClientSecret, resourceClientSecretKey);
+			return this._getSessionForProvider(id, server, xaaProviderId, xaaScopes, issuer, errorOnUserInteraction, resourceClientId, resource, audience, resourceClientSecret);
 		}
 
 		let providerId = await this._authenticationService.getOrActivateProviderIdForServer(authorizationServer, resourceServer);
@@ -292,12 +290,10 @@ export class MainThreadMcp extends Disposable implements MainThreadMcpShape {
 		const resolvedClientId = clientId ?? authDetails.clientId;
 		const mcpServerUrl = server.launch.type === McpServerTransportType.HTTP ? server.launch.uri.toString(true) : undefined;
 		let clientSecret: string | undefined;
-		let clientSecretKey: string | undefined;
 		let didLookupClientSecret = false;
 		if (resolvedClientId && mcpServerUrl) {
-			clientSecretKey = mcpOAuthClientSecretStorageKey(mcpServerUrl, resolvedClientId);
 			try {
-				clientSecret = await this._secretStorageService.get(clientSecretKey);
+				clientSecret = await this._secretStorageService.get(mcpOAuthClientSecretStorageKey(mcpServerUrl, resolvedClientId));
 				didLookupClientSecret = true;
 			} catch {
 				// Best-effort lookup; proceed without a client secret.
@@ -334,7 +330,7 @@ export class MainThreadMcp extends Disposable implements MainThreadMcpShape {
 			providerId = provider.id;
 		}
 
-		return this._getSessionForProvider(id, server, providerId, resolvedScopes, authorizationServer, errorOnUserInteraction, resolvedClientId, authDetails.resourceMetadata?.resource, /* audience */ undefined, clientSecret, clientSecretKey);
+		return this._getSessionForProvider(id, server, providerId, resolvedScopes, authorizationServer, errorOnUserInteraction, resolvedClientId, authDetails.resourceMetadata?.resource, /* audience */ undefined, clientSecret);
 	}
 
 	private _ensureXaaIssuer(): URI {
@@ -366,12 +362,8 @@ export class MainThreadMcp extends Disposable implements MainThreadMcpShape {
 		resource?: string,
 		audience?: string,
 		clientSecret?: string,
-		// The ISecretStorageService key `clientSecret` was read from, if any. Captured (rather than
-		// the value) so re-validation re-reads the current secret from storage instead of replaying
-		// one that may since have been rotated via the "Set Client Secret" code lens.
-		clientSecretKey?: string,
 	): Promise<string | undefined> {
-		const authContext: IMcpServerAuthContext = { authorizationServer, clientId, resource, audience, clientSecretKey };
+		const authContext: IMcpServerAuthContext = { authorizationServer, clientId, resource, audience };
 		const sessions = await this._authenticationService.getSessions(providerId, scopes, { authorizationServer, clientId, clientSecret, resource, audience }, true);
 		// Only HTTP servers authenticate, so the server URL is always known here. A token is only released
 		// to a server whose current URL matches the one the user consented to, so changing the URL while
@@ -496,25 +488,13 @@ export class MainThreadMcp extends Disposable implements MainThreadMcpShape {
 				continue;
 			}
 
-			// Re-read the client secret from storage rather than replaying the value that was
-			// current when this server was tracked, so a secret rotated via the "Set Client
-			// Secret" code lens takes effect immediately instead of validating with a stale one.
-			let clientSecret: string | undefined;
-			if (context.clientSecretKey) {
-				try {
-					clientSecret = await this._secretStorageService.get(context.clientSecretKey);
-				} catch {
-					// Best-effort lookup; proceed without a client secret.
-				}
-			}
-
 			// Validate if the session is still available. Replay the authorization server, client
 			// id, resource, and audience captured when the session was established so the silent
 			// token request targets the same authority the user signed in against — dropping the
 			// authorization server here would fall back to the provider's default authority (e.g.
 			// the Microsoft provider's `organizations` tenant) and can tear down a working server.
 			try {
-				await this._getSessionForProvider(serverId, serverDefinition, providerId, scopes, context.authorizationServer, true, context.clientId, context.resource, context.audience, clientSecret, context.clientSecretKey);
+				await this._getSessionForProvider(serverId, serverDefinition, providerId, scopes, context.authorizationServer, true, context.clientId, context.resource, context.audience);
 			} catch (e) {
 				if (UserInteractionRequiredError.is(e)) {
 					// Session is no longer valid, stop the server
@@ -669,17 +649,12 @@ class ExtHostMcpServerLaunch extends Disposable implements IMcpMessageTransport 
  * that the original sign-in used. Dropping the authorization server here would let the provider
  * fall back to a default authority (e.g. the Microsoft provider's `organizations` tenant) and
  * request a token against the wrong tenant.
- *
- * `clientSecretKey` is the secret-storage key rather than the secret value, so a secret rotated
- * via the "Set Client Secret" code lens is re-read fresh on each re-validation instead of
- * replaying a stale, possibly-revoked value.
  */
 export interface IMcpServerAuthContext {
 	readonly authorizationServer?: URI;
 	readonly clientId?: string;
 	readonly resource?: string;
 	readonly audience?: string;
-	readonly clientSecretKey?: string;
 }
 
 /**
