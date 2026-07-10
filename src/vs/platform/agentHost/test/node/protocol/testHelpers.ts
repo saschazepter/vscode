@@ -366,7 +366,7 @@ export async function startRealServer(options?: { readonly claudeSdkRoot?: strin
 				HOME: options.homeDir,
 				USERPROFILE: options.homeDir,
 			} : {}),
-			// Codex defaults to disabled; opt it in for the real-SDK suite when a
+			// Codex defaults to disabled; opt it in for the agent host e2e suite when a
 			// codex SDK root is supplied so the provider actually registers.
 			...(options?.codexSdkRoot ? { [AgentHostCodexAgentEnabledEnvVar]: 'true' } : {}),
 			...(realCapture ? {
@@ -379,7 +379,7 @@ export async function startRealServer(options?: { readonly claudeSdkRoot?: strin
 			} : mockLlmServer ? {
 				GITHUB_PAT: 'smoketest-fake-pat',
 				IS_SCENARIO_AUTOMATION: '1',
-				// Real-SDK Copilot tests run against responses-capable models
+				// Agent host e2e Copilot tests run against responses-capable models
 				// (e.g. gpt-5.3-codex) that are "pro"-gated in the mock /models
 				// fixture, so mint a pro-plan token for this harness.
 				VSCODE_COPILOT_CHAT_TOKEN: buildCopilotChatToken(capiUrl!, 'pro'),
@@ -446,7 +446,7 @@ export async function startRealServer(options?: { readonly claudeSdkRoot?: strin
 			// Intentionally swallowed - the test runner fails if console.error is used.
 			// Server logs go to the agent host's logger (under
 			// `<userDataPath>/logs/<timestamp>/agenthost-server.log`); check
-			// there when investigating real-SDK test failures.
+			// there when investigating agent host e2e test failures.
 		});
 
 		child.on('error', err => {

@@ -4,14 +4,14 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * Real Codex app-server integration tests.
+ * Agent host end-to-end tests (Codex).
  *
  * Disabled by default. To run, set `AGENT_HOST_REAL_CODEX=1`. The Codex CLI
  * is resolved automatically from the dev dependency in
  * `node_modules/@openai/codex`.
  *
  *   AGENT_HOST_REAL_CODEX=1 ./scripts/test-integration.sh --run \
- *     src/vs/platform/agentHost/test/node/protocol/codexRealSdk.integrationTest.ts
+ *     src/vs/platform/agentHost/test/node/protocol/codexAgentHostE2E.integrationTest.ts
  *
  * **Authentication:** token from `GITHUB_TOKEN` (preferred) or `gh auth
  * token`. The agent host's Codex proxy forwards the app-server's Responses API
@@ -24,7 +24,7 @@ import assert from 'assert';
 import { join } from '../../../../../base/common/path.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { MessageKind, PendingMessageKind, ChatInputResponseKind, type ChatInputRequest } from '../../../common/state/sessionState.js';
-import { createRealSession, defineSharedRealSdkTests, dispatchTurn, getAcceptedAnswers, type IRealSdkProviderConfig } from './realSdkTestHelpers.js';
+import { createRealSession, defineAgentHostE2ETests, dispatchTurn, getAcceptedAnswers, type IAgentHostE2EProviderConfig } from './agentHostE2ETestHelpers.js';
 import { getActionEnvelope, isActionNotification, startRealServer, TestProtocolClient, type IServerHandle } from './testHelpers.js';
 import { URI } from '../../../../../base/common/uri.js';
 
@@ -44,8 +44,8 @@ function resolveCodexSdkRoot(): string | undefined {
 // drives the /responses traffic the proxy answers), so resolve it always.
 const CODEX_SDK_ROOT = resolveCodexSdkRoot();
 
-const CODEX_CONFIG: IRealSdkProviderConfig = {
-	suiteTitle: 'Protocol WebSocket - Real Codex App Server',
+const CODEX_CONFIG: IAgentHostE2EProviderConfig = {
+	suiteTitle: 'Agent Host E2E — Codex',
 	provider: 'codex',
 	scheme: 'codex',
 	shellToolName: 'shell',
@@ -61,7 +61,7 @@ const CODEX_CONFIG: IRealSdkProviderConfig = {
 	shellPermissionReplayUnstableOnWindows: true,
 };
 
-defineSharedRealSdkTests(CODEX_CONFIG);
+defineAgentHostE2ETests(CODEX_CONFIG);
 
 // Codex-specific steering coverage. Steering is wired via `turn/steer`; the
 // agent buffers the message and promotes the codex `userMessage` echo into a
@@ -69,7 +69,7 @@ defineSharedRealSdkTests(CODEX_CONFIG);
 // stateful app-server behaviors (mid-turn steering, thread restarts, archive /
 // truncate) that are not deterministically reproducible, so they run only
 // against the live app-server (`AGENT_HOST_REAL_CODEX=1`).
-(REAL_CODEX_ENABLED && !!CODEX_SDK_ROOT ? suite : suite.skip)('Protocol WebSocket - Real Codex App Server - steering', function () {
+(REAL_CODEX_ENABLED && !!CODEX_SDK_ROOT ? suite : suite.skip)('Agent Host E2E — Codex - steering', function () {
 
 	let server: IServerHandle;
 	let client: TestProtocolClient;

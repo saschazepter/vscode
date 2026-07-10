@@ -4,13 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * Shared helpers and a parameterized suite factory for real-SDK integration
+ * Shared helpers and a parameterized suite factory for agent host e2e integration
  * tests. Both the Copilot (`copilotcli`) and Claude (`claude`) providers expose
  * the same agent-host protocol, so most tests are identical apart from a
  * handful of provider-specific tool names.
  *
- * Each provider invokes {@link defineSharedRealSdkTests} from its own
- * `*RealSdk.integrationTest.ts` file and then layers on any provider-specific
+ * Each provider invokes {@link defineAgentHostE2ETests} from its own
+ * `*AgentHostE2E.integrationTest.ts` file and then layers on any provider-specific
  * tests as a separate `suite` block.
  */
 
@@ -56,7 +56,7 @@ import {
  */
 const RECORD = process.env['AGENT_HOST_REPLAY_RECORD'] === '1';
 const REPLAY_MODE: CapiReplayMode = RECORD ? 'record' : 'replay';
-/** Gate for real-SDK tests whose local execution is POSIX-specific (shell tool
+/** Gate for agent host e2e tests whose local execution is POSIX-specific (shell tool
  * calls, git worktrees, `pwd`) and does not reproduce on Windows. */
 const isWindows = process.platform === 'win32';
 /** A synthetic token used on replay (no real credential needed). */
@@ -66,7 +66,7 @@ export const REPLAY_PLACEHOLDER_TOKEN = 'replay-no-token';
  * Fixtures live in the source tree (committed) though the compiled test runs
  * from `out/`/`out-build/` — resolve up to the repo root and into `src/...`.
  */
-const CAPTURES_DIR = fileURLToPath(new URL('../../../../../../../src/vs/platform/agentHost/test/node/protocol/captures/realSdk/', import.meta.url));
+const CAPTURES_DIR = fileURLToPath(new URL('../../../../../../../src/vs/platform/agentHost/test/node/protocol/captures/agentHostE2E/', import.meta.url));
 
 /** Per-test fixture path derived from the provider + test title. */
 function fixturePathFor(provider: string, testTitle: string): string {
@@ -77,7 +77,7 @@ function fixturePathFor(provider: string, testTitle: string): string {
 /**
  * Build the `capiReplay` option for a test: replays the committed per-test
  * fixture by default (tokenless), or records it against real CAPI when
- * `AGENT_HOST_REPLAY_RECORD=1`. Shared by {@link defineSharedRealSdkTests} and
+ * `AGENT_HOST_REPLAY_RECORD=1`. Shared by {@link defineAgentHostE2ETests} and
  * provider-specific suites so both go through the same record/replay path.
  */
 export function capiReplayFor(provider: string, testTitle: string): { fixturePath: string; real: true; mode: CapiReplayMode; workDir: string } {
@@ -112,11 +112,11 @@ export function resolveGitHubToken(): string {
 // #region Provider configuration
 
 /**
- * Per-provider knobs for the shared real-SDK suite. Lets us share the bulk of
+ * Per-provider knobs for the shared agent host e2e suite. Lets us share the bulk of
  * the test bodies while parameterizing things that genuinely differ between
  * Copilot and Claude (tool names, URI scheme, server startup options).
  */
-export interface IRealSdkProviderConfig {
+export interface IAgentHostE2EProviderConfig {
 	/** Suite title shown in the test runner. */
 	readonly suiteTitle: string;
 	/** Provider id passed to `createSession`. */
@@ -168,16 +168,6 @@ export interface IRealSdkProviderConfig {
 	 */
 	readonly supportsSubagents: boolean;
 	/**
-	 * When set, the provider's committed subagent fixtures are stale relative to
-	 * the current bundled SDK (it now issues a different number of subagent
-	 * `/v1/messages` turns than were captured). Because the proxy matches those
-	 * turns as a single by-endpoint sequence, a mismatch derails replay, so the
-	 * subagent tests run only while recording for this provider until the
-	 * fixtures are re-recorded. Providers whose fixtures still match keep
-	 * replaying deterministically.
-	 */
-	readonly subagentFixturesStale?: boolean;
-	/**
 	 * When set, this provider's shell tool call is not reproduced by its bundled
 	 * SDK on Windows during replay (e.g. Codex's `exec_command` yields no
 	 * tool-call notification there), so the shell-permission test runs only on
@@ -206,7 +196,7 @@ export interface IRealSdkProviderConfig {
 /** Create a session for the configured provider, authenticate, subscribe, and return the session URI. */
 export async function createRealSession(
 	c: TestProtocolClient,
-	config: IRealSdkProviderConfig,
+	config: IAgentHostE2EProviderConfig,
 	clientId: string,
 	trackingList: string[],
 	workingDirectory: URI,
@@ -556,11 +546,11 @@ export function startBackgroundApprovalLoop(c: TestProtocolClient, options: IBac
 // #region Shared suite
 
 /**
- * Registers the cross-provider real-SDK suite. The body is identical for
+ * Registers the cross-provider agent host e2e suite. The body is identical for
  * every provider that speaks the agent host protocol — the only knobs are
  * tool names and URI scheme.
  */
-export function defineSharedRealSdkTests(config: IRealSdkProviderConfig): void {
+export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): void {
 	(config.enabled ? suite : suite.skip)(config.suiteTitle, function () {
 
 		let server: IServerHandle;
@@ -574,7 +564,7 @@ export function defineSharedRealSdkTests(config: IRealSdkProviderConfig): void {
 
 		suiteTeardown(function () {
 			// no-op: the server is started/killed per-test in setup/teardown
-			// because some real-SDK paths (notably Claude's mid-turn dispose)
+			// because some agent host e2e paths (notably Claude's mid-turn dispose)
 			// leave the agent host in a bad state. Per-test isolation costs
 			// ~5s/test at startup but keeps a single broken test from
 			// poisoning every subsequent one.
@@ -1039,14 +1029,7 @@ export function defineSharedRealSdkTests(config: IRealSdkProviderConfig): void {
 				`pwd output should include the resolved worktree path ${resolvedWorkingDirectoryPath}`);
 		});
 
-		// Subagent turns interleave the parent's and the child's `/v1/messages`
-		// calls, which the replay proxy matches as a single by-endpoint sequence.
-		// When a provider's committed fixtures fall out of sync with the bundled
-		// SDK's current subagent turn count (`subagentFixturesStale`), the recorded
-		// turns no longer line up on replay and the subagent never reaches its
-		// inner tool call — so for those providers the test runs only while
-		// recording. Providers whose fixtures still match keep replaying.
-		(config.supportsSubagents && (RECORD || !config.subagentFixturesStale) ? test : test.skip)('subagent tool calls are routed to the subagent session, not flat in the parent', async function () {
+		(config.supportsSubagents ? test : test.skip)('subagent tool calls are routed to the subagent session, not flat in the parent', async function () {
 			this.timeout(180_000);
 
 			const tempDir = mkdtempSync(`${tmpdir()}/ahp-subagent-test-`);
@@ -1146,13 +1129,7 @@ export function defineSharedRealSdkTests(config: IRealSdkProviderConfig): void {
 				`Parent tool calls: ${JSON.stringify(parentStarts.map(a => a.toolName))}`);
 		});
 
-		// Same `subagentFixturesStale` limitation as the routing test above: when a
-		// provider's committed subagent turns fall out of sync with the current
-		// SDK, the replay sequence misaligns (an unrecorded call plus sub-agent
-		// assistant text bleeding into the parent transcript). Such providers run
-		// this only while recording; providers whose fixtures still match keep
-		// replaying.
-		(config.supportsSubagents && (RECORD || !config.subagentFixturesStale) ? test : test.skip)('reopening a session keeps sub-agent messages out of the parent transcript (replay path)', async function () {
+		(config.supportsSubagents ? test : test.skip)('reopening a session keeps sub-agent messages out of the parent transcript (replay path)', async function () {
 			this.timeout(180_000);
 
 			const tempDir = mkdtempSync(`${tmpdir()}/ahp-subagent-replay-`);

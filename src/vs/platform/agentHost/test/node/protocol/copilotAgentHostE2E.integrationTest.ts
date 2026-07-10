@@ -4,9 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * Real Copilot SDK integration tests.
+ * Agent host end-to-end tests (Copilot).
  *
- * The cross-provider portion lives in {@link defineSharedRealSdkTests}; this
+ * The cross-provider portion lives in {@link defineAgentHostE2ETests}; this
  * file layers on Copilot-specific assertions (cost metadata, cd-prefix
  * stripping).
  *
@@ -14,7 +14,7 @@
  * fixtures (no token, no network). To re-record the fixtures against real CAPI,
  * set `AGENT_HOST_REPLAY_RECORD=1`:
  *
- *   AGENT_HOST_REPLAY_RECORD=1 ./scripts/test-integration.sh --run src/vs/platform/agentHost/test/node/protocol/copilotRealSdk.integrationTest.ts
+ *   AGENT_HOST_REPLAY_RECORD=1 ./scripts/test-integration.sh --run src/vs/platform/agentHost/test/node/protocol/copilotAgentHostE2E.integrationTest.ts
  *
  * Recording auth: the token is obtained from `gh auth token`, or override with
  * `GITHUB_TOKEN=ghp_xxx`. Replay needs no credential.
@@ -32,13 +32,13 @@ import { URI } from '../../../../../base/common/uri.js';
 import { MessageAttachmentKind, buildDefaultChatUri, ToolCallConfirmationReason, type MessageAttachment } from '../../../common/state/sessionState.js';
 import { ActionType, type ChatUsageAction } from '../../../common/state/sessionActions.js';
 import {
-	capiReplayFor, createRealSession, defineSharedRealSdkTests, dispatchTurn, driveTurnWithAttachmentsToCompletion,
-	type IRealSdkProviderConfig,
-} from './realSdkTestHelpers.js';
+	capiReplayFor, createRealSession, defineAgentHostE2ETests, dispatchTurn, driveTurnWithAttachmentsToCompletion,
+	type IAgentHostE2EProviderConfig,
+} from './agentHostE2ETestHelpers.js';
 import { fetchSessionWithChat, getActionEnvelope, isActionNotification, IServerHandle, startRealServer, TestProtocolClient } from './testHelpers.js';
 
-const COPILOT_CONFIG: IRealSdkProviderConfig = {
-	suiteTitle: 'Protocol WebSocket — Real Copilot SDK',
+const COPILOT_CONFIG: IAgentHostE2EProviderConfig = {
+	suiteTitle: 'Agent Host E2E — Copilot',
 	provider: 'copilotcli',
 	scheme: 'copilotcli',
 	shellToolName: 'bash',
@@ -53,9 +53,9 @@ const COPILOT_CONFIG: IRealSdkProviderConfig = {
 	supportsPlanMode: true,
 };
 
-defineSharedRealSdkTests(COPILOT_CONFIG);
+defineAgentHostE2ETests(COPILOT_CONFIG);
 
-suite('Protocol WebSocket — Real Copilot SDK (Copilot-specific)', function () {
+suite('Agent Host E2E — Copilot (Copilot-specific)', function () {
 
 	let server: IServerHandle;
 	let client: TestProtocolClient;

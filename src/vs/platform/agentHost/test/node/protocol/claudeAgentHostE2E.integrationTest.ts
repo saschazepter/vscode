@@ -4,9 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * Real Claude SDK integration tests.
+ * Agent host end-to-end tests (Claude).
  *
- * The cross-provider portion lives in {@link defineSharedRealSdkTests}; this
+ * The cross-provider portion lives in {@link defineAgentHostE2ETests}; this
  * file would layer on Claude-specific assertions as the provider grows.
  *
  * Runs by default in deterministic replay mode against committed fixtures (no
@@ -15,7 +15,7 @@
  * the dev dependency in `node_modules/@anthropic-ai/claude-agent-sdk`.
  *
  *   AGENT_HOST_REPLAY_RECORD=1 ./scripts/test-integration.sh --run \
- *     src/vs/platform/agentHost/test/node/protocol/claudeRealSdk.integrationTest.ts
+ *     src/vs/platform/agentHost/test/node/protocol/claudeAgentHostE2E.integrationTest.ts
  *
  * **Recording authentication:** token from `GITHUB_TOKEN` (preferred) or `gh auth
  * token`. Either works — the agent host's `CopilotApiService` discovers the
@@ -26,7 +26,7 @@
 
 import { existsSync } from 'fs';
 import { join } from '../../../../../base/common/path.js';
-import { defineSharedRealSdkTests, type IRealSdkProviderConfig } from './realSdkTestHelpers.js';
+import { defineAgentHostE2ETests, type IAgentHostE2EProviderConfig } from './agentHostE2ETestHelpers.js';
 
 /**
  * Resolve the path of the locally installed `@anthropic-ai/claude-agent-sdk`
@@ -53,8 +53,8 @@ function resolveClaudeSdkRoot(): string | undefined {
 // the HTTP the proxy answers), so resolve it unconditionally.
 const CLAUDE_SDK_ROOT = resolveClaudeSdkRoot();
 
-const CLAUDE_CONFIG: IRealSdkProviderConfig = {
-	suiteTitle: 'Protocol WebSocket — Real Claude SDK',
+const CLAUDE_CONFIG: IAgentHostE2EProviderConfig = {
+	suiteTitle: 'Agent Host E2E — Claude',
 	provider: 'claude',
 	scheme: 'claude',
 	shellToolName: 'Bash',
@@ -66,15 +66,10 @@ const CLAUDE_CONFIG: IRealSdkProviderConfig = {
 	// The shared suite skips that test when the flag is false.
 	supportsWorktreeIsolation: false,
 	supportsSubagents: true,
-	// The Claude SDK's subagent flow now emits a different number of
-	// `/v1/messages` turns than the committed fixtures captured, so subagent
-	// replay is skipped for Claude until the fixtures are re-recorded (see
-	// `subagentFixturesStale`). Copilot's subagent fixtures still match.
-	subagentFixturesStale: true,
 	// Plan mode is wired (`ExitPlanMode` interactive tool exists) but the
 	// shared test's Copilot-flavoured prompt doesn't reliably drive Claude
 	// to invoke it. TODO: rework the prompt for Claude conventions.
 	supportsPlanMode: false,
 };
 
-defineSharedRealSdkTests(CLAUDE_CONFIG);
+defineAgentHostE2ETests(CLAUDE_CONFIG);

@@ -1,4 +1,4 @@
-# Agent-host real-SDK replay tests
+# Agent host end-to-end tests
 
 End-to-end tests that exercise the **whole agent host** — the real server process, the real bundled provider SDK/CLI subprocess (Claude / Copilot / Codex), and the real JSON-RPC + AHP protocol over a WebSocket — **without a token and without network**.
 
@@ -6,16 +6,18 @@ They do this by recording the model traffic once (against real CAPI) into commit
 
 > **New here?** Read [Mental model](#mental-model), then [Running the tests](#running-the-tests). Writing a test? Jump to [Writing a new test](#writing-a-new-test). CI is red? Jump to [Troubleshooting](#troubleshooting).
 
+> These are **e2e tests**. The `*.integrationTest.ts` file suffix and `test-integration.sh` script are just the VS Code test-runner conventions they hook into.
+
 ---
 
 ## TL;DR
 
 ```bash
 # Replay (default): deterministic, tokenless. This is what CI runs.
-./scripts/test-integration.sh --run src/vs/platform/agentHost/test/node/protocol/copilotRealSdk.integrationTest.ts
+./scripts/test-integration.sh --run src/vs/platform/agentHost/test/node/protocol/copilotAgentHostE2E.integrationTest.ts
 
 # Re-record a provider's fixtures against real CAPI (needs a GitHub token).
-AGENT_HOST_REPLAY_RECORD=1 ./scripts/test-integration.sh --run src/vs/platform/agentHost/test/node/protocol/claudeRealSdk.integrationTest.ts
+AGENT_HOST_REPLAY_RECORD=1 ./scripts/test-integration.sh --run src/vs/platform/agentHost/test/node/protocol/claudeAgentHostE2E.integrationTest.ts
 ```
 
 - **Replay** (no env var) — serves committed fixtures, no upstream contact, no credential. Strict: an unrecorded request fails the run.
@@ -59,15 +61,15 @@ Key properties:
 | `capiWireCodec.ts` | SSE codecs. Aggregates recorded SSE → a normalized turn, and regenerates SSE from a turn on replay, for both `anthropic` and `responses` dialects. |
 | `capiStubs.ts` | Hardcoded responses for ancillary bootstrap endpoints (`/models`, token, user, `/models/session`, telemetry, agents). |
 | `testHelpers.ts` | `startRealServer(...)` (wires the proxy + env), the mock LLM server, `TestProtocolClient`. |
-| `realSdkTestHelpers.ts` | `defineSharedRealSdkTests(config)` — the cross-provider suite, record/replay plumbing, per-provider config. |
-| `{claude,copilot,codex}RealSdk.integrationTest.ts` | Per-provider entry points: resolve the SDK, define the config, add provider-specific tests. |
-| `captures/realSdk/*.yaml` | The committed fixtures, one per `(provider, test)`. |
+| `agentHostE2ETestHelpers.ts` | `defineAgentHostE2ETests(config)` — the cross-provider suite, record/replay plumbing, per-provider config. |
+| `{claude,copilot,codex}AgentHostE2E.integrationTest.ts` | Per-provider entry points: resolve the SDK, define the config, add provider-specific tests. |
+| `captures/agentHostE2E/*.yaml` | The committed fixtures, one per `(provider, test)`. |
 
 ---
 
 ## Fixture format
 
-Fixtures live in `captures/realSdk/` and are named `${provider}-${slugified-test-title}.yaml`. They are intentionally minimal and human-reviewable:
+Fixtures live in `captures/agentHostE2E/` and are named `${provider}-${slugified-test-title}.yaml`. They are intentionally minimal and human-reviewable:
 
 ```yaml
 version: 1
@@ -107,7 +109,7 @@ exchanges:
 Replay is the default — no setup, no token:
 
 ```bash
-./scripts/test-integration.sh --run src/vs/platform/agentHost/test/node/protocol/copilotRealSdk.integrationTest.ts
+./scripts/test-integration.sh --run src/vs/platform/agentHost/test/node/protocol/copilotAgentHostE2E.integrationTest.ts
 ```
 
 Provider availability:
@@ -125,7 +127,7 @@ Re-record when a provider's bundled SDK/CLI is bumped and its wire behavior chan
 ```bash
 # One provider:
 AGENT_HOST_REPLAY_RECORD=1 ./scripts/test-integration.sh --run \
-  src/vs/platform/agentHost/test/node/protocol/claudeRealSdk.integrationTest.ts
+  src/vs/platform/agentHost/test/node/protocol/claudeAgentHostE2E.integrationTest.ts
 ```
 
 What happens in record mode:
@@ -142,12 +144,12 @@ After recording, **review the diff** (paths normalized? no usernames, tokens, or
 
 ## Writing a new test
 
-Most tests are cross-provider and live in `defineSharedRealSdkTests` (`realSdkTestHelpers.ts`). A shared test:
+Most tests are cross-provider and live in `defineAgentHostE2ETests` (`agentHostE2ETestHelpers.ts`). A shared test:
 
 ```ts
 test('my new behavior', async function () {
     this.timeout(120_000);
-    const sessionUri = await createRealSession(client, config, `real-sdk-mine-${config.provider}`, createdSessions, URI.file(tempDir));
+    const sessionUri = await createRealSession(client, config, `e2e-mine-${config.provider}`, createdSessions, URI.file(tempDir));
     dispatchTurn(client, sessionUri, 'turn-1', 'Do the thing', 1);
     // assert on the AHP notifications you receive…
 });
@@ -159,14 +161,14 @@ Guidelines:
 2. **Drive with `client.waitForNotification(...)`** and assert on protocol actions. Don't wait on wall-clock timing.
 3. **Add the test, then record**: write the test, run once with `AGENT_HOST_REPLAY_RECORD=1` to capture fixtures for every enabled provider, review, commit.
 4. **Keep prompts deterministic and minimal** — fewer model turns = smaller, more robust fixtures.
-5. **Provider-specific** assertions go in that provider's `*.integrationTest.ts` after the `defineSharedRealSdkTests(config)` call.
+5. **Provider-specific** assertions go in that provider's `*.integrationTest.ts` after the `defineAgentHostE2ETests(config)` call.
 6. If the behavior can't replay deterministically (real-time streaming, mid-turn aborts, concurrency), gate it — see below.
 
 ---
 
 ## Provider config & per-test gates
 
-`IRealSdkProviderConfig` (in `realSdkTestHelpers.ts`) parameterizes the shared suite. Notable flags and the gates that use them:
+`IAgentHostE2EProviderConfig` (in `agentHostE2ETestHelpers.ts`) parameterizes the shared suite. Notable flags and the gates that use them:
 
 | Flag / condition | Effect |
 |---|---|
@@ -174,7 +176,6 @@ Guidelines:
 | `supportsSubagents` | Gates the two subagent tests. |
 | `supportsWorktreeIsolation` | Gates the worktree test. |
 | `supportsPlanMode` | Gates the plan-mode test. |
-| `subagentFixturesStale` | When set, the subagent tests run **record-only** for that provider (its committed subagent fixtures are stale vs. the current SDK). Re-record and clear the flag to restore replay. |
 | `shellPermissionReplayUnstableOnWindows` | Skips the shell-permission test on **Windows** for that provider (e.g. Codex's `exec_command` tool call isn't emitted by the Codex CLI on Windows). |
 | `RECORD` (env) | The `can abort a running turn` test is record-only — replay serves the truncated response instantly, so there's no window to abort. |
 | `isWindows` | The worktree test is skipped on Windows (POSIX-shaped `.worktrees` paths + host-terminal `pwd`). |
@@ -204,7 +205,7 @@ The SDK made a model call the fixture doesn't have. Causes:
 
 - **The SDK was bumped** and now issues more/different calls than were recorded → **re-record** the affected fixtures.
 - **A new ancillary endpoint** is being hit → if it's a bootstrap/probe (not a real model turn), add it to `capiStubs.ts` instead of recording it. (This is how `/models/session` was handled.)
-- **Non-deterministic call sequence** (e.g. parent + subagent both hit `/v1/messages` and interleave) → the by-endpoint sequence can't line up; make the test record-only via a flag (see `subagentFixturesStale`).
+- **Stale subagent fixtures after an SDK bump** — parent + subagent calls share one `/v1/messages` sequence; once the recorded responses are from an older SDK they can drive the current SDK to diverge (an extra call, or the subagent never reaching its tool call). The flow is deterministic, so **re-record** the subagent fixtures to fix it.
 
 ### `replay mode requires a fixture but none exists`
 
@@ -224,7 +225,7 @@ Normalization missed something (e.g. a path that `ls` line-wrapped, or a new sec
 
 ### Subagent tests fail after an SDK bump
 
-Subagent flows interleave parent + child `/v1/messages` calls into one sequence and are the most SDK-version-sensitive. Set `subagentFixturesStale: true` for the provider (record-only) until you can re-record; other providers keep replaying.
+Subagent flows are the most SDK-version-sensitive: the parent's and child's `/v1/messages` calls share one by-endpoint sequence, so once the recorded responses are from an older SDK they can drive the current SDK to diverge (an unrecorded call, or the subagent never reaching its tool call). **Re-record** the provider's subagent fixtures (`AGENT_HOST_REPLAY_RECORD=1 …`). The flow itself is deterministic, so a fresh recording replays reliably.
 
 ### Everything suddenly reaches "real CAPI" / 401s locally
 
@@ -265,9 +266,9 @@ The deepest difference is the **unit of storage**, and it's why subagents behave
     - messages: [ …subagent conversation… ]   # separate entry, content-matched
   ```
 
-- **This harness** stores a flat list of **`exchanges`** (request→response pairs) bucketed only by `(method, path)` and matched by **sequence position**; the request is a review-only summary, not matched. Parent and subagent turns land in the *same* `/v1/messages` bucket, so their arrival order must be deterministic — which is exactly why the subagent tests here are the most fragile and some run record-only (`subagentFixturesStale`).
+- **This harness** stores a flat list of **`exchanges`** (request→response pairs) bucketed only by `(method, path)` and matched by **sequence position**; the request is a review-only summary, not matched. Parent and subagent turns land in the *same* `/v1/messages` bucket and match by arrival order, so the harness relies on that order being deterministic. In practice it is (a fresh recording replays reliably), but it makes subagent fixtures the most SDK-version-sensitive — a bump can change the responses enough that a stale recording derails the current SDK, so re-record after bumps.
 
-So: **content-keyed conversations vs. sequence-keyed exchanges.** That single choice is the biggest reason the CLI harness replays subagents robustly where this one needs re-records or gating — and it's the natural direction to evolve this harness if subagent replay coverage becomes important.
+So: **content-keyed conversations vs. sequence-keyed exchanges.** That single choice is the biggest reason the CLI harness replays subagents robustly across SDK changes where this one needs re-records — and it's the natural direction to evolve this harness if that maintenance cost becomes a problem.
 
 ---
 
