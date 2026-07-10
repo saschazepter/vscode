@@ -325,18 +325,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private static readonly _CONFIRMATION_FLUSH_DELAY_MS = 1500;
 
 	/**
-	 * Coalesced session state-change emission. Transitions detected by the
-	 * reactive autorun are buffered here (latest per session) and flushed once
-	 * after a short settle window instead of synchronously. This collapses the
-	 * rapid ``thinking <-> idle`` storm emitted while a remote session's history
-	 * is replayed on load (each replayed request briefly re-opens the last
-	 * response) into a single settled emission. Without it, every intermediate
-	 * flip is flushed to the backend as an ``agent_state`` delta, spamming it
-	 * with dozens of contradictory transitions per load and causing spurious or
-	 * duplicated narrations. Genuine transitions still ship after the settle,
-	 * well within the confirmation flush watchdog's tolerance.
+	 * Latest state change per session, buffered and flushed once after a short
+	 * settle window (see {@link _emitPendingStateChanges}) so a rapid
+	 * ``thinking <-> idle`` replay storm coalesces into a single net emission
+	 * instead of spamming the backend with contradictory transitions. Each entry
+	 * also records the burst's baseline (``fromState``/``fromDetail``) so a wobble
+	 * that returns to its starting state is recognized as net-zero.
 	 */
-	private readonly _pendingStateChanges = new Map<string, { sessionId: string; currentState: string; label: string; detail?: string; lastResponseSummary?: string; detailOnly?: boolean }>();
+	private readonly _pendingStateChanges = new Map<string, { sessionId: string; currentState: string; label: string; detail?: string; lastResponseSummary?: string; fromState: string; fromDetail: string }>();
 	private _stateChangeEmitTimer: ReturnType<typeof setTimeout> | undefined;
 	private static readonly _STATE_CHANGE_SETTLE_MS = 120;
 
@@ -868,7 +864,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				const autorunDisposable = autorun(reader => {
 					const agentSessions = this.agentSessionsService.model.sessions.filter(s => !s.isArchived());
 					let needsRecheck = false;
-					const stateChanges: { sessionId: string; currentState: string; label: string; detail?: string; lastResponseSummary?: string; detailOnly?: boolean }[] = [];
+					const stateChanges: { sessionId: string; currentState: string; label: string; detail?: string; lastResponseSummary?: string; fromState: string; fromDetail: string }[] = [];
 					const waitingForConfirmationSessions: { sessionId: string; label: string; detail?: string; transition: boolean }[] = [];
 					const processedResources = new Set<string>();
 
@@ -927,7 +923,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 								clearTimeout(cancelExpiry);
 								this._userCancelledSessions.delete(sessionId);
 							} else {
-								stateChanges.push({ sessionId, currentState, label, detail, lastResponseSummary, detailOnly: isDetailTransition });
+								stateChanges.push({ sessionId, currentState, label, detail, lastResponseSummary, fromState: prev?.state ?? currentState, fromDetail: prev?.detail ?? '' });
 							}
 						}
 						if (currentState !== 'unknown') {
@@ -978,7 +974,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 									continue;
 								}
 								if (!this._userCancelledSessions.has(sessionId)) {
-									stateChanges.push({ sessionId, currentState, label: s.label || 'Untitled session', lastResponseSummary: cachedSummary });
+									stateChanges.push({ sessionId, currentState, label: s.label || 'Untitled session', lastResponseSummary: cachedSummary, fromState: prev?.state ?? currentState, fromDetail: prev?.detail ?? '' });
 								}
 								this._prevSessionStates.set(sessionId, { state: currentState, detail: '' });
 								continue;
@@ -990,7 +986,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 									clearTimeout(cancelExpiry);
 									this._userCancelledSessions.delete(sessionId);
 								} else {
-									stateChanges.push({ sessionId, currentState, label: s.label || 'Untitled session' });
+									stateChanges.push({ sessionId, currentState, label: s.label || 'Untitled session', fromState: prev?.state ?? currentState, fromDetail: prev?.detail ?? '' });
 								}
 							}
 							if (currentState !== 'unknown') {
@@ -1014,6 +1010,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					if (needsRecheck) {
 						setTimeout(() => this._autoApproveCheck(), 500);
 					}
+					// Evict per-session caches for sessions that are no longer tracked
+					// (archived/removed/disposed), so long-lived voice connections don't
+					// retain summaries or state for sessions that will never be narrated.
+					this._pruneSessionCaches(processedResources);
 					// The session_context delta is the sole narration trigger
 					// on the BE side. Its handler detects per-session
 					// ``agent_state`` transitions and fires ``_proactive_status_update``
@@ -1022,17 +1022,28 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					// in addition causes the BE to chain a SECOND narration after
 					// the first (see ``_chain_proactive``), which manifested as
 					// duplicate / mid-stream-replaced narrations.
-					this._sendContext();
 					if (stateChanges.length > 0) {
 						// Coalesce rapid transitions into a single settled emission
 						// (see _pendingStateChanges). Buffer the latest change per
-						// session and (re)arm the settle timer; the immediate flush,
-						// cache invalidation and timeline persist all happen once the
-						// storm settles, in _emitPendingStateChanges().
+						// session (preserving the burst's baseline so a net-zero
+						// wobble is recognized) and (re)arm the settle timer; the
+						// flush, cache invalidation and timeline persist all happen
+						// once the storm settles, in _emitPendingStateChanges().
+						//
+						// Deliberately do NOT `_sendContext()` here: staging the
+						// intermediate (glitching) state into the shared pending
+						// context would let a `flushSessionContext()` during the
+						// settle window (e.g. _activateShownSession) ship the wobble
+						// and bypass coalescing.
 						for (const change of stateChanges) {
-							this._pendingStateChanges.set(change.sessionId, change);
+							const existing = this._pendingStateChanges.get(change.sessionId);
+							this._pendingStateChanges.set(change.sessionId, existing
+								? { ...change, fromState: existing.fromState, fromDetail: existing.fromDetail }
+								: change);
 						}
 						this._scheduleStateChangeEmit();
+					} else {
+						this._sendContext();
 					}
 
 					// Arm a paranoid re-flush watchdog for any session currently
@@ -2351,7 +2362,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		const model = this.chatService.getSession(resource);
 		const activatedState = model ? this._getAgentStateInfo(model).state : 'no-model';
 		const awaitingConfirmation = activatedState === 'waiting_for_confirmation';
-		this.logService.trace(`[voice] _activateShownSession key=${key} state=${activatedState} activeId=${this._getActiveSessionId() ?? '<none>'} hadDeferred=${hadDeferred} heardBefore=${this._lastHeardTranscriptById.has(key)} recentlyRead=${this._recentlyReadResponse.has(key)}`);
+		this.logService.trace(`[voice] _activateShownSession key=${key.slice(-32)} state=${activatedState} activeId=${this._getActiveSessionId()?.slice(-32) ?? '<none>'} hadDeferred=${hadDeferred} heardBefore=${this._lastHeardTranscriptById.has(key)} recentlyRead=${this._recentlyReadResponse.has(key)}`);
 		if (awaitingConfirmation) {
 			this._narrateConfirmationViaTwoPhase(key);
 			return;
@@ -2956,12 +2967,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	/**
-	 * Flush the coalesced session state changes to the backend exactly once and
-	 * persist them to the local timeline. Because {@link _sendContext} rebuilds
-	 * the full context from the now-settled model state and `_sendDelta`
-	 * merge-patches against the last-sent snapshot, an oscillation that returned
-	 * to its prior state produces no delta and is silently dropped - only a real
-	 * net transition reaches the backend.
+	 * Flush the coalesced session state changes to the backend and persist only
+	 * true net changes to the local timeline. {@link _sendContext} rebuilds the
+	 * full context from the now-settled model state and `_sendDelta` merge-patches
+	 * against the last-sent snapshot, so an oscillation that returned to its prior
+	 * state produces no delta. Each buffered change carries the burst's baseline
+	 * (`fromState`/`fromDetail`); we compare the settled state against it so a
+	 * net-zero wobble is neither traced nor persisted as a `coding_event` (which
+	 * would otherwise replay a phantom transition to the backend on reconnect),
+	 * and a detail change reached via an intermediate state (e.g.
+	 * `waiting(old) → thinking → waiting(new)`) is still treated as detail-only.
 	 */
 	private _emitPendingStateChanges(): void {
 		const changes = [...this._pendingStateChanges.values()];
@@ -2969,18 +2984,35 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (changes.length === 0) {
 			return;
 		}
-		// For detail-only transitions (same agent_state but different
-		// confirmation content), invalidate the cache so _sendDelta treats the
-		// session as new and includes agent_state + agent_state_detail together.
+		// Keep only changes whose settled state differs from the burst baseline;
+		// classify a same-state confirmation whose detail changed as detail-only.
+		const netChanges: { change: typeof changes[number]; detailOnly: boolean }[] = [];
 		for (const change of changes) {
-			if (change.detailOnly) {
+			const detail = change.detail ?? '';
+			const stateChanged = change.fromState !== change.currentState;
+			const detailOnly = !stateChanged && change.currentState === 'waiting_for_confirmation' && change.fromDetail !== detail;
+			if (stateChanged || detailOnly) {
+				netChanges.push({ change, detailOnly });
+			}
+		}
+		if (netChanges.length === 0) {
+			// The storm settled back to the baseline; still send a fresh context
+			// (idempotent — _sendDelta emits nothing) but trace/persist nothing.
+			this._sendContext();
+			return;
+		}
+		// For detail-only transitions (same agent_state but different confirmation
+		// content), invalidate the cache so _sendDelta treats the session as new
+		// and includes agent_state + agent_state_detail together.
+		for (const { change, detailOnly } of netChanges) {
+			if (detailOnly) {
 				this.voiceClientService.invalidateSessionCache(change.sessionId);
 			}
 		}
 		this._sendContext();
-		this.logService.trace(`[voice] emitting ${changes.length} settled stateChange(s): ${changes.map(c => `${c.label}:${c.currentState}${c.detailOnly ? ' (detail-only)' : ''}`).join(', ')}`);
+		this.logService.trace(`[voice] emitting ${netChanges.length} settled stateChange(s): ${netChanges.map(({ change, detailOnly }) => `${change.label}:${change.currentState}${detailOnly ? ' (detail-only)' : ''}`).join(', ')}`);
 		this.voiceClientService.flushSessionContext();
-		for (const change of changes) {
+		for (const { change } of netChanges) {
 			// Persist as a coding_event in the local timeline so
 			// "session X went from thinking → waiting_for_confirmation"
 			// can be replayed as cross-session context on reconnect.
@@ -3409,6 +3441,19 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this._lastResponseSummaryById.set(sessionId, summary);
 		} else if (state === 'thinking') {
 			this._lastResponseSummaryById.delete(sessionId);
+		}
+	}
+
+	/**
+	 * Drop per-session caches for sessions no longer in the tracked set, so a
+	 * long-lived voice connection doesn't retain summaries/state for archived,
+	 * removed, or disposed sessions that will never be narrated again.
+	 */
+	private _pruneSessionCaches(liveSessionIds: Set<string>): void {
+		for (const id of this._lastResponseSummaryById.keys()) {
+			if (!liveSessionIds.has(id)) {
+				this._lastResponseSummaryById.delete(id);
+			}
 		}
 	}
 
