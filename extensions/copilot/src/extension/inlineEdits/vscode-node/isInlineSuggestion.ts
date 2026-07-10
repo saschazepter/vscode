@@ -16,25 +16,59 @@ export interface InlineSuggestionEdit {
  * which is required for VS Code to render ghost text.
  */
 export function toInlineSuggestion(cursorPos: Position, doc: TextDocument, range: Range, newText: string, advanced: boolean = true): InlineSuggestionEdit | undefined {
-	// Special case: a multi-line insertion that starts on the line *after* the cursor
-	// can be re-expressed as a pure insertion at the cursor.
+	if (range.start.line === range.end.line && range.start.line === cursorPos.line) {
+		const sameLineEdit = validateSameLineGhostText(cursorPos, doc, range, newText);
+		if (sameLineEdit) {
+			return sameLineEdit;
+		}
+	}
+
+	if (advanced) {
+		const cursorEdit = tryRebaseAsCursorEdit(cursorPos, doc, range, newText);
+		if (cursorEdit) {
+			return cursorEdit;
+		}
+	}
+
+	// Preserve the established behavior for insertions into an empty next line.
 	const nextLineInsertion = tryAdjustNextLineInsertion(cursorPos, doc, range, newText);
 	if (nextLineInsertion) {
 		return nextLineInsertion;
 	}
 
-	// If the range spans multiple lines, try to collapse it to a single line by
-	// trimming a shared prefix up to a newline boundary.
-	if (advanced && range.start.line !== range.end.line) {
-		({ range, newText } = stripCommonLinePrefix(doc, range, newText));
-	}
+	return undefined;
+}
 
-	// Ghost text requires the edit to be on the cursor's line.
-	if (range.start.line !== range.end.line || range.start.line !== cursorPos.line) {
+/**
+ * Re-express an edit as an equivalent edit from the cursor to the end of its
+ * line. If any equivalent inline suggestion exists, one exists in this form.
+ */
+function tryRebaseAsCursorEdit(cursorPos: Position, doc: TextDocument, range: Range, newText: string): InlineSuggestionEdit | undefined {
+	const cursorOffset = doc.offsetAt(cursorPos);
+	const lineEnd = doc.lineAt(cursorPos.line).range.end;
+	const lineEndOffset = doc.offsetAt(lineEnd);
+	const rangeStartOffset = doc.offsetAt(range.start);
+	const rangeEndOffset = doc.offsetAt(range.end);
+	const affectedStart = doc.positionAt(Math.min(cursorOffset, rangeStartOffset));
+	const affectedEnd = doc.positionAt(Math.max(lineEndOffset, rangeEndOffset));
+
+	const editedText = doc.getText(new Range(affectedStart, range.start)) + newText + doc.getText(new Range(range.end, affectedEnd));
+	const unchangedPrefix = doc.getText(new Range(affectedStart, cursorPos));
+	const unchangedSuffix = doc.getText(new Range(lineEnd, affectedEnd));
+	const cursorEditTextEnd = editedText.length - unchangedSuffix.length;
+	if (
+		cursorEditTextEnd < unchangedPrefix.length
+		|| !editedText.startsWith(unchangedPrefix)
+		|| !editedText.endsWith(unchangedSuffix)
+	) {
 		return undefined;
 	}
 
-	return validateSameLineGhostText(cursorPos, doc, range, newText);
+	const cursorEdit = {
+		range: new Range(cursorPos, lineEnd),
+		newText: editedText.substring(unchangedPrefix.length, cursorEditTextEnd),
+	};
+	return validateSameLineGhostText(cursorPos, doc, cursorEdit.range, cursorEdit.newText);
 }
 
 /**
@@ -75,30 +109,6 @@ function tryAdjustNextLineInsertion(cursorPos: Position, doc: TextDocument, rang
 }
 
 /**
- * Strip the longest shared prefix that ends on a newline boundary from both sides
- * of a multi-line edit. This often shrinks the range so it fits on a single line,
- * which is required for ghost text rendering.
- */
-function stripCommonLinePrefix(doc: TextDocument, range: Range, newText: string): { range: Range; newText: string } {
-	const replacedText = doc.getText(range);
-	const maxLen = Math.min(replacedText.length, newText.length);
-	let commonLen = 0;
-	while (commonLen < maxLen && replacedText[commonLen] === newText[commonLen]) {
-		commonLen++;
-	}
-	if (commonLen === 0) {
-		return { range, newText };
-	}
-	const lastNewline = replacedText.lastIndexOf('\n', commonLen - 1);
-	if (lastNewline < 0) {
-		return { range, newText };
-	}
-	const strippedLen = lastNewline + 1;
-	const newStart = doc.positionAt(doc.offsetAt(range.start) + strippedLen);
-	return { range: new Range(newStart, range.end), newText: newText.substring(strippedLen) };
-}
-
-/**
  * Validate that a single-line edit can be rendered as ghost text at the cursor:
  *  - the cursor is at or after `range.start`
  *  - everything before the cursor in the replaced text matches `newText`
@@ -133,4 +143,3 @@ export function isSubword(a: string, b: string): boolean {
 	}
 	return true;
 }
-
