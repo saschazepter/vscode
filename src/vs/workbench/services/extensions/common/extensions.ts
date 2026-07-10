@@ -422,9 +422,12 @@ export async function resolveEnabledApiProposalsFallbackExperiment(assignmentSer
  * API access to extension/proposal combinations that have not declared the proposal via their
  * `enabledApiProposals`-property. It only takes effect on `stable` builds.
  *
+ * Note that the experiment only applies to extensions that already declare at least one proposal:
+ * an extension with no `enabledApiProposals` at all is never granted access.
+ *
  * @param value A comma-separated list of `publisher.extension:proposalName` entries. Any combination
  * that appears here will have {@link isProposedApiEnabled} return `true` even when the extension has
- * not declared the proposal.
+ * not declared that particular proposal.
  * @param quality The product quality. The experiment only takes effect when this is `stable`.
  */
 export function setEnabledApiProposalsFallbackExperiment(value: string | undefined, quality: string | undefined): IDisposable {

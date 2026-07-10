@@ -34,40 +34,46 @@ suite('isProposedApiEnabled (extensionEnabledApiProposalsFallback experiment)', 
 		};
 	}
 
-	test('experiment enables a not-declared proposal on stable, honoring the declared value otherwise', () => {
+	test('experiment enables a declared-but-missing proposal on stable, honoring the declared value otherwise', () => {
 		const declared = desc('test.declared', ['someProposal']);
-		const notDeclared = desc('test.notDeclared', undefined);
-		const other = desc('test.other', undefined);
+		const missingButInExperiment = desc('test.missing', ['unrelatedProposal']);
+		const other = desc('test.other', ['unrelatedProposal']);
 
-		store.add(setEnabledApiProposalsFallbackExperiment('test.notDeclared:someProposal', 'stable'));
+		store.add(setEnabledApiProposalsFallbackExperiment('test.missing:someProposal', 'stable'));
 
 		assert.deepStrictEqual(
 			{
 				declared: isProposedApiEnabled(declared, 'someProposal' as ApiProposalName),
-				notDeclaredInExperiment: isProposedApiEnabled(notDeclared, 'someProposal' as ApiProposalName),
-				notDeclaredOutsideExperiment: isProposedApiEnabled(notDeclared, 'otherProposal' as ApiProposalName),
+				missingInExperiment: isProposedApiEnabled(missingButInExperiment, 'someProposal' as ApiProposalName),
+				missingOutsideExperiment: isProposedApiEnabled(missingButInExperiment, 'otherProposal' as ApiProposalName),
 				otherExtension: isProposedApiEnabled(other, 'someProposal' as ApiProposalName),
 			},
 			{
 				declared: true,
-				notDeclaredInExperiment: true,
-				notDeclaredOutsideExperiment: false,
+				missingInExperiment: true,
+				missingOutsideExperiment: false,
 				otherExtension: false,
 			}
 		);
 	});
 
+	test('experiment does not grant access to extensions that declare no proposals', () => {
+		const noProposals = desc('test.missing', undefined);
+		store.add(setEnabledApiProposalsFallbackExperiment('test.missing:someProposal', 'stable'));
+		assert.strictEqual(isProposedApiEnabled(noProposals, 'someProposal' as ApiProposalName), false);
+	});
+
 	test('experiment has no effect on non-stable builds', () => {
-		const notDeclared = desc('test.notDeclared', undefined);
-		store.add(setEnabledApiProposalsFallbackExperiment('test.notDeclared:someProposal', 'insider'));
-		assert.strictEqual(isProposedApiEnabled(notDeclared, 'someProposal' as ApiProposalName), false);
+		const missing = desc('test.missing', ['unrelatedProposal']);
+		store.add(setEnabledApiProposalsFallbackExperiment('test.missing:someProposal', 'insider'));
+		assert.strictEqual(isProposedApiEnabled(missing, 'someProposal' as ApiProposalName), false);
 	});
 
 	test('disposing the experiment removes the fallback', () => {
-		const notDeclared = desc('test.notDeclared', undefined);
-		const disposable = setEnabledApiProposalsFallbackExperiment('test.notDeclared:someProposal', 'stable');
-		assert.strictEqual(isProposedApiEnabled(notDeclared, 'someProposal' as ApiProposalName), true);
+		const missing = desc('test.missing', ['unrelatedProposal']);
+		const disposable = setEnabledApiProposalsFallbackExperiment('test.missing:someProposal', 'stable');
+		assert.strictEqual(isProposedApiEnabled(missing, 'someProposal' as ApiProposalName), true);
 		disposable.dispose();
-		assert.strictEqual(isProposedApiEnabled(notDeclared, 'someProposal' as ApiProposalName), false);
+		assert.strictEqual(isProposedApiEnabled(missing, 'someProposal' as ApiProposalName), false);
 	});
 });
