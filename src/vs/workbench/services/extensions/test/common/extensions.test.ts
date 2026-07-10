@@ -63,6 +63,29 @@ suite('isProposedApiEnabled (extensionEnabledApiProposalsFallback experiment)', 
 		assert.strictEqual(isProposedApiEnabled(noProposals, 'someProposal' as ApiProposalName), false);
 	});
 
+	test('missing experiment allows all proposals on stable by default', () => {
+		const withProposals = desc('test.withProposals', ['unrelatedProposal']);
+		const withoutProposals = desc('test.withoutProposals', undefined);
+		store.add(setEnabledApiProposalsFallbackExperiment(undefined, 'stable'));
+
+		assert.deepStrictEqual(
+			{
+				withProposals: isProposedApiEnabled(withProposals, 'someProposal' as ApiProposalName),
+				withoutProposals: isProposedApiEnabled(withoutProposals, 'someProposal' as ApiProposalName),
+			},
+			{
+				withProposals: true,
+				withoutProposals: false,
+			}
+		);
+	});
+
+	test('empty experiment blocks all proposals that reach the fallback', () => {
+		const missing = desc('test.missing', ['unrelatedProposal']);
+		store.add(setEnabledApiProposalsFallbackExperiment('', 'stable'));
+		assert.strictEqual(isProposedApiEnabled(missing, 'someProposal' as ApiProposalName), false);
+	});
+
 	test('experiment has no effect on non-stable builds', () => {
 		const missing = desc('test.missing', ['unrelatedProposal']);
 		store.add(setEnabledApiProposalsFallbackExperiment('test.missing:someProposal', 'insider'));

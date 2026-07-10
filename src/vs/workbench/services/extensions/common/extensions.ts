@@ -424,31 +424,32 @@ export async function resolveEnabledApiProposalsFallbackExperiment(assignmentSer
  *
  * @param value A comma-separated list of `publisher.extension:proposalName` entries. Any combination
  * that appears here will have {@link isProposedApiEnabled} return `true` even when the extension has
- * not declared that particular proposal.
+ * not declared that particular proposal. When unset, all proposals are allowed; an empty string
+ * blocks all proposals that reach the fallback.
  * @param quality The product quality. The experiment only takes effect when this is `stable`.
  */
 export function setEnabledApiProposalsFallbackExperiment(value: string | undefined, quality: string | undefined): IDisposable {
-	if (quality !== 'stable' || !value) {
+	if (quality !== 'stable') {
 		return Disposable.None;
 	}
 
 	const allowed = new Set<string>();
-	for (const entry of value.split(',')) {
-		const trimmed = entry.trim();
-		const idx = trimmed.indexOf(':');
-		if (idx <= 0 || idx === trimmed.length - 1) {
-			continue;
+	if (value !== undefined) {
+		for (const entry of value.split(',')) {
+			const trimmed = entry.trim();
+			const idx = trimmed.indexOf(':');
+			if (idx <= 0 || idx === trimmed.length - 1) {
+				continue;
+			}
+			const extensionId = ExtensionIdentifier.toKey(trimmed.slice(0, idx));
+			const proposal = trimmed.slice(idx + 1);
+			allowed.add(`${extensionId}:${proposal}`);
 		}
-		const extensionId = ExtensionIdentifier.toKey(trimmed.slice(0, idx));
-		const proposal = trimmed.slice(idx + 1);
-		allowed.add(`${extensionId}:${proposal}`);
 	}
 
-	if (allowed.size === 0) {
-		return Disposable.None;
-	}
-
-	const resolver: ProposedApiEnabledResolver = (extension, proposal) => allowed.has(`${ExtensionIdentifier.toKey(extension.identifier)}:${proposal}`);
+	const resolver: ProposedApiEnabledResolver = value === undefined
+		? () => true
+		: (extension, proposal) => allowed.has(`${ExtensionIdentifier.toKey(extension.identifier)}:${proposal}`);
 	_proposedApiEnabledResolver = resolver;
 	return toDisposable(() => {
 		if (_proposedApiEnabledResolver === resolver) {
