@@ -7,6 +7,7 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { derived, IObservable } from '../../../../base/common/observable.js';
 import { ISessionsService } from '../../../services/sessions/browser/sessionsService.js';
 import { ISessionFile } from '../../../services/sessions/common/session.js';
+import { externalChangesDevSeedObs } from './externalChangesDevSeed.js';
 
 /** Shared stable empty result so "no session / no files" doesn't churn observers. */
 const EMPTY_SESSION_FILES: readonly ISessionFile[] = Object.freeze([]);
@@ -28,6 +29,12 @@ export class SessionFilesViewModel extends Disposable {
 		// and this derived does not propagate. The shared empty constant keeps
 		// the "no session" case equally stable.
 		this.sessionFilesObs = derived(this, reader => {
+			// Developer seed (see externalChangesDevSeed.ts) takes precedence so
+			// the section can be demoed without a real out-of-workspace agent run.
+			const devSeed = externalChangesDevSeedObs.read(reader);
+			if (devSeed !== undefined) {
+				return devSeed;
+			}
 			const activeSession = sessionsService.activeSession.read(reader);
 			return activeSession?.externalChanges?.read(reader) ?? EMPTY_SESSION_FILES;
 		});
