@@ -24,7 +24,7 @@ import { TestStorageService } from '../../../../../workbench/test/common/workben
 import { ISessionsProvidersService } from '../../../../services/sessions/browser/sessionsProvidersService.js';
 import { IProviderSessionType, ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
 import { ISession, ISessionWorkspace } from '../../../../services/sessions/common/session.js';
-import { IPickedSessionType, IPreferredSessionType, SessionTypePicker } from '../../browser/sessionTypePicker.js';
+import { IPickedSessionType, IPreferredSessionType, ISessionTypePickerOptions, SessionTypePicker } from '../../browser/sessionTypePicker.js';
 
 // ---- Mocks ------------------------------------------------------------------
 
@@ -109,6 +109,7 @@ function createPicker(
 	session: ISettableObservable<ISession | undefined>,
 	managementService: MockSessionsManagementService,
 	storage: IStorageService,
+	options?: ISessionTypePickerOptions,
 ): TestSessionTypePicker {
 	const instantiationService = disposables.add(new TestInstantiationService());
 	instantiationService.stub(IActionWidgetService, { isVisible: false, hide: () => { }, show: () => { } });
@@ -127,7 +128,7 @@ function createPicker(
 		lookupLanguageModel: () => undefined,
 	});
 	instantiationService.stub(IContextKeyService, new MockContextKeyService());
-	return disposables.add(instantiationService.createInstance(TestSessionTypePicker, session));
+	return disposables.add(instantiationService.createInstance(TestSessionTypePicker, session, options));
 }
 
 // ---- Tests ------------------------------------------------------------------
@@ -250,6 +251,35 @@ suite('SessionTypePicker', () => {
 		session.set(createFakeSession('local-1', 'local', folder), undefined);
 		picker.pick({ providerId: 'local-1', sessionTypeId: 'local' });
 		assert.strictEqual(picker.getUserPickedSessionType(), undefined);
+	});
+
+	test('persistSelection false never mutates the shared New Session preference', () => {
+		management.setSessionTypes([
+			sessionType('local-1', 'local', 'Local'),
+			sessionType('copilot', 'copilot-cli', 'Copilot CLI'),
+			sessionType('anthropic', 'claude', 'Claude'),
+		]);
+
+		// The New Session composer stored an explicit, non-default preference.
+		const shared = createPicker(disposables, session, management, storage);
+		shared.pick({ providerId: 'copilot', sessionTypeId: 'copilot-cli' });
+		assert.deepStrictEqual(shared.getUserPickedSessionType(), { providerId: 'copilot', sessionTypeId: 'copilot-cli' });
+
+		// The automations dialog picker still reads that stored preference to seed
+		// a sensible default, but must never write or clear it.
+		const scopedSession = observableValue<ISession | undefined>('scoped', undefined);
+		const scoped = createPicker(disposables, scopedSession, management, storage, { persistSelection: false });
+		assert.deepStrictEqual(scoped.getUserPickedSessionType(), { providerId: 'copilot', sessionTypeId: 'copilot-cli' });
+		// Give the scoped picker a folder so 'local' is its default type.
+		scopedSession.set(createFakeSession('local-1', 'local', folder), undefined);
+
+		// A different non-default pick would normally be written — it must not be.
+		scoped.pick({ providerId: 'anthropic', sessionTypeId: 'claude' });
+		assert.deepStrictEqual(shared.getUserPickedSessionType(), { providerId: 'copilot', sessionTypeId: 'copilot-cli' });
+
+		// Picking the default type would normally clear the stored pick — it must not.
+		scoped.pick({ providerId: 'local-1', sessionTypeId: 'local' });
+		assert.deepStrictEqual(shared.getUserPickedSessionType(), { providerId: 'copilot', sessionTypeId: 'copilot-cli' });
 	});
 
 	test('a quick chat sources its types from the quick-chat list, not the folder list', () => {

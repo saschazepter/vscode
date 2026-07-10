@@ -423,7 +423,7 @@ export function renderForm(
 
 	// The picker is authoritative for the session type
 	const folderObs = observableValue<URI | undefined>('automationFolder', state.folderUri);
-	const sessionTypePicker = disposables.add(instantiationService.createInstance(MobileSessionTypePicker, constObservable<ISession | undefined>(undefined)));
+	const sessionTypePicker = disposables.add(instantiationService.createInstance(MobileSessionTypePicker, constObservable<ISession | undefined>(undefined), { persistSelection: false, telemetrySource: 'AutomationSessionTypePicker' }));
 	sessionTypePicker.setFolderSource(folderObs, {
 		initialPick: state.providerId && state.sessionTypeId
 			? { providerId: state.providerId, sessionTypeId: state.sessionTypeId }
