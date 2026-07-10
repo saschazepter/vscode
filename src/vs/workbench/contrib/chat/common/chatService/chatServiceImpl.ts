@@ -941,6 +941,8 @@ export class ChatService extends Disposable implements IChatService {
 					this._pendingRequests.deleteAndDispose(model.sessionResource);
 					cancellationListener.clear();
 					lastRequest.response?.complete();
+					// Flush any message queued/steered during the streamed turn (no-op if none, or server-managed).
+					this.processPendingRequests(model.sessionResource);
 				}
 			}));
 		} else {
