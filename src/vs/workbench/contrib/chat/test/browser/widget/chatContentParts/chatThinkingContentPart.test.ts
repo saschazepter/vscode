@@ -485,7 +485,7 @@ suite('ChatThinkingContentPart', () => {
 			assert.ok(scrollable, 'Should have scrollable container');
 		});
 
-		test('should remove scrolling constraint and reveal tools when streaming completes', async () => {
+		test('should collapse without animation when streaming completes', async () => {
 			const content = createThinkingPart('**Content with scrolling**');
 			const context = createMockRenderContext(false);
 
@@ -513,17 +513,25 @@ suite('ChatThinkingContentPart', () => {
 			part.finalizeTitleIfDefault();
 			const button = part.domNode.querySelector<HTMLElement>('.monaco-button');
 			assert.ok(button);
+			const scrollable = part.domNode.querySelector<HTMLElement>('.monaco-scrollable-element');
+			const completedHeight = scrollable?.style.maxHeight;
+			const completionAnimationEnabled = part.domNode.classList.contains('chat-thinking-fixed-mode-animated');
 			button.click();
 			await new Promise<void>(resolve => mainWindow.requestAnimationFrame(() => resolve()));
 
-			const scrollable = part.domNode.querySelector<HTMLElement>('.monaco-scrollable-element');
 			const verticalScrollbar = part.domNode.querySelector('.scrollbar.vertical');
 			assert.deepStrictEqual({
-				completedHeight: scrollable?.style.maxHeight,
+				completedHeight,
+				completionAnimationEnabled,
+				userAnimationEnabled: part.domNode.classList.contains('chat-thinking-fixed-mode-animated'),
+				expandedHeight: scrollable?.style.maxHeight,
 				scrollbarIsInvisible: verticalScrollbar?.classList.contains('invisible'),
 				toolIsVisible: !!part.domNode.querySelector('.test-completed-tool'),
 			}, {
-				completedHeight: '400px',
+				completedHeight: '0px',
+				completionAnimationEnabled: false,
+				userAnimationEnabled: true,
+				expandedHeight: '400px',
 				scrollbarIsInvisible: true,
 				toolIsVisible: true,
 			});
@@ -702,15 +710,50 @@ suite('ChatThinkingContentPart', () => {
 			mainWindow.document.body.appendChild(part.domNode);
 			disposables.add(toDisposable(() => part.domNode.remove()));
 			part.finalizeTitleIfDefault();
+			const button = part.domNode.querySelector<HTMLElement>('.monaco-button');
+			button?.click();
+			button?.click();
 
 			assert.deepStrictEqual({
 				generatedTitle: content.generatedTitle,
 				durationPersisted: typeof content.reasoningDurationMs === 'number',
 				labelHasDuration: /^Reviewed the implementation - \d+s$/.test(part.domNode.querySelector('.monaco-button')?.textContent ?? ''),
+				ariaLabelHasDuration: /^Reviewed the implementation - \d+s$/.test(button?.ariaLabel ?? ''),
 			}, {
 				generatedTitle: 'Reviewed the implementation',
 				durationPersisted: true,
 				labelHasDuration: true,
+				ariaLabelHasDuration: true,
+			});
+		});
+
+		test('persists elapsed time to the source of array-valued reasoning', () => {
+			const sourceContent: IChatThinkingPart = {
+				kind: 'thinking',
+				value: ['**Reviewed the implementation**'],
+				id: 'array-thinking-id',
+			};
+			const itemContent: IChatThinkingPart = {
+				...sourceContent,
+				value: '**Reviewed the implementation**',
+			};
+			const part = store.add(instantiationService.createInstance(
+				ChatThinkingContentPart,
+				itemContent,
+				createMockRenderContext(false),
+				mockMarkdownRenderer,
+				false
+			));
+			part.setReasoningDurationTarget(sourceContent);
+
+			part.finalizeTitleIfDefault();
+
+			assert.deepStrictEqual({
+				sourceDurationPersisted: typeof sourceContent.reasoningDurationMs === 'number',
+				itemDurationPersisted: typeof itemContent.reasoningDurationMs === 'number',
+			}, {
+				sourceDurationPersisted: true,
+				itemDurationPersisted: false,
 			});
 		});
 

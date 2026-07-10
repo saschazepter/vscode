@@ -363,6 +363,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 	private containsGroupedItems: boolean = false;
 	private reasoningStartedAt: number | undefined;
 	private reasoningDurationMs: number | undefined;
+	private reasoningDurationTarget: IChatThinkingPart | undefined;
 
 	get aggregatedDiff(): IEditSessionDiffStats { return this._aggregatedDiff; }
 
@@ -541,7 +542,14 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 
 		if (this._collapseButton) {
 			this._register(this._collapseButton.onDidClick(() => {
-				if (this.streamingCompleted || this.fixedScrollingMode) {
+				if (this.fixedScrollingMode) {
+					if (this.streamingCompleted) {
+						this.domNode.classList.add('chat-thinking-fixed-mode-animated');
+					}
+					return;
+				}
+
+				if (this.streamingCompleted) {
 					return;
 				}
 
@@ -939,12 +947,12 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 
 				const insertionsFragment = added === 1 ? localize('chat.thinking.insertions.one', "1 insertion") : localize('chat.thinking.insertions', "{0} insertions", added);
 				const deletionsFragment = removed === 1 ? localize('chat.thinking.deletions.one', "1 deletion") : localize('chat.thinking.deletions', "{0} deletions", removed);
-				this._collapseButton.element.ariaLabel = localize('chat.thinking.titleWithDiff', "{0}, {1}, {2}", displayTitle, insertionsFragment, deletionsFragment);
+				this.setAriaLabel(localize('chat.thinking.titleWithDiff', "{0}, {1}, {2}", displayTitle, insertionsFragment, deletionsFragment));
 			} else {
-				this._collapseButton.element.ariaLabel = displayTitle;
+				this.setAriaLabel(displayTitle);
 			}
 		} else {
-			this._collapseButton.element.ariaLabel = displayTitle;
+			this.setAriaLabel(displayTitle);
 		}
 	}
 
@@ -1076,6 +1084,10 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 		this.setExpanded(false);
 	}
 
+	public setReasoningDurationTarget(content: IChatThinkingPart): void {
+		this.reasoningDurationTarget = content;
+	}
+
 	public updateThinking(content: IChatThinkingPart): void {
 		// If disposed, ignore late updates coming from renderer diffing
 		if (this._store.isDisposed) {
@@ -1174,7 +1186,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 		this.processPendingRemovals();
 		if (this.reasoningStartedAt !== undefined && this.reasoningDurationMs === undefined) {
 			this.reasoningDurationMs = Math.max(0, Date.now() - this.reasoningStartedAt);
-			this.content.reasoningDurationMs = this.reasoningDurationMs;
+			(this.reasoningDurationTarget ?? this.content).reasoningDurationMs = this.reasoningDurationMs;
 		}
 
 		// With lazy rendering, wrapper may not be created yet if content hasn't been expanded

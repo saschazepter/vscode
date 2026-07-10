@@ -41,6 +41,7 @@ export abstract class ChatCollapsibleContentPart extends Disposable implements I
 	protected readonly _showCheckmarks: IObservable<boolean>;
 	private _contentElement?: HTMLElement;
 	private _contentInitialized = false;
+	private ariaLabel: string;
 
 	public get icon(): ThemeIcon | undefined {
 		return this._overrideIcon.get();
@@ -60,6 +61,7 @@ export abstract class ChatCollapsibleContentPart extends Disposable implements I
 		@IConfigurationService configurationService: IConfigurationService,
 	) {
 		super();
+		this.ariaLabel = typeof title === 'string' ? title : title.value;
 		this.element = context.element;
 		this.hasFollowingContent = context.contentIndex + 1 < context.content.length;
 		this._showCheckmarks = observableConfigValue(AccessibilityWorkbenchSettingId.ShowChatCheckmarks, false, configurationService);
@@ -149,7 +151,7 @@ export abstract class ChatCollapsibleContentPart extends Disposable implements I
 			if (animatedContent) {
 				animatedContent.inert = !expanded;
 			}
-			this.updateAriaLabel(collapseButton.element, typeof referencesLabel === 'string' ? referencesLabel : referencesLabel.value, expanded);
+			this.updateAriaLabel(collapseButton.element, this.ariaLabel, expanded);
 			this.expansionDidChange(expanded);
 		}));
 
@@ -205,7 +207,14 @@ export abstract class ChatCollapsibleContentPart extends Disposable implements I
 		this.title = title;
 		if (this._collapseButton) {
 			this._collapseButton.label = title;
-			this.updateAriaLabel(this._collapseButton.element, title, this.isExpanded());
+		}
+		this.setAriaLabel(title);
+	}
+
+	protected setAriaLabel(label: string): void {
+		this.ariaLabel = label;
+		if (this._collapseButton) {
+			this.updateAriaLabel(this._collapseButton.element, label, this.isExpanded());
 		}
 	}
 
@@ -227,7 +236,7 @@ export abstract class ChatCollapsibleContentPart extends Disposable implements I
 		labelElement.appendChild(result.element);
 
 		const textContent = result.element.textContent || '';
-		this.updateAriaLabel(this._collapseButton.element, textContent, this.isExpanded());
+		this.setAriaLabel(textContent);
 
 		this._renderedTitleWithWidgets.value = result;
 	}

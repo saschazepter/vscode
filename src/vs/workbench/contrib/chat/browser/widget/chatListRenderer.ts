@@ -3531,30 +3531,31 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				}
 			}
 
-			// create thinking part if it doesn't exist yet
-			const { part: lastThinking, separatedFromReasoning } = this.getLastThinkingPartForGroupedItem(context, templateData);
-			if (!lastThinking && markdownPart?.domNode && this.shouldPinPart(markdown, context.element) && shouldCreateGroupedThinkingPart(collapsedToolsMode, separatedFromReasoning) && isComplete) {
-				const thinkingPart = this.renderThinkingPart({
-					kind: 'thinking',
-				}, context, templateData);
+			const shouldPin = this.shouldPinPart(markdown, context.element);
+			if (markdownPart?.domNode && shouldPin && isComplete) {
+				// create thinking part if it doesn't exist yet
+				const { part: lastThinking, separatedFromReasoning } = this.getLastThinkingPartForGroupedItem(context, templateData);
+				if (!lastThinking && shouldCreateGroupedThinkingPart(collapsedToolsMode, separatedFromReasoning)) {
+					const thinkingPart = this.renderThinkingPart({
+						kind: 'thinking',
+					}, context, templateData);
 
-				if (thinkingPart instanceof ChatThinkingContentPart) {
-					// Factory wrapping already-created markdown part
-					thinkingPart.appendItem(
-						() => ({ domNode: markdownPart.domNode, disposable: markdownPart }),
-						markdownPart.codeblocksPartId,
-						markdown,
-						templateData.value,
-						markdownPart.onDidChangeDiff,
-						markdownPart,
-					);
+					if (thinkingPart instanceof ChatThinkingContentPart) {
+						// Factory wrapping already-created markdown part
+						thinkingPart.appendItem(
+							() => ({ domNode: markdownPart.domNode, disposable: markdownPart }),
+							markdownPart.codeblocksPartId,
+							markdown,
+							templateData.value,
+							markdownPart.onDidChangeDiff,
+							markdownPart,
+						);
+					}
+
+					return thinkingPart;
 				}
 
-				return thinkingPart;
-			}
-
-			if (this.shouldPinPart(markdown, context.element) && isComplete) {
-				if (lastThinking && markdownPart?.domNode) {
+				if (lastThinking) {
 					// Factory wrapping already-created markdown part.
 					// No eagerDisposable needed here because the markdownPart is returned
 					// from this method and tracked directly in renderedParts, so it will
@@ -3567,7 +3568,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 						markdownPart.onDidChangeDiff
 					);
 				}
-			} else if (!this.shouldPinPart(markdown, context.element) && !isBlankMarkdown && !hasPendingEditCodeblock) {
+			} else if (!shouldPin && !isBlankMarkdown && !hasPendingEditCodeblock) {
 				this.finalizeCurrentThinkingPart(context, templateData);
 			}
 		}
@@ -3606,6 +3607,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 					} else {
 						const itemContent = { ...content, value: item };
 						const itemPart = templateData.instantiationService.createInstance(ChatThinkingContentPart, itemContent, context, this.chatContentMarkdownRenderer, streamingCompleted);
+						itemPart.setReasoningDurationTarget(content);
 						lastPart = itemPart;
 					}
 				}
