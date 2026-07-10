@@ -2114,7 +2114,15 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 		// -  normal: 0 (sticky tabs inherit look and feel from non-sticky tabs)
 		let stickyTabsWidth = 0;
 		if (this.tabsModel.stickyCount > 0) {
-			stickyTabsWidth = this.tabsModel.stickyCount * this.getStickyTabWidth(this.groupsView.partOptions.pinnedTabSizing);
+			const stickyTabWidth = this.getStickyTabWidth(this.groupsView.partOptions.pinnedTabSizing);
+			stickyTabsWidth = this.tabsModel.stickyCount * stickyTabWidth;
+
+			for (let tabIndex = 0; tabIndex < this.tabsModel.stickyCount; tabIndex++) {
+				const tab = this.getTabAtIndex(tabIndex);
+				if (tab) {
+					tab.style.left = `${tabIndex * stickyTabWidth}px`;
+				}
+			}
 		}
 
 		const activeTabAndIndex = this.tabsModel.activeEditor ? this.getTabAndIndex(this.tabsModel.activeEditor) : undefined;
