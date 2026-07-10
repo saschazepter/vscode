@@ -32,11 +32,10 @@ export interface IChatHelpfulnessFeedback {
 
 /**
  * A prototype for the helpfulness feedback experiment shown to the
- * MAI-Code-1-Flash cohort in place of the footer thumbs. It presents an obvious
- * "Was this response helpful?" prompt with Yes/No buttons inline on the footer
- * toolbar row; once a rating is cast it reveals an optional full-width detail
- * text box below, and once submitted the prompt is replaced inline by a short
- * "thanks" acknowledgement.
+ * MAI-Code-1-Flash cohort in place of the footer thumbs. It presents
+ * "Helpful"/"Unhelpful" buttons inline on the footer toolbar row; once a rating
+ * is cast it reveals an optional full-width detail text box below, and once
+ * submitted the buttons are replaced inline by a short "thanks" acknowledgement.
  */
 export class ChatHelpfulnessBanner extends Disposable {
 
@@ -66,15 +65,13 @@ export class ChatHelpfulnessBanner extends Disposable {
 	constructor(inlineContainer: HTMLElement, blockContainer: HTMLElement) {
 		super();
 
-		// Prompt row: label + Yes/No buttons, shown by default inline on the
+		// Prompt row: Helpful/Unhelpful buttons, shown by default inline on the
 		// footer toolbar row as the obvious entry point into the feedback flow.
 		this.promptRow = dom.append(inlineContainer, $('.chat-helpfulness-prompt.hidden'));
-		const promptLabel = dom.append(this.promptRow, $('span.chat-helpfulness-prompt-label'));
-		promptLabel.textContent = localize('chat.helpfulness.prompt', "Was this response helpful?");
 
 		const buttonsContainer = dom.append(this.promptRow, $('.chat-helpfulness-buttons'));
-		this.yesButton = this._register(this.createVoteButton(buttonsContainer, Codicon.thumbsup, localize('chat.helpfulness.yes', "Yes"), ChatHelpfulnessVote.Yes));
-		this.noButton = this._register(this.createVoteButton(buttonsContainer, Codicon.thumbsdown, localize('chat.helpfulness.no', "No"), ChatHelpfulnessVote.No));
+		this.yesButton = this._register(this.createVoteButton(buttonsContainer, Codicon.thumbsup, localize('chat.helpfulness.yes', "Helpful"), ChatHelpfulnessVote.Yes));
+		this.noButton = this._register(this.createVoteButton(buttonsContainer, Codicon.thumbsdown, localize('chat.helpfulness.no', "Unhelpful"), ChatHelpfulnessVote.No));
 
 		// Thanks row: replaces the prompt inline once feedback is submitted.
 		this.thanksRow = dom.append(inlineContainer, $('.chat-helpfulness-thanks.hidden'));

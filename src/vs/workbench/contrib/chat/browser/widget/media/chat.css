@@ -324,10 +324,9 @@
 }
 
 /* Helpfulness feedback prototype. For the MAI-Code-1-Flash cohort the footer
-thumbs are replaced by an obvious "Was this response helpful?" prompt with Yes/No
-buttons shown inline on the footer toolbar row; casting a rating reveals a
-full-width detail box below, and submitting replaces the prompt inline with a
-short acknowledgement. */
+thumbs are replaced by "Helpful"/"Unhelpful" buttons shown inline on the footer
+toolbar row; casting a rating reveals a full-width detail box below, and
+submitting replaces the buttons inline with a short acknowledgement. */
 
 /* For the feedback cohort, let the footer grow to fit the full-width detail box
 below the toolbar row, and keep it visible (rather than the hover-only reveal
@@ -342,7 +341,7 @@ used for the thumbs) so the follow-up prompt is discoverable. */
 	visibility: visible;
 }
 
-/* The prompt and thanks render inline on the toolbar row, to the right of the
+/* The buttons and thanks render inline on the toolbar row, to the right of the
 action icons. */
 .interactive-item-container .chat-helpfulness-prompt {
 	display: flex;
@@ -356,11 +355,6 @@ action icons. */
 .interactive-item-container .chat-helpfulness-details.hidden,
 .interactive-item-container .chat-helpfulness-thanks.hidden {
 	display: none !important;
-}
-
-.interactive-item-container .chat-helpfulness-prompt-label {
-	font-size: var(--vscode-chat-font-size-body-s, 13px);
-	color: var(--vscode-foreground);
 }
 
 .interactive-item-container .chat-helpfulness-buttons {

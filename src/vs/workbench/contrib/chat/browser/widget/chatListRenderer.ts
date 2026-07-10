@@ -864,9 +864,9 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 
 	/**
 	 * The helpfulness feedback prototype only applies to Microsoft-internal
-	 * users whose response was produced by the MAI-Code-1-Flash model. For this
-	 * cohort the standard thumbs up/down are replaced by the inline rating UX in
-	 * the footer toolbar.
+	 * users whose response was produced by the MAI-Code-1-Flash model and that
+	 * actually produced file edits. For this cohort the standard thumbs up/down
+	 * are replaced by the inline rating UX in the footer toolbar.
 	 */
 	private isInHelpfulnessCohort(element: ChatTreeItem): boolean {
 		if (!isResponseVM(element)) {
@@ -883,7 +883,13 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}
 
 		const metadata = this.languageModelsService.lookupLanguageModel(modelId);
-		return metadata?.name === 'MAI-Code-1-Flash';
+		if (metadata?.name !== 'MAI-Code-1-Flash') {
+			return false;
+		}
+
+		// Only surface the prompt when the response actually produced file edits.
+		const model = this.chatService.getSession(element.session.sessionResource);
+		return model?.editingSession?.hasEditsInRequest(element.requestId) ?? false;
 	}
 
 	private renderChatTreeItem(element: ChatTreeItem, index: number, templateData: IChatListItemTemplate): void {
@@ -948,10 +954,9 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 
 		// Helpfulness feedback prototype: for Microsoft-internal users on the
 		// MAI-Code-1-Flash model, the thumbs in the footer toolbar are replaced
-		// by an inline "Was this response helpful?" prompt with Yes/No buttons.
-		// Once the user rates the response, a full-width detail box is revealed
-		// below the toolbar; after submitting, the prompt is replaced inline by
-		// a short acknowledgement.
+		// by inline "Helpful"/"Unhelpful" buttons. Once the user rates the
+		// response, a full-width detail box is revealed below the toolbar; after
+		// submitting, the buttons are replaced inline by a short acknowledgement.
 		const inFeedbackCohort = this.isInHelpfulnessCohort(element);
 		ChatContextKeys.responseInFeedbackCohort.bindTo(templateData.contextKeyService).set(inFeedbackCohort);
 		templateData.rowContainer.classList.toggle('cohort-feedback', inFeedbackCohort);
@@ -1829,7 +1834,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			detail: { classification: 'CustomerContent'; purpose: 'FeatureInsight'; comment: 'The free-form feedback text the user provided.' };
 			requestId: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The identifier of the chat request the feedback is about.' };
 			harness: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The chat session type/harness the feedback was submitted from.' };
-			owner: 'pwang347';
+			owner: 'cwebster-99';
 			comment: 'Tracks user feedback submitted through the chat helpfulness banner.';
 		};
 		this.telemetryService.publicLog2<ChatHelpfulnessFeedbackEvent, ChatHelpfulnessFeedbackClassification>('chatHelpfulnessFeedback', {
