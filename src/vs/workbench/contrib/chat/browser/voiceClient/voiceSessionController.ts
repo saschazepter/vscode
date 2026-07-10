@@ -377,6 +377,19 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 */
 	private readonly _pendingIdleNarration = new Set<string>();
 
+	/**
+	 * Last response summary captured per session WHILE its chat model was
+	 * resident. Copilot/remote session models are disposed as soon as the user
+	 * switches away, so a completion that lands while the session is unfocused
+	 * would otherwise be reported to the backend as a summary-less ``idle`` and
+	 * never narrated (the eager reload to recover the summary races the switch's
+	 * re-disposal). Caching the summary here — independent of the model's
+	 * lifetime — lets the no-model paths still report ``last_response_summary``.
+	 * Refreshed whenever a resident model exposes a summary; cleared when the
+	 * session starts a new turn (``thinking``) so a stale reply is never narrated.
+	 */
+	private readonly _lastResponseSummaryById = new Map<string, string>();
+
 	// --- Telemetry tracking ---
 	private _telemetrySessionIndex = 0;
 	private _telemetrySessionStart: number | undefined;
@@ -893,6 +906,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 						const currentState = info.state;
 						const detail = info.detail;
 						const lastResponseSummary = info.last_response_summary;
+						// Capture the summary while the model is resident so a later
+						// completion reported after disposal can still narrate.
+						this._cacheResponseSummary(sessionId, currentState, lastResponseSummary);
 
 						const prev = this._prevSessionStates.get(sessionId);
 						const isStateTransition = prev !== undefined && prev.state !== currentState && currentState !== 'unknown';
@@ -931,6 +947,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 								: s.status === AgentSessionStatus.NeedsInput ? 'waiting_for_confirmation'
 									: s.status === AgentSessionStatus.Completed ? 'idle'
 										: 'unknown';
+							// A new turn (thinking) supersedes any cached summary even
+							// without a resident model, so a later completion never
+							// narrates the previous reply.
+							this._cacheResponseSummary(sessionId, currentState, undefined);
 							if (s.status === AgentSessionStatus.NeedsInput) {
 								this._ensureModelLoaded(s.resource);
 							}
@@ -940,12 +960,22 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 							// Remote/Copilot sessions don't keep their model resident, so a
 							// coarse ``idle`` transition would carry no last_response_summary
-							// and the backend would narrate an empty completion. Defer the
-							// transition: eagerly load the model and let the autorun re-fire
-							// with the summary once it resolves. Do not record the idle state
-							// yet so the transition is still detected after the model loads.
+							// and the backend would narrate an empty completion. If we
+							// captured the summary while the model was resident, narrate
+							// now using the cache. Otherwise defer: eagerly load the model
+							// and let the autorun re-fire with the summary once it resolves
+							// (do not record the idle state yet so the transition is still
+							// detected after the model loads).
 							if (isStateTransition && currentState === 'idle') {
-								this._deferIdleNarrationUntilModelLoaded(s.resource);
+								const cachedSummary = this._lastResponseSummaryById.get(sessionId);
+								if (!cachedSummary) {
+									this._deferIdleNarrationUntilModelLoaded(s.resource);
+									continue;
+								}
+								if (!this._userCancelledSessions.has(sessionId)) {
+									stateChanges.push({ sessionId, currentState, label: s.label || 'Untitled session', lastResponseSummary: cachedSummary });
+								}
+								this._prevSessionStates.set(sessionId, { state: currentState, detail: '' });
 								continue;
 							}
 
@@ -1384,6 +1414,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._eagerModelRefs.clear();
 		this._eagerModelLoading.clear();
 		this._pendingIdleNarration.clear();
+		this._lastResponseSummaryById.clear();
 		this._userLogin = undefined;
 		this._lastPersistedTurnId = undefined;
 		this._pendingPriorTimeline = [];
@@ -3034,13 +3065,18 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				currentState = info.state;
 				detail = info.detail;
 				lastResponseSummary = info.last_response_summary;
-				// Model is resident now; drop any pending idle deferral/suppression.
+				// Capture the summary while resident so a later completion after
+				// disposal can still narrate; also drop any pending idle deferral.
+				this._cacheResponseSummary(sessionId, currentState, lastResponseSummary);
 				this._pendingIdleNarration.delete(sessionId);
 			} else {
 				currentState = s.status === AgentSessionStatus.InProgress ? 'thinking'
 					: s.status === AgentSessionStatus.NeedsInput ? 'waiting_for_confirmation'
 						: s.status === AgentSessionStatus.Completed ? 'idle'
 							: 'unknown';
+				// A new turn supersedes any cached summary even without a resident
+				// model, so a later completion never narrates the previous reply.
+				this._cacheResponseSummary(sessionId, currentState, undefined);
 				if (s.status === AgentSessionStatus.NeedsInput) {
 					this._ensureModelLoaded(s.resource);
 				}
@@ -3050,11 +3086,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			const isStateChange = prev !== undefined && prev.state !== currentState && currentState !== 'unknown';
 			const isDetailChange = !isStateChange && prev !== undefined && currentState === 'waiting_for_confirmation' && (detail ?? '') !== prev.detail;
 
-			// Defer summary-less idle transitions for remote/Copilot sessions until
-			// their model loads (see _deferIdleNarrationUntilModelLoaded).
+			// Summary-less idle transitions for remote/Copilot sessions: narrate
+			// from the cached summary if we have one, otherwise defer until the
+			// model loads (see _deferIdleNarrationUntilModelLoaded).
 			if (!model && currentState === 'idle' && isStateChange) {
-				this._deferIdleNarrationUntilModelLoaded(s.resource);
-				continue;
+				const cachedSummary = this._lastResponseSummaryById.get(sessionId);
+				if (!cachedSummary) {
+					this._deferIdleNarrationUntilModelLoaded(s.resource);
+					continue;
+				}
+				lastResponseSummary = cachedSummary;
 			}
 
 			if (isStateChange || isDetailChange) {
@@ -3191,7 +3232,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				// If this idle transition is deferred until the model loads, keep
 				// reporting the prior state so the backend doesn't narrate a
 				// premature, summary-less completion. See _pendingIdleNarration.
-				if (fallbackState === 'idle' && this._pendingIdleNarration.has(sessionIdStr)) {
+				// If we already cached a summary while the model was resident we
+				// can narrate now, so don't hold in that case.
+				if (fallbackState === 'idle' && this._pendingIdleNarration.has(sessionIdStr) && !this._lastResponseSummaryById.has(sessionIdStr)) {
 					const prev = this._prevSessionStates.get(sessionIdStr);
 					if (prev?.state) {
 						fallbackState = prev.state;
@@ -3207,13 +3250,21 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					fallbackState = 'thinking';
 				}
 				const scoped = this._reportedAgentState(fallbackState, isActive);
+				// Supply the summary captured while the model was resident, so an
+				// idle completion that lands after the model is disposed still
+				// narrates instead of shipping a summary-less (silent) idle.
+				const cachedSummary = fallbackState === 'idle' ? this._lastResponseSummaryById.get(sessionIdStr) : undefined;
 				return {
 					id: sessionIdStr,
 					is_active: isActive,
 					agent_state: scoped.state,
+					...(cachedSummary ? { last_response_summary: cachedSummary } : {}),
 				};
 			}
 			const stateInfo = this._getAgentStateInfo(model);
+			// Capture the summary while the model is resident so a later
+			// completion reported after the model is disposed can still narrate.
+			this._cacheResponseSummary(s.resource.toString(), stateInfo.state, stateInfo.last_response_summary);
 			// A confirmation whose detail hasn't rendered yet is held as
 			// `thinking` for the same reason as the no-model case above: narrate
 			// exactly once, with the detail, rather than a detail-less one first.
@@ -3328,6 +3379,22 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private _deferIdleNarrationUntilModelLoaded(resource: URI): void {
 		this._pendingIdleNarration.add(resource.toString());
 		this._ensureModelLoaded(resource);
+	}
+
+	/**
+	 * Cache (or invalidate) a session's response summary based on the current
+	 * state observed from its resident model. Called wherever a resident model's
+	 * state is computed so the summary survives the model's disposal.
+	 * - `idle` with a summary → cache it (the completed reply).
+	 * - `thinking` → a new turn started; drop the stale summary so a later
+	 *   completion never narrates the previous reply.
+	 */
+	private _cacheResponseSummary(sessionId: string, state: string, summary: string | undefined): void {
+		if (state === 'idle' && summary) {
+			this._lastResponseSummaryById.set(sessionId, summary);
+		} else if (state === 'thinking') {
+			this._lastResponseSummaryById.delete(sessionId);
+		}
 	}
 
 	private _getAgentStateInfo(model: IChatModel | undefined | null): { state: string; detail?: string; last_response_summary?: string } {
