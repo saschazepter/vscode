@@ -187,6 +187,7 @@
 /* Provenance footer note (enriched variant) */
 .session-files-widget-footer {
 	display: flex;
+	flex-shrink: 0;
 	align-items: flex-start;
 	gap: 6px;
 	padding: 6px 4px 2px 4px;

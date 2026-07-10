@@ -328,7 +328,7 @@ export class SessionFilesWidget extends Disposable {
 		const footerIcon = dom.append(this._footerNode, $('.session-files-widget-footer-icon'));
 		footerIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.info));
 		const footerText = dom.append(this._footerNode, $('.session-files-widget-footer-text'));
-		footerText.textContent = localize('sessionFiles.footerNote', "Part of the agent's suggestions. Located outside this workspace, so they are not committed with the workspace changes.");
+		footerText.textContent = localize('sessionFiles.footerNote', "Part of the agent's suggestions, kept outside this workspace and not committed with it.");
 		this._footerNode.style.display = 'none';
 
 		this._register(this._list.onDidOpen(e => {
@@ -444,6 +444,10 @@ export class SessionFilesWidget extends Disposable {
 		this._bodyNode.style.display = '';
 		this._updateFooterVisibility();
 		const listHeight = Math.max(0, height - this._footerHeight());
+		// Pin the list container height explicitly so the footer note (appended
+		// after it in the body) is not pushed out and clipped by the body's
+		// overflow. Inline style wins over the stylesheet's height: 100%.
+		this._listContainer.style.height = `${listHeight}px`;
 		this._list.layout(listHeight);
 	}
 
