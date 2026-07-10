@@ -372,6 +372,9 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 	}
 
 	protected onConfigurationChanged(event: IConfigurationChangeEvent): void {
+		if (event.affectsConfiguration(LayoutSettings.MODERN_UI)) {
+			this.updateStyles();
+		}
 
 		// Custom menu bar (disabled if auxiliary)
 		if (!this.isAuxiliary && !hasNativeMenu(this.configurationService, this.titleBarStyle) && (!isMacintosh || isWeb)) {
@@ -818,13 +821,15 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 				this.element.classList.remove('inactive');
 			}
 
-			const titleBackground = this.getColor(this.isInactive ? TITLE_BAR_INACTIVE_BACKGROUND : TITLE_BAR_ACTIVE_BACKGROUND, (color, theme) => {
-				// LCD Rendering Support: the title bar part is a defining its own GPU layer.
-				// To benefit from LCD font rendering, we must ensure that we always set an
-				// opaque background color. As such, we compute an opaque color given we know
-				// the background color is the workbench background.
-				return color.isOpaque() ? color : color.makeOpaque(WORKBENCH_BACKGROUND(theme));
-			}) || '';
+			const titleBackground = isWindows && this.configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true
+				? WORKBENCH_BACKGROUND(this.theme).toString()
+				: this.getColor(this.isInactive ? TITLE_BAR_INACTIVE_BACKGROUND : TITLE_BAR_ACTIVE_BACKGROUND, (color, theme) => {
+					// LCD Rendering Support: the title bar part is a defining its own GPU layer.
+					// To benefit from LCD font rendering, we must ensure that we always set an
+					// opaque background color. As such, we compute an opaque color given we know
+					// the background color is the workbench background.
+					return color.isOpaque() ? color : color.makeOpaque(WORKBENCH_BACKGROUND(theme));
+				}) || '';
 			this.element.style.backgroundColor = titleBackground;
 
 			if (this.appIconBadge) {
