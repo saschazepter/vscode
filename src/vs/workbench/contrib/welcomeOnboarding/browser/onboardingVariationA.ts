@@ -1191,6 +1191,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 			const importStepIndex = this.currentStepIndex;
 			this.closeButton?.focus();
 			setImportButtonState('running');
+			this.accessibilityService.status(localize('onboarding.import.started.status', "Importing customizations from {0}", source.label));
 			void this._runImport().then(async succeeded => {
 				if (!this._isShowing) {
 					return;
