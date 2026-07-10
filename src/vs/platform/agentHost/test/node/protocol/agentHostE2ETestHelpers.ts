@@ -1138,8 +1138,13 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 				`Parent tool calls: ${JSON.stringify(parentStarts.map(a => a.toolName))}`);
 		});
 
-		// Windows-skipped for providers with on-disk subagent replay (see `subagentReplayUnstableOnWindows`).
-		((isWindows && config.subagentReplayUnstableOnWindows) ? test.skip : (config.supportsSubagents ? test : test.skip))('reopening a session keeps sub-agent messages out of the parent transcript (replay path)', async function () {
+		// FLAKE PROBE (throwaway branch — do NOT merge): register the subagent-reopen
+		// test many times, ungated on Windows, so CI empirically exercises the
+		// Claude/Windows path that motivated `subagentReplayUnstableOnWindows`. Every
+		// registration keeps the identical title so all runs reuse the one committed
+		// fixture. Count is env-tunable via AGENT_HOST_FLAKE_PROBE_COUNT.
+		const __reopenProbeCount = Number(process.env['AGENT_HOST_FLAKE_PROBE_COUNT'] ?? '20') || 1;
+		const __runReopenTest = async function (this: Mocha.Context) {
 			this.timeout(180_000);
 
 			const tempDir = mkdtempSync(`${tmpdir()}/ahp-subagent-replay-`);
@@ -1260,7 +1265,10 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 				`parent transcript must NOT contain the sub-agent's phrase after reopen ` +
 				`(replay path leaked sub-agent assistant.message into parent turns); ` +
 				`parent text: ${JSON.stringify(parentText).slice(0, 800)}`);
-		});
+		};
+		for (let __probe = 0; __probe < __reopenProbeCount; __probe++) {
+			(config.supportsSubagents ? test : test.skip)('reopening a session keeps sub-agent messages out of the parent transcript (replay path)', __runReopenTest);
+		}
 	});
 }
 
