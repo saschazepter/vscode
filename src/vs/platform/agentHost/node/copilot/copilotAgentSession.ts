@@ -3262,6 +3262,34 @@ export class CopilotAgentSession extends Disposable {
 		// Tracks the last parent-scope usage so the async attribution enrichment
 		// can re-emit a complete action (with accumulated credits, quota, etc.).
 		let lastParentUsage: UsageInfo | undefined;
+		let lastParentUsageTurnId: string | undefined;
+		let autoModeResolved: { readonly turnId: string; readonly data: NonNullable<UsageInfoMeta['autoModeResolved']> } | undefined;
+
+		this._register(wrapper.onAutoModeResolved(e => {
+			this._lastSeenModelId = e.data.chosenModel;
+			const turnId = this._turnId;
+			this._logService.info(`[Copilot:${sessionId}] Auto mode resolved to ${e.data.chosenModel}${e.data.reasoningBucket ? ` (${e.data.reasoningBucket})` : ''}`);
+			if (!turnId) {
+				return;
+			}
+			autoModeResolved = { turnId, data: e.data };
+			const priorUsage = lastParentUsageTurnId === turnId ? lastParentUsage : undefined;
+			const usage: UsageInfo = {
+				...priorUsage,
+				model: e.data.chosenModel,
+				_meta: {
+					...(priorUsage?._meta ?? {}),
+					autoModeResolved: e.data,
+				},
+			};
+			lastParentUsage = usage;
+			lastParentUsageTurnId = turnId;
+			this._emitAction({
+				type: ActionType.ChatUsage,
+				turnId,
+				usage,
+			});
+		}));
 
 		this._register(wrapper.onUsage(e => {
 			// Usage events for a subagent's model calls carry the subagent's
@@ -3310,6 +3338,9 @@ export class CopilotAgentSession extends Disposable {
 				if (typeof context.cost === 'number') {
 					metadata.cost = context.cost;
 				}
+				if (scope === '' && autoModeResolved?.turnId === this._turnId) {
+					metadata.autoModeResolved = autoModeResolved.data;
+				}
 				if (turn && typeof copilotUsage?.totalNanoAiu === 'number') {
 					const scopedTotal = (turn.copilotUsageTotalNanoAiuByScope.get(scope) ?? 0) + copilotUsage.totalNanoAiu;
 					turn.copilotUsageTotalNanoAiuByScope.set(scope, scopedTotal);
@@ -3337,6 +3368,7 @@ export class CopilotAgentSession extends Disposable {
 			const parentContext = parentToolCallId ? (turn?.parentContextUsage ?? {}) : eventContext;
 			const parentUsage = buildUsage('', parentContext);
 			lastParentUsage = parentUsage;
+			lastParentUsageTurnId = this._turnId;
 			this._emitAction({
 				type: ActionType.ChatUsage,
 				turnId: this._turnId,
@@ -3366,7 +3398,8 @@ export class CopilotAgentSession extends Disposable {
 			const turnId = this._turnId;
 			// Capture the base usage before the await boundary so concurrent
 			// usage events don't overwrite what we merge into.
-			const baseUsage = lastParentUsage ?? {
+			const baseUsage = lastParentUsageTurnId === turnId ? lastParentUsage : undefined;
+			const usage = baseUsage ?? {
 				inputTokens: e.data.inputTokens,
 				outputTokens: e.data.outputTokens,
 				model: e.data.model,
@@ -3386,7 +3419,7 @@ export class CopilotAgentSession extends Disposable {
 				}
 				// Guard against a newer usage event having arrived while we
 				// were awaiting — only enrich if baseUsage is still current.
-				if (baseUsage !== lastParentUsage) {
+				if (usage !== lastParentUsage || lastParentUsageTurnId !== turnId) {
 					return;
 				}
 				if (this._logService.getLevel() <= LogLevel.Trace) {
@@ -3395,13 +3428,14 @@ export class CopilotAgentSession extends Disposable {
 				// Re-emit the usage action preserving the captured parent-scope
 				// usage (with accumulated credits) but adding the attribution.
 				const enriched: UsageInfo = {
-					...baseUsage,
+					...usage,
 					_meta: {
-						...(baseUsage._meta ?? {}),
+						...(usage._meta ?? {}),
 						contextAttribution: attribution,
 					},
 				};
 				lastParentUsage = enriched;
+				lastParentUsageTurnId = turnId;
 				this._emitAction({
 					type: ActionType.ChatUsage,
 					turnId,
