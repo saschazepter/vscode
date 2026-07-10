@@ -12,7 +12,7 @@ import { ISelectOptionItem, SelectBox } from '../../../../base/browser/ui/select
 import { Checkbox } from '../../../../base/browser/ui/toggle/toggle.js';
 import { IAction } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
-import { Event } from '../../../../base/common/event.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { DisposableStore, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { autorun, constObservable, observableValue } from '../../../../base/common/observable.js';
@@ -44,7 +44,8 @@ import { DAYS_OF_WEEK } from '../../../../workbench/contrib/chat/common/automati
 import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 import { ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
 import { ChatAgentLocation, isChatPermissionLevel } from '../../../../workbench/contrib/chat/common/constants.js';
-import { IChatWidget } from '../../../../workbench/contrib/chat/browser/chat.js';
+import { AgentSessionTarget } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessions.js';
+import { IChatWidget, ISessionTypePickerDelegate } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { ChatInputPart, IChatInputPartOptions, IChatInputStyles } from '../../../../workbench/contrib/chat/browser/widget/input/chatInputPart.js';
 import { isModeConsideredBuiltIn } from '../../../../workbench/contrib/chat/browser/widget/input/modePickerActionItem.js';
 
@@ -428,19 +429,24 @@ export function renderForm(
 			? { providerId: state.providerId, sessionTypeId: state.sessionTypeId }
 			: undefined,
 	});
+	// The dialog has no session, so the input part reads the active session type from the picker via this delegate.
+	const onDidChangeSessionType = disposables.add(new Emitter<AgentSessionTarget>());
+	const sessionTypeDelegate: ISessionTypePickerDelegate = {
+		getActiveSessionProvider: () => sessionTypePicker.selectedPick?.sessionTypeId as AgentSessionTarget | undefined,
+		onDidChangeActiveSessionProvider: onDidChangeSessionType.event,
+	};
 	const syncStateFromPicker = () => {
 		const pick = sessionTypePicker.selectedPick;
 		state.providerId = pick?.providerId;
 		state.sessionTypeId = pick?.sessionTypeId;
+		if (pick?.sessionTypeId) {
+			onDidChangeSessionType.fire(pick.sessionTypeId as AgentSessionTarget);
+		}
 	};
 	// Seed state from the picker's initial default (edit: saved type; create: folder default).
 	syncStateFromPicker();
-	disposables.add(sessionTypePicker.onDidSelectSessionType(pick => {
-		if (!pick) {
-			return;
-		}
-		state.providerId = pick.providerId;
-		state.sessionTypeId = pick.sessionTypeId;
+	disposables.add(sessionTypePicker.onDidSelectSessionType(() => {
+		syncStateFromPicker();
 		revalidate();
 	}));
 
@@ -495,6 +501,7 @@ export function renderForm(
 		// reserve the default 24px margin and lay the editor out too narrow,
 		// leaving its scrollbar floating ~24px in from the right wall.
 		inputPartHorizontalPadding: 0,
+		sessionTypePickerDelegate: sessionTypeDelegate,
 		workspacePickerInput: workspacePicker,
 		secondaryToolbarActionViewItemProvider: (action, itemOptions) => {
 			if (action.id === AUTOMATIONS_HARNESS_CHIP_ACTION_ID) {
