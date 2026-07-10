@@ -275,14 +275,16 @@ export class MainThreadMcp extends Disposable implements MainThreadMcpShape {
 			// Using `resource` (not the server launch URI) ensures the key matches what the prompt
 			// writes in $promptForResourceClientSecret, so prompted secrets survive window reload.
 			let resourceClientSecret: string | undefined;
+			let resourceClientSecretKey: string | undefined;
 			if (resourceClientId) {
+				resourceClientSecretKey = mcpOAuthClientSecretStorageKey(resource, resourceClientId);
 				try {
-					resourceClientSecret = await this._secretStorageService.get(mcpOAuthClientSecretStorageKey(resource, resourceClientId));
+					resourceClientSecret = await this._secretStorageService.get(resourceClientSecretKey);
 				} catch {
 					// Best-effort lookup; fall through.
 				}
 			}
-			return this._getSessionForProvider(id, server, xaaProviderId, xaaScopes, issuer, errorOnUserInteraction, resourceClientId, resource, audience, resourceClientSecret);
+			return this._getSessionForProvider(id, server, xaaProviderId, xaaScopes, issuer, errorOnUserInteraction, resourceClientId, resource, audience, resourceClientSecret, resourceClientSecretKey);
 		}
 
 		let providerId = await this._authenticationService.getOrActivateProviderIdForServer(authorizationServer, resourceServer);
@@ -290,10 +292,12 @@ export class MainThreadMcp extends Disposable implements MainThreadMcpShape {
 		const resolvedClientId = clientId ?? authDetails.clientId;
 		const mcpServerUrl = server.launch.type === McpServerTransportType.HTTP ? server.launch.uri.toString(true) : undefined;
 		let clientSecret: string | undefined;
+		let clientSecretKey: string | undefined;
 		let didLookupClientSecret = false;
 		if (resolvedClientId && mcpServerUrl) {
+			clientSecretKey = mcpOAuthClientSecretStorageKey(mcpServerUrl, resolvedClientId);
 			try {
-				clientSecret = await this._secretStorageService.get(mcpOAuthClientSecretStorageKey(mcpServerUrl, resolvedClientId));
+				clientSecret = await this._secretStorageService.get(clientSecretKey);
 				didLookupClientSecret = true;
 			} catch {
 				// Best-effort lookup; proceed without a client secret.
@@ -330,7 +334,7 @@ export class MainThreadMcp extends Disposable implements MainThreadMcpShape {
 			providerId = provider.id;
 		}
 
-		return this._getSessionForProvider(id, server, providerId, resolvedScopes, authorizationServer, errorOnUserInteraction, resolvedClientId, authDetails.resourceMetadata?.resource, /* audience */ undefined, clientSecret);
+		return this._getSessionForProvider(id, server, providerId, resolvedScopes, authorizationServer, errorOnUserInteraction, resolvedClientId, authDetails.resourceMetadata?.resource, /* audience */ undefined, clientSecret, clientSecretKey);
 	}
 
 	private _ensureXaaIssuer(): URI {
@@ -362,7 +366,12 @@ export class MainThreadMcp extends Disposable implements MainThreadMcpShape {
 		resource?: string,
 		audience?: string,
 		clientSecret?: string,
+		// The ISecretStorageService key `clientSecret` was read from, if any. Captured (rather than
+		// the value) so re-validation re-reads the current secret from storage instead of replaying
+		// one that may since have been rotated via the "Set Client Secret" code lens.
+		clientSecretKey?: string,
 	): Promise<string | undefined> {
+		const authContext: IMcpServerAuthContext = { authorizationServer, clientId, resource, audience, clientSecretKey };
 		const sessions = await this._authenticationService.getSessions(providerId, scopes, { authorizationServer, clientId, clientSecret, resource, audience }, true);
 		// Only HTTP servers authenticate, so the server URL is always known here. A token is only released
 		// to a server whose current URL matches the one the user consented to, so changing the URL while
@@ -382,13 +391,13 @@ export class MainThreadMcp extends Disposable implements MainThreadMcpShape {
 			// If we have an existing session preference, use that. If not, we'll return any valid session at the end of this function.
 			if (matchingAccountPreferenceSession && this.authenticationMCPServerAccessService.isAccessAllowedForUrl(providerId, matchingAccountPreferenceSession.account.label, server.id, mcpServerUrl)) {
 				this.authenticationMCPServerUsageService.addAccountUsage(providerId, matchingAccountPreferenceSession.account.label, scopes, server.id, server.label);
-				this._serverAuthTracking.track(providerId, serverId, scopes);
+				this._serverAuthTracking.track(providerId, serverId, scopes, authContext);
 				return matchingAccountPreferenceSession.accessToken;
 			}
 			// If we only have one account for a single auth provider, lets just check if it's allowed and return it if it is.
 			if (!provider.supportsMultipleAccounts && this.authenticationMCPServerAccessService.isAccessAllowedForUrl(providerId, sessions[0].account.label, server.id, mcpServerUrl)) {
 				this.authenticationMCPServerUsageService.addAccountUsage(providerId, sessions[0].account.label, scopes, server.id, server.label);
-				this._serverAuthTracking.track(providerId, serverId, scopes);
+				this._serverAuthTracking.track(providerId, serverId, scopes, authContext);
 				return sessions[0].accessToken;
 			}
 		}
@@ -438,7 +447,7 @@ export class MainThreadMcp extends Disposable implements MainThreadMcpShape {
 		this.authenticationMCPServerAccessService.updateAllowedMcpServers(providerId, session.account.label, [{ id: server.id, name: server.label, allowed: true, url: mcpServerUrl }]);
 		this.authenticationMcpServersService.updateAccountPreference(server.id, providerId, session.account);
 		this.authenticationMCPServerUsageService.addAccountUsage(providerId, session.account.label, scopes, server.id, server.label);
-		this._serverAuthTracking.track(providerId, serverId, scopes);
+		this._serverAuthTracking.track(providerId, serverId, scopes, authContext);
 		return session.accessToken;
 	}
 
@@ -473,7 +482,7 @@ export class MainThreadMcp extends Disposable implements MainThreadMcpShape {
 			return;
 		}
 
-		for (const { serverId, scopes } of serversUsingProvider) {
+		for (const { serverId, scopes, context } of serversUsingProvider) {
 			const server = this._servers.get(serverId);
 			const serverDefinition = this._serverDefinitions.get(serverId);
 
@@ -487,9 +496,25 @@ export class MainThreadMcp extends Disposable implements MainThreadMcpShape {
 				continue;
 			}
 
-			// Validate if the session is still available
+			// Re-read the client secret from storage rather than replaying the value that was
+			// current when this server was tracked, so a secret rotated via the "Set Client
+			// Secret" code lens takes effect immediately instead of validating with a stale one.
+			let clientSecret: string | undefined;
+			if (context.clientSecretKey) {
+				try {
+					clientSecret = await this._secretStorageService.get(context.clientSecretKey);
+				} catch {
+					// Best-effort lookup; proceed without a client secret.
+				}
+			}
+
+			// Validate if the session is still available. Replay the authorization server, client
+			// id, resource, and audience captured when the session was established so the silent
+			// token request targets the same authority the user signed in against — dropping the
+			// authorization server here would fall back to the provider's default authority (e.g.
+			// the Microsoft provider's `organizations` tenant) and can tear down a working server.
 			try {
-				await this._getSessionForProvider(serverId, serverDefinition, providerId, scopes, undefined, true);
+				await this._getSessionForProvider(serverId, serverDefinition, providerId, scopes, context.authorizationServer, true, context.clientId, context.resource, context.audience, clientSecret, context.clientSecretKey);
 			} catch (e) {
 				if (UserInteractionRequiredError.is(e)) {
 					// Session is no longer valid, stop the server
@@ -638,21 +663,41 @@ class ExtHostMcpServerLaunch extends Disposable implements IMcpMessageTransport 
 }
 
 /**
+ * The context needed to re-acquire a token for a tracked MCP server, captured when the
+ * session was first established. The tracker holds this opaquely and replays it verbatim on
+ * re-validation so the silent token request targets the same authority / resource / audience
+ * that the original sign-in used. Dropping the authorization server here would let the provider
+ * fall back to a default authority (e.g. the Microsoft provider's `organizations` tenant) and
+ * request a token against the wrong tenant.
+ *
+ * `clientSecretKey` is the secret-storage key rather than the secret value, so a secret rotated
+ * via the "Set Client Secret" code lens is re-read fresh on each re-validation instead of
+ * replaying a stale, possibly-revoked value.
+ */
+export interface IMcpServerAuthContext {
+	readonly authorizationServer?: URI;
+	readonly clientId?: string;
+	readonly resource?: string;
+	readonly audience?: string;
+	readonly clientSecretKey?: string;
+}
+
+/**
  * Tracks which MCP servers are using which authentication providers.
  * Organized by provider ID for efficient lookup when auth sessions change.
  */
-class McpServerAuthTracker {
-	// Provider ID -> Array of serverId and scopes used
-	private readonly _tracking = new Map<string, Array<{ serverId: number; scopes: string[] }>>();
+export class McpServerAuthTracker {
+	// Provider ID -> Array of tracked servers (serverId, scopes, and the auth context to replay)
+	private readonly _tracking = new Map<string, Array<{ serverId: number; scopes: string[]; context: IMcpServerAuthContext }>>();
 
 	/**
 	 * Track authentication for a server with a specific provider.
 	 * Replaces any existing tracking for this server/provider combination.
 	 */
-	track(providerId: string, serverId: number, scopes: string[]): void {
+	track(providerId: string, serverId: number, scopes: string[], context: IMcpServerAuthContext): void {
 		const servers = this._tracking.get(providerId) || [];
 		const filtered = servers.filter(s => s.serverId !== serverId);
-		filtered.push({ serverId, scopes });
+		filtered.push({ serverId, scopes, context });
 		this._tracking.set(providerId, filtered);
 	}
 
@@ -673,7 +718,7 @@ class McpServerAuthTracker {
 	/**
 	 * Get all servers using a specific authentication provider.
 	 */
-	get(providerId: string): ReadonlyArray<{ serverId: number; scopes: string[] }> | undefined {
+	get(providerId: string): ReadonlyArray<{ serverId: number; scopes: string[]; context: IMcpServerAuthContext }> | undefined {
 		return this._tracking.get(providerId);
 	}
 
