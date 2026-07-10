@@ -175,16 +175,19 @@ export class IssueReporterOverlay {
 		private readonly resolveKeybinding?: (commandId: string) => ResolvedKeybinding | undefined,
 	) {
 		this._hideToolbarInScreenshots = initialHideToolbar;
+		const hasStandaloneExtensionData = !!data.data && !data.extensionId;
+		this.includeExtensionData = hasStandaloneExtensionData;
 		this.model = new IssueReporterModel({
 			...data,
 			issueType: data.issueType || IssueType.Bug,
 			allExtensions: data.enabledExtensions,
+			extensionData: hasStandaloneExtensionData ? data.data : undefined,
 			includeSystemInfo: true,
 			includeWorkspaceInfo: true,
 			includeProcessInfo: true,
 			includeExtensions: true,
 			includeExperiments: true,
-			includeExtensionData: false,
+			includeExtensionData: hasStandaloneExtensionData,
 		});
 		this.selectedIssueType = data.issueType;
 		this.selectedIssueSource = data.issueSource ?? (data.extensionId ? IssueSource.Extension : undefined);
