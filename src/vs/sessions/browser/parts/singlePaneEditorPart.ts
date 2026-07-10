@@ -65,6 +65,14 @@ export class SinglePaneMainEditorPart extends MainEditorPart {
 		};
 	}
 
+	// Double-clicking the chat↔side-pane sash resets the side pane to this width
+	// (the grid's sash-reset reads `preferredWidth`). Use 60% of the window so it
+	// matches the side pane's reveal split (`INITIAL_EDITOR_WIDTH_RATIO`). Scoped to
+	// single-pane: the classic layout keeps the standard distribute-on-reset.
+	get preferredWidth(): number | undefined {
+		return Math.max(300, Math.floor(this.layoutService.mainContainerDimension.width * 0.6));
+	}
+
 	constructor(
 		editorPartsView: IEditorPartsView,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
