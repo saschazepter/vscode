@@ -48,6 +48,13 @@
 	flex: 0 1 auto;
 }
 
+.style-override .part.editor .tabs-container > .tab.sticky-compact.has-icon > .tab-label {
+	width: 16px;
+	min-width: 16px;
+	max-width: 16px;
+	flex: 0 0 16px;
+}
+
 .style-override .part.editor .tabs-container > .tab.sticky-compact.has-icon > .tab-label::before {
 	padding-right: 0;
 }

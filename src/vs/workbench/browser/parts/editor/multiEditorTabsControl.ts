@@ -104,7 +104,7 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 		shrink: 80 as const,
 		fit: 120 as const
 	};
-	private static readonly STYLE_OVERRIDE_COMPACT_PINNED_TAB_SPACING = 4 as const;
+	private static readonly STYLE_OVERRIDE_PINNED_TAB_SPACING = 4 as const;
 
 	private static readonly DRAG_OVER_OPEN_TAB_THRESHOLD = 1500;
 
@@ -2215,13 +2215,13 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 	}
 
 	private getStickyTabWidth(pinnedTabSizing: IEditorPartOptions['pinnedTabSizing']): number {
+		const styleOverrideSpacing = this.parent.closest('.style-override') ? MultiEditorTabsControl.STYLE_OVERRIDE_PINNED_TAB_SPACING : 0;
+
 		switch (pinnedTabSizing) {
-			case 'compact': {
-				const styleOverrideSpacing = this.parent.closest('.style-override') ? MultiEditorTabsControl.STYLE_OVERRIDE_COMPACT_PINNED_TAB_SPACING : 0;
+			case 'compact':
 				return MultiEditorTabsControl.TAB_WIDTH.compact + styleOverrideSpacing;
-			}
 			case 'shrink':
-				return MultiEditorTabsControl.TAB_WIDTH.shrink;
+				return MultiEditorTabsControl.TAB_WIDTH.shrink + styleOverrideSpacing;
 			default:
 				return 0;
 		}
