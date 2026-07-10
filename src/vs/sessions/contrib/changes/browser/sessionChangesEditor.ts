@@ -36,6 +36,7 @@ import { ActiveSessionContextKeys } from '../common/changes.js';
 import { IChangesViewService } from '../common/changesViewService.js';
 import { ChangesActionsBar } from './changesView.js';
 import { SessionChangesEditorInput } from './sessionChangesEditorInput.js';
+import { isEqual } from '../../../../base/common/resources.js';
 
 const HEADER_HEIGHT = 35;
 
@@ -202,6 +203,27 @@ export class SessionChangesEditor extends EditorPane {
 	expandAllDiffs(): void {
 		this.viewModel?.expandAll();
 	}
+
+	public collapse(resource: URI): void {
+		const item = this.viewModel?.items.read(undefined)
+			.find(i => isEqual(i.modifiedUri, resource) || isEqual(i.originalUri, resource));
+		if (!item) {
+			return;
+		}
+
+		this.viewModel?.collapse(item);
+	}
+
+	public expand(resource: URI): void {
+		const item = this.viewModel?.items.read(undefined)
+			.find(i => isEqual(i.modifiedUri, resource) || isEqual(i.originalUri, resource));
+		if (!item) {
+			return;
+		}
+
+		this.viewModel?.expand(item);
+	}
+
 
 	override setOptions(options: IMultiDiffEditorOptions | undefined): void {
 		this._applyOptions(options);
