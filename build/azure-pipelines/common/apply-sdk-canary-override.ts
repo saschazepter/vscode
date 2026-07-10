@@ -151,7 +151,7 @@ function assertCliSatisfiesSdk(sdkVersion: string, cliVersion: string): void {
  *
  * Canary versions look like `X.Y.Z-canary.<N>.g<sha>`; "newest" is the highest
  * `[X, Y, Z, N]` tuple (numeric, so `canary.9` < `canary.10`). The resolved
- * concrete version is also emitted as an ADO build tag (`sdk-canary:<version>`)
+ * concrete version is also emitted as an ADO build tag (`sdk-canary=<version>`)
  * so the orchestrator can read it back for accurate Slack reporting.
  */
 function resolveLatestCanary(): string {
@@ -180,8 +180,10 @@ function resolveLatestCanary(): string {
 	console.log(`[canary-override] Resolved 'latest-canary' -> @github/copilot-sdk@${latest} (from ${canaries.length} canary versions on the feed).`);
 	// Surface the concrete version on the build so the GitHub orchestrator can
 	// read it back (build tags API) for accurate reporting, without itself
-	// needing feed-read access. Idempotent across the per-platform jobs.
-	console.log(`##vso[build.addbuildtag]sdk-canary:${latest}`);
+	// needing feed-read access. Idempotent across the per-platform jobs. Use `=`
+	// (not `:`) as the separator: build tags land in the Add Build Tag REST URL
+	// path, and ASP.NET rejects `:` there as a "dangerous" path character.
+	console.log(`##vso[build.addbuildtag]sdk-canary=${latest}`);
 	return latest;
 }
 
