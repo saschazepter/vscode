@@ -28,6 +28,7 @@ import { ServicesAccessor } from '../../../../platform/instantiation/common/inst
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IWorkbenchContribution, WorkbenchPhase, registerWorkbenchContribution2 } from '../../../common/contributions.js';
+import { ConfigurationKeyValuePairs, IConfigurationMigrationRegistry, Extensions as WorkbenchConfigurationExtensions } from '../../../common/configuration.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 
 import { AgentsVoiceStorageKeys } from '../common/agentsVoice.js';
@@ -497,8 +498,17 @@ configurationRegistry.registerConfiguration({
 			type: 'number',
 			markdownDescription: nls.localize('agents.voice.turn.silenceMs', "Trailing silence in milliseconds before the backend ends the turn automatically. Set to `-1` to disable ending the turn on silence, in which case the turn ends only via a stop phrase ({0}) or manually. When enabled, the backend clamps this to its supported range (currently 200-5000 ms) and is the source of truth.", '`#agents.voice.turn.stopPhrases#`'),
 			default: 800,
-			minimum: -1,
-			maximum: 5000,
+			anyOf: [
+				{
+					const: -1,
+					description: nls.localize('agents.voice.turn.silenceMs.disabled', "Do not end the turn on trailing silence."),
+				},
+				{
+					type: 'number',
+					minimum: 200,
+					maximum: 5000,
+				},
+			],
 			scope: ConfigurationScope.APPLICATION,
 		},
 		'agents.voice.turn.stopPhrases': {
@@ -510,3 +520,27 @@ configurationRegistry.registerConfiguration({
 		},
 	}
 });
+
+// Migrate the removed `agents.voice.turn.autoEndMode` setting onto the two
+// settings that now govern turn-ending, preserving the previous behavior:
+// silence ending is disabled (`silenceMs: -1`) unless the old mode was `vad`
+// or `both`, and stop-phrase ending is disabled (`stopPhrases: []`) unless the
+// old mode was `phrase` or `both`.
+Registry.as<IConfigurationMigrationRegistry>(WorkbenchConfigurationExtensions.ConfigurationMigration)
+	.registerConfigurationMigrations([{
+		key: 'agents.voice.turn.autoEndMode',
+		migrateFn: (value: unknown) => {
+			const result: ConfigurationKeyValuePairs = [['agents.voice.turn.autoEndMode', { value: undefined }]];
+			if (value === 'off' || value === 'vad' || value === 'phrase' || value === 'both') {
+				const silenceEnabled = value === 'vad' || value === 'both';
+				const phraseEnabled = value === 'phrase' || value === 'both';
+				if (!silenceEnabled) {
+					result.push(['agents.voice.turn.silenceMs', { value: -1 }]);
+				}
+				if (!phraseEnabled) {
+					result.push(['agents.voice.turn.stopPhrases', { value: [] }]);
+				}
+			}
+			return result;
+		}
+	}]);
