@@ -22,6 +22,7 @@ function getMockTheme(type: ColorScheme): IColorTheme {
 		type: type,
 		getColor: (colorId: ColorIdentifier): Color | undefined => themingRegistry.resolveDefaultColor(colorId, theme),
 		defines: () => true,
+		isColorCustomized: () => false,
 		getTokenStyleMetadata: () => undefined,
 		tokenColorMap: [],
 		tokenFontMap: [],

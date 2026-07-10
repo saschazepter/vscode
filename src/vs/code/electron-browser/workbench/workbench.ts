@@ -91,6 +91,13 @@
 		if (data?.layoutInfo) {
 			const { layoutInfo, colorInfo } = data;
 			const modernUI = layoutInfo.modernUI === true;
+			const inactiveTitleBar = !window.document.hasFocus();
+			const titleBarColorCustomizations = colorInfo.titleBarColorCustomizations;
+			const titleBarBackgroundCustomized = titleBarColorCustomizations
+				? inactiveTitleBar ? titleBarColorCustomizations.inactiveBackground : titleBarColorCustomizations.activeBackground
+				: colorInfo.titleBarColorsCustomized === true;
+			const titleBarBorderCustomized = titleBarColorCustomizations?.border ?? colorInfo.titleBarColorsCustomized === true;
+			const titleBarBackground = inactiveTitleBar ? colorInfo.titleBarInactiveBackground ?? colorInfo.titleBarBackground : colorInfo.titleBarBackground;
 			const floatingMargin = 4;
 			const floatingOuterMargin = floatingMargin * 2;
 			const floatingBorderWidth = 1;
@@ -174,11 +181,11 @@
 				titleDiv.style.height = `${layoutInfo.titleBarHeight}px`;
 				titleDiv.style.left = '0';
 				titleDiv.style.top = '0';
-				titleDiv.style.backgroundColor = modernUI ? 'transparent' : `${colorInfo.titleBarBackground}`;
+				titleDiv.style.backgroundColor = modernUI && !titleBarBackgroundCustomized ? 'transparent' : `${titleBarBackground}`;
 				(titleDiv.style as CSSStyleDeclaration & { '-webkit-app-region': string })['-webkit-app-region'] = 'drag';
 				splash.appendChild(titleDiv);
 
-				if (!modernUI && colorInfo.titleBarBorder) {
+				if ((!modernUI || titleBarBorderCustomized) && colorInfo.titleBarBorder) {
 					const titleBorder = document.createElement('div');
 					titleBorder.style.position = 'absolute';
 					titleBorder.style.width = '100%';

@@ -32,7 +32,7 @@ import { coalesce } from '../../base/common/arrays.js';
 import { assertReturnsDefined } from '../../base/common/types.js';
 import { INotificationService, NotificationsFilter } from '../../platform/notification/common/notification.js';
 import { IThemeService } from '../../platform/theme/common/themeService.js';
-import { WINDOW_ACTIVE_BORDER, WINDOW_INACTIVE_BORDER } from '../common/theme.js';
+import { getModernUIColorCustomizations, WINDOW_ACTIVE_BORDER, WINDOW_INACTIVE_BORDER } from '../common/theme.js';
 import { LineNumbersType } from '../../editor/common/config/editorOptions.js';
 import { URI } from '../../base/common/uri.js';
 import { IViewDescriptorService, ViewContainerLocation } from '../common/views.js';
@@ -103,6 +103,10 @@ enum LayoutClasses {
 	WINDOW_BORDER = 'border',
 	NO_SHADOWS = 'no-shadows',
 	FLOATING_PANELS = 'floating-panels',
+	MODERN_UI_TITLE_BAR_ACTIVE_BACKGROUND = 'modern-ui-titlebar-active-background',
+	MODERN_UI_TITLE_BAR_INACTIVE_BACKGROUND = 'modern-ui-titlebar-inactive-background',
+	MODERN_UI_TITLE_BAR_BORDER = 'modern-ui-titlebar-border',
+	MODERN_UI_ACTIVE_TAB_BORDER = 'modern-ui-active-tab-border',
 	// Presentation class for the Modern UI Update experiment, owned/toggled at
 	// runtime by `StyleOverridesContribution`. It is *also* applied here at render
 	// time (see `getLayoutClasses`) because parts read it back during layout (e.g.
@@ -450,6 +454,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			// Modern UI Update (floating panels presentation)
 			if (e.affectsConfiguration(LayoutSettings.MODERN_UI)) {
 				this.updateFloatingPanels();
+				this.updateModernUIColorCustomizations();
 				this.layout(); // re-layout so parts pick up the new floating margins
 			}
 
@@ -482,7 +487,10 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		}
 
 		// Theme changes
-		this._register(this.themeService.onDidColorThemeChange(() => this.updateWindowBorder()));
+		this._register(this.themeService.onDidColorThemeChange(() => {
+			this.updateWindowBorder();
+			this.updateModernUIColorCustomizations();
+		}));
 
 		// Window active / focus changes
 		this._register(this.hostService.onDidChangeFocus(focused => this.onWindowFocusChanged(focused)));
@@ -502,6 +510,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 
 			const eventDisposables = disposables.add(new DisposableStore());
 			this._onDidAddContainer.fire({ container: window.container, disposables: eventDisposables });
+			this.updateModernUIColorCustomizations();
 
 			disposables.add(window.onDidLayout(dimension => this.handleContainerDidLayout(window.container, dimension)));
 		}));
@@ -637,6 +646,18 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		// card margins) to the main container so auxiliary windows — whose parts do
 		// not apply the matching content insets in code — are left untouched.
 		this.mainContainer.classList.toggle(LayoutClasses.FLOATING_PANELS, this.isFloatingPanelsEnabled());
+	}
+
+	private updateModernUIColorCustomizations(): void {
+		const modernUI = this.isFloatingPanelsEnabled();
+		const customizations = getModernUIColorCustomizations(this.themeService.getColorTheme());
+
+		for (const container of this.containers) {
+			container.classList.toggle(LayoutClasses.MODERN_UI_TITLE_BAR_ACTIVE_BACKGROUND, modernUI && customizations.titleBar.activeBackground);
+			container.classList.toggle(LayoutClasses.MODERN_UI_TITLE_BAR_INACTIVE_BACKGROUND, modernUI && customizations.titleBar.inactiveBackground);
+			container.classList.toggle(LayoutClasses.MODERN_UI_TITLE_BAR_BORDER, modernUI && customizations.titleBar.border);
+			container.classList.toggle(LayoutClasses.MODERN_UI_ACTIVE_TAB_BORDER, modernUI && customizations.activeTabBorder);
+		}
 	}
 
 	private setSideBarPosition(position: Position): void {
@@ -1903,6 +1924,9 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 	}
 
 	getLayoutClasses(): string[] {
+		const modernUI = this.isFloatingPanelsEnabled();
+		const modernUIColorCustomizations = modernUI ? getModernUIColorCustomizations(this.themeService.getColorTheme()) : undefined;
+
 		return coalesce([
 			!this.isVisible(Parts.SIDEBAR_PART) ? LayoutClasses.SIDEBAR_HIDDEN : undefined,
 			!this.isVisible(Parts.EDITOR_PART, mainWindow) ? LayoutClasses.MAIN_EDITOR_AREA_HIDDEN : undefined,
@@ -1911,9 +1935,13 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			!this.isVisible(Parts.STATUSBAR_PART) ? LayoutClasses.STATUSBAR_HIDDEN : undefined,
 			this.state.runtime.mainWindowFullscreen ? LayoutClasses.FULLSCREEN : undefined,
 			this.isShadowsDisabled() ? LayoutClasses.NO_SHADOWS : undefined,
-			this.isFloatingPanelsEnabled() ? LayoutClasses.FLOATING_PANELS : undefined,
+			modernUI ? LayoutClasses.FLOATING_PANELS : undefined,
+			modernUIColorCustomizations?.titleBar.activeBackground ? LayoutClasses.MODERN_UI_TITLE_BAR_ACTIVE_BACKGROUND : undefined,
+			modernUIColorCustomizations?.titleBar.inactiveBackground ? LayoutClasses.MODERN_UI_TITLE_BAR_INACTIVE_BACKGROUND : undefined,
+			modernUIColorCustomizations?.titleBar.border ? LayoutClasses.MODERN_UI_TITLE_BAR_BORDER : undefined,
+			modernUIColorCustomizations?.activeTabBorder ? LayoutClasses.MODERN_UI_ACTIVE_TAB_BORDER : undefined,
 			// Also seed the style-override class here (see `LayoutClasses.STYLE_OVERRIDE`).
-			this.isFloatingPanelsEnabled() ? LayoutClasses.STYLE_OVERRIDE : undefined,
+			modernUI ? LayoutClasses.STYLE_OVERRIDE : undefined,
 			`panel-position-${positionToString(this.getPanelPosition())}`,
 			`panel-alignment-${this.getPanelAlignment()}`
 		]);

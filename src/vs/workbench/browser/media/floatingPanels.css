@@ -127,13 +127,22 @@
 }
 
 /*
- * Activity bar, status bar and title bar blend into the shell: drop their own
- * background and borders so the editor-colored backdrop shows through.
+ * Activity and status bars blend into the shell: drop their own background and
+ * borders so the editor-colored backdrop shows through.
  */
 .monaco-workbench.floating-panels .part.activitybar,
-.monaco-workbench.floating-panels .part.statusbar,
-.monaco-workbench.floating-panels .part.titlebar {
+.monaco-workbench.floating-panels .part.statusbar {
 	background-color: transparent !important;
+	border-color: transparent !important;
+}
+
+/* Preserve active and inactive title-bar backgrounds independently. */
+.monaco-workbench.floating-panels:not(.modern-ui-titlebar-active-background) .part.titlebar:not(.inactive),
+.monaco-workbench.floating-panels:not(.modern-ui-titlebar-inactive-background) .part.titlebar.inactive {
+	background-color: transparent !important;
+}
+
+.monaco-workbench.floating-panels:not(.modern-ui-titlebar-border) .part.titlebar {
 	border-color: transparent !important;
 }
 

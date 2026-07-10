@@ -5,7 +5,8 @@
 
 import { ColorThemeData } from '../../common/colorThemeData.js';
 import assert from 'assert';
-import { ITokenColorCustomizations } from '../../common/workbenchThemeService.js';
+import { IColorCustomizations, ITokenColorCustomizations } from '../../common/workbenchThemeService.js';
+import { getModernUIColorCustomizations } from '../../../../common/theme.js';
 import { TokenStyle, getTokenClassificationRegistry } from '../../../../../platform/theme/common/tokenClassificationRegistry.js';
 import { Color } from '../../../../../base/common/color.js';
 import { isString } from '../../../../../base/common/types.js';
@@ -14,7 +15,7 @@ import { NullLogService } from '../../../../../platform/log/common/log.js';
 import { DiskFileSystemProvider } from '../../../../../platform/files/node/diskFileSystemProvider.js';
 import { FileAccess, Schemas } from '../../../../../base/common/network.js';
 import { ExtensionResourceLoaderService } from '../../../../../platform/extensionResourceLoader/common/extensionResourceLoaderService.js';
-import { ITokenStyle } from '../../../../../platform/theme/common/themeService.js';
+import { ITitleBarColorCustomizations, ITokenStyle } from '../../../../../platform/theme/common/themeService.js';
 import { mock, TestProductService } from '../../../../test/common/workbenchTestServices.js';
 import { IRequestService } from '../../../../../platform/request/common/request.js';
 import { IStorageService } from '../../../../../platform/storage/common/storage.js';
@@ -100,6 +101,66 @@ suite('Themes - TokenStyleResolving', () => {
 	});
 
 	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('modern UI color customizations', () => {
+		const modernThemeSettingsId = 'vs-dark default-modern';
+		const defaultModernThemeColors = {
+			'tab.activeBorder': '#1F1F1F',
+			'titleBar.activeBackground': '#181818',
+			'titleBar.activeForeground': '#CCCCCC',
+			'titleBar.inactiveBackground': '#1F1F1F',
+			'titleBar.inactiveForeground': '#9D9D9D',
+			'titleBar.border': '#2B2B2B'
+		};
+		const getCustomizations = (colors: IColorCustomizations) => {
+			const themeData = ColorThemeData.createUnloadedTheme(modernThemeSettingsId, defaultModernThemeColors);
+			themeData.settingsId = modernThemeSettingsId;
+			themeData.setCustomColors(colors);
+			return getModernUIColorCustomizations(themeData);
+		};
+		const titleBarDefaults: ITitleBarColorCustomizations = {
+			activeForeground: false,
+			inactiveForeground: false,
+			activeBackground: false,
+			inactiveBackground: false,
+			border: false
+		};
+		const expected = (titleBar: Partial<ITitleBarColorCustomizations> = {}, activeTabBorder = false) => ({
+			titleBar: { ...titleBarDefaults, ...titleBar },
+			activeTabBorder
+		});
+
+		assert.deepStrictEqual([
+			getCustomizations({}),
+			getCustomizations({ 'tab.activeBorder': '#FF0000' }),
+			getCustomizations({ 'titleBar.activeForeground': '#FF0000' }),
+			getCustomizations({ 'titleBar.inactiveForeground': '#FF0000' }),
+			getCustomizations({ 'titleBar.activeBackground': '#FF0000' }),
+			getCustomizations({ 'titleBar.inactiveBackground': '#FF0000' }),
+			getCustomizations({ 'titleBar.border': '#FF0000' }),
+			getCustomizations({
+				'tab.activeBorder': '#FF0000',
+				'titleBar.activeForeground': '#FF0000',
+				'titleBar.inactiveBackground': '#FF0000',
+				'titleBar.border': '#FF0000'
+			}),
+			getCustomizations({ '[vs-dark default-modern]': { 'titleBar.activeBackground': '#FF0000' } }),
+			getCustomizations({ '[different-theme]': { 'titleBar.activeBackground': '#FF0000' } }),
+			getCustomizations({ 'tab.activeBorder': 'default', 'titleBar.activeBackground': 'default' })
+		], [
+			expected(),
+			expected({}, true),
+			expected({ activeForeground: true }),
+			expected({ inactiveForeground: true }),
+			expected({ activeBackground: true }),
+			expected({ inactiveBackground: true }),
+			expected({ border: true }),
+			expected({ activeForeground: true, inactiveBackground: true, border: true }, true),
+			expected({ activeBackground: true }),
+			expected(),
+			expected()
+		]);
+	});
 
 	test('color defaults', async () => {
 		const themeData = ColorThemeData.createUnloadedTheme('foo');

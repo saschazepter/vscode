@@ -61,6 +61,11 @@ export interface IColorTheme {
 	defines(color: ColorIdentifier): boolean;
 
 	/**
+	 * Returns whether the color has an explicit color customization.
+	 */
+	isColorCustomized(color: ColorIdentifier): boolean;
+
+	/**
 	 * Returns the token style for a given classification. The result uses the <code>MetadataConsts</code> format
 	 */
 	getTokenStyleMetadata(type: string, modifiers: string[], modelLanguage: string): ITokenStyle | undefined;
@@ -79,6 +84,14 @@ export interface IColorTheme {
 	 * Defines whether semantic highlighting should be enabled for the theme.
 	 */
 	readonly semanticHighlighting: boolean;
+}
+
+export interface ITitleBarColorCustomizations {
+	readonly activeForeground: boolean;
+	readonly inactiveForeground: boolean;
+	readonly activeBackground: boolean;
+	readonly inactiveBackground: boolean;
+	readonly border: boolean;
 }
 
 export class IFontTokenOptions {
@@ -226,7 +239,10 @@ export interface IPartsSplash {
 		foreground: string | undefined;
 		editorBackground: string | undefined;
 		titleBarBackground: string | undefined;
+		titleBarInactiveBackground: string | undefined;
 		titleBarBorder: string | undefined;
+		titleBarColorCustomizations?: ITitleBarColorCustomizations;
+		titleBarColorsCustomized?: boolean;
 		activityBarBackground: string | undefined;
 		activityBarBorder: string | undefined;
 		sideBarBackground: string | undefined;

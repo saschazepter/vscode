@@ -68,6 +68,8 @@ suite('TokenizationSupport2Adapter', () => {
 					throw new Error('Not implemented');
 				},
 
+				isColorCustomized: () => false,
+
 				getTokenStyleMetadata: (type: string, modifiers: string[], modelLanguage: string): ITokenStyle | undefined => {
 					return undefined;
 				},

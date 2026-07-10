@@ -31,6 +31,10 @@ export class TestColorTheme implements IColorTheme {
 		throw new Error('Method not implemented.');
 	}
 
+	isColorCustomized(color: string): boolean {
+		return false;
+	}
+
 	getTokenStyleMetadata(type: string, modifiers: string[], modelLanguage: string): ITokenStyle | undefined {
 		return undefined;
 	}

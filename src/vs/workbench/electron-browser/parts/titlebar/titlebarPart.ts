@@ -17,7 +17,7 @@ import { IActionViewItemService } from '../../../../platform/actions/browser/act
 import { BrowserTitlebarPart, BrowserTitleService, IAuxiliaryTitlebarPart } from '../../../browser/parts/titlebar/titlebarPart.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
-import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
+import { IWorkbenchLayoutService, LayoutSettings, Parts } from '../../../services/layout/browser/layoutService.js';
 import { INativeHostService } from '../../../../platform/native/common/native.js';
 import { hasNativeTitlebar, useWindowControlsOverlay, DEFAULT_CUSTOM_TITLEBAR_HEIGHT, hasNativeMenu } from '../../../../platform/window/common/window.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -29,6 +29,7 @@ import { IEditorService } from '../../../services/editor/common/editorService.js
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { CodeWindow, mainWindow } from '../../../../base/browser/window.js';
 import { IsWindowAlwaysOnTopContext } from '../../../common/contextkeys.js';
+import { getModernUIColorCustomizations } from '../../../common/theme.js';
 
 export class NativeTitlebarPart extends BrowserTitlebarPart {
 
@@ -68,7 +69,7 @@ export class NativeTitlebarPart extends BrowserTitlebarPart {
 		@IConfigurationService configurationService: IConfigurationService,
 		@INativeWorkbenchEnvironmentService environmentService: INativeWorkbenchEnvironmentService,
 		@IInstantiationService instantiationService: IInstantiationService,
-		@IThemeService themeService: IThemeService,
+		@IThemeService protected override readonly themeService: IThemeService,
 		@IStorageService storageService: IStorageService,
 		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
 		@IContextKeyService contextKeyService: IContextKeyService,
@@ -116,6 +117,10 @@ export class NativeTitlebarPart extends BrowserTitlebarPart {
 
 	protected override onConfigurationChanged(event: IConfigurationChangeEvent): void {
 		super.onConfigurationChanged(event);
+
+		if (event.affectsConfiguration(LayoutSettings.MODERN_UI)) {
+			this.updateStyles();
+		}
 
 		if (event.affectsConfiguration('window.doubleClickIconToClose')) {
 			if (this.appIcon) {
@@ -257,17 +262,28 @@ export class NativeTitlebarPart extends BrowserTitlebarPart {
 			if (useWindowControlsOverlay(this.configurationService)) {
 				if (
 					!this.cachedWindowControlStyles ||
-					this.cachedWindowControlStyles.bgColor !== this.element.style.backgroundColor ||
+					this.cachedWindowControlStyles.bgColor !== this.getWindowControlsBackgroundColor() ||
 					this.cachedWindowControlStyles.fgColor !== this.element.style.color
 				) {
 					this.nativeHostService.updateWindowControls({
 						targetWindowId: getWindowId(getWindow(this.element)),
-						backgroundColor: this.element.style.backgroundColor,
+						backgroundColor: this.getWindowControlsBackgroundColor(),
 						foregroundColor: this.element.style.color
 					});
 				}
 			}
 		}
+	}
+
+	private getWindowControlsBackgroundColor(): string {
+		if (getWindow(this.element) === mainWindow && this.configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true) {
+			const titleBarCustomizations = getModernUIColorCustomizations(this.themeService.getColorTheme()).titleBar;
+			if (this.element.classList.contains('inactive') ? !titleBarCustomizations.inactiveBackground : !titleBarCustomizations.activeBackground) {
+				return 'transparent';
+			}
+		}
+
+		return this.element.style.backgroundColor;
 	}
 
 	override layout(width: number, height: number): void {

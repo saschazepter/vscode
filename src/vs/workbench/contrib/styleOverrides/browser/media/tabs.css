@@ -92,7 +92,7 @@
 }
 
 .style-override .part.editor .tabs-container > .tab .tab-border-top-container,
-.style-override .part.editor .tabs-container > .tab .tab-border-bottom-container {
+.style-override:not(.modern-ui-active-tab-border) .part.editor .tabs-container > .tab .tab-border-bottom-container {
 	display: none !important;
 }
 

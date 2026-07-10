@@ -5,7 +5,7 @@
 
 import { localize } from '../../nls.js';
 import { registerColor, editorBackground, contrastBorder, transparent, editorWidgetBackground, textLinkForeground, lighten, darken, focusBorder, activeContrastBorder, editorWidgetForeground, editorErrorForeground, editorWarningForeground, editorInfoForeground, treeIndentGuidesStroke, errorForeground, listActiveSelectionBackground, listActiveSelectionForeground, editorForeground, toolbarHoverBackground, inputBorder, widgetBorder, scrollbarShadow } from '../../platform/theme/common/colorRegistry.js';
-import { IColorTheme } from '../../platform/theme/common/themeService.js';
+import { IColorTheme, ITitleBarColorCustomizations } from '../../platform/theme/common/themeService.js';
 import { Color } from '../../base/common/color.js';
 import { ColorScheme } from '../../platform/theme/common/theme.js';
 
@@ -689,6 +689,24 @@ export const TITLE_BAR_BORDER = registerColor('titleBar.border', {
 	hcDark: contrastBorder,
 	hcLight: contrastBorder
 }, localize('titleBarBorder', "Title bar border color."));
+
+export interface IModernUIColorCustomizations {
+	readonly titleBar: ITitleBarColorCustomizations;
+	readonly activeTabBorder: boolean;
+}
+
+export function getModernUIColorCustomizations(theme: IColorTheme): IModernUIColorCustomizations {
+	return {
+		titleBar: {
+			activeForeground: theme.isColorCustomized(TITLE_BAR_ACTIVE_FOREGROUND),
+			inactiveForeground: theme.isColorCustomized(TITLE_BAR_INACTIVE_FOREGROUND),
+			activeBackground: theme.isColorCustomized(TITLE_BAR_ACTIVE_BACKGROUND),
+			inactiveBackground: theme.isColorCustomized(TITLE_BAR_INACTIVE_BACKGROUND),
+			border: theme.isColorCustomized(TITLE_BAR_BORDER)
+		},
+		activeTabBorder: theme.isColorCustomized(TAB_ACTIVE_BORDER)
+	};
+}
 
 // < --- Menubar --- >
 

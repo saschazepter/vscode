@@ -118,6 +118,10 @@ class StandaloneTheme implements IStandaloneTheme {
 		return this.getColors().has(colorId);
 	}
 
+	public isColorCustomized(colorId: ColorIdentifier): boolean {
+		return false;
+	}
+
 	public get type(): ColorScheme {
 		switch (this.base) {
 			case VS_LIGHT_THEME_NAME: return ColorScheme.LIGHT;

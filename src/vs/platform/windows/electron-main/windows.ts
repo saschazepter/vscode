@@ -219,12 +219,13 @@ export function defaultBrowserWindowOptions(accessor: ServicesAccessor, windowSt
 				options.titleBarOverlay = true;
 			} else {
 
-				// This logic will not perfectly guess the right colors
-				// to use on initialization, but prefer to keep things
-				// simple as it is temporary and not noticeable
-
-				const titleBarColor = themeMainService.getWindowSplash(undefined)?.colorInfo.titleBarBackground ?? themeMainService.getBackgroundColor();
-				const symbolColor = Color.fromHex(titleBarColor).isDarker() ? '#FFFFFF' : '#000000';
+				const splash = themeMainService.getWindowSplash(undefined);
+				const colorInfo = splash?.colorInfo;
+				const titleBarColor = splash?.layoutInfo?.modernUI === true && !(colorInfo?.titleBarColorCustomizations?.activeBackground ?? colorInfo?.titleBarColorsCustomized === true)
+					? 'transparent'
+					: colorInfo?.titleBarBackground ?? themeMainService.getBackgroundColor();
+				const titleBarSymbolBackground = titleBarColor === 'transparent' ? colorInfo?.editorBackground ?? themeMainService.getBackgroundColor() : titleBarColor;
+				const symbolColor = Color.fromHex(titleBarSymbolBackground).isDarker() ? '#FFFFFF' : '#000000';
 
 				options.titleBarOverlay = {
 					height: 29, // the smallest size of the title bar on windows accounting for the border on windows 11
