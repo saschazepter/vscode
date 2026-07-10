@@ -294,6 +294,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 
 	private readonly templateDataByRequestId = new Map<string, IChatListItemTemplate>();
 	private readonly responseTemplateDataByRequestId = new Map<string, IChatListItemTemplate>();
+	private readonly templateDataByRow = new WeakMap<HTMLElement, IChatListItemTemplate>();
 
 	/** Track pending question carousels by session resource for auto-skip on chat submission */
 	private readonly pendingQuestionCarousels = new ResourceMap<Set<ChatQuestionCarouselPart>>();
@@ -581,6 +582,21 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}
 	}
 
+	/**
+	 * Returns the currently rendered chat item containing the node.
+	 */
+	getElementFromNode(node: HTMLElement): ChatTreeItem | undefined {
+		let current: HTMLElement | null = node;
+		while (current && this.delegate.container.contains(current)) {
+			const element = this.templateDataByRow.get(current)?.currentElement;
+			if (element) {
+				return element;
+			}
+			current = current.parentElement;
+		}
+		return undefined;
+	}
+
 	renderTemplate(container: HTMLElement): IChatListItemTemplate {
 		const templateDisposables = new DisposableStore();
 		const disabledOverlay = dom.append(container, $('.chat-row-disabled-overlay'));
@@ -735,6 +751,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		const connectionObserver = document.createElement('connection-observer') as dom.ConnectionObserverElement;
 		dom.append(container, connectionObserver);
 		const template: IChatListItemTemplate = { header, avatarContainer, requestHover, username, detail, value, rowContainer, elementDisposables, templateDisposables, contextKeyService, instantiationService: scopedInstantiationService, agentHover, titleToolbar, footerToolbar, footerDetailsContainer, disabledOverlay, checkpointToolbar, checkpointRestoreToolbar, checkpointContainer, checkpointRestoreContainer };
+		this.templateDataByRow.set(rowContainer, template);
 
 		connectionObserver.onDidDisconnect = () => {
 			template.renderedPartsMounted = false;

@@ -5,22 +5,25 @@
 
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { shouldSuppressPersistedAutoScroll } from '../../../browser/widget/chatListWidget.js';
+import { UserToggleResizeState } from '../../../browser/widget/chatListWidget.js';
 
 suite('ChatListWidget', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('suppresses persisted auto-scroll only within the user toggle window', () => {
-		assert.deepStrictEqual({
-			noToggle: shouldSuppressPersistedAutoScroll(0, 1000, 250),
-			atWindowStart: shouldSuppressPersistedAutoScroll(1000, 1000, 250),
-			atWindowEnd: shouldSuppressPersistedAutoScroll(1000, 1250, 250),
-			afterWindow: shouldSuppressPersistedAutoScroll(1000, 1251, 250),
-		}, {
-			noToggle: false,
-			atWindowStart: true,
-			atWindowEnd: true,
-			afterWindow: false,
-		});
+	test('keeps user toggle suppression active until resizing settles', () => {
+		const state = new UserToggleResizeState(2);
+		const states = [state.isActive];
+
+		state.start();
+		states.push(state.isActive);
+		state.advanceFrame();
+		states.push(state.isActive);
+		state.markResized();
+		state.advanceFrame();
+		states.push(state.isActive);
+		state.advanceFrame();
+		states.push(state.isActive);
+
+		assert.deepStrictEqual(states, [false, true, true, true, false]);
 	});
 });

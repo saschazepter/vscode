@@ -10,7 +10,7 @@ import { ITreeContextMenuEvent, ITreeElement, ITreeFilter } from '../../../../..
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { FuzzyScore } from '../../../../../base/common/filters.js';
-import { Disposable, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap, IDisposable, MutableDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { ScrollEvent } from '../../../../../base/common/scrollable.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { MenuId } from '../../../../../platform/actions/common/actions.js';
@@ -41,8 +41,73 @@ export interface IChatListWidgetStyles {
 	listBackground?: string;
 }
 
-export function shouldSuppressPersistedAutoScroll(lastUserToggleTime: number, now: number, suppressWindow: number): boolean {
-	return lastUserToggleTime !== 0 && now - lastUserToggleTime <= suppressWindow;
+/**
+ * Tracks when a user-triggered resize has remained stable across animation frames.
+ */
+export class UserToggleResizeState {
+
+	private framesUntilSettled = 0;
+
+	constructor(private readonly requiredStableFrames: number) { }
+
+	get isActive(): boolean {
+		return this.framesUntilSettled > 0;
+	}
+
+	start(): void {
+		this.framesUntilSettled = this.requiredStableFrames;
+	}
+
+	markResized(): void {
+		if (this.isActive) {
+			this.start();
+		}
+	}
+
+	advanceFrame(): void {
+		if (this.isActive) {
+			this.framesUntilSettled--;
+		}
+	}
+}
+
+class UserToggleResizeTracker extends Disposable {
+
+	private readonly state = new UserToggleResizeState(2);
+	private readonly pendingFrame = this._register(new MutableDisposable<IDisposable>());
+
+	constructor(
+		target: HTMLElement,
+		private readonly onDidSettle: () => void,
+	) {
+		super();
+
+		const targetWindow = dom.getWindow(target);
+		const resizeObserver = this._register(new dom.DisposableResizeObserver('ChatListWidget.userToggleResize', () => {
+			this.state.markResized();
+			this.scheduleFrame(targetWindow);
+		}, targetWindow));
+		this._register(resizeObserver.observe(target));
+
+		this.state.start();
+		this.scheduleFrame(targetWindow);
+	}
+
+	private scheduleFrame(targetWindow: Window): void {
+		if (this.pendingFrame.value) {
+			return;
+		}
+
+		this.pendingFrame.value = dom.scheduleAtNextAnimationFrame(targetWindow, () => {
+			this.pendingFrame.clear();
+			this.state.advanceFrame();
+			if (this.state.isActive) {
+				this.scheduleFrame(targetWindow);
+			} else {
+				this.onDidSettle();
+			}
+		});
+	}
 }
 
 export interface IChatListWidgetOptions {
@@ -192,8 +257,7 @@ export class ChatListWidget extends Disposable {
 	private _suppressAutoScroll: boolean = false;
 	private _settingChangeCounter: number = 0;
 	private _visibleChangeCount: number = 0;
-	private _lastUserToggleTime: number = 0;
-	private static readonly userToggleSuppressWindow = 250;
+	private readonly _userToggleResizeTrackers = this._register(new DisposableMap<ChatTreeItem, UserToggleResizeTracker>());
 
 	private readonly _container: HTMLElement;
 	private readonly _scrollDownButton: Button;
@@ -461,8 +525,15 @@ export class ChatListWidget extends Disposable {
 		// Set initial at-bottom state (scrollLock defaults to true)
 		this.updateScrollDownButtonVisibility();
 
-		this._register(dom.addDisposableListener(this._container, ChatCollapsibleContentPart.userToggleEvent, () => {
-			this._lastUserToggleTime = performance.now();
+		this._register(dom.addDisposableListener(this._container, ChatCollapsibleContentPart.userToggleEvent, e => {
+			if (!dom.isHTMLElement(e.target)) {
+				return;
+			}
+
+			const element = this._renderer.getElementFromNode(e.target);
+			if (element) {
+				this.trackUserToggleResize(element, e.target);
+			}
 		}));
 
 		// Handle context menu internally
@@ -672,7 +743,7 @@ export class ChatListWidget extends Disposable {
 	 */
 	private _updateElementHeight(element: ChatTreeItem, height?: number): void {
 		if (this._tree.hasElement(element) && this._visible) {
-			if (shouldSuppressPersistedAutoScroll(this._lastUserToggleTime, performance.now(), ChatListWidget.userToggleSuppressWindow)) {
+			if (this._userToggleResizeTrackers.has(element)) {
 				this._tree.updateElementHeight(element, height);
 				return;
 			}
@@ -680,6 +751,15 @@ export class ChatListWidget extends Disposable {
 				this._tree.updateElementHeight(element, height);
 			});
 		}
+	}
+
+	private trackUserToggleResize(element: ChatTreeItem, target: HTMLElement): void {
+		const tracker: UserToggleResizeTracker = new UserToggleResizeTracker(target, () => {
+			if (this._userToggleResizeTrackers.get(element) === tracker) {
+				this._userToggleResizeTrackers.deleteAndDispose(element);
+			}
+		});
+		this._userToggleResizeTrackers.set(element, tracker);
 	}
 
 	/**
