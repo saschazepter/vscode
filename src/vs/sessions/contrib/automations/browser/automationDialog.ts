@@ -445,7 +445,10 @@ export function renderForm(
 	};
 	// Seed state from the picker's initial default (edit: saved type; create: folder default).
 	syncStateFromPicker();
-	disposables.add(sessionTypePicker.onDidSelectSessionType(() => {
+	// Covers both explicit user picks and recomputes (e.g. an agent host
+	// advertising its session types after the dialog opened), so the saved
+	// automation always matches the chip the picker displays.
+	disposables.add(sessionTypePicker.onDidChangeSelectedPick(() => {
 		syncStateFromPicker();
 		revalidate();
 	}));
@@ -458,16 +461,16 @@ export function renderForm(
 
 	disposables.add(workspacePicker.onDidSelectWorkspace(uri => {
 		state.folderUri = uri;
+		// Setting the folder recomputes the picker's default; onDidChangeSelectedPick
+		// mirrors any resulting pick change into state. revalidate() still runs here
+		// because folder validity can change even when the pick does not.
 		folderObs.set(uri, undefined);
-		// The picker re-derives its default for the new folder; mirror it into state.
-		syncStateFromPicker();
 		revalidate();
 	}));
 
 	if (!state.folderUri && workspacePicker.selectedFolderUri) {
 		state.folderUri = workspacePicker.selectedFolderUri;
 		folderObs.set(state.folderUri, undefined);
-		syncStateFromPicker();
 	}
 
 	const promptRow = DOM.append(form, $('.automation-form-row'));

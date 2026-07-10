@@ -282,6 +282,28 @@ suite('SessionTypePicker', () => {
 		assert.deepStrictEqual(shared.getUserPickedSessionType(), { providerId: 'copilot', sessionTypeId: 'copilot-cli' });
 	});
 
+	test('onDidChangeSelectedPick fires when session types are advertised after the picker is created', () => {
+		// No types advertised yet (e.g. the agent host has not connected).
+		management.setSessionTypes([]);
+		const picker = createPicker(disposables, session, management, storage);
+		const folderObs = observableValue<URI | undefined>('folder', folder);
+		picker.setFolderSource(folderObs);
+		assert.strictEqual(picker.selectedPick, undefined);
+
+		const fired: (IPreferredSessionType | undefined)[] = [];
+		disposables.add(picker.onDidChangeSelectedPick(pick => fired.push(pick)));
+
+		// A provider advertises its types late; the displayed default shifts on its
+		// own (no explicit user pick), and consumers that cache the pick are notified.
+		management.setSessionTypes([
+			sessionType('local-1', 'local', 'Local'),
+			sessionType('copilot', 'copilot-cli', 'Copilot CLI'),
+		]);
+
+		assert.deepStrictEqual(picker.selectedPick, { providerId: 'local-1', sessionTypeId: 'local' });
+		assert.deepStrictEqual(fired, [{ providerId: 'local-1', sessionTypeId: 'local' }]);
+	});
+
 	test('a quick chat sources its types from the quick-chat list, not the folder list', () => {
 		// Folder list is empty (workspace-less); quick-chat list drives defaults.
 		management.setSessionTypes([]);

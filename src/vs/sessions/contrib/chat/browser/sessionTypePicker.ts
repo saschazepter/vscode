@@ -53,6 +53,10 @@ export interface IPreferredSessionType {
 	readonly sessionTypeId: string;
 }
 
+function pickEquals(a: IPreferredSessionType | undefined, b: IPreferredSessionType | undefined): boolean {
+	return a?.providerId === b?.providerId && a?.sessionTypeId === b?.sessionTypeId;
+}
+
 interface IStoredSessionTypePick {
 	readonly providerId?: string;
 	readonly sessionTypeId: string;
@@ -110,6 +114,16 @@ export class SessionTypePicker extends Disposable {
 	protected readonly _onDidSelectSessionType = this._register(new Emitter<IPickedSessionType | undefined>());
 	readonly onDidSelectSessionType = this._onDidSelectSessionType.event;
 
+	/**
+	 * Fires whenever the effective {@link selectedPick} changes for any reason:
+	 * an explicit user pick OR a recompute (e.g. a provider advertising its
+	 * session types late). Unlike {@link onDidSelectSessionType}, which only
+	 * covers explicit picks, this lets consumers that cache the pick stay in
+	 * sync when the displayed default shifts on its own.
+	 */
+	protected readonly _onDidChangeSelectedPick = this._register(new Emitter<IPreferredSessionType | undefined>());
+	readonly onDidChangeSelectedPick = this._onDidChangeSelectedPick.event;
+
 	/** Session types the active session's folder can be served by, across all providers. */
 	protected _folderSessionTypes: IProviderSessionType[] = [];
 
@@ -165,8 +179,12 @@ export class SessionTypePicker extends Disposable {
 	 */
 	protected _recompute(): void {
 		this._folderSessionTypes = this._resolveFolderSessionTypes();
+		const previous = this._picked;
 		this._picked = this._computeCurrentPick();
 		this._updateTriggerLabel();
+		if (!pickEquals(previous, this._picked)) {
+			this._onDidChangeSelectedPick.fire(this._picked);
+		}
 	}
 
 	/**
@@ -463,6 +481,7 @@ export class SessionTypePicker extends Disposable {
 		// actually changed, to avoid unnecessary work.
 		if (visiblePickChanged) {
 			this._onDidSelectSessionType.fire(pick);
+			this._onDidChangeSelectedPick.fire(this._picked);
 		}
 	}
 
