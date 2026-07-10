@@ -52,13 +52,10 @@ export class ChatPromoNotificationContribution extends Disposable implements IWo
 		const modelIds = this._languageModelsService.getLanguageModelIds();
 
 		// A promo can appear in several harnesses at once (e.g. the same model
-		// offered in the Local, Copilot, and Codex sessions). Each harness has its
-		// own model copy, so the notification must advertise the model that belongs
-		// to the harness the chat input is actually in — otherwise the "Use <model>"
-		// action would switch to a model that isn't valid for that session. Bucket
-		// the first non-dismissed promo per harness (a model's `targetChatSessionType`,
+		// offered in the Local, Copilot, and Codex sessions). Bucket the first
+		// non-dismissed promo per harness (a model's `targetChatSessionType`,
 		// or the local pool when unset).
-		const promoByHarness = new Map<string, { readonly promo: NonNullable<ILanguageModelChatMetadata['promo']>; readonly name: string }>();
+		const promoByHarness = new Map<string, NonNullable<ILanguageModelChatMetadata['promo']>>();
 		for (const id of modelIds) {
 			const meta = this._languageModelsService.lookupLanguageModel(id);
 			if (!meta?.promo || dismissed.has(meta.promo.id)) {
@@ -66,14 +63,14 @@ export class ChatPromoNotificationContribution extends Disposable implements IWo
 			}
 			const harness = meta.targetChatSessionType ?? localChatSessionType;
 			if (!promoByHarness.has(harness)) {
-				promoByHarness.set(harness, { promo: meta.promo, name: meta.name });
+				promoByHarness.set(harness, meta.promo);
 			}
 		}
 
 		// Refresh the notification for every harness that has an eligible promo,
 		// scoping each one to its harness so it only renders in matching sessions.
 		const desired = new Set<string>();
-		for (const [harness, { promo, name }] of promoByHarness) {
+		for (const [harness, promo] of promoByHarness) {
 			const notificationId = `${PROMO_NOTIFICATION_ID}.${harness}`;
 			desired.add(notificationId);
 
@@ -90,7 +87,7 @@ export class ChatPromoNotificationContribution extends Disposable implements IWo
 			this._chatInputNotificationService.setNotification({
 				id: notificationId,
 				severity: ChatInputNotificationSeverity.Info,
-				message: localize('chat.promo.message', "{0} \u2014 try {1} from the model picker.", promo.message, name),
+				message: promo.message,
 				description: localize('chat.promo.endsAt', "Ends {0}.", formattedDate),
 				actions: [],
 				dismissible: true,

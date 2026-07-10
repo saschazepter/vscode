@@ -126,7 +126,6 @@ suite('ChatPromoNotificationContribution', () => {
 		const notification = notifService.getNotification();
 		assert.ok(notification, 'Expected a notification to be shown');
 		assert.ok(notification.message.toString().includes('20% off'));
-		assert.ok(notification.message.toString().includes('GPT-5.5'));
 		assert.strictEqual(notification.actions.length, 0);
 	});
 
@@ -285,19 +284,16 @@ suite('ChatPromoNotificationContribution', () => {
 		const local = notifService.getNotificationForSession('local');
 		assert.ok(local, 'Expected a local promo');
 		assert.ok(local.message.toString().includes('Local promo'));
-		assert.ok(local.message.toString().includes('GPT-5.5'));
 		assert.strictEqual(local.actions.length, 0);
 
 		const copilot = notifService.getNotificationForSession('copilotcli');
 		assert.ok(copilot, 'Expected a Copilot promo');
 		assert.ok(copilot.message.toString().includes('Copilot promo'));
-		assert.ok(copilot.message.toString().includes('Claude'));
 		assert.strictEqual(copilot.actions.length, 0);
 
 		const codex = notifService.getNotificationForSession('openai-codex');
 		assert.ok(codex, 'Expected a Codex promo');
 		assert.ok(codex.message.toString().includes('Codex promo'));
-		assert.ok(codex.message.toString().includes('o4'));
 		assert.strictEqual(codex.actions.length, 0);
 	});
 
