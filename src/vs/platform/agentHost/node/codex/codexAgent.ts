@@ -27,7 +27,6 @@ import { ActionType, isChatAction, type SessionAction, type ChatAction } from '.
 import type { ConfigSchema, ModelSelection, ProtectedResourceMetadata, ToolDefinition, AgentSelection } from '../../common/state/protocol/state.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
 import { buildDefaultChatUri, parseChatUri, type ClientPluginCustomization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, ChatInputResponseKind, type PolicyState, type ToolCallResult, ToolResultContentType, type Turn, ResponsePartKind } from '../../common/state/sessionState.js';
-import { toToolCallMeta } from '../../common/meta/agentToolCallMeta.js';
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
 import { ActiveClientToolSet } from '../activeClientState.js';
 import { McpCustomizationController } from '../shared/mcpCustomizationController.js';
@@ -1733,8 +1732,16 @@ export class CodexAgent extends Disposable implements IAgent {
 		const toolCallId = generateUuid();
 		const invocationMessage = summary.detail || summary.title;
 		const confirmationTitle = 'Approve anyway';
-		const meta = summary.toolKind ? toToolCallMeta({ toolKind: summary.toolKind }) : undefined;
-
+		// Deliberately render this as a PLAIN confirmation card, NOT a terminal
+		// pill: the denied action already appears as its real commandExecution
+		// terminal box (streamed by the app-server) and again in the denial
+		// blockquote above. Tagging the card with a terminal `toolKind` + a
+		// `toolInput` would make the adapter draw a *second* terminal box for the
+		// same command (see stateToProgressAdapter `shouldRenderAsTerminal`),
+		// which is the duplicate the user reported. Omitting both keeps the card
+		// to just its title/message + "Approve anyway" button. The button still
+		// works because the reducer keys PendingConfirmation off confirmationTitle
+		// (with `confirmed` unset), independent of toolInput/meta.
 		session.pendingGuardianReviewCards.add(toolCallId);
 		let decision: CommandExecutionApprovalDecision;
 		try {
@@ -1746,16 +1753,13 @@ export class CodexAgent extends Disposable implements IAgent {
 					toolName: 'auto_review_denied',
 					displayName: summary.title,
 					intention: invocationMessage,
-					_meta: meta,
 				});
 				this._fire(session.sessionUri, {
 					type: ActionType.ChatToolCallReady,
 					turnId,
 					toolCallId,
 					invocationMessage,
-					toolInput: invocationMessage,
 					confirmationTitle,
-					_meta: meta,
 				});
 			});
 		} catch (err) {
