@@ -8,6 +8,7 @@ import { VSBuffer } from '../../../../base/common/buffer.js';
 import { parse } from '../../../../base/common/json.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { equals } from '../../../../base/common/objects.js';
+import { isWeb } from '../../../../base/common/platform.js';
 import { extname } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IExtensionGalleryService, IExtensionManagementService, IExtensionIdentifier, InstallExtensionInfo, EXTENSION_INSTALL_SKIP_WALKTHROUGH_CONTEXT } from '../../../../platform/extensionManagement/common/extensionManagement.js';
@@ -144,6 +145,15 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 	}
 
 	async detectSources(token?: CancellationToken): Promise<IExternalEditorSource[]> {
+		// Importing from another local editor requires access to the real local machine's
+		// application-data directory. On web there is no such thing: the path service synthesizes a
+		// "home" from the workspace root, so a repository containing e.g. `.config/Cursor/User` could
+		// be misidentified as an installed editor and offered as trusted import data (including
+		// extension ids). Never detect sources on web.
+		if (isWeb) {
+			return [];
+		}
+
 		// Detection reads the local machine's application-data directory. In a remote window the
 		// workbench file system operates against the remote host, so local detection would either
 		// find nothing or inspect the wrong machine. Skip it entirely in that case.
