@@ -14,7 +14,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
-import { Action2, MenuId, MenuItemAction, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { Action2, MenuItemAction, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { asCssVariable } from '../../../../platform/theme/common/colorUtils.js';
@@ -51,7 +51,7 @@ class OpenPullRequestAction extends Action2 {
 				order: 1,
 				when: SessionHasPullRequestContext
 			}, {
-				id: MenuId.SessionItemContextMenu,
+				id: Menus.SessionItemContextMenu,
 				group: 'navigation',
 				order: 0,
 				when: SessionHasPullRequestContext
@@ -63,8 +63,6 @@ class OpenPullRequestAction extends Action2 {
 		const openerService = accessor.get(IOpenerService);
 		const sessionsService = accessor.get(ISessionsService);
 
-		// The session header forwards the (active) session; the sessions list
-		// context menu forwards the selected session(s). Fall back to the active session.
 		const targetSession = (Array.isArray(session) ? session[0] : session) ?? sessionsService.activeSession.get();
 		const pullRequestUri = this._getPullRequestUri(targetSession);
 		if (!pullRequestUri) {
