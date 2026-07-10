@@ -396,21 +396,18 @@ let _proposedApiEnabledResolver: ProposedApiEnabledResolver | undefined;
 export const enabledApiProposalsFallbackExperimentName = 'extensionEnabledApiProposalsFallback';
 
 /**
- * Resolves the value of the {@link enabledApiProposalsFallbackExperimentName}-experiment. The
- * experiment only applies on `stable` builds, so this returns `undefined` for any other quality
- * without querying the assignment service.
- *
- * This is meant to be called while building the extension host init data, so it is hardened against
- * a slow or failing experiment read: the assignment service can block on its initial network fetch
- * the very first time it is queried, and rejecting here would break extension host startup (the init
- * data promise has no error handling). Both cases resolve to `undefined`, which simply keeps today's
- * behavior (no fallback) for this session; the value is picked up from cache on the next start.
+ * Resolves the value of the {@link enabledApiProposalsFallbackExperimentName}-experiment, or
+ * `undefined` when it does not apply (non-`stable` quality) or cannot be read in time.
  */
 export async function resolveEnabledApiProposalsFallbackExperiment(assignmentService: IAssignmentService, quality: string | undefined): Promise<string | undefined> {
 	if (quality !== 'stable') {
 		return undefined;
 	}
 	try {
+		// This runs while building the ext host init data (whose promise has no error handling) and
+		// the assignment service can block on its initial network fetch, so cap the wait and swallow
+		// errors: falling back to `undefined` keeps today's behavior and the value is read from the
+		// cache on the next start.
 		return await raceTimeout(assignmentService.getTreatment<string>(enabledApiProposalsFallbackExperimentName), 5000);
 	} catch {
 		return undefined;

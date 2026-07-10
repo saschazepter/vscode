@@ -71,7 +71,7 @@ suite('isProposedApiEnabled (extensionEnabledApiProposalsFallback experiment)', 
 
 	test('disposing the experiment removes the fallback', () => {
 		const missing = desc('test.missing', ['unrelatedProposal']);
-		const disposable = setEnabledApiProposalsFallbackExperiment('test.missing:someProposal', 'stable');
+		const disposable = store.add(setEnabledApiProposalsFallbackExperiment('test.missing:someProposal', 'stable'));
 		assert.strictEqual(isProposedApiEnabled(missing, 'someProposal' as ApiProposalName), true);
 		disposable.dispose();
 		assert.strictEqual(isProposedApiEnabled(missing, 'someProposal' as ApiProposalName), false);
