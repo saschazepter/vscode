@@ -22,6 +22,7 @@ suite('extensionTarget', () => {
 			linuxArm64: getExtensionTarget('linux', 'arm64', notAlpine),
 			linuxArmhf: getExtensionTarget('linux', 'armhf', notAlpine),
 			linuxArmProcess: getExtensionTarget('linux', 'arm', notAlpine),
+			linuxUnsupportedArch: getExtensionTarget('linux', 'riscv64', notAlpine),
 			alpineX64: getExtensionTarget('linux', 'x64', alpine),
 			alpineArm64: getExtensionTarget('linux', 'arm64', alpine),
 			unsupported: getExtensionTarget('sunos', 'x64'),
@@ -30,11 +31,12 @@ suite('extensionTarget', () => {
 			darwinArm64: 'darwin-arm64',
 			win32X64: 'win32-x64',
 			win32Arm64: 'win32-arm64',
-			win32Ia32: 'win32-x86',
+			win32Ia32: undefined,
 			linuxX64: 'linux-x64',
 			linuxArm64: 'linux-arm64',
 			linuxArmhf: 'linux-armhf',
 			linuxArmProcess: 'linux-armhf',
+			linuxUnsupportedArch: undefined,
 			alpineX64: 'alpine-x64',
 			alpineArm64: 'alpine-arm64',
 			unsupported: undefined,
@@ -63,5 +65,11 @@ suite('extensionTarget', () => {
 			alpineX64: 'my-ext-alpine-x64.vsix',
 			alpineArm64: 'my-ext-alpine-arm64.vsix',
 		});
+	});
+
+	test('getPlatformSpecificAssetName throws for malformed targets', () => {
+		assert.throws(() => getPlatformSpecificAssetName('my-ext', 'linux'), /Invalid target platform/);
+		assert.throws(() => getPlatformSpecificAssetName('my-ext', 'freebsd-x64'), /Invalid target platform/);
+		assert.throws(() => getPlatformSpecificAssetName('my-ext', ''), /Invalid target platform/);
 	});
 });

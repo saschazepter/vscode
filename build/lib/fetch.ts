@@ -158,9 +158,14 @@ export function fetchGithub(repo: string, options: IGitHubAssetOptions): Stream 
 		if (options.latest) {
 			// Pick the most recently published non-draft release. Sort by `published_at` (when the
 			// release was made public) rather than `created_at` (when the draft was first created).
+			// Treat a missing/unparseable timestamp as 0 so it sorts to the end deterministically.
+			const publishedTime = (r: IGitHubRelease) => {
+				const time = Date.parse(r.published_at ?? '');
+				return isNaN(time) ? 0 : time;
+			};
 			const releases = (json as IGitHubRelease[])
 				.filter(r => !r.draft)
-				.sort((a, b) => Date.parse(b.published_at ?? '') - Date.parse(a.published_at ?? ''));
+				.sort((a, b) => publishedTime(b) - publishedTime(a));
 			if (releases.length === 0) {
 				return callback(new Error(`Could not find a release in ${repo}`));
 			}

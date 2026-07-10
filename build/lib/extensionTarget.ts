@@ -23,13 +23,24 @@ export function isAlpineLinux(): boolean {
 }
 
 /**
+ * The set of platform-specific marketplace target platforms, matching the `TargetPlatform` enum
+ * in `src/vs/platform/extensions/common/extensions.ts` (excluding the non platform-specific
+ * `web`/`universal`/`unknown`/`undefined` values).
+ */
+const supportedTargets = new Set([
+	'win32-x64', 'win32-arm64',
+	'linux-x64', 'linux-arm64', 'linux-armhf',
+	'alpine-x64', 'alpine-arm64',
+	'darwin-x64', 'darwin-arm64',
+]);
+
+/**
  * Normalizes an architecture (from `VSCODE_ARCH` or `process.arch`) to the suffix used
  * by the marketplace target platform identifiers.
  */
 function toTargetArch(arch: string): string {
 	switch (arch) {
 		case 'arm': return 'armhf';
-		case 'ia32': return 'x86';
 		default: return arch;
 	}
 }
@@ -39,20 +50,24 @@ function toTargetArch(arch: string): string {
  * for the given platform and architecture. Mirrors the `TargetPlatform` enum in
  * `src/vs/platform/extensions/common/extensions.ts`.
  *
- * @returns the target platform string, or `undefined` when the combination is not supported.
+ * @returns the target platform string, or `undefined` when the combination is not a supported
+ * marketplace target (e.g. an unsupported OS or architecture such as `win32-ia32` or `linux-riscv64`).
  */
 export function getExtensionTarget(platform: string, arch: string, isAlpine: () => boolean = isAlpineLinux): string | undefined {
 	const targetArch = toTargetArch(arch);
+	let target: string | undefined;
 	switch (platform) {
 		case 'darwin':
-			return `darwin-${targetArch}`;
+			target = `darwin-${targetArch}`;
+			break;
 		case 'win32':
-			return `win32-${targetArch}`;
+			target = `win32-${targetArch}`;
+			break;
 		case 'linux':
-			return isAlpine() ? `alpine-${targetArch}` : `linux-${targetArch}`;
-		default:
-			return undefined;
+			target = isAlpine() ? `alpine-${targetArch}` : `linux-${targetArch}`;
+			break;
 	}
+	return target && supportedTargets.has(target) ? target : undefined;
 }
 
 /**
@@ -89,19 +104,18 @@ export function getCurrentExtensionTarget(): string | undefined {
  * Derives the GitHub release asset name for a platform-specific extension from its name and
  * marketplace target platform, following the `node-vsce-sign` naming pattern:
  * `<name>-<osAlias>-<arch>.vsix` where osAlias is one of `osx`, `win`, `linux`, `alpine`.
+ *
+ * @throws when `target` is not a well-formed `<os>-<arch>` marketplace target.
  */
 export function getPlatformSpecificAssetName(name: string, target: string): string {
 	const index = target.lastIndexOf('-');
-	const targetOs = target.substring(0, index);
-	const targetArch = target.substring(index + 1);
+	const targetOs = index > 0 ? target.substring(0, index) : '';
+	const targetArch = index > 0 ? target.substring(index + 1) : '';
 
-	let osAlias: string;
-	switch (targetOs) {
-		case 'darwin': osAlias = 'osx'; break;
-		case 'win32': osAlias = 'win'; break;
-		case 'linux': osAlias = 'linux'; break;
-		case 'alpine': osAlias = 'alpine'; break;
-		default: osAlias = targetOs; break;
+	const osAliases: { [os: string]: string } = { darwin: 'osx', win32: 'win', linux: 'linux', alpine: 'alpine' };
+	const osAlias = osAliases[targetOs];
+	if (!osAlias || !targetArch) {
+		throw new Error(`Invalid target platform '${target}': expected one of ${Object.keys(osAliases).map(os => `${os}-<arch>`).join(', ')}`);
 	}
 
 	const assetArch = targetArch === 'armhf' ? 'arm' : targetArch;
