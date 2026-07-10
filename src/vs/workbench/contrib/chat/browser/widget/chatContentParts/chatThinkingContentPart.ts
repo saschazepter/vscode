@@ -361,9 +361,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 	private _aggregatedDiff: IEditSessionDiffStats = { added: 0, removed: 0 };
 	private containsReasoning: boolean;
 	private containsGroupedItems: boolean = false;
-	private reasoningStartedAt: number | undefined;
 	private reasoningDurationMs: number | undefined;
-	private reasoningDurationTarget: IChatThinkingPart | undefined;
 
 	get aggregatedDiff(): IEditSessionDiffStats { return this._aggregatedDiff; }
 
@@ -419,7 +417,6 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 		super(extractedTitle, context, undefined, hoverService, configurationService);
 
 		this.containsReasoning = containsReasoning;
-		this.reasoningStartedAt = !streamingCompleted && containsReasoning ? Date.now() : undefined;
 		this.reasoningDurationMs = content.reasoningDurationMs;
 		this.id = content.id;
 		this.content = content;
@@ -957,7 +954,7 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 	}
 
 	private getFinalizedDisplayTitle(title: string): string {
-		if (this.thinkingDisplayMode !== ThinkingDisplayMode.Collapsed || !this.containsReasoning || this.containsGroupedItems || this.reasoningDurationMs === undefined) {
+		if (this.thinkingDisplayMode !== ThinkingDisplayMode.Collapsed || !this.containsReasoning || this.containsGroupedItems || !this.reasoningDurationMs) {
 			return title;
 		}
 
@@ -979,9 +976,6 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 			return;
 		}
 		this.containsReasoning = true;
-		if (this.reasoningStartedAt === undefined && !this.streamingCompleted) {
-			this.reasoningStartedAt = Date.now();
-		}
 	}
 
 	private setDropdownClickable(clickable: boolean): void {
@@ -1084,16 +1078,13 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 		this.setExpanded(false);
 	}
 
-	public setReasoningDurationTarget(content: IChatThinkingPart): void {
-		this.reasoningDurationTarget = content;
-	}
-
 	public updateThinking(content: IChatThinkingPart): void {
 		// If disposed, ignore late updates coming from renderer diffing
 		if (this._store.isDisposed) {
 			return;
 		}
 		this.content = content;
+		this.reasoningDurationMs = content.reasoningDurationMs;
 
 		// Update any pending lazy thinking item with matching ID so that
 		// when materialized, it will have the latest streaming content
@@ -1184,10 +1175,6 @@ export class ChatThinkingContentPart extends ChatCollapsibleContentPart implemen
 
 	public finalizeTitleIfDefault(): void {
 		this.processPendingRemovals();
-		if (this.reasoningStartedAt !== undefined && this.reasoningDurationMs === undefined) {
-			this.reasoningDurationMs = Math.max(0, Date.now() - this.reasoningStartedAt);
-			(this.reasoningDurationTarget ?? this.content).reasoningDurationMs = this.reasoningDurationMs;
-		}
 
 		// With lazy rendering, wrapper may not be created yet if content hasn't been expanded
 		if (this.wrapper) {

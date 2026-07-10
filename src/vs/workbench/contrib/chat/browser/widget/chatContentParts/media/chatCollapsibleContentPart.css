@@ -16,7 +16,7 @@
 		}
 	}
 
-	&.chat-used-context-collapsed > .chat-collapsible-content-animation {
+	&.chat-collapsible-content-animated.chat-used-context-collapsed > .chat-collapsible-content-animation {
 		grid-template-rows: 0fr;
 		opacity: 0;
 		visibility: hidden;

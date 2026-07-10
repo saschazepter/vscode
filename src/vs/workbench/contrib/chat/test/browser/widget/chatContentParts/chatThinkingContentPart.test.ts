@@ -699,6 +699,7 @@ suite('ChatThinkingContentPart', () => {
 
 		test('adds elapsed time to finalized reasoning-only headers', () => {
 			const content = createThinkingPart('**Reviewed the implementation**');
+			content.reasoningDurationMs = 1200;
 			const part = store.add(instantiationService.createInstance(
 				ChatThinkingContentPart,
 				content,
@@ -716,44 +717,12 @@ suite('ChatThinkingContentPart', () => {
 
 			assert.deepStrictEqual({
 				generatedTitle: content.generatedTitle,
-				durationPersisted: typeof content.reasoningDurationMs === 'number',
 				labelHasDuration: /^Reviewed the implementation - \d+s$/.test(part.domNode.querySelector('.monaco-button')?.textContent ?? ''),
 				ariaLabelHasDuration: /^Reviewed the implementation - \d+s$/.test(button?.ariaLabel ?? ''),
 			}, {
 				generatedTitle: 'Reviewed the implementation',
-				durationPersisted: true,
 				labelHasDuration: true,
 				ariaLabelHasDuration: true,
-			});
-		});
-
-		test('persists elapsed time to the source of array-valued reasoning', () => {
-			const sourceContent: IChatThinkingPart = {
-				kind: 'thinking',
-				value: ['**Reviewed the implementation**'],
-				id: 'array-thinking-id',
-			};
-			const itemContent: IChatThinkingPart = {
-				...sourceContent,
-				value: '**Reviewed the implementation**',
-			};
-			const part = store.add(instantiationService.createInstance(
-				ChatThinkingContentPart,
-				itemContent,
-				createMockRenderContext(false),
-				mockMarkdownRenderer,
-				false
-			));
-			part.setReasoningDurationTarget(sourceContent);
-
-			part.finalizeTitleIfDefault();
-
-			assert.deepStrictEqual({
-				sourceDurationPersisted: typeof sourceContent.reasoningDurationMs === 'number',
-				itemDurationPersisted: typeof itemContent.reasoningDurationMs === 'number',
-			}, {
-				sourceDurationPersisted: true,
-				itemDurationPersisted: false,
 			});
 		});
 
@@ -773,6 +742,24 @@ suite('ChatThinkingContentPart', () => {
 			part.finalizeTitleIfDefault();
 
 			assert.strictEqual(part.domNode.querySelector('.monaco-button')?.textContent, 'Reviewed the implementation - 3s');
+		});
+
+		test('does not show zero or unknown reasoning duration', () => {
+			const titles = [undefined, 0].map(reasoningDurationMs => {
+				const content = createThinkingPart('**Reviewed the implementation**');
+				content.reasoningDurationMs = reasoningDurationMs;
+				const part = store.add(instantiationService.createInstance(
+					ChatThinkingContentPart,
+					content,
+					createMockRenderContext(false),
+					mockMarkdownRenderer,
+					true
+				));
+				part.finalizeTitleIfDefault();
+				return part.domNode.querySelector('.monaco-button')?.textContent;
+			});
+
+			assert.deepStrictEqual(titles, ['Reviewed the implementation', 'Reviewed the implementation']);
 		});
 	});
 

@@ -3624,7 +3624,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 					} else {
 						const itemContent = { ...content, value: item };
 						const itemPart = templateData.instantiationService.createInstance(ChatThinkingContentPart, itemContent, context, this.chatContentMarkdownRenderer, streamingCompleted);
-						itemPart.setReasoningDurationTarget(content);
 						lastPart = itemPart;
 					}
 				}
