@@ -91,7 +91,9 @@
 	border-top: var(--vscode-strokeThickness) solid var(--vscode-widget-border, var(--vscode-editorWidget-border, transparent));
 }
 
-.ai-customization-management-editor .sidebar-migration-button {
+.ai-customization-management-editor .sidebar-migration-shortcut > button.sidebar-migration-button {
+	all: unset;
+	box-sizing: border-box;
 	display: flex;
 	align-items: center;
 	gap: 10px;
@@ -109,11 +111,11 @@
 	text-align: left;
 }
 
-.ai-customization-management-editor .sidebar-migration-button:hover {
+.ai-customization-management-editor .sidebar-migration-shortcut > button.sidebar-migration-button:hover {
 	background-color: var(--vscode-list-hoverBackground);
 }
 
-.ai-customization-management-editor .sidebar-migration-button:focus-visible {
+.ai-customization-management-editor .sidebar-migration-shortcut > button.sidebar-migration-button:focus-visible {
 	outline: var(--vscode-strokeThickness) solid var(--vscode-focusBorder);
 	outline-offset: -1px;
 }
@@ -139,6 +141,7 @@
 }
 
 .ai-customization-management-editor .sidebar-migration-count {
+	margin-left: auto;
 	flex-shrink: 0;
 	min-width: 14px;
 	color: var(--vscode-descriptionForeground);
