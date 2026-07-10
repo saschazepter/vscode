@@ -5,6 +5,7 @@
 
 import assert from 'assert';
 import { VSBuffer } from '../../../../base/common/buffer.js';
+import { timeout } from '../../../../base/common/async.js';
 import { Event } from '../../../../base/common/event.js';
 import { DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../base/common/network.js';
@@ -1060,6 +1061,40 @@ suite('AgentSideEffects', () => {
 				action: { type: ActionType.ChatResponsePart, turnId: 'turn-1', part: { kind: ResponsePartKind.Markdown, id: 'msg-2', content: 'after' } },
 			});
 			assert.strictEqual(envelopes.filter(e => e.action.type === ActionType.ChatResponsePart).length, 1);
+		});
+
+		test('customizations change publishes once, then dedupes identical re-fetches', async () => {
+			setupSession();
+
+			const customizations: Customization[] = [
+				{ type: CustomizationType.Plugin, id: customizationId('file:///plugin-a'), uri: 'file:///plugin-a', name: 'Plugin A', enabled: true, load: { kind: CustomizationLoadStatus.Loaded } },
+			];
+			let fetchCalls = 0;
+			agent.getSessionCustomizations = async () => { fetchCalls++; return customizations; };
+
+			const changed: ActionEnvelope[] = [];
+			disposables.add(stateManager.onDidEmitEnvelope(e => {
+				if (e.action.type === ActionType.SessionCustomizationsChanged) {
+					changed.push(e);
+				}
+			}));
+			disposables.add(sideEffects.registerProgressListener(agent));
+
+			// First change: fetch + publish.
+			agent.fireCustomizationsChange();
+			await waitForState(stateManager, () => changed.length >= 1 || undefined);
+			assert.strictEqual(changed.length, 1);
+
+			// Subsequent changes that resolve to the same customizations (e.g. the
+			// O(N^2) fan-out from a shared `~/.claude` edit) must not re-publish.
+			agent.fireCustomizationsChange();
+			agent.fireCustomizationsChange();
+			const deadline = Date.now() + 5000;
+			while (fetchCalls < 3 && Date.now() < deadline) {
+				await timeout(5);
+			}
+			assert.strictEqual(changed.length, 1, 'identical customizations must not re-publish');
+			assert.ok(fetchCalls >= 3, 'each change still re-fetches to compare');
 		});
 	});
 

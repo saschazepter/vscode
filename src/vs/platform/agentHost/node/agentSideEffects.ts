@@ -37,6 +37,7 @@ import {
 	SessionLifecycle,
 	ToolCallStatus,
 	ToolResultContentType,
+	type Customization,
 	type ErrorInfo,
 	type ISessionWithDefaultChat,
 	type Message,
@@ -113,6 +114,7 @@ export class AgentSideEffects extends Disposable {
 	/** Maps tool call IDs to the agent that owns them, for routing confirmations. */
 	private readonly _toolCallAgents = new Map<string, string>();
 	private _lastAgentInfos: readonly AgentInfo[] = [];
+	private readonly _lastSessionCustomizations = new Map<ProtocolURI, readonly Customization[]>();
 
 	private readonly _permissionManager: SessionPermissionManager;
 
@@ -238,6 +240,20 @@ export class AgentSideEffects extends Disposable {
 		}
 
 		const customizations = await agent.getSessionCustomizations(URI.parse(session));
+
+		// Skip the dispatch when the resolved customizations are unchanged since
+		// the last publish for this session. A single edit under a shared
+		// `~/.claude` tree fans out to every open session (and, via the
+		// agent-level `onDidCustomizationsChange`, is republished once per
+		// session), so without this guard a single change emitted O(N^2)
+		// identical `SessionCustomizationsChanged` envelopes. Mirrors the
+		// `_publishAgentInfos` dedup.
+		const previous = this._lastSessionCustomizations.get(session);
+		if (previous && equals(previous, customizations)) {
+			return;
+		}
+		this._lastSessionCustomizations.set(session, customizations);
+
 		this._stateManager.dispatchServerAction(session, {
 			type: ActionType.SessionCustomizationsChanged,
 			customizations: [...customizations],
@@ -256,6 +272,7 @@ export class AgentSideEffects extends Disposable {
 				this._publishSessionCustomizationsSoon(agent, session);
 			}
 		}
+		this._pruneSessionCustomizationsCache();
 	}
 
 	private _publishAllSessionCustomizations(): void {
@@ -263,6 +280,27 @@ export class AgentSideEffects extends Disposable {
 			const agent = this._options.getAgent(session);
 			if (agent) {
 				this._publishSessionCustomizationsSoon(agent, session);
+			}
+		}
+		this._pruneSessionCustomizationsCache();
+	}
+
+	/**
+	 * Drops dedup-cache entries for sessions that no longer exist. Session
+	 * teardown (both permanent `deleteSession` and eviction via `removeSession`)
+	 * emits no signal we subscribe to here, so instead of listening for removal
+	 * we reconcile against the live session set on every customization publish
+	 * cycle. That keeps {@link _lastSessionCustomizations} bounded by the live
+	 * session count rather than growing over the host's lifetime.
+	 */
+	private _pruneSessionCustomizationsCache(): void {
+		if (this._lastSessionCustomizations.size === 0) {
+			return;
+		}
+		const live = new Set<ProtocolURI>(this._stateManager.getSessionUris());
+		for (const session of this._lastSessionCustomizations.keys()) {
+			if (!live.has(session)) {
+				this._lastSessionCustomizations.delete(session);
 			}
 		}
 	}
