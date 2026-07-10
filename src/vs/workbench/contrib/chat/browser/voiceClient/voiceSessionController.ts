@@ -2703,7 +2703,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this.voicePlaybackService.notifyPlaybackStart(sessionResource, transcript);
 		}
 
-		const ttsEnabled = this.configurationService.getValue<boolean>('agents.voice.textToSpeech') !== false;
+		const ttsEnabled = this.configurationService.getValue<boolean>('agents.voice.speakResponses') !== false;
 		if (ttsEnabled && audio) {
 			// Claim the playback slot only when we actually have audio to play.
 			// A transcript-only frame (empty audio) must NOT claim it, or the
