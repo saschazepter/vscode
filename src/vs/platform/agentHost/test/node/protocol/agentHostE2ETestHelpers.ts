@@ -175,6 +175,17 @@ export interface IAgentHostE2EProviderConfig {
 	 */
 	readonly shellPermissionReplayUnstableOnWindows?: boolean;
 	/**
+	 * When set, this provider reconstructs a reopened subagent transcript by
+	 * reading the bundled SDK's on-disk session storage (Claude reads the
+	 * `subagents/agent-*.jsonl` files the SDK subprocess wrote during the live
+	 * turn). On Windows those files are not reliably flushed/visible by the time
+	 * the session is reopened, so the subagent-reopen test can intermittently see
+	 * an empty transcript there. Gate that one test to POSIX for such providers;
+	 * macOS/Linux keep full coverage, and providers that rebuild from the
+	 * in-process event log (Copilot) are unaffected and stay enabled on Windows.
+	 */
+	readonly subagentReplayUnstableOnWindows?: boolean;
+	/**
 	 * Whether the provider's plan-mode flow matches the shared test's
 	 * expectations (auto-approve session-state writes; reach the
 	 * exit-plan-mode tool as an `inputRequested`). Currently true only for
@@ -1129,7 +1140,13 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 				`Parent tool calls: ${JSON.stringify(parentStarts.map(a => a.toolName))}`);
 		});
 
-		(/*config.supportsSubagents ? test :*/ test.skip)('reopening a session keeps sub-agent messages out of the parent transcript (replay path)', async function () {
+		// Reopening rebuilds the subagent transcript from persisted SDK state. For
+		// providers that read the bundled SDK's on-disk subagent files (Claude),
+		// those files are not reliably visible on Windows right after the turn, so
+		// the reopened transcript can come back empty there — gate to POSIX for
+		// those providers (macOS/Linux keep coverage; Copilot rebuilds from the
+		// in-process event log and stays enabled on Windows). See PR #325284.
+		((isWindows && config.subagentReplayUnstableOnWindows) ? test.skip : (config.supportsSubagents ? test : test.skip))('reopening a session keeps sub-agent messages out of the parent transcript (replay path)', async function () {
 			this.timeout(180_000);
 
 			const tempDir = mkdtempSync(`${tmpdir()}/ahp-subagent-replay-`);

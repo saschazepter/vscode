@@ -136,6 +136,16 @@ export function getAncillaryStub(method: string, path: string): IStubResponse | 
 	if ((path === '/models/session' || path === '/models/session/intent') && method === 'POST') {
 		return { status: 500, headers: { 'content-type': 'text/plain', 'x-should-retry': 'false' }, body: 'auto-mode not available in replay' };
 	}
+	// Enterprise MCP registry policy. The Copilot CLI fetches this only when the
+	// developer has local MCP servers configured (`~/.copilot/mcp-config.json`)
+	// on an org/enterprise plan — a local customization that varies per machine,
+	// so it must never be a recorded turn (it would fail replay for anyone whose
+	// local config differs, see issue #325248). Serve an empty registry so the
+	// CLI applies no enterprise restrictions and proceeds exactly as it does
+	// when no registry is configured.
+	if (path === '/copilot/mcp_registry' && method === 'GET') {
+		return { status: 200, headers: JSON_HEADERS, body: JSON.stringify({ mcp_registries: [] }) };
+	}
 	if (path.startsWith('/copilot_internal/')) {
 		if (path.includes('/token') || path.includes('/nltoken')) {
 			return { status: 200, headers: JSON_HEADERS, body: tokenStubBody() };

@@ -66,6 +66,11 @@ const CLAUDE_CONFIG: IAgentHostE2EProviderConfig = {
 	// The shared suite skips that test when the flag is false.
 	supportsWorktreeIsolation: false,
 	supportsSubagents: true,
+	// Reopening a subagent transcript reads the bundled SDK's on-disk
+	// `subagents/agent-*.jsonl` files, which are not reliably flushed/visible on
+	// Windows right after the turn — so the subagent-reopen test is gated to
+	// POSIX for Claude (see PR #325284). macOS/Linux keep full coverage.
+	subagentReplayUnstableOnWindows: true,
 	// Plan mode is wired (`ExitPlanMode` interactive tool exists) but the
 	// shared test's Copilot-flavoured prompt doesn't reliably drive Claude
 	// to invoke it. TODO: rework the prompt for Claude conventions.
