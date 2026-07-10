@@ -7,7 +7,8 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { parse } from '../../../../base/common/json.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { isLinux, isMacintosh, isWindows } from '../../../../base/common/platform.js';
+import { equals } from '../../../../base/common/objects.js';
+import { extname } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IExtensionGalleryService, IExtensionManagementService, IExtensionIdentifier, InstallExtensionInfo, EXTENSION_INSTALL_SKIP_WALKTHROUGH_CONTEXT } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { areSameExtensions } from '../../../../platform/extensionManagement/common/extensionManagementUtil.js';
@@ -15,9 +16,12 @@ import { IFileService } from '../../../../platform/files/common/files.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IJSONEditingService, IJSONValue } from '../../../services/configuration/common/jsonEditing.js';
 import { IWorkbenchEnvironmentService } from '../../../services/environment/common/environmentService.js';
+import { IWorkbenchExtensionManagementService } from '../../../services/extensionManagement/common/extensionManagement.js';
 import { IPathService } from '../../../services/path/common/pathService.js';
+import { IWorkbenchThemeService } from '../../../services/themes/common/workbenchThemeService.js';
 import { IUserDataProfileService } from '../../../services/userDataProfile/common/userDataProfile.js';
 import { IExternalEditorImportPreview, IExternalEditorImportResult, IExternalEditorImportSelection, IExternalEditorImportService, IExternalEditorSource } from '../common/externalEditorImport.js';
+import { IExternalEditorImportEnvironmentService } from '../common/externalEditorImportEnvironment.js';
 
 /**
  * Describes how to locate a known source editor's user data. Source editors that
@@ -130,7 +134,10 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		@IUserDataProfileService private readonly userDataProfileService: IUserDataProfileService,
 		@IExtensionGalleryService private readonly extensionGalleryService: IExtensionGalleryService,
 		@IExtensionManagementService private readonly extensionManagementService: IExtensionManagementService,
+		@IWorkbenchExtensionManagementService private readonly workbenchExtensionManagementService: IWorkbenchExtensionManagementService,
+		@IWorkbenchThemeService private readonly themeService: IWorkbenchThemeService,
 		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService,
+		@IExternalEditorImportEnvironmentService private readonly importEnvironmentService: IExternalEditorImportEnvironmentService,
 		@ILogService private readonly logService: ILogService,
 	) {
 		super();
@@ -145,7 +152,7 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		}
 
 		const home = await this.pathService.userHome({ preferLocal: true });
-		const appDataHome = this.getApplicationDataHome(home);
+		const appDataHome = await this.importEnvironmentService.getApplicationDataHome(home);
 		if (!appDataHome) {
 			return [];
 		}
@@ -191,30 +198,39 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 
 	async import(source: IExternalEditorSource, selection: IExternalEditorImportSelection, token?: CancellationToken): Promise<IExternalEditorImportResult> {
 		let settingsImported = 0;
+		let settingsFailed = false;
 		let keybindingsImported = false;
+		let keybindingsFailed = false;
 		let snippetsImported = 0;
+		let snippetsFailed = 0;
 		let extensionsInstalled = 0;
 		let extensionsFailed = 0;
 
-		if (selection.settings && source.hasSettings) {
-			settingsImported = await this.importSettings(source);
+		if (!token?.isCancellationRequested && selection.settings && source.hasSettings) {
+			const result = await this.importSettings(source);
+			settingsImported = result.imported;
+			settingsFailed = result.failed;
 		}
 
-		if (selection.keybindings && source.hasKeybindings) {
-			keybindingsImported = await this.importKeybindings(source);
+		if (!token?.isCancellationRequested && selection.keybindings && source.hasKeybindings) {
+			const result = await this.importKeybindings(source);
+			keybindingsImported = result.imported;
+			keybindingsFailed = result.failed;
 		}
 
-		if (selection.snippets && source.hasSnippets) {
-			snippetsImported = await this.importSnippets(source);
+		if (!token?.isCancellationRequested && selection.snippets && source.hasSnippets) {
+			const result = await this.importSnippets(source);
+			snippetsImported = result.imported;
+			snippetsFailed = result.failed;
 		}
 
-		if (selection.extensions && source.hasExtensions) {
+		if (!token?.isCancellationRequested && selection.extensions && source.hasExtensions) {
 			const result = await this.importExtensions(source, token);
 			extensionsInstalled = result.installed;
 			extensionsFailed = result.failed;
 		}
 
-		return { settingsImported, keybindingsImported, snippetsImported, extensionsInstalled, extensionsFailed };
+		return { settingsImported, settingsFailed, keybindingsImported, keybindingsFailed, snippetsImported, snippetsFailed, extensionsInstalled, extensionsFailed };
 	}
 
 	// =====================================================================
@@ -229,30 +245,6 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 			source.hasExtensions ? this.previewExtensions(source, token) : Promise.resolve([]),
 		]);
 		return { settings, keybindings, snippets, extensions };
-	}
-
-	async hasImportableChanges(source: IExternalEditorSource): Promise<boolean> {
-		const [settings, keybindings, snippets, extensions] = await Promise.all([
-			source.hasSettings ? this.previewSettings(source) : Promise.resolve([]),
-			source.hasKeybindings ? this.previewKeybindings(source) : Promise.resolve([]),
-			source.hasSnippets ? this.previewSnippets(source) : Promise.resolve([]),
-			source.hasExtensions ? this.hasNewExtensions(source) : Promise.resolve(false),
-		]);
-		return settings.length > 0 || keybindings.length > 0 || snippets.length > 0 || extensions;
-	}
-
-	private async hasNewExtensions(source: IExternalEditorSource): Promise<boolean> {
-		if (!source.extensionsManifestUri) {
-			return false;
-		}
-
-		const identifiers = await this.readExtensionIdentifiers(source.extensionsManifestUri);
-		if (identifiers.length === 0) {
-			return false;
-		}
-
-		const installed = await this.extensionManagementService.getInstalled();
-		return identifiers.some(identifier => !installed.some(local => areSameExtensions(local.identifier, identifier)));
 	}
 
 	private async previewSettings(source: IExternalEditorSource): Promise<string[]> {
@@ -285,7 +277,7 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		const existingKeybindings = await this.readJsonArray(this.userDataProfileService.currentProfile.keybindingsResource) ?? [];
 		const labels: string[] = [];
 		for (const entry of sourceKeybindings) {
-			if (existingKeybindings.some(existing => this.deepEqual(existing, entry))) {
+			if (existingKeybindings.some(existing => equals(existing, entry))) {
 				continue;
 			}
 			const key = (entry as { key?: unknown } | null)?.key;
@@ -313,7 +305,7 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		const targetSnippetsHome = this.userDataProfileService.currentProfile.snippetsHome;
 		const names: string[] = [];
 		for (const child of sourceStat.children) {
-			if (child.isDirectory) {
+			if (child.isDirectory || !this.isSnippetFile(child.resource)) {
 				continue;
 			}
 			if (await this.safeExists(URI.joinPath(targetSnippetsHome, child.name))) {
@@ -334,7 +326,7 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 			return [];
 		}
 
-		const installed = await this.extensionManagementService.getInstalled();
+		const installed = await this.extensionManagementService.getInstalled(undefined, this.userDataProfileService.currentProfile.extensionsResource);
 		const toQuery = identifiers.filter(identifier => !installed.some(local => areSameExtensions(local.identifier, identifier)));
 		if (toQuery.length === 0) {
 			return [];
@@ -353,10 +345,10 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 	// Settings
 	// =====================================================================
 
-	private async importSettings(source: IExternalEditorSource): Promise<number> {
+	private async importSettings(source: IExternalEditorSource): Promise<{ imported: number; failed: boolean }> {
 		const sourceSettings = await this.readJsonObject(URI.joinPath(source.userDataUri, 'settings.json'));
 		if (!sourceSettings) {
-			return 0;
+			return { imported: 0, failed: false };
 		}
 
 		const targetResource = this.userDataProfileService.currentProfile.settingsResource;
@@ -379,15 +371,15 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		}
 
 		if (edits.length === 0) {
-			return 0;
+			return { imported: 0, failed: false };
 		}
 
 		try {
 			await this.jsonEditingService.write(targetResource, edits, true);
-			return edits.length;
+			return { imported: edits.length, failed: false };
 		} catch (error) {
 			this.logService.error('[externalEditorImport] Failed to import settings', error);
-			return 0;
+			return { imported: 0, failed: true };
 		}
 	}
 
@@ -426,7 +418,14 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		// 1. Explicit theme in settings.json wins.
 		const explicit = settings?.[COLOR_THEME_SETTING_KEY];
 		if (typeof explicit === 'string' && explicit) {
-			return explicit;
+			const themes = await this.themeService.getColorThemes();
+			if (themes.some(theme => theme.settingsId === explicit)) {
+				return explicit;
+			}
+			const kind = this.inferKindFromThemeName(explicit);
+			if (kind) {
+				return DEFAULT_THEME_BY_KIND[kind];
+			}
 		}
 
 		// 2. The fork's persisted theme state (the user's real selected theme).
@@ -515,10 +514,10 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 	// Keybindings
 	// =====================================================================
 
-	private async importKeybindings(source: IExternalEditorSource): Promise<boolean> {
+	private async importKeybindings(source: IExternalEditorSource): Promise<{ imported: boolean; failed: boolean }> {
 		const sourceKeybindings = await this.readJsonArray(URI.joinPath(source.userDataUri, 'keybindings.json'));
 		if (!sourceKeybindings || sourceKeybindings.length === 0) {
-			return false;
+			return { imported: false, failed: false };
 		}
 
 		const targetResource = this.userDataProfileService.currentProfile.keybindingsResource;
@@ -529,12 +528,12 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		// keybindings, so bail out rather than risk data loss.
 		if (targetExists && !existingKeybindings) {
 			this.logService.warn('[externalEditorImport] Existing keybindings.json could not be parsed; skipping keybindings import');
-			return false;
+			return { imported: false, failed: true };
 		}
 
-		const newEntries = sourceKeybindings.filter(entry => !existingKeybindings!.some(existing => this.deepEqual(existing, entry)));
+		const newEntries = sourceKeybindings.filter(entry => !existingKeybindings!.some(existing => equals(existing, entry)));
 		if (newEntries.length === 0) {
-			return false;
+			return { imported: false, failed: false };
 		}
 
 		try {
@@ -546,10 +545,10 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 				const edits: IJSONValue[] = newEntries.map(value => ({ path: [-1], value }));
 				await this.jsonEditingService.write(targetResource, edits, true);
 			}
-			return true;
+			return { imported: true, failed: false };
 		} catch (error) {
 			this.logService.error('[externalEditorImport] Failed to import keybindings', error);
-			return false;
+			return { imported: false, failed: true };
 		}
 	}
 
@@ -557,24 +556,25 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 	// Snippets
 	// =====================================================================
 
-	private async importSnippets(source: IExternalEditorSource): Promise<number> {
+	private async importSnippets(source: IExternalEditorSource): Promise<{ imported: number; failed: number }> {
 		const sourceSnippetsHome = URI.joinPath(source.userDataUri, 'snippets');
 		let sourceStat;
 		try {
 			sourceStat = await this.fileService.resolve(sourceSnippetsHome);
 		} catch (error) {
 			this.logService.error('[externalEditorImport] Failed to read snippets', error);
-			return 0;
+			return { imported: 0, failed: 1 };
 		}
 
 		if (!sourceStat.children?.length) {
-			return 0;
+			return { imported: 0, failed: 0 };
 		}
 
 		const targetSnippetsHome = this.userDataProfileService.currentProfile.snippetsHome;
 		let imported = 0;
+		let failed = 0;
 		for (const child of sourceStat.children) {
-			if (child.isDirectory) {
+			if (child.isDirectory || !this.isSnippetFile(child.resource)) {
 				continue;
 			}
 			const targetUri = URI.joinPath(targetSnippetsHome, child.name);
@@ -588,10 +588,11 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 				imported++;
 			} catch (error) {
 				this.logService.error(`[externalEditorImport] Failed to import snippet ${child.name}`, error);
+				failed++;
 			}
 		}
 
-		return imported;
+		return { imported, failed };
 	}
 
 	// =====================================================================
@@ -608,7 +609,8 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 			return { installed: 0, failed: 0 };
 		}
 
-		const installed = await this.extensionManagementService.getInstalled();
+		const profileLocation = this.userDataProfileService.currentProfile.extensionsResource;
+		const installed = await this.extensionManagementService.getInstalled(undefined, profileLocation);
 		const toQuery = identifiers.filter(identifier => !installed.some(local => areSameExtensions(local.identifier, identifier)));
 		if (toQuery.length === 0) {
 			return { installed: 0, failed: 0 };
@@ -629,19 +631,46 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 			return { installed: 0, failed: unresolved };
 		}
 
-		const installExtensionInfos: InstallExtensionInfo[] = galleryExtensions.map(extension => ({
-			extension,
-			options: { context: { [EXTENSION_INSTALL_SKIP_WALKTHROUGH_CONTEXT]: true } },
-		}));
-
-		try {
-			const results = await this.extensionManagementService.installGalleryExtensions(installExtensionInfos);
-			const installFailed = results.filter(result => !result.local).length;
-			return { installed: results.length - installFailed, failed: unresolved + installFailed };
-		} catch (error) {
-			this.logService.error('[externalEditorImport] Failed to install extensions', error);
-			return { installed: 0, failed: unresolved + installExtensionInfos.length };
+		const installExtensionInfos: InstallExtensionInfo[] = [];
+		for (const extension of galleryExtensions) {
+			if (await this.workbenchExtensionManagementService.canInstall(extension) !== true) {
+				continue;
+			}
+			installExtensionInfos.push({
+				extension,
+				options: {
+					isMachineScoped: false,
+					donotIncludePackAndDependencies: true,
+					profileLocation,
+					context: { [EXTENSION_INSTALL_SKIP_WALKTHROUGH_CONTEXT]: true },
+				},
+			});
 		}
+
+		let failed = unresolved + galleryExtensions.length - installExtensionInfos.length;
+		try {
+			await this.workbenchExtensionManagementService.requestPublisherTrust(installExtensionInfos);
+		} catch (error) {
+			this.logService.error('[externalEditorImport] Publisher trust was not granted', error);
+			return { installed: 0, failed: failed + installExtensionInfos.length };
+		}
+
+		let installedCount = 0;
+		for (let index = 0; index < installExtensionInfos.length; index++) {
+			const { extension, options } = installExtensionInfos[index];
+			if (token?.isCancellationRequested) {
+				failed += installExtensionInfos.length - index;
+				break;
+			}
+			try {
+				await this.workbenchExtensionManagementService.installFromGallery(extension, options);
+				installedCount++;
+			} catch (error) {
+				failed++;
+				this.logService.error(`[externalEditorImport] Failed to install extension ${extension.identifier.id}`, error);
+			}
+		}
+		return { installed: installedCount, failed };
 	}
 
 	private async readExtensionIdentifiers(manifestUri: URI): Promise<IExtensionIdentifier[]> {
@@ -679,23 +708,6 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 	// Helpers
 	// =====================================================================
 
-	/**
-	 * Returns the platform application-data directory that contains per-product
-	 * folders (e.g. `Cursor`, `Code`). Returns `undefined` for unsupported platforms.
-	 */
-	private getApplicationDataHome(home: URI): URI | undefined {
-		if (isWindows) {
-			return URI.joinPath(home, 'AppData', 'Roaming');
-		}
-		if (isMacintosh) {
-			return URI.joinPath(home, 'Library', 'Application Support');
-		}
-		if (isLinux) {
-			return URI.joinPath(home, '.config');
-		}
-		return undefined;
-	}
-
 	private async safeExists(resource: URI): Promise<boolean> {
 		try {
 			return await this.fileService.exists(resource);
@@ -707,10 +719,15 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 	private async safeHasChildren(resource: URI): Promise<boolean> {
 		try {
 			const stat = await this.fileService.resolve(resource);
-			return !!stat.children?.some(child => !child.isDirectory);
+			return !!stat.children?.some(child => !child.isDirectory && this.isSnippetFile(child.resource));
 		} catch {
 			return false;
 		}
+	}
+
+	private isSnippetFile(resource: URI): boolean {
+		const extension = extname(resource).toLowerCase();
+		return extension === '.json' || extension === '.code-snippets';
 	}
 
 	private async readJsonObject(resource: URI): Promise<Record<string, unknown> | undefined> {
@@ -733,7 +750,4 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		}
 	}
 
-	private deepEqual(a: unknown, b: unknown): boolean {
-		return JSON.stringify(a) === JSON.stringify(b);
-	}
 }

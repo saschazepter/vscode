@@ -4,19 +4,23 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { CancellationTokenSource } from '../../../../../base/common/cancellation.js';
 import { VSBuffer } from '../../../../../base/common/buffer.js';
 import { isMacintosh, isWindows } from '../../../../../base/common/platform.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { NullLogService } from '../../../../../platform/log/common/log.js';
-import { IExtensionGalleryService, IExtensionManagementService, InstallExtensionInfo } from '../../../../../platform/extensionManagement/common/extensionManagement.js';
+import { IExtensionGalleryService, IExtensionManagementService } from '../../../../../platform/extensionManagement/common/extensionManagement.js';
 import { IWorkbenchEnvironmentService } from '../../../../services/environment/common/environmentService.js';
+import { IWorkbenchExtensionManagementService } from '../../../../services/extensionManagement/common/extensionManagement.js';
 import { IJSONEditingService, IJSONValue } from '../../../../services/configuration/common/jsonEditing.js';
 import { IPathService } from '../../../../services/path/common/pathService.js';
+import { IWorkbenchThemeService } from '../../../../services/themes/common/workbenchThemeService.js';
 import { IUserDataProfileService } from '../../../../services/userDataProfile/common/userDataProfile.js';
 import { ExternalEditorImportService } from '../../browser/externalEditorImportService.js';
 import { IExternalEditorSource } from '../../common/externalEditorImport.js';
+import { ExternalEditorImportEnvironmentService, IExternalEditorImportEnvironmentService } from '../../common/externalEditorImportEnvironment.js';
 
 function applicationDataHome(home: URI): URI {
 	if (isWindows) {
@@ -33,7 +37,7 @@ suite('ExternalEditorImportService', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 	const home = URI.file('/home/tester');
 
-	function createService(existingPaths: Set<string>, remoteAuthority?: string, fileContents?: Map<string, string>): ExternalEditorImportService {
+	function createService(existingPaths: Set<string>, remoteAuthority?: string, fileContents?: Map<string, string>, importEnvironmentService?: IExternalEditorImportEnvironmentService): ExternalEditorImportService {
 		const fileService = {
 			exists: async (resource: URI) => existingPaths.has(resource.toString()),
 			readFile: async (resource: URI) => {
@@ -62,7 +66,10 @@ suite('ExternalEditorImportService', () => {
 			{} as unknown as IUserDataProfileService,
 			{} as unknown as IExtensionGalleryService,
 			{} as unknown as IExtensionManagementService,
+			{} as unknown as IWorkbenchExtensionManagementService,
+			{ getColorThemes: async () => [{ settingsId: 'Monokai' }] } as unknown as IWorkbenchThemeService,
 			{ remoteAuthority } as unknown as IWorkbenchEnvironmentService,
+			importEnvironmentService ?? new ExternalEditorImportEnvironmentService(),
 			new NullLogService(),
 		));
 	}
@@ -242,11 +249,27 @@ suite('ExternalEditorImportService', () => {
 		assert.strictEqual(sources.length, 0);
 	});
 
+	test('detects Cursor under a redirected application-data root', async () => {
+		const redirectedHome = URI.file('/redirected/config');
+		const cursorUser = URI.joinPath(redirectedHome, 'Cursor', 'User');
+		const existing = new Set<string>([URI.joinPath(cursorUser, 'settings.json').toString()]);
+		const importEnvironmentService = {
+			_serviceBrand: undefined,
+			getApplicationDataHome: async () => redirectedHome,
+		};
+
+		const sources = await createService(existing, undefined, undefined, importEnvironmentService).detectSources();
+
+		assert.deepStrictEqual(sources.map(source => source.userDataUri.toString()), [cursorUser.toString()]);
+	});
+
 	function createImportService(options: {
 		files: InMemoryFiles;
 		jsonEditingService?: IJSONEditingService;
 		extensionGalleryService?: IExtensionGalleryService;
 		extensionManagementService?: IExtensionManagementService;
+		workbenchExtensionManagementService?: IWorkbenchExtensionManagementService;
+		importEnvironmentService?: IExternalEditorImportEnvironmentService;
 	}): ExternalEditorImportService {
 		const pathService = { userHome: async () => home } as unknown as IPathService;
 		const userDataProfileService = {
@@ -254,8 +277,14 @@ suite('ExternalEditorImportService', () => {
 				settingsResource: URI.file('/profile/settings.json'),
 				keybindingsResource: keybindingsTarget,
 				snippetsHome: URI.file('/profile/snippets'),
+				extensionsResource: URI.file('/profile/extensions.json'),
 			},
 		} as unknown as IUserDataProfileService;
+		const workbenchExtensionManagementService = {
+			canInstall: async () => true,
+			requestPublisherTrust: async () => true,
+			installFromGallery: async () => undefined,
+		} as unknown as IWorkbenchExtensionManagementService;
 
 		return store.add(new ExternalEditorImportService(
 			options.files.service,
@@ -264,7 +293,10 @@ suite('ExternalEditorImportService', () => {
 			userDataProfileService,
 			options.extensionGalleryService ?? ({} as unknown as IExtensionGalleryService),
 			options.extensionManagementService ?? ({} as unknown as IExtensionManagementService),
+			options.workbenchExtensionManagementService ?? workbenchExtensionManagementService,
+			{ getColorThemes: async () => [] } as unknown as IWorkbenchThemeService,
 			{ remoteAuthority: undefined } as unknown as IWorkbenchEnvironmentService,
+			options.importEnvironmentService ?? new ExternalEditorImportEnvironmentService(),
 			new NullLogService(),
 		));
 	}
@@ -296,6 +328,19 @@ suite('ExternalEditorImportService', () => {
 				{ path: ['workbench.colorTheme'], value: 'Light Modern' },
 			],
 		}]);
+	});
+
+	test('reports settings write failures without importing anything', async () => {
+		const sourceSettings = URI.joinPath(cursorUserData, 'settings.json');
+		const files = new InMemoryFiles(new Map([
+			[sourceSettings.toString(), JSON.stringify({ 'editor.fontSize': 14 })],
+		]));
+		const jsonEditingService = { write: async () => { throw new Error('write failed'); } } as unknown as IJSONEditingService;
+		const service = createImportService({ files, jsonEditingService });
+
+		const result = await service.import(cursorSource({ hasSettings: true }), { settings: true });
+
+		assert.deepStrictEqual({ imported: result.settingsImported, failed: result.settingsFailed }, { imported: 0, failed: true });
 	});
 
 	test('imports keybindings by appending through the JSON editing service to preserve the existing file', async () => {
@@ -343,6 +388,132 @@ suite('ExternalEditorImportService', () => {
 		assert.strictEqual(files.get(keybindingsTarget), '{ "not": "an array" }');
 	});
 
+	test('compares keybindings structurally regardless of property order', async () => {
+		const sourceKeybindings = URI.joinPath(cursorUserData, 'keybindings.json');
+		const files = new InMemoryFiles(new Map([
+			[sourceKeybindings.toString(), JSON.stringify([{ command: 'a', key: 'ctrl+a' }])],
+			[keybindingsTarget.toString(), JSON.stringify([{ key: 'ctrl+a', command: 'a' }])],
+		]));
+
+		const service = createImportService({ files });
+		const preview = await service.preview(cursorSource({ hasKeybindings: true }));
+		const result = await service.import(cursorSource({ hasKeybindings: true }), { keybindings: true });
+
+		assert.deepStrictEqual({ preview: preview.keybindings, imported: result.keybindingsImported }, { preview: [], imported: false });
+	});
+
+	test('previews and imports only supported snippet files', async () => {
+		const snippetsHome = URI.joinPath(cursorUserData, 'snippets');
+		const files = new InMemoryFiles(new Map([
+			[snippetsHome.toString(), 'directory'],
+			[URI.joinPath(snippetsHome, 'valid.code-snippets').toString(), '{}'],
+			[URI.joinPath(snippetsHome, 'notes.txt').toString(), 'not a snippet'],
+		]));
+		files.service.resolve = async resource => ({
+			children: [
+				{ name: 'valid.code-snippets', isDirectory: false, resource: URI.joinPath(resource, 'valid.code-snippets') },
+				{ name: 'notes.txt', isDirectory: false, resource: URI.joinPath(resource, 'notes.txt') },
+			],
+		}) as never;
+
+		const service = createImportService({ files });
+		const source = cursorSource({ hasSnippets: true });
+		const preview = await service.preview(source);
+		const result = await service.import(source, { snippets: true });
+
+		assert.deepStrictEqual({ preview: preview.snippets, imported: result.snippetsImported }, { preview: ['valid.code-snippets'], imported: 1 });
+	});
+
+	test('previews no changes when every source customization already exists', async () => {
+		const sourceSettings = URI.joinPath(cursorUserData, 'settings.json');
+		const sourceKeybindings = URI.joinPath(cursorUserData, 'keybindings.json');
+		const sourceSnippets = URI.joinPath(cursorUserData, 'snippets');
+		const sourceSnippet = URI.joinPath(sourceSnippets, 'existing.code-snippets');
+		const targetSnippet = URI.file('/profile/snippets/existing.code-snippets');
+		const manifest = URI.joinPath(home, '.cursor', 'extensions', 'extensions.json');
+		const files = new InMemoryFiles(new Map([
+			[sourceSettings.toString(), JSON.stringify({ 'editor.fontSize': 14 })],
+			[URI.file('/profile/settings.json').toString(), JSON.stringify({ 'editor.fontSize': 14 })],
+			[sourceKeybindings.toString(), JSON.stringify([{ key: 'ctrl+a', command: 'a' }])],
+			[keybindingsTarget.toString(), JSON.stringify([{ command: 'a', key: 'ctrl+a' }])],
+			[sourceSnippets.toString(), 'directory'],
+			[sourceSnippet.toString(), '{}'],
+			[targetSnippet.toString(), '{}'],
+			[manifest.toString(), JSON.stringify([{ identifier: { id: 'pub.existing' } }])],
+		]));
+		files.service.resolve = async resource => ({
+			children: resource.toString() === sourceSnippets.toString()
+				? [{ name: 'existing.code-snippets', isDirectory: false, resource: sourceSnippet }]
+				: [],
+		}) as never;
+		const extensionManagementService = {
+			getInstalled: async () => [{ identifier: { id: 'pub.existing' } }],
+		} as unknown as IExtensionManagementService;
+		const service = createImportService({ files, extensionManagementService });
+
+		const preview = await service.preview(cursorSource({ hasSettings: true, hasKeybindings: true, hasSnippets: true, hasExtensions: true }));
+
+		assert.deepStrictEqual(preview, { settings: [], keybindings: [], snippets: [], extensions: [] });
+	});
+
+	test('previews each independently available customization category', async () => {
+		const settingsFiles = new InMemoryFiles(new Map([
+			[URI.joinPath(cursorUserData, 'settings.json').toString(), JSON.stringify({ 'editor.fontSize': 14 })],
+		]));
+		const settings = await createImportService({ files: settingsFiles }).preview(cursorSource({ hasSettings: true }));
+
+		const keybindingsFiles = new InMemoryFiles(new Map([
+			[URI.joinPath(cursorUserData, 'keybindings.json').toString(), JSON.stringify([{ key: 'ctrl+a', command: 'a' }])],
+		]));
+		const keybindings = await createImportService({ files: keybindingsFiles }).preview(cursorSource({ hasKeybindings: true }));
+
+		const snippetsHome = URI.joinPath(cursorUserData, 'snippets');
+		const snippet = URI.joinPath(snippetsHome, 'new.code-snippets');
+		const snippetFiles = new InMemoryFiles(new Map([
+			[snippetsHome.toString(), 'directory'],
+			[snippet.toString(), '{}'],
+		]));
+		snippetFiles.service.resolve = async () => ({
+			children: [{ name: 'new.code-snippets', isDirectory: false, resource: snippet }],
+		}) as never;
+		const snippets = await createImportService({ files: snippetFiles }).preview(cursorSource({ hasSnippets: true }));
+
+		const manifest = URI.joinPath(home, '.cursor', 'extensions', 'extensions.json');
+		const extensionFiles = new InMemoryFiles(new Map([
+			[manifest.toString(), JSON.stringify([{ identifier: { id: 'pub.new' } }])],
+		]));
+		const extensionManagementService = { getInstalled: async () => [] } as unknown as IExtensionManagementService;
+		const extensionGalleryService = {
+			getExtensions: async () => [{ identifier: { id: 'pub.new' }, displayName: 'New Extension' }],
+		} as unknown as IExtensionGalleryService;
+		const extensions = await createImportService({ files: extensionFiles, extensionManagementService, extensionGalleryService }).preview(cursorSource({ hasExtensions: true }));
+
+		assert.deepStrictEqual({ settings, keybindings, snippets, extensions }, {
+			settings: { settings: ['editor.fontSize'], keybindings: [], snippets: [], extensions: [] },
+			keybindings: { settings: [], keybindings: ['ctrl+a → a'], snippets: [], extensions: [] },
+			snippets: { settings: [], keybindings: [], snippets: ['new.code-snippets'], extensions: [] },
+			extensions: { settings: [], keybindings: [], snippets: [], extensions: ['New Extension'] },
+		});
+	});
+
+	test('counts snippet write failures', async () => {
+		const snippetsHome = URI.joinPath(cursorUserData, 'snippets');
+		const sourceSnippet = URI.joinPath(snippetsHome, 'valid.code-snippets');
+		const files = new InMemoryFiles(new Map([
+			[snippetsHome.toString(), 'directory'],
+			[sourceSnippet.toString(), '{}'],
+		]));
+		files.service.resolve = async resource => ({
+			children: [{ name: 'valid.code-snippets', isDirectory: false, resource: URI.joinPath(resource, 'valid.code-snippets') }],
+		}) as never;
+		files.service.writeFile = async () => { throw new Error('write failed'); };
+		const service = createImportService({ files });
+
+		const result = await service.import(cursorSource({ hasSnippets: true }), { snippets: true });
+
+		assert.deepStrictEqual({ imported: result.snippetsImported, failed: result.snippetsFailed }, { imported: 0, failed: 1 });
+	});
+
 	test('counts extensions missing from the gallery as failed', async () => {
 		const manifest = URI.joinPath(home, '.cursor', 'extensions', 'extensions.json');
 		const files = new InMemoryFiles(new Map([
@@ -351,7 +522,6 @@ suite('ExternalEditorImportService', () => {
 
 		const extensionManagementService = {
 			getInstalled: async () => [],
-			installGalleryExtensions: async (infos: InstallExtensionInfo[]) => infos.map(info => ({ identifier: info.extension.identifier, local: {} })),
 		} as unknown as IExtensionManagementService;
 
 		// Only one of the two requested extensions resolves in the gallery.
@@ -376,7 +546,6 @@ suite('ExternalEditorImportService', () => {
 
 		const extensionManagementService = {
 			getInstalled: async () => [],
-			installGalleryExtensions: async (infos: InstallExtensionInfo[]) => infos.map(info => ({ identifier: info.extension.identifier, local: {} })),
 		} as unknown as IExtensionManagementService;
 
 		let queriedIds: string[] = [];
@@ -394,5 +563,96 @@ suite('ExternalEditorImportService', () => {
 			{ queriedIds, installed: result.extensionsInstalled, failed: result.extensionsFailed },
 			{ queriedIds: ['ms-vscode-remote.remote-ssh'], installed: 1, failed: 0 },
 		);
+	});
+
+	test('checks and installs extensions in the current profile', async () => {
+		const manifest = URI.joinPath(home, '.cursor', 'extensions', 'extensions.json');
+		const profileLocation = URI.file('/profile/extensions.json');
+		const files = new InMemoryFiles(new Map([
+			[manifest.toString(), JSON.stringify([{ identifier: { id: 'pub.a' } }])],
+		]));
+		const getInstalledLocations: (URI | undefined)[] = [];
+		const extensionManagementService = {
+			getInstalled: async (_type: undefined, location: URI | undefined) => {
+				getInstalledLocations.push(location);
+				return [];
+			},
+		} as unknown as IExtensionManagementService;
+		const extensionGalleryService = {
+			getExtensions: async () => [{ identifier: { id: 'pub.a' }, displayName: 'A' }],
+		} as unknown as IExtensionGalleryService;
+		const installLocations: (URI | undefined)[] = [];
+		const workbenchExtensionManagementService = {
+			canInstall: async () => true,
+			requestPublisherTrust: async () => true,
+			installFromGallery: async (_extension: object, options: { profileLocation?: URI }) => { installLocations.push(options.profileLocation); },
+		} as unknown as IWorkbenchExtensionManagementService;
+		const service = createImportService({ files, extensionGalleryService, extensionManagementService, workbenchExtensionManagementService });
+		const source = cursorSource({ hasExtensions: true });
+
+		await service.preview(source);
+		await service.import(source, { extensions: true });
+
+		assert.deepStrictEqual({ getInstalledLocations, installLocations }, {
+			getInstalledLocations: [profileLocation, profileLocation],
+			installLocations: [profileLocation],
+		});
+	});
+
+	test('counts unsupported and untrusted extensions as failed', async () => {
+		const manifest = URI.joinPath(home, '.cursor', 'extensions', 'extensions.json');
+		const files = new InMemoryFiles(new Map([
+			[manifest.toString(), JSON.stringify([
+				{ identifier: { id: 'pub.unsupported' } },
+				{ identifier: { id: 'pub.untrusted' } },
+			])],
+		]));
+		const extensionManagementService = { getInstalled: async () => [] } as unknown as IExtensionManagementService;
+		const extensionGalleryService = {
+			getExtensions: async () => [
+				{ identifier: { id: 'pub.unsupported' } },
+				{ identifier: { id: 'pub.untrusted' } },
+			],
+		} as unknown as IExtensionGalleryService;
+		const workbenchExtensionManagementService = {
+			canInstall: async (extension: { identifier: { id: string } }) => extension.identifier.id !== 'pub.unsupported',
+			requestPublisherTrust: async () => { throw new Error('denied'); },
+			installFromGallery: async () => undefined,
+		} as unknown as IWorkbenchExtensionManagementService;
+		const service = createImportService({ files, extensionGalleryService, extensionManagementService, workbenchExtensionManagementService });
+
+		const result = await service.import(cursorSource({ hasExtensions: true }), { extensions: true });
+
+		assert.deepStrictEqual({ installed: result.extensionsInstalled, failed: result.extensionsFailed }, { installed: 0, failed: 2 });
+	});
+
+	test('counts only remaining extensions as failed when installation is cancelled', async () => {
+		const manifest = URI.joinPath(home, '.cursor', 'extensions', 'extensions.json');
+		const files = new InMemoryFiles(new Map([
+			[manifest.toString(), JSON.stringify([
+				{ identifier: { id: 'pub.installed' } },
+				{ identifier: { id: 'pub.cancelled-a' } },
+				{ identifier: { id: 'pub.cancelled-b' } },
+			])],
+		]));
+		const extensionManagementService = { getInstalled: async () => [] } as unknown as IExtensionManagementService;
+		const extensionGalleryService = {
+			getExtensions: async () => [
+				{ identifier: { id: 'pub.installed' } },
+				{ identifier: { id: 'pub.cancelled-a' } },
+				{ identifier: { id: 'pub.cancelled-b' } },
+			],
+		} as unknown as IExtensionGalleryService;
+		const cancellation = store.add(new CancellationTokenSource());
+		const workbenchExtensionManagementService = {
+			canInstall: async () => true,
+			requestPublisherTrust: async () => true,
+			installFromGallery: async () => { cancellation.cancel(); },
+		} as unknown as IWorkbenchExtensionManagementService;
+		const service = createImportService({ files, extensionGalleryService, extensionManagementService, workbenchExtensionManagementService });
+
+		const result = await service.import(cursorSource({ hasExtensions: true }), { extensions: true }, cancellation.token);
+
+		assert.deepStrictEqual({ installed: result.extensionsInstalled, failed: result.extensionsFailed }, { installed: 1, failed: 2 });
 	});
 });

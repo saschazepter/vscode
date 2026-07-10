@@ -57,8 +57,11 @@ export interface IExternalEditorImportSelection {
  */
 export interface IExternalEditorImportResult {
 	readonly settingsImported: number;
+	readonly settingsFailed: boolean;
 	readonly keybindingsImported: boolean;
+	readonly keybindingsFailed: boolean;
 	readonly snippetsImported: number;
+	readonly snippetsFailed: number;
 	readonly extensionsInstalled: number;
 	readonly extensionsFailed: number;
 }
@@ -92,13 +95,6 @@ export interface IExternalEditorImportService {
 	 * given source, without making any changes.
 	 */
 	preview(source: IExternalEditorSource, token?: CancellationToken): Promise<IExternalEditorImportPreview>;
-
-	/**
-	 * Quickly determines whether importing from the given source would bring over anything
-	 * new. Uses only local checks (no gallery lookups) so it is safe to call on a hot path,
-	 * such as deciding whether to show the import step at all.
-	 */
-	hasImportableChanges(source: IExternalEditorSource): Promise<boolean>;
 
 	/**
 	 * Imports the selected categories of customizations from the given source into the current profile.

@@ -12,12 +12,15 @@ import { Action2, registerAction2 } from '../../../../platform/actions/common/ac
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
 import { IProgressService, ProgressLocation } from '../../../../platform/progress/common/progress.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IWorkbenchContribution, WorkbenchPhase, registerWorkbenchContribution2 } from '../../../common/contributions.js';
 import { IExternalEditorImportResult, IExternalEditorImportService, IExternalEditorSource } from '../common/externalEditorImport.js';
+import { ExternalEditorImportEnvironmentService, IExternalEditorImportEnvironmentService } from '../common/externalEditorImportEnvironment.js';
 import { ExternalEditorImportService } from './externalEditorImportService.js';
 
+registerSingleton(IExternalEditorImportEnvironmentService, ExternalEditorImportEnvironmentService, InstantiationType.Delayed);
 registerSingleton(IExternalEditorImportService, ExternalEditorImportService, InstantiationType.Delayed);
 
 const EXTERNAL_IMPORT_PROMPTED_KEY = 'externalEditorImport.prompted';
@@ -38,20 +41,27 @@ export async function runExternalEditorImport(
 
 	const parts: string[] = [];
 	if (result.settingsImported > 0) {
-		parts.push(localize('externalImport.settingsCount', "{0} settings", result.settingsImported));
+		parts.push(result.settingsImported === 1
+			? localize('externalImport.oneSetting', "1 setting")
+			: localize('externalImport.settingsCount', "{0} settings", result.settingsImported));
 	}
 	if (result.keybindingsImported) {
 		parts.push(localize('externalImport.keybindings', "keyboard shortcuts"));
 	}
 	if (result.snippetsImported > 0) {
-		parts.push(localize('externalImport.snippetsCount', "{0} snippet files", result.snippetsImported));
+		parts.push(result.snippetsImported === 1
+			? localize('externalImport.oneSnippet', "1 snippet file")
+			: localize('externalImport.snippetsCount', "{0} snippet files", result.snippetsImported));
 	}
 	if (result.extensionsInstalled > 0) {
-		parts.push(localize('externalImport.extensionsCount', "{0} extensions", result.extensionsInstalled));
+		parts.push(result.extensionsInstalled === 1
+			? localize('externalImport.oneExtension', "1 extension")
+			: localize('externalImport.extensionsCount', "{0} extensions", result.extensionsInstalled));
 	}
+	const failed = result.settingsFailed || result.keybindingsFailed || result.snippetsFailed > 0 || result.extensionsFailed > 0;
 
 	if (parts.length === 0) {
-		if (result.extensionsFailed > 0) {
+		if (failed) {
 			notificationService.notify({
 				severity: Severity.Warning,
 				message: localize('externalImport.failed', "Some customizations from {0} could not be imported. You can try again later from the Command Palette.", source.label),
@@ -59,10 +69,10 @@ export async function runExternalEditorImport(
 		} else {
 			notificationService.info(localize('externalImport.nothing', "Nothing new to import from {0} \u2014 your customizations are already up to date.", source.label));
 		}
-	} else if (result.extensionsFailed > 0) {
+	} else if (failed) {
 		notificationService.notify({
 			severity: Severity.Warning,
-			message: localize('externalImport.donePartial', "Imported {0} from {1}. Some extensions could not be imported.", parts.join(', '), source.label),
+			message: localize('externalImport.donePartial', "Imported {0} from {1}. Some customizations could not be imported.", parts.join(', '), source.label),
 		});
 	} else {
 		notificationService.info(localize('externalImport.done', "Imported {0} from {1}.", parts.join(', '), source.label));
@@ -85,6 +95,7 @@ export class ExternalEditorImportNotificationContribution extends Disposable imp
 		@INotificationService private readonly notificationService: INotificationService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IProgressService private readonly progressService: IProgressService,
+		@ILogService private readonly logService: ILogService,
 	) {
 		super();
 
@@ -100,7 +111,7 @@ export class ExternalEditorImportNotificationContribution extends Disposable imp
 			return; // already offered before
 		}
 
-		this.tryPrompt();
+		void this.tryPrompt().catch(error => this.logService.error('[externalEditorImport] Failed to determine whether to prompt for import', error));
 	}
 
 	private async tryPrompt(): Promise<void> {
@@ -115,6 +126,10 @@ export class ExternalEditorImportNotificationContribution extends Disposable imp
 		if (!source) {
 			return;
 		}
+		const preview = await this.importService.preview(source, CancellationToken.None);
+		if (preview.settings.length === 0 && preview.keybindings.length === 0 && preview.snippets.length === 0 && preview.extensions.length === 0) {
+			return;
+		}
 
 		// Mark as prompted regardless of the user's choice so we never nag.
 		this.storageService.store(EXTERNAL_IMPORT_PROMPTED_KEY, true, StorageScope.APPLICATION, StorageTarget.USER);
@@ -125,7 +140,12 @@ export class ExternalEditorImportNotificationContribution extends Disposable imp
 			[
 				{
 					label: localize('externalImport.prompt.import', "Import from {0}", source.label),
-					run: () => { runExternalEditorImport(source, this.importService, this.notificationService, this.progressService); },
+					run: () => {
+						void runExternalEditorImport(source, this.importService, this.notificationService, this.progressService).catch(error => {
+							this.logService.error('[externalEditorImport] Import from notification failed', error);
+							this.notificationService.error(localize('externalImport.unexpectedError', "Could not import customizations from {0}.", source.label));
+						});
+					},
 				},
 				{
 					label: localize('externalImport.prompt.notNow', "Not Now"),
@@ -157,32 +177,6 @@ registerAction2(class extends Action2 {
 		const source = sources[0];
 		if (!source) {
 			notificationService.info(localize('externalImport.none', "No other editors with importable customizations were found on this machine."));
-			return;
-		}
-
-		await runExternalEditorImport(source, importService, notificationService, progressService);
-	}
-});
-
-registerAction2(class extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.importFromCursor',
-			title: localize2('externalImport.cursorAction', "Import Settings and Extensions from Cursor"),
-			category: Categories.Preferences,
-			f1: true,
-		});
-	}
-
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const importService = accessor.get(IExternalEditorImportService);
-		const notificationService = accessor.get(INotificationService);
-		const progressService = accessor.get(IProgressService);
-
-		const sources = await importService.detectSources(CancellationToken.None);
-		const source = sources.find(candidate => candidate.id === 'cursor');
-		if (!source) {
-			notificationService.info(localize('externalImport.cursor.none', "Cursor with importable customizations was not found on this machine."));
 			return;
 		}
 
