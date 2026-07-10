@@ -283,6 +283,11 @@ export class EditorResolverService extends Disposable implements IEditorResolver
 		return this.getAssociationsForResourceFromSetting(resource, editorsAssociationsSettingId);
 	}
 
+	getConfiguredDefaultEditor(resource: URI, forDiffEditor?: boolean): string | undefined {
+		const settingId = forDiffEditor ? diffEditorsAssociationsSettingId : editorsAssociationsSettingId;
+		return this.getAssociationsForResourceFromSetting(resource, settingId)[0]?.viewType;
+	}
+
 	private getAssociationsForResourceByType(resource: URI, associationType: EditorAssociationType): EditorAssociations {
 		// The specialized diff/merge associations win over the general ones and are allowed to target
 		// an editor even if that editor opted out of diffs/merges through a `never` priority.
@@ -405,8 +410,8 @@ export class EditorResolverService extends Disposable implements IEditorResolver
 		return Array.from(this._flattenedEditors.values()).flat();
 	}
 
-	updateUserAssociations(globPattern: string, editorID: string): void {
-		this.updateUserAssociationsForSetting(editorsAssociationsSettingId, globPattern, editorID);
+	updateUserAssociations(globPattern: string, editorID: string, forDiffEditor?: boolean): void {
+		this.updateUserAssociationsForSetting(forDiffEditor ? diffEditorsAssociationsSettingId : editorsAssociationsSettingId, globPattern, editorID);
 	}
 
 	private updateUserAssociationsForType(associationType: EditorAssociationType, globPattern: string, editorID: string): void {
@@ -486,6 +491,20 @@ export class EditorResolverService extends Disposable implements IEditorResolver
 
 		// All
 		return distinct(this._registeredEditors.map(editor => editor.editorInfo), editor => editor.id);
+	}
+
+	getBinaryDiffFallbackEditor(resource: URI): string | undefined {
+		this._flattenedEditors = this._flattenEditorsMap();
+
+		// `findMatchingEditors(..., DiffEditor)` only keeps editors that provide a diff editor factory
+		// and sorts them by their diff priority. It still includes `never` editors (they match by glob),
+		// which is exactly what we want here: a `never` editor opts out of diffs for text files, but is
+		// the better choice than the generic binary fallback when the text diff editor cannot render the
+		// content. We exclude the built-in default text editor since that is the editor that already
+		// failed to render the binary content.
+		const editors = this.findMatchingEditors(resource, EditorAssociationType.DiffEditor)
+			.filter(editor => editor.editorInfo.id !== DEFAULT_EDITOR_ASSOCIATION.id);
+		return editors[0]?.editorInfo.id;
 	}
 
 	/**
