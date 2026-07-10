@@ -272,6 +272,12 @@ export class MultiDiffEditorWidgetImpl extends Disposable {
 					return;
 				}
 
+				// Restore the persisted active item instead of selecting the first
+				// change, so the restored scroll/collapsed state is preserved.
+				if (this._restorePendingActiveDiffItem(viewModel, items)) {
+					return;
+				}
+
 				// Navigate to the first change using the existing navigation
 				// logic. Whether this also moves keyboard focus into the editor
 				// is driven by the last `setViewModel` call: an editor opened
@@ -349,19 +355,27 @@ export class MultiDiffEditorWidgetImpl extends Disposable {
 				left: this.scrollLeft.get(),
 			},
 			docStates: Object.fromEntries(this._viewItems.get().map(i => [i.getKey(), i.getViewState()])),
+			activeDiffItemKey: this._viewModel.get()?.activeDiffItem.get()?.getKey(),
 		};
 	}
 
 	/** This accounts for documents that are not loaded yet. */
 	private _lastDocStates: IMultiDiffEditorViewState['docStates'];
 
-	public setViewState(viewState: IMultiDiffEditorViewState): void {
+	/**
+	 * The active diff item to restore once the documents are loaded. Restoring it
+	 * suppresses the automatic first-change navigation (which would expand the
+	 * first file and reset scroll), so the restored state wins. Consumed once.
+	 */
+	private _lastActiveDiffItemKey: string | undefined;
+
+	public setViewState(viewState: IMultiDiffEditorViewState, tx?: ITransaction): void {
 		this.setScrollState(viewState.scrollState);
 
 		this._lastDocStates = viewState.docStates;
+		this._lastActiveDiffItemKey = viewState.activeDiffItemKey;
 
-		transaction(tx => {
-			/** setViewState */
+		const applyDocStates = (tx: ITransaction) => {
 			if (viewState.docStates) {
 				for (const i of this._viewItems.get()) {
 					const state = viewState.docStates[i.getKey()];
@@ -370,7 +384,44 @@ export class MultiDiffEditorWidgetImpl extends Disposable {
 					}
 				}
 			}
-		});
+		};
+		if (tx) {
+			applyDocStates(tx);
+		} else {
+			transaction(applyDocStates);
+		}
+
+		// If the documents are already loaded, restore the active item now (this
+		// overrides the first-change selection the init autorun may have made);
+		// otherwise the init autorun restores it once loading completes.
+		const viewModel = this._viewModel.get();
+		if (viewModel) {
+			this._restorePendingActiveDiffItem(viewModel, viewModel.items.get());
+		}
+	}
+
+	/**
+	 * Restores the persisted active diff item (if any) onto the view model, so the
+	 * automatic first-change navigation is skipped. On an explicit (non-preserve-focus)
+	 * open it also moves focus into the restored item's editor, mirroring the
+	 * first-change navigation it replaces. Returns whether it was applied.
+	 */
+	private _restorePendingActiveDiffItem(viewModel: MultiDiffEditorViewModel, items: readonly DocumentDiffItemViewModel[]): boolean {
+		const key = this._lastActiveDiffItemKey;
+		if (key === undefined || items.length === 0) {
+			return false;
+		}
+		this._lastActiveDiffItemKey = undefined;
+		const target = items.find(i => i.getKey() === key);
+		if (!target) {
+			return false;
+		}
+		viewModel.activeDiffItem.setCache(target, undefined);
+
+		if (!this._preserveFocusOnLoad) {
+			this._viewItemsInfo.get().getItem(target).template.get()?.editor.focus();
+		}
+		return true;
 	}
 
 	public findDocumentDiffItem(resource: URI): IDocumentDiffItem | undefined {
@@ -517,6 +568,8 @@ function highlightRange(targetEditor: ICodeEditor, range: IRange) {
 export interface IMultiDiffEditorViewState {
 	scrollState: { top: number; left: number };
 	docStates?: Record<string, IMultiDiffDocState>;
+	/** Key ({@link DocumentDiffItemViewModel.getKey}) of the active diff item, if any. */
+	activeDiffItemKey?: string;
 }
 
 interface IMultiDiffDocState {

@@ -7,7 +7,7 @@ import { Dimension } from '../../../../base/browser/dom.js';
 import { Event } from '../../../../base/common/event.js';
 import { readHotReloadableExport } from '../../../../base/common/hotReloadHelpers.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { derived, observableValue, recomputeInitiallyAndOnChange } from '../../../../base/common/observable.js';
+import { derived, observableValue, recomputeInitiallyAndOnChange, transaction } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
@@ -60,12 +60,22 @@ export class MultiDiffEditorWidget extends Disposable {
 		return new MultiDiffEditorViewModel(model, this._instantiationService);
 	}
 
-	public setViewModel(viewModel: MultiDiffEditorViewModel | undefined, options?: { readonly preserveFocus?: boolean }): void {
+	public setViewModel(viewModel: MultiDiffEditorViewModel | undefined, options?: { readonly preserveFocus?: boolean; readonly viewState?: IMultiDiffEditorViewState }): void {
 		// An editor opened with `preserveFocus` (e.g. restored in the background
 		// or on a session switch) must not have its automatic first-change
 		// selection steal keyboard focus from elsewhere (such as the chat input).
 		this._widgetImpl.get().setPreserveFocusOnLoad(!!options?.preserveFocus);
-		this._viewModel.set(viewModel, undefined);
+
+		// Apply the view model and the (optional) restored view state in a single
+		// transaction so the widget's automatic first-change navigation, which runs
+		// when the model is set, already sees the restored active item/collapsed
+		// state instead of navigating to (and focusing) the first file.
+		transaction(tx => {
+			this._viewModel.set(viewModel, tx);
+			if (options?.viewState) {
+				this._widgetImpl.get().setViewState(options.viewState, tx);
+			}
+		});
 	}
 
 	public layout(dimension: Dimension): void {
