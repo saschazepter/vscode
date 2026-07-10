@@ -4,17 +4,14 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as dom from '../../../../../base/browser/dom.js';
-import { Gesture, EventType as TouchEventType } from '../../../../../base/browser/touch.js';
-import { Codicon } from '../../../../../base/common/codicons.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { autorun, IObservable } from '../../../../../base/common/observable.js';
-import { renderIcon } from '../../../../../base/browser/ui/iconLabel/iconLabels.js';
+import { Checkbox } from '../../../../../base/browser/ui/toggle/toggle.js';
 import { localize } from '../../../../../nls.js';
-import { IActionWidgetService } from '../../../../../platform/actionWidget/browser/actionWidget.js';
-import { ActionListItemKind, IActionListDelegate, IActionListItem } from '../../../../../platform/actionWidget/browser/actionList.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { IContextKey, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
+import { defaultCheckboxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { reportNewChatPickerClosed } from '../../../chat/browser/newChatPickerTelemetry.js';
 import { IActiveSession } from '../../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsProvidersService } from '../../../../services/sessions/browser/sessionsProvidersService.js';
@@ -24,22 +21,15 @@ import { SessionIsolationPickerVisibleContext } from '../../../../common/context
 
 export type IsolationMode = 'worktree' | 'workspace';
 
-interface IIsolationPickerItem {
-	readonly mode: IsolationMode;
-	readonly checked?: boolean;
-}
-
 /**
  * A self-contained widget for selecting the isolation mode.
  *
- * Options:
- * - **Worktree** (`worktree`) — run in a git worktree
- * - **Folder** (`workspace`) — run directly in the folder
+ * Rendered as a "Worktree" checkbox: checked runs the session in a git
+ * worktree (`worktree`), unchecked runs it directly in the folder
+ * (`workspace`).
  *
  * Only visible when isolation option is enabled, project has a git repo,
  * and the target is CLI.
- *
- * Emits `onDidChange` with the selected `IsolationMode` when the user picks an option.
  */
 export class IsolationPicker extends Disposable {
 
@@ -47,6 +37,7 @@ export class IsolationPicker extends Disposable {
 	private _isolationOptionEnabled: boolean;
 
 	private readonly _renderDisposables = this._register(new DisposableStore());
+	private readonly _triggerContent = this._register(new DisposableStore());
 	private _slotElement: HTMLElement | undefined;
 	private _triggerElement: HTMLElement | undefined;
 
@@ -60,7 +51,6 @@ export class IsolationPicker extends Disposable {
 
 	constructor(
 		private readonly _session: IObservable<IActiveSession | undefined>,
-		@IActionWidgetService private readonly actionWidgetService: IActionWidgetService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@ISessionsProvidersService private readonly sessionsProvidersService: ISessionsProvidersService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
@@ -77,7 +67,7 @@ export class IsolationPicker extends Disposable {
 				if (!this._isolationOptionEnabled) {
 					this._setModeOnSession('worktree');
 				}
-				this._updateTriggerLabel();
+				this._updateTrigger();
 			}
 		}));
 
@@ -97,7 +87,7 @@ export class IsolationPicker extends Disposable {
 			} else {
 				this._hasGitRepo = false;
 			}
-			this._updateTriggerLabel();
+			this._updateTrigger();
 		}));
 	}
 
@@ -111,91 +101,15 @@ export class IsolationPicker extends Disposable {
 	render(container: HTMLElement): void {
 		this._renderDisposables.clear();
 
-		const slot = dom.append(container, dom.$('.sessions-chat-picker-slot'));
+		const slot = dom.append(container, dom.$('.sessions-chat-picker-slot.sessions-chat-isolation-checkbox'));
 		this._renderDisposables.add({ dispose: () => slot.remove() });
 		this._slotElement = slot;
 		// Onboarding spotlight target — id is referenced by the "new session" tour
 		// in vs/sessions/contrib/onboardingTours.
 		this._renderDisposables.add(markOnboardingTarget(slot, 'sessions.newSession.isolation'));
 
-		const trigger = dom.append(slot, dom.$('a.action-label'));
-		trigger.tabIndex = 0;
-		trigger.role = 'button';
-		this._triggerElement = trigger;
-		this._updateTriggerLabel();
-
-		this._renderDisposables.add(Gesture.addTarget(trigger));
-		for (const eventType of [dom.EventType.CLICK, TouchEventType.Tap]) {
-			this._renderDisposables.add(dom.addDisposableListener(trigger, eventType, (e) => {
-				dom.EventHelper.stop(e, true);
-				this._showPicker();
-			}));
-		}
-
-		this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.KEY_DOWN, (e) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				dom.EventHelper.stop(e, true);
-				this._showPicker();
-			}
-		}));
-	}
-
-	private _showPicker(): void {
-		if (!this._triggerElement || this.actionWidgetService.isVisible) {
-			return;
-		}
-
-		if (!this._hasGitRepo || !this._isolationOptionEnabled) {
-			return;
-		}
-
-		const currentIsolationMode = this._getSessionIsolationMode();
-		const items: IActionListItem<IIsolationPickerItem>[] = [
-			{
-				kind: ActionListItemKind.Action,
-				label: localize('isolationMode.worktree', "Worktree"),
-				group: { title: '', icon: Codicon.worktree },
-				item: { mode: 'worktree', checked: currentIsolationMode === 'worktree' || undefined },
-			},
-			{
-				kind: ActionListItemKind.Action,
-				label: localize('isolationMode.folder', "Folder"),
-				group: { title: '', icon: Codicon.folder },
-				item: { mode: 'workspace', checked: currentIsolationMode === 'workspace' || undefined },
-			},
-		];
-
-		const triggerElement = this._triggerElement;
-		const delegate: IActionListDelegate<IIsolationPickerItem> = {
-			onSelect: ({ mode }) => {
-				this.actionWidgetService.hide();
-				reportNewChatPickerClosed(this.telemetryService, {
-					id: 'NewChatIsolationPicker',
-					name: 'NewChatIsolationPicker',
-					optionIdBefore: currentIsolationMode,
-					optionIdAfter: mode,
-					optionLabelBefore: undefined,
-					optionLabelAfter: undefined,
-					isPII: false,
-				});
-				this._setModeOnSession(mode);
-			},
-			onHide: () => { triggerElement.focus(); },
-		};
-
-		this.actionWidgetService.show<IIsolationPickerItem>(
-			'isolationPicker',
-			false,
-			items,
-			delegate,
-			this._triggerElement,
-			undefined,
-			[],
-			{
-				getAriaLabel: (item) => item.label ?? '',
-				getWidgetAriaLabel: () => localize('isolationPicker.ariaLabel', "Isolation Mode"),
-			},
-		);
+		this._triggerElement = dom.append(slot, dom.$('.action-label'));
+		this._updateTrigger();
 	}
 
 	private _setModeOnSession(mode: IsolationMode): void {
@@ -205,41 +119,52 @@ export class IsolationPicker extends Disposable {
 		providerSession?.setIsolationMode(mode);
 	}
 
-	private _updateTriggerLabel(): void {
+	private _updateTrigger(): void {
 		if (!this._triggerElement) {
 			this._visibleKey.set(false);
 			return;
 		}
 
+		this._triggerContent.clear();
 		dom.clearNode(this._triggerElement);
 
-		const isolationMode = this._getSessionIsolationMode();
-		let modeIcon;
-		let modeLabel: string;
+		const isDisabled = !this._hasGitRepo;
+		const isChecked = this._getSessionIsolationMode() === 'worktree';
+		const label = localize('isolationMode.worktree', "Worktree");
 
-		switch (isolationMode) {
-			case 'workspace':
-				modeIcon = Codicon.folder;
-				modeLabel = localize('isolationMode.folder', "Folder");
-				break;
-			case 'worktree':
-			default:
-				modeIcon = Codicon.worktree;
-				modeLabel = localize('isolationMode.worktree', "Worktree");
-				break;
+		const checkbox = this._triggerContent.add(new Checkbox(label, isChecked, { ...defaultCheckboxStyles, size: 14 }));
+		if (isDisabled) {
+			checkbox.disable();
+		}
+		dom.append(this._triggerElement, checkbox.domNode);
+		const labelSpan = dom.append(this._triggerElement, dom.$('span.sessions-chat-dropdown-label'));
+		labelSpan.textContent = label;
+
+		const applyChecked = (checked: boolean) => {
+			const before: IsolationMode = this._getSessionIsolationMode();
+			const mode: IsolationMode = checked ? 'worktree' : 'workspace';
+			reportNewChatPickerClosed(this.telemetryService, {
+				id: 'NewChatIsolationPicker',
+				name: 'NewChatIsolationPicker',
+				optionIdBefore: before,
+				optionIdAfter: mode,
+				optionLabelBefore: undefined,
+				optionLabelAfter: undefined,
+				isPII: false,
+			});
+			this._setModeOnSession(mode);
+		};
+
+		this._triggerContent.add(checkbox.onChange(() => applyChecked(checkbox.checked)));
+		if (!isDisabled) {
+			this._triggerContent.add(dom.addDisposableListener(labelSpan, dom.EventType.CLICK, () => {
+				checkbox.checked = !checkbox.checked;
+				applyChecked(checkbox.checked);
+			}));
 		}
 
-		dom.append(this._triggerElement, renderIcon(modeIcon));
-		const labelSpan = dom.append(this._triggerElement, dom.$('span.sessions-chat-dropdown-label'));
-		labelSpan.textContent = modeLabel;
-		dom.append(this._triggerElement, renderIcon(Codicon.chevronDown));
-
-		this._triggerElement.ariaLabel = localize('isolationPicker.triggerAriaLabel', "Pick Isolation Mode, {0}", modeLabel);
-
-		const isDisabled = !this._hasGitRepo;
+		this._triggerElement.setAttribute('aria-label', localize('isolationPicker.checkboxAriaLabel', "Worktree isolation"));
 		this._slotElement?.classList.toggle('disabled', isDisabled);
-		this._triggerElement.setAttribute('aria-disabled', String(isDisabled));
-		this._triggerElement.tabIndex = isDisabled ? -1 : 0;
 		this._visibleKey.set(this._hasGitRepo && this._isolationOptionEnabled);
 	}
 }
