@@ -13,7 +13,7 @@ import { toAction } from '../../../../base/common/actions.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
 import { autorun, IObservable } from '../../../../base/common/observable.js';
-import { basename } from '../../../../base/common/resources.js';
+import { basename, dirname } from '../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
@@ -28,6 +28,7 @@ import { DEFAULT_LABELS_CONTAINER, IResourceLabel, ResourceLabels } from '../../
 import { createFileIconThemableTreeContainerScope } from '../../../../workbench/contrib/files/browser/views/explorerView.js';
 import { ACTIVE_GROUP, IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
 import { ISessionFile, SessionFileOperation } from '../../../services/sessions/common/session.js';
+import { ExternalChangesPresentation, externalChangesPresentationObs } from './externalChangesPresentation.js';
 
 const $ = dom.$;
 
@@ -36,27 +37,48 @@ export interface ISessionFilesInput {
 	readonly sessionFilesObs: IObservable<readonly ISessionFile[]>;
 }
 
-class SessionFileListDelegate implements IListVirtualDelegate<ISessionFile> {
+/** A file row (both variants). Carries an optional inline location suffix. */
+interface ISessionFileRow {
+	readonly kind: 'file';
+	readonly file: ISessionFile;
+	/** Dimmed parent-folder path shown after the name (Variant A only). */
+	readonly location: string | undefined;
+}
+
+/** A location group header (Variant B only). */
+interface ISessionLocationRow {
+	readonly kind: 'group';
+	/** Absolute path label of the containing folder. */
+	readonly location: string;
+}
+
+type SessionFileListRow = ISessionFileRow | ISessionLocationRow;
+
+class SessionFileListDelegate implements IListVirtualDelegate<SessionFileListRow> {
 	static readonly ITEM_HEIGHT = 22;
 
-	getHeight(_element: ISessionFile): number {
+	getHeight(_element: SessionFileListRow): number {
 		return SessionFileListDelegate.ITEM_HEIGHT;
 	}
 
-	getTemplateId(_element: ISessionFile): string {
-		return SessionFileListRenderer.TEMPLATE_ID;
+	getTemplateId(element: SessionFileListRow): string {
+		return element.kind === 'group'
+			? SessionLocationRenderer.TEMPLATE_ID
+			: SessionFileRowRenderer.TEMPLATE_ID;
 	}
 }
 
 interface ISessionFileTemplateData {
+	readonly root: HTMLElement;
 	readonly label: IResourceLabel;
+	readonly badge: HTMLElement;
 	readonly toolbar: WorkbenchToolBar;
 	readonly templateDisposables: DisposableStore;
 }
 
-class SessionFileListRenderer implements IListRenderer<ISessionFile, ISessionFileTemplateData> {
+class SessionFileRowRenderer implements IListRenderer<ISessionFileRow, ISessionFileTemplateData> {
 	static readonly TEMPLATE_ID = 'sessionFile';
-	readonly templateId = SessionFileListRenderer.TEMPLATE_ID;
+	readonly templateId = SessionFileRowRenderer.TEMPLATE_ID;
 
 	constructor(
 		private readonly _labels: ResourceLabels,
@@ -67,32 +89,42 @@ class SessionFileListRenderer implements IListRenderer<ISessionFile, ISessionFil
 
 	renderTemplate(container: HTMLElement): ISessionFileTemplateData {
 		const templateDisposables = new DisposableStore();
-		const row = dom.append(container, $('.session-files-widget-file'));
-		const label = templateDisposables.add(this._labels.create(row));
+		const root = dom.append(container, $('.session-files-widget-file'));
+		const label = templateDisposables.add(this._labels.create(root));
+
+		// External-location badge: a subtle icon marking the row as living
+		// outside the workspace. Shown after the label in the enriched variant.
+		const badge = dom.append(root, $('.session-files-widget-external-badge'));
+		badge.classList.add(...ThemeIcon.asClassNameArray(Codicon.linkExternal));
 
 		const actionBarContainer = $('.chat-collapsible-list-action-bar');
 		const toolbar = templateDisposables.add(this._instantiationService.createInstance(WorkbenchToolBar, actionBarContainer, undefined));
 		label.element.appendChild(actionBarContainer);
 
-		return { label, toolbar, templateDisposables };
+		return { root, label, badge, toolbar, templateDisposables };
 	}
 
-	renderElement(element: ISessionFile, _index: number, templateData: ISessionFileTemplateData): void {
+	renderElement(element: ISessionFileRow, _index: number, templateData: ISessionFileTemplateData): void {
+		const { file } = element;
+		templateData.root.classList.toggle('grouped', element.location === undefined);
+		templateData.badge.style.display = element.location !== undefined ? '' : 'none';
 		templateData.label.setResource({
-			resource: element.uri,
-			name: basename(element.uri),
+			resource: file.uri,
+			name: basename(file.uri),
+			description: element.location,
 		}, {
 			fileKind: FileKind.FILE,
 			fileDecorations: undefined,
-			strikethrough: element.operation === SessionFileOperation.Deleted,
-			title: getSessionFileTitle(element, this._labelService),
+			strikethrough: file.operation === SessionFileOperation.Deleted,
+			title: getSessionFileTitle(file, this._labelService),
+			descriptionTitle: element.location,
 		});
 
 		templateData.toolbar.setActions([toAction({
 			id: 'sessionFiles.openFile',
 			label: localize('sessionFiles.openFileAction', "Open File"),
 			class: ThemeIcon.asClassName(Codicon.goToFile),
-			run: () => this._onOpenFile(element),
+			run: () => this._onOpenFile(file),
 		})]);
 	}
 
@@ -101,16 +133,52 @@ class SessionFileListRenderer implements IListRenderer<ISessionFile, ISessionFil
 	}
 }
 
+interface ISessionLocationTemplateData {
+	readonly icon: HTMLElement;
+	readonly labelNode: HTMLElement;
+}
+
+class SessionLocationRenderer implements IListRenderer<ISessionLocationRow, ISessionLocationTemplateData> {
+	static readonly TEMPLATE_ID = 'sessionLocation';
+	readonly templateId = SessionLocationRenderer.TEMPLATE_ID;
+
+	renderTemplate(container: HTMLElement): ISessionLocationTemplateData {
+		const root = dom.append(container, $('.session-files-widget-location'));
+		const icon = dom.append(root, $('.session-files-widget-location-icon'));
+		icon.classList.add(...ThemeIcon.asClassNameArray(Codicon.folderOpened));
+		const labelNode = dom.append(root, $('.session-files-widget-location-label'));
+		return { icon, labelNode };
+	}
+
+	renderElement(element: ISessionLocationRow, _index: number, templateData: ISessionLocationTemplateData): void {
+		templateData.labelNode.textContent = element.location;
+		templateData.labelNode.title = element.location;
+	}
+
+	disposeTemplate(_templateData: ISessionLocationTemplateData): void { }
+}
+
 /**
  * A widget that lists the files created, edited or deleted **outside** the
- * session workspace during the session. Rendered between the changes tree and
- * the CI checks widget in the changes view as a resizable SplitView pane.
+ * session workspace during the session ("external changes"). Rendered between
+ * the changes tree and the CI checks widget in the changes view as a resizable
+ * SplitView pane.
+ *
+ * The presentation is driven by {@link externalChangesPresentationObs} so the
+ * developer toggle can compare, at runtime, two ways of making it clear the
+ * files live elsewhere but are part of the agent's suggestions:
+ * - {@link ExternalChangesPresentation.EnrichedSection} (A): a flat list where
+ *   each row shows the parent folder inline plus an external badge, with a
+ *   footer note.
+ * - {@link ExternalChangesPresentation.GroupedByLocation} (B): files grouped
+ *   under location headers.
  *
  * The collapse/resize behaviour mirrors {@link CIStatusWidget}.
  */
 export class SessionFilesWidget extends Disposable {
 
 	static readonly HEADER_HEIGHT = 32; // 5px section margin + 6px header margin + 28px header
+	static readonly FOOTER_HEIGHT = 34; // provenance note shown in the enriched variant
 	static readonly MIN_BODY_HEIGHT = 3 * SessionFileListDelegate.ITEM_HEIGHT + 2;
 	static readonly PREFERRED_BODY_HEIGHT = 4 * SessionFileListDelegate.ITEM_HEIGHT;
 	static readonly MAX_BODY_HEIGHT = 240;
@@ -122,7 +190,9 @@ export class SessionFilesWidget extends Disposable {
 	private readonly _countNode: HTMLElement;
 	private readonly _chevronNode: HTMLElement;
 	private readonly _bodyNode: HTMLElement;
-	private readonly _list: WorkbenchList<ISessionFile>;
+	private readonly _listContainer: HTMLElement;
+	private readonly _footerNode: HTMLElement;
+	private readonly _list: WorkbenchList<SessionFileListRow>;
 	private readonly _labels: ResourceLabels;
 
 	private readonly _onDidChangeHeight = this._register(new Emitter<void>());
@@ -131,14 +201,17 @@ export class SessionFilesWidget extends Disposable {
 	private readonly _onDidToggleCollapsed = this._register(new Emitter<boolean>());
 	readonly onDidToggleCollapsed = this._onDidToggleCollapsed.event;
 
+	private _files: readonly ISessionFile[] = [];
+	private _rows: SessionFileListRow[] = [];
 	private _fileCount = 0;
 	private _collapsed = false;
+	private _presentation: ExternalChangesPresentation = externalChangesPresentationObs.get();
 
 	get element(): HTMLElement {
 		return this._domNode;
 	}
 
-	/** The full content height the widget would like (header + all files). */
+	/** The full content height the widget would like (header + rows + footer). */
 	get desiredHeight(): number {
 		if (this._fileCount === 0) {
 			return 0;
@@ -146,7 +219,9 @@ export class SessionFilesWidget extends Disposable {
 		if (this._collapsed) {
 			return SessionFilesWidget.HEADER_HEIGHT;
 		}
-		return SessionFilesWidget.HEADER_HEIGHT + this._fileCount * SessionFileListDelegate.ITEM_HEIGHT;
+		return SessionFilesWidget.HEADER_HEIGHT
+			+ this._rows.length * SessionFileListDelegate.ITEM_HEIGHT
+			+ this._footerHeight();
 	}
 
 	/** Whether the widget is currently visible (has files to show). */
@@ -182,7 +257,7 @@ export class SessionFilesWidget extends Disposable {
 		this._headerNode = dom.append(this._domNode, $('.session-files-widget-header'));
 		this._titleNode = dom.append(this._headerNode, $('.session-files-widget-title'));
 		this._titleLabelNode = dom.append(this._titleNode, $('.session-files-widget-title-label'));
-		this._titleLabelNode.textContent = localize('sessionFiles.label', "Other Files");
+		this._titleLabelNode.textContent = localize('sessionFiles.label', "Changes Outside This Workspace");
 		// File count shown in the header only while collapsed (mirrors the
 		// customizations section in the sessions view).
 		this._countNode = dom.append(this._headerNode, $('.session-files-widget-count.hidden'));
@@ -190,14 +265,14 @@ export class SessionFilesWidget extends Disposable {
 		this._chevronNode.classList.add(...ThemeIcon.asClassNameArray(Codicon.chevronDown));
 
 		this._headerNode.setAttribute('role', 'button');
-		this._headerNode.setAttribute('aria-label', localize('sessionFiles.toggle', "Toggle Other Files"));
+		this._headerNode.setAttribute('aria-label', localize('sessionFiles.toggle', "Toggle Changes Outside This Workspace"));
 		this._headerNode.setAttribute('aria-expanded', 'true');
 		this._headerNode.tabIndex = 0;
 
 		this._register(this._hoverService.setupManagedHover(
 			getDefaultHoverDelegate('mouse'),
 			this._headerNode,
-			localize('sessionFiles.hover', "Files created, edited, or deleted outside the workspace during this session. These files are not part of the workspace and won't be committed."),
+			localize('sessionFiles.hover', "Files the agent created, edited, or deleted outside this workspace. They are part of the agent's suggestions, but because they live elsewhere they are not committed with the workspace changes."),
 		));
 
 		// Register the gesture target so the toggle works on touch platforms
@@ -216,69 +291,149 @@ export class SessionFilesWidget extends Disposable {
 			}
 		}));
 
-		// Body (list of files)
+		// Body (list of files + optional footer note)
 		const bodyId = 'session-files-widget-body';
 		this._bodyNode = dom.append(this._domNode, $(`.${bodyId}`));
 		this._bodyNode.id = bodyId;
 		this._headerNode.setAttribute('aria-controls', bodyId);
 
-		const listContainer = $('.session-files-widget-list');
+		this._listContainer = $('.session-files-widget-list');
 		this._list = this._register(this._instantiationService.createInstance(
-			WorkbenchList<ISessionFile>,
+			WorkbenchList<SessionFileListRow>,
 			'SessionFilesWidget',
-			listContainer,
+			this._listContainer,
 			new SessionFileListDelegate(),
-			[this._instantiationService.createInstance(SessionFileListRenderer, this._labels, (file: ISessionFile) => this._openFilePlain(file))],
+			[
+				this._instantiationService.createInstance(SessionFileRowRenderer, this._labels, (file: ISessionFile) => this._openFilePlain(file)),
+				new SessionLocationRenderer(),
+			],
 			{
 				multipleSelectionSupport: false,
 				openOnSingleClick: true,
 				accessibilityProvider: {
-					getWidgetAriaLabel: () => localize('sessionFiles.listAriaLabel', "Other Files"),
-					getAriaLabel: item => localize('sessionFiles.fileAriaLabel', "{0}, {1}", basename(item.uri), getSessionFileOperationLabel(item.operation)),
+					getWidgetAriaLabel: () => localize('sessionFiles.listAriaLabel', "Changes Outside This Workspace"),
+					getAriaLabel: row => row.kind === 'group'
+						? localize('sessionFiles.locationAriaLabel', "Location {0}", row.location)
+						: localize('sessionFiles.fileAriaLabel', "{0}, {1}", basename(row.file.uri), getSessionFileOperationLabel(row.file.operation)),
 				},
 				keyboardNavigationLabelProvider: {
-					getKeyboardNavigationLabel: item => basename(item.uri),
+					getKeyboardNavigationLabel: row => row.kind === 'group' ? row.location : basename(row.file.uri),
 				},
 			},
 		));
-		this._bodyNode.appendChild(listContainer);
+		this._bodyNode.appendChild(this._listContainer);
+
+		// Footer provenance note (enriched variant only).
+		this._footerNode = dom.append(this._bodyNode, $('.session-files-widget-footer'));
+		const footerIcon = dom.append(this._footerNode, $('.session-files-widget-footer-icon'));
+		footerIcon.classList.add(...ThemeIcon.asClassNameArray(Codicon.info));
+		const footerText = dom.append(this._footerNode, $('.session-files-widget-footer-text'));
+		footerText.textContent = localize('sessionFiles.footerNote', "Part of the agent's suggestions. Located outside this workspace, so they are not committed with the workspace changes.");
+		this._footerNode.style.display = 'none';
 
 		this._register(this._list.onDidOpen(e => {
-			if (e.element) {
-				void this._openFile(e.element, !!e.editorOptions?.preserveFocus, !!e.editorOptions?.pinned);
+			if (e.element && e.element.kind === 'file') {
+				void this._openFile(e.element.file, !!e.editorOptions?.preserveFocus, !!e.editorOptions?.pinned);
 			}
+		}));
+
+		// Re-render whenever the developer toggle switches the presentation.
+		this._register(autorun(reader => {
+			const presentation = externalChangesPresentationObs.read(reader);
+			if (presentation === this._presentation) {
+				return;
+			}
+			this._presentation = presentation;
+			this._rebuild();
 		}));
 	}
 
 	setInput(input: ISessionFilesInput): IDisposable {
 		return autorun(reader => {
-			const files = input.sessionFilesObs.read(reader);
-
-			const oldCount = this._fileCount;
-			this._fileCount = files.length;
-
-			if (files.length === 0) {
-				this._setCollapsed(false);
-				this._renderBody([]);
-				this._domNode.style.display = 'none';
-				if (oldCount !== 0) {
-					this._onDidChangeHeight.fire();
-				}
-				return;
-			}
-
-			this._domNode.style.display = '';
-			this._renderBody(files);
-			this._renderCount();
-
-			if (this._fileCount !== oldCount) {
-				this._onDidChangeHeight.fire();
-			}
+			this._files = input.sessionFilesObs.read(reader);
+			this._rebuild();
 		});
 	}
 
+	/** Rebuild the row model and DOM from the current files + presentation. */
+	private _rebuild(): void {
+		const oldRowCount = this._rows.length;
+		this._fileCount = this._files.length;
+		this._rows = this._buildRows(this._files);
+
+		if (this._fileCount === 0) {
+			this._setCollapsed(false);
+			this._list.splice(0, this._list.length, []);
+			this._footerNode.style.display = 'none';
+			this._domNode.style.display = 'none';
+			if (oldRowCount !== 0) {
+				this._onDidChangeHeight.fire();
+			}
+			return;
+		}
+
+		this._domNode.style.display = '';
+		this._list.splice(0, this._list.length, this._rows);
+		this._renderCount();
+		this._updateFooterVisibility();
+
+		if (this._rows.length !== oldRowCount) {
+			this._onDidChangeHeight.fire();
+		}
+	}
+
+	/** Build the flat row list for the active presentation. */
+	private _buildRows(files: readonly ISessionFile[]): SessionFileListRow[] {
+		if (this._presentation === ExternalChangesPresentation.GroupedByLocation) {
+			return this._buildGroupedRows(files);
+		}
+		// Enriched (A): one file row per file, with the parent folder inline.
+		return files.map(file => ({
+			kind: 'file',
+			file,
+			location: this._locationLabel(file.uri),
+		} satisfies ISessionFileRow));
+	}
+
+	/** Group files under their containing folder, preserving first-seen order. */
+	private _buildGroupedRows(files: readonly ISessionFile[]): SessionFileListRow[] {
+		const groups = new Map<string, ISessionFile[]>();
+		for (const file of files) {
+			const location = this._locationLabel(file.uri);
+			const bucket = groups.get(location);
+			if (bucket) {
+				bucket.push(file);
+			} else {
+				groups.set(location, [file]);
+			}
+		}
+		const rows: SessionFileListRow[] = [];
+		for (const [location, bucket] of groups) {
+			rows.push({ kind: 'group', location } satisfies ISessionLocationRow);
+			for (const file of bucket) {
+				rows.push({ kind: 'file', file, location: undefined } satisfies ISessionFileRow);
+			}
+		}
+		return rows;
+	}
+
+	private _locationLabel(uri: URI): string {
+		return this._labelService.getUriLabel(dirname(uri));
+	}
+
+	private _footerHeight(): number {
+		return this._presentation === ExternalChangesPresentation.EnrichedSection && this._fileCount > 0
+			? SessionFilesWidget.FOOTER_HEIGHT
+			: 0;
+	}
+
+	private _updateFooterVisibility(): void {
+		const showFooter = !this._collapsed && this._footerHeight() > 0;
+		this._footerNode.style.display = showFooter ? '' : 'none';
+	}
+
 	/**
-	 * Layout the widget body list to the given height.
+	 * Layout the widget body (list + optional footer) to the given height.
 	 * Called by the parent view after computing available space.
 	 */
 	layout(height: number): void {
@@ -287,7 +442,9 @@ export class SessionFilesWidget extends Disposable {
 			return;
 		}
 		this._bodyNode.style.display = '';
-		this._list.layout(height);
+		this._updateFooterVisibility();
+		const listHeight = Math.max(0, height - this._footerHeight());
+		this._list.layout(listHeight);
 	}
 
 	private _toggleCollapsed(): void {
@@ -330,6 +487,7 @@ export class SessionFilesWidget extends Disposable {
 		this._headerNode.classList.toggle('collapsed', collapsed);
 		this._headerNode.setAttribute('aria-expanded', String(!collapsed));
 		this._renderCount();
+		this._updateFooterVisibility();
 	}
 
 	/** Show the file count in the header only while collapsed. */
@@ -345,10 +503,6 @@ export class SessionFilesWidget extends Disposable {
 				this._collapsed ? Codicon.chevronRight : Codicon.chevronDown
 			)
 		);
-	}
-
-	private _renderBody(files: readonly ISessionFile[]): void {
-		this._list.splice(0, this._list.length, files);
 	}
 
 	private async _openFile(file: ISessionFile, preserveFocus: boolean, pinned: boolean): Promise<void> {

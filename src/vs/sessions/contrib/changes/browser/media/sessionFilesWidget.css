@@ -169,3 +169,71 @@
 .session-files-widget .monaco-list-row.selected .chat-collapsible-list-action-bar:not(.has-no-actions) {
 	display: inherit;
 }
+
+/* Enriched variant (A): trailing external-location badge on each file row */
+.session-files-widget-external-badge {
+	flex-shrink: 0;
+	margin-left: 4px;
+	font-size: var(--vscode-codiconFontSize-compact, 12px);
+	color: var(--vscode-descriptionForeground);
+	opacity: 0.85;
+}
+
+/* Dim the inline parent-folder path shown after the file name (enriched variant) */
+.session-files-widget-file .monaco-icon-label .label-description {
+	opacity: 0.8;
+}
+
+/* Provenance footer note (enriched variant) */
+.session-files-widget-footer {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 6px 4px 2px 4px;
+	color: var(--vscode-descriptionForeground);
+	font-size: var(--vscode-agents-fontSize-label2, 11px);
+	line-height: 1.35;
+}
+
+.session-files-widget-footer-icon {
+	flex-shrink: 0;
+	margin-top: 1px;
+	font-size: var(--vscode-codiconFontSize-compact, 12px);
+	opacity: 0.9;
+}
+
+.session-files-widget-footer-text {
+	flex: 1;
+	min-width: 0;
+}
+
+/* Grouped variant (B): location header row */
+.session-files-widget-location {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	height: 100%;
+	width: 100%;
+	min-width: 0;
+	color: var(--vscode-descriptionForeground);
+	font-weight: var(--vscode-agents-fontWeight-semiBold, 600);
+}
+
+.session-files-widget-location-icon {
+	flex-shrink: 0;
+	font-size: var(--vscode-codiconFontSize-compact, 12px);
+	opacity: 0.9;
+}
+
+.session-files-widget-location-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	direction: rtl;
+	text-align: left;
+}
+
+/* Grouped variant (B): indent files nested under a location header */
+.session-files-widget-file.grouped {
+	padding-left: 16px;
+}
