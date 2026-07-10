@@ -14,7 +14,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { IActionViewItemService } from '../../../../platform/actions/browser/actionViewItemService.js';
-import { Action2, MenuItemAction, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { Action2, MenuId, MenuItemAction, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { asCssVariable } from '../../../../platform/theme/common/colorUtils.js';
@@ -26,6 +26,7 @@ import { SessionHasPullRequestContext } from '../../../common/contextkeys.js';
 import { ISessionContext } from '../../../services/sessions/browser/sessionContext.js';
 import { ISessionsService } from '../../../services/sessions/browser/sessionsService.js';
 import { IActiveSession } from '../../../services/sessions/common/sessionsManagement.js';
+import { ISession } from '../../../services/sessions/common/session.js';
 import { IGitHubPullRequest } from '../common/types.js';
 import { IGitHubService } from './githubService.js';
 import { createPullRequestHoverElement } from './pullRequestHover.js';
@@ -44,36 +45,40 @@ class OpenPullRequestAction extends Action2 {
 			// Pull request pill shown in the session header meta row
 			// (vs/sessions/browser/parts/sessionHeader.ts). Rendered with a
 			// custom action view item that shows the PR icon + live `#<number>` label.
-			menu: {
+			menu: [{
 				id: Menus.SessionHeaderMeta,
 				group: 'navigation',
 				order: 1,
 				when: SessionHasPullRequestContext
-			},
+			}, {
+				id: MenuId.SessionItemContextMenu,
+				group: 'navigation',
+				order: 0,
+				when: SessionHasPullRequestContext
+			}],
 		});
 	}
 
-	override async run(accessor: ServicesAccessor, session?: IActiveSession): Promise<void> {
+	override async run(accessor: ServicesAccessor, session?: IActiveSession | ISession | ISession[]): Promise<void> {
 		const openerService = accessor.get(IOpenerService);
 		const sessionsService = accessor.get(ISessionsService);
 
-		// The clicked session is forwarded as the argument by the session header,
-		// which has already promoted it to be the active session. Fall back to the
-		// active session when invoked without an explicit argument.
-		const targetSession = session ?? sessionsService.activeSession.get();
-		const pullRequestUri = getPullRequestUri(targetSession);
+		// The session header forwards the (active) session; the sessions list
+		// context menu forwards the selected session(s). Fall back to the active session.
+		const targetSession = (Array.isArray(session) ? session[0] : session) ?? sessionsService.activeSession.get();
+		const pullRequestUri = this._getPullRequestUri(targetSession);
 		if (!pullRequestUri) {
 			return;
 		}
 
 		await openerService.open(pullRequestUri, { openExternal: true });
 	}
+
+	private _getPullRequestUri(session: ISession | undefined): URI | undefined {
+		return session?.workspace.get()?.folders[0]?.gitRepository?.gitHubInfo.get()?.pullRequest?.uri;
+	}
 }
 registerAction2(OpenPullRequestAction);
-
-function getPullRequestUri(session: IActiveSession | undefined): URI | undefined {
-	return session?.workspace.get()?.folders[0]?.gitRepository?.gitHubInfo.get()?.pullRequest?.uri;
-}
 
 // --- Open Pull Request action view item (session header pull request pill)
 
