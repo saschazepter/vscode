@@ -244,6 +244,15 @@ export class AgentHostSessionConfigPicker extends Disposable {
 			this._renderConfigPickers();
 		}));
 		this._watchProviders(this._sessionsProvidersService.getProviders());
+
+		// Re-render when the layout crosses the phone breakpoint so the
+		// isolation control swaps between the desktop checkbox and the
+		// phone chip (which routes to the unified repository sheet).
+		this._register(this._contextKeyService.onDidChangeContext(e => {
+			if (e.affectsSome(new Set([IsPhoneLayoutContext.key]))) {
+				this._renderConfigPickers();
+			}
+		}));
 	}
 
 	private _watchProviders(providers: readonly ISessionsProvider[]): void {
@@ -451,15 +460,15 @@ export class AgentHostSessionConfigPicker extends Disposable {
 		}
 
 		const applyValue = (checked: boolean) => {
-			const before = provider.getSessionConfig(sessionId)?.values[SessionConfigKey.Isolation];
+			const before = provider.getSessionConfig(sessionId)?.values[SessionConfigKey.Isolation] ?? schema.default;
 			const nextValue = checked ? 'worktree' : 'folder';
 			reportNewChatPickerClosed(this._telemetryService, {
 				id: 'NewChatAgentHostSessionConfigPicker',
 				name: `NewChatAgentHostSessionConfigPicker.${SessionConfigKey.Isolation}`,
 				optionIdBefore: typeof before === 'string' ? before : undefined,
 				optionIdAfter: nextValue,
-				optionLabelBefore: undefined,
-				optionLabelAfter: nextValue,
+				optionLabelBefore: typeof before === 'string' ? this._getLabel(schema, before) : undefined,
+				optionLabelAfter: this._getLabel(schema, nextValue),
 				isPII: false,
 			});
 			provider.setSessionConfigValue(sessionId, SessionConfigKey.Isolation, nextValue).catch(() => { /* best-effort */ });
@@ -467,10 +476,17 @@ export class AgentHostSessionConfigPicker extends Disposable {
 
 		this._renderDisposables.add(checkbox.onChange(() => applyValue(checkbox.checked)));
 		if (!disabled) {
-			this._renderDisposables.add(dom.addDisposableListener(labelSpan, dom.EventType.CLICK, () => {
-				checkbox.checked = !checkbox.checked;
-				applyValue(checkbox.checked);
-			}));
+			// Toggle from anywhere on the row so the visible hit target
+			// (padding + checkbox/label gap) matches the interactive one.
+			// The checkbox stops its own click from bubbling here.
+			this._renderDisposables.add(Gesture.addTarget(row));
+			for (const eventType of [dom.EventType.CLICK, TouchEventType.Tap]) {
+				this._renderDisposables.add(dom.addDisposableListener(row, eventType, e => {
+					dom.EventHelper.stop(e, true);
+					checkbox.checked = !checkbox.checked;
+					applyValue(checkbox.checked);
+				}));
+			}
 		}
 	}
 

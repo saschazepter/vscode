@@ -5,6 +5,7 @@
 
 import * as dom from '../../../../../base/browser/dom.js';
 import './media/isolationPicker.css';
+import { Gesture, EventType as TouchEventType } from '../../../../../base/browser/touch.js';
 import { Disposable, DisposableStore, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { autorun, IObservable } from '../../../../../base/common/observable.js';
 import { Checkbox } from '../../../../../base/browser/ui/toggle/toggle.js';
@@ -38,9 +39,9 @@ export class IsolationPicker extends Disposable {
 	private _isolationOptionEnabled: boolean;
 
 	private readonly _renderDisposables = this._register(new DisposableStore());
-	private readonly _triggerContent = this._register(new DisposableStore());
 	private _slotElement: HTMLElement | undefined;
 	private _triggerElement: HTMLElement | undefined;
+	private _checkbox: Checkbox | undefined;
 
 	/**
 	 * Tracks whether the isolation picker is currently visible — i.e. the
@@ -109,7 +110,37 @@ export class IsolationPicker extends Disposable {
 		// in vs/sessions/contrib/onboardingTours.
 		this._renderDisposables.add(markOnboardingTarget(slot, 'sessions.newSession.isolation'));
 
-		this._triggerElement = dom.append(slot, dom.$('.action-label'));
+		const label = localize('isolationMode.worktree', "Worktree");
+		const row = dom.append(slot, dom.$('.action-label'));
+		this._triggerElement = row;
+		row.setAttribute('aria-label', localize('isolationPicker.checkboxAriaLabel', "Worktree isolation"));
+
+		// The checkbox instance is kept stable across state updates so that
+		// toggling it (which re-enters `_updateTrigger` via the isolation
+		// observable) doesn't recreate the DOM and drop keyboard focus.
+		const checkbox = this._renderDisposables.add(new Checkbox(label, this._getSessionIsolationMode() === 'worktree', { ...defaultCheckboxStyles, size: 14 }));
+		this._checkbox = checkbox;
+		dom.append(row, checkbox.domNode);
+		const labelSpan = dom.append(row, dom.$('span.sessions-chat-dropdown-label'));
+		labelSpan.textContent = label;
+
+		this._renderDisposables.add(checkbox.onChange(() => this._applyChecked(checkbox.checked)));
+		// Toggle from anywhere on the row so the visible hit target
+		// (padding + checkbox/label gap) matches the interactive one. The
+		// checkbox stops its own click from bubbling here. `Gesture` +
+		// tap keeps this custom non-button target reliable on iOS.
+		this._renderDisposables.add(Gesture.addTarget(row));
+		for (const eventType of [dom.EventType.CLICK, TouchEventType.Tap]) {
+			this._renderDisposables.add(dom.addDisposableListener(row, eventType, e => {
+				if (!checkbox.enabled) {
+					return;
+				}
+				dom.EventHelper.stop(e, true);
+				checkbox.checked = !checkbox.checked;
+				this._applyChecked(checkbox.checked);
+			}));
+		}
+
 		this._updateTrigger();
 	}
 
@@ -120,51 +151,34 @@ export class IsolationPicker extends Disposable {
 		providerSession?.setIsolationMode(mode);
 	}
 
+	private _applyChecked(checked: boolean): void {
+		const before: IsolationMode = this._getSessionIsolationMode();
+		const mode: IsolationMode = checked ? 'worktree' : 'workspace';
+		reportNewChatPickerClosed(this.telemetryService, {
+			id: 'NewChatIsolationPicker',
+			name: 'NewChatIsolationPicker',
+			optionIdBefore: before,
+			optionIdAfter: mode,
+			optionLabelBefore: undefined,
+			optionLabelAfter: undefined,
+			isPII: false,
+		});
+		this._setModeOnSession(mode);
+	}
+
 	private _updateTrigger(): void {
-		if (!this._triggerElement) {
+		if (!this._triggerElement || !this._checkbox) {
 			this._visibleKey.set(false);
 			return;
 		}
 
-		this._triggerContent.clear();
-		dom.clearNode(this._triggerElement);
-
 		const isDisabled = !this._hasGitRepo;
-		const isChecked = this._getSessionIsolationMode() === 'worktree';
-		const label = localize('isolationMode.worktree', "Worktree");
-
-		const checkbox = this._triggerContent.add(new Checkbox(label, isChecked, { ...defaultCheckboxStyles, size: 14 }));
+		this._checkbox.checked = this._getSessionIsolationMode() === 'worktree';
 		if (isDisabled) {
-			checkbox.disable();
+			this._checkbox.disable();
+		} else {
+			this._checkbox.enable();
 		}
-		dom.append(this._triggerElement, checkbox.domNode);
-		const labelSpan = dom.append(this._triggerElement, dom.$('span.sessions-chat-dropdown-label'));
-		labelSpan.textContent = label;
-
-		const applyChecked = (checked: boolean) => {
-			const before: IsolationMode = this._getSessionIsolationMode();
-			const mode: IsolationMode = checked ? 'worktree' : 'workspace';
-			reportNewChatPickerClosed(this.telemetryService, {
-				id: 'NewChatIsolationPicker',
-				name: 'NewChatIsolationPicker',
-				optionIdBefore: before,
-				optionIdAfter: mode,
-				optionLabelBefore: undefined,
-				optionLabelAfter: undefined,
-				isPII: false,
-			});
-			this._setModeOnSession(mode);
-		};
-
-		this._triggerContent.add(checkbox.onChange(() => applyChecked(checkbox.checked)));
-		if (!isDisabled) {
-			this._triggerContent.add(dom.addDisposableListener(labelSpan, dom.EventType.CLICK, () => {
-				checkbox.checked = !checkbox.checked;
-				applyChecked(checkbox.checked);
-			}));
-		}
-
-		this._triggerElement.setAttribute('aria-label', localize('isolationPicker.checkboxAriaLabel', "Worktree isolation"));
 		this._slotElement?.classList.toggle('disabled', isDisabled);
 		this._visibleKey.set(this._hasGitRepo && this._isolationOptionEnabled);
 	}

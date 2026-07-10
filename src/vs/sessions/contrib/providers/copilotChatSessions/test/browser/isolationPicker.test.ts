@@ -110,4 +110,15 @@ suite('IsolationPicker', () => {
 		assert.deepStrictEqual(setModeCalls, ['workspace']);
 		assert.strictEqual(getCheckbox(container).getAttribute('aria-checked'), 'false');
 	});
+
+	test('keeps the same checkbox element across toggles', () => {
+		const picker = createPicker(disposables, 'worktree', []);
+		const container = document.createElement('div');
+		picker.render(container);
+
+		const before = getCheckbox(container);
+		before.click();
+
+		assert.strictEqual(getCheckbox(container), before, 'checkbox element should be reused so focus is preserved');
+	});
 });
