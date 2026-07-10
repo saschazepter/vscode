@@ -35,7 +35,7 @@ import { IProductService } from '../../../../platform/product/common/productServ
 import { defaultCheckboxStyles, defaultInputBoxStyles, defaultSelectBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { hasNativeContextMenu } from '../../../../platform/window/common/window.js';
 import { WorkspacePicker } from '../../chat/browser/sessionWorkspacePicker.js';
-import { SessionTypePicker } from '../../chat/browser/sessionTypePicker.js';
+import { MobileSessionTypePicker } from '../../chat/browser/mobile/mobileSessionTypePicker.js';
 import { ISession, ISessionWorkspaceBrowseAction, SESSION_WORKSPACE_GROUP_LOCAL } from '../../../services/sessions/common/session.js';
 import { IGitService } from '../../../../workbench/contrib/git/common/gitService.js';
 import { AutomationInterval } from '../../../../workbench/contrib/chat/common/automations/automation.js';
@@ -271,7 +271,7 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 class AutomationSessionTypePickerActionViewItem extends BaseActionViewItem {
 	constructor(
 		action: IAction,
-		private readonly picker: SessionTypePicker,
+		private readonly picker: MobileSessionTypePicker,
 		options?: IBaseActionViewItemOptions,
 	) {
 		super(undefined, action, options);
@@ -423,7 +423,7 @@ export function renderForm(
 
 	// The picker is authoritative for the session type
 	const folderObs = observableValue<URI | undefined>('automationFolder', state.folderUri);
-	const sessionTypePicker = disposables.add(instantiationService.createInstance(SessionTypePicker, constObservable<ISession | undefined>(undefined)));
+	const sessionTypePicker = disposables.add(instantiationService.createInstance(MobileSessionTypePicker, constObservable<ISession | undefined>(undefined)));
 	sessionTypePicker.setFolderSource(folderObs, {
 		initialPick: state.providerId && state.sessionTypeId
 			? { providerId: state.providerId, sessionTypeId: state.sessionTypeId }
