@@ -42,9 +42,22 @@ export interface IExtensionDefinition {
 }
 
 const root = path.dirname(path.dirname(import.meta.dirname));
-const productjson = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '../../product.json'), 'utf8'));
-const builtInExtensions = productjson.builtInExtensions as IExtensionDefinition[] || [];
-const webBuiltInExtensions = productjson.webBuiltInExtensions as IExtensionDefinition[] || [];
+
+function readProductJson(): { builtInExtensions?: IExtensionDefinition[]; webBuiltInExtensions?: IExtensionDefinition[]; extensionsGallery?: { serviceUrl?: string } } {
+	const product = JSON.parse(fs.readFileSync(path.join(root, 'product.json'), 'utf8'));
+	// Merge product.overrides.json (gitignored, used for local testing) the same way bootstrap-meta
+	// does at runtime, so overridden built-in extensions are also downloaded.
+	try {
+		const overrides = JSON.parse(fs.readFileSync(path.join(root, 'product.overrides.json'), 'utf8'));
+		return Object.assign(product, overrides);
+	} catch (err) {
+		return product;
+	}
+}
+
+const productjson = readProductJson();
+const builtInExtensions = productjson.builtInExtensions || [];
+const webBuiltInExtensions = productjson.webBuiltInExtensions || [];
 const controlFilePath = path.join(os.homedir(), '.vscode-oss-dev', 'extensions', 'control.json');
 const ENABLE_LOGGING = !process.env['VSCODE_BUILD_BUILTIN_EXTENSIONS_SILENCE_PLEASE'];
 

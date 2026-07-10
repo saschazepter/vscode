@@ -43,7 +43,7 @@ suite('extensionTarget', () => {
 		});
 	});
 
-	test('getPlatformSpecificAssetName follows the node-vsce-sign naming pattern', () => {
+	test('getPlatformSpecificAssetName uses the <name>-<target>.vsix convention', () => {
 		assert.deepStrictEqual({
 			darwinX64: getPlatformSpecificAssetName('my-ext', 'darwin-x64'),
 			darwinArm64: getPlatformSpecificAssetName('my-ext', 'darwin-arm64'),
@@ -55,20 +55,21 @@ suite('extensionTarget', () => {
 			alpineX64: getPlatformSpecificAssetName('my-ext', 'alpine-x64'),
 			alpineArm64: getPlatformSpecificAssetName('my-ext', 'alpine-arm64'),
 		}, {
-			darwinX64: 'my-ext-osx-x64.vsix',
-			darwinArm64: 'my-ext-osx-arm64.vsix',
-			win32X64: 'my-ext-win-x64.vsix',
-			win32Arm64: 'my-ext-win-arm64.vsix',
+			darwinX64: 'my-ext-darwin-x64.vsix',
+			darwinArm64: 'my-ext-darwin-arm64.vsix',
+			win32X64: 'my-ext-win32-x64.vsix',
+			win32Arm64: 'my-ext-win32-arm64.vsix',
 			linuxX64: 'my-ext-linux-x64.vsix',
 			linuxArm64: 'my-ext-linux-arm64.vsix',
-			linuxArmhf: 'my-ext-linux-arm.vsix',
+			linuxArmhf: 'my-ext-linux-armhf.vsix',
 			alpineX64: 'my-ext-alpine-x64.vsix',
 			alpineArm64: 'my-ext-alpine-arm64.vsix',
 		});
 	});
 
-	test('getPlatformSpecificAssetName throws for malformed targets', () => {
+	test('getPlatformSpecificAssetName throws for unsupported targets', () => {
 		assert.throws(() => getPlatformSpecificAssetName('my-ext', 'linux'), /Invalid target platform/);
+		assert.throws(() => getPlatformSpecificAssetName('my-ext', 'win32-x86'), /Invalid target platform/);
 		assert.throws(() => getPlatformSpecificAssetName('my-ext', 'freebsd-x64'), /Invalid target platform/);
 		assert.throws(() => getPlatformSpecificAssetName('my-ext', ''), /Invalid target platform/);
 	});

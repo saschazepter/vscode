@@ -102,23 +102,15 @@ export function getCurrentExtensionTarget(): string | undefined {
 
 /**
  * Derives the GitHub release asset name for a platform-specific extension from its name and
- * marketplace target platform, following the `node-vsce-sign` naming pattern:
- * `<name>-<osAlias>-<arch>.vsix` where osAlias is one of `osx`, `win`, `linux`, `alpine`.
+ * marketplace target platform. Platform-specific VS Code extensions are conventionally named
+ * `<name>-<target>.vsix` where `<target>` is the marketplace target platform (e.g.
+ * `my-ext-win32-x64.vsix`, `my-ext-linux-armhf.vsix`, `my-ext-darwin-arm64.vsix`).
  *
- * @throws when `target` is not a well-formed `<os>-<arch>` marketplace target.
+ * @throws when `target` is not a supported marketplace target platform.
  */
 export function getPlatformSpecificAssetName(name: string, target: string): string {
-	const index = target.lastIndexOf('-');
-	const targetOs = index > 0 ? target.substring(0, index) : '';
-	const targetArch = index > 0 ? target.substring(index + 1) : '';
-
-	const osAliases: { [os: string]: string } = { darwin: 'osx', win32: 'win', linux: 'linux', alpine: 'alpine' };
-	const osAlias = osAliases[targetOs];
-	if (!osAlias || !targetArch) {
-		throw new Error(`Invalid target platform '${target}': expected one of ${Object.keys(osAliases).map(os => `${os}-<arch>`).join(', ')}`);
+	if (!supportedTargets.has(target)) {
+		throw new Error(`Invalid target platform '${target}': expected one of [${[...supportedTargets]}]`);
 	}
-
-	const assetArch = targetArch === 'armhf' ? 'arm' : targetArch;
-
-	return `${name}-${osAlias}-${assetArch}.vsix`;
+	return `${name}-${target}.vsix`;
 }
