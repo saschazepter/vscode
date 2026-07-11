@@ -717,6 +717,19 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		);
 		this._seedSessionEntry(sessionId, sessionUri, session);
 
+		// Seed the eagerly-claimed active client (mirrors the Copilot agent) so
+		// its synced customizations — e.g. the built-in skills bundle — reach the
+		// SDK at creation. Without this no follow-up `session/activeClientSet` is
+		// dispatched (the state already matches), so the sync would never fire.
+		if (config.activeClient) {
+			const seeded = config.activeClient;
+			const handle = this.getOrCreateActiveClient(sessionUri, { clientId: seeded.clientId, displayName: seeded.displayName });
+			handle.tools = seeded.tools;
+			if (seeded.customizations !== undefined) {
+				await this.syncClientCustomizations(sessionUri, seeded.clientId, seeded.customizations);
+			}
+		}
+
 		return {
 			session: sessionUri,
 			workingDirectory,

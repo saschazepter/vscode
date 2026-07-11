@@ -5918,6 +5918,39 @@ suite('ClaudeAgent — Phase 11 customizations', () => {
 		return { agent, proxy, api, sdk, sessionData, stateManager, configService, instantiationService, fileService };
 	}
 
+	test('createSession seeds the eager activeClient customizations to the plugin manager', async () => {
+		const pm = new FakeAgentPluginManager();
+		const { agent } = buildCtxWith(pm);
+		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
+
+		const customizations = [makeClientCustomization('https://bundle', 'Synced')];
+		await agent.createSession({
+			session: AgentSession.uri('claude', 'eager'),
+			workingDirectory: URI.file('/work'),
+			activeClient: { clientId: 'client-1', tools: [], customizations },
+		});
+
+		// The eagerly-claimed active client's customizations must be synced at
+		// creation (mirrors the Copilot agent). Without this, built-in skills
+		// like `/create-pr` never reach the SDK: the workbench state already
+		// carries the active client, so no follow-up `session/activeClientSet`
+		// is dispatched to trigger the sync.
+		assert.deepStrictEqual(pm.syncCalls, [{ clientId: 'client-1', customizations }]);
+	});
+
+	test('createSession without an activeClient does not sync customizations', async () => {
+		const pm = new FakeAgentPluginManager();
+		const { agent } = buildCtxWith(pm);
+		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
+
+		await agent.createSession({
+			session: AgentSession.uri('claude', 'no-eager'),
+			workingDirectory: URI.file('/work'),
+		});
+
+		assert.deepStrictEqual(pm.syncCalls, []);
+	});
+
 	test('setClientCustomizations forwards each item as a SessionCustomizationUpdated action', async () => {
 		const pm = new FakeAgentPluginManager();
 		pm.syncResult = [makeSyncedRef('https://a', '/p/a'), makeSyncedRef('https://b', '/p/b')];
