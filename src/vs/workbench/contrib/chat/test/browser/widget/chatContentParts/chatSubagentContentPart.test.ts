@@ -8,6 +8,8 @@ import { isHTMLElement } from '../../../../../../../base/browser/dom.js';
 import { Event } from '../../../../../../../base/common/event.js';
 import { DisposableStore } from '../../../../../../../base/common/lifecycle.js';
 import { observableValue } from '../../../../../../../base/common/observable.js';
+// eslint-disable-next-line local/code-no-deep-import-of-internal
+import { BaseObservable } from '../../../../../../../base/common/observableInternal/observables/baseObservable.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../../base/test/common/utils.js';
 import { mainWindow } from '../../../../../../../base/browser/window.js';
 import { workbenchInstantiationService } from '../../../../../../test/browser/workbenchTestServices.js';
@@ -285,7 +287,7 @@ suite('ChatSubagentContentPart', () => {
 	}
 
 	function getWrapperElement(part: ChatSubagentContentPart): HTMLElement | undefined {
-		const wrapper = part.domNode.lastElementChild;
+		const wrapper = part.domNode.querySelector('.chat-thinking-collapsible');
 		return isHTMLElement(wrapper) ? wrapper : undefined;
 	}
 
@@ -299,6 +301,37 @@ suite('ChatSubagentContentPart', () => {
 			assert.ok(part.domNode.classList.contains('chat-thinking-box'), 'Should have chat-thinking-box class');
 			assert.ok(part.domNode.classList.contains('chat-subagent-part'), 'Should have chat-subagent-part class');
 			assert.ok(part.domNode.classList.contains('chat-thinking-fixed-mode'), 'Should have chat-thinking-fixed-mode class');
+			assert.ok(part.domNode.classList.contains('chat-collapsible-content-animatable'), 'Should prepare expandable content for animation');
+			assert.strictEqual(part.domNode.classList.contains('chat-collapsible-content-animated'), false, 'Should not animate while streaming');
+		});
+
+		test('should keep collapsed animated content out of keyboard navigation', () => {
+			const toolInvocation = createMockToolInvocation();
+			const context = createMockRenderContext(false);
+
+			const part = createPart(toolInvocation, context);
+			const animationContent = part.domNode.querySelector<HTMLElement>('.chat-collapsible-content-animation-inner');
+			const chevron = part.domNode.querySelector('.chat-collapsible-hover-chevron');
+			const button = getCollapseButton(part);
+			assert.ok(animationContent);
+			assert.ok(chevron);
+			assert.ok(button);
+
+			const collapsedInert = animationContent.inert;
+			const collapsedChevronExpanded = chevron.classList.contains('expanded');
+			button.click();
+
+			assert.deepStrictEqual({
+				collapsedInert,
+				collapsedChevronExpanded,
+				expandedInert: animationContent.inert,
+				expandedChevronExpanded: chevron.classList.contains('expanded'),
+			}, {
+				collapsedInert: true,
+				collapsedChevronExpanded: false,
+				expandedInert: false,
+				expandedChevronExpanded: true,
+			});
 		});
 
 		test('should shimmer for an in-progress subagent even when the response is complete', () => {
@@ -529,7 +562,13 @@ suite('ChatSubagentContentPart', () => {
 
 			part.markAsInactive();
 
-			assert.strictEqual(part.getIsActive(), false, 'Should be inactive after markAsInactive');
+			assert.deepStrictEqual({
+				isActive: part.getIsActive(),
+				animationEnabled: part.domNode.classList.contains('chat-collapsible-content-animated'),
+			}, {
+				isActive: false,
+				animationEnabled: true,
+			});
 		});
 
 		test('markAsInactive should remove streaming class', () => {
@@ -1329,6 +1368,39 @@ suite('ChatSubagentContentPart', () => {
 			// Should auto-expand when tool needs confirmation
 			assert.strictEqual(part.domNode.classList.contains('chat-used-context-collapsed'), false,
 				'Should auto-expand when tool needs confirmation');
+		});
+
+		test('should stop tracking a tool invocation once it reaches a terminal state', async () => {
+			const toolInvocation = createMockToolInvocation({
+				toolSpecificData: {
+					kind: 'subagent',
+					description: 'Working on task',
+					agentName: 'TestAgent'
+				}
+			});
+			const context = createMockRenderContext(false);
+
+			const part = createPart(toolInvocation, context);
+
+			const stateObservable = observableValue('state', createState(IChatToolInvocation.StateKind.Executing));
+			const childTool: IChatToolInvocation = {
+				...createMockToolInvocation({
+					toolId: 'readFile',
+					subAgentInvocationId: toolInvocation.subAgentInvocationId
+				}),
+				state: stateObservable,
+				invocationMessage: 'Reading file'
+			};
+
+			part.trackToolState(childTool);
+			const observerCount = () => (stateObservable as unknown as BaseObservable<IChatToolInvocation.State>).debugGetObservers().size;
+			assert.strictEqual(observerCount(), 1, 'Tracking autorun should observe the tool state');
+
+			// Complete the tool; disposal of the tracking autorun is deferred via a microtask.
+			stateObservable.set(createState(IChatToolInvocation.StateKind.Completed), undefined);
+			await Promise.resolve();
+
+			assert.strictEqual(observerCount(), 0, 'Tracking autorun should be disposed once the tool reaches a terminal state');
 		});
 
 		test('should auto-collapse when confirmation is addressed', () => {
