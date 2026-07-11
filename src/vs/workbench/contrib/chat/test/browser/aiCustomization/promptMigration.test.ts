@@ -123,11 +123,10 @@ suite('promptMigration', () => {
 		const migratedSkillUri = createSkillFileUri(skillRoots[0].uri, 'review-prompt');
 		const migratedSkillContent = (await fileService.readFile(migratedSkillUri)).value.toString();
 
-		assert.deepStrictEqual(result, {
-			convertedCount: 1,
-			failedPromptFileNames: ['failing.prompt.md'],
-			unsupportedHeaderKeys: ['mode'],
-		});
+		assert.strictEqual(result.convertedCount, 1);
+		assert.deepStrictEqual(result.failedPromptFileNames, ['failing.prompt.md']);
+		assert.deepStrictEqual(result.unsupportedHeaderKeys, ['mode']);
+		assert.deepStrictEqual(result.convertedSkillFileUris.map(uri => uri.toString()), [migratedSkillUri.toString()]);
 		assert.ok(migratedSkillContent.includes('disable-model-invocation: true'));
 		assert.strictEqual(await fileService.exists(promptFiles[0].uri), false);
 		assert.strictEqual(await fileService.exists(promptFiles[1].uri), false);

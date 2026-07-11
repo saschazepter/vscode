@@ -29,6 +29,7 @@ export interface IMigratedPromptFilesResult {
 	readonly convertedCount: number;
 	readonly failedPromptFileNames: readonly string[];
 	readonly unsupportedHeaderKeys: readonly string[];
+	readonly convertedSkillFileUris: readonly URI[];
 }
 
 export type PromptMigrationSkillSourceFolders = ReadonlyMap<PromptsStorage, ICustomizationSourceFolder>;
@@ -99,6 +100,7 @@ export async function migratePromptFilesToSkills(
 	const reservedSkillNames = new Map<string, Set<string>>();
 	const unsupportedHeaderKeys = new Set<string>();
 	const failedPromptFileNames: string[] = [];
+	const convertedSkillFileUris: URI[] = [];
 	let convertedCount = 0;
 
 	for (const promptFile of promptFiles) {
@@ -123,6 +125,7 @@ export async function migratePromptFilesToSkills(
 			await fileService.createFolder(dirname(skillFileUri));
 			await fileService.writeFile(skillFileUri, VSBuffer.fromString(migratedSkill.content));
 			await fileService.del(promptFile.uri);
+			convertedSkillFileUris.push(skillFileUri);
 			convertedCount++;
 		} catch (error) {
 			failedPromptFileNames.push(basename(promptFile.uri));
@@ -134,6 +137,7 @@ export async function migratePromptFilesToSkills(
 		convertedCount,
 		failedPromptFileNames,
 		unsupportedHeaderKeys: Array.from(unsupportedHeaderKeys).sort(),
+		convertedSkillFileUris,
 	};
 }
 

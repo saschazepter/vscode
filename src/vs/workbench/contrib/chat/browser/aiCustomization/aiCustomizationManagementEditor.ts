@@ -7,13 +7,14 @@ import './media/aiCustomizationManagement.css';
 import * as DOM from '../../../../../base/browser/dom.js';
 
 import { status } from '../../../../../base/browser/ui/aria/aria.js';
-import { RunOnceScheduler } from '../../../../../base/common/async.js';
+import { RunOnceScheduler, timeout } from '../../../../../base/common/async.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { VSBuffer } from '../../../../../base/common/buffer.js';
 import { onUnexpectedError } from '../../../../../base/common/errors.js';
 import { DisposableStore, IReference, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { Event } from '../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../base/common/htmlContent.js';
+import { ResourceSet } from '../../../../../base/common/map.js';
 import { autorun } from '../../../../../base/common/observable.js';
 import { Orientation, Sizing, SplitView } from '../../../../../base/browser/ui/splitview/splitview.js';
 import { Color } from '../../../../../base/common/color.js';
@@ -72,6 +73,9 @@ import { resolveWorkspaceTargetDirectory, resolveUserTargetDirectory, Customizat
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { AICustomizationSources, IAICustomizationWorkspaceService } from '../../common/aiCustomizationWorkspaceService.js';
 import { CodeEditorWidget } from '../../../../../editor/browser/widget/codeEditor/codeEditorWidget.js';
+import { Button } from '../../../../../base/browser/ui/button/button.js';
+import { InputBox } from '../../../../../base/browser/ui/inputbox/inputBox.js';
+import { Checkbox } from '../../../../../base/browser/ui/toggle/toggle.js';
 import { ITextModel } from '../../../../../editor/common/model.js';
 import { createTextBufferFactoryFromSnapshot } from '../../../../../editor/common/model/textModel.js';
 import { IModelService } from '../../../../../editor/common/services/model.js';
@@ -80,10 +84,12 @@ import { IConfigurationService } from '../../../../../platform/configuration/com
 import { getSimpleEditorOptions } from '../../../codeEditor/browser/simpleEditorOptions.js';
 import { IWorkingCopyService } from '../../../../services/workingCopy/common/workingCopyService.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import { IContextViewService } from '../../../../../platform/contextview/browser/contextView.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IMarkdownRendererService } from '../../../../../platform/markdown/browser/markdownRenderer.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { IQuickInputService, IQuickPickItem } from '../../../../../platform/quickinput/common/quickInput.js';
+import { defaultButtonStyles, defaultCheckboxStyles, defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { getDefaultHoverDelegate } from '../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { IWorkbenchMcpServer } from '../../../mcp/common/mcpTypes.js';
 import { IAgentPluginItem } from '../agentPluginEditor/agentPluginItems.js';
@@ -318,8 +324,17 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private currentEditingSource: AICustomizationSource | undefined;
 	private currentEditingPromptType: PromptsType | undefined;
 	private currentEditingReadOnly = false;
+	private editorReturnViewMode: 'list' | 'migration' = 'list';
 	private currentModelRef: IReference<IResolvedTextEditorModel> | undefined;
-	private viewMode: 'list' | 'editor' | 'mcpDetail' | 'pluginDetail' | 'toolsDetail' = 'list';
+	private viewMode: 'list' | 'migration' | 'editor' | 'mcpDetail' | 'pluginDetail' | 'toolsDetail' = 'list';
+	private migrationContentContainer: HTMLElement | undefined;
+	private migrationListContainer: HTMLElement | undefined;
+	private migrationMigrateButton: Button | undefined;
+	private migrationSearchInput: InputBox | undefined;
+	private migrationDescriptionElement: HTMLElement | undefined;
+	private migrationSearchQuery = '';
+	private selectedPromptMigrationUris = new ResourceSet();
+	private readonly migrationPageDisposables = this._register(new DisposableStore());
 
 	// Embedded MCP server detail view
 	private mcpDetailContainer: HTMLElement | undefined;
@@ -381,6 +396,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IWorkingCopyService private readonly workingCopyService: IWorkingCopyService,
 		@IHoverService private readonly hoverService: IHoverService,
+		@IContextViewService private readonly contextViewService: IContextViewService,
 		@IMarkdownRendererService private readonly markdownRendererService: IMarkdownRendererService,
 		@IModelService private readonly modelService: IModelService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
@@ -749,7 +765,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.migrationShortcutCount = DOM.append(button, $('span.sidebar-migration-count'));
 
 		this.editorDisposables.add(DOM.addDisposableListener(button, 'click', () => {
-			void this.migratePromptFiles();
+			this.showPromptMigrationPage();
 		}));
 	}
 
@@ -766,7 +782,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 					}
 				},
 				migratePromptFiles: () => {
-					void this.migratePromptFiles();
+					this.showPromptMigrationPage();
 				},
 				prefillChat: async (query, options) => {
 					try {
@@ -820,6 +836,46 @@ export class AICustomizationManagementEditor extends EditorPane {
 		return button;
 	}
 
+	private createPromptMigrationContent(contentInner: HTMLElement): void {
+		this.migrationContentContainer = DOM.append(contentInner, $('.prompt-migration-content-container.ai-customization-list-widget'));
+
+		const header = DOM.append(this.migrationContentContainer, $('.section-title-header'));
+		const titleRow = DOM.append(header, $('.section-title-row'));
+		const title = DOM.append(titleRow, $('h2.section-title'));
+		title.textContent = localize('promptMigrationPageTitle', "Migrate Prompt Files");
+		this.migrationDescriptionElement = DOM.append(header, $('p.section-title-description'));
+		const sectionLink = DOM.append(header, $('a.section-title-link')) as HTMLAnchorElement;
+		sectionLink.textContent = localize('learnMoreSkills', "Learn more about agent skills");
+		sectionLink.href = 'https://code.visualstudio.com/docs/agent-customization/agent-skills?referrer=in-product';
+		this.editorDisposables.add(DOM.addDisposableListener(sectionLink, 'click', e => {
+			e.preventDefault();
+			this.openerService.open(URI.parse(sectionLink.href));
+		}));
+
+		const actions = DOM.append(this.migrationContentContainer, $('.list-search-and-button-container.prompt-migration-actions'));
+		const searchContainer = DOM.append(actions, $('.list-search-container'));
+		this.migrationSearchInput = this.editorDisposables.add(new InputBox(searchContainer, this.contextViewService, {
+			placeholder: localize('promptMigrationSearchPlaceholder', "Type to search..."),
+			inputBoxStyles: defaultInputBoxStyles,
+		}));
+		this.editorDisposables.add(this.migrationSearchInput.onDidChange(() => {
+			this.migrationSearchQuery = this.migrationSearchInput?.value ?? '';
+			this.renderPromptMigrationPage();
+		}));
+		const actionButtonContainer = DOM.append(actions, $('.list-add-button-container'));
+		this.migrationMigrateButton = this.editorDisposables.add(new Button(actionButtonContainer, defaultButtonStyles));
+		this.migrationMigrateButton.element.classList.add('list-add-button', 'prompt-migration-button');
+		this.migrationMigrateButton.label = localize('promptMigrationPageButton', "Migrate");
+		this.editorDisposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), this.migrationMigrateButton.element, localize('promptMigrationPageButtonTooltip', "Convert selected prompt files to skills")));
+		this.editorDisposables.add(this.migrationMigrateButton.onDidClick(() => {
+			const selectedPromptFiles = this.promptFilesToMigrate.filter(file => this.selectedPromptMigrationUris.has(file.uri));
+			void this.migratePromptFiles(selectedPromptFiles);
+		}));
+
+		this.migrationListContainer = DOM.append(this.migrationContentContainer, $('.prompt-migration-list.list-container'));
+		this.renderPromptMigrationPage();
+	}
+
 	private createContent(): void {
 		const contentInner = DOM.append(this.contentContainer, $('.content-inner'));
 
@@ -837,6 +893,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.promptsContentContainer = DOM.append(contentInner, $('.prompts-content-container'));
 		this.listWidget = this.editorDisposables.add(this.instantiationService.createInstance(AICustomizationListWidget));
 		this.promptsContentContainer.appendChild(this.listWidget.element);
+		this.createPromptMigrationContent(contentInner);
 
 		// Handle item selection
 		this.editorDisposables.add(this.listWidget.onDidSelectItem(item => {
@@ -1028,6 +1085,14 @@ export class AICustomizationManagementEditor extends EditorPane {
 	}
 
 	private setPromptFilesToMigrate(promptFiles: readonly IPromptPath[]): void {
+		const previousPromptUris = new ResourceSet(this.promptFilesToMigrate.map(promptFile => promptFile.uri));
+		const selectedPromptUris = new ResourceSet();
+		for (const promptFile of promptFiles) {
+			if (!previousPromptUris.has(promptFile.uri) || this.selectedPromptMigrationUris.has(promptFile.uri)) {
+				selectedPromptUris.add(promptFile.uri);
+			}
+		}
+		this.selectedPromptMigrationUris = selectedPromptUris;
 		this.promptFilesToMigrate = promptFiles;
 		this.refreshPromptMigrationUi();
 	}
@@ -1036,6 +1101,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		const migrationInfo = this.isPromptMigrationEnabled() ? getPromptMigrationInfo(this.promptFilesToMigrate) : undefined;
 		this.welcomePage?.setPromptMigrationInfo(migrationInfo);
 		this.updateSidebarMigrationShortcut(migrationInfo);
+		this.renderPromptMigrationPage();
 	}
 
 	private updateSidebarMigrationShortcut(migrationInfo: ReturnType<typeof getPromptMigrationInfo> | undefined): void {
@@ -1058,15 +1124,18 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.layoutSidebar(this.sidebarWidth, this.sidebarHeight);
 	}
 
-	private async migratePromptFiles(): Promise<void> {
-		if (this.promptFilesToMigrate.length === 0) {
+	private async migratePromptFiles(promptFiles: readonly IPromptPath[]): Promise<void> {
+		if (promptFiles.length === 0) {
 			return;
 		}
 		if (!this.isPromptMigrationEnabled()) {
 			return;
 		}
 
-		const migrationInfo = getPromptMigrationInfo(this.promptFilesToMigrate);
+		const migrationInfo = getPromptMigrationInfo(promptFiles);
+		if (!migrationInfo) {
+			return;
+		}
 		const confirmResult = await this.dialogService.confirm({
 			type: 'question',
 			message: localize('promptMigrationConfirmMessage', "Convert prompt files to skills?"),
@@ -1092,12 +1161,12 @@ export class AICustomizationManagementEditor extends EditorPane {
 		}
 
 		const migrationResult = await migratePromptFilesToSkills(
-			this.promptFilesToMigrate,
+			promptFiles,
 			skillSourceFoldersByStorage,
 			this.fileService,
 			onUnexpectedError,
 		);
-		const { convertedCount, failedPromptFileNames, unsupportedHeaderKeys } = migrationResult;
+		const { convertedCount, failedPromptFileNames, unsupportedHeaderKeys, convertedSkillFileUris } = migrationResult;
 
 		if (failedPromptFileNames.length > 0) {
 			const displayedFileNames = failedPromptFileNames.slice(0, 3);
@@ -1142,6 +1211,181 @@ export class AICustomizationManagementEditor extends EditorPane {
 		}
 
 		this.selectSection(AICustomizationManagementSection.Skills);
+		void this.revealMigratedSkills(convertedSkillFileUris);
+	}
+
+	private renderPromptMigrationPage(): void {
+		if (!this.migrationListContainer || !this.migrationMigrateButton) {
+			return;
+		}
+
+		this.migrationPageDisposables.clear();
+		DOM.clearNode(this.migrationListContainer);
+		this.updatePromptMigrationPageDescription();
+		if (this.promptFilesToMigrate.length === 0 || !this.isPromptMigrationEnabled()) {
+			const emptyMessage = DOM.append(this.migrationListContainer, $('p.prompt-migration-empty'));
+			emptyMessage.textContent = localize('promptMigrationPageEmpty', "No prompt files are available to migrate.");
+			this.migrationMigrateButton.enabled = false;
+			return;
+		}
+
+		const query = this.migrationSearchQuery.trim().toLowerCase();
+		const filteredPromptFiles = this.promptFilesToMigrate.filter(promptFile => {
+			if (!query) {
+				return true;
+			}
+			const displayName = (promptFile.name ?? basename(promptFile.uri)).toLowerCase();
+			const relativePath = this.labelService.getUriLabel(promptFile.uri, { relative: true }).toLowerCase();
+			return displayName.includes(query) || relativePath.includes(query);
+		});
+		if (filteredPromptFiles.length === 0) {
+			const emptyMessage = DOM.append(this.migrationListContainer, $('p.prompt-migration-empty'));
+			emptyMessage.textContent = localize('promptMigrationSearchEmpty', "No prompt files match your search.");
+			this.updatePromptMigrationActionState();
+			return;
+		}
+
+		const workspacePromptFiles = filteredPromptFiles.filter(file => file.storage === PromptsStorage.local);
+		const userPromptFiles = filteredPromptFiles.filter(file => file.storage === PromptsStorage.user);
+		const openPromptFileInEmbeddedEditor = (promptFile: IPromptPath): void => {
+			const isWorkspaceFile = promptFile.storage === PromptsStorage.local;
+			void this.showEmbeddedEditor(
+				promptFile.uri,
+				promptFile.name ?? basename(promptFile.uri),
+				PromptsType.prompt,
+				promptFile.storage,
+				isWorkspaceFile,
+			);
+		};
+		const renderSelectionCheckbox = (row: HTMLElement, promptFile: IPromptPath): Checkbox => {
+			const checkboxContainer = DOM.append(row, $('.item-sync-checkbox.prompt-migration-checkbox'));
+			const checkboxTitle = localize('promptMigrationSelectAriaLabel', "Select {0}", promptFile.name ?? basename(promptFile.uri));
+			const checkbox = this.migrationPageDisposables.add(new Checkbox(checkboxTitle, this.selectedPromptMigrationUris.has(promptFile.uri), defaultCheckboxStyles));
+			checkboxContainer.replaceChildren(checkbox.domNode);
+			this.migrationPageDisposables.add(checkbox.onChange(() => {
+				if (checkbox.checked) {
+					this.selectedPromptMigrationUris.add(promptFile.uri);
+				} else {
+					this.selectedPromptMigrationUris.delete(promptFile.uri);
+				}
+				this.updatePromptMigrationActionState();
+			}));
+			return checkbox;
+		};
+
+		const renderGroup = (groupLabel: string, promptFiles: readonly IPromptPath[]): void => {
+			if (promptFiles.length === 0) {
+				return;
+			}
+
+			const group = DOM.append(this.migrationListContainer!, $('.prompt-migration-group'));
+			const groupHeader = DOM.append(group, $('.ai-customization-group-header.prompt-migration-group-header'));
+			const groupLabelGroup = DOM.append(groupHeader, $('.group-label-group'));
+			const label = DOM.append(groupLabelGroup, $('span.group-label'));
+			label.textContent = groupLabel;
+			const count = DOM.append(groupLabelGroup, $('span.group-count'));
+			count.textContent = String(promptFiles.length);
+
+			for (const promptFile of promptFiles) {
+				const row = DOM.append(group, $('div.ai-customization-list-item.prompt-migration-item'));
+				const checkbox = renderSelectionCheckbox(row, promptFile);
+				this.migrationPageDisposables.add(DOM.addDisposableListener(row, 'click', event => {
+					if (event.target instanceof Node && checkbox.domNode.contains(event.target)) {
+						return;
+					}
+					openPromptFileInEmbeddedEditor(promptFile);
+				}));
+
+				const itemLeft = DOM.append(row, $('span.item-left'));
+				const itemText = DOM.append(itemLeft, $('span.item-text'));
+				const nameRow = DOM.append(itemText, $('span.item-name-row'));
+				const nameLabel = DOM.append(nameRow, $('span.item-name.prompt-migration-item-name'));
+				nameLabel.textContent = promptFile.name ?? basename(promptFile.uri);
+
+				const pathLabel = DOM.append(itemText, $('span.item-description.is-filename.prompt-migration-item-path'));
+				pathLabel.textContent = this.labelService.getUriLabel(promptFile.uri, { relative: true });
+			}
+		};
+
+		renderGroup(localize('promptMigrationWorkspaceGroup', "Workspace"), workspacePromptFiles);
+		renderGroup(localize('promptMigrationUserGroup', "User"), userPromptFiles);
+
+		for (const promptFile of filteredPromptFiles.filter(file => file.storage !== PromptsStorage.local && file.storage !== PromptsStorage.user)) {
+			const row = DOM.append(this.migrationListContainer, $('div.ai-customization-list-item.prompt-migration-item'));
+			const checkbox = renderSelectionCheckbox(row, promptFile);
+			this.migrationPageDisposables.add(DOM.addDisposableListener(row, 'click', event => {
+				if (event.target instanceof Node && checkbox.domNode.contains(event.target)) {
+					return;
+				}
+				openPromptFileInEmbeddedEditor(promptFile);
+			}));
+
+			const itemLeft = DOM.append(row, $('span.item-left'));
+			const itemText = DOM.append(itemLeft, $('span.item-text'));
+			const nameRow = DOM.append(itemText, $('span.item-name-row'));
+			const nameLabel = DOM.append(nameRow, $('span.item-name.prompt-migration-item-name'));
+			nameLabel.textContent = promptFile.name ?? basename(promptFile.uri);
+
+			const pathLabel = DOM.append(itemText, $('span.item-description.is-filename.prompt-migration-item-path'));
+			pathLabel.textContent = this.labelService.getUriLabel(promptFile.uri, { relative: true });
+		}
+
+		this.updatePromptMigrationActionState();
+	}
+
+	private updatePromptMigrationPageDescription(): void {
+		if (!this.migrationDescriptionElement) {
+			return;
+		}
+
+		const migrationInfo = getPromptMigrationInfo(this.promptFilesToMigrate);
+		if (!migrationInfo) {
+			this.migrationDescriptionElement.textContent = localize('promptMigrationPageDescription', "Select prompt files to convert into skills for the active harness.");
+			return;
+		}
+
+		const { workspacePromptCount, userPromptCount, totalPromptCount } = migrationInfo;
+		const harnessLabel = this.getActiveHarnessLabel();
+
+		if (workspacePromptCount > 0 && userPromptCount > 0) {
+			this.migrationDescriptionElement.textContent = localize(
+				'promptMigrationPageDescriptionWorkspaceAndUser',
+				"Prompt files are deprecated for this harness. Found {0} prompt files ({1} workspace, {2} global) that local VS Code can still run, but {3} ignores. Convert them to skills to keep them available.",
+				totalPromptCount,
+				workspacePromptCount,
+				userPromptCount,
+				harnessLabel,
+			);
+			return;
+		}
+
+		if (workspacePromptCount > 0) {
+			this.migrationDescriptionElement.textContent = localize(
+				'promptMigrationPageDescriptionWorkspace',
+				"Prompt files are deprecated for this harness. Found {0} workspace prompt files that local VS Code can still run, but {1} ignores. Convert them to skills to keep them available.",
+				workspacePromptCount,
+				harnessLabel,
+			);
+			return;
+		}
+
+		this.migrationDescriptionElement.textContent = localize(
+			'promptMigrationPageDescriptionUser',
+			"Prompt files are deprecated for this harness. Found {0} global prompt files that local VS Code can still run, but {1} ignores. Convert them to skills to keep them available.",
+			userPromptCount,
+			harnessLabel,
+		);
+	}
+
+	private updatePromptMigrationActionState(): void {
+		if (!this.migrationMigrateButton) {
+			return;
+		}
+		const selectedCount = this.promptFilesToMigrate.filter(file => this.selectedPromptMigrationUris.has(file.uri)).length;
+		this.migrationMigrateButton.enabled = selectedCount > 0;
+		this.migrationMigrateButton.label = selectedCount > 0
+			? localize('promptMigrationPageButtonWithCount', "Migrate ({0})", selectedCount)
+			: localize('promptMigrationPageButton', "Migrate");
 	}
 
 	private isPromptMigrationEnabled(): boolean {
@@ -1194,6 +1438,32 @@ export class AICustomizationManagementEditor extends EditorPane {
 		return selected?.folder;
 	}
 
+	private async revealMigratedSkills(skillUris: readonly URI[]): Promise<void> {
+		if (skillUris.length === 0) {
+			return;
+		}
+
+		await this.listWidget.setSection(AICustomizationManagementSection.Skills);
+		if (this.listWidget.revealAndSelectFirstItemByUri(skillUris)) {
+			return;
+		}
+
+		// A stale search filter can hide migrated skills from the list.
+		this.listWidget.clearSearch();
+		if (this.listWidget.revealAndSelectFirstItemByUri(skillUris)) {
+			return;
+		}
+
+		// Skill discovery/list refresh can lag immediately after migration;
+		// retry briefly until the new item appears.
+		for (let attempt = 0; attempt < 10; attempt++) {
+			await timeout(100);
+			if (this.listWidget.revealAndSelectFirstItemByUri(skillUris)) {
+				return;
+			}
+		}
+	}
+
 	private isPromptsSection(section: AICustomizationManagementSection | undefined): section is AICustomizationManagementSection {
 		return section === AICustomizationManagementSection.Agents ||
 			section === AICustomizationManagementSection.Skills ||
@@ -1226,6 +1496,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 	public showWelcomePage(): void {
 		if (this.viewMode === 'editor') {
 			this.goBackToList();
+		}
+		if (this.viewMode === 'migration') {
+			this.viewMode = 'list';
 		}
 		if (this.viewMode === 'mcpDetail') {
 			this.goBackFromMcpDetail();
@@ -1261,6 +1534,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		if (this.viewMode === 'editor') {
 			this.goBackToList();
+		}
+		if (this.viewMode === 'migration') {
+			this.viewMode = 'list';
 		}
 		if (this.viewMode === 'mcpDetail') {
 			this.goBackFromMcpDetail();
@@ -1352,6 +1628,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 	private updateContentVisibility(): void {
 		const isEditorMode = this.viewMode === 'editor';
+		const isMigrationMode = this.viewMode === 'migration';
 		const isMcpDetailMode = this.viewMode === 'mcpDetail';
 		const isPluginDetailMode = this.viewMode === 'pluginDetail';
 		const isToolsDetailMode = this.viewMode === 'toolsDetail';
@@ -1365,31 +1642,34 @@ export class AICustomizationManagementEditor extends EditorPane {
 		const isAutomationsSection = this.selectedSection === AICustomizationManagementSection.Automations;
 
 		if (this.welcomePage) {
-			this.welcomePage.container.style.display = isWelcome && !isEditorMode && !isDetailMode ? '' : 'none';
+			this.welcomePage.container.style.display = isWelcome && !isEditorMode && !isMigrationMode && !isDetailMode ? '' : 'none';
 		}
 		if (this.promptsContentContainer) {
-			this.promptsContentContainer.style.display = !isEditorMode && !isDetailMode && isPromptsSection ? '' : 'none';
+			this.promptsContentContainer.style.display = !isEditorMode && !isMigrationMode && !isDetailMode && isPromptsSection ? '' : 'none';
+		}
+		if (this.migrationContentContainer) {
+			this.migrationContentContainer.style.display = isMigrationMode ? '' : 'none';
 		}
 		if (this.modelsContentContainer) {
-			this.modelsContentContainer.style.display = !isEditorMode && !isDetailMode && isModelsSection ? '' : 'none';
+			this.modelsContentContainer.style.display = !isEditorMode && !isMigrationMode && !isDetailMode && isModelsSection ? '' : 'none';
 		}
 		if (this.mcpContentContainer) {
-			this.mcpContentContainer.style.display = !isEditorMode && !isDetailMode && isMcpSection ? '' : 'none';
+			this.mcpContentContainer.style.display = !isEditorMode && !isMigrationMode && !isDetailMode && isMcpSection ? '' : 'none';
 		}
 		if (this.mcpDetailContainer) {
 			this.mcpDetailContainer.style.display = isMcpDetailMode ? '' : 'none';
 		}
 		if (this.pluginContentContainer) {
-			this.pluginContentContainer.style.display = !isEditorMode && !isDetailMode && isPluginsSection ? '' : 'none';
+			this.pluginContentContainer.style.display = !isEditorMode && !isMigrationMode && !isDetailMode && isPluginsSection ? '' : 'none';
 		}
 		if (this.automationsContentContainer) {
-			this.automationsContentContainer.style.display = !isEditorMode && !isDetailMode && isAutomationsSection ? '' : 'none';
+			this.automationsContentContainer.style.display = !isEditorMode && !isMigrationMode && !isDetailMode && isAutomationsSection ? '' : 'none';
 		}
 		if (this.pluginDetailContainer) {
 			this.pluginDetailContainer.style.display = isPluginDetailMode ? '' : 'none';
 		}
 		if (this.toolsContentContainer) {
-			this.toolsContentContainer.style.display = !isEditorMode && !isDetailMode && isToolsSection ? '' : 'none';
+			this.toolsContentContainer.style.display = !isEditorMode && !isMigrationMode && !isDetailMode && isToolsSection ? '' : 'none';
 		}
 		if (this.toolsDetailContainer) {
 			this.toolsDetailContainer.style.display = isToolsDetailMode ? '' : 'none';
@@ -1561,6 +1841,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 		if (this.viewMode === 'editor') {
 			this.goBackToList();
 		}
+		if (this.viewMode === 'migration') {
+			this.viewMode = 'list';
+		}
 		if (this.viewMode === 'mcpDetail') {
 			this.goBackFromMcpDetail();
 		}
@@ -1583,6 +1866,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.splitViewContainer.style.height = `${dimension.height}px`;
 			this.splitView.layout(dimension.width, dimension.height);
 		}
+		this.migrationSearchInput?.layout();
 	}
 
 	override focus(): void {
@@ -1593,6 +1877,10 @@ export class AICustomizationManagementEditor extends EditorPane {
 			} else {
 				this.editorModeButton?.focus();
 			}
+			return;
+		}
+		if (this.viewMode === 'migration') {
+			this.migrationSearchInput?.focus();
 			return;
 		}
 		if (this.selectedSection === undefined) {
@@ -1626,6 +1914,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 			if (this.viewMode === 'editor') {
 				this.goBackToList();
 			}
+			if (this.viewMode === 'migration') {
+				this.viewMode = 'list';
+			}
 			if (this.viewMode === 'mcpDetail') {
 				this.goBackFromMcpDetail();
 			}
@@ -1657,6 +1948,35 @@ export class AICustomizationManagementEditor extends EditorPane {
 					this.pluginListWidget?.showBrowseMarketplace();
 				}
 			}
+		}
+	}
+
+	public showPromptMigrationPage(): void {
+		if (!this.isPromptMigrationEnabled()) {
+			return;
+		}
+
+		if (this.viewMode === 'editor') {
+			this.goBackToList();
+		}
+		if (this.viewMode === 'mcpDetail') {
+			this.goBackFromMcpDetail();
+		}
+		if (this.viewMode === 'pluginDetail') {
+			this.goBackFromPluginDetail();
+		}
+		if (this.viewMode === 'toolsDetail') {
+			this.goBackFromToolDetail();
+		}
+
+		this.selectedSection = undefined;
+		this.sectionContextKey.set('');
+		this.viewMode = 'migration';
+		this.ensureSectionsListReflectsActiveSection(undefined);
+		this.renderPromptMigrationPage();
+		this.updateContentVisibility();
+		if (this.dimension) {
+			this.layout(this.dimension);
 		}
 	}
 
@@ -1762,6 +2082,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	}
 
 	private async showEmbeddedEditor(uri: URI, displayName: string, promptType: PromptsType, source: AICustomizationSource, isWorkspaceFile = false, isReadOnly = false): Promise<void> {
+		this.editorReturnViewMode = this.viewMode === 'migration' ? 'migration' : 'list';
 		this.currentModelRef?.dispose();
 		this.currentModelRef = undefined;
 		this.editorModelChangeDisposables.clear();
@@ -1860,6 +2181,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 	}
 
 	private goBackToList(): void {
+		const returnViewMode = this.editorReturnViewMode;
+		this.editorReturnViewMode = 'list';
 		const fileUri = this.currentEditingUri;
 		const backgroundSaveRequest = this.createExistingCustomizationSaveRequest();
 		if (backgroundSaveRequest) {
@@ -1889,16 +2212,25 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.updateEditorActionButton();
 		this.updateEditorDisplayMode();
 		this.embeddedEditor?.setModel(null);
-		this.viewMode = 'list';
+		this.viewMode = returnViewMode;
 		this.updateContentVisibility();
 
-		// Refresh the list to pick up newly created/edited files
-		void this.listWidget?.refresh();
+		if (returnViewMode === 'migration') {
+			this.renderPromptMigrationPage();
+			void this.refreshPromptMigrationInfo();
+		} else {
+			// Refresh the list to pick up newly created/edited files
+			void this.listWidget?.refresh();
+		}
 
 		if (this.dimension) {
 			this.layout(this.dimension);
 		}
-		this.listWidget?.focusSearch();
+		if (returnViewMode === 'migration') {
+			this.migrationSearchInput?.focus();
+		} else {
+			this.listWidget?.focusSearch();
+		}
 
 		if (backgroundSaveRequest) {
 			const saveRequest = backgroundSaveRequest;
@@ -2090,10 +2422,14 @@ export class AICustomizationManagementEditor extends EditorPane {
 		this.editorActionButton.disabled = this.editorActionButtonInProgress;
 		this.editorActionButton.setAttribute('aria-label', shouldShowBuiltinSaveAction
 			? localize('saveBuiltinCopyAndChooseLocation', "Save override")
-			: localize('backToList', "Back to list"));
+			: this.editorReturnViewMode === 'migration'
+				? localize('backToPromptMigration', "Back to Migrate Prompt Files")
+				: localize('backToList', "Back to list"));
 		this.editorActionButton.title = shouldShowBuiltinSaveAction
 			? localize('saveBuiltinCopyAndChooseLocationTooltip', "Save override (choose Workspace, User, or Cancel)")
-			: localize('backToList', "Back to list");
+			: this.editorReturnViewMode === 'migration'
+				? localize('backToPromptMigrationTooltip', "Back to Migrate Prompt Files")
+				: localize('backToList', "Back to list");
 	}
 
 	private shouldShowBuiltinSaveAction(): boolean {

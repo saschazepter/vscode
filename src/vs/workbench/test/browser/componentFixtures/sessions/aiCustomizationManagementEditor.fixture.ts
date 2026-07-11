@@ -569,6 +569,7 @@ interface IRenderEditorOptions {
 	readonly openFirstItem?: boolean;
 	readonly openItemLabel?: string;
 	readonly editorDisplayMode?: 'preview' | 'raw';
+	readonly showPromptMigrationPage?: boolean;
 }
 
 function renderFixtureMarkdown(markdown: string): HTMLElement {
@@ -900,6 +901,10 @@ async function renderEditor(ctx: ComponentFixtureContext, options: IRenderEditor
 
 	if (options.scrollToBottom) {
 		editor.revealLastItem();
+	}
+
+	if (options.showPromptMigrationPage) {
+		editor.showPromptMigrationPage();
 	}
 
 	if (options.openFirstItem) {
@@ -1511,6 +1516,14 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 		render: ctx => renderEditor(ctx, {
 			sessionResource: localSessionResource,
 			selectedSection: AICustomizationManagementSection.Prompts,
+		}),
+	}),
+
+	PromptMigration: defineComponentFixture({
+		labels: { kind: 'screenshot' },
+		render: ctx => renderEditor(ctx, {
+			sessionResource: agentHostCopilotSessionResource,
+			showPromptMigrationPage: true,
 		}),
 	}),
 

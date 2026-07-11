@@ -856,6 +856,7 @@
 
 /* Content container visibility */
 .ai-customization-management-editor .prompts-content-container,
+.ai-customization-management-editor .prompt-migration-content-container,
 .ai-customization-management-editor .mcp-content-container,
 .ai-customization-management-editor .plugin-content-container,
 .ai-customization-management-editor .models-content-container,
@@ -870,6 +871,60 @@
 	border-radius: 6px;
 	overflow: hidden;
 	box-sizing: border-box;
+}
+
+.ai-customization-management-editor .prompt-migration-list {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	overflow: auto;
+	padding-bottom: 6px;
+}
+
+.ai-customization-management-editor .prompt-migration-group {
+	display: flex;
+	flex-direction: column;
+}
+
+.ai-customization-management-editor .prompt-migration-group + .prompt-migration-group {
+	margin-top: 8px;
+}
+
+.ai-customization-management-editor .prompt-migration-group-header {
+	cursor: default;
+	margin-bottom: 2px;
+}
+
+.ai-customization-management-editor .prompt-migration-group-header:hover {
+	background-color: transparent;
+}
+
+.ai-customization-management-editor .prompt-migration-item {
+	gap: 8px;
+}
+
+.ai-customization-management-editor .prompt-migration-checkbox {
+	flex-shrink: 0;
+	margin: 0;
+}
+
+.ai-customization-management-editor .prompt-migration-item-name {
+	color: inherit;
+}
+
+.ai-customization-management-editor .prompt-migration-item .item-left {
+	gap: 8px;
+}
+
+.ai-customization-management-editor .prompt-migration-empty {
+	margin: 0;
+	padding: 8px 12px;
+	color: var(--vscode-descriptionForeground);
+	font-size: var(--vscode-agents-fontSize-body2);
+}
+
+.ai-customization-management-editor .prompt-migration-button {
+	min-width: 96px;
 }
 
 /* Tools section list widget */

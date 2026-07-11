@@ -29,7 +29,7 @@ suite('aiCustomizationManagementEditor', () => {
 		editorPreviewFrontMatterContainer: HTMLElement | undefined;
 		editorPreviewDisposables: { add<T>(value: T): T; clear(): void; dispose(): void };
 		editorPreviewRenderScheduler: { cancel(): void; schedule(): void };
-		viewMode: 'list' | 'editor' | 'mcpDetail' | 'pluginDetail';
+		viewMode: 'list' | 'migration' | 'editor' | 'mcpDetail' | 'pluginDetail' | 'toolsDetail';
 		dimension: undefined;
 		hoverService: IHoverService;
 		configurationService: IConfigurationService;
