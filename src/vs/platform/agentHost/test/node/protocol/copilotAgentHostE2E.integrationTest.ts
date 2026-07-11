@@ -32,10 +32,10 @@ import { URI } from '../../../../../base/common/uri.js';
 import { MessageAttachmentKind, buildDefaultChatUri, ToolCallConfirmationReason, type MessageAttachment } from '../../../common/state/sessionState.js';
 import { ActionType, type ChatUsageAction } from '../../../common/state/sessionActions.js';
 import {
-	capiReplayFor, createRealSession, defineAgentHostE2ETests, dispatchTurn, driveTurnWithAttachmentsToCompletion,
+	AgentHostE2EServerLease, createRealSession, defineAgentHostE2ETests, dispatchTurn, driveTurnWithAttachmentsToCompletion,
 	type IAgentHostE2EProviderConfig,
 } from './agentHostE2ETestHelpers.js';
-import { fetchSessionWithChat, getActionEnvelope, isActionNotification, IServerHandle, startRealServer, TestProtocolClient } from './testHelpers.js';
+import { fetchSessionWithChat, getActionEnvelope, isActionNotification, TestProtocolClient } from './testHelpers.js';
 
 const COPILOT_CONFIG: IAgentHostE2EProviderConfig = {
 	suiteTitle: 'Agent Host E2E — Copilot',
@@ -51,46 +51,34 @@ const COPILOT_CONFIG: IAgentHostE2EProviderConfig = {
 	supportsWorktreeIsolation: true,
 	supportsSubagents: true,
 	supportsPlanMode: true,
+	// Copilot's session dispose reliably returns the agent to a clean state, so
+	// the suite reuses one replay server across tests (paying server fork + CLI
+	// startup once) instead of restarting per test.
+	supportsSharedReplayServer: true,
 };
 
 defineAgentHostE2ETests(COPILOT_CONFIG);
 
 suite('Agent Host E2E — Copilot (Copilot-specific)', function () {
 
-	let server: IServerHandle;
 	let client: TestProtocolClient;
 	const createdSessions: string[] = [];
 	const tempDirs: string[] = [];
+	const lease = new AgentHostE2EServerLease(COPILOT_CONFIG, { homeDir: homedir() });
 
 	// Per-test server fronted by the record/replay proxy: these tests replay
 	// committed fixtures by default (tokenless) and record against real CAPI
-	// with `AGENT_HOST_REPLAY_RECORD=1`, mirroring the shared suite.
+	// with `AGENT_HOST_REPLAY_RECORD=1`, mirroring the shared suite. When
+	// `supportsSharedReplayServer` is set (Copilot, replay only) the lease reuses
+	// one server across the suite and swaps the fixture per test.
 	setup(async function () {
 		this.timeout(60_000);
-		server = await startRealServer({
-			homeDir: homedir(),
-			capiReplay: capiReplayFor(COPILOT_CONFIG.provider, this.currentTest?.title ?? 'unknown'),
-		});
-		client = new TestProtocolClient(server.port);
-		await client.connect();
+		({ client } = await lease.acquire(this.currentTest?.title ?? 'unknown'));
 	});
 
 	teardown(async function () {
 		this.timeout(60_000);
-		for (const session of createdSessions) {
-			try {
-				await client.call('disposeSession', { session }, 30_000);
-			} catch { /* best-effort */ }
-		}
-		createdSessions.length = 0;
-		client.close();
-		// Flush the recording / surface strict replay cache-misses; kill even if
-		// the strict check throws.
-		try {
-			await server?.capiReplay?.stop();
-		} finally {
-			server?.process.kill();
-		}
+		await lease.release(createdSessions);
 
 		for (const dir of tempDirs) {
 			try {
@@ -98,6 +86,11 @@ suite('Agent Host E2E — Copilot (Copilot-specific)', function () {
 			} catch { /* best-effort */ }
 		}
 		tempDirs.length = 0;
+	});
+
+	suiteTeardown(async function () {
+		this.timeout(60_000);
+		await lease.dispose();
 	});
 
 	test('usage reports include Copilot cost metadata', async function () {
