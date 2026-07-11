@@ -5951,6 +5951,52 @@ suite('ClaudeAgent — Phase 11 customizations', () => {
 		assert.deepStrictEqual(pm.syncCalls, []);
 	});
 
+	test('createSession re-seeds the eager activeClient on reconnect to an existing session', async () => {
+		const pm = new FakeAgentPluginManager();
+		const { agent } = buildCtxWith(pm);
+		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
+
+		const customizations = [makeClientCustomization('https://bundle', 'Synced')];
+		const cfg = {
+			session: AgentSession.uri('claude', 'reconnect'),
+			workingDirectory: URI.file('/work'),
+			activeClient: { clientId: 'client-1', tools: [], customizations },
+		};
+		await agent.createSession(cfg);
+		// AgentService reissues createSession for the same URI on reconnect; the
+		// eager client must be re-applied even though the session already exists.
+		await agent.createSession(cfg);
+
+		assert.deepStrictEqual(pm.syncCalls, [
+			{ clientId: 'client-1', customizations },
+			{ clientId: 'client-1', customizations },
+		]);
+	});
+
+	test('createSession eager seeding suppresses orphan customization progress', async () => {
+		const pm = new FakeAgentPluginManager();
+		pm.syncResult = [makeSyncedRef('https://bundle', '/p/bundle')];
+		const { agent } = buildCtxWith(pm);
+		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
+
+		const updates: string[] = [];
+		disposables.add(agent.onDidSessionProgress(s => {
+			if (s.kind === 'action' && s.action.type === ActionType.SessionCustomizationUpdated) {
+				updates.push(s.action.customization.uri.toString());
+			}
+		}));
+
+		await agent.createSession({
+			session: AgentSession.uri('claude', 'quiet'),
+			workingDirectory: URI.file('/work'),
+			activeClient: { clientId: 'client-1', tools: [], customizations: [makeClientCustomization('https://bundle', 'Synced')] },
+		});
+
+		// The session state does not exist yet at create time, so the initial
+		// sync must be quiet — no orphan SessionCustomizationUpdated envelopes.
+		assert.deepStrictEqual(updates, []);
+	});
+
 	test('setClientCustomizations forwards each item as a SessionCustomizationUpdated action', async () => {
 		const pm = new FakeAgentPluginManager();
 		pm.syncResult = [makeSyncedRef('https://a', '/p/a'), makeSyncedRef('https://b', '/p/b')];
