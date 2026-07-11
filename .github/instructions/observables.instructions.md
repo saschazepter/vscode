@@ -1,5 +1,5 @@
 ---
-description: Guidelines for writing code using observables and deriveds.
+description: Guidelines for writing code using observables and deriveds. Use when writing or reviewing code that uses autorun, derived, observableValue, observable-driven DOM rendering, or any reactive observable pattern.
 ---
 
 ```ts
@@ -70,3 +70,7 @@ Most important symbols:
 	* [3] **Choose the right event observable pattern:**
 		* Use `observableFromEvent(owner, event, valueComputer)` when you need to track a computed value that changes with the event, and you want updates only when the computed value actually changes
 		* Use `observableSignalFromEvent(owner, event)` when you need to force re-computation every time the event fires, regardless of value stability. This is important when the computed value might not change but dependent computations need fresh context (e.g., workspace folder changes where the folder array reference might be the same but file path calculations need to be refreshed)
+	* [4] **Render/update split for autorun + DOM:** When a UI component uses `autorun` to react to observable changes and update DOM, split the work into two methods:
+		* `render()` — creates DOM elements and wires up event listeners once. Disposables go into a `DisposableStore` (e.g. `_renderDisposables`) that is cleared only when `render()` is called again.
+		* A lightweight update method (e.g. `_updateTriggerLabel()`) — called from the `autorun`. Only mutates existing DOM (text content, classes, attributes, aria labels). Does NOT create new event listeners or add new disposables.
+		* Never call the full `render()` from an `autorun`. Each autorun fire would accumulate orphaned disposables (listeners on detached DOM nodes) that are never cleaned up, causing a memory leak.
