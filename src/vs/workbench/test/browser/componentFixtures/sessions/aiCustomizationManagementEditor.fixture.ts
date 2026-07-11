@@ -669,8 +669,11 @@ async function renderEditor(ctx: ComponentFixtureContext, options: IRenderEditor
 			registerWorkbenchServices(reg);
 			// Enable the structured customization preview setting so the
 			// editor exercises the preview-first behavior in fixtures.
+			// Also enable prompt migration so migration affordances render in
+			// screenshot fixtures that depend on agent-host harnesses.
 			reg.defineInstance(IConfigurationService, new TestConfigurationService({
 				[ChatConfiguration.ChatCustomizationsStructuredPreviewEnabled]: true,
+				[ChatConfiguration.ChatCustomizationsPromptMigrationEnabled]: true,
 			}));
 			reg.define(IListService, ListService);
 			reg.defineInstance(ITextModelService, new class extends mock<ITextModelService>() {

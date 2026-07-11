@@ -653,6 +653,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 			if (e.affectsConfiguration(ChatConfiguration.ChatCustomizationsStructuredPreviewEnabled)) {
 				this.onStructuredPreviewSettingChanged();
 			}
+			if (e.affectsConfiguration(ChatConfiguration.ChatCustomizationsPromptMigrationEnabled)) {
+				this.refreshPromptMigrationUi();
+			}
 			if (e.affectsConfiguration(CHAT_AUTOMATIONS_ENABLED_SETTING)) {
 				this.rebuildVisibleSections();
 			}
@@ -1023,12 +1026,16 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 	private setPromptFilesToMigrate(promptFiles: readonly IPromptPath[]): void {
 		this.promptFilesToMigrate = promptFiles;
-		const migrationInfo = getPromptMigrationInfo(promptFiles);
+		this.refreshPromptMigrationUi();
+	}
+
+	private refreshPromptMigrationUi(): void {
+		const migrationInfo = this.isPromptMigrationEnabled() ? getPromptMigrationInfo(this.promptFilesToMigrate) : undefined;
 		this.welcomePage?.setPromptMigrationInfo(migrationInfo);
 		this.updateSidebarMigrationShortcut(migrationInfo);
 	}
 
-	private updateSidebarMigrationShortcut(migrationInfo: ReturnType<typeof getPromptMigrationInfo>): void {
+	private updateSidebarMigrationShortcut(migrationInfo: ReturnType<typeof getPromptMigrationInfo> | undefined): void {
 		if (!this.migrationShortcutContainer || !this.migrationShortcutButton || !this.migrationShortcutCount) {
 			return;
 		}
@@ -1050,6 +1057,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 	private async migratePromptFiles(): Promise<void> {
 		if (this.promptFilesToMigrate.length === 0) {
+			return;
+		}
+		if (!this.isPromptMigrationEnabled()) {
 			return;
 		}
 
@@ -1129,6 +1139,10 @@ export class AICustomizationManagementEditor extends EditorPane {
 		}
 
 		this.selectSection(AICustomizationManagementSection.Skills);
+	}
+
+	private isPromptMigrationEnabled(): boolean {
+		return this.configurationService.getValue<boolean>(ChatConfiguration.ChatCustomizationsPromptMigrationEnabled) === true;
 	}
 
 	private async resolveMigrationSkillSourceFolders(
