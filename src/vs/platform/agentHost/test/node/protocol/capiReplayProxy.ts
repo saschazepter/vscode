@@ -232,12 +232,12 @@ export class CapiReplayProxy {
 
 	constructor(private readonly _options: ICapiReplayProxyOptions) {
 		this._fixturePath = _options.fixturePath;
-		const fixtureExists = existsSync(_options.fixturePath);
+		const fixtureExists = existsSync(this._fixturePath);
 		this._mode = _options.mode ?? 'replay';
 		this._strict = _options.strict ?? true;
 
 		if (this._mode === 'replay' && !fixtureExists) {
-			throw new Error(`[capi-replay] replay mode requires a fixture but none exists at ${_options.fixturePath}`);
+			throw new Error(`[capi-replay] replay mode requires a fixture but none exists at ${this._fixturePath}`);
 		}
 
 		// Replay is read-only (never contacts the upstream); recording is the

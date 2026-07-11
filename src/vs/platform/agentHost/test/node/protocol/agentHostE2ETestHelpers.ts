@@ -602,7 +602,11 @@ export class AgentHostE2EServerLease {
 	async acquire(testTitle: string): Promise<{ server: IServerHandle; client: TestProtocolClient }> {
 		const capiReplay = capiReplayFor(this._config.provider, testTitle);
 		if (this._shared && this._server) {
-			this._server.capiReplay!.resetForReplay(capiReplay.fixturePath);
+			const proxy = this._server.capiReplay;
+			if (!proxy) {
+				throw new Error('[agent-host-e2e] shared replay server has no capiReplay proxy to reset');
+			}
+			proxy.resetForReplay(capiReplay.fixturePath);
 		} else {
 			this._server = await startRealServer({ ...this._startOptions, capiReplay });
 		}
