@@ -115,6 +115,15 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 	private readonly _providers = new Set<IChatDebugLogProvider>();
 	private readonly _invocationCts = new ResourceMap<CancellationTokenSource>();
 
+	/**
+	 * Sessions whose provider events should be cleared before the next batch of
+	 * provider events is applied. The clear is deferred until the first new
+	 * provider event actually arrives so that a provider which transiently
+	 * returns nothing (e.g. an Agent Host `events.jsonl` mid-rewrite) does not
+	 * wipe the events currently shown.
+	 */
+	private readonly _pendingProviderClear = new ResourceMap<boolean>();
+
 	/** Events that were returned by providers (not internally logged). */
 	private readonly _providerEvents = new WeakSet<IChatDebugEvent>();
 
@@ -264,6 +273,14 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 	}
 
 	addProviderEvent(event: IChatDebugEvent): void {
+		// If a re-invocation is pending for this session, clear the previously
+		// loaded provider events now that fresh data has actually arrived. This
+		// is deferred (rather than done up front in invokeProviders) so that a
+		// provider which returns nothing this cycle keeps the current events.
+		if (this._pendingProviderClear.has(event.sessionResource)) {
+			this._pendingProviderClear.delete(event.sessionResource);
+			this._clearProviderEvents(event.sessionResource);
+		}
 		this._providerEvents.add(event);
 		this.addEvent(event);
 	}
@@ -394,10 +411,11 @@ export class ChatDebugServiceImpl extends Disposable implements IChatDebugServic
 			existingCts.dispose();
 		}
 
-		// Clear only provider-sourced events for this session to avoid
-		// duplicates when re-invoking (e.g. navigating back to a session).
-		// Internally-logged events (e.g. prompt discovery) are preserved.
-		this._clearProviderEvents(sessionResource);
+		// Mark provider events for this session to be cleared before the next
+		// batch is applied. The clear is deferred to addProviderEvent so that a
+		// provider returning nothing this cycle preserves the current events;
+		// see _pendingProviderClear.
+		this._pendingProviderClear.set(sessionResource, true);
 
 		const cts = new CancellationTokenSource();
 		this._invocationCts.set(sessionResource, cts);

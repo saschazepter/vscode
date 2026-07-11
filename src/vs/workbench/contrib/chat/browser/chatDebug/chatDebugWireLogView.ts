@@ -497,6 +497,10 @@ export class ChatDebugWireLogView extends Disposable {
 	}
 
 	private renderList(): void {
+		// Dispose the previous rows' stores (click listeners etc.) before
+		// clearing and rebuilding; otherwise they accumulate on every filter
+		// change, "Load more", or full live refresh.
+		this.contentDisposables.clear();
 		DOM.clearNode(this.list);
 		this.rowElements = [];
 		this.rowStores = [];
@@ -693,9 +697,15 @@ export class ChatDebugWireLogView extends Disposable {
 		}
 
 		const header = DOM.append(row, $('.chat-debug-wirelog-row-header'));
+		// Accessibility: the header is an expand/collapse toggle. Make it
+		// keyboard-focusable, expose button semantics + expanded state, and
+		// hide the purely-decorative chevron from assistive technology.
+		header.tabIndex = 0;
+		header.setAttribute('role', 'button');
 
 		// Expansion chevron.
 		const chevron = DOM.append(header, $(`span.chat-debug-wirelog-chevron${ThemeIcon.asCSSSelector(Codicon.chevronRight)}`));
+		chevron.setAttribute('aria-hidden', 'true');
 
 		// Direction indicator.
 		const outbound = frame.dir === 'c2s';
@@ -760,6 +770,7 @@ export class ChatDebugWireLogView extends Disposable {
 			row.classList.toggle('chat-debug-wirelog-row-expanded', expanded);
 			chevron.classList.toggle('codicon-chevron-down', expanded);
 			chevron.classList.toggle('codicon-chevron-right', !expanded);
+			header.setAttribute('aria-expanded', String(expanded));
 			if (scan) {
 				this.scrollable.scanDomNode();
 			}
@@ -770,6 +781,12 @@ export class ChatDebugWireLogView extends Disposable {
 		setExpanded(isError, false);
 
 		store.add(DOM.addDisposableListener(header, DOM.EventType.CLICK, () => setExpanded(!expanded, true)));
+		store.add(DOM.addDisposableListener(header, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault();
+				setExpanded(!expanded, true);
+			}
+		}));
 		return { row, store };
 	}
 
@@ -927,23 +944,33 @@ function parseWireFrames(text: string): IWireFrame[] {
  * Folds response frames into the request they answer (matched by id in
  * chronological order), leaving notifications and unmatched frames as
  * standalone entries.
+ *
+ * AHP is bidirectional: both client and host can originate requests, and their
+ * id namespaces are independent. A response therefore answers a request from
+ * the opposite direction (a c2s request is answered by an s2c response and vice
+ * versa), so pending requests are keyed by direction + id to avoid pairing a
+ * response with a same-id request from the other direction.
  */
 function buildWireEntries(frames: IWireFrame[]): IWireEntry[] {
 	const entries: IWireEntry[] = [];
-	const pendingById = new Map<string, IWireEntry>();
+	const pendingByKey = new Map<string, IWireEntry>();
+	const pendingKey = (dir: WireLogDirection, id: string) => `${dir}|${id}`;
 	for (const frame of frames) {
 		if (frame.kind === 'response' && frame.id !== undefined) {
-			const request = pendingById.get(frame.id);
+			// A response answers a request travelling in the opposite direction.
+			const requestDir: WireLogDirection = frame.dir === 'c2s' ? 's2c' : 'c2s';
+			const key = pendingKey(requestDir, frame.id);
+			const request = pendingByKey.get(key);
 			if (request) {
 				request.response = frame;
-				pendingById.delete(frame.id);
+				pendingByKey.delete(key);
 				continue;
 			}
 		}
 		const entry: IWireEntry = { frame, response: undefined };
 		entries.push(entry);
 		if (frame.kind === 'request' && frame.id !== undefined) {
-			pendingById.set(frame.id, entry);
+			pendingByKey.set(pendingKey(frame.dir, frame.id), entry);
 		}
 	}
 	return entries;

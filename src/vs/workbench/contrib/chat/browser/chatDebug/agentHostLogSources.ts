@@ -284,7 +284,15 @@ export async function readAgentHostLogSourceContent(
 	}
 }
 
-/** Lists AHP wire log files, ranking those matching `nameToken` first. */
+/**
+ * Lists AHP wire log files for a session's connection.
+ *
+ * When `nameToken` identifies the session's connection (its filenames embed
+ * `ahp-<timestamp>-<connectionId>.jsonl`), only matching files are returned —
+ * so unrelated connections' logs are not surfaced as spurious "rotated"
+ * sources. Falls back to all AHP logs (newest first) when the token is absent
+ * or matches nothing.
+ */
 async function listWireLogFiles(
 	fileService: IFileService,
 	environmentService: IEnvironmentService,
@@ -301,17 +309,13 @@ async function listWireLogFiles(
 		.filter(child => !child.isDirectory && child.name.endsWith('.jsonl'))
 		.map(child => ({ resource: child.resource, name: child.name, mtime: child.mtime ?? 0 }));
 
-	// Rank files matching the session's connection token first, newest first.
-	return files.sort((a, b) => {
-		if (nameToken) {
-			const am = a.name.includes(nameToken) ? 0 : 1;
-			const bm = b.name.includes(nameToken) ? 0 : 1;
-			if (am !== bm) {
-				return am - bm;
-			}
-		}
-		return b.mtime - a.mtime;
-	});
+	// Restrict to the session's connection when it can be identified; otherwise
+	// fall back to all files so a session is never left without any log.
+	const matching = nameToken ? files.filter(file => file.name.includes(nameToken)) : [];
+	const selected = matching.length > 0 ? matching : files;
+
+	// Newest first.
+	return selected.sort((a, b) => b.mtime - a.mtime);
 }
 
 /** Reads at most `capBytes` from the tail of a file. */

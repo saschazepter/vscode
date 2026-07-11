@@ -10,7 +10,7 @@ import { URI } from '../../../../../base/common/uri.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { toErrorMessage } from '../../../../../base/common/errorMessage.js';
-import { IAgentHostService } from '../../../../../platform/agentHost/common/agentService.js';
+import { IAgentHostService, type IAgentConnection } from '../../../../../platform/agentHost/common/agentService.js';
 import { agentHostAuthority } from '../../../../../platform/agentHost/common/agentHostUri.js';
 import { IRemoteAgentHostService } from '../../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { ActionType, type ActionEnvelope, type ChatUsageAction, type SessionCustomizationsChangedAction } from '../../../../../platform/agentHost/common/state/sessionActions.js';
@@ -112,6 +112,13 @@ abstract class AgentHostActionRecorder extends Disposable {
 	/** Live per-remote-connection action listeners, keyed by agent-host authority. */
 	private readonly _remoteListeners = this._register(new DisposableMap<string>());
 
+	/**
+	 * The connection object currently subscribed for each authority. Tracked so
+	 * a reconnect (which replaces the connection object under the same
+	 * authority) is detected and the listener re-subscribed to the live object.
+	 */
+	private readonly _remoteConnections = new Map<string, IAgentConnection>();
+
 	constructor(
 		protected readonly _isEnabled: () => boolean,
 		agentHostService: IAgentHostActionSource,
@@ -144,17 +151,24 @@ abstract class AgentHostActionRecorder extends Disposable {
 		for (const info of this._remoteAgentHostService.connections) {
 			const authority = agentHostAuthority(info.address);
 			seen.add(authority);
-			if (this._remoteListeners.has(authority)) {
+			const connection = this._remoteAgentHostService.getConnectionByAuthority(authority);
+			if (!connection) {
 				continue;
 			}
-			const connection = this._remoteAgentHostService.getConnectionByAuthority(authority);
-			if (connection) {
-				this._remoteListeners.set(authority, connection.onDidAction(envelope => this._dispatch(envelope)));
+			// Skip only when already subscribed to this exact connection object.
+			// After a reconnect the object is replaced under the same authority,
+			// so we must re-subscribe to the live one (DisposableMap.set
+			// disposes the previous, now-dead listener).
+			if (this._remoteConnections.get(authority) === connection) {
+				continue;
 			}
+			this._remoteConnections.set(authority, connection);
+			this._remoteListeners.set(authority, connection.onDidAction(envelope => this._dispatch(envelope)));
 		}
 		for (const authority of [...this._remoteListeners.keys()]) {
 			if (!seen.has(authority)) {
 				this._remoteListeners.deleteAndDispose(authority);
+				this._remoteConnections.delete(authority);
 			}
 		}
 	}

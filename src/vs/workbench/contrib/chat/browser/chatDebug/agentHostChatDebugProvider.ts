@@ -23,7 +23,7 @@ import { IWorkbenchEnvironmentService } from '../../../../services/environment/c
 import { IPathService } from '../../../../services/path/common/pathService.js';
 import { ChatDebugHookResult, ChatDebugLogLevel, IChatDebugCustomizationLogEntry, IChatDebugEvent, IChatDebugFileEntry, IChatDebugLogProvider, IChatDebugMessageSection, IChatDebugModelTurnEvent, IChatDebugResolvedEventContent, IChatDebugService } from '../../common/chatDebugService.js';
 import { IAgentHostCustomizationService } from '../agentSessions/agentHost/agentHostCustomizationService.js';
-import { AgentHostAgentDebugLogEnabledSettingId } from '../../common/promptSyntax/promptTypes.js';
+import { AgentHostAgentDebugLogEnabledSettingId, AgentHostAgentDebugLogMaxEventsSettingId } from '../../common/promptSyntax/promptTypes.js';
 import { COPILOT_CLI_EH_SCHEME, COPILOT_CLI_LOCAL_AH_SCHEME, getCopilotCliSessionRawId, resolveEventsUri } from '../copilotCliEventsUri.js';
 import { AgentHostCustomizationRecorder, AgentHostUsageRecorder, buildAgentHostCustomizationsUri, buildAgentHostUsageUri, readAgentHostCustomizationsSnapshot, readAgentHostUsageRecords, type IAgentHostUsageRecord } from './agentHostUsageSidecar.js';
 
@@ -54,6 +54,8 @@ const MAX_DISCOVERED_SESSIONS = 30;
 const TITLE_READ_BYTES = 64 * 1024;
 /** Cap on cached resolved-event details to bound memory. */
 const MAX_RESOLVED_DETAILS = 50_000;
+/** Fallback in-memory record cap when the configured value is missing/invalid. */
+const DEFAULT_MAX_EVENTS_IN_MEMORY = 10_000;
 /** Cap on a tool argument/result string stored on the (list-level) event. */
 const MAX_EVENT_PAYLOAD = 4_000;
 /** Cap on a tool argument/result string stored for the detail (expanded) view. */
@@ -454,9 +456,30 @@ export class AgentHostChatDebugContribution extends Disposable implements IWorkb
 	 *
 	 * Returns `undefined` when the file does not exist yet or cannot be read.
 	 */
+	/**
+	 * The configured in-memory event cap for agent host sessions (see
+	 * {@link AgentHostAgentDebugLogMaxEventsSettingId}). The raw record cache is
+	 * trimmed to this many entries so a long-running session does not retain an
+	 * unbounded array, matching the capped public event buffer.
+	 */
+	private _maxRecordsInMemory(): number {
+		const configured = this._configurationService.getValue<number>(AgentHostAgentDebugLogMaxEventsSettingId);
+		if (typeof configured === 'number' && Number.isFinite(configured) && configured >= 1) {
+			return Math.floor(configured);
+		}
+		return DEFAULT_MAX_EVENTS_IN_MEMORY;
+	}
+
+	/** Trims `records` in place to the most recent {@link _maxRecordsInMemory} entries. */
+	private _capRecordsInMemory(records: IAgentHostEventRecord[]): void {
+		const max = this._maxRecordsInMemory();
+		if (records.length > max) {
+			records.splice(0, records.length - max);
+		}
+	}
+
 	private async _readEventRecords(eventsUri: URI, token: CancellationToken): Promise<IAgentHostEventRecord[] | undefined> {
 		const key = eventsUri.toString();
-
 		let size: number;
 		try {
 			const stat = await this._fileService.stat(eventsUri);
@@ -490,6 +513,7 @@ export class AgentHostChatDebugContribution extends Disposable implements IWorkb
 					cache.pendingBytes = combined;
 				}
 				cache.consumedBytes = size;
+				this._capRecordsInMemory(cache.records);
 				return cache.records;
 			} catch {
 				// Fall through to a full read (e.g. transient error / offset moved).
@@ -513,6 +537,7 @@ export class AgentHostChatDebugContribution extends Disposable implements IWorkb
 		if (lastNewline >= 0) {
 			appendJsonlRecords(buffer.slice(0, lastNewline + 1).toString(), records);
 		}
+		this._capRecordsInMemory(records);
 		this._liveRead = {
 			key,
 			consumedBytes: buffer.byteLength,
@@ -632,7 +657,7 @@ export function convertAgentHostEventsToDebugEvents(
 	// Positions of emitted model-turn events, so per-round usage from the sidecar
 	// (preferred) or session-cumulative usage from `session.shutdown` can be
 	// back-filled onto them (see below).
-	const modelTurnRefs: { readonly index: number; readonly id: string; readonly turnId?: string; readonly outputTokens?: number }[] = [];
+	const modelTurnRefs: IModelTurnRef[] = [];
 
 	// Logical-tree context. The "current message" pointers are tracked per agent
 	// (keyed by `agentId`, `''` for the main agent) so a sub-agent turn never
@@ -1037,28 +1062,53 @@ export function convertAgentHostEventsToDebugEvents(
 	// The per-turn split in (2) is an even approximation but the column sums are
 	// exact; totals that aren't known (e.g. input/cache on a live session) are
 	// left blank.
-	if (usageRecords && usageRecords.length > 0 && modelTurnRefs.length > 0) {
-		applyPerTurnUsage(events, resolved, modelTurnRefs, usageRecords);
-	} else {
-		const totals = extractSessionUsageTotals(records) ?? fallbackUsageTotals;
-		if (totals && modelTurnRefs.length > 0) {
-			const n = modelTurnRefs.length;
-			const inputs = totals.inputTokens !== undefined ? distributeEvenly(totals.inputTokens, n) : undefined;
-			const cached = totals.cacheReadTokens !== undefined ? distributeEvenly(totals.cacheReadTokens, n) : undefined;
-			const aiu = distributeEvenly(totals.totalNanoAiu, n);
-			for (let i = 0; i < n; i++) {
-				const ref = modelTurnRefs[i];
-				const turn = events[ref.index] as IChatDebugModelTurnEvent;
-				const inputTokens = inputs?.[i];
-				const cachedTokens = cached?.[i];
-				const totalTokens = inputTokens !== undefined ? inputTokens + (ref.outputTokens ?? 0) : undefined;
-				const copilotUsageNanoAiu = aiu[i] > 0 ? aiu[i] : undefined;
-				events[ref.index] = { ...turn, inputTokens, cachedTokens, totalTokens, copilotUsageNanoAiu };
-				const detail = resolved.get(ref.id);
-				if (detail?.kind === 'modelTurn') {
-					resolved.set(ref.id, { ...detail, inputTokens, cachedTokens, totalTokens });
-				}
+
+	// Distributes cumulative `totals` evenly across the given turns.
+	const fillTurnsWithTotals = (targets: readonly IModelTurnRef[], totals: ISessionUsageTotals) => {
+		const n = targets.length;
+		if (n === 0) {
+			return;
+		}
+		const inputs = totals.inputTokens !== undefined ? distributeEvenly(totals.inputTokens, n) : undefined;
+		const cached = totals.cacheReadTokens !== undefined ? distributeEvenly(totals.cacheReadTokens, n) : undefined;
+		const aiu = distributeEvenly(totals.totalNanoAiu, n);
+		for (let i = 0; i < n; i++) {
+			const ref = targets[i];
+			const turn = events[ref.index] as IChatDebugModelTurnEvent;
+			const inputTokens = inputs?.[i];
+			const cachedTokens = cached?.[i];
+			const totalTokens = inputTokens !== undefined ? inputTokens + (ref.outputTokens ?? 0) : undefined;
+			const copilotUsageNanoAiu = aiu[i] > 0 ? aiu[i] : undefined;
+			events[ref.index] = { ...turn, inputTokens, cachedTokens, totalTokens, copilotUsageNanoAiu };
+			const detail = resolved.get(ref.id);
+			if (detail?.kind === 'modelTurn') {
+				resolved.set(ref.id, { ...detail, inputTokens, cachedTokens, totalTokens });
 			}
+		}
+	};
+
+	if (usageRecords && usageRecords.length > 0 && modelTurnRefs.length > 0) {
+		const coverage = applyPerTurnUsage(events, resolved, modelTurnRefs, usageRecords);
+		// The sidecar may only cover a prefix of the session's turns (logging
+		// enabled mid-session, or a dropped append). Reconcile the remaining
+		// turns from the authoritative shutdown/live totals so the Overview
+		// aggregates aren't undercounted, keeping the exact per-round values we
+		// did capture.
+		const uncovered = modelTurnRefs.filter((_ref, i) => !coverage.covered.has(i));
+		if (uncovered.length > 0) {
+			const totals = extractSessionUsageTotals(records) ?? fallbackUsageTotals;
+			if (totals) {
+				fillTurnsWithTotals(uncovered, {
+					inputTokens: totals.inputTokens !== undefined ? Math.max(0, totals.inputTokens - coverage.assignedInput) : undefined,
+					cacheReadTokens: totals.cacheReadTokens !== undefined ? Math.max(0, totals.cacheReadTokens - coverage.assignedCache) : undefined,
+					totalNanoAiu: Math.max(0, totals.totalNanoAiu - coverage.assignedAiu),
+				});
+			}
+		}
+	} else if (modelTurnRefs.length > 0) {
+		const totals = extractSessionUsageTotals(records) ?? fallbackUsageTotals;
+		if (totals) {
+			fillTurnsWithTotals(modelTurnRefs, totals);
 		}
 	}
 
@@ -1234,12 +1284,33 @@ export function buildCustomizationDebugEvents(
 
 	return { events, resolved };
 }
+
+/** A model-turn debug event plus the context needed to back-fill its usage. */
+interface IModelTurnRef {
+	readonly index: number;
+	readonly id: string;
+	readonly turnId?: string;
+	readonly outputTokens?: number;
+}
+
+/** What {@link applyPerTurnUsage} assigned, so callers can reconcile the rest. */
+interface IPerTurnUsageCoverage {
+	/** Positions in `modelTurnRefs` that received a sidecar usage record. */
+	readonly covered: ReadonlySet<number>;
+	/** Sum of input tokens assigned from the sidecar. */
+	readonly assignedInput: number;
+	/** Sum of cache-read tokens assigned from the sidecar. */
+	readonly assignedCache: number;
+	/** Sum of Copilot AIU (nano) assigned from the sidecar. */
+	readonly assignedAiu: number;
+}
+
 function applyPerTurnUsage(
 	events: IChatDebugEvent[],
 	resolved: Map<string, IChatDebugResolvedEventContent>,
-	modelTurnRefs: readonly { readonly index: number; readonly id: string; readonly turnId?: string; readonly outputTokens?: number }[],
+	modelTurnRefs: readonly IModelTurnRef[],
 	usageRecords: readonly IAgentHostUsageRecord[],
-): void {
+): IPerTurnUsageCoverage {
 	const assign = (ref: typeof modelTurnRefs[number], inputTokens: number | undefined, cachedTokens: number | undefined, copilotUsageNanoAiu: number | undefined) => {
 		const turn = events[ref.index] as IChatDebugModelTurnEvent;
 		const totalTokens = inputTokens !== undefined ? inputTokens + (ref.outputTokens ?? 0) : undefined;
@@ -1282,17 +1353,28 @@ function applyPerTurnUsage(
 	}
 
 	let recordIndex = 0;
-	for (const ref of modelTurnRefs) {
+	let assignedInput = 0;
+	let assignedCache = 0;
+	let assignedAiu = 0;
+	const covered = new Set<number>();
+	for (let refIdx = 0; refIdx < modelTurnRefs.length; refIdx++) {
 		if (recordIndex >= usageRecords.length) {
 			break;
 		}
+		const ref = modelTurnRefs[refIdx];
 		const record = usageRecords[recordIndex];
 		if (ref.outputTokens !== undefined && record.outputTokens !== undefined && ref.outputTokens !== record.outputTokens) {
 			continue; // this ref has no captured usage record — leave it blank
 		}
-		assign(ref, record.inputTokens, record.cacheReadTokens, aiuByRecordIndex[recordIndex]);
+		const aiu = aiuByRecordIndex[recordIndex];
+		assign(ref, record.inputTokens, record.cacheReadTokens, aiu);
+		assignedInput += record.inputTokens ?? 0;
+		assignedCache += record.cacheReadTokens ?? 0;
+		assignedAiu += aiu ?? 0;
+		covered.add(refIdx);
 		recordIndex++;
 	}
+	return { covered, assignedInput, assignedCache, assignedAiu };
 }
 
 /** Session usage totals distributed across model turns. */
