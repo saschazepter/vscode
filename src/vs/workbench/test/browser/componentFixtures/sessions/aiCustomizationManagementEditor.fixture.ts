@@ -643,7 +643,15 @@ async function renderEditor(ctx: ComponentFixtureContext, options: IRenderEditor
 		AICustomizationManagementSection.Plugins,
 	];
 	const availableHarnesses = options.availableHarnesses ?? [
-		createVSCodeHarnessDescriptor()
+		createVSCodeHarnessDescriptor(),
+		{
+			id: 'agent-host-copilotcli',
+			label: 'Copilot [Agent Host]',
+			icon: ThemeIcon.fromId(Codicon.server.id),
+			hiddenSections: [AICustomizationManagementSection.Prompts],
+			hideGenerateButton: true,
+			itemProvider: createFixtureAgentHostItemProvider(allFiles),
+		},
 	];
 
 	const allMcpServers = [...mcpWorkspaceServers, ...mcpUserServers];
@@ -1395,14 +1403,6 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 		labels: { kind: 'screenshot', blocksCi: true },
 		render: ctx => renderEditor(ctx, {
 			sessionResource: agentHostCopilotSessionResource,
-			availableHarnesses: [{
-				id: 'agent-host-copilotcli',
-				label: 'Copilot [Agent Host]',
-				icon: ThemeIcon.fromId(Codicon.server.id),
-				hiddenSections: [AICustomizationManagementSection.Prompts],
-				hideGenerateButton: true,
-				itemProvider: createFixtureAgentHostItemProvider(allFiles),
-			}],
 		}),
 	}),
 
