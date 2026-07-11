@@ -79,12 +79,33 @@ suite('promptMigration', () => {
 
 		assert.strictEqual(migrated.skillName, 'review-prompt');
 		assert.deepStrictEqual(migrated.unsupportedHeaderKeys, ['tools', 'mode']);
-		assert.ok(migrated.content.includes('name: "review-prompt"'));
-		assert.ok(migrated.content.includes('description: "Review the active change"'));
+		assert.ok(migrated.content.includes('name: review-prompt'));
+		assert.ok(migrated.content.includes('description: Review the active change'));
 		assert.ok(migrated.content.includes('disable-model-invocation: true'));
 		assert.ok(migrated.content.includes('argument-hint: "[diff]"'));
 		assert.ok(!migrated.content.includes('tools: [read_file, edit_file]'));
 		assert.ok(migrated.content.includes('## Steps'));
+	});
+
+	test('preserves argument-hint formatting from source prompt', () => {
+		const promptFile: IPromptPath = {
+			uri: URI.file('/workspace/.github/prompts/review.prompt.md'),
+			name: 'Review Prompt',
+			storage: PromptsStorage.local,
+			type: PromptsType.prompt,
+			source: PromptFileSource.GitHubWorkspace,
+		};
+		const content = [
+			'---',
+			'name: Review Prompt',
+			'description: Review the active change',
+			'argument-hint: diff',
+			'---',
+			'Review body',
+		].join('\n');
+
+		const migrated = migratePromptFileToSkill(promptFile, content);
+		assert.ok(migrated.content.includes('argument-hint: diff'));
 	});
 
 	test('migrates prompt files and continues after per-file failures', async () => {

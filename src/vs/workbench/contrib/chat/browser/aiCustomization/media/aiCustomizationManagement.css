@@ -90,21 +90,9 @@
 	padding-top: var(--vscode-spacing-size40);
 }
 
-.ai-customization-management-editor .sidebar-migration-heading {
-	display: flex;
-	align-items: center;
-	gap: var(--vscode-spacing-size80);
-	margin: 0 8px 2px;
-	color: var(--vscode-descriptionForeground);
-	font-size: var(--vscode-agents-fontSize-label2);
-	font-weight: var(--vscode-agents-fontWeight-semiBold);
-	line-height: 16px;
-}
-
-.ai-customization-management-editor .sidebar-migration-heading::after {
-	content: '';
-	flex: 1;
+.ai-customization-management-editor .sidebar-migration-separator {
 	height: var(--vscode-strokeThickness);
+	margin: 0 8px 6px;
 	background-color: var(--vscode-widget-border, var(--vscode-editorWidget-border, transparent));
 }
 

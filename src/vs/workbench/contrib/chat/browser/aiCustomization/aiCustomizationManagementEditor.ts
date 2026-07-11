@@ -747,8 +747,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		const container = this.migrationShortcutContainer = DOM.append(sidebarContent, $('.sidebar-migration-shortcut'));
 		container.style.display = 'none';
 
-		const heading = DOM.append(container, $('div.sidebar-migration-heading'));
-		heading.textContent = localize('migrationShortcutHeading', "Migrate");
+		DOM.append(container, $('div.sidebar-migration-separator'));
 
 		const button = this.migrationShortcutButton = DOM.append(container, $('button.sidebar-migration-button')) as HTMLButtonElement;
 		button.type = 'button';
@@ -760,7 +759,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		icon.setAttribute('aria-hidden', 'true');
 
 		const label = DOM.append(button, $('span.sidebar-migration-label'));
-		label.textContent = localize('migrationShortcutLabel', "Prompts");
+		label.textContent = localize('migrationShortcutLabel', "Migrate Prompts");
 
 		this.migrationShortcutCount = DOM.append(button, $('span.sidebar-migration-count'));
 

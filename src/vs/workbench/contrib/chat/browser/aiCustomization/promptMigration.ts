@@ -9,7 +9,7 @@ import { VSBuffer } from '../../../../../base/common/buffer.js';
 import { basename, dirname } from '../../../../../base/common/resources.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { SKILL_FILENAME, VALID_SKILL_NAME_REGEX, getCleanPromptName } from '../../common/promptSyntax/config/promptFileLocations.js';
-import { ParsedPromptFile, PromptFileParser, PromptHeaderAttributes } from '../../common/promptSyntax/promptFileParser.js';
+import { IHeaderAttribute, ParsedPromptFile, PromptFileParser, PromptHeaderAttributes } from '../../common/promptSyntax/promptFileParser.js';
 import { IPromptPath, PromptsStorage } from '../../common/promptSyntax/service/promptsService.js';
 import { ICustomizationSourceFolder } from '../../common/customizationHarnessService.js';
 
@@ -70,6 +70,7 @@ export function migratePromptFileToSkill(promptFile: IPromptPath, content: strin
 	const skillName = skillNameOverride ?? sanitizeSkillName(friendlyName);
 	const description = promptFile.description?.trim() || parsed.header?.description?.trim() || friendlyName;
 	const argumentHint = parsed.header?.argumentHint?.trim();
+	const argumentHintAttribute = parsed.header?.getAttribute(PromptHeaderAttributes.argumentHint);
 	const body = getPromptBody(parsed, content);
 	const unsupportedHeaderKeys = parsed.header?.attributes
 		.filter(attribute => !retainedPromptHeaderKeys.has(attribute.key))
@@ -77,13 +78,13 @@ export function migratePromptFileToSkill(promptFile: IPromptPath, content: strin
 
 	const headerLines = [
 		'---',
-		`name: ${JSON.stringify(skillName)}`,
-		`description: ${JSON.stringify(description)}`,
+		`name: ${skillName}`,
+		`description: ${description}`,
 		'disable-model-invocation: true',
 	];
 
 	if (argumentHint) {
-		headerLines.push(`argument-hint: ${JSON.stringify(argumentHint)}`);
+		headerLines.push(`argument-hint: ${formatMigratedHeaderValue(argumentHint, argumentHintAttribute)}`);
 	}
 
 	headerLines.push('---', '');
@@ -93,6 +94,21 @@ export function migratePromptFileToSkill(promptFile: IPromptPath, content: strin
 		content: `${headerLines.join('\n')}${body}`,
 		unsupportedHeaderKeys,
 	};
+}
+
+function formatMigratedHeaderValue(value: string, sourceAttribute: IHeaderAttribute | undefined): string {
+	if (sourceAttribute?.value.type === 'scalar') {
+		switch (sourceAttribute.value.format) {
+			case 'single':
+				return `'${value.replace(/'/g, `''`)}'`;
+			case 'double':
+				return JSON.stringify(value);
+			case 'none':
+				return value;
+		}
+	}
+
+	return value;
 }
 
 export async function migratePromptFilesToSkills(
