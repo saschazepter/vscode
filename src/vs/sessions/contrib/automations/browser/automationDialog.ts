@@ -147,7 +147,25 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 		this.branchSlot = DOM.append(isolationGroup, $('span.automation-form-branch-slot')) as HTMLSpanElement;
 		this.branchSlot.setAttribute('aria-live', 'polite');
 
-		this.renderBranchChip();
+		const trigger = DOM.append(this.branchSlot, $('span.automation-form-branch-chip')) as HTMLSpanElement;
+		this.branchTrigger = trigger;
+		trigger.setAttribute('role', 'button');
+
+		this.renderDisposables.add(Gesture.addTarget(trigger));
+		for (const eventType of [DOM.EventType.CLICK, TouchEventType.Tap]) {
+			this.renderDisposables.add(DOM.addDisposableListener(trigger, eventType, (e) => {
+				DOM.EventHelper.stop(e, true);
+				this.showBranchPicker();
+			}));
+		}
+		this.renderDisposables.add(DOM.addDisposableListener(trigger, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				DOM.EventHelper.stop(e, true);
+				this.showBranchPicker();
+			}
+		}));
+
+		this.updateBranchLabel();
 		this.renderDisposables.add(this.workspacePicker.onDidSelectWorkspace(uri => {
 			this.updateBranchForFolder(uri);
 		}));
@@ -171,36 +189,18 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 		this.branchTrigger.setAttribute('aria-disabled', String(!enabled));
 	}
 
-	private renderBranchChip(): void {
-		if (!this.branchSlot) {
+	private updateBranchLabel(): void {
+		if (!this.branchTrigger) {
 			return;
 		}
-		DOM.clearNode(this.branchSlot);
-
-		const trigger = DOM.append(this.branchSlot, $('span.automation-form-branch-chip')) as HTMLSpanElement;
-		this.branchTrigger = trigger;
-		trigger.setAttribute('role', 'button');
+		DOM.clearNode(this.branchTrigger);
 
 		const branchName = this.state.branch ?? localize('automation.form.branch.select', "Branch");
-		trigger.setAttribute('aria-label', localize('automation.form.branch.pickerAriaLabel', "Pick Branch, {0}", branchName));
+		this.branchTrigger.setAttribute('aria-label', localize('automation.form.branch.pickerAriaLabel', "Pick Branch, {0}", branchName));
 
-		DOM.append(trigger, renderIcon(Codicon.gitBranch));
-		DOM.append(trigger, $('span.automation-form-branch-name', undefined, branchName));
-		DOM.append(trigger, renderIcon(Codicon.chevronDown));
-
-		this.renderDisposables.add(Gesture.addTarget(trigger));
-		for (const eventType of [DOM.EventType.CLICK, TouchEventType.Tap]) {
-			this.renderDisposables.add(DOM.addDisposableListener(trigger, eventType, (e) => {
-				DOM.EventHelper.stop(e, true);
-				this.showBranchPicker();
-			}));
-		}
-		this.renderDisposables.add(DOM.addDisposableListener(trigger, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				DOM.EventHelper.stop(e, true);
-				this.showBranchPicker();
-			}
-		}));
+		DOM.append(this.branchTrigger, renderIcon(Codicon.gitBranch));
+		DOM.append(this.branchTrigger, $('span.automation-form-branch-name', undefined, branchName));
+		DOM.append(this.branchTrigger, renderIcon(Codicon.chevronDown));
 
 		this.updateBranchPickerState();
 	}
@@ -226,7 +226,7 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 			onSelect: ({ name }) => {
 				this.actionWidgetService.hide();
 				this.state.branch = name;
-				this.renderBranchChip();
+				this.updateBranchLabel();
 			},
 			onHide: () => { trigger.focus(); },
 		};
@@ -255,7 +255,7 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 		this.branches = [];
 		if (!folder) {
 			this.state.branch = undefined;
-			this.renderBranchChip();
+			this.updateBranchLabel();
 			return;
 		}
 		let repo;
@@ -266,7 +266,7 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 				return;
 			}
 			this.state.branch = undefined;
-			this.renderBranchChip();
+			this.updateBranchLabel();
 			return;
 		}
 		if (myRequestId !== this.branchRequestId) {
@@ -274,11 +274,10 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 		}
 		if (!repo) {
 			this.state.branch = undefined;
-			this.renderBranchChip();
+			this.updateBranchLabel();
 			return;
 		}
 
-		// Load branch list from git
 		try {
 			const refs = await repo.getRefs({ pattern: 'refs/heads' });
 			if (myRequestId !== this.branchRequestId) {
@@ -305,7 +304,7 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 			} else if (!head?.commit) {
 				this.state.branch = undefined;
 			}
-			this.renderBranchChip();
+			this.updateBranchLabel();
 		}));
 		this.branchRepoDisposable.value = watcher;
 	}
@@ -584,10 +583,10 @@ export function renderForm(
 				}, itemOptions);
 			}
 			if (action.id === AUTOMATIONS_ISOLATION_GROUP_ACTION_ID) {
-						const actionWidgetService = instantiationService.invokeFunction(accessor => accessor.get(IActionWidgetService));
-						const gitService = instantiationService.invokeFunction(accessor => accessor.get(IGitService));
-						return new AutomationIsolationGroupActionViewItem(action, state, workspacePicker, actionWidgetService, gitService, itemOptions);
-					}
+				const actionWidgetService = instantiationService.invokeFunction(accessor => accessor.get(IActionWidgetService));
+				const gitService = instantiationService.invokeFunction(accessor => accessor.get(IGitService));
+				return new AutomationIsolationGroupActionViewItem(action, state, workspacePicker, actionWidgetService, gitService, itemOptions);
+			}
 			return undefined;
 		},
 	};
