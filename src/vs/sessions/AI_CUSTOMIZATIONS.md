@@ -73,6 +73,10 @@ The Tools section can browse the Marketplace in the core workbench, where extens
 
 When the active harness is an agent host (`agent-host-*` / `remote-*`), the overview can render a **Migrate** card. The card appears only when the core `IPromptsService` still discovers local/user `*.prompt.md` files, because those files are ignored by agent-host harnesses, and only when the experimental `chat.customizations.promptMigration.enabled` setting is enabled. The left sidebar also renders a bottom **Migrate Prompt Files** shortcut in that state so the flow is discoverable even when the overview is not visible. Choosing either entry converts those prompt files into skills under the harness-appropriate skill roots (for example `.github/skills` / `~/.copilot/skills` for Copilot, `.claude/skills` / `~/.claude/skills` for Claude), preserves manual invocation by setting `disable-model-invocation: true`, and removes the original prompt files. If multiple workspace skill roots are available, migration prompts once to choose the workspace target and reuses that target for all migrated workspace prompts.
 
+Automation run history stores the created session as a serialized URI. Its Open Session action uses the shared resource-first session opener, allowing the Agents window to route the URI through `ISessionsService` before the core workbench falls back to resolving an `IAgentSession`.
+
+Manual automation runs announce that they started once session dispatch commits, while lifecycle tracking continues until completion, failure, cancellation, or timeout.
+
 ### IAICustomizationWorkspaceService
 
 The `IAICustomizationWorkspaceService` interface controls per-window behavior:
