@@ -396,6 +396,11 @@ let _proposedApiEnabledResolver: ProposedApiEnabledResolver | undefined;
 export const enabledApiProposalsFallbackExperimentName = 'extensionEnabledApiProposalsFallback';
 
 /**
+ * Experiment value that explicitly blocks all proposals reaching the fallback.
+ */
+export const enabledApiProposalsFallbackNone = 'none';
+
+/**
  * Resolves the value of the {@link enabledApiProposalsFallbackExperimentName}-experiment, or
  * `undefined` when it does not apply (non-`stable` quality) or cannot be read in time.
  */
@@ -424,8 +429,8 @@ export async function resolveEnabledApiProposalsFallbackExperiment(assignmentSer
  *
  * @param value A comma-separated list of `publisher.extension:proposalName` entries. Any combination
  * that appears here will have {@link isProposedApiEnabled} return `true` even when the extension has
- * not declared that particular proposal. When unset, all proposals are allowed; an empty string
- * blocks all proposals that reach the fallback.
+ * not declared that particular proposal. When unset, all proposals are allowed;
+ * {@link enabledApiProposalsFallbackNone} blocks all proposals that reach the fallback.
  * @param quality The product quality. The experiment only takes effect when this is `stable`.
  */
 export function setEnabledApiProposalsFallbackExperiment(value: string | undefined, quality: string | undefined): IDisposable {
@@ -434,7 +439,7 @@ export function setEnabledApiProposalsFallbackExperiment(value: string | undefin
 	}
 
 	const allowed = new Set<string>();
-	if (value !== undefined) {
+	if (value !== undefined && value !== enabledApiProposalsFallbackNone) {
 		for (const entry of value.split(',')) {
 			const trimmed = entry.trim();
 			const idx = trimmed.indexOf(':');

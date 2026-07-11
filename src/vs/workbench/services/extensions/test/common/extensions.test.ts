@@ -8,7 +8,7 @@ import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { ExtensionIdentifier, IExtensionDescription, TargetPlatform } from '../../../../../platform/extensions/common/extensions.js';
 import { ApiProposalName } from '../../../../../platform/extensions/common/extensionsApiProposals.js';
-import { isProposedApiEnabled, setEnabledApiProposalsFallbackExperiment } from '../../common/extensions.js';
+import { enabledApiProposalsFallbackNone, isProposedApiEnabled, setEnabledApiProposalsFallbackExperiment } from '../../common/extensions.js';
 
 suite('isProposedApiEnabled (extensionEnabledApiProposalsFallback experiment)', () => {
 
@@ -80,9 +80,9 @@ suite('isProposedApiEnabled (extensionEnabledApiProposalsFallback experiment)', 
 		);
 	});
 
-	test('empty experiment blocks all proposals that reach the fallback', () => {
+	test('none experiment blocks all proposals that reach the fallback', () => {
 		const missing = desc('test.missing', ['unrelatedProposal']);
-		store.add(setEnabledApiProposalsFallbackExperiment('', 'stable'));
+		store.add(setEnabledApiProposalsFallbackExperiment(enabledApiProposalsFallbackNone, 'stable'));
 		assert.strictEqual(isProposedApiEnabled(missing, 'someProposal' as ApiProposalName), false);
 	});
 
