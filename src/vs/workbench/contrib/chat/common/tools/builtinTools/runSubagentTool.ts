@@ -9,7 +9,7 @@ import { Emitter, type Event } from '../../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { IJSONSchema, IJSONSchemaMap } from '../../../../../../base/common/jsonSchema.js';
 import { Disposable, DisposableStore } from '../../../../../../base/common/lifecycle.js';
-import { URI } from '../../../../../../base/common/uri.js';
+import type { URI } from '../../../../../../base/common/uri.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { generateUuid } from '../../../../../../base/common/uuid.js';
 import { localize } from '../../../../../../nls.js';
@@ -22,7 +22,7 @@ import { isByokModel } from '../../chatSelectedModel.js';
 import { IChatProgress, IChatService } from '../../chatService/chatService.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../../constants.js';
 import { COPILOT_VENDOR_ID, ILanguageModelChatMetadata, ILanguageModelsService } from '../../languageModels.js';
-import { ChatModel, IChatRequestModeInstructions } from '../../model/chatModel.js';
+import type { ChatModel, IChatRequestModeInstructions } from '../../model/chatModel.js';
 import { getChatSessionType } from '../../model/chatUri.js';
 import { IChatAgentRequest, IChatAgentResult, IChatAgentService } from '../../participants/chatAgents.js';
 import { ComputeAutomaticInstructions } from '../../promptSyntax/computeAutomaticInstructions.js';
@@ -166,7 +166,7 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 			let resolvedModelName: string | undefined;
 			const currentModeInstructions = request.modeInfo?.modeInstructions;
 
-			const subAgentName = args.agentName;
+			const subAgentName = this.normalizeRequestedAgentName(args.agentName);
 			const effectiveSubAgentName = subAgentName ?? currentModeInstructions?.name;
 
 			if (subAgentName) {
@@ -553,8 +553,9 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 
 	async prepareToolInvocation(context: IToolInvocationPreparationContext, _token: CancellationToken): Promise<IPreparedToolInvocation | undefined> {
 		const args = context.parameters as IRunSubagentToolInputParams;
+		const requestedAgentName = this.normalizeRequestedAgentName(args.agentName);
 
-		const subagent = args.agentName ? await this.getSubAgentByName(args.agentName) : undefined;
+		const subagent = requestedAgentName ? await this.getSubAgentByName(requestedAgentName) : undefined;
 		const currentModeInstructions = context.chatSessionResource ? this.getCurrentModeInstructions(context.chatSessionResource) : undefined;
 
 		// Resolve the model early and cache it for invoke()
@@ -566,14 +567,22 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 			toolSpecificData: {
 				kind: 'subagent',
 				description: args.description,
-				agentName: subagent?.name ?? args.agentName ?? currentModeInstructions?.name,
+				agentName: subagent?.name ?? requestedAgentName ?? currentModeInstructions?.name,
 				prompt: args.prompt,
 				modelName: resolved.resolvedModelName,
 			},
 		};
 	}
 
+	private normalizeRequestedAgentName(agentName: string | undefined): string | undefined {
+		const normalized = agentName?.trim();
+		return normalized ? normalized : undefined;
+	}
+
 	private getCurrentModeInstructions(sessionResource: URI): IChatRequestModeInstructions | undefined {
+		if (typeof this.chatService.getSession !== 'function') {
+			return undefined;
+		}
 		const model = this.chatService.getSession(sessionResource) as ChatModel | undefined;
 		return model?.getRequests().at(-1)?.modeInfo?.modeInstructions;
 	}
