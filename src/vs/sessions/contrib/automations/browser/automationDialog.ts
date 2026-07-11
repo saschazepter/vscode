@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as DOM from '../../../../base/browser/dom.js';
+import { Gesture, EventType as TouchEventType } from '../../../../base/browser/touch.js';
 import { BaseActionViewItem, IBaseActionViewItemOptions } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { IButton } from '../../../../base/browser/ui/button/button.js';
@@ -21,8 +22,6 @@ import { ICodeEditorService } from '../../../../editor/browser/services/codeEdit
 import { EditorContextKeys } from '../../../../editor/common/editorContextKeys.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
-import { ActionListItemKind, IActionListDelegate, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
@@ -101,14 +100,13 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 	private readonly renderDisposables = this._register(new DisposableStore());
 	private readonly branchRepoDisposable = this._register(new MutableDisposable<IDisposable>());
 	private branchRequestId = 0;
-	private folderChip: HTMLSpanElement | undefined;
+	private checkbox: Checkbox | undefined;
 	private branchSlot: HTMLSpanElement | undefined;
 
 	constructor(
 		action: IAction,
 		private readonly state: IFormState,
 		private readonly workspacePicker: AutomationsWorkspacePicker,
-		private readonly actionWidgetService: IActionWidgetService,
 		private readonly gitService: IGitService,
 		options?: IBaseActionViewItemOptions,
 	) {
@@ -122,45 +120,39 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 		DOM.clearNode(container);
 		container.style.marginLeft = 'auto';
 
-		const isolationGroup = DOM.append(container, $('span.automation-form-isolation-group'));
-		this.folderChip = DOM.append(isolationGroup, $('span.automation-form-isolation-chip')) as HTMLSpanElement;
-		this.folderChip.setAttribute('role', 'button');
-		this.folderChip.tabIndex = 0;
+		const isolationGroup = DOM.append(container, $('span.automation-form-isolation-group.sessions-chat-isolation-checkbox'));
+		const label = localize('automation.form.isolation.worktree', "Worktree");
+		const row = DOM.append(isolationGroup, $('span.action-label'));
+		row.setAttribute('aria-label', localize('automation.form.isolation.pickerAriaLabel', "Worktree isolation"));
+
+		const checkbox = this.renderDisposables.add(new Checkbox(label, this.state.isolationMode === 'worktree', { ...defaultCheckboxStyles, size: 14 }));
+		this.checkbox = checkbox;
+		DOM.append(row, checkbox.domNode);
+		const labelSpan = DOM.append(row, $('span.sessions-chat-dropdown-label'));
+		labelSpan.textContent = label;
+
+		this.renderDisposables.add(checkbox.onChange(() => this.applyChecked(checkbox.checked)));
+		this.renderDisposables.add(Gesture.addTarget(row));
+		for (const eventType of [DOM.EventType.CLICK, TouchEventType.Tap]) {
+			this.renderDisposables.add(DOM.addDisposableListener(row, eventType, e => {
+				DOM.EventHelper.stop(e, true);
+				checkbox.checked = !checkbox.checked;
+				this.applyChecked(checkbox.checked);
+			}));
+		}
+
 		this.branchSlot = DOM.append(isolationGroup, $('span.automation-form-branch-slot')) as HTMLSpanElement;
 		this.branchSlot.setAttribute('aria-live', 'polite');
 
-		this.renderIsolationChip();
 		this.renderBranchLabel(localize('automation.form.branch.unknown', "—"), true);
 		this.renderDisposables.add(this.workspacePicker.onDidSelectWorkspace(uri => {
 			this.updateBranchForFolder(uri);
 		}));
-		this.renderDisposables.add(DOM.addDisposableListener(this.folderChip, DOM.EventType.CLICK, (e) => {
-			DOM.EventHelper.stop(e, true);
-			this.showIsolationPicker();
-		}));
-		this.renderDisposables.add(DOM.addDisposableListener(this.folderChip, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				DOM.EventHelper.stop(e, true);
-				this.showIsolationPicker();
-			}
-		}));
 		this.updateBranchForFolder(this.state.folderUri);
 	}
 
-	private renderIsolationChip(): void {
-		if (!this.folderChip) {
-			return;
-		}
-		DOM.clearNode(this.folderChip);
-		const isWorktree = this.state.isolationMode === 'worktree';
-		const modeIcon = isWorktree ? Codicon.worktree : Codicon.folder;
-		const modeLabel = isWorktree
-			? localize('automation.form.isolation.worktree', "Worktree")
-			: localize('automation.form.isolation.folder', "Folder");
-		this.folderChip.setAttribute('aria-label', localize('automation.form.isolation.pickerAriaLabel', "Pick Isolation Mode, {0}", modeLabel));
-		this.folderChip.title = modeLabel;
-		DOM.append(this.folderChip, renderIcon(modeIcon));
-		DOM.append(this.folderChip, $('span.automation-form-isolation-label', undefined, modeLabel));
+	private applyChecked(checked: boolean): void {
+		this.state.isolationMode = checked ? 'worktree' : 'workspace';
 	}
 
 	private renderBranchLabel(text: string, isMissing: boolean): void {
@@ -171,50 +163,6 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 		this.branchSlot.classList.toggle('automation-form-branch-missing', isMissing);
 		DOM.append(this.branchSlot, renderIcon(Codicon.gitBranch));
 		DOM.append(this.branchSlot, $('span.automation-form-branch-name', undefined, text));
-	}
-
-	private showIsolationPicker(): void {
-		if (!this.folderChip || this.actionWidgetService.isVisible) {
-			return;
-		}
-		const currentMode = this.state.isolationMode ?? 'workspace';
-		const items: IActionListItem<{ readonly mode: string; readonly checked?: boolean }>[] = [
-			{
-				kind: ActionListItemKind.Action,
-				label: localize('automation.form.isolation.worktree', "Worktree"),
-				group: { title: '', icon: Codicon.worktree },
-				item: { mode: 'worktree', checked: currentMode === 'worktree' || undefined },
-			},
-			{
-				kind: ActionListItemKind.Action,
-				label: localize('automation.form.isolation.folder', "Folder"),
-				group: { title: '', icon: Codicon.folder },
-				item: { mode: 'workspace', checked: currentMode === 'workspace' || undefined },
-			},
-		];
-		const delegate: IActionListDelegate<{ readonly mode: string; readonly checked?: boolean }> = {
-			onSelect: ({ mode }) => {
-				this.actionWidgetService.hide();
-				this.state.isolationMode = mode;
-				this.renderIsolationChip();
-			},
-			onHide: () => {
-				this.folderChip?.focus();
-			},
-		};
-		this.actionWidgetService.show(
-			'automationIsolationPicker',
-			false,
-			items,
-			delegate,
-			this.folderChip,
-			undefined,
-			[],
-			{
-				getAriaLabel: item => item.label ?? '',
-				getWidgetAriaLabel: () => localize('automation.form.isolation.widgetAriaLabel', "Isolation Mode"),
-			},
-		);
 	}
 
 	private async updateBranchForFolder(folder: URI | undefined): Promise<void> {
@@ -536,10 +484,9 @@ export function renderForm(
 				}, itemOptions);
 			}
 			if (action.id === AUTOMATIONS_ISOLATION_GROUP_ACTION_ID) {
-				const actionWidgetService = instantiationService.invokeFunction(accessor => accessor.get(IActionWidgetService));
-				const gitService = instantiationService.invokeFunction(accessor => accessor.get(IGitService));
-				return new AutomationIsolationGroupActionViewItem(action, state, workspacePicker, actionWidgetService, gitService, itemOptions);
-			}
+					const gitService = instantiationService.invokeFunction(accessor => accessor.get(IGitService));
+					return new AutomationIsolationGroupActionViewItem(action, state, workspacePicker, gitService, itemOptions);
+				}
 			return undefined;
 		},
 	};

@@ -2892,7 +2892,36 @@ body:has(.automation-dialog) .monaco-menu-container {
 	gap: 5px;
 }
 
-.automation-form-prompt-host .automation-form-isolation-chip,
+.automation-form-prompt-host .automation-form-isolation-group.sessions-chat-isolation-checkbox .action-label {
+	display: inline-flex;
+	align-items: center;
+	cursor: pointer;
+	gap: 4px;
+	height: 16px;
+	padding: 3px 6px;
+	font-size: 11px;
+	color: var(--vscode-icon-foreground);
+	background: transparent;
+	border: none;
+	min-width: 0;
+	border-radius: var(--vscode-cornerRadius-small);
+}
+
+.automation-form-prompt-host .automation-form-isolation-group.sessions-chat-isolation-checkbox .action-label:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+	color: var(--vscode-foreground);
+}
+
+.automation-form-prompt-host .automation-form-isolation-group.sessions-chat-isolation-checkbox .monaco-checkbox {
+	margin-right: 6px;
+}
+
+.automation-form-prompt-host .automation-form-isolation-group.sessions-chat-isolation-checkbox .sessions-chat-dropdown-label {
+	font-size: 11px;
+	margin-left: 0;
+	cursor: pointer;
+}
+
 .automation-form-prompt-host .automation-form-branch-slot {
 	display: inline-flex;
 	align-items: center;
@@ -2906,33 +2935,14 @@ body:has(.automation-dialog) .monaco-menu-container {
 	min-width: 0;
 }
 
-.automation-form-prompt-host .automation-form-isolation-chip > .codicon,
 .automation-form-prompt-host .automation-form-branch-slot > .codicon {
 	font-size: 12px;
 	color: var(--vscode-icon-foreground);
 	flex-shrink: 0;
 }
 
-.automation-form-prompt-host .automation-form-isolation-chip {
-	cursor: pointer;
-	border-radius: var(--vscode-cornerRadius-small);
-}
-
-.automation-form-prompt-host .automation-form-isolation-chip:not(.automation-form-isolation-chip-disabled):hover {
-	background-color: var(--vscode-toolbar-hoverBackground);
-	color: var(--vscode-foreground);
-}
-
-.automation-form-prompt-host .automation-form-isolation-chip-disabled {
-	cursor: default;
-}
-
-.automation-form-prompt-host .automation-form-isolation-label,
 .automation-form-prompt-host .automation-form-branch-name {
 	font-size: 11px;
-}
-
-.automation-form-prompt-host .automation-form-branch-name {
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
