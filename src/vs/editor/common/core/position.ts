@@ -6,7 +6,7 @@
 /**
  * A position in the editor. This interface is suitable for serialization.
  */
-export interface IPosition {
+exportinterface IPosition {
 	/**
 	 * The 1-based line number. The first line is line 1.
 	 */
