@@ -731,6 +731,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 		const container = this.migrationShortcutContainer = DOM.append(sidebarContent, $('.sidebar-migration-shortcut'));
 		container.style.display = 'none';
 
+		const heading = DOM.append(container, $('div.sidebar-migration-heading'));
+		heading.textContent = localize('migrationShortcutHeading', "Migrate");
+
 		const button = this.migrationShortcutButton = DOM.append(container, $('button.sidebar-migration-button')) as HTMLButtonElement;
 		button.type = 'button';
 		button.setAttribute('aria-label', localize('migrationShortcutAriaLabel', "Migrate prompt files to skills"));

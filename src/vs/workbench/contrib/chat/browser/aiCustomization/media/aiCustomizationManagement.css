@@ -87,8 +87,25 @@
 .ai-customization-management-editor .sidebar-migration-shortcut {
 	flex-shrink: 0;
 	margin-top: var(--vscode-spacing-size80);
-	padding-top: var(--vscode-spacing-size80);
-	border-top: var(--vscode-strokeThickness) solid var(--vscode-widget-border, var(--vscode-editorWidget-border, transparent));
+	padding-top: var(--vscode-spacing-size40);
+}
+
+.ai-customization-management-editor .sidebar-migration-heading {
+	display: flex;
+	align-items: center;
+	gap: var(--vscode-spacing-size80);
+	margin: 0 8px 2px;
+	color: var(--vscode-descriptionForeground);
+	font-size: var(--vscode-agents-fontSize-label2);
+	font-weight: var(--vscode-agents-fontWeight-semiBold);
+	line-height: 16px;
+}
+
+.ai-customization-management-editor .sidebar-migration-heading::after {
+	content: '';
+	flex: 1;
+	height: var(--vscode-strokeThickness);
+	background-color: var(--vscode-widget-border, var(--vscode-editorWidget-border, transparent));
 }
 
 .ai-customization-management-editor .sidebar-migration-shortcut > button.sidebar-migration-button {
