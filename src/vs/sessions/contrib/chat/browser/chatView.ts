@@ -275,10 +275,8 @@ export class ChatView extends AbstractChatView {
 		this._loadCts.value = cts;
 		const token = cts.token;
 
-		// The input editor is shared across chat switches and stays editable while
-		// the model loads. Capture whatever draft is already in it as we enter the
-		// load window so any text the user types during loading can be preserved
-		// when the model binds rather than being lost. See #325323.
+		// Capture the input draft before the load window opens so text typed
+		// during loading is preserved when the model binds. See #325323.
 		const inputBeforeLoad = this._widget.getInput();
 
 		const loadPromise = this.chatService.acquireOrLoadSession(resource, ChatAgentLocation.Chat, token, 'ChatView').then(ref => {

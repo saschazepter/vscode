@@ -483,27 +483,21 @@ export interface IChatWidget {
 }
 
 /**
- * Binds a freshly loaded model to a chat widget via `setModel`, preserving any
- * text the user typed into the input while the session was still loading.
+ * Binds a freshly loaded model to a chat widget, preserving any text the user
+ * typed into the input while the session was still loading (the input stays
+ * editable during the async load, and binding would otherwise reset it to the
+ * session's own draft). See #325323.
  *
- * A chat widget's input editor stays visible and editable while its session
- * loads asynchronously, but no view model is bound yet. When the model finally
- * binds, it resets the editor to the session's own (usually empty) draft, which
- * would discard whatever the user typed in the meantime. See #325323.
- *
- * @param widget The chat widget being (re)bound.
- * @param inputBeforeLoad The input value captured when the load window started,
- * used as a baseline so a previous session's leftover draft is not mistaken for
- * newly typed text.
+ * @param inputBeforeLoad Input value captured when the load window started, used
+ * as a baseline so a previous session's leftover draft is not mistaken for newly
+ * typed text.
  * @param setModel Callback that performs the actual `setModel` binding.
  */
 export function setModelPreservingInputTypedWhileLoading(widget: IChatWidget, inputBeforeLoad: string, setModel: () => void): void {
-	// Read what the user typed during loading before binding resets the editor.
 	const typedWhileLoading = widget.getInput();
 	setModel();
-	// Only restore when the user actually typed something new during the load and
-	// the loaded session has no draft of its own, so we never clobber a persisted
-	// draft or carry a previous session's leftover draft over on a plain switch.
+	// Restore only genuinely new text onto a session that has no draft of its own,
+	// so we never clobber a persisted draft or carry over a leftover draft.
 	if (typedWhileLoading && typedWhileLoading !== inputBeforeLoad && !widget.getInput()) {
 		widget.setInput(typedWhileLoading);
 	}

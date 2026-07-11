@@ -1073,15 +1073,14 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			&& !model.hasRequests;
 	}
 
-	private async showModel(token: CancellationToken, modelRef?: IChatModelReference | undefined, startNewSession = true, ignoreTransferredSession = false): Promise<IChatModel | undefined> {
+	private async showModel(token: CancellationToken, modelRef?: IChatModelReference | undefined, startNewSession = true, ignoreTransferredSession = false, inputBeforeLoad?: string): Promise<IChatModel | undefined> {
 		const oldModelResource = this.modelRef.value?.object.sessionResource;
 		this.modelRef.value = undefined;
 
-		// The input editor stays editable while the model loads asynchronously.
-		// Capture whatever draft is already in it as we enter the load window so
-		// any text the user types during loading can be preserved when the model
-		// binds rather than being lost. See #325323.
-		const inputBeforeLoad = this._widget?.getInput() ?? '';
+		// Baseline draft for preserving text typed during loading. `loadSession`
+		// opens its load window before calling us, so it passes its own baseline;
+		// otherwise this call's own await is the load window. See #325323.
+		const baselineInput = inputBeforeLoad ?? this._widget?.getInput() ?? '';
 
 		let ref: IChatModelReference | undefined;
 		if (startNewSession) {
@@ -1118,7 +1117,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		}
 
 		if (model) {
-			setModelPreservingInputTypedWhileLoading(this._widget, inputBeforeLoad, () => this._widget.setModel(model));
+			setModelPreservingInputTypedWhileLoading(this._widget, baselineInput, () => this._widget.setModel(model));
 		} else {
 			this._widget.setModel(model);
 		}
@@ -1189,6 +1188,11 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		const t0 = Date.now();
 		this.logService.trace(`[ChatViewPane] loadSession start uri=${sessionResource.toString()}`);
 
+		// Capture the input draft up front: the load window (clear + acquire below)
+		// opens before `showModel` binds, so text typed during loading must be
+		// baselined here to be preserved rather than erased. See #325323.
+		const inputBeforeLoad = this._widget?.getInput() ?? '';
+
 		// Cancel any in-flight loadSession call so the last one always wins
 		this.loadSessionCts.value?.cancel();
 		const cts = this.loadSessionCts.value = new CancellationTokenSource();
@@ -1231,7 +1235,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 					return undefined;
 				}
 
-				const result = await this.showModel(token, newModelRef);
+				const result = await this.showModel(token, newModelRef, true, false, inputBeforeLoad);
 				this.logService.trace(`[ChatViewPane] loadSession done total=${Date.now() - t0}ms uri=${sessionResource.toString()}`);
 				return result;
 			} catch (err) {
@@ -1247,7 +1251,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 				// is not left in a broken state without title or back button.
 				this.logService.error(`Failed to load chat session '${sessionResource.toString()}'`, err);
 				this.notificationService.error(localize('chat.loadSessionFailed', "Failed to open chat session: {0}", toErrorMessage(err)));
-				const result = await this.showModel(token, undefined);
+				const result = await this.showModel(token, undefined, true, false, inputBeforeLoad);
 				this.logService.trace(`[ChatViewPane] loadSession done total=${Date.now() - t0}ms uri=${sessionResource.toString()} error=true`);
 				return result;
 			} finally {
