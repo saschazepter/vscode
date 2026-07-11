@@ -1140,10 +1140,10 @@ export class AICustomizationManagementEditor extends EditorPane {
 			type: 'question',
 			message: localize('promptMigrationConfirmMessage', "Convert prompt files to skills?"),
 			detail: migrationInfo && migrationInfo.workspacePromptCount > 0 && migrationInfo.userPromptCount > 0
-				? localize('promptMigrationConfirmDetailWorkspaceAndUser', "This converts {0} workspace prompt files and {1} global prompt files into skills for the active harness and removes the original prompt files.", migrationInfo.workspacePromptCount, migrationInfo.userPromptCount)
+				? localize('promptMigrationConfirmDetailWorkspaceAndUser', "This converts {0} workspace prompt files and {1} user prompt files into skills for the active harness and removes the original prompt files.", migrationInfo.workspacePromptCount, migrationInfo.userPromptCount)
 				: migrationInfo && migrationInfo.workspacePromptCount > 0
 					? localize('promptMigrationConfirmDetailWorkspace', "This converts {0} workspace prompt files into skills for the active harness and removes the original prompt files.", migrationInfo.workspacePromptCount)
-					: localize('promptMigrationConfirmDetailUser', "This converts {0} global prompt files into skills for the active harness and removes the original prompt files.", migrationInfo?.userPromptCount ?? this.promptFilesToMigrate.length),
+					: localize('promptMigrationConfirmDetailUser', "This converts {0} user prompt files into skills for the active harness and removes the original prompt files.", migrationInfo?.userPromptCount ?? this.promptFilesToMigrate.length),
 			primaryButton: localize('promptMigrationConfirmButton', "Convert to Skills"),
 		});
 		if (!confirmResult.confirmed) {
@@ -1280,6 +1280,21 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 			const group = DOM.append(this.migrationListContainer!, $('.prompt-migration-group'));
 			const groupHeader = DOM.append(group, $('.ai-customization-group-header.prompt-migration-group-header'));
+			const groupCheckboxContainer = DOM.append(groupHeader, $('.item-sync-checkbox.prompt-migration-group-checkbox'));
+			const allInGroupSelected = promptFiles.every(file => this.selectedPromptMigrationUris.has(file.uri));
+			const groupCheckboxAriaLabel = localize('promptMigrationSelectGroupAriaLabel', "Select all {0} prompt files", groupLabel.toLowerCase());
+			const groupCheckbox = this.migrationPageDisposables.add(new Checkbox(groupCheckboxAriaLabel, allInGroupSelected, defaultCheckboxStyles));
+			groupCheckboxContainer.replaceChildren(groupCheckbox.domNode);
+			this.migrationPageDisposables.add(groupCheckbox.onChange(() => {
+				for (const promptFile of promptFiles) {
+					if (groupCheckbox.checked) {
+						this.selectedPromptMigrationUris.add(promptFile.uri);
+					} else {
+						this.selectedPromptMigrationUris.delete(promptFile.uri);
+					}
+				}
+				this.renderPromptMigrationPage();
+			}));
 			const groupLabelGroup = DOM.append(groupHeader, $('.group-label-group'));
 			const label = DOM.append(groupLabelGroup, $('span.group-label'));
 			label.textContent = groupLabel;
@@ -1350,7 +1365,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		if (workspacePromptCount > 0 && userPromptCount > 0) {
 			this.migrationDescriptionElement.textContent = localize(
 				'promptMigrationPageDescriptionWorkspaceAndUser',
-				"Prompt files are deprecated for this harness. Found {0} prompt files ({1} workspace, {2} global) that local VS Code can still run, but {3} ignores. Convert them to skills to keep them available.",
+				"Prompt files are not supported for this harness. Found {0} prompt files ({1} workspace, {2} user) that local VS Code can still run, but {3} ignores. Convert them to skills to keep them available.",
 				totalPromptCount,
 				workspacePromptCount,
 				userPromptCount,
@@ -1362,7 +1377,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		if (workspacePromptCount > 0) {
 			this.migrationDescriptionElement.textContent = localize(
 				'promptMigrationPageDescriptionWorkspace',
-				"Prompt files are deprecated for this harness. Found {0} workspace prompt files that local VS Code can still run, but {1} ignores. Convert them to skills to keep them available.",
+				"Prompt files are not supported for this harness. Found {0} workspace prompt files that local VS Code can still run, but {1} ignores. Convert them to skills to keep them available.",
 				workspacePromptCount,
 				harnessLabel,
 			);
@@ -1371,7 +1386,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		this.migrationDescriptionElement.textContent = localize(
 			'promptMigrationPageDescriptionUser',
-			"Prompt files are deprecated for this harness. Found {0} global prompt files that local VS Code can still run, but {1} ignores. Convert them to skills to keep them available.",
+			"Prompt files are not supported for this harness. Found {0} user prompt files that local VS Code can still run, but {1} ignores. Convert them to skills to keep them available.",
 			userPromptCount,
 			harnessLabel,
 		);

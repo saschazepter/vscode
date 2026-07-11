@@ -899,6 +899,10 @@
 	background-color: transparent;
 }
 
+.ai-customization-management-editor .prompt-migration-group-checkbox {
+	margin-right: 8px;
+}
+
 .ai-customization-management-editor .prompt-migration-item {
 	gap: 8px;
 }
