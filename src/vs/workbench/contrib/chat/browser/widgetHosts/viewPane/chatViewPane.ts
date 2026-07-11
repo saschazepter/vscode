@@ -59,7 +59,7 @@ import { IChatViewsWelcomeDescriptor } from '../../viewsWelcome/chatViewsWelcome
 import { IWorkbenchLayoutService, LayoutSettings, Position } from '../../../../../services/layout/browser/layoutService.js';
 import { AgentSessionsViewerOrientation, AgentSessionsViewerPosition } from '../../agentSessions/agentSessions.js';
 import { IProgressService } from '../../../../../../platform/progress/common/progress.js';
-import { ChatViewId, IChatWidgetService } from '../../chat.js';
+import { ChatViewId, IChatWidgetService, setModelPreservingInputTypedWhileLoading } from '../../chat.js';
 import { IActivityService, ProgressBadge } from '../../../../../services/activity/common/activity.js';
 import { disposableTimeout } from '../../../../../../base/common/async.js';
 import { AgentSessionsFilter, AgentSessionsGrouping } from '../../agentSessions/agentSessionsFilter.js';
@@ -1077,6 +1077,12 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		const oldModelResource = this.modelRef.value?.object.sessionResource;
 		this.modelRef.value = undefined;
 
+		// The input editor stays editable while the model loads asynchronously.
+		// Capture whatever draft is already in it as we enter the load window so
+		// any text the user types during loading can be preserved when the model
+		// binds rather than being lost. See #325323.
+		const inputBeforeLoad = this._widget?.getInput() ?? '';
+
 		let ref: IChatModelReference | undefined;
 		if (startNewSession) {
 			if (modelRef) {
@@ -1111,7 +1117,11 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			this.viewState.sessionResource = model.sessionResource;
 		}
 
-		this._widget.setModel(model);
+		if (model) {
+			setModelPreservingInputTypedWhileLoading(this._widget, inputBeforeLoad, () => this._widget.setModel(model));
+		} else {
+			this._widget.setModel(model);
+		}
 
 		// Update title control
 		this.titleControl?.update(model);

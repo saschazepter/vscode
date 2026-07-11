@@ -205,7 +205,14 @@ class InputEditorDecorations extends Disposable {
 
 		const viewModel = this.widget.viewModel;
 		if (!viewModel) {
+			// There is no bound view model yet (e.g. while a session is still
+			// loading). If the user has already started typing, make sure any
+			// previously-rendered placeholder decoration is cleared so it doesn't
+			// render on top of their text.
 			this.updateAriaPlaceholder(undefined);
+			if (inputValue) {
+				this.widget.inputEditor.setDecorationsByType(decorationDescription, placeholderDecorationType, []);
+			}
 			return;
 		}
 
