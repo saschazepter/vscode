@@ -105,6 +105,8 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 	private branchSlot: HTMLSpanElement | undefined;
 	private branchTrigger: HTMLSpanElement | undefined;
 	private branches: readonly string[] = [];
+	private checkbox: Checkbox | undefined;
+	private checkboxRow: HTMLSpanElement | undefined;
 
 	constructor(
 		action: IAction,
@@ -130,15 +132,21 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 		row.setAttribute('aria-label', localize('automation.form.isolation.pickerAriaLabel', "Worktree isolation"));
 
 		const checkbox = this.renderDisposables.add(new Checkbox(label, this.state.isolationMode === 'worktree', { ...defaultCheckboxStyles, size: 14 }));
+		this.checkbox = checkbox;
 		DOM.append(row, checkbox.domNode);
 		const labelSpan = DOM.append(row, $('span.sessions-chat-dropdown-label'));
 		labelSpan.textContent = label;
+		this.checkboxRow = row;
 
-		this.renderDisposables.add(checkbox.onChange(() => this.applyChecked(checkbox.checked)));
+		this.renderDisposables.add(checkbox.onChange(() => {
+			if (!this.state.folderUri) { return; }
+			this.applyChecked(checkbox.checked);
+		}));
 		this.renderDisposables.add(Gesture.addTarget(row));
 		for (const eventType of [DOM.EventType.CLICK, TouchEventType.Tap]) {
 			this.renderDisposables.add(DOM.addDisposableListener(row, eventType, e => {
 				DOM.EventHelper.stop(e, true);
+				if (!this.state.folderUri) { return; }
 				checkbox.checked = !checkbox.checked;
 				this.applyChecked(checkbox.checked);
 			}));
@@ -168,13 +176,32 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 		this.updateBranchLabel();
 		this.renderDisposables.add(this.workspacePicker.onDidSelectWorkspace(uri => {
 			this.updateBranchForFolder(uri);
+			this.updateCheckboxState();
 		}));
 		this.updateBranchForFolder(this.state.folderUri);
+		this.updateCheckboxState();
 	}
 
 	private applyChecked(checked: boolean): void {
 		this.state.isolationMode = checked ? 'worktree' : 'workspace';
 		this.updateBranchPickerState();
+	}
+
+	private updateCheckboxState(): void {
+		if (!this.checkbox || !this.checkboxRow) {
+			return;
+		}
+		const hasWorkspace = !!this.state.folderUri;
+		if (hasWorkspace) {
+			this.checkbox.enable();
+		} else {
+			this.checkbox.disable();
+		}
+		this.checkboxRow.classList.toggle('disabled', !hasWorkspace);
+		if (!hasWorkspace) {
+			this.checkbox.checked = false;
+			this.applyChecked(false);
+		}
 	}
 
 	private updateBranchPickerState(): void {
