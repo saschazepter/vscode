@@ -34,6 +34,10 @@ export interface IMigratedPromptFilesResult {
 
 export type PromptMigrationSkillSourceFolders = ReadonlyMap<PromptsStorage, ICustomizationSourceFolder>;
 
+export interface IPromptMigrationOptions {
+	readonly deleteOriginalPromptFiles?: boolean;
+}
+
 const retainedPromptHeaderKeys = new Set([
 	PromptHeaderAttributes.name,
 	PromptHeaderAttributes.description,
@@ -96,12 +100,14 @@ export async function migratePromptFilesToSkills(
 	skillSourceFoldersByStorage: PromptMigrationSkillSourceFolders,
 	fileService: IFileService,
 	onMigrationError?: (error: Error) => void,
+	options?: IPromptMigrationOptions,
 ): Promise<IMigratedPromptFilesResult> {
 	const reservedSkillNames = new Map<string, Set<string>>();
 	const unsupportedHeaderKeys = new Set<string>();
 	const failedPromptFileNames: string[] = [];
 	const convertedSkillFileUris: URI[] = [];
 	let convertedCount = 0;
+	const deleteOriginalPromptFiles = options?.deleteOriginalPromptFiles ?? true;
 
 	for (const promptFile of promptFiles) {
 		const skillSourceFolder = skillSourceFoldersByStorage.get(promptFile.storage);
@@ -124,7 +130,9 @@ export async function migratePromptFilesToSkills(
 			await fileService.createFolder(skillSourceFolder.uri);
 			await fileService.createFolder(dirname(skillFileUri));
 			await fileService.writeFile(skillFileUri, VSBuffer.fromString(migratedSkill.content));
-			await fileService.del(promptFile.uri);
+			if (deleteOriginalPromptFiles) {
+				await fileService.del(promptFile.uri);
+			}
 			convertedSkillFileUris.push(skillFileUri);
 			convertedCount++;
 		} catch (error) {

@@ -132,4 +132,34 @@ suite('promptMigration', () => {
 		assert.strictEqual(await fileService.exists(promptFiles[1].uri), false);
 		assert.strictEqual(migrationErrors.length, 1);
 	});
+
+	test('can keep original prompt files after migration', async () => {
+		const promptFile: IPromptPath = {
+			uri: URI.file('/workspace/.github/prompts/review.prompt.md'),
+			name: 'Review Prompt',
+			storage: PromptsStorage.local,
+			type: PromptsType.prompt,
+			source: PromptFileSource.GitHubWorkspace,
+		};
+		const skillRoot: ICustomizationSourceFolder = { uri: URI.file('/workspace/.github/skills'), label: '.github/skills', source: PromptsStorage.local };
+
+		const fileService = store.add(new FileService(new NullLogService()));
+		const fileSystemProvider = store.add(new InMemoryFileSystemProvider());
+		store.add(fileService.registerProvider(Schemas.file, fileSystemProvider));
+		await fileService.writeFile(promptFile.uri, VSBuffer.fromString(['---', 'name: "Review Prompt"', '---', 'Review body'].join('\n')));
+
+		const result = await migratePromptFilesToSkills(
+			[promptFile],
+			new Map<PromptsStorage, ICustomizationSourceFolder>([[PromptsStorage.local, skillRoot]]),
+			fileService,
+			undefined,
+			{ deleteOriginalPromptFiles: false },
+		);
+		const migratedSkillUri = createSkillFileUri(skillRoot.uri, 'review-prompt');
+
+		assert.strictEqual(result.convertedCount, 1);
+		assert.deepStrictEqual(result.convertedSkillFileUris.map(uri => uri.toString()), [migratedSkillUri.toString()]);
+		assert.strictEqual(await fileService.exists(promptFile.uri), true);
+		assert.strictEqual(await fileService.exists(migratedSkillUri), true);
+	});
 });
