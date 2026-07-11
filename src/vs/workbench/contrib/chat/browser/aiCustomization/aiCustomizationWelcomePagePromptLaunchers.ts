@@ -236,10 +236,6 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 		DOM.clearNode(this.cardsContainer);
 		this.firstCard = undefined;
 
-		if (this.promptMigrationInfo) {
-			this.renderPromptMigrationCard();
-		}
-
 		for (const category of this.categoryDescriptions) {
 			if (!visibleSectionIds.has(category.id)) {
 				continue;
@@ -295,6 +291,10 @@ export class PromptLaunchersAICustomizationWelcomePage extends Disposable implem
 					this.callbacks.selectSection(category.id);
 				}
 			}));
+		}
+
+		if (this.promptMigrationInfo) {
+			this.renderPromptMigrationCard();
 		}
 
 		// Content changed — recompute scroll dimensions.
