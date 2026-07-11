@@ -22,6 +22,8 @@ import { ICodeEditorService } from '../../../../editor/browser/services/codeEdit
 import { EditorContextKeys } from '../../../../editor/common/editorContextKeys.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
+import { ActionListItemKind, IActionListDelegate, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
@@ -100,13 +102,15 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 	private readonly renderDisposables = this._register(new DisposableStore());
 	private readonly branchRepoDisposable = this._register(new MutableDisposable<IDisposable>());
 	private branchRequestId = 0;
-	private checkbox: Checkbox | undefined;
 	private branchSlot: HTMLSpanElement | undefined;
+	private branchTrigger: HTMLSpanElement | undefined;
+	private branches: readonly string[] = [];
 
 	constructor(
 		action: IAction,
 		private readonly state: IFormState,
 		private readonly workspacePicker: AutomationsWorkspacePicker,
+		private readonly actionWidgetService: IActionWidgetService,
 		private readonly gitService: IGitService,
 		options?: IBaseActionViewItemOptions,
 	) {
@@ -126,7 +130,6 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 		row.setAttribute('aria-label', localize('automation.form.isolation.pickerAriaLabel', "Worktree isolation"));
 
 		const checkbox = this.renderDisposables.add(new Checkbox(label, this.state.isolationMode === 'worktree', { ...defaultCheckboxStyles, size: 14 }));
-		this.checkbox = checkbox;
 		DOM.append(row, checkbox.domNode);
 		const labelSpan = DOM.append(row, $('span.sessions-chat-dropdown-label'));
 		labelSpan.textContent = label;
@@ -144,7 +147,7 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 		this.branchSlot = DOM.append(isolationGroup, $('span.automation-form-branch-slot')) as HTMLSpanElement;
 		this.branchSlot.setAttribute('aria-live', 'polite');
 
-		this.renderBranchLabel(localize('automation.form.branch.unknown', "—"), true);
+		this.renderBranchChip();
 		this.renderDisposables.add(this.workspacePicker.onDidSelectWorkspace(uri => {
 			this.updateBranchForFolder(uri);
 		}));
@@ -153,24 +156,106 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 
 	private applyChecked(checked: boolean): void {
 		this.state.isolationMode = checked ? 'worktree' : 'workspace';
+		this.updateBranchPickerState();
 	}
 
-	private renderBranchLabel(text: string, isMissing: boolean): void {
+	private updateBranchPickerState(): void {
+		if (!this.branchTrigger) {
+			return;
+		}
+		const isWorktree = this.state.isolationMode === 'worktree';
+		const hasBranches = this.branches.length > 0;
+		const enabled = isWorktree && hasBranches;
+		this.branchTrigger.classList.toggle('disabled', !enabled);
+		this.branchTrigger.tabIndex = enabled ? 0 : -1;
+		this.branchTrigger.setAttribute('aria-disabled', String(!enabled));
+	}
+
+	private renderBranchChip(): void {
 		if (!this.branchSlot) {
 			return;
 		}
 		DOM.clearNode(this.branchSlot);
-		this.branchSlot.classList.toggle('automation-form-branch-missing', isMissing);
-		DOM.append(this.branchSlot, renderIcon(Codicon.gitBranch));
-		DOM.append(this.branchSlot, $('span.automation-form-branch-name', undefined, text));
+
+		const trigger = DOM.append(this.branchSlot, $('span.automation-form-branch-chip')) as HTMLSpanElement;
+		this.branchTrigger = trigger;
+		trigger.setAttribute('role', 'button');
+
+		const branchName = this.state.branch ?? localize('automation.form.branch.select', "Branch");
+		trigger.setAttribute('aria-label', localize('automation.form.branch.pickerAriaLabel', "Pick Branch, {0}", branchName));
+
+		DOM.append(trigger, renderIcon(Codicon.gitBranch));
+		DOM.append(trigger, $('span.automation-form-branch-name', undefined, branchName));
+		DOM.append(trigger, renderIcon(Codicon.chevronDown));
+
+		this.renderDisposables.add(Gesture.addTarget(trigger));
+		for (const eventType of [DOM.EventType.CLICK, TouchEventType.Tap]) {
+			this.renderDisposables.add(DOM.addDisposableListener(trigger, eventType, (e) => {
+				DOM.EventHelper.stop(e, true);
+				this.showBranchPicker();
+			}));
+		}
+		this.renderDisposables.add(DOM.addDisposableListener(trigger, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				DOM.EventHelper.stop(e, true);
+				this.showBranchPicker();
+			}
+		}));
+
+		this.updateBranchPickerState();
+	}
+
+	private showBranchPicker(): void {
+		if (!this.branchTrigger || this.actionWidgetService.isVisible) {
+			return;
+		}
+		if (this.state.isolationMode !== 'worktree' || this.branches.length === 0) {
+			return;
+		}
+
+		const currentBranch = this.state.branch;
+		const items: IActionListItem<{ readonly name: string }>[] = this.branches.map(branch => ({
+			kind: ActionListItemKind.Action,
+			label: branch,
+			group: { title: '', icon: Codicon.gitBranch },
+			item: { name: branch, checked: branch === currentBranch || undefined },
+		}));
+
+		const trigger = this.branchTrigger;
+		const delegate: IActionListDelegate<{ readonly name: string }> = {
+			onSelect: ({ name }) => {
+				this.actionWidgetService.hide();
+				this.state.branch = name;
+				this.renderBranchChip();
+			},
+			onHide: () => { trigger.focus(); },
+		};
+
+		this.actionWidgetService.show(
+			'automationBranchPicker',
+			false,
+			items,
+			delegate,
+			this.branchTrigger,
+			undefined,
+			[],
+			{
+				getAriaLabel: item => item.label ?? '',
+				getWidgetAriaLabel: () => localize('automation.form.branch.widgetAriaLabel', "Branch"),
+			},
+			this.branches.length > 10
+				? { showFilter: true, filterPlaceholder: localize('automation.form.branch.filter', "Filter branches...") }
+				: undefined,
+		);
 	}
 
 	private async updateBranchForFolder(folder: URI | undefined): Promise<void> {
 		const myRequestId = ++this.branchRequestId;
 		this.branchRepoDisposable.clear();
+		this.branches = [];
 		if (!folder) {
 			this.state.branch = undefined;
-			this.renderBranchLabel(localize('automation.form.branch.noFolder', "—"), true);
+			this.renderBranchChip();
 			return;
 		}
 		let repo;
@@ -181,7 +266,7 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 				return;
 			}
 			this.state.branch = undefined;
-			this.renderBranchLabel(localize('automation.form.branch.noRepo', "no git repo"), true);
+			this.renderBranchChip();
 			return;
 		}
 		if (myRequestId !== this.branchRequestId) {
@@ -189,23 +274,38 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 		}
 		if (!repo) {
 			this.state.branch = undefined;
-			this.renderBranchLabel(localize('automation.form.branch.noRepo', "no git repo"), true);
+			this.renderBranchChip();
 			return;
 		}
+
+		// Load branch list from git
+		try {
+			const refs = await repo.getRefs({ pattern: 'refs/heads' });
+			if (myRequestId !== this.branchRequestId) {
+				return;
+			}
+			this.branches = refs
+				.map(r => r.name)
+				.filter((name): name is string => !!name)
+				.filter(name => !name.includes('copilot-worktree-'));
+		} catch {
+			if (myRequestId !== this.branchRequestId) {
+				return;
+			}
+		}
+
 		const watcher = new DisposableStore();
 		watcher.add(autorun(reader => {
 			const head = repo.state.read(reader).HEAD;
 			const name = head?.name;
 			if (name) {
-				this.state.branch = name;
-				this.renderBranchLabel(name, false);
-			} else if (head?.commit) {
+				if (!this.state.branch) {
+					this.state.branch = name;
+				}
+			} else if (!head?.commit) {
 				this.state.branch = undefined;
-				this.renderBranchLabel(localize('automation.form.branch.detached', "({0})", head.commit.slice(0, 7)), false);
-			} else {
-				this.state.branch = undefined;
-				this.renderBranchLabel(localize('automation.form.branch.noBranch', "—"), true);
 			}
+			this.renderBranchChip();
 		}));
 		this.branchRepoDisposable.value = watcher;
 	}
@@ -484,9 +584,10 @@ export function renderForm(
 				}, itemOptions);
 			}
 			if (action.id === AUTOMATIONS_ISOLATION_GROUP_ACTION_ID) {
-					const gitService = instantiationService.invokeFunction(accessor => accessor.get(IGitService));
-					return new AutomationIsolationGroupActionViewItem(action, state, workspacePicker, gitService, itemOptions);
-				}
+						const actionWidgetService = instantiationService.invokeFunction(accessor => accessor.get(IActionWidgetService));
+						const gitService = instantiationService.invokeFunction(accessor => accessor.get(IGitService));
+						return new AutomationIsolationGroupActionViewItem(action, state, workspacePicker, actionWidgetService, gitService, itemOptions);
+					}
 			return undefined;
 		},
 	};
