@@ -8,25 +8,32 @@
  */
 export interface IPosition {
 	/**
-	 * line number (starts at 1)
+	 * The 1-based line number. The first line is line 1.
 	 */
 	readonly lineNumber: number;
 	/**
-	 * column (the first character in a line is between column 1 and column 2)
+	 * The 1-based column number. A column points at the gap between two
+	 * characters: column 1 is before the first character of the line, column 2
+	 * is between the first and second character, and so on.
 	 */
 	readonly column: number;
 }
 
 /**
  * A position in the editor.
+ *
+ * Positions are immutable. Methods that would change a position instead return
+ * a new {@link Position}.
  */
 export class Position {
 	/**
-	 * line number (starts at 1)
+	 * The 1-based line number. The first line is line 1.
 	 */
 	public readonly lineNumber: number;
 	/**
-	 * column (the first character in a line is between column 1 and column 2)
+	 * The 1-based column number. A column points at the gap between two
+	 * characters: column 1 is before the first character of the line, column 2
+	 * is between the first and second character, and so on.
 	 */
 	public readonly column: number;
 
@@ -36,10 +43,12 @@ export class Position {
 	}
 
 	/**
-	 * Create a new position from this position.
+	 * Create a new position derived from this one, overriding the line number
+	 * and/or column. Arguments that are left out default to this position's
+	 * values. Returns `this` if nothing changed.
 	 *
-	 * @param newLineNumber new line number
-	 * @param newColumn new column
+	 * @param newLineNumber the new line number (defaults to this line number)
+	 * @param newColumn the new column (defaults to this column)
 	 */
 	with(newLineNumber: number = this.lineNumber, newColumn: number = this.column): Position {
 		if (newLineNumber === this.lineNumber && newColumn === this.column) {
@@ -50,24 +59,26 @@ export class Position {
 	}
 
 	/**
-	 * Derive a new position from this position.
+	 * Create a new position by moving this position by the given deltas. The
+	 * resulting line number and column are each clamped to a minimum of 1.
 	 *
-	 * @param deltaLineNumber line number delta
-	 * @param deltaColumn column delta
+	 * @param deltaLineNumber the number of lines to move by (defaults to 0)
+	 * @param deltaColumn the number of columns to move by (defaults to 0)
 	 */
 	delta(deltaLineNumber: number = 0, deltaColumn: number = 0): Position {
 		return this.with(Math.max(1, this.lineNumber + deltaLineNumber), Math.max(1, this.column + deltaColumn));
 	}
 
 	/**
-	 * Test if this position equals other position
+	 * Test if this position equals `other`.
 	 */
 	public equals(other: IPosition): boolean {
 		return Position.equals(this, other);
 	}
 
 	/**
-	 * Test if position `a` equals position `b`
+	 * Test if position `a` equals position `b`. Two `null` positions are
+	 * considered equal.
 	 */
 	public static equals(a: IPosition | null, b: IPosition | null): boolean {
 		if (!a && !b) {
@@ -126,7 +137,9 @@ export class Position {
 	}
 
 	/**
-	 * A function that compares positions, useful for sorting
+	 * A comparator function for positions, useful for sorting. Returns a
+	 * negative number if `a` comes before `b`, a positive number if `a` comes
+	 * after `b`, and 0 if they are at the same position.
 	 */
 	public static compare(a: IPosition, b: IPosition): number {
 		const aLineNumber = a.lineNumber | 0;
@@ -149,7 +162,7 @@ export class Position {
 	}
 
 	/**
-	 * Convert to a human-readable representation.
+	 * Convert to a human-readable representation of the form `(lineNumber,column)`.
 	 */
 	public toString(): string {
 		return '(' + this.lineNumber + ',' + this.column + ')';
@@ -158,14 +171,16 @@ export class Position {
 	// ---
 
 	/**
-	 * Create a `Position` from an `IPosition`.
+	 * Create a `Position` from an `IPosition`. Unlike {@link Position.clone},
+	 * this accepts any object that satisfies the `IPosition` interface.
 	 */
 	public static lift(pos: IPosition): Position {
 		return new Position(pos.lineNumber, pos.column);
 	}
 
 	/**
-	 * Test if `obj` is an `IPosition`.
+	 * Test if `obj` is an `IPosition`, i.e. it has numeric `lineNumber` and
+	 * `column` properties.
 	 */
 	public static isIPosition(obj: unknown): obj is IPosition {
 		return (
@@ -175,6 +190,9 @@ export class Position {
 		);
 	}
 
+	/**
+	 * Return a plain, serializable `IPosition` representation of this position.
+	 */
 	public toJSON(): IPosition {
 		return {
 			lineNumber: this.lineNumber,
