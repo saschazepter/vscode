@@ -96,6 +96,38 @@ suite('importedTurnsFromChatModel', () => {
 		}]);
 	});
 
+	test('collapses a path-like inline reference label to the file basename', () => {
+		const uri = URI.file('/repo/src/common/appInsightsClientFactory.ts');
+		const result = project(model([request('q', response([
+			inlineReference(uri, 'src/common/appInsightsClientFactory.ts'),
+		]))]));
+
+		assert.deepStrictEqual(result, [{
+			text: 'q',
+			state: TurnState.Complete,
+			error: undefined,
+			parts: [
+				{ kind: ResponsePartKind.Markdown, content: `[appInsightsClientFactory.ts](${uri.toString()})` },
+			],
+		}]);
+	});
+
+	test('keeps a short inline reference label (e.g. a symbol name) as-is', () => {
+		const uri = URI.file('/repo/src/common/appInsightsClientFactory.ts');
+		const result = project(model([request('q', response([
+			inlineReference(uri, 'logEvent'),
+		]))]));
+
+		assert.deepStrictEqual(result, [{
+			text: 'q',
+			state: TurnState.Complete,
+			error: undefined,
+			parts: [
+				{ kind: ResponsePartKind.Markdown, content: `[logEvent](${uri.toString()})` },
+			],
+		}]);
+	});
+
 	test('maps a cancelled response to a cancelled turn', () => {
 		const result = project(model([request('q', response([markdown('partial')], { canceled: true }))]));
 

@@ -1175,6 +1175,15 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			return {};
 		}
 
+		// Creating/resuming an agent-host session can take several seconds on
+		// first use (CLI spawn, git worktree, plugin snapshot) — work done below
+		// before any turn progress is emitted. Show a shimmering status only if the
+		// turn is slow to start, cancelled as soon as real progress streams, so
+		// established sessions' fast turns never flash it.
+		const preparingStatus = disposableTimeout(() => {
+			progress([{ kind: 'progressMessage', content: new MarkdownString(localize('agentHost.preparingSession', "Preparing session…")), shimmer: true }]);
+		}, 500);
+
 		const resolvedSession = this._resolveSessionUri(request.sessionResource);
 		const sessionKey = resolvedSession.toString();
 
@@ -1238,13 +1247,20 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		const stopWatch = StopWatch.create(false);
 		let firstProgress: number | undefined;
 		const measuredProgress = (parts: IChatProgress[]) => {
+			// Real progress has started — cancel the pending "preparing" status.
+			preparingStatus.dispose();
 			if (firstProgress === undefined && parts.some(isFirstVisibleProgressPart)) {
 				firstProgress = stopWatch.elapsed();
 			}
 			progress(parts);
 		};
 
-		const completedTurn = await this._handleTurn(resolvedSession, request, measuredProgress, cancellationToken);
+		let completedTurn: Turn | undefined;
+		try {
+			completedTurn = await this._handleTurn(resolvedSession, request, measuredProgress, cancellationToken);
+		} finally {
+			preparingStatus.dispose();
+		}
 		const details = this._getTurnResponseDetails(request.sessionResource, resolvedSession, completedTurn);
 		const errorDetails = this._getTurnErrorDetails(completedTurn);
 

@@ -1562,10 +1562,14 @@ export async function openChatSession(accessor: ServicesAccessor, openOptions: N
 				if (openOptions.replaceEditor) {
 					// TODO: Do not rely on active editor
 					const activeEditor = editorGroupService.activeGroup.activeEditor;
-					if (!activeEditor || !(activeEditor instanceof ChatEditorInput)) {
-						throw new Error('No active chat editor to replace');
+					if (activeEditor instanceof ChatEditorInput) {
+						await editorService.replaceEditors([{ editor: activeEditor, replacement: { resource: sessionResource, options } }], editorGroupService.activeGroup);
+					} else {
+						// No chat editor to replace in place — fall back to opening a
+						// new editor so the session (and the user's pending send) is
+						// never lost.
+						await editorService.openEditor({ resource: sessionResource, options });
 					}
-					await editorService.replaceEditors([{ editor: activeEditor, replacement: { resource: sessionResource, options } }], editorGroupService.activeGroup);
 				} else {
 					await editorService.openEditor({ resource: sessionResource, options });
 				}
