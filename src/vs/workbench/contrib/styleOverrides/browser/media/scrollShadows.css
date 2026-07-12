@@ -106,5 +106,5 @@
  * shows the editor-coloured rectangle.
  * ========================================================================== */
 .style-override .part.editor .interactive-input-editor .editor-scrollable::after {
-    display: none;
+	display: none;
 }
