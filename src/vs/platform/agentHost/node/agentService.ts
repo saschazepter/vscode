@@ -1214,12 +1214,14 @@ export class AgentService extends Disposable implements IAgentService {
 	 * generation never fires). Deliberately unprefixed: an imported session is a
 	 * continuation of the source chat, not a distinct kind of session, so it
 	 * should read like any other. The placeholder is later refined into a
-	 * generated title (see the `importConversation` branch in `createSession`).
+	 * generated title (see the `importConversation` branch in `createSession`),
+	 * but a neutral non-empty fallback is kept so the session still reads like a
+	 * normal chat when generation is unavailable or fails.
 	 */
 	private _buildImportedTitle(turns: readonly Turn[]): string {
 		const firstText = turns.find(t => t.message?.text?.trim())?.message.text.trim();
 		if (!firstText) {
-			return '';
+			return localize('agentHost.importedSessionFallback', "New Session");
 		}
 		const MAX = 60;
 		return firstText.length > MAX ? `${firstText.slice(0, MAX)}...` : firstText;

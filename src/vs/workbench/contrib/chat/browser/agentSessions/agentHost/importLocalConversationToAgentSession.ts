@@ -47,6 +47,7 @@ function stringifyToolInput(rawInput: unknown): string {
 function inlineReferenceToMarkdown(reference: IChatContentInlineReference['inlineReference'], name: string | undefined): string {
 	let uri: URI | undefined;
 	let label = name;
+	let isSymbol = false;
 	if (URI.isUri(reference)) {
 		uri = reference;
 	} else {
@@ -58,14 +59,17 @@ function inlineReferenceToMarkdown(reference: IChatContentInlineReference['inlin
 		} else if (URI.isUri(location.location?.uri)) {
 			uri = location.location.uri;
 			label = label ?? location.name;
+			isSymbol = true;
 		}
 	}
 	if (!uri) {
 		return label ?? '';
 	}
-	// A missing or path-like label (contains a path separator) would render the
-	// full workspace-relative path; the source chip only shows the basename.
-	if (!label || /[\\/]/.test(label)) {
+	// A file reference with a missing or path-like label (some carry the
+	// workspace-relative path as their name) collapses to the basename, matching
+	// the source chip. A symbol's name is preserved verbatim — it may legitimately
+	// contain a separator (e.g. C++ `operator/`) and must not be treated as a path.
+	if (!label || (!isSymbol && /[\\/]/.test(label))) {
 		label = basename(uri);
 	}
 	return `[${label}](${uri.toString()})`;

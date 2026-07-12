@@ -1464,7 +1464,12 @@ function registerNewSessionInPlaceAction(type: string, displayName: string): IDi
 				throw new BugIndicatingError(`Invalid chat session position argument: ${chatSessionPosition}`);
 			}
 
-			await openChatSession(accessor, { type: type, displayName: localize('chat', "Chat"), position: chatSessionPosition, replaceEditor: true });
+			// Resolve the editor to replace up front from the currently active
+			// chat editor, so the replacement targets that specific tab rather
+			// than whatever becomes active during the async open.
+			const activeEditor = accessor.get(IEditorGroupsService).activeGroup.activeEditor;
+			const replaceEditorForResource = activeEditor instanceof ChatEditorInput ? activeEditor.sessionResource : undefined;
+			await openChatSession(accessor, { type: type, displayName: localize('chat', "Chat"), position: chatSessionPosition, replaceEditorForResource });
 		}
 	});
 }
@@ -1514,7 +1519,13 @@ export type NewChatSessionOpenOptions = {
 	readonly type: string;
 	readonly position: ChatSessionPosition;
 	readonly displayName: string;
-	readonly replaceEditor?: boolean;
+	/**
+	 * When set, the editor showing this (source) session resource is replaced
+	 * in place with the newly opened session. The source resource is resolved
+	 * to its concrete editor at replace time, so the correct tab is replaced
+	 * even if the user activated a different editor during the async setup.
+	 */
+	readonly replaceEditorForResource?: URI;
 };
 
 export async function openChatSession(accessor: ServicesAccessor, openOptions: NewChatSessionOpenOptions, chatSendOptions?: NewChatSessionSendOptions): Promise<void> {
@@ -1574,12 +1585,23 @@ export async function openChatSession(accessor: ServicesAccessor, openOptions: N
 						fallback: localize('chatEditorContributionName', "{0}", openOptions.displayName),
 					}
 				};
-				if (openOptions.replaceEditor) {
-					// TODO: Do not rely on active editor
-					const activeEditor = editorGroupService.activeGroup.activeEditor;
-					if (activeEditor instanceof ChatEditorInput) {
-						await editorService.replaceEditors([{ editor: activeEditor, replacement: { resource: sessionResource, options } }], editorGroupService.activeGroup);
-					} else {
+				if (openOptions.replaceEditorForResource) {
+					// Replace the specific source chat editor, identified by its
+					// session resource — not whatever happens to be active now. The
+					// repository extraction and other awaits above may have run while
+					// the user activated a different chat editor, so consulting the
+					// active editor could replace an unrelated tab.
+					const sourceResource = openOptions.replaceEditorForResource;
+					let replaced = false;
+					for (const group of editorGroupService.groups) {
+						const editor = group.editors.find(e => e instanceof ChatEditorInput && resources.isEqual(e.sessionResource, sourceResource));
+						if (editor) {
+							await editorService.replaceEditors([{ editor, replacement: { resource: sessionResource, options } }], group);
+							replaced = true;
+							break;
+						}
+					}
+					if (!replaced) {
 						// No chat editor to replace in place — fall back to opening a
 						// new editor so the session (and the user's pending send) is
 						// never lost.
