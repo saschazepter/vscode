@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { sep } from '../../../../../base/common/path.js';
-import { AsyncIterableProducer, raceCancellationError } from '../../../../../base/common/async.js';
+import { AsyncIterableProducer, DeferredPromise, raceCancellationError } from '../../../../../base/common/async.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
@@ -22,6 +22,7 @@ import { InstantiationType, registerSingleton } from '../../../../../platform/in
 import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
+import { IProgressService } from '../../../../../platform/progress/common/progress.js';
 import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { isDark } from '../../../../../platform/theme/common/theme.js';
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
@@ -1526,6 +1527,7 @@ export async function openChatSession(accessor: ServicesAccessor, openOptions: N
 	const customizationHarnessService = accessor.get(ICustomizationHarnessService);
 	const toolsService = accessor.get(ILanguageModelToolsService);
 	const importConversationStore = accessor.get(IAgentHostImportConversationStore);
+	const progressService = accessor.get(IProgressService);
 
 	// Determine resource to open
 	const sessionResource = getResourceForNewChatSession(openOptions);
@@ -1537,11 +1539,24 @@ export async function openChatSession(accessor: ServicesAccessor, openOptions: N
 		importConversationStore.set(sessionResource, chatSendOptions.importConversation);
 	}
 
-	// Open chat session
+	// Open chat session. For a sidebar "Continue in…" migration the transition
+	// spans multiple async phases (load → materializing send → untitled→real
+	// rebind), during which the chat widget is transiently empty. Hold the
+	// sessions list suppressed across the whole transition so it never flashes.
+	let sessionsListSuppression: IDisposable | undefined;
+	let transitionProgress: DeferredPromise<void> | undefined;
 	try {
 		switch (openOptions.position) {
 			case ChatSessionPosition.Sidebar: {
 				const view = await viewsService.openView(ChatViewId) as ChatViewPane;
+				if (chatSendOptions?.importConversation) {
+					sessionsListSuppression = view.beginSessionsListSuppression();
+					// Show the chat view's working indicator for the whole transition (the
+					// widget is blank while the backend session materializes) so it does not
+					// look hung. Completed once the migration finishes below.
+					transitionProgress = new DeferredPromise<void>();
+					progressService.withProgress({ location: ChatViewId }, () => transitionProgress!.p);
+				}
 				if (openOptions.type === AgentSessionProviders.Local) {
 					await view.startNewLocalSession();
 				} else {
@@ -1579,6 +1594,8 @@ export async function openChatSession(accessor: ServicesAccessor, openOptions: N
 		}
 	} catch (e) {
 		logService.error(`Failed to open '${openOptions.type}' chat session with openOptions: ${JSON.stringify(openOptions)}`, e);
+		sessionsListSuppression?.dispose();
+		transitionProgress?.complete();
 		return;
 	}
 
@@ -1618,6 +1635,12 @@ export async function openChatSession(accessor: ServicesAccessor, openOptions: N
 			logService.error(`Failed to send initial request to '${openOptions.type}' chat session with contextOptions: ${JSON.stringify(chatSendOptions)}`, e);
 		}
 	}
+
+	// The migration transition is complete (session loaded, request sent and any
+	// untitled→real rebind done); allow the sessions list again and stop the
+	// working indicator.
+	sessionsListSuppression?.dispose();
+	transitionProgress?.complete();
 }
 
 /**
