@@ -132,7 +132,7 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 		container.style.marginLeft = 'auto';
 
 		const isolationGroup = DOM.append(container, $('span.automation-form-isolation-group.sessions-chat-isolation-checkbox'));
-		const label = localize('automation.form.isolation.worktree', "Worktree");
+		const label = localize('automation.form.isolation.worktree', "New WorkTree");
 		const row = DOM.append(isolationGroup, $('span.action-label'));
 		row.setAttribute('aria-label', localize('automation.form.isolation.pickerAriaLabel', "Worktree isolation"));
 
