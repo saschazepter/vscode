@@ -182,8 +182,14 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 		this.updateCheckboxState();
 	}
 
+	private headBranch: string | undefined;
+
 	private applyChecked(checked: boolean): void {
 		this.state.isolationMode = checked ? 'worktree' : 'workspace';
+		if (!checked) {
+			this.state.branch = this.headBranch;
+			this.updateBranchLabel();
+		}
 		this.updateBranchPickerState();
 	}
 
@@ -326,10 +332,12 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 			const head = repo.state.read(reader).HEAD;
 			const name = head?.name;
 			if (name) {
+				this.headBranch = name;
 				if (!this.state.branch) {
 					this.state.branch = name;
 				}
 			} else if (!head?.commit) {
+				this.headBranch = undefined;
 				this.state.branch = undefined;
 			}
 			this.updateBranchLabel();
