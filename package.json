@@ -311,6 +311,7 @@
     "fsevents@2.3.2": true,
     "fsevents@1.2.13": true,
     "es5-ext": false,
-    "husky": false
+    "husky": false,
+    "@vscode/windows-ca-certs@0.3.4": true
   }
 }
