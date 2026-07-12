@@ -295,7 +295,7 @@ suite('AgentSideEffects — tool call telemetry', () => {
 		startTurn('turn-1');
 
 		toolStart('turn-1', 'tc-inflight', 'bash');
-		fire({ type: ActionType.ChatTurnCancelled, turnId: 'turn-1', endedAt: '2025-01-01T00:00:00.000Z' });
+		fire({ type: ActionType.ChatTurnCancelled, turnId: 'turn-1', duration: 1000 });
 		// A late completion after the turn ended must not emit: the start entry
 		// was cleared, so there is no timing to report.
 		toolComplete('turn-1', 'tc-inflight', { success: true, pastTenseMessage: 'ran' });
@@ -391,7 +391,7 @@ suite('AgentSideEffects — tool call telemetry', () => {
 				invocationMessage: 'Write file',
 				confirmationTitle: 'Write file',
 			});
-			fire({ type: ActionType.ChatTurnCancelled, turnId: 'turn-1', endedAt: '2025-01-01T00:00:00.000Z' });
+			fire({ type: ActionType.ChatTurnCancelled, turnId: 'turn-1', duration: 1000 });
 
 			await timeout(5 * 60 * 1000);
 		});

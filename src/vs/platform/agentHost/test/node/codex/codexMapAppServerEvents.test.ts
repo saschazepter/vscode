@@ -604,7 +604,7 @@ suite('codexMapAppServerEvents', () => {
 				error: null, startedAt: 1_752_012_321, completedAt: 1_752_012_323.5, durationMs: 2500,
 			},
 		});
-		assert.deepStrictEqual(actions, [{ type: ActionType.ChatTurnComplete, turnId: 'turn_a', endedAt: '2025-07-08T22:05:23.500Z' }]);
+		assert.deepStrictEqual(actions, [{ type: ActionType.ChatTurnComplete, turnId: 'turn_a', duration: 2500 }]);
 		assert.strictEqual(state.currentTurnId, undefined);
 	});
 
@@ -618,9 +618,9 @@ suite('codexMapAppServerEvents', () => {
 				status: 'completed' as never,
 				error: null, startedAt: null, completedAt: null, durationMs: null,
 			},
-		});
-		const completeAction = actions[1] as { type: ActionType; turnId: string; endedAt: string };
-		const { endedAt: completeEndedAt, ...completeRest } = completeAction;
+		}, 321);
+		const completeAction = actions[1] as { type: ActionType; turnId: string; duration: number };
+		const { duration: completeDuration, ...completeRest } = completeAction;
 		assert.deepStrictEqual({ actions: [actions[0], completeRest], remainingToolCalls: state.itemToToolCall.size }, {
 			actions: [
 				{ type: ActionType.ChatToolCallComplete, turnId: 'turn_a', toolCallId: 'tc_1', result: { success: false, pastTenseMessage: 'Stopped shell', content: [{ type: ToolResultContentType.Text, text: 'partial output' }], error: { message: 'Turn completed before the tool reported completion' } } },
@@ -628,7 +628,7 @@ suite('codexMapAppServerEvents', () => {
 			],
 			remainingToolCalls: 0,
 		});
-		assert.ok(typeof completeEndedAt === 'string' && completeEndedAt.includes('T'));
+		assert.strictEqual(completeDuration, 321);
 	});
 
 	test('turn/completed with status=failed emits ChatError + ChatTurnComplete', () => {
@@ -642,9 +642,10 @@ suite('codexMapAppServerEvents', () => {
 				startedAt: null, completedAt: null, durationMs: null,
 			},
 		});
-		assert.strictEqual(actions.length, 2);
-		assert.strictEqual((actions[0] as { type: ActionType }).type, ActionType.ChatError);
-		assert.strictEqual((actions[1] as { type: ActionType }).type, ActionType.ChatTurnComplete);
+		assert.deepStrictEqual(actions, [
+			{ type: ActionType.ChatError, turnId: 'turn_a', duration: 0, error: { errorType: 'CodexError', message: 'boom' } },
+			{ type: ActionType.ChatTurnComplete, turnId: 'turn_a', duration: 0 },
+		]);
 	});
 
 	test('turn/completed with status=interrupted emits ChatTurnCancelled', () => {
@@ -657,8 +658,7 @@ suite('codexMapAppServerEvents', () => {
 				error: null, startedAt: null, completedAt: null, durationMs: null,
 			},
 		});
-		assert.strictEqual(actions.length, 1);
-		assert.strictEqual((actions[0] as { type: ActionType }).type, ActionType.ChatTurnCancelled);
+		assert.deepStrictEqual(actions, [{ type: ActionType.ChatTurnCancelled, turnId: 'turn_a', duration: 0 }]);
 	});
 
 	test('turnStateFromStatus maps strings correctly', () => {

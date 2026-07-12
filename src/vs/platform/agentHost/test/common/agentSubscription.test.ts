@@ -322,7 +322,7 @@ suite('SessionStateSubscription', () => {
 		sub.handleSnapshot(state, 0);
 
 		sub.receiveEnvelope(makeEnvelope(
-			{ type: ActionType.ChatTurnComplete, turnId: 'turn-1', endedAt: '2025-01-01T00:00:00.000Z' },
+			{ type: ActionType.ChatTurnComplete, turnId: 'turn-1', duration: 1000 },
 			1,
 			undefined,
 		));
@@ -450,7 +450,7 @@ suite('ChatStateSubscription', () => {
 		assert.strictEqual((sub.value as ChatState | undefined)?.activeTurn?.id, 'turn-1');
 
 		sub.receiveEnvelope(makeEnvelope(
-			{ type: ActionType.ChatTurnComplete, turnId: 'turn-1', endedAt: '2025-01-01T00:00:00.000Z' },
+			{ type: ActionType.ChatTurnComplete, turnId: 'turn-1', duration: 1000 },
 			1,
 			undefined,
 		));

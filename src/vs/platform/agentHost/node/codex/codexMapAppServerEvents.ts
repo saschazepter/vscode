@@ -744,6 +744,7 @@ export function mapItemCompleted(
 export function mapTurnCompleted(
 	state: ICodexSessionMapState,
 	params: TurnCompletedNotification,
+	fallbackDuration?: number,
 ): (SessionAction | ChatAction)[] {
 	state.currentTurnId = undefined;
 	state.itemToPartId.clear();
@@ -752,7 +753,13 @@ export function mapTurnCompleted(
 	state.itemToToolCall.clear();
 	const turnId = params.turn.id;
 	const status = params.turn.status;
-	const endedAt = typeof params.turn.completedAt === 'number' ? new Date(params.turn.completedAt * 1000).toISOString() : new Date().toISOString();
+	const duration = typeof params.turn.durationMs === 'number' && Number.isFinite(params.turn.durationMs) && params.turn.durationMs >= 0
+		? params.turn.durationMs
+		: typeof params.turn.startedAt === 'number' && typeof params.turn.completedAt === 'number'
+			? Math.max(0, (params.turn.completedAt - params.turn.startedAt) * 1000)
+			: typeof fallbackDuration === 'number' && Number.isFinite(fallbackDuration)
+				? Math.max(0, fallbackDuration)
+				: 0;
 	const orphanedToolCallActions: (SessionAction | ChatAction)[] = orphanedToolCalls.map(entry => ({
 		type: ActionType.ChatToolCallComplete,
 		turnId: entry.turnId,
@@ -771,7 +778,7 @@ export function mapTurnCompleted(
 			{
 				type: ActionType.ChatError,
 				turnId,
-				endedAt,
+				duration,
 				error: {
 					errorType: 'CodexError',
 					...extractForwardedErrorInfo(errMessage),
@@ -780,14 +787,14 @@ export function mapTurnCompleted(
 			{
 				type: ActionType.ChatTurnComplete,
 				turnId,
-				endedAt,
+				duration,
 			},
 		];
 	}
 	if (status === 'interrupted') {
-		return [...orphanedToolCallActions, { type: ActionType.ChatTurnCancelled, turnId, endedAt }];
+		return [...orphanedToolCallActions, { type: ActionType.ChatTurnCancelled, turnId, duration }];
 	}
-	return [...orphanedToolCallActions, { type: ActionType.ChatTurnComplete, turnId, endedAt }];
+	return [...orphanedToolCallActions, { type: ActionType.ChatTurnComplete, turnId, duration }];
 }
 
 /**

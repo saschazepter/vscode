@@ -11,6 +11,7 @@ import { Emitter } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { type IObservable, observableValue } from '../../../../base/common/observable.js';
 import { basename, dirname, isAbsolute, join, resolve, sep } from '../../../../base/common/path.js';
+import { StopWatch } from '../../../../base/common/stopwatch.js';
 import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { IInstantiationService } from '../../../instantiation/common/instantiation.js';
@@ -394,6 +395,8 @@ interface ICodexSession {
 	model: ModelSelection | undefined;
 	/** Workbench-facing turn id for the active turn. */
 	currentTurnId: string | undefined;
+	/** Local monotonic timer for the active workbench-facing turn. */
+	turnStopWatch: StopWatch | undefined;
 	/** Codex app-server turn id for the active turn. */
 	currentAppTurnId: string | undefined;
 	/** Codex app-server turn id -> workbench-facing turn id. */
@@ -1276,7 +1279,7 @@ export class CodexAgent extends Disposable implements IAgent {
 	private _handleTurnCompletedNotification(session: ICodexSession, params: TurnCompletedNotification): (SessionAction | ChatAction)[] {
 		const appTurnId = params.turn.id;
 		const hostTurnId = this._hostTurnId(session, appTurnId);
-		const out = mapTurnCompleted(session.mapState, this._withHostTurn(session, params));
+		const out = mapTurnCompleted(session.mapState, this._withHostTurn(session, params), this._clearTurnStopWatch(session));
 		// Remember which codex (app-server) turn each workbench turn maps to so
 		// truncateSession can translate a host turn id to a thread rollback even
 		// after the live correlation below is cleared.
@@ -1352,7 +1355,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		const appTurnId = session.currentAppTurnId;
 		const previousHostTurnId = session.currentTurnId ?? (appTurnId ? this._hostTurnId(session, appTurnId) : undefined);
 		if (previousHostTurnId) {
-			actions.push({ type: ActionType.ChatTurnComplete, turnId: previousHostTurnId, endedAt: new Date().toISOString() });
+			actions.push({ type: ActionType.ChatTurnComplete, turnId: previousHostTurnId, duration: this._clearTurnStopWatch(session) });
 		}
 		const newHostTurnId = generateUuid();
 		if (appTurnId) {
@@ -1367,6 +1370,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			message: steering.message,
 			queuedMessageId: steering.id,
 		});
+		this._startTurnStopWatch(session);
 		return actions;
 	}
 
@@ -1567,13 +1571,14 @@ export class CodexAgent extends Disposable implements IAgent {
 				session.hostTurnIdByAppTurnId.delete(appTurnId);
 			}
 			if (turnId) {
+				const duration = this._clearTurnStopWatch(session);
 				this._fire(session.sessionUri, {
 					type: ActionType.ChatError,
 					turnId,
-					endedAt: new Date().toISOString(),
+					duration,
 					error: { errorType: 'CodexDisconnected', message: 'Codex app-server disconnected; session must restart.' },
 				});
-				this._fire(session.sessionUri, { type: ActionType.ChatTurnComplete, turnId, endedAt: new Date().toISOString() });
+				this._fire(session.sessionUri, { type: ActionType.ChatTurnComplete, turnId, duration });
 			}
 		}
 		// Release resources. The proxy handle is refcounted and drops
@@ -1708,6 +1713,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			firstTurnSent: false,
 			model: effectiveModel,
 			currentTurnId: undefined,
+			turnStopWatch: undefined,
 			currentAppTurnId: undefined,
 			hostTurnIdByAppTurnId: new Map<string, string>(),
 			codexTurnIdByHostTurnId: new Map<string, string>(),
@@ -1912,6 +1918,18 @@ export class CodexAgent extends Disposable implements IAgent {
 		}
 	}
 
+	private _startTurnStopWatch(session: ICodexSession): StopWatch {
+		const stopWatch = StopWatch.create(false);
+		session.turnStopWatch = stopWatch;
+		return stopWatch;
+	}
+
+	private _clearTurnStopWatch(session: ICodexSession): number {
+		const elapsed = session.turnStopWatch?.elapsed();
+		session.turnStopWatch = undefined;
+		return typeof elapsed === 'number' && Number.isFinite(elapsed) ? Math.max(0, elapsed) : 0;
+	}
+
 	private async _sendMessage(chat: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string): Promise<void> {
 		const sessionUri = this._sessionUriFromChat(chat);
 		this._logService.info(`[Codex DEBUG] sendMessage session=${sessionUri.toString()} prompt=${JSON.stringify(prompt).slice(0, 60)}`);
@@ -1932,13 +1950,14 @@ export class CodexAgent extends Disposable implements IAgent {
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			this._logService.error(`[Codex:${sessionId}] materialize failed: ${message}`);
+			const duration = this._clearTurnStopWatch(session);
 			this._fire(sessionUri, {
 				type: ActionType.ChatError,
 				turnId: effectiveTurnId,
-				endedAt: new Date().toISOString(),
+				duration,
 				error: { errorType: 'CodexMaterializeFailed', message },
 			});
-			this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId, endedAt: new Date().toISOString() });
+			this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId, duration });
 			return;
 		}
 		// Codex registers client tools only at `thread/start`. If the thread
@@ -1952,13 +1971,14 @@ export class CodexAgent extends Disposable implements IAgent {
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				this._logService.error(`[Codex:${sessionId}] tool re-materialize failed: ${message}`);
+				const duration = this._clearTurnStopWatch(session);
 				this._fire(sessionUri, {
 					type: ActionType.ChatError,
 					turnId: effectiveTurnId,
-					endedAt: new Date().toISOString(),
+					duration,
 					error: { errorType: 'CodexMaterializeFailed', message },
 				});
-				this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId, endedAt: new Date().toISOString() });
+				this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId, duration });
 				return;
 			}
 		}
@@ -1970,16 +1990,17 @@ export class CodexAgent extends Disposable implements IAgent {
 				});
 				session.needsResume = false;
 			} catch (err) {
+				const duration = this._clearTurnStopWatch(session);
 				this._fire(sessionUri, {
 					type: ActionType.ChatError,
 					turnId: effectiveTurnId,
-					endedAt: new Date().toISOString(),
+					duration,
 					error: {
 						errorType: 'CodexResumeFailed',
 						message: err instanceof Error ? err.message : String(err),
 					},
 				});
-				this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId, endedAt: new Date().toISOString() });
+				this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId, duration });
 				return;
 			}
 		}
@@ -1988,6 +2009,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		// Buffer the prompt text for `turn/started`'s userMessage fallback.
 		session.lastPromptText = prompt;
 		session.currentTurnId = effectiveTurnId;
+		this._startTurnStopWatch(session);
 		try {
 			const model = await this._resolveModel(session);
 			const turnOptions = this._turnStartOptions(session, model.id);
@@ -2004,18 +2026,19 @@ export class CodexAgent extends Disposable implements IAgent {
 			// stream emits ChatTurnComplete asynchronously.
 		} catch (err) {
 			if (err instanceof CancellationError) {
-				this._fire(sessionUri, { type: ActionType.ChatTurnCancelled, turnId: effectiveTurnId, endedAt: new Date().toISOString() });
+				this._fire(sessionUri, { type: ActionType.ChatTurnCancelled, turnId: effectiveTurnId, duration: this._clearTurnStopWatch(session) });
 				return;
 			}
 			const message = err instanceof Error ? err.message : String(err);
 			this._logService.error(`[Codex:${sessionId}] turn/start error: ${message}`);
+			const duration = this._clearTurnStopWatch(session);
 			this._fire(sessionUri, {
 				type: ActionType.ChatError,
 				turnId: effectiveTurnId,
-				endedAt: new Date().toISOString(),
+				duration,
 				error: { errorType: 'CodexTurnError', ...extractForwardedErrorInfo(message) },
 			});
-			this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId, endedAt: new Date().toISOString() });
+			this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId, duration });
 		} finally {
 			// Best-effort temp-file cleanup. Image-on-localImage will be
 			// re-read by codex synchronously during the turn so this is
@@ -2343,6 +2366,7 @@ export class CodexAgent extends Disposable implements IAgent {
 				firstTurnSent: true,
 				model: undefined,
 				currentTurnId: undefined,
+				turnStopWatch: undefined,
 				currentAppTurnId: undefined,
 				hostTurnIdByAppTurnId: new Map<string, string>(),
 				codexTurnIdByHostTurnId: new Map<string, string>(),

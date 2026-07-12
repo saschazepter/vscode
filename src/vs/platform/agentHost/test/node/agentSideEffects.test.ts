@@ -750,7 +750,7 @@ suite('AgentSideEffects', () => {
 			stateManager.dispatchClientAction(defaultChatUri, {
 				type: ActionType.ChatTurnStarted, turnId, startedAt: '2025-01-01T00:00:00.000Z', message: { text, origin: { kind: MessageKind.User } },
 			}, { clientId: 'test', clientSeq: ++clientSeq });
-			stateManager.dispatchServerAction(defaultChatUri, { type: ActionType.ChatTurnComplete, turnId, endedAt: '2025-01-01T00:00:00.000Z' });
+			stateManager.dispatchServerAction(defaultChatUri, { type: ActionType.ChatTurnComplete, turnId, duration: 1000 });
 		}
 
 		async function runBang(se: AgentSideEffects, terminalManager: TestAgentHostTerminalManager, turnId: string): Promise<void> {
@@ -920,7 +920,7 @@ suite('AgentSideEffects', () => {
 			stateManager.dispatchServerAction(defaultChatUri, {
 				type: ActionType.ChatTurnComplete,
 				turnId: 'turn-1',
-				endedAt: '2025-01-01T00:00:00.000Z',
+				duration: 1000,
 			});
 
 			const envelopes: ActionEnvelope[] = [];
@@ -972,7 +972,7 @@ suite('AgentSideEffects', () => {
 			sideEffects.handleAction(defaultChatUri, {
 				type: ActionType.ChatTurnCancelled,
 				turnId: 'turn-1',
-				endedAt: '2025-01-01T00:00:00.000Z',
+				duration: 1000,
 			});
 
 			await new Promise(r => setTimeout(r, 10));
@@ -1415,7 +1415,7 @@ suite('AgentSideEffects', () => {
 			// Fire idle → turn completes → queued message should be consumed
 			agent.fireProgress({
 				kind: 'action', resource: URI.parse(defaultChatUri),
-				action: { type: ActionType.ChatTurnComplete, turnId: 'turn-1', endedAt: '2025-01-01T00:00:00.000Z' },
+				action: { type: ActionType.ChatTurnComplete, turnId: 'turn-1', duration: 1000 },
 			});
 
 			const turnComplete = envelopes.find(e => e.action.type === ActionType.ChatTurnComplete);
@@ -1457,7 +1457,7 @@ suite('AgentSideEffects', () => {
 			assert.strictEqual(agent.sendMessageCalls.length, 0);
 
 			// Cancel the active turn (client abort).
-			const cancelAction = { type: ActionType.ChatTurnCancelled as const, turnId: 'turn-1', endedAt: '2025-01-01T00:00:00.000Z' };
+			const cancelAction = { type: ActionType.ChatTurnCancelled as const, turnId: 'turn-1', duration: 1000 };
 			stateManager.dispatchClientAction(defaultChatUri, cancelAction, { clientId: 'test', clientSeq: 2 });
 			sideEffects.handleAction(defaultChatUri, cancelAction);
 
@@ -1501,7 +1501,7 @@ suite('AgentSideEffects', () => {
 			// then the message queued behind it must be drained to the agent.
 			agent.fireProgress({
 				kind: 'action', resource: URI.parse(defaultChatUri),
-				action: { type: ActionType.ChatTurnComplete, turnId: 'turn-1', endedAt: '2025-01-01T00:00:00.000Z' },
+				action: { type: ActionType.ChatTurnComplete, turnId: 'turn-1', duration: 1000 },
 			});
 
 			// The `/rename` must not reach the agent; only the message behind it does
@@ -1541,7 +1541,7 @@ suite('AgentSideEffects', () => {
 			// so the harness routes it to the right peer SDK chat.
 			agent.fireProgress({
 				kind: 'action', resource: chatUri,
-				action: { type: ActionType.ChatTurnComplete, turnId: 'pturn-1', endedAt: '2025-01-01T00:00:00.000Z' },
+				action: { type: ActionType.ChatTurnComplete, turnId: 'pturn-1', duration: 1000 },
 			});
 
 			await waitForSendMessageCalls(1);
@@ -2250,7 +2250,7 @@ suite('AgentSideEffects', () => {
 			});
 			agent.fireProgress({
 				kind: 'action', resource: URI.parse(defaultChatUri),
-				action: { type: ActionType.ChatTurnComplete, turnId: 'turn-1', endedAt: '2025-01-01T00:00:00.000Z' },
+				action: { type: ActionType.ChatTurnComplete, turnId: 'turn-1', duration: 1000 },
 			});
 
 			// Verify no active turn
@@ -3377,7 +3377,7 @@ suite('AgentSideEffects', () => {
 			sideEffects.handleAction(defaultChatUri, {
 				type: ActionType.ChatTurnCancelled,
 				turnId: 'turn-1',
-				endedAt: '2025-01-01T00:00:00.000Z',
+				duration: 1000,
 			});
 
 			// Both subagent chats should have their turns completed (cancelled)
@@ -3727,7 +3727,7 @@ suite('AgentSideEffects', () => {
 			});
 			assert.strictEqual(sessionInputNeeded().length, 1);
 
-			stateManager.dispatchServerAction(defaultChatUri, { type: ActionType.ChatTurnCancelled, turnId: 'turn-1', endedAt: '2025-01-01T00:00:00.000Z' });
+			stateManager.dispatchServerAction(defaultChatUri, { type: ActionType.ChatTurnCancelled, turnId: 'turn-1', duration: 1000 });
 
 			assert.deepStrictEqual(sessionInputNeeded(), []);
 		});
@@ -4048,7 +4048,7 @@ suite('AgentSideEffects', () => {
 
 			agent.fireProgress({
 				kind: 'action', resource: URI.parse(defaultChatUri),
-				action: { type: ActionType.ChatTurnComplete, turnId: 'turn-1', endedAt: '2025-01-01T00:00:00.000Z' },
+				action: { type: ActionType.ChatTurnComplete, turnId: 'turn-1', duration: 1000 },
 			});
 
 			// `_runTurnCompleteSideEffects` now defers the

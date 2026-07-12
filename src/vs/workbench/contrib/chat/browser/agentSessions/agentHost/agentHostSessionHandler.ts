@@ -644,6 +644,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	private readonly _surfacedMcpAuthServers = new ResourceMap<Set<string>>();
 	/** Turn IDs dispatched by this client, used to distinguish server-originated turns. */
 	private readonly _clientDispatchedTurnIds = new Set<string>();
+	private readonly _turnStopWatches = new Map<string, StopWatch>();
 	private readonly _config: IAgentHostSessionHandlerConfig;
 
 	/** Active session subscriptions, keyed by backend session URI string. */
@@ -1087,7 +1088,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				this._config.connection.dispatch(chatURI, {
 					type: ActionType.ChatTurnCancelled,
 					turnId,
-					endedAt: new Date().toISOString(),
+					duration: this._turnDuration(chatURI, turnId),
 				});
 				return true;
 			},
@@ -1635,6 +1636,29 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		}));
 	}
 
+	private _turnStopWatchKey(chatURI: string, turnId: string): string {
+		return `${chatURI}\0${turnId}`;
+	}
+
+	private _ensureTurnStopWatch(chatURI: string, turnId: string): StopWatch {
+		const key = this._turnStopWatchKey(chatURI, turnId);
+		let stopWatch = this._turnStopWatches.get(key);
+		if (!stopWatch) {
+			stopWatch = StopWatch.create(false);
+			this._turnStopWatches.set(key, stopWatch);
+		}
+		return stopWatch;
+	}
+
+	private _turnDuration(chatURI: string, turnId: string): number {
+		const elapsed = this._turnStopWatches.get(this._turnStopWatchKey(chatURI, turnId))?.elapsed();
+		return typeof elapsed === 'number' && Number.isFinite(elapsed) ? Math.max(0, elapsed) : 0;
+	}
+
+	private _clearTurnStopWatch(chatURI: string, turnId: string): void {
+		this._turnStopWatches.delete(this._turnStopWatchKey(chatURI, turnId));
+	}
+
 	// ---- Turn handling (state-driven) ---------------------------------------
 
 	private async _handleTurn(
@@ -1707,6 +1731,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				...(requestedAgentUri ? { agent: { uri: requestedAgentUri } } : {}),
 			},
 		};
+		this._ensureTurnStopWatch(turnChannel, turnId);
 		this._config.connection.dispatch(turnChannel, turnAction);
 
 		// Ensure the snapshot controller records a sentinel checkpoint for this
@@ -1728,7 +1753,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				this._config.connection.dispatch(turnChannel, {
 					type: ActionType.ChatTurnCancelled,
 					turnId,
-					endedAt: new Date().toISOString(),
+					duration: this._turnDuration(turnChannel, turnId),
 				});
 			}));
 
@@ -1830,6 +1855,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	private _observeTurn(opts: IObserveTurnOptions): IDisposable {
 		const sessionKey = opts.backendSession.toString();
 		const store = new DisposableStore();
+		this._ensureTurnStopWatch(opts.chatURI, opts.turnId);
 		// `_ensureSessionSubscription` returns a process-shared, non-refcounted
 		// subscription owned by the chat session lifecycle. Do NOT release it
 		// from here — other callers (the server-turn watcher, reconnect, the
@@ -1862,6 +1888,12 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		const responseParts$ = derived(reader => turn$.read(reader)?.responseParts ?? []);
 		const inputRequests$ = derived(reader => mergedState$.read(reader)?.inputRequests ?? []);
 		const usage$ = derived(reader => turn$.read(reader)?.usage);
+		store.add(autorun(reader => {
+			const state = mergedState$.read(reader);
+			if (state?.turns.some(turn => turn.id === opts.turnId)) {
+				this._clearTurnStopWatch(opts.chatURI, opts.turnId);
+			}
+		}));
 		const mcpAuthRequired$ = derivedOpts({ equalsFn: equals }, reader => {
 			const state = mergedState$.read(reader);
 			const servers = state?.customizations?.flatMap(c => c.type === CustomizationType.McpServer

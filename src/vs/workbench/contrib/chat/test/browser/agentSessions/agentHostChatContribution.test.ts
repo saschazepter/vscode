@@ -8,6 +8,7 @@ import { encodeBase64, VSBuffer } from '../../../../../../base/common/buffer.js'
 import { CancellationToken, CancellationTokenSource } from '../../../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { DisposableStore, IDisposable, IReference, toDisposable } from '../../../../../../base/common/lifecycle.js';
+import { hasKey } from '../../../../../../base/common/types.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { constObservable, derived, ISettableObservable, observableValue, type IObservable } from '../../../../../../base/common/observable.js';
 import { mock, upcastPartial } from '../../../../../../base/test/common/mock.js';
@@ -24,7 +25,7 @@ import { IAgentCreateSessionConfig, IAgentHostService, IAgentSessionMetadata, Ag
 import type { ChatInputRequestWithPlanReview } from '../../../../../../platform/agentHost/common/agentHostPlanReview.js';
 import { AgentFeedbackAttachmentDisplayKind, AgentFeedbackAttachmentMetadataKey } from '../../../../../../platform/agentHost/common/meta/agentFeedbackAttachments.js';
 import { BrowserViewAttachmentDisplayKind, BrowserViewAttachmentMetadataKey } from '../../../../../../platform/agentHost/common/meta/browserViewAttachments.js';
-import { ActionType, isSessionAction, isChatAction, type ActionEnvelope, type IRootConfigChangedAction, type SessionAction, type ChatAction, type TerminalAction, type INotification, type IToolCallConfirmedAction, type ITurnStartedAction, type ClientAnnotationsAction } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
+import { ActionType, isSessionAction, isChatAction, type ActionEnvelope, type IRootConfigChangedAction, type SessionAction, type ChatAction as AgentHostChatAction, type TerminalAction, type INotification, type IToolCallConfirmedAction, type ITurnStartedAction, type ClientAnnotationsAction } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
 import type { IStateSnapshot } from '../../../../../../platform/agentHost/common/state/sessionProtocol.js';
 import { CustomizationType, McpAuthRequiredReason, McpServerStatus, type ClientPluginCustomization, type ToolDefinition } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, SessionLifecycle, SessionStatus, TurnState, ToolCallStatus, ToolCallConfirmationReason, ToolCallContributorKind, createSessionState, createChatState, createDefaultChatSummary, buildChatUri, buildDefaultChatUri, parseDefaultChatUri, isAhpChatChannel, createActiveTurn, isAhpRootChannel, PolicyState, ResponsePartKind, ROOT_STATE_URI, StateComponents, buildSubagentChatUri, ToolResultContentType, MessageAttachmentKind, MessageKind, type SessionState, type SessionSummary, type ChatState, type ISessionWithDefaultChat, RootState, type ToolCallState, type AgentInfo } from '../../../../../../platform/agentHost/common/state/sessionState.js';
@@ -93,6 +94,22 @@ import { AgentHostCompletionReferenceKind, ChatPasteAttachmentMetadata, toAgentH
 import { messageAttachmentsToVariableData } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
 import { AgentHostSessionReferenceAttachmentDisplayKind, AgentHostSessionReferenceAttachmentMetadataKey, AgentHostSessionReferenceTrajectoryAttachmentDisplayKind, toSessionReferenceModelRepresentation } from '../../../browser/agentSessions/agentHost/agentHostSessionReferenceAttachment.js';
 import { IAgentHostEnablementService } from '../../../../../../platform/agentHost/common/agentHostEnablementService.js';
+
+type ILegacyTimedChatAction =
+	| { type: 'chat/turnComplete'; turnId: string; endedAt: string }
+	| { type: 'chat/turnCancelled'; turnId: string; endedAt: string }
+	| { type: 'chat/error'; turnId: string; endedAt: string; error: { errorType: string; message: string; stack?: string } };
+
+type ChatAction = AgentHostChatAction | ILegacyTimedChatAction;
+type TestActionEnvelope = Omit<ActionEnvelope, 'action'> & { action: SessionAction | ChatAction | TerminalAction | ClientAnnotationsAction | IRootConfigChangedAction };
+
+function normalizeTestAction(action: SessionAction | ChatAction | TerminalAction | ClientAnnotationsAction | IRootConfigChangedAction): SessionAction | AgentHostChatAction | TerminalAction | ClientAnnotationsAction | IRootConfigChangedAction {
+	if (hasKey(action, { endedAt: true })) {
+		const { endedAt: _endedAt, ...rest } = action as ILegacyTimedChatAction;
+		return { ...rest, duration: 1000 } as AgentHostChatAction;
+	}
+	return action as SessionAction | AgentHostChatAction | TerminalAction | ClientAnnotationsAction | IRootConfigChangedAction;
+}
 
 // ---- Mock agent host service ------------------------------------------------
 
@@ -403,7 +420,7 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 		return this.inflightCreates.get(resource.toString());
 	}
 
-	override dispatch(channel: string, action: SessionAction | ChatAction | TerminalAction | ClientAnnotationsAction | IRootConfigChangedAction): void {
+	override dispatch(channel: string, action: SessionAction | AgentHostChatAction | TerminalAction | ClientAnnotationsAction | IRootConfigChangedAction): void {
 		this.dispatchedActions.push({ channel, action, clientId: this.clientId, clientSeq: this._nextSeq++ });
 		// Apply state-management actions optimistically so state-dependent
 		// logic (e.g. customization re-dispatch) sees the correct activeClient.
@@ -423,8 +440,9 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 	}
 
 	// Test helpers
-	fireAction(envelope: ActionEnvelope): void {
-		this._onDidAction.fire(envelope);
+	fireAction(envelope: TestActionEnvelope): void {
+		const normalized = { ...envelope, action: normalizeTestAction(envelope.action) } satisfies ActionEnvelope;
+		this._onDidAction.fire(normalized);
 		// Route the action to the matching live subscription, applying the
 		// appropriate reducer. Chat actions (turns/tools/input) belong to the
 		// session's default-chat channel: producers may address them to either
@@ -432,22 +450,22 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 		// and emit there — mirroring the server's behaviour. Session actions
 		// target the session channel directly.
 		const noop = () => { };
-		if (isChatAction(envelope.action)) {
-			const chatUri = isAhpChatChannel(envelope.channel) ? envelope.channel : buildDefaultChatUri(envelope.channel);
+		if (isChatAction(normalized.action)) {
+			const chatUri = isAhpChatChannel(normalized.channel) ? normalized.channel : buildDefaultChatUri(normalized.channel);
 			const entry = this._liveSubscriptions.get(chatUri);
 			if (entry) {
-				entry.onWillApply.fire(envelope);
-				entry.state = chatReducer(entry.state as ChatState, envelope.action as Parameters<typeof chatReducer>[1], noop);
+				entry.onWillApply.fire(normalized);
+				entry.state = chatReducer(entry.state as ChatState, normalized.action as Parameters<typeof chatReducer>[1], noop);
 				entry.emitter.fire(entry.state);
-				entry.onDidApply.fire(envelope);
+				entry.onDidApply.fire(normalized);
 			}
-		} else if (isSessionAction(envelope.action)) {
-			const entry = this._liveSubscriptions.get(envelope.channel);
+		} else if (isSessionAction(normalized.action)) {
+			const entry = this._liveSubscriptions.get(normalized.channel);
 			if (entry) {
-				entry.onWillApply.fire(envelope);
-				entry.state = sessionReducer(entry.state as SessionState, envelope.action as Parameters<typeof sessionReducer>[1], noop);
+				entry.onWillApply.fire(normalized);
+				entry.state = sessionReducer(entry.state as SessionState, normalized.action as Parameters<typeof sessionReducer>[1], noop);
 				entry.emitter.fire(entry.state);
-				entry.onDidApply.fire(envelope);
+				entry.onDidApply.fire(normalized);
 			}
 		}
 	}

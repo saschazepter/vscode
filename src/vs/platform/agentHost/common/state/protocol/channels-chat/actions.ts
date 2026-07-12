@@ -331,8 +331,13 @@ export interface ChatTurnCompleteAction {
 	type: ActionType.ChatTurnComplete;
 	/** Turn identifier */
 	turnId: string;
-	/** ISO 8601 timestamp when this turn completed. */
-	endedAt: string;
+	/**
+	 * Elapsed turn duration in milliseconds, measured by the producer's own
+	 * clock. Clients MUST NOT derive this by subtracting timestamps — cross-
+	 * client clocks may differ — and MUST treat it as opaque, producer-supplied
+	 * data.
+	 */
+	duration: number;
 	/**
 	 * Additional provider-specific metadata for this action.
 	 *
@@ -356,8 +361,13 @@ export interface ChatTurnCancelledAction {
 	type: ActionType.ChatTurnCancelled;
 	/** Turn identifier */
 	turnId: string;
-	/** ISO 8601 timestamp when this turn was cancelled. */
-	endedAt: string;
+	/**
+	 * Elapsed turn duration in milliseconds, measured by the producer's own
+	 * clock. Clients MUST NOT derive this by subtracting timestamps — cross-
+	 * client clocks may differ — and MUST treat it as opaque, producer-supplied
+	 * data.
+	 */
+	duration: number;
 	/**
 	 * Additional provider-specific metadata for this action.
 	 *
@@ -380,8 +390,13 @@ export interface ChatErrorAction {
 	type: ActionType.ChatError;
 	/** Turn identifier */
 	turnId: string;
-	/** ISO 8601 timestamp when this turn failed. */
-	endedAt: string;
+	/**
+	 * Elapsed turn duration in milliseconds, measured by the producer's own
+	 * clock. Clients MUST NOT derive this by subtracting timestamps — cross-
+	 * client clocks may differ — and MUST treat it as opaque, producer-supplied
+	 * data.
+	 */
+	duration: number;
 	/** Error details */
 	error: ErrorInfo;
 	/**

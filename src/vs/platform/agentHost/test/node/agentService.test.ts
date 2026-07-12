@@ -418,7 +418,7 @@ suite('AgentService (node dispatcher)', () => {
 			await waitForCondition(() => svc.stateManager.getSessionState(sourceSession.toString())?.title === 'Source generated title', 'source generated title should be applied');
 			svc.dispatchAction(
 				buildDefaultChatUri(sourceSession.toString()),
-				{ type: ActionType.ChatTurnComplete, turnId: 'source-turn', endedAt: '2025-01-01T00:00:00.000Z' },
+				{ type: ActionType.ChatTurnComplete, turnId: 'source-turn', duration: 1000 },
 				'test-client', 2,
 			);
 			await waitForCondition(() => (svc.stateManager.getSessionState(sourceSession.toString())?.turns.length ?? 0) === 1, 'source turn should be complete before forking');
@@ -944,7 +944,7 @@ suite('AgentService (node dispatcher)', () => {
 			// session, reintroducing #321269's sibling eviction bug).
 			service.dispatchAction(
 				buildDefaultChatUri(session.toString()),
-				{ type: ActionType.ChatTurnComplete, turnId: 'turn-1', endedAt: '2025-01-01T00:00:00.000Z' },
+				{ type: ActionType.ChatTurnComplete, turnId: 'turn-1', duration: 1000 },
 				'test-client', 2,
 			);
 			const stateAfterTurn = service.stateManager.getSessionState(session.toString());
@@ -4006,7 +4006,7 @@ suite('AgentService (node dispatcher)', () => {
 				);
 				service.dispatchAction(
 					buildDefaultChatUri(sessionResource.toString()),
-					{ type: ActionType.ChatTurnComplete, turnId: 'turn-1', endedAt: '2025-01-01T00:00:00.000Z' },
+					{ type: ActionType.ChatTurnComplete, turnId: 'turn-1', duration: 1000 },
 					'client-1', 2,
 				);
 

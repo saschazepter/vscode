@@ -217,11 +217,17 @@ export function mapSDKMessageToAgentSignals(
 	message: SDKMessage,
 	chat: URI,
 	turnId: string,
-	state: ClaudeMapperState,
-	logService: ILogService,
-	registry: SubagentRegistry,
+	turnDurationOrState: number | undefined | ClaudeMapperState,
+	stateOrLogService: ClaudeMapperState | ILogService,
+	logServiceOrRegistry: ILogService | SubagentRegistry,
+	registryOrClientToolOwner?: SubagentRegistry | ((toolName: string) => string | undefined),
 	clientToolOwner?: (toolName: string) => string | undefined,
 ): AgentSignal[] {
+	const turnDuration = typeof turnDurationOrState === 'number' || typeof turnDurationOrState === 'undefined' ? turnDurationOrState : undefined;
+	const state = turnDurationOrState instanceof ClaudeMapperState ? turnDurationOrState : stateOrLogService as ClaudeMapperState;
+	const logService = turnDurationOrState instanceof ClaudeMapperState ? stateOrLogService as ILogService : logServiceOrRegistry as ILogService;
+	const registry = turnDurationOrState instanceof ClaudeMapperState ? logServiceOrRegistry as SubagentRegistry : registryOrClientToolOwner as SubagentRegistry;
+	const resolvedClientToolOwner = turnDurationOrState instanceof ClaudeMapperState ? registryOrClientToolOwner as ((toolName: string) => string | undefined) | undefined : clientToolOwner;
 	if (logService.getLevel() <= LogLevel.Trace) {
 		try {
 			const snippet = JSON.stringify(message, (k, v) => typeof v === 'string' && v.length > 200 ? v.slice(0, 200) + '…' : v);
@@ -233,13 +239,13 @@ export function mapSDKMessageToAgentSignals(
 	switch (message.type) {
 		case 'stream_event':
 			return tagWithParent(
-				mapStreamEvent(message.event, chat, turnId, state, logService, message.parent_tool_use_id, registry, clientToolOwner),
+				mapStreamEvent(message.event, chat, turnId, state, logService, message.parent_tool_use_id, registry, resolvedClientToolOwner),
 				chat,
 				message.parent_tool_use_id,
 				registry,
 			);
 		case 'result':
-			return mapResult(message, chat, turnId, state, logService, registry);
+			return mapResult(message, chat, turnId, turnDuration, state, logService, registry);
 		case 'assistant':
 			return tagWithParent(
 				mapAssistantCanonical(message, chat, turnId, state, message.parent_tool_use_id, registry),
@@ -423,6 +429,7 @@ function mapResult(
 	message: Extract<SDKMessage, { type: 'result' }>,
 	session: URI,
 	turnId: string,
+	turnDuration: number | undefined,
 	state: ClaudeMapperState,
 	logService: ILogService,
 	registry: SubagentRegistry,
@@ -469,7 +476,7 @@ function mapResult(
 			action: {
 				type: ActionType.ChatError,
 				turnId,
-				endedAt: new Date().toISOString(),
+				duration: typeof turnDuration === 'number' && Number.isFinite(turnDuration) ? Math.max(0, turnDuration) : 0,
 				error: {
 					errorType: message.subtype,
 					...extractForwardedErrorInfo(errorText),
@@ -721,4 +728,3 @@ function makeContentBlockPartId(
 	}
 	return `${turnId}#${messageId}#${index}`;
 }
-

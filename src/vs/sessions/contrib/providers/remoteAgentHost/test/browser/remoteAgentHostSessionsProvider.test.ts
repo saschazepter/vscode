@@ -805,7 +805,8 @@ suite('RemoteAgentHostSessionsProvider', () => {
 			channel: buildDefaultChatUri(AgentSession.uri('copilotcli', 'persist-sess').toString()),
 			action: {
 				type: ActionType.ChatTurnComplete,
-				endedAt: '2025-01-01T00:00:00.000Z',
+				turnId: 'turn-1',
+				duration: 1000,
 			},
 			serverSeq: 1,
 			origin: undefined,
@@ -1058,7 +1059,8 @@ suite('RemoteAgentHostSessionsProvider', () => {
 			channel: buildDefaultChatUri(AgentSession.uri('copilotcli', 'turn-sess').toString()),
 			action: {
 				type: ActionType.ChatTurnComplete,
-				endedAt: '2025-01-01T00:00:00.000Z',
+				turnId: 'turn-1',
+				duration: 1000,
 			},
 			serverSeq: 1,
 			origin: undefined,

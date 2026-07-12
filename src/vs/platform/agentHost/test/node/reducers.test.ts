@@ -7,7 +7,7 @@ import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { changesetReducer, chatReducer, sessionReducer } from '../../common/state/protocol/reducers.js';
 import { ActionType } from '../../common/state/sessionActions.js';
-import { ChangesetStatus, ChangesetOperationStatus, CustomizationLoadStatus, MessageKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, ChatOriginKind, SessionLifecycle, SessionStatus, ToolCallConfirmationReason, ResponsePartKind, ToolCallStatus, type AgentCustomization, type ChangesetState, type Customization, type PluginCustomization, type ChatState, type SessionState } from '../../common/state/sessionState.js';
+import { ChangesetStatus, ChangesetOperationStatus, CustomizationLoadStatus, MessageKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, ChatOriginKind, SessionLifecycle, SessionStatus, ToolCallConfirmationReason, ResponsePartKind, ToolCallStatus, TurnState, type AgentCustomization, type ChangesetState, type Customization, type PluginCustomization, type ChatState, type SessionState } from '../../common/state/sessionState.js';
 import { CustomizationType } from '../../common/state/protocol/state.js';
 
 function makeSession(): SessionState {
@@ -56,7 +56,7 @@ suite('chatReducer – summaryStatus with tool call confirmations and input requ
 
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('preserves turn start timestamp after completion', () => {
+	test('preserves turn start timestamp and duration after completion', () => {
 		let state = chatReducer(makeChat(), {
 			type: ActionType.ChatTurnStarted,
 			turnId: 'turn-1',
@@ -64,60 +64,45 @@ suite('chatReducer – summaryStatus with tool call confirmations and input requ
 			message: { text: 'hello', origin: { kind: MessageKind.User } },
 		});
 		const activeStartedAt = state.activeTurn?.startedAt;
-		const activeModifiedAt = state.modifiedAt;
 		state = chatReducer(state, {
 			type: ActionType.ChatTurnComplete,
 			turnId: 'turn-1',
-			endedAt: '2025-01-01T00:02:30.000Z',
+			duration: 150_000,
 		});
 
 		assert.deepStrictEqual({
 			activeStartedAt,
-			activeModifiedAt,
 			completedStartedAt: state.turns[0].startedAt,
 			duration: state.turns[0].duration,
-			completedModifiedAt: state.modifiedAt,
 		}, {
 			activeStartedAt: '2025-01-01T00:00:00.000Z',
-			activeModifiedAt: '2025-01-01T00:00:00.000Z',
 			completedStartedAt: '2025-01-01T00:00:00.000Z',
 			duration: 150_000,
-			completedModifiedAt: '2025-01-01T00:02:30.000Z',
 		});
 	});
 
-	test('rejects invalid turn lifecycle timestamps', () => {
-		const initial = makeChat();
-		const logs: string[] = [];
-		const afterInvalidStart = chatReducer(initial, {
-			type: ActionType.ChatTurnStarted,
-			turnId: 'turn-1',
-			startedAt: 'invalid',
-			message: { text: 'hello', origin: { kind: MessageKind.User } },
-		}, message => logs.push(message));
-		const active = chatReducer(initial, {
+	test('clamps negative terminal duration', () => {
+		const active = chatReducer(makeChat(), {
 			type: ActionType.ChatTurnStarted,
 			turnId: 'turn-1',
 			startedAt: '2025-01-01T00:00:00.000Z',
 			message: { text: 'hello', origin: { kind: MessageKind.User } },
 		});
-		const afterInvalidEnd = chatReducer(active, {
+		const afterNegativeDuration = chatReducer(active, {
 			type: ActionType.ChatTurnComplete,
 			turnId: 'turn-1',
-			endedAt: 'invalid',
-		}, message => logs.push(message));
+			duration: -5,
+		});
 
-		assert.deepStrictEqual({
-			startUnchanged: afterInvalidStart === initial,
-			endUnchanged: afterInvalidEnd === active,
-			logs,
-		}, {
-			startUnchanged: true,
-			endUnchanged: true,
-			logs: [
-				'Ignoring ChatTurnStarted with invalid startedAt: invalid',
-				'Ignoring ChatTurnComplete with invalid endedAt: invalid',
-			],
+		assert.deepStrictEqual(afterNegativeDuration.turns[0], {
+			id: 'turn-1',
+			startedAt: '2025-01-01T00:00:00.000Z',
+			duration: 0,
+			message: { text: 'hello', origin: { kind: MessageKind.User } },
+			responseParts: [],
+			usage: undefined,
+			state: TurnState.Complete,
+			error: undefined,
 		});
 	});
 

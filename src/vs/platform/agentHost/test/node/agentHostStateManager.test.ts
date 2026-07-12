@@ -299,7 +299,7 @@ suite('AgentHostStateManager', () => {
 		manager.dispatchServerAction(sessionChatUri, {
 			type: ActionType.ChatTurnComplete,
 			turnId: 'turn-1',
-			endedAt: '2025-01-01T00:00:00.000Z',
+			duration: 1000,
 		});
 
 		const activeChanged = envelopes.filter(e => e.action.type === ActionType.RootActiveSessionsChanged);
@@ -332,14 +332,14 @@ suite('AgentHostStateManager', () => {
 		manager.dispatchServerAction(sessionChatUri, {
 			type: ActionType.ChatTurnComplete,
 			turnId: 'turn-1',
-			endedAt: '2025-01-01T00:00:00.000Z',
+			duration: 1000,
 		});
 		assert.strictEqual(manager.rootState.activeSessions, 1);
 
 		manager.dispatchServerAction(buildDefaultChatUri(session2Uri), {
 			type: ActionType.ChatTurnComplete,
 			turnId: 'turn-2',
-			endedAt: '2025-01-01T00:00:00.000Z',
+			duration: 1000,
 		});
 		assert.strictEqual(manager.rootState.activeSessions, 0);
 	});
@@ -400,7 +400,7 @@ suite('AgentHostStateManager', () => {
 		manager.dispatchServerAction(sessionChatUri, {
 			type: ActionType.ChatTurnComplete,
 			turnId: 'stale-turn',
-			endedAt: '2025-01-01T00:00:00.000Z',
+			duration: 1000,
 		});
 
 		assert.strictEqual(manager.rootState.activeSessions, 1);
@@ -431,7 +431,7 @@ suite('AgentHostStateManager', () => {
 		manager.dispatchServerAction(sessionChatUri, {
 			type: ActionType.ChatTurnComplete,
 			turnId: 'turn-2',
-			endedAt: '2025-01-01T00:00:00.000Z',
+			duration: 1000,
 		});
 
 		assert.strictEqual(manager.rootState.activeSessions, 0);
@@ -453,12 +453,12 @@ suite('AgentHostStateManager', () => {
 		manager.dispatchServerAction(sessionChatUri, {
 			type: ActionType.ChatTurnComplete,
 			turnId: 'stale-turn',
-			endedAt: '2025-01-01T00:00:00.000Z',
+			duration: 1000,
 		});
 		manager.dispatchServerAction(sessionChatUri, {
 			type: ActionType.ChatError,
 			turnId: 'turn-1',
-			endedAt: '2025-01-01T00:00:00.000Z',
+			duration: 1000,
 			error: { errorType: 'failed', message: 'boom' },
 		});
 
@@ -486,7 +486,7 @@ suite('AgentHostStateManager', () => {
 		manager.dispatchServerAction(sessionChatUri, {
 			type: ActionType.ChatTurnCancelled,
 			turnId: 'turn-1',
-			endedAt: '2025-01-01T00:00:00.000Z',
+			duration: 1000,
 		});
 		manager.dispatchServerAction(buildDefaultChatUri(session2Uri), {
 			type: ActionType.ChatTurnStarted,
@@ -650,7 +650,7 @@ suite('AgentHostStateManager', () => {
 			manager.dispatchServerAction(sessionChatUri, {
 				type: ActionType.ChatTurnComplete,
 				turnId: 'turn-1',
-				endedAt: '2025-01-01T00:00:00.000Z',
+				duration: 1000,
 			});
 
 			// Simulate eviction within the 100 ms debounce window.
@@ -1023,7 +1023,7 @@ suite('AgentHostStateManager', () => {
 			manager.dispatchServerAction(sessionChatUri, {
 				type: ActionType.ChatTurnComplete,
 				turnId: 'turn-1',
-				endedAt: '2025-01-01T00:00:00.000Z',
+				duration: 1000,
 			});
 			const afterComplete = manager.hasActiveTurn(sessionUri);
 
@@ -1053,7 +1053,7 @@ suite('AgentHostStateManager', () => {
 			manager.dispatchServerAction(sessionChatUri, {
 				type: ActionType.ChatTurnComplete,
 				turnId: 'turn-1',
-				endedAt: '2025-01-01T00:00:00.000Z',
+				duration: 1000,
 			});
 
 			assert.deepStrictEqual(observed, [
@@ -1090,7 +1090,7 @@ suite('AgentHostStateManager', () => {
 			manager.dispatchServerAction(defaultChat, {
 				type: ActionType.ChatTurnComplete,
 				turnId: 'turn-default',
-				endedAt: '2025-01-01T00:00:00.000Z',
+				duration: 1000,
 			});
 			const afterDefaultComplete = manager.hasActiveTurn(sessionUri);
 
@@ -1098,7 +1098,7 @@ suite('AgentHostStateManager', () => {
 			manager.dispatchServerAction(peerChat, {
 				type: ActionType.ChatTurnComplete,
 				turnId: 'turn-peer',
-				endedAt: '2025-01-01T00:00:00.000Z',
+				duration: 1000,
 			});
 			const afterBothComplete = manager.hasActiveTurn(sessionUri);
 
@@ -1128,7 +1128,7 @@ suite('AgentHostStateManager', () => {
 			manager.dispatchServerAction(peerChat, {
 				type: ActionType.ChatTurnComplete,
 				turnId: 'turn-peer',
-				endedAt: '2025-01-01T00:00:00.000Z',
+				duration: 1000,
 			});
 			const afterPeerComplete = manager.getSessionState(sessionUri)?.status;
 
@@ -1172,7 +1172,7 @@ suite('AgentHostStateManager', () => {
 			manager.dispatchServerAction(peerChat, {
 				type: ActionType.ChatTurnComplete,
 				turnId: 'turn-peer',
-				endedAt: '2025-01-01T00:00:00.000Z',
+				duration: 1000,
 			});
 
 			assert.deepStrictEqual(
@@ -1216,14 +1216,14 @@ suite('AgentHostStateManager', () => {
 			manager.dispatchServerAction(defaultChat, {
 				type: ActionType.ChatTurnComplete,
 				turnId: 'turn-default',
-				endedAt: '2025-01-01T00:00:00.000Z',
+				duration: 1000,
 			});
 			const activeAfterFirstCompletes = manager.rootState.activeSessions;
 
 			manager.dispatchServerAction(peerChat, {
 				type: ActionType.ChatTurnComplete,
 				turnId: 'turn-peer',
-				endedAt: '2025-01-01T00:00:00.000Z',
+				duration: 1000,
 			});
 
 			assert.deepStrictEqual(
@@ -1275,7 +1275,7 @@ suite('AgentHostStateManager', () => {
 			manager.dispatchServerAction(defaultChat, {
 				type: ActionType.ChatTurnComplete,
 				turnId: 'turn-default',
-				endedAt: '2025-01-01T00:00:00.000Z',
+				duration: 1000,
 			});
 
 			assert.deepStrictEqual(
