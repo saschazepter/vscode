@@ -280,9 +280,10 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 		const myRequestId = ++this.branchRequestId;
 		this.branchRepoDisposable.clear();
 		this.branches = [];
+		this.state.branch = undefined;
+		this.updateBranchLabel();
+		this.updateBranchPickerState();
 		if (!folder) {
-			this.state.branch = undefined;
-			this.updateBranchLabel();
 			return;
 		}
 		let repo;
