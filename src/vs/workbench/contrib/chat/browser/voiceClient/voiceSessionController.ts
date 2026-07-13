@@ -299,12 +299,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 */
 	private readonly _lastHeardTranscriptById = new Map<string, string>();
 
-	/**
-	 * One-shot override: report sessions as `thinking` so `is_active` ships before
-	 * `waiting_for_confirmation`, which the backend only narrates in a later delta.
-	 */
-	private readonly _forceThinkingOnce = new Set<string>();
-
 	// --- Session audio cache for replay ---
 	private readonly _sessionAudioCache = new Map<string, Float32Array>();
 	private _replaySourceNode: AudioBufferSourceNode | undefined;
@@ -330,17 +324,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private static readonly _CONFIRMATION_FLUSH_DELAY_MS = 1500;
 
 	/**
-	 * Response analog of {@link _confirmationFlushWatchdogs}. When a reply
-	 * completes on the session that is currently on screen, the on-focus
-	 * re-narration path won't re-fire (no future focus event) and, on a fast
-	 * switch, may have already run before the unheard marker existed. A one-shot
-	 * watchdog re-checks shortly after: if the marker still survives (the backend
-	 * dropped the narration rather than a live one clearing it), it re-narrates.
-	 */
-	private readonly _responseRenarrateWatchdogs = new Map<string, ReturnType<typeof setTimeout>>();
-	private static readonly _RESPONSE_RENARRATE_WATCHDOG_MS = 1500;
-
-	/**
 	 * Latest state change per session, buffered and flushed once after a short
 	 * settle window (see {@link _emitPendingStateChanges}) so a rapid
 	 * ``thinking <-> idle`` replay storm coalesces into a single net emission
@@ -351,68 +334,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private readonly _pendingStateChanges = new Map<string, { sessionId: string; currentState: string; label: string; detail?: string; lastResponseSummary?: string; fromState: string; fromDetail: string }>();
 	private _stateChangeEmitTimer: ReturnType<typeof setTimeout> | undefined;
 	private static readonly _STATE_CHANGE_SETTLE_MS = 120;
-
-	/**
-	 * Pending confirmation phase 2 (see `_activateShownSession`): send
-	 * `agent_state` after `is_active` has settled so it narrates.
-	 *
-	 * Keyed per session so activating one confirmation session never cancels
-	 * another's pending phase-2 (which would leave it stuck reporting `thinking`
-	 * and only narrate on a second focus).
-	 */
-	private readonly _confirmationActivateTimers = new Map<string, ReturnType<typeof setTimeout>>();
-	private static readonly _CONFIRMATION_ACTIVATE_DELAY_MS = 250;
-
-	/**
-	 * Sessions that completed (``idle`` with a reply) while in the background and
-	 * whose reply we have NOT narrated to the user. The backend narrates one
-	 * thing at a time and simply DROPS a completion's narration when another is
-	 * in flight (see onAudioResponse) — so unlike a deferred reply there is no
-	 * audio to buffer, and returning to the session finds it silent. We record
-	 * the completion here and, on focus, re-elicit narration via a forced
-	 * ``thinking -> idle`` transition (the backend's sole narration trigger),
-	 * mirroring {@link _narrateConfirmationViaTwoPhase}. Cleared when the
-	 * session's audio actually arrives (played or deferred), when a new turn
-	 * starts, or once we re-elicit on focus.
-	 */
-	private readonly _unheardResponseSessions = new Set<string>();
-
-	/** Per-session phase-2 timers for the response re-narration two-phase. */
-	private readonly _responseActivateTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
-	/**
-	 * The focused session whose confirmation transition we just shipped and
-	 * expect the backend to narrate. If a tagged narration for a DIFFERENT
-	 * session arrives before this one's own audio, the backend preempted this
-	 * confirmation (it narrates one thing at a time and the session's state does
-	 * not transition again, so it would be lost forever). We re-assert it once.
-	 * Cleared when this session's own audio arrives, or when it stops being the
-	 * active/awaiting-confirmation session.
-	 */
-	private _confirmationNarrationPending: { sessionId: string; at: number; reasserted: boolean } | undefined;
-	private static readonly _CONFIRMATION_REASSERT_WINDOW_MS = 12000;
-
-	/**
-	 * The focused session whose response re-narration we just shipped and expect
-	 * the backend to narrate. Mirrors {@link _confirmationNarrationPending}: if a
-	 * tagged narration for a DIFFERENT session arrives before this one's own
-	 * audio, the backend preempted our re-narration (it narrates one at a time)
-	 * and, because the session stays `idle`, it would be lost — so we re-assert
-	 * once. Cleared when this session's own audio arrives, or when it stops being
-	 * the active/idle session.
-	 */
-	private _responseNarrationPending: { sessionId: string; at: number; reasserted: boolean } | undefined;
-
-	/**
-	 * While a shown session's confirmation/response is being re-narrated via the
-	 * two-phase flow, force `_buildSessionContext` to mark THAT session
-	 * `is_active` — even if a different session is the sticky input
-	 * `_targetSession`. The backend narrates only the active session's
-	 * transition, so without this a re-narration for the viewed session would
-	 * never fire whenever the input target points elsewhere. Cleared once the
-	 * two-phase completes (or aborts).
-	 */
-	private _narrationActiveOverride: string | undefined;
 
 	/** Model refs eagerly loaded for sessions awaiting input (no UI focus needed). */
 	private readonly _eagerModelRefs = new Map<string, IChatModelReference>();
@@ -442,13 +363,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private readonly _lastResponseSummaryById = new Map<string, string>();
 
 	/**
-	 * The `last_response_summary` of the most recent completion whose narration
-	 * was actually heard, per session. Used by `_maybeHoldBackgroundIdle` to tell
-	 * a fresh (unheard) background completion apart from one that already
-	 * narrated, robustly and independent of debounce/marker ordering: a summary
-	 * that matches this map was already read, so it isn't held or re-narrated.
+	 * The exact text last narrated per session, used to de-duplicate narration
+	 * requests. Before asking the backend to speak a session's pending item we
+	 * check this map: an identical text was already spoken (live or on a prior
+	 * focus), so we skip it — this single guard replaces the old summary-identity
+	 * dedup, the recently-read window, and the focus/live double-narrate races.
+	 * Cleared for a session when it starts a new turn (`thinking`) so a repeated
+	 * identical reply later still narrates.
 	 */
-	private readonly _narratedSummaryById = new Map<string, string>();
+	private readonly _lastNarratedText = new Map<string, string>();
 
 
 	// --- Telemetry tracking ---
@@ -1281,50 +1204,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// (otherwise it is stranded and never read). Untagged / non-agent-host
 			// ids pass through unchanged.
 			const codingSessionId = this._canonicalSessionId(e.codingSessionId);
-			// Confirmation preemption recovery: the backend narrates one thing at
-			// a time. If we just shipped a focused session's confirmation and a
-			// TAGGED narration for a DIFFERENT session arrives first, the backend
-			// preempted the confirmation and — because the session's state does not
-			// transition again — it would be lost forever. Detect that here and
-			// re-assert the confirmation once (see _confirmationNarrationPending).
-			//
-			// TODO: interim client mitigation. The real fix is backend-side: it
-			// should serialize/queue proactive narrations (or re-narrate a
-			// still-pending confirmation on the next session_context) instead of
-			// dropping one when another is in flight. Remove once that lands.
-			if (e.isFirstChunk) {
-				this._reconcileConfirmationNarration(codingSessionId);
-				this._reconcileResponseNarration(codingSessionId);
-			}
 			// If this response is for a session the user isn't currently looking
 			// at, don't play it now: buffer it until that session is focused and
 			// notify with a short audio cue instead.
 			const defer = this._shouldDeferResponse(codingSessionId, e.isFirstChunk);
 			if (e.isFirstChunk || e.isFinal) {
 				this.logService.trace(`[voice] audio_response codingSessionId=${codingSessionId ?? '<none>'} focused=${this._focusedSessionId ?? '<none>'} isFirstChunk=${e.isFirstChunk} isFinal=${e.isFinal} suppress=${this._suppressIncomingAudio} defer=${defer}`);
-			}
-			// The backend is narrating this session's reply now (live or deferred),
-			// so it's no longer an unheard background completion awaiting on-focus
-			// re-narration. Clear the marker so we don't read it twice. Untagged
-			// audio that plays live belongs to the active session, so attribute it
-			// there — otherwise a live-narrated reply on the active session keeps
-			// its marker and gets re-narrated a second time on focus / by the
-			// watchdog.
-			if (e.isFirstChunk) {
-				const heardId = codingSessionId ?? (defer ? undefined : this._getActiveSessionId());
-				if (heardId) {
-					this._unheardResponseSessions.delete(heardId);
-					// Remember which completion (by summary) was narrated, so a later
-					// background rebuild recognises it as already-heard and neither
-					// holds nor re-narrates it. Only record when actually playing it
-					// (not deferred) — a deferred reply hasn't been heard yet.
-					if (!defer) {
-						const narrated = this._lastResponseSummaryById.get(heardId);
-						if (narrated) {
-							this._narratedSummaryById.set(heardId, narrated);
-						}
-					}
-				}
 			}
 			if (defer) {
 				this._deferResponse(codingSessionId!, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
@@ -1521,31 +1406,20 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._recentlyReadResponse.clear();
 		this._droppingRenarration.clear();
 		this._lastHeardTranscriptById.clear();
-		this._forceThinkingOnce.clear();
 		this._awaitingReplyForSession = undefined;
-		for (const t of this._confirmationActivateTimers.values()) { clearTimeout(t); }
-		this._confirmationActivateTimers.clear();
-		for (const t of this._responseActivateTimers.values()) { clearTimeout(t); }
-		this._responseActivateTimers.clear();
-		this._unheardResponseSessions.clear();
 		this._prevSessionStates.clear();
 		for (const t of this._userCancelledSessions.values()) { clearTimeout(t); }
 		this._userCancelledSessions.clear();
 		for (const t of this._confirmationFlushWatchdogs.values()) { clearTimeout(t); }
 		this._confirmationFlushWatchdogs.clear();
-		for (const t of this._responseRenarrateWatchdogs.values()) { clearTimeout(t); }
-		this._responseRenarrateWatchdogs.clear();
 		if (this._stateChangeEmitTimer) { clearTimeout(this._stateChangeEmitTimer); this._stateChangeEmitTimer = undefined; }
 		this._pendingStateChanges.clear();
-		this._confirmationNarrationPending = undefined;
-		this._responseNarrationPending = undefined;
-		this._narrationActiveOverride = undefined;
 		for (const ref of this._eagerModelRefs.values()) { ref.dispose(); }
 		this._eagerModelRefs.clear();
 		this._eagerModelLoading.clear();
 		this._pendingIdleNarration.clear();
 		this._lastResponseSummaryById.clear();
-		this._narratedSummaryById.clear();
+		this._lastNarratedText.clear();
 		this._userLogin = undefined;
 		this._lastPersistedTurnId = undefined;
 		this._pendingPriorTimeline = [];
@@ -2461,7 +2335,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private _activateShownSession(resource: URI): void {
 		const key = resource.toString();
 		this._lastShownSessionId = key;
-		const hadDeferred = this._deferredResponses.has(key);
 		this._flushDeferredResponse(key);
 		this._clearConfirmationIndicator(key);
 		if (this._confirmationDetailPending(resource)) {
@@ -2475,218 +2348,72 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._recentlyReadResponse.set(key, { transcript: heard, at: Date.now() });
 			}
 		}
-		// Split resident confirmations across deltas: flip `is_active` while
-		// holding `thinking`, then send `waiting_for_confirmation` so it narrates.
-		// Without this, focusing an unfocused session awaiting confirmation ships
-		// the confirmation and `is_active` together and the backend narrates only
-		// on the next activation — so it's read on the second focus, not the first.
+		// Ask the backend to speak this session's pending item (a completed reply
+		// or a waiting confirmation) now that the user is looking at it. `_narrate`
+		// de-dupes, so a reply already read live is not read again on refocus, and
+		// a session with nothing pending narrates nothing.
+		const narratable = this._currentNarratable(resource);
+		if (narratable) {
+			this._narrate(key, narratable.kind, narratable.text);
+		}
+		this._sendContext();
+		this.voiceClientService.flushSessionContext();
+	}
+
+	/**
+	 * Ask the backend to narrate a session's pending item, de-duplicated by the
+	 * exact text last spoken for that session (see {@link _lastNarratedText}).
+	 * This is the single narration trigger: called live when an item lands on the
+	 * shown session, and on focus for an item that arrived in the background. The
+	 * dedup makes both paths idempotent, so there is no preemption to recover
+	 * from and no transition to trick the backend into observing.
+	 */
+	private _narrate(sessionId: string, kind: 'response' | 'confirmation', text: string): void {
+		if (!text) {
+			return;
+		}
+		if (this._lastNarratedText.get(sessionId) === text) {
+			return;
+		}
+		this._lastNarratedText.set(sessionId, text);
+		this.logService.trace(`[voice] narrate kind=${kind} id=${sessionId.slice(-32)}`);
+		this.voiceClientService.requestNarration(sessionId, kind, text);
+	}
+
+	/**
+	 * The pending item a session would narrate right now: a waiting confirmation's
+	 * prompt, or a completed reply's summary. Prefers the resident chat model;
+	 * falls back to the cached summary / agent-session status when the model has
+	 * been disposed. A confirmation whose detail isn't loaded yet returns
+	 * `undefined` after kicking off the load, so the narration fires once the
+	 * detail is available (via the state-change path while the session is shown).
+	 */
+	private _currentNarratable(resource: URI): { kind: 'response' | 'confirmation'; text: string } | undefined {
 		const model = this.chatService.getSession(resource);
-		const activatedState = model ? this._getAgentStateInfo(model).state : 'no-model';
-		const awaitingConfirmation = activatedState === 'waiting_for_confirmation';
-		this.logService.trace(`[voice] _activateShownSession key=${key.slice(-32)} state=${activatedState} activeId=${this._getActiveSessionId()?.slice(-32) ?? '<none>'} hadDeferred=${hadDeferred} heardBefore=${this._lastHeardTranscriptById.has(key)} recentlyRead=${this._recentlyReadResponse.has(key)}`);
-		if (awaitingConfirmation) {
-			this._narrateConfirmationViaTwoPhase(key);
-			return;
-		}
-		// A reply that completed while this session was in the background may have
-		// had its narration dropped by the backend (it narrates one at a time),
-		// leaving nothing to flush. Re-elicit it now via a forced thinking->idle
-		// transition. Guarded by `hadDeferred` (a buffered reply was just flushed
-		// instead). Runs in both the main window and the embedder-driven agents
-		// window — mirroring the confirmation two-phase above, which is likewise
-		// unconditional — since the backend drops responses in either mode.
-		if (!hadDeferred && this._unheardResponseSessions.has(key)) {
-			this._unheardResponseSessions.delete(key);
-			this._narrateResponseViaTwoPhase(key, resource);
-			return;
-		}
-		this._sendContext();
-		this.voiceClientService.flushSessionContext();
-	}
-
-	/**
-	 * Re-narrate a focused session's completed reply that was never read because
-	 * the backend dropped its narration while the session was in the background.
-	 * Mirrors {@link _narrateConfirmationViaTwoPhase}: flip `is_active` while
-	 * holding the session as `thinking`, then send the real `idle` +
-	 * `last_response_summary` so the backend observes a fresh `thinking -> idle`
-	 * transition (its sole narration trigger) and narrates the reply. The model
-	 * is eagerly loaded so the summary is available for phase two.
-	 */
-	private _narrateResponseViaTwoPhase(key: string, resource: URI, isReassert: boolean = false): void {
-		this.logService.trace(`[voice] re-narrating unheard response id=${key.slice(-32)}${isReassert ? ' (re-assert)' : ''}`);
-		this._ensureModelLoaded(resource);
-		// Phase 1: flip is_active while holding the session as `thinking`. Force
-		// this session active for the duration so its transition narrates even if
-		// the sticky input target points elsewhere (see _narrationActiveOverride).
-		this._narrationActiveOverride = key;
-		this._forceThinkingOnce.add(key);
-		this._sendContext();
-		this.voiceClientService.flushSessionContext();
-		// Phase 2: after `is_active` settles, send the real `idle` + summary.
-		const existing = this._responseActivateTimers.get(key);
-		if (existing) {
-			clearTimeout(existing);
-		}
-		this._responseActivateTimers.set(key, setTimeout(() => {
-			this._responseActivateTimers.delete(key);
-			this._forceThinkingOnce.delete(key);
-			// Only ship the transition if the user is still VIEWING this session
-			// (shown, not the sticky input target), so we don't narrate a reply
-			// for a session the user already navigated away from.
-			if (this._shownSessionId() === key) {
-				this._sendContext();
-				this.voiceClientService.flushSessionContext();
-				// Expect this reply to narrate now; track it so a competing
-				// narration that preempts it can trigger a single re-assert. If
-				// this send is ITSELF the re-assert, mark it consumed so we never
-				// loop re-asserting the same reply.
-				this._responseNarrationPending = { sessionId: key, at: Date.now(), reasserted: isReassert };
+		if (model) {
+			const info = this._getAgentStateInfo(model);
+			if (info.state === 'waiting_for_confirmation' && info.detail) {
+				return { kind: 'confirmation', text: info.detail };
 			}
-			// Release the active override now the transition has shipped (or was
-			// aborted); the next context build reverts to the real target.
-			if (this._narrationActiveOverride === key) {
-				this._narrationActiveOverride = undefined;
+			if (info.state === 'idle' && info.last_response_summary) {
+				return { kind: 'response', text: info.last_response_summary };
 			}
-		}, VoiceSessionController._CONFIRMATION_ACTIVATE_DELAY_MS));
-	}
-
-	/**
-	 * Reconcile a just-shipped response re-narration against an incoming audio
-	 * response, recovering the "focused a completed session but its reply was
-	 * never read" case caused by backend narration preemption. Mirrors
-	 * {@link _reconcileConfirmationNarration}.
-	 *
-	 * - Audio for the SAME session clears the pending marker: its reply narrated.
-	 * - A TAGGED narration for a DIFFERENT session while our response session is
-	 *   still the active, still-idle one means the backend narrated that instead
-	 *   and dropped ours. Re-assert the reply once (fresh `thinking -> idle`
-	 *   transition) so it is read.
-	 *
-	 * The one-shot `reasserted` guard prevents an oscillation loop, and clearing
-	 * on the session's own audio prevents a double-read when it did narrate.
-	 */
-	private _reconcileResponseNarration(codingSessionId: string | undefined): void {
-		const pending = this._responseNarrationPending;
-		if (!pending) {
-			return;
+			return undefined;
 		}
-		// Our response session's own narration arrived — it was read.
-		if (codingSessionId === pending.sessionId) {
-			this._responseNarrationPending = undefined;
-			return;
+		const session = this.agentSessionsService.model.sessions.find(s => !s.isArchived() && isEqual(s.resource, resource));
+		if (session?.status === AgentSessionStatus.NeedsInput) {
+			// Detail lives on the model; load it and let the state-change path
+			// narrate once it renders.
+			this._ensureModelLoaded(resource);
+			return undefined;
 		}
-		// Only a tagged narration for another session is unambiguous evidence of
-		// preemption; ignore untagged audio (can't attribute it).
-		if (!codingSessionId) {
-			return;
-		}
-		const expired = Date.now() - pending.at > VoiceSessionController._CONFIRMATION_REASSERT_WINDOW_MS;
-		// "Still viewing" is the shown session, not the sticky input target: a
-		// target selected elsewhere must not discard the reply for the session
-		// the user is actually looking at.
-		const stillActive = this._shownSessionId() === pending.sessionId;
-		let stillIdle = false;
-		if (stillActive) {
-			const model = this.chatService.getSession(URI.parse(pending.sessionId));
-			stillIdle = !!model && this._getAgentStateInfo(model).state === 'idle';
-		}
-		if (pending.reasserted || expired || !stillActive || !stillIdle) {
-			// Give up: navigated away, started a new turn, already retried, or timed out.
-			this._responseNarrationPending = undefined;
-			return;
-		}
-		this.logService.trace(`[voice] response for ${pending.sessionId.slice(-32)} preempted by narration for ${codingSessionId.slice(-32)}; re-asserting`);
-		this._responseNarrationPending = undefined;
-		this._narrateResponseViaTwoPhase(pending.sessionId, URI.parse(pending.sessionId), /* isReassert */ true);
-	}
-
-	/**
-	 * Narrate a focused session's pending confirmation by splitting it across two
-	 * deltas: flip `is_active` while holding the session as `thinking`, then send
-	 * `waiting_for_confirmation` so the backend observes a fresh
-	 * `thinking -> waiting_for_confirmation` transition and narrates it. Without
-	 * the split, the confirmation and `is_active` ship together and the backend
-	 * only narrates on the next activation (read on the second focus).
-	 *
-	 * Records {@link _confirmationNarrationPending} so a competing narration for
-	 * another session (which preempts this one on the backend) can be detected
-	 * and this confirmation re-asserted rather than lost. See onAudioResponse.
-	 */
-	private _narrateConfirmationViaTwoPhase(key: string, isReassert: boolean = false): void {
-		// Phase 1: flip is_active while holding the session as `thinking`.
-		this._forceThinkingOnce.add(key);
-		this._sendContext();
-		this.voiceClientService.flushSessionContext();
-		// Phase 2: after `is_active` settles, send `waiting_for_confirmation`.
-		// Timers are keyed per session so activating another confirmation
-		// session can't cancel this one's phase-2 (which would strand it as
-		// `thinking` and narrate only on a second focus).
-		const existing = this._confirmationActivateTimers.get(key);
-		if (existing) {
-			clearTimeout(existing);
-		}
-		this._confirmationActivateTimers.set(key, setTimeout(() => {
-			this._confirmationActivateTimers.delete(key);
-			this._forceThinkingOnce.delete(key);
-			// Only ship the transition if this session is still active.
-			if (this._getActiveSessionId() === key) {
-				this._sendContext();
-				this.voiceClientService.flushSessionContext();
-				// Expect this confirmation to narrate now; track it so a competing
-				// narration that preempts it can trigger a single re-assert. If
-				// this send is ITSELF the re-assert, mark it consumed so we never
-				// loop re-asserting the same confirmation.
-				this._confirmationNarrationPending = { sessionId: key, at: Date.now(), reasserted: isReassert };
+		if (session?.status === AgentSessionStatus.Completed) {
+			const summary = this._lastResponseSummaryById.get(resource.toString());
+			if (summary) {
+				return { kind: 'response', text: summary };
 			}
-		}, VoiceSessionController._CONFIRMATION_ACTIVATE_DELAY_MS));
-	}
-
-	/**
-	 * Reconcile a just-shipped confirmation narration against an incoming audio
-	 * response, recovering the "focused a confirmation but it was never read"
-	 * case caused by backend narration preemption.
-	 *
-	 * - Audio for the SAME session clears the pending marker: the confirmation
-	 *   (or a following reply) for it narrated, nothing to recover.
-	 * - A TAGGED narration for a DIFFERENT session while our confirmation session
-	 *   is still the active, still-awaiting-confirmation one means the backend
-	 *   narrated that instead and dropped ours. Re-assert the confirmation once
-	 *   (fresh `thinking -> waiting_for_confirmation` transition) so it is read.
-	 *
-	 * The one-shot `reasserted` guard prevents an oscillation loop, and clearing
-	 * on the session's own audio prevents a double-read when it did narrate.
-	 */
-	private _reconcileConfirmationNarration(codingSessionId: string | undefined): void {
-		const pending = this._confirmationNarrationPending;
-		if (!pending) {
-			return;
 		}
-		// Our confirmation session's own narration arrived — it was read.
-		if (codingSessionId === pending.sessionId) {
-			this._confirmationNarrationPending = undefined;
-			return;
-		}
-		// Only a tagged narration for another session is unambiguous evidence of
-		// preemption; ignore untagged audio (can't attribute it).
-		if (!codingSessionId) {
-			return;
-		}
-		const expired = Date.now() - pending.at > VoiceSessionController._CONFIRMATION_REASSERT_WINDOW_MS;
-		const stillActive = this._getActiveSessionId() === pending.sessionId;
-		let stillAwaiting = false;
-		if (stillActive) {
-			const model = this.chatService.getSession(URI.parse(pending.sessionId));
-			stillAwaiting = !!model && this._getAgentStateInfo(model).state === 'waiting_for_confirmation';
-		}
-		if (pending.reasserted || expired || !stillActive || !stillAwaiting) {
-			// Give up: navigated away, resolved, already retried, or timed out.
-			this._confirmationNarrationPending = undefined;
-			return;
-		}
-		this.logService.trace(`[voice] confirmation for ${pending.sessionId.slice(-32)} preempted by narration for ${codingSessionId.slice(-32)}; re-asserting`);
-		this._confirmationNarrationPending = undefined;
-		this._narrateConfirmationViaTwoPhase(pending.sessionId, /* isReassert */ true);
+		return undefined;
 	}
 
 	/**
@@ -3232,6 +2959,26 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	/**
+	 * React to a session reaching a narratable state. The user only hears an item
+	 * for the session they are looking at; a background item is spoken later when
+	 * they focus that session (see {@link _activateShownSession}). A new turn
+	 * (`thinking`) clears the dedup so a later identical reply still narrates.
+	 */
+	private _handleNarratableStateChange(sessionId: string, currentState: string, detail: string | undefined, lastResponseSummary: string | undefined, shownNow: string | undefined): void {
+		if (currentState === 'thinking') {
+			this._lastNarratedText.delete(sessionId);
+		}
+		if (sessionId !== shownNow) {
+			return;
+		}
+		if (currentState === 'idle' && lastResponseSummary) {
+			this._narrate(sessionId, 'response', lastResponseSummary);
+		} else if (currentState === 'waiting_for_confirmation' && detail) {
+			this._narrate(sessionId, 'confirmation', detail);
+		}
+	}
+
+	/**
 	 * Flush the coalesced session state changes to the backend and persist only
 	 * true net changes to the local timeline. {@link _sendContext} rebuilds the
 	 * full context from the now-settled model state and `_sendDelta` merge-patches
@@ -3243,25 +2990,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * and a detail change reached via an intermediate state (e.g.
 	 * `waiting(old) → thinking → waiting(new)`) is still treated as detail-only.
 	 */
-	/**
-	 * Mark (or clear) a completion for on-focus re-narration. An idle+summary
-	 * completion is recorded as a candidate unheard reply — including the shown
-	 * session, since the marker is cleared the instant its audio is heard (see
-	 * onAudioResponse), so a reply that narrates live is never re-read; only one
-	 * the backend dropped survives. A new turn/confirmation clears any pending
-	 * marker. Arms the shown-session watchdog when no focus event will fire.
-	 */
-	private _recordCompletionForRenarration(sessionId: string, currentState: string, lastResponseSummary: string | undefined, shownNow: string | undefined): void {
-		if (currentState === 'idle' && lastResponseSummary) {
-			this._unheardResponseSessions.add(sessionId);
-			if (sessionId === shownNow) {
-				this._armResponseRenarrateWatchdog(sessionId);
-			}
-		} else if (currentState === 'thinking' || currentState === 'waiting_for_confirmation') {
-			this._unheardResponseSessions.delete(sessionId);
-		}
-	}
-
 	private _emitPendingStateChanges(): void {
 		const changes = [...this._pendingStateChanges.values()];
 		this._pendingStateChanges.clear();
@@ -3285,13 +3013,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this._sendContext();
 			return;
 		}
-		// Track completions so an unheard reply can be re-narrated (see
-		// _recordCompletionForRenarration). Both this coalesced path and the
-		// direct _checkSessionStateChanges path feed it, so remote/unloaded
-		// sessions surfaced only by the latter are covered too.
+		// Speak the settled item for the shown session; a background session's item
+		// waits until the user focuses it. Both this coalesced path and the direct
+		// _checkSessionStateChanges path feed this, so remote/unloaded sessions
+		// surfaced only by the latter are covered too.
 		const shownNow = this._shownSessionId();
 		for (const { change } of netChanges) {
-			this._recordCompletionForRenarration(change.sessionId, change.currentState, change.lastResponseSummary, shownNow);
+			this._handleNarratableStateChange(change.sessionId, change.currentState, change.detail, change.lastResponseSummary, shownNow);
 		}
 		// For detail-only transitions (same agent_state but different confirmation
 		// content), invalidate the cache so _sendDelta treats the session as new
@@ -3355,50 +3083,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this.voiceClientService.flushSessionContext();
 		}, VoiceSessionController._CONFIRMATION_FLUSH_DELAY_MS);
 		this._confirmationFlushWatchdogs.set(sessionId, timer);
-	}
-
-	/**
-	 * Re-narrate a reply that completed on the on-screen session if its narration
-	 * was dropped. Response analog of {@link _armConfirmationFlushWatchdog}.
-	 *
-	 * The on-focus re-narration in {@link _activateShownSession} only fires on a
-	 * focus event, so a reply that completes on the already-shown session (or on
-	 * a session focused a beat before its unheard marker was set, in a fast
-	 * switch) is never re-checked. This one-shot watchdog does that: after a short
-	 * delay it re-narrates iff the reply is still genuinely unheard — its marker
-	 * survived (a live narration would have cleared it), the session is still the
-	 * active, idle one, and nothing is buffered for it.
-	 */
-	private _armResponseRenarrateWatchdog(sessionId: string): void {
-		// Exactly one delayed re-check per completion; don't refresh the timer.
-		if (this._responseRenarrateWatchdogs.has(sessionId)) {
-			return;
-		}
-		this.logService.trace(`[voice] arming response re-narrate watchdog id=${sessionId.slice(-32)}`);
-		const timer = setTimeout(() => {
-			this._responseRenarrateWatchdogs.delete(sessionId);
-			// Marker cleared -> the reply's audio was heard; nothing to do.
-			if (!this._unheardResponseSessions.has(sessionId)) {
-				return;
-			}
-			// A buffered reply is flushed on focus instead; don't double-read.
-			if (this._deferredResponses.has(sessionId)) {
-				return;
-			}
-			// The two-phase re-narrates the VIEWED session (it forces is_active),
-			// and only while it is still idle with a reply — bail otherwise.
-			if (this._shownSessionId() !== sessionId) {
-				return;
-			}
-			const model = this.chatService.getSession(URI.parse(sessionId));
-			if (!model || this._getAgentStateInfo(model).state !== 'idle') {
-				return;
-			}
-			this.logService.trace(`[voice] response re-narrate watchdog firing id=${sessionId.slice(-32)}`);
-			this._unheardResponseSessions.delete(sessionId);
-			this._narrateResponseViaTwoPhase(sessionId, URI.parse(sessionId));
-		}, VoiceSessionController._RESPONSE_RENARRATE_WATCHDOG_MS);
-		this._responseRenarrateWatchdogs.set(sessionId, timer);
 	}
 
 	/**
@@ -3529,12 +3213,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// via onDidChangeSessions or the periodic poll rather than the autorun).
 		this._reconcileConfirmationIndicators(waitingSessionIds);
 
-		// Feed the same unheard-reply bookkeeping the coalesced autorun path uses,
-		// so completions surfaced ONLY here (e.g. remote/unloaded sessions) can
-		// still be re-narrated on focus if the backend drops their narration.
+		// Speak the settled item for the shown session; completions surfaced ONLY
+		// here (e.g. remote/unloaded sessions) are covered too. Background sessions
+		// are spoken on focus.
 		const shownNow = this._shownSessionId();
 		for (const change of stateChanges) {
-			this._recordCompletionForRenarration(change.sessionId, change.currentState, change.lastResponseSummary, shownNow);
+			this._handleNarratableStateChange(change.sessionId, change.currentState, change.detail, change.lastResponseSummary, shownNow);
 		}
 
 		if (stateChanges.length > 0) {
@@ -3587,53 +3271,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		return { state: realState, hideConfirmationDetail: false };
 	}
 
-	/**
-	 * Decide whether to hold a completed reply's `idle` state as `thinking` in the
-	 * backend context, and whether to withhold its `last_response_summary`.
-	 *
-	 * The backend narrates a session's completion only on a FRESH `-> idle`
-	 * transition while the session is active; a re-sent `idle` it has already seen
-	 * is deduped and never narrated (unlike `waiting_for_confirmation`, which it
-	 * narrates on every entry). So a reply that completes while its session is in
-	 * the background must NOT be reported as `idle` yet — otherwise the backend
-	 * records that idle (unnarrated, since the session is inactive) and later,
-	 * on focus, the re-elicited `idle` is deduped and silently dropped.
-	 *
-	 * Instead we hold it as `thinking` until the session becomes active, so the
-	 * on-focus release (`thinking -> idle` while active) is the backend's first
-	 * sighting of the completion and it narrates it. This mirrors how confirmations
-	 * are held as `thinking` while unfocused.
-	 *
-	 * Also self-heals {@link _unheardResponseSessions} from the current state (a
-	 * still-unheard, non-active idle reply) so a spurious `thinking` blip from an
-	 * eager model reload can't drop the marker before the session is focused.
-	 */
-	private _maybeHoldBackgroundIdle(id: string, state: string, summary: string | undefined, isActive: boolean): { state: string; suppressSummary: boolean } {
-		if (state !== 'idle' || isActive) {
-			return { state, suppressSummary: false };
-		}
-		// No summary means there's nothing to narrate; report idle as-is.
-		if (!summary) {
-			return { state, suppressSummary: false };
-		}
-		// If this exact completion (matched by summary) was already narrated,
-		// don't hold or re-narrate it — report idle normally. Matching by summary
-		// rather than the `_unheardResponseSessions` marker is deliberate: the
-		// marker is added by the debounced state-change emit, which can lag a
-		// context push (e.g. one triggered by an eager model reload) and let a
-		// raw idle+summary leak out first — after which the backend dedupes the
-		// on-focus re-send and the reply is silently dropped. Summary identity is
-		// available synchronously and survives that ordering race.
-		if (this._narratedSummaryById.get(id) === summary) {
-			return { state, suppressSummary: false };
-		}
-		// A fresh background completion: mark it unheard (for on-focus
-		// re-narration) and hold it as `thinking` — withholding the summary — so
-		// the backend's FIRST sighting of this idle happens once the session is
-		// focused, guaranteeing it narrates instead of being deduped.
-		this._unheardResponseSessions.add(id);
-		return { state: 'thinking', suppressSummary: true };
-	}
+
 
 	private _buildSessionContext(): IVoiceSessionContext {
 		const oneHourAgo = Date.now() - 60 * 60 * 1000;
@@ -3652,10 +3290,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// single active session to act on. Without this, when several sessions
 		// await confirmation the backend has no active session and asks the user
 		// which one to use.
-		// While re-narrating a shown session, force it active so the backend
-		// narrates its transition even if the sticky input target points at a
-		// different session. See _narrationActiveOverride.
-		const targetSessionId = this._narrationActiveOverride ?? this._getActiveSessionId();
+		const targetSessionId = this._getActiveSessionId();
 
 		const sessionList = sessions.map(s => {
 			const model = this.chatService.getSession(s.resource);
@@ -3686,10 +3321,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					this._ensureModelLoaded(s.resource);
 					fallbackState = 'thinking';
 				}
-				// Hold a background completion as `thinking` until active so the
-				// backend narrates it on focus (see _maybeHoldBackgroundIdle).
-				const bgHold = this._maybeHoldBackgroundIdle(sessionIdStr, fallbackState, this._lastResponseSummaryById.get(sessionIdStr), isActive);
-				fallbackState = bgHold.state;
 				const scoped = this._reportedAgentState(fallbackState, isActive);
 				// Supply the summary captured while the model was resident, so an
 				// idle completion that lands after the model is disposed still
@@ -3710,19 +3341,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// `thinking` for the same reason as the no-model case above: narrate
 			// exactly once, with the detail, rather than a detail-less one first.
 			const detailPending = stateInfo.state === 'waiting_for_confirmation' && !stateInfo.detail;
-			// One-shot: hold as `thinking` so `is_active` ships before the real state.
-			const forceThinking = this._forceThinkingOnce.has(s.resource.toString());
 			// Hold a summary-less idle while an eager reload is still replaying the
 			// response, so we don't ship (and consume) the idle before the summary
 			// is ready. See _effectiveResidentState.
 			const heldState = this._effectiveResidentState(s.resource.toString(), stateInfo);
-			// Hold a background completion as `thinking` until its session is active
-			// so the backend narrates it on focus (see _maybeHoldBackgroundIdle).
-			const bgHold = this._maybeHoldBackgroundIdle(s.resource.toString(), heldState, stateInfo.last_response_summary, isActive);
-			const scoped = (detailPending || forceThinking || bgHold.suppressSummary)
+			const scoped = detailPending
 				? { state: 'thinking', hideConfirmationDetail: true }
-				: this._reportedAgentState(bgHold.state, isActive);
-			const shipSummary = (!forceThinking && !bgHold.suppressSummary && heldState === stateInfo.state) ? stateInfo.last_response_summary : undefined;
+				: this._reportedAgentState(heldState, isActive);
+			const shipSummary = heldState === stateInfo.state ? stateInfo.last_response_summary : undefined;
 			return {
 				id: s.resource.toString(),
 				is_active: isActive,
@@ -3746,16 +3372,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				if (lastActive < oneHourAgo) { continue; }
 			}
 			const isActive = key === targetSessionId;
-			// Hold a background completion as `thinking` until active so the
-			// backend narrates it on focus (see _maybeHoldBackgroundIdle).
-			const bgHold = this._maybeHoldBackgroundIdle(key, stateInfo.state, stateInfo.last_response_summary, isActive);
-			const scoped = this._reportedAgentState(bgHold.state, isActive);
+			const scoped = this._reportedAgentState(stateInfo.state, isActive);
 			sessionList.push({
 				id: key,
 				is_active: isActive,
 				agent_state: scoped.state,
 				...(!scoped.hideConfirmationDetail && stateInfo.detail ? { agent_state_detail: stateInfo.detail } : {}),
-				...(!bgHold.suppressSummary && stateInfo.last_response_summary ? { last_response_summary: stateInfo.last_response_summary } : {}),
+				...(stateInfo.last_response_summary ? { last_response_summary: stateInfo.last_response_summary } : {}),
 			});
 		}
 
@@ -3846,10 +3469,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this._lastResponseSummaryById.set(sessionId, summary);
 		} else if (state === 'thinking') {
 			this._lastResponseSummaryById.delete(sessionId);
-			// A new turn supersedes the previously-narrated completion, so forget
-			// it — the next completion must be held/narrated even if its summary
-			// text happens to match the prior one.
-			this._narratedSummaryById.delete(sessionId);
 		}
 	}
 
@@ -3864,20 +3483,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._lastResponseSummaryById.delete(id);
 			}
 		}
-		for (const id of this._narratedSummaryById.keys()) {
+		for (const id of this._lastNarratedText.keys()) {
 			if (!liveSessionIds.has(id)) {
-				this._narratedSummaryById.delete(id);
-			}
-		}
-		for (const id of this._unheardResponseSessions) {
-			if (!liveSessionIds.has(id)) {
-				this._unheardResponseSessions.delete(id);
-			}
-		}
-		for (const [id, timer] of this._responseRenarrateWatchdogs) {
-			if (!liveSessionIds.has(id)) {
-				clearTimeout(timer);
-				this._responseRenarrateWatchdogs.delete(id);
+				this._lastNarratedText.delete(id);
 			}
 		}
 	}
