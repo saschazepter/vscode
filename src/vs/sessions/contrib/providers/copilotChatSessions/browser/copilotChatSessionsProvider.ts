@@ -10,7 +10,7 @@ import { CancellationError } from '../../../../../base/common/errors.js';
 import { IMarkdownString, MarkdownString, markdownStringEqual } from '../../../../../base/common/htmlContent.js';
 import { Disposable, DisposableStore, IDisposable, DisposableMap, MutableDisposable } from '../../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../../base/common/network.js';
-import { autorun, constObservable, derived, derivedOpts, IObservable, IReader, ISettableObservable, ITransaction, observableSignalFromEvent, observableValue, observableValueOpts, transaction } from '../../../../../base/common/observable.js';
+import { autorun, constObservable, derived, derivedOpts, IObservable, IObservableSignal, IReader, ISettableObservable, ITransaction, observableSignal, observableValue, observableValueOpts, transaction } from '../../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
@@ -203,22 +203,6 @@ function dateEquals(a: Date | undefined, b: Date | undefined): boolean {
 
 function markdownStringEquals(a: IMarkdownString | undefined, b: IMarkdownString | undefined): boolean {
 	return a === b || !!a && !!b && markdownStringEqual(a, b);
-}
-
-/**
- * Structural equality for a group's chat list keyed on each chat's resource.
- * `_toChat` returns a fresh wrapper on every recompute, so identity comparison
- * would always differ; comparing resources lets a group-membership recompute
- * that produced the same set of chats avoid propagating downstream.
- */
-function chatArraysEqualByResource(a: readonly IChat[] | undefined, b: readonly IChat[] | undefined): boolean {
-	if (a === b) {
-		return true;
-	}
-	if (!a || !b || a.length !== b.length) {
-		return false;
-	}
-	return a.every((chat, i) => chat.resource.toString() === b[i].resource.toString());
 }
 
 /**
@@ -1470,13 +1454,25 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	private readonly _onDidGroupMembershipChange = this._register(new Emitter<{ sessionId: string }>());
 
 	/**
-	 * A single shared signal that ticks on every group membership change. Session
-	 * chat observables read this instead of each subscribing to
-	 * `_onDidGroupMembershipChange` with a per-session filter, so the number of
-	 * listeners on the emitter stays constant rather than growing with the number
-	 * of sessions (which previously leaked listeners as sessions accumulated).
+	 * Per-group signals, keyed by `sessionId`, that invalidate a single group's
+	 * chats observable. A group's chats derived observes only its own signal, so a
+	 * membership change recomputes just the affected group rather than every observed
+	 * group.
 	 */
-	private readonly _onDidGroupMembershipChangeSignal = observableSignalFromEvent(this, this._onDidGroupMembershipChange.event);
+	private readonly _groupMembershipSignals = new Map<string, IObservableSignal<void>>();
+
+	/**
+	 * A single subscription to `_onDidGroupMembershipChange` that fans each event out
+	 * to the affected group's own signal. Subscribing exactly once (instead of once per
+	 * session) keeps the emitter's listener count constant regardless of how many
+	 * sessions exist — the per-session subscriptions previously leaked listeners as
+	 * sessions accumulated.
+	 */
+	private _registerGroupMembershipFanOut(): void {
+		this._register(this._onDidGroupMembershipChange.event(e => {
+			this._groupMembershipSignals.get(e.sessionId)?.trigger(undefined, undefined);
+		}));
+	}
 
 	private readonly _multiChatEnabled: boolean;
 
@@ -1567,6 +1563,8 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		this._register(this.agentSessionsService.model.onDidChangeSessions(() => {
 			this._refreshSessionCache();
 		}));
+
+		this._registerGroupMembershipFanOut();
 	}
 
 	// -- Sessions --
@@ -2991,6 +2989,38 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	}
 
 	/**
+	 * Get (creating on first use) the membership signal for a group, keyed by
+	 * `sessionId`. The group's chats observable observes this signal so a membership
+	 * change recomputes only the affected group; the single fan-out subscription in
+	 * `_groupMembershipSubscription` triggers it.
+	 */
+	private _getGroupMembershipSignal(sessionId: string): IObservableSignal<void> {
+		let signal = this._groupMembershipSignals.get(sessionId);
+		if (!signal) {
+			signal = observableSignal<void>(this);
+			this._groupMembershipSignals.set(sessionId, signal);
+		}
+		return signal;
+	}
+
+	/**
+	 * Structural equality for a group's chat list keyed on each chat's resource.
+	 * `_toChat` returns a fresh wrapper on every recompute, so identity comparison
+	 * would always differ; comparing resources lets a recompute that produced the
+	 * same set of chats avoid propagating downstream. Uses the URI identity comparer
+	 * so scheme-specific path casing and normalization are handled consistently.
+	 */
+	private _chatArraysEqual(a: readonly IChat[] | undefined, b: readonly IChat[] | undefined): boolean {
+		if (a === b) {
+			return true;
+		}
+		if (!a || !b || a.length !== b.length) {
+			return false;
+		}
+		return a.every((chat, i) => this.uriIdentityService.extUri.isEqual(chat.resource, b[i].resource));
+	}
+
+	/**
 	 * Wraps a primary {@link ICopilotChatSession} and its sibling chats into an {@link ISession}.
 	 * When multi-chat is enabled, the `chats` observable is derived from `sessionParentId`
 	 * metadata and updates when group membership changes.
@@ -3020,17 +3050,18 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		// reflects the real backend resource without rebuilding the cached wrapper.
 		const mainChat = primaryChat.mainChat;
 
+		const membershipSignal = this._getGroupMembershipSignal(sessionId);
 		const groupChatsObs = derivedOpts<readonly IChat[] | undefined>({
 			owner: this,
-			equalsFn: chatArraysEqualByResource,
+			equalsFn: (a, b) => this._chatArraysEqual(a, b),
 		}, reader => {
-			// Recompute the group's chats whenever any group membership changes.
-			// Reading the single shared signal (rather than a per-session filtered
-			// event) keeps the listener count on `_onDidGroupMembershipChange`
-			// constant regardless of how many sessions exist; the `equalsFn` then
-			// stops sessions whose membership didn't actually change from
-			// propagating downstream.
-			this._onDidGroupMembershipChangeSignal.read(reader);
+			// Recompute this group's chats only when its own membership signal ticks.
+			// A single provider-wide listener on `_onDidGroupMembershipChange` fans out
+			// to per-group signals (see `_groupMembershipSubscription`), so the emitter's
+			// listener count stays constant while invalidation remains targeted to the
+			// affected group. The `equalsFn` then stops a recompute that produced the
+			// same chat set from propagating downstream.
+			membershipSignal.read(reader);
 			const chatIds = this._getChatIdsInGroup(sessionId);
 			if (chatIds.length === 0) {
 				return undefined;
