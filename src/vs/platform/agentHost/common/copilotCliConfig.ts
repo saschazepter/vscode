@@ -15,6 +15,8 @@ import type { ModelSelection } from './state/protocol/state.js';
 export const enum CopilotCliConfigKey {
 	/** Use Agent Host's custom terminal tool instead of the SDK's default. Off by default. */
 	EnableCustomTerminalTool = 'enableCustomTerminalTool',
+	/** Log level passed to the Copilot SDK client. */
+	CopilotSdkLogLevel = 'copilotSdkLogLevel',
 	/** Enable the rubber duck critic subagent. */
 	RubberDuck = 'rubberDuck',
 	/** Apply Opus 4.8-tuned system-prompt overrides on Opus 4.8 models. Off by default. */
@@ -32,11 +34,19 @@ export const enum CopilotCliConfigKey {
 
 export const AgentHostCustomTerminalToolEnabledSettingId = 'chat.agentHost.customTerminalTool.enabled';
 
+export const AgentHostCopilotSdkLogLevelSettingId = 'chat.agentHost.copilotSdk.logLevel';
+
 export const AgentHostOpus48PromptEnabledSettingId = 'chat.agentHost.opus48Prompt.enabled';
 
 export const AgentHostReasoningEffortOverrideSettingId = 'chat.agentHost.reasoningEffortOverride';
 
 export const AgentHostModelCapabilityOverridesSettingId = 'chat.agentHost.modelCapabilityOverrides';
+
+export const copilotSdkLogLevels = ['none', 'error', 'warning', 'info', 'debug', 'all'] as const;
+export type CopilotSdkLogLevel = typeof copilotSdkLogLevels[number];
+
+export const copilotSdkLogLevelSettingValues = ['default', ...copilotSdkLogLevels] as const;
+export type CopilotSdkLogLevelSetting = typeof copilotSdkLogLevelSettingValues[number];
 
 /** Per-model capability override; the agent-host equivalent of the extension's `IModelCapabilityOverride`. */
 interface ICopilotCliModelCapabilityOverride {
@@ -53,6 +63,22 @@ export const copilotCliConfigSchema = createSchema({
 		title: localize('agentHost.config.enableCustomTerminalTool.title', "Use Agent Host Terminal Tool"),
 		description: localize('agentHost.config.enableCustomTerminalTool.description', "When enabled, Copilot SDK sessions use Agent Host's terminal tool override instead of the SDK's default terminal behavior."),
 		default: false,
+	}),
+	[CopilotCliConfigKey.CopilotSdkLogLevel]: schemaProperty<CopilotSdkLogLevelSetting>({
+		type: 'string',
+		title: localize('agentHost.config.copilotSdkLogLevel.title', "Copilot SDK Log Level"),
+		description: localize('agentHost.config.copilotSdkLogLevel.description', "Controls logging from the Copilot SDK runtime. The default follows the agent host's log level."),
+		enum: [...copilotSdkLogLevelSettingValues],
+		enumLabels: [
+			localize('agentHost.config.copilotSdkLogLevel.default', "Use Agent Host Log Level"),
+			localize('agentHost.config.copilotSdkLogLevel.none', "None"),
+			localize('agentHost.config.copilotSdkLogLevel.error', "Error"),
+			localize('agentHost.config.copilotSdkLogLevel.warning', "Warning"),
+			localize('agentHost.config.copilotSdkLogLevel.info', "Info"),
+			localize('agentHost.config.copilotSdkLogLevel.debug', "Debug"),
+			localize('agentHost.config.copilotSdkLogLevel.all', "All"),
+		],
+		default: 'default',
 	}),
 	[CopilotCliConfigKey.RubberDuck]: schemaProperty<boolean>({
 		type: 'boolean',
