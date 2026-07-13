@@ -8,16 +8,27 @@ import { mainWindow } from '../../../../../../base/browser/window.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { DisposableStore, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { AgentSessionStatusIcon, AgentSessionsDataSource, AgentSessionListItem, IAgentSessionsFilter, sessionDateFromNow, getRepositoryName, AgentSessionsSorter, groupAgentSessionsByDate, getAgentSessionStatusIcon } from '../../../browser/agentSessions/agentSessionsViewer.js';
+import { AgentSessionRenderer, AgentSessionsDataSource, AgentSessionListItem, IAgentSessionsFilter, sessionDateFromNow, getRepositoryName, AgentSessionsSorter, groupAgentSessionsByDate, getAgentSessionStatusIcon } from '../../../browser/agentSessions/agentSessionsViewer.js';
 import { AgentSessionSection, IAgentSession, IAgentSessionSection, IAgentSessionsModel, isAgentSession, isAgentSessionSection, isAgentSessionShowLess, isAgentSessionShowMore } from '../../../browser/agentSessions/agentSessionsModel.js';
-import { ChatSessionStatus } from '../../../common/chatSessionsService.js';
-import { ITreeSorter } from '../../../../../../base/browser/ui/tree/tree.js';
+import { ChatSessionStatus, IChatSessionsService } from '../../../common/chatSessionsService.js';
+import { ITreeNode, ITreeSorter } from '../../../../../../base/browser/ui/tree/tree.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Event } from '../../../../../../base/common/event.js';
 import { AgentSessionsGrouping, AgentSessionsSorting } from '../../../browser/agentSessions/agentSessionsFilter.js';
 import { shouldShowSessionInPicker } from '../../../browser/agentSessions/agentSessionsPicker.js';
 import { themeColorFromId } from '../../../../../../base/common/themables.js';
 import { TestAccessibilityService } from '../../../../../../platform/accessibility/test/common/testAccessibilityService.js';
+import { FuzzyScore } from '../../../../../../base/common/filters.js';
+import { observableValue } from '../../../../../../base/common/observable.js';
+import { mock } from '../../../../../../base/test/common/mock.js';
+import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
+import { MenuWorkbenchToolBar } from '../../../../../../platform/actions/browser/toolbar.js';
+import { MockContextKeyService } from '../../../../../../platform/keybinding/test/common/mockKeybindingService.js';
+import { IMarkdownRendererService } from '../../../../../../platform/markdown/browser/markdownRenderer.js';
+import { IProductService } from '../../../../../../platform/product/common/productService.js';
+import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
+import { IVoicePlaybackService } from '../../../common/voicePlaybackService.js';
+import { HoverPosition } from '../../../../../../base/browser/ui/hover/hoverWidget.js';
 
 suite('sessionDateFromNow', () => {
 
@@ -150,44 +161,74 @@ suite('AgentSessionsDataSource', () => {
 		test('renders compact glyphs and scaled spinners in a centered status slot', () => {
 			const store = new DisposableStore();
 			try {
-				const createStatusIcon = (motionReduced: boolean) => {
+				const renderStatusIcon = (motionReduced: boolean, session: IAgentSession) => {
 					const root = mainWindow.document.createElement('div');
 					root.classList.add('monaco-workbench', motionReduced ? 'monaco-reduce-motion' : 'monaco-enable-motion');
 					const viewer = mainWindow.document.createElement('div');
 					viewer.classList.add('agent-sessions-viewer');
 					const listRow = mainWindow.document.createElement('div');
 					listRow.classList.add('monaco-list-row');
-					const item = mainWindow.document.createElement('div');
-					item.classList.add('agent-session-item');
-					const iconColumn = mainWindow.document.createElement('div');
-					iconColumn.classList.add('agent-session-icon-col');
-					const container = mainWindow.document.createElement('div');
-					iconColumn.appendChild(container);
-					item.appendChild(iconColumn);
-					listRow.appendChild(item);
 					viewer.appendChild(listRow);
 					root.appendChild(viewer);
 					mainWindow.document.body.appendChild(root);
 					store.add(toDisposable(() => root.remove()));
 
+					const instantiationService = store.add(new TestInstantiationService());
+					instantiationService.stubInstance(MenuWorkbenchToolBar, { dispose() { } });
 					const accessibilityService = new class extends TestAccessibilityService {
 						override isMotionReduced(): boolean {
 							return motionReduced;
 						}
 					}();
+					const renderer = store.add(new AgentSessionRenderer(
+						{ disableHover: true, getHoverPosition: () => HoverPosition.BELOW },
+						undefined,
+						observableValue<URI | undefined>('activeSessionResource', undefined),
+						new class extends mock<IMarkdownRendererService>() { }(),
+						new class extends mock<IProductService>() {
+							override readonly urlProtocol = 'vscode';
+						}(),
+						new class extends mock<IHoverService>() { }(),
+						instantiationService,
+						new MockContextKeyService(),
+						new class extends mock<IChatSessionsService>() {
+							override async resolveChatSessionItem() { return undefined; }
+						}(),
+						accessibilityService,
+						new class extends mock<IVoicePlaybackService>() {
+							override readonly pendingResponseVersion = observableValue<number>('pendingResponseVersion', 0);
+							override hasPendingResponse() { return false; }
+						}(),
+					));
+					const template = renderer.renderTemplate(listRow);
+					const render = (session: IAgentSession) => {
+						const treeNode: ITreeNode<IAgentSession, FuzzyScore> = {
+							element: session,
+							children: [],
+							depth: 0,
+							visibleChildrenCount: 0,
+							visibleChildIndex: 0,
+							collapsible: false,
+							collapsed: false,
+							visible: true,
+							filterData: undefined,
+						};
+						renderer.renderElement(treeNode, 0, template);
+					};
+					render(session);
+					store.add(toDisposable(() => renderer.disposeTemplate(template)));
 
 					return {
-						container,
-						statusIcon: store.add(new AgentSessionStatusIcon(container, getAgentSessionStatusIcon, accessibilityService)),
+						icon: listRow.querySelector<HTMLElement>('.agent-session-icon')!,
+						render,
 					};
 				};
 
-				const normalMotion = createStatusIcon(false);
-				normalMotion.statusIcon.setStatus(createMockSession({ status: ChatSessionStatus.InProgress }));
-				const inProgressSpinner = normalMotion.container.querySelector<HTMLElement>('.monaco-pixel-spinner');
+				const normalMotion = renderStatusIcon(false, createMockSession({ status: ChatSessionStatus.InProgress }));
+				const inProgressSpinner = normalMotion.icon.querySelector<HTMLElement>('.monaco-pixel-spinner');
 				assert.ok(inProgressSpinner);
 				assert.deepStrictEqual({
-					slotWidth: mainWindow.getComputedStyle(normalMotion.container).width,
+					slotWidth: mainWindow.getComputedStyle(normalMotion.icon).width,
 					spinnerWidth: mainWindow.getComputedStyle(inProgressSpinner).width,
 					spinnerTransform: mainWindow.getComputedStyle(inProgressSpinner).transform,
 					ariaHidden: inProgressSpinner.getAttribute('aria-hidden'),
@@ -198,17 +239,16 @@ suite('AgentSessionsDataSource', () => {
 					ariaHidden: 'true',
 				});
 
-				normalMotion.statusIcon.setStatus(createMockSession({ status: ChatSessionStatus.NeedsInput }));
-				assert.ok(normalMotion.container.querySelector('.monaco-pixel-spinner-ring'));
+				normalMotion.render(createMockSession({ status: ChatSessionStatus.NeedsInput }));
+				assert.ok(normalMotion.icon.querySelector('.monaco-pixel-spinner-ring'));
 
-				const reducedMotion = createStatusIcon(true);
-				reducedMotion.statusIcon.setStatus(createMockSession({ status: ChatSessionStatus.NeedsInput }));
-				const needsInputGlyph = reducedMotion.container.querySelector<HTMLElement>('.codicon');
+				const reducedMotion = renderStatusIcon(true, createMockSession({ status: ChatSessionStatus.NeedsInput }));
+				const needsInputGlyph = reducedMotion.icon.querySelector<HTMLElement>('.codicon');
 				assert.ok(needsInputGlyph);
 				assert.deepStrictEqual({
 					glyphFontSize: mainWindow.getComputedStyle(needsInputGlyph).fontSize,
-					iconAnimation: mainWindow.getComputedStyle(reducedMotion.container).animationName,
-					hasSpinner: !!reducedMotion.container.querySelector('.monaco-pixel-spinner'),
+					iconAnimation: mainWindow.getComputedStyle(reducedMotion.icon).animationName,
+					hasSpinner: !!reducedMotion.icon.querySelector('.monaco-pixel-spinner'),
 				}, {
 					glyphFontSize: '12px',
 					iconAnimation: 'none',

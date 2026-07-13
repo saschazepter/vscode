@@ -96,7 +96,7 @@ interface IAgentSessionItemTemplate {
 	readonly disposables: IDisposable;
 }
 
-export class AgentSessionStatusIcon extends Disposable {
+class AgentSessionStatusIcon extends Disposable {
 
 	private static readonly PIXEL_SPINNER_GRID_KEY = '__pixel_spinner_grid__';
 	private static readonly PIXEL_SPINNER_RING_KEY = '__pixel_spinner_ring__';
