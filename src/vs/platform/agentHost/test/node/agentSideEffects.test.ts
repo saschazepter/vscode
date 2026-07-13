@@ -3761,6 +3761,65 @@ suite('AgentSideEffects', () => {
 			assert.deepStrictEqual(sessionInputNeeded(), []);
 		});
 
+		test('auto-approved tool call is kept out of the session inputNeeded queue', () => {
+			setupSession();
+			startTurn('turn-1');
+
+			// Auto-approved client tool (bypass approvals): the host tags the
+			// call `autoApproveBySetting` and the client auto-approves + runs it.
+			// It transitions through PendingConfirmation and Running but never
+			// blocks on the user, so it must never appear in `inputNeeded` (which
+			// would flash the session as "input needed" in the sessions list).
+			stateManager.dispatchServerAction(defaultChatUri, {
+				type: ActionType.ChatToolCallStart, turnId: 'turn-1',
+				toolCallId: 'tc-auto', toolName: 'browser_navigate', displayName: 'Navigate Browser',
+				contributor: { kind: ToolCallContributorKind.Client, clientId: 'client-1' },
+				_meta: { autoApproveBySetting: true },
+			});
+			stateManager.dispatchServerAction(defaultChatUri, {
+				type: ActionType.ChatToolCallReady, turnId: 'turn-1',
+				toolCallId: 'tc-auto', invocationMessage: 'Navigate', confirmationTitle: 'Navigate',
+				_meta: { autoApproveBySetting: true },
+			});
+			assert.deepStrictEqual(sessionInputNeeded(), [], 'no confirmation entry while PendingConfirmation');
+
+			stateManager.dispatchServerAction(defaultChatUri, {
+				type: ActionType.ChatToolCallConfirmed, turnId: 'turn-1',
+				toolCallId: 'tc-auto', approved: true, confirmed: ToolCallConfirmationReason.Setting,
+			});
+			assert.deepStrictEqual(sessionInputNeeded(), [], 'no client-execution entry while Running');
+		});
+
+		test('auto-approved tool still surfaces a genuine result confirmation', () => {
+			setupSession();
+			startTurn('turn-1');
+
+			// Auto-approved parameter gate — must not surface. But once the tool
+			// runs and requests a post-execution result confirmation, that gate is
+			// a genuine user prompt and must appear even though the call carries
+			// `autoApproveBySetting`.
+			stateManager.dispatchServerAction(defaultChatUri, {
+				type: ActionType.ChatToolCallStart, turnId: 'turn-1',
+				toolCallId: 'tc-auto-result', toolName: 'browser_navigate', displayName: 'Navigate Browser',
+				contributor: { kind: ToolCallContributorKind.Client, clientId: 'client-1' },
+				_meta: { autoApproveBySetting: true },
+			});
+			stateManager.dispatchServerAction(defaultChatUri, {
+				type: ActionType.ChatToolCallReady, turnId: 'turn-1',
+				toolCallId: 'tc-auto-result', invocationMessage: 'Navigate', confirmed: ToolCallConfirmationReason.NotNeeded,
+			});
+			stateManager.dispatchServerAction(defaultChatUri, {
+				type: ActionType.ChatToolCallComplete, turnId: 'turn-1',
+				toolCallId: 'tc-auto-result', requiresResultConfirmation: true,
+				result: { success: true, pastTenseMessage: 'Navigated' },
+			});
+
+			assert.deepStrictEqual(
+				sessionInputNeeded().map(r => ({ kind: r.kind, toolCallId: r.kind === SessionInputRequestKind.ToolConfirmation ? r.toolCall.toolCallId : undefined })),
+				[{ kind: SessionInputRequestKind.ToolConfirmation, toolCallId: 'tc-auto-result' }],
+			);
+		});
+
 		test('ending the turn clears the chat\'s outstanding requests', () => {
 			setupSession();
 			startTurn('turn-1');
