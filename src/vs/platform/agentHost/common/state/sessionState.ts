@@ -625,7 +625,7 @@ export function createDefaultChatSummary(session: SessionSummary, chatUri: Proto
 	return summary;
 }
 
-/** Activity bits (0–4) of {@link SessionStatus}; the high bits carry orthogonal flags (IsRead / IsArchived). */
+/** Activity bits (0-4) of {@link SessionStatus}; the high bits carry orthogonal flags (IsRead / IsArchived). */
 const STATUS_ACTIVITY_MASK = (1 << 5) - 1;
 
 /** Whether the active turn has a `PendingConfirmation` tool call auto-approved by the session's bypass setting. */
