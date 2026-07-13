@@ -742,17 +742,51 @@ suite('CopilotAgent', () => {
 		});
 	});
 
-	test('appends a short session-id suffix when the branch name already exists', async () => {
+	test('finds an available branch name when candidates collide', async () => {
 		const copilotApiService = new TestCopilotApiService();
 		copilotApiService.response = 'add-agent-host-config';
 		const generator = new AgentBranchNameGenerator(copilotApiService, new NullLogService());
+		const collisions = new Set([
+			'agents/add-agent-host-config',
+			'agents/add-agent-host-config-12345678',
+			'agents/12345678-aaaa-bbbb-cccc-123456789abc',
+		]);
+		const exhaustedCandidates: string[] = [];
+		let exhaustionError: string | undefined;
+		try {
+			await generator.generateBranchName({
+				sessionId: '12345678-aaaa-bbbb-cccc-123456789abc',
+				branchNameCollides: async name => {
+					exhaustedCandidates.push(name);
+					return true;
+				},
+			});
+		} catch (error) {
+			exhaustionError = error instanceof Error ? error.message : String(error);
+		}
 
 		assert.deepStrictEqual({
-			unique: await generator.generateBranchName({ sessionId: '12345678-aaaa-bbbb-cccc-123456789abc', message: 'Add agent host config', githubToken: 'token', branchExists: async () => false }),
-			collision: await generator.generateBranchName({ sessionId: '12345678-aaaa-bbbb-cccc-123456789abc', message: 'Add agent host config', githubToken: 'token', branchExists: async name => name === 'agents/add-agent-host-config' }),
+			unique: await generator.generateBranchName({ sessionId: '12345678-aaaa-bbbb-cccc-123456789abc', message: 'Add agent host config', githubToken: 'token', branchNameCollides: async () => false }),
+			collision: await generator.generateBranchName({ sessionId: '12345678-aaaa-bbbb-cccc-123456789abc', message: 'Add agent host config', githubToken: 'token', branchNameCollides: async name => name === 'agents/add-agent-host-config' }),
+			repeatedCollision: await generator.generateBranchName({ sessionId: '12345678-aaaa-bbbb-cccc-123456789abc', message: 'Add agent host config', githubToken: 'token', branchNameCollides: async name => collisions.has(name) }),
+			fallbackCollision: await generator.generateBranchName({ sessionId: '12345678-aaaa-bbbb-cccc-123456789abc', branchNameCollides: async name => collisions.has(name) }),
+			exhaustion: {
+				error: exhaustionError,
+				candidateCount: exhaustedCandidates.length,
+				firstCandidate: exhaustedCandidates[0],
+				lastCandidate: exhaustedCandidates.at(-1),
+			},
 		}, {
 			unique: 'agents/add-agent-host-config',
 			collision: 'agents/add-agent-host-config-12345678',
+			repeatedCollision: 'agents/add-agent-host-config-12345678-2',
+			fallbackCollision: 'agents/12345678-aaaa-bbbb-cccc-123456789abc-2',
+			exhaustion: {
+				error: 'Unable to find an available branch name after checking 100 candidates',
+				candidateCount: 100,
+				firstCandidate: 'agents/12345678-aaaa-bbbb-cccc-123456789abc',
+				lastCandidate: 'agents/12345678-aaaa-bbbb-cccc-123456789abc-100',
+			},
 		});
 	});
 

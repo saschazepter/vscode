@@ -6,6 +6,7 @@
 import assert from 'assert';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
+import { timeout } from '../../../../../base/common/async.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { join } from '../../../../../base/common/path.js';
 import { basename } from '../../../../../base/common/resources.js';
@@ -15,7 +16,7 @@ import { NullLogService } from '../../../../log/common/log.js';
 import { IAgentHostGitService } from '../../../common/agentHostGitService.js';
 import { SessionConfigKey } from '../../../common/sessionConfigKeys.js';
 import { AH_META_IS_ARCHIVED_DB_KEY, AH_META_IS_DONE_DB_KEY, MessageKind, ResponsePartKind, TurnState, type Turn } from '../../../common/state/sessionState.js';
-import { IAgentBranchNameGenerator } from '../../../node/shared/agentBranchNameGenerator.js';
+import { AgentBranchNameGenerator, IAgentBranchNameGenerator } from '../../../node/shared/agentBranchNameGenerator.js';
 import { ICopilotApiService } from '../../../node/shared/copilotApiService.js';
 import { SessionWorkingDirectoryMissingError, WorktreeIsolation, getWorktreeName, getWorktreesRoot } from '../../../node/shared/worktreeIsolation.js';
 import { TestSessionDatabase, createNoopGitService, createSessionDataService } from '../../common/sessionTestHelpers.js';
@@ -88,13 +89,13 @@ suite('WorktreeIsolation', () => {
 		};
 	}
 
-	function createIsolation(disposableStore: Pick<DisposableStore, 'add'>): WorktreeIsolation {
-		const branchNameGenerator: IAgentBranchNameGenerator = {
+	function createIsolation(disposableStore: Pick<DisposableStore, 'add'>, options?: { readonly branchNameGenerator?: IAgentBranchNameGenerator; readonly gitService?: IAgentHostGitService }): WorktreeIsolation {
+		const branchNameGenerator = options?.branchNameGenerator ?? {
 			generateBranchName: async () => branchName,
 		};
 		return disposableStore.add(new WorktreeIsolation(
 			branchNameGenerator,
-			createGitService(),
+			options?.gitService ?? createGitService(),
 			createNullCopilotApiService(),
 			createSessionDataService(db),
 			new NullLogService(),
@@ -202,6 +203,108 @@ suite('WorktreeIsolation', () => {
 			secondTakeAnnouncement: undefined,
 			idempotentReturn: expectedWorktree.toString(),
 			createdSessions: [sessionId],
+		});
+	});
+
+	test('resolveWorkingDirectory avoids an existing worktree directory', async () => {
+		const collisionSessionId = '12345678-aaaa-bbbb-cccc-123456789abc';
+		const collisionSessionUri = URI.parse(`agent-session://test/${collisionSessionId}`);
+		const existingWorktree = URI.joinPath(worktreesRoot, 'add-feature');
+		mkdirSync(existingWorktree.fsPath, { recursive: true });
+		branchExists = false;
+		const isolation = createIsolation(disposables, {
+			branchNameGenerator: new AgentBranchNameGenerator(createNullCopilotApiService(), new NullLogService()),
+		});
+
+		const resolved = await isolation.resolveWorkingDirectory({
+			sessionUri: collisionSessionUri,
+			sessionId: collisionSessionId,
+			workingDirectory: repoRoot,
+			config: { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' },
+			prompt: 'Add feature',
+		});
+
+		assert.deepStrictEqual({
+			branchName: addWorktreeCalls[0]?.branchName,
+			worktree: resolved?.toString(),
+		}, {
+			branchName: 'agents/add-feature-12345678',
+			worktree: URI.joinPath(worktreesRoot, 'add-feature-12345678').toString(),
+		});
+	});
+
+	test('resolveWorkingDirectory treats a failed branch check as a collision', async () => {
+		const collisionSessionId = '12345678-aaaa-bbbb-cccc-123456789abc';
+		const collisionSessionUri = URI.parse(`agent-session://test/${collisionSessionId}`);
+		const gitService = createGitService();
+		let branchExistsCalls = 0;
+		gitService.branchExists = async () => {
+			if (branchExistsCalls++ === 0) {
+				throw new Error('transient failure');
+			}
+			return false;
+		};
+		const isolation = createIsolation(disposables, {
+			branchNameGenerator: new AgentBranchNameGenerator(createNullCopilotApiService(), new NullLogService()),
+			gitService,
+		});
+
+		const resolved = await isolation.resolveWorkingDirectory({
+			sessionUri: collisionSessionUri,
+			sessionId: collisionSessionId,
+			workingDirectory: repoRoot,
+			config: { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' },
+			prompt: 'Add feature',
+		});
+
+		assert.deepStrictEqual({
+			branchExistsCalls,
+			branchName: addWorktreeCalls[0]?.branchName,
+			worktree: resolved?.toString(),
+		}, {
+			branchExistsCalls: 2,
+			branchName: 'agents/add-feature-12345678',
+			worktree: URI.joinPath(worktreesRoot, 'add-feature-12345678').toString(),
+		});
+	});
+
+	test('resolveWorkingDirectory serializes concurrent creation in the same repository', async () => {
+		const gitService = createGitService();
+		const existingBranches = new Set<string>();
+		let activeAddWorktrees = 0;
+		let maxActiveAddWorktrees = 0;
+		gitService.branchExists = async (_repositoryRoot, candidate) => existingBranches.has(candidate);
+		gitService.addWorktree = async (_repositoryRoot, worktree, candidate, startPoint) => {
+			activeAddWorktrees++;
+			maxActiveAddWorktrees = Math.max(maxActiveAddWorktrees, activeAddWorktrees);
+			await timeout(10);
+			addWorktreeCalls.push({ worktree, branchName: candidate, startPoint });
+			existingBranches.add(candidate);
+			mkdirSync(worktree.fsPath, { recursive: true });
+			activeAddWorktrees--;
+		};
+		const isolation = createIsolation(disposables, {
+			branchNameGenerator: new AgentBranchNameGenerator(createNullCopilotApiService(), new NullLogService()),
+			gitService,
+		});
+		const config = { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' };
+
+		const worktrees = await Promise.all([
+			isolation.resolveWorkingDirectory({ sessionUri: URI.parse('agent-session://test/12345678-aaaa-bbbb-cccc-123456789abc'), sessionId: '12345678-aaaa-bbbb-cccc-123456789abc', workingDirectory: repoRoot, config, prompt: 'Add feature' }),
+			isolation.resolveWorkingDirectory({ sessionUri: URI.parse('agent-session://test/87654321-aaaa-bbbb-cccc-123456789abc'), sessionId: '87654321-aaaa-bbbb-cccc-123456789abc', workingDirectory: repoRoot, config, prompt: 'Add feature' }),
+		]);
+
+		assert.deepStrictEqual({
+			maxActiveAddWorktrees,
+			branchNames: addWorktreeCalls.map(call => call.branchName),
+			worktrees: worktrees.map(worktree => worktree?.toString()),
+		}, {
+			maxActiveAddWorktrees: 1,
+			branchNames: ['agents/add-feature', 'agents/add-feature-87654321'],
+			worktrees: [
+				URI.joinPath(worktreesRoot, 'add-feature').toString(),
+				URI.joinPath(worktreesRoot, 'add-feature-87654321').toString(),
+			],
 		});
 	});
 

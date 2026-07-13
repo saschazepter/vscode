@@ -221,6 +221,7 @@ export class WorktreeIsolation extends Disposable {
 	 * guarantee each agent previously enforced with its own sequencer.
 	 */
 	private readonly _sequencer = new SequencerByKey<string>();
+	private readonly _worktreeCreationSequencer = new SequencerByKey<string>();
 
 	/** Branch-name generator for worktree sessions; created from {@link ICopilotApiService} unless a test supplies an override. */
 	private readonly _branchNameGenerator: IAgentBranchNameGenerator;
@@ -416,23 +417,26 @@ export class WorktreeIsolation extends Disposable {
 		const worktreeBranchPrefix = typeof config[SessionConfigKey.WorktreeBranchPrefix] === 'string'
 			? config[SessionConfigKey.WorktreeBranchPrefix] as string
 			: undefined;
-		const branchName = await this._branchNameGenerator.generateBranchName({
-			sessionId,
-			message: prompt,
-			githubToken,
-			branchPrefix: worktreeBranchPrefix,
-			// Treat a failed existence check as a collision so we fall back to a
-			// suffixed branch name rather than risk `addWorktree` failing because
-			// the branch already exists.
-			branchExists: candidate => this._gitService.branchExists(repositoryRoot, candidate).catch(() => true),
-		});
-		const worktree = URI.joinPath(worktreesRoot, getWorktreeName(branchName, worktreeBranchPrefix));
-		await fs.mkdir(worktreesRoot.fsPath, { recursive: true });
 		const baseBranch = typeof config[SessionConfigKey.Branch] === 'string' ? config[SessionConfigKey.Branch] as string : undefined;
-		// `addWorktree`'s signature requires a startPoint, but historically the
-		// runtime accepted undefined when `branch` was not set in config. Preserve
-		// that behavior by passing through whatever value (or undefined) was set.
-		await this._gitService.addWorktree(repositoryRoot, worktree, branchName, baseBranch as string);
+		const { branchName, worktree } = await this._worktreeCreationSequencer.queue(repositoryRoot.toString(), async () => {
+			const branchName = await this._branchNameGenerator.generateBranchName({
+				sessionId,
+				message: prompt,
+				githubToken,
+				branchPrefix: worktreeBranchPrefix,
+				branchNameCollides: async candidate => {
+					if (await this._gitService.branchExists(repositoryRoot, candidate).catch(() => true)) {
+						return true;
+					}
+					const candidateWorktree = URI.joinPath(worktreesRoot, getWorktreeName(candidate, worktreeBranchPrefix));
+					return fileExists(candidateWorktree.fsPath);
+				},
+			});
+			const worktree = URI.joinPath(worktreesRoot, getWorktreeName(branchName, worktreeBranchPrefix));
+			await fs.mkdir(worktreesRoot.fsPath, { recursive: true });
+			await this._gitService.addWorktree(repositoryRoot, worktree, branchName, baseBranch as string);
+			return { branchName, worktree };
+		});
 		const worktreeIncludeFiles = Array.isArray(config[SessionConfigKey.WorktreeIncludeFiles])
 			&& config[SessionConfigKey.WorktreeIncludeFiles].every(pattern => typeof pattern === 'string')
 			? config[SessionConfigKey.WorktreeIncludeFiles] as readonly string[]
@@ -794,4 +798,13 @@ export function worktreeProjectFromRepositoryRoot(repositoryRootRaw: string | un
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+async function fileExists(path: string): Promise<boolean> {
+	try {
+		await fs.access(path);
+		return true;
+	} catch {
+		return false;
+	}
 }
