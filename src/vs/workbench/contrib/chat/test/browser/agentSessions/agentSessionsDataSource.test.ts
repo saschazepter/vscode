@@ -155,8 +155,17 @@ suite('AgentSessionsDataSource', () => {
 					root.classList.add('monaco-workbench', motionReduced ? 'monaco-reduce-motion' : 'monaco-enable-motion');
 					const viewer = mainWindow.document.createElement('div');
 					viewer.classList.add('agent-sessions-viewer');
+					const listRow = mainWindow.document.createElement('div');
+					listRow.classList.add('monaco-list-row');
+					const item = mainWindow.document.createElement('div');
+					item.classList.add('agent-session-item');
+					const iconColumn = mainWindow.document.createElement('div');
+					iconColumn.classList.add('agent-session-icon-col');
 					const container = mainWindow.document.createElement('div');
-					viewer.appendChild(container);
+					iconColumn.appendChild(container);
+					item.appendChild(iconColumn);
+					listRow.appendChild(item);
+					viewer.appendChild(listRow);
 					root.appendChild(viewer);
 					mainWindow.document.body.appendChild(root);
 					store.add(toDisposable(() => root.remove()));

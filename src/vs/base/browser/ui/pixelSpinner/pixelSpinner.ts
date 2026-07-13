@@ -6,7 +6,7 @@
 import { getWindow, h, onDidUnregisterWindow } from '../../dom.js';
 import { synchronizeCSSAnimations } from '../../animationSync.js';
 import { CodeWindow } from '../../window.js';
-import { IDisposable } from '../../../common/lifecycle.js';
+import { IDisposable, markAsSingleton } from '../../../common/lifecycle.js';
 import './pixelSpinner.css';
 
 export interface IPixelSpinnerOptions {
@@ -104,13 +104,13 @@ function getObserverFor(targetWindow: CodeWindow): IntersectionObserver | undefi
 		observersByWindow.set(targetWindow, observer);
 
 		if (!unregisterWindowListener) {
-			unregisterWindowListener = onDidUnregisterWindow(window => {
+			unregisterWindowListener = markAsSingleton(onDidUnregisterWindow(window => {
 				const obs = observersByWindow.get(window);
 				if (obs) {
 					obs.disconnect();
 					observersByWindow.delete(window);
 				}
-			});
+			}));
 		}
 	}
 	return observer;

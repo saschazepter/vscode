@@ -154,18 +154,20 @@
 			line-height: 17px;
 
 			.agent-session-icon {
-				flex: 0 0 var(--vscode-codiconFontSize);
-				width: var(--vscode-codiconFontSize);
-				height: var(--vscode-codiconFontSize);
+				flex: 0 0 var(--vscode-codiconFontSize, 16px);
+				width: var(--vscode-codiconFontSize, 16px);
+				height: var(--vscode-codiconFontSize, 16px);
 				display: flex;
 				align-items: center;
 				justify-content: center;
 
 				> .codicon {
-					font-size: var(--vscode-codiconFontSize-compact);
+					font-size: var(--vscode-codiconFontSize-compact, 12px) !important;
 				}
 
 				> .monaco-pixel-spinner {
+					width: var(--vscode-codiconFontSize, 16px);
+					height: var(--vscode-codiconFontSize, 16px);
 					transform: translateZ(0) scale(0.75);
 					transform-origin: center;
 				}
