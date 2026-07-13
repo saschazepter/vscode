@@ -500,7 +500,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 	readonly onDidCustomizationsChange: Event<void>;
 	/** Per-session active client state for tools + plugin snapshot tracking. */
 	private readonly _activeClients = new ResourceMap<ActiveClient>();
-	private readonly _slashCommandProvier: CopilotSlashCommandProvider;
+	private readonly _slashCommandProvider: CopilotSlashCommandProvider;
 
 	constructor(
 		@ILogService private readonly _logService: ILogService,
@@ -523,7 +523,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		super();
 		this._plugins = this._register(this._instantiationService.createInstance(PluginController));
 		this._sessionLauncher = this._instantiationService.createInstance(CopilotSessionLauncher);
-		this._slashCommandProvier = new CopilotSlashCommandProvider(() => this._ensureClient().then(c => c.rpc.commands.list().then(c => c.commands)), this._logService);
+		this._slashCommandProvider = new CopilotSlashCommandProvider(() => this._ensureClient().then(c => c.rpc.commands.list().then(c => c.commands)), this._logService);
 		this.onDidCustomizationsChange = this._plugins.onDidChange;
 		// Mirror the sub-agent fan-out signals onto the first-class spawned-
 		// chat channel so the orchestrator manages sub-agent chats
@@ -1469,7 +1469,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		if (session) {
 			return session.getRuntimeSlashCommands(options) ?? [];
 		}
-		return this._slashCommandProvier.getSlashCommands();
+		return this._slashCommandProvider.getSlashCommands(options);
 	}
 
 	/**

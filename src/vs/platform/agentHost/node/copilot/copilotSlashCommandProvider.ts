@@ -33,7 +33,7 @@ export class CopilotSlashCommandProvider {
 			const catalog = await this._getRuntimeSlashCommandCatalog(maxWaitMs === undefined ? undefined : Math.max(0, maxWaitMs));
 			return catalog.commands;
 		} catch (err) {
-			this._logService.warn(`[Copilot:Untitled] rpc.commands.list failed`, err);
+			this._logService.warn(`[Copilot] rpc.commands.list failed`, err);
 			return [];
 		}
 	}
