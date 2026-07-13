@@ -166,6 +166,20 @@ suite('IsolationGroupModel', () => {
 		assert.strictEqual(state.isolationMode, 'worktree');
 	});
 
+	test('workspace-mode saved branch does not leak into worktree toggle', () => {
+		const state = createState({
+			folderUri: FOLDER_A,
+			isolationMode: 'workspace',
+			branch: 'stale-head-at-save-time',
+		});
+		const model = new IsolationGroupModel(state);
+		model.onHeadChanged('current-head');
+
+		model.onWorktreeToggled(true);
+		assert.strictEqual(state.branch, 'current-head');
+		assert.notStrictEqual(state.branch, 'stale-head-at-save-time');
+	});
+
 	test('branchPickerEnabled requires worktree mode and workspace', () => {
 		const state = createState({ folderUri: FOLDER_A, isolationMode: 'worktree' });
 		const model = new IsolationGroupModel(state);

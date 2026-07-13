@@ -226,7 +226,7 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 			this.branchTrigger.setAttribute('aria-label', localize('automation.form.branch.pickerAriaLabel', "Pick Branch, {0}", branchName));
 			DOM.append(this.branchTrigger, renderIcon(Codicon.gitBranch));
 			DOM.append(this.branchTrigger, $('span.automation-form-branch-name', undefined, branchName));
-			DOM.append(this.branchTrigger, renderIcon(Codicon.chevronDown));
+			DOM.append(this.branchTrigger, renderIcon(Codicon.chevronDownCompact));
 			const branchPickerEnabled = this.model.branchPickerEnabled;
 			this.branchTrigger.classList.toggle('disabled', !branchPickerEnabled);
 			this.branchTrigger.tabIndex = branchPickerEnabled ? 0 : -1;
@@ -345,6 +345,11 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 			}));
 			this.branchRepoDisposable.value = watcher;
 		})();
+	}
+
+	override dispose(): void {
+		this.branchRequestId++;
+		super.dispose();
 	}
 }
 

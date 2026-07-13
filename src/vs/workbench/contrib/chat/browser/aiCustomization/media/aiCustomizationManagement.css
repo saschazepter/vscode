@@ -2896,6 +2896,7 @@ body:has(.automation-dialog) .monaco-menu-container {
 	display: inline-flex;
 	align-items: center;
 	cursor: pointer;
+	touch-action: manipulation;
 	gap: 4px;
 	height: 16px;
 	padding: 3px 6px;
@@ -2907,9 +2908,13 @@ body:has(.automation-dialog) .monaco-menu-container {
 	border-radius: var(--vscode-cornerRadius-small);
 }
 
-.automation-form-prompt-host .automation-form-isolation-group.sessions-chat-isolation-checkbox .action-label:hover {
+.automation-form-prompt-host .automation-form-isolation-group.sessions-chat-isolation-checkbox .action-label:not(.disabled):hover {
 	background-color: var(--vscode-toolbar-hoverBackground);
 	color: var(--vscode-foreground);
+}
+
+.automation-form-prompt-host .automation-form-isolation-group.sessions-chat-isolation-checkbox .action-label.disabled {
+	cursor: default;
 }
 
 .automation-form-prompt-host .automation-form-isolation-group.sessions-chat-isolation-checkbox .monaco-checkbox {
@@ -2961,6 +2966,7 @@ body:has(.automation-dialog) .monaco-menu-container {
 	align-items: center;
 	gap: 4px;
 	cursor: pointer;
+	touch-action: manipulation;
 	border-radius: var(--vscode-cornerRadius-small);
 	padding: 1px 4px;
 }
@@ -2970,13 +2976,18 @@ body:has(.automation-dialog) .monaco-menu-container {
 	color: var(--vscode-foreground);
 }
 
+.automation-form-prompt-host .automation-form-branch-chip:not(.disabled):focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
 .automation-form-prompt-host .automation-form-branch-chip.disabled {
 	cursor: default;
 	opacity: 0.5;
 }
 
-.automation-form-prompt-host .automation-form-branch-chip > .codicon.codicon-chevron-down {
-	font-size: 10px;
+.automation-form-prompt-host .automation-form-branch-chip > .codicon.codicon-chevron-down-compact {
+	font-size: 12px;
 	margin-left: 2px;
 }
 

@@ -24,7 +24,7 @@ export class IsolationGroupModel {
 		private readonly state: IIsolationFormState,
 	) {
 		this.worktreeRequested = state.isolationMode === 'worktree';
-		this.selectedBranch = state.branch;
+		this.selectedBranch = state.isolationMode === 'worktree' ? state.branch : undefined;
 	}
 
 	onWorktreeToggled(checked: boolean): void {
