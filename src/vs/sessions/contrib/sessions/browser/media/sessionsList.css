@@ -498,6 +498,19 @@
 	display: block;
 }
 
+/* Shortcut sections (e.g. Automations) are non-expandable links — hide
+   the toolbar and chevron even on hover/focus. */
+.monaco-list-row:hover .session-section.session-section-shortcut .session-section-toolbar,
+.monaco-list-row.focused .session-section.session-section-shortcut .session-section-toolbar,
+.monaco-list-row:hover .session-section.session-section-shortcut .session-section-chevron,
+.monaco-list-row.focused .session-section.session-section-shortcut .session-section-chevron {
+	display: none;
+}
+
+.session-section.session-section-shortcut {
+	cursor: pointer;
+}
+
 .monaco-list-row:hover .session-section .session-section-chevron.collapsible,
 .monaco-list-row.focused .session-section .session-section-chevron.collapsible {
 	display: flex;

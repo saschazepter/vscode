@@ -79,6 +79,10 @@ import { ElementsDragAndDropData, ListViewTargetSector } from '../../../../../ba
 import { ISessionsProvidersService } from '../../../../services/sessions/browser/sessionsProvidersService.js';
 import { buildSessionHoverContent } from '../sessionHoverContent.js';
 import { SessionStatusIcon } from '../../../../browser/sessionStatusIcon.js';
+import { automationIcon } from '../../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationIcons.js';
+import { ChatAutomationsEnabledContext } from '../../../../../workbench/contrib/chat/common/automations/automationsEnabled.js';
+import { AICustomizationManagementCommands } from '../../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationManagement.js';
+import { AICustomizationManagementSection } from '../../../../../workbench/contrib/chat/common/aiCustomizationWorkspaceService.js';
 
 const $ = DOM.$;
 
@@ -892,17 +896,19 @@ class SessionSectionRenderer implements ITreeRenderer<SessionListItem, FuzzyScor
 		this.templatesByElement.set(element, template);
 		this.templatesById.set(element.id, template);
 		template.container.classList.remove(SESSION_HEADER_DROP_TARGET_CLASS);
+		template.container.classList.toggle('session-section-shortcut', element.id === AUTOMATIONS_SECTION_ID);
 
 		// Leading icon for the "Pinned" and "Chats" (quick chats) section headers.
 		// Templates are reused across rows, so recompute the icon every render.
 		const sectionIcon = element.id === QUICK_CHATS_SECTION_ID ? Codicon.commentDiscussion
 			: element.id === 'pinned' ? Codicon.pinned
-				: undefined;
+				: element.id === AUTOMATIONS_SECTION_ID ? automationIcon
+					: undefined;
 		template.icon.className = sectionIcon ? `session-section-icon ${ThemeIcon.asClassName(sectionIcon)}` : 'session-section-icon';
 		template.icon.style.display = sectionIcon ? '' : 'none';
 
 		template.label.textContent = element.label;
-		if (this.hideSectionCount) {
+		if (this.hideSectionCount || element.id === AUTOMATIONS_SECTION_ID) {
 			template.count.textContent = '';
 			template.count.style.display = 'none';
 		} else {
@@ -916,6 +922,10 @@ class SessionSectionRenderer implements ITreeRenderer<SessionListItem, FuzzyScor
 		const sectionType = element.id.startsWith('workspace:') ? 'workspace' : element.id;
 		SessionSectionTypeContext.bindTo(template.contextKeyService).set(sectionType);
 		template.toolbar.context = element;
+
+		// The automations row is a flat shortcut — no toolbar or chevron.
+		const isAutomation = element.id === AUTOMATIONS_SECTION_ID;
+		template.chevron.style.display = isAutomation ? 'none' : '';
 	}
 
 	/**
@@ -1180,6 +1190,9 @@ class SessionsAccessibilityProvider {
 			return `${element.group.name}, ${element.sessions.length}`;
 		}
 		if (isSessionSection(element)) {
+			if (element.id === AUTOMATIONS_SECTION_ID) {
+				return element.label;
+			}
 			return `${element.label}, ${element.sessions.length}`;
 		}
 		if (isSessionShowMore(element)) {
@@ -1896,6 +1909,10 @@ export class SessionsList extends Disposable implements ISessionsList {
 			if (isSessionPlaceholder(element)) {
 				return;
 			}
+			if (isSessionSection(element) && element.id === AUTOMATIONS_SECTION_ID) {
+				this.commandService.executeCommand(AICustomizationManagementCommands.OpenEditor, AICustomizationManagementSection.Automations);
+				return;
+			}
 			if (!isSessionSection(element) && !isSessionGroupItem(element)) {
 				this.markRead(element);
 				// A deliberate left mouse click on a session should move keyboard
@@ -2246,6 +2263,17 @@ export class SessionsList extends Disposable implements ISessionsList {
 		};
 
 		const renderSection = (section: ISessionSection): IObjectTreeElement<SessionListItem> => {
+			// The "Automations" section is a non-expandable shortcut row that
+			// opens the automations management editor on click.
+			if (section.id === AUTOMATIONS_SECTION_ID) {
+				return {
+					element: section as SessionListItem,
+					collapsible: false,
+					collapsed: false,
+					children: [],
+				};
+			}
+
 			const isWorkspaceGroup = grouping === SessionsGrouping.Workspace
 				&& section.id.startsWith('workspace:');
 			const limitSessions = isWorkspaceGroup
@@ -2293,6 +2321,11 @@ export class SessionsList extends Disposable implements ISessionsList {
 				children: renderSessionChildren(groupItem.sessions, `group:${groupItem.group.id}`, groupItem.group.name, !this.hasFindPattern && this.workspaceGroupCapped),
 			};
 		};
+
+		// Automations shortcut — always first, gated by the enabled context key.
+		if (this.contextKeyService.getContextKeyValue<boolean>(ChatAutomationsEnabledContext.key)) {
+			children.push(renderSection({ id: AUTOMATIONS_SECTION_ID, label: localize('automations', "Automations"), sessions: [] }));
+		}
 
 		const pinnedSection = sections.find(s => s.id === 'pinned');
 		if (pinnedSection) {
@@ -3206,6 +3239,9 @@ export function computeReorderSortChanges(input: IReorderSortInput): { set: Map<
 
 /** Fixed section id for workspace-less "quick chat" sessions. */
 export const QUICK_CHATS_SECTION_ID = 'quickchats';
+
+/** Fixed section id for the non-expandable "Automations" shortcut row. */
+export const AUTOMATIONS_SECTION_ID = 'automations';
 
 /**
  * Whether a session is a workspace-less "quick chat", per the session's own
