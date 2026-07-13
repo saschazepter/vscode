@@ -922,10 +922,60 @@ export class ChatService extends Disposable implements IChatService {
 				}));
 			}
 
+			// True mid-turn steering for streamed (activeResponseCallback) sessions.
+			// While a streamed turn is in progress the session holds a *synthetic* pending
+			// request (created by trackNewCancellableRequest; it has no `requestId`), so a
+			// message the user sends mid-turn is queued as a Steering message. For
+			// non-server-managed sessions (agent-host queues are drained by the server)
+			// dispatch that steering message to the participant immediately instead of waiting
+			// for the turn to complete, so the provider can inject it into the live server-side
+			// turn (e.g. POST /tasks/{id}/steer). The active stream keeps rendering the result.
+			//
+			// We only dispatch when the in-flight pending request is the synthetic tracker
+			// (`requestId === undefined`) or there is none — never when a *real* request is in
+			// flight (that would dispose it); those steers flush normally on completion.
+			if (!this._isServerManagedQueue(model.sessionResource)) {
+				let dispatchingImmediateSteer = false;
+				const canImmediatelyDispatch = () => {
+					if (!model.getPendingRequests().some(r => r.kind === ChatRequestQueueKind.Steering)) {
+						return false;
+					}
+					const pending = this._pendingRequests.get(model.sessionResource);
+					return !pending || pending.requestId === undefined;
+				};
+				disposables.add(model.onDidChangePendingRequests(() => {
+					if (dispatchingImmediateSteer || !canImmediatelyDispatch()) {
+						return;
+					}
+					dispatchingImmediateSteer = true;
+					// Defer to a microtask: this event fires *during* addPendingRequest, so
+					// dispatching synchronously would re-enter the model mid-mutation.
+					queueMicrotask(() => {
+						dispatchingImmediateSteer = false;
+						if (this._sessionModels.get(model.sessionResource) !== model || !canImmediatelyDispatch()) {
+							return;
+						}
+						// Release the synthetic pending request (if any) so the queue processor
+						// can run, then dispatch. Re-tracking happens on the next progress tick.
+						if (this._pendingRequests.has(model.sessionResource)) {
+							this._pendingRequests.deleteAndDispose(model.sessionResource);
+						}
+						this.processNextPendingRequest(model);
+					});
+				}));
+			}
+
 			// Single autorun that streams progress for whichever request is current.
 			disposables.add(autorun(reader => {
 				const progressArray = providedSession.progressObs?.read(reader) ?? [];
 				const isComplete = providedSession.isCompleteObs?.read(reader) ?? false;
+
+				// Keep the streamed turn tracked as in-progress even if an immediate steer
+				// dispatch briefly cleared the pending request (so `requestInProgress` stays
+				// true and subsequent messages continue to route through steering).
+				if (!isComplete) {
+					ensureCancellationTracking();
+				}
 
 				// Process only new progress items
 				if (lastRequest && progressArray.length > lastProgressLength) {
