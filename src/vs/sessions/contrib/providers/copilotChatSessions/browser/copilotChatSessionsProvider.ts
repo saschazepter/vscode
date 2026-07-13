@@ -10,7 +10,7 @@ import { CancellationError } from '../../../../../base/common/errors.js';
 import { IMarkdownString, MarkdownString, markdownStringEqual } from '../../../../../base/common/htmlContent.js';
 import { Disposable, DisposableStore, IDisposable, DisposableMap, MutableDisposable } from '../../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../../base/common/network.js';
-import { autorun, constObservable, derived, IObservable, IReader, ISettableObservable, ITransaction, observableFromEvent, observableValue, observableValueOpts, transaction } from '../../../../../base/common/observable.js';
+import { autorun, constObservable, derived, derivedOpts, IObservable, IReader, ISettableObservable, ITransaction, observableSignalFromEvent, observableValue, observableValueOpts, transaction } from '../../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
@@ -203,6 +203,22 @@ function dateEquals(a: Date | undefined, b: Date | undefined): boolean {
 
 function markdownStringEquals(a: IMarkdownString | undefined, b: IMarkdownString | undefined): boolean {
 	return a === b || !!a && !!b && markdownStringEqual(a, b);
+}
+
+/**
+ * Structural equality for a group's chat list keyed on each chat's resource.
+ * `_toChat` returns a fresh wrapper on every recompute, so identity comparison
+ * would always differ; comparing resources lets a group-membership recompute
+ * that produced the same set of chats avoid propagating downstream.
+ */
+function chatArraysEqualByResource(a: readonly IChat[] | undefined, b: readonly IChat[] | undefined): boolean {
+	if (a === b) {
+		return true;
+	}
+	if (!a || !b || a.length !== b.length) {
+		return false;
+	}
+	return a.every((chat, i) => chat.resource.toString() === b[i].resource.toString());
 }
 
 /**
@@ -1452,6 +1468,15 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	 * used to update the chats observable in `_chatToSession`.
 	 */
 	private readonly _onDidGroupMembershipChange = this._register(new Emitter<{ sessionId: string }>());
+
+	/**
+	 * A single shared signal that ticks on every group membership change. Session
+	 * chat observables read this instead of each subscribing to
+	 * `_onDidGroupMembershipChange` with a per-session filter, so the number of
+	 * listeners on the emitter stays constant rather than growing with the number
+	 * of sessions (which previously leaked listeners as sessions accumulated).
+	 */
+	private readonly _onDidGroupMembershipChangeSignal = observableSignalFromEvent(this, this._onDidGroupMembershipChange.event);
 
 	private readonly _multiChatEnabled: boolean;
 
@@ -2995,27 +3020,33 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		// reflects the real backend resource without rebuilding the cached wrapper.
 		const mainChat = primaryChat.mainChat;
 
-		const groupChatsObs = observableFromEvent<readonly IChat[] | undefined>(
-			this,
-			Event.filter(this._onDidGroupMembershipChange.event, e => e.sessionId === sessionId),
-			() => {
-				const chatIds = this._getChatIdsInGroup(sessionId);
-				if (chatIds.length === 0) {
-					return undefined;
+		const groupChatsObs = derivedOpts<readonly IChat[] | undefined>({
+			owner: this,
+			equalsFn: chatArraysEqualByResource,
+		}, reader => {
+			// Recompute the group's chats whenever any group membership changes.
+			// Reading the single shared signal (rather than a per-session filtered
+			// event) keeps the listener count on `_onDidGroupMembershipChange`
+			// constant regardless of how many sessions exist; the `equalsFn` then
+			// stops sessions whose membership didn't actually change from
+			// propagating downstream.
+			this._onDidGroupMembershipChangeSignal.read(reader);
+			const chatIds = this._getChatIdsInGroup(sessionId);
+			if (chatIds.length === 0) {
+				return undefined;
+			}
+			const resolved: ICopilotChatSession[] = [];
+			for (const id of chatIds) {
+				const c = this._sessionCache.get(this._localIdFromchatId(id));
+				if (c) {
+					resolved.push(c);
 				}
-				const resolved: ICopilotChatSession[] = [];
-				for (const id of chatIds) {
-					const c = this._sessionCache.get(this._localIdFromchatId(id));
-					if (c) {
-						resolved.push(c);
-					}
-				}
-				if (resolved.length === 0) {
-					return undefined;
-				}
-				return resolved.map(c => this._toChat(c));
-			},
-		);
+			}
+			if (resolved.length === 0) {
+				return undefined;
+			}
+			return resolved.map(c => this._toChat(c));
+		});
 
 		// When the group has no resolved chats (typical for a new session before
 		// commit), fall back to the settable `mainChat` so it stays in sync after
