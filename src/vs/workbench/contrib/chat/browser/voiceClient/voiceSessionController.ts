@@ -330,6 +330,17 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private static readonly _CONFIRMATION_FLUSH_DELAY_MS = 1500;
 
 	/**
+	 * Response analog of {@link _confirmationFlushWatchdogs}. When a reply
+	 * completes on the session that is currently on screen, the on-focus
+	 * re-narration path won't re-fire (no future focus event) and, on a fast
+	 * switch, may have already run before the unheard marker existed. A one-shot
+	 * watchdog re-checks shortly after: if the marker still survives (the backend
+	 * dropped the narration rather than a live one clearing it), it re-narrates.
+	 */
+	private readonly _responseRenarrateWatchdogs = new Map<string, ReturnType<typeof setTimeout>>();
+	private static readonly _RESPONSE_RENARRATE_WATCHDOG_MS = 1500;
+
+	/**
 	 * Latest state change per session, buffered and flushed once after a short
 	 * settle window (see {@link _emitPendingStateChanges}) so a rapid
 	 * ``thinking <-> idle`` replay storm coalesces into a single net emission
@@ -1273,9 +1284,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			}
 			// The backend is narrating this session's reply now (live or deferred),
 			// so it's no longer an unheard background completion awaiting on-focus
-			// re-narration. Clear the marker so we don't read it twice.
-			if (codingSessionId && e.isFirstChunk) {
-				this._unheardResponseSessions.delete(codingSessionId);
+			// re-narration. Clear the marker so we don't read it twice. Untagged
+			// audio that plays live belongs to the active session, so attribute it
+			// there — otherwise a live-narrated reply on the active session keeps
+			// its marker and gets re-narrated a second time on focus / by the
+			// watchdog.
+			if (e.isFirstChunk) {
+				const heardId = codingSessionId ?? (defer ? undefined : this._getActiveSessionId());
+				if (heardId) {
+					this._unheardResponseSessions.delete(heardId);
+				}
 			}
 			if (defer) {
 				this._deferResponse(codingSessionId!, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
@@ -1471,6 +1489,8 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._userCancelledSessions.clear();
 		for (const t of this._confirmationFlushWatchdogs.values()) { clearTimeout(t); }
 		this._confirmationFlushWatchdogs.clear();
+		for (const t of this._responseRenarrateWatchdogs.values()) { clearTimeout(t); }
+		this._responseRenarrateWatchdogs.clear();
 		if (this._stateChangeEmitTimer) { clearTimeout(this._stateChangeEmitTimer); this._stateChangeEmitTimer = undefined; }
 		this._pendingStateChanges.clear();
 		this._confirmationNarrationPending = undefined;
@@ -3172,14 +3192,24 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this._sendContext();
 			return;
 		}
-		// Track background completions so an unheard reply can be re-narrated on
-		// focus (see _unheardResponseSessions). A completion for the session the
-		// user is currently viewing narrates live, so it is never marked.
+		// Track completions so an unheard reply can be re-narrated. Mark EVERY
+		// idle+summary completion as a candidate unheard reply — including the
+		// session currently on screen. The marker is cleared the instant the
+		// reply's audio is actually heard (see onAudioResponse), so a reply that
+		// narrates live is never re-read; only a reply whose narration the
+		// backend dropped survives. Keying the decision on "shown at emit time"
+		// was racy: on a fast switch the just-completed background session can
+		// already be the shown one by the time this debounced emit runs, which
+		// wrongly suppressed the marker and left the reply silently unheard.
 		const shownNow = this._shownSessionId();
 		for (const { change } of netChanges) {
 			if (change.currentState === 'idle' && change.lastResponseSummary) {
-				if (change.sessionId !== shownNow) {
-					this._unheardResponseSessions.add(change.sessionId);
+				this._unheardResponseSessions.add(change.sessionId);
+				// If the completed session is the one on screen, no future focus
+				// event will drive the on-focus re-narration, so arm a one-shot
+				// watchdog that re-narrates iff the reply is still unheard.
+				if (change.sessionId === shownNow) {
+					this._armResponseRenarrateWatchdog(change.sessionId);
 				}
 			} else if (change.currentState === 'thinking' || change.currentState === 'waiting_for_confirmation') {
 				// A new turn or confirmation supersedes any pending unheard reply.
@@ -3248,6 +3278,50 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this.voiceClientService.flushSessionContext();
 		}, VoiceSessionController._CONFIRMATION_FLUSH_DELAY_MS);
 		this._confirmationFlushWatchdogs.set(sessionId, timer);
+	}
+
+	/**
+	 * Re-narrate a reply that completed on the on-screen session if its narration
+	 * was dropped. Response analog of {@link _armConfirmationFlushWatchdog}.
+	 *
+	 * The on-focus re-narration in {@link _activateShownSession} only fires on a
+	 * focus event, so a reply that completes on the already-shown session (or on
+	 * a session focused a beat before its unheard marker was set, in a fast
+	 * switch) is never re-checked. This one-shot watchdog does that: after a short
+	 * delay it re-narrates iff the reply is still genuinely unheard — its marker
+	 * survived (a live narration would have cleared it), the session is still the
+	 * active, idle one, and nothing is buffered for it.
+	 */
+	private _armResponseRenarrateWatchdog(sessionId: string): void {
+		// Exactly one delayed re-check per completion; don't refresh the timer.
+		if (this._responseRenarrateWatchdogs.has(sessionId)) {
+			return;
+		}
+		this.logService.trace(`[voice] arming response re-narrate watchdog id=${sessionId.slice(-32)}`);
+		const timer = setTimeout(() => {
+			this._responseRenarrateWatchdogs.delete(sessionId);
+			// Marker cleared -> the reply's audio was heard; nothing to do.
+			if (!this._unheardResponseSessions.has(sessionId)) {
+				return;
+			}
+			// A buffered reply is flushed on focus instead; don't double-read.
+			if (this._deferredResponses.has(sessionId)) {
+				return;
+			}
+			// The two-phase only narrates the active session (is_active), and only
+			// while it is still idle with a reply — bail otherwise.
+			if (this._getActiveSessionId() !== sessionId) {
+				return;
+			}
+			const model = this.chatService.getSession(URI.parse(sessionId));
+			if (!model || this._getAgentStateInfo(model).state !== 'idle') {
+				return;
+			}
+			this.logService.trace(`[voice] response re-narrate watchdog firing id=${sessionId.slice(-32)}`);
+			this._unheardResponseSessions.delete(sessionId);
+			this._narrateResponseViaTwoPhase(sessionId, URI.parse(sessionId));
+		}, VoiceSessionController._RESPONSE_RENARRATE_WATCHDOG_MS);
+		this._responseRenarrateWatchdogs.set(sessionId, timer);
 	}
 
 	/**
@@ -3643,6 +3717,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		for (const id of this._unheardResponseSessions) {
 			if (!liveSessionIds.has(id)) {
 				this._unheardResponseSessions.delete(id);
+			}
+		}
+		for (const [id, timer] of this._responseRenarrateWatchdogs) {
+			if (!liveSessionIds.has(id)) {
+				clearTimeout(timer);
+				this._responseRenarrateWatchdogs.delete(id);
 			}
 		}
 	}
