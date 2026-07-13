@@ -214,7 +214,7 @@ export class SuggestWidget implements IDisposable {
 
 		const details = this._disposables.add(instantiationService.createInstance(SuggestDetailsWidget, this.editor));
 		details.onDidClose(() => this.toggleDetails(), this, this._disposables);
-		this._details = new SuggestDetailsOverlay(details, this.editor, this.element.domNode);
+		this._details = new SuggestDetailsOverlay(details, this.editor);
 
 		const applyIconStyle = () => this.element.domNode.classList.toggle('no-icons', !this.editor.getOption(EditorOption.suggest).showIcons);
 		applyIconStyle();

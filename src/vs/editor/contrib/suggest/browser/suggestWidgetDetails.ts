@@ -19,11 +19,6 @@ import { IMarkdownRendererService } from '../../../../platform/markdown/browser/
 import { EditorOption } from '../../../common/config/editorOptions.js';
 import { CompletionItem } from './suggest.js';
 
-const detailsPlacementClasses = ['details-east', 'details-west', 'details-south', 'details-north'] as const;
-type DetailsPlacementClass = typeof detailsPlacementClasses[number];
-const detailsAlignmentClasses = ['details-align-top', 'details-align-bottom'] as const;
-type DetailsAlignmentClass = typeof detailsAlignmentClasses[number];
-
 export function canExpandCompletionItem(item: CompletionItem | undefined): boolean {
 	return !!item && Boolean(item.completion.documentation || item.completion.detail && item.completion.detail !== item.completion.label);
 }
@@ -281,13 +276,10 @@ export class SuggestDetailsOverlay implements IOverlayWidget {
 	private _preferAlignAtTop: boolean = true;
 	private _userSize?: dom.Dimension;
 	private _topLeft?: TopLeftPosition;
-	private _placement?: DetailsPlacementClass;
-	private _alignment?: DetailsAlignmentClass;
 
 	constructor(
 		readonly widget: SuggestDetailsWidget,
 		private readonly _editor: ICodeEditor,
-		private readonly _suggestWidgetDomNode: HTMLElement,
 	) {
 
 		this._resizable = new ResizableHTMLElement();
@@ -367,7 +359,6 @@ export class SuggestDetailsOverlay implements IOverlayWidget {
 
 	hide(sessionEnded: boolean = false): void {
 		this._resizable.clearSashHoverState();
-		this._setPlacement(undefined);
 
 		if (this._added) {
 			this._editor.removeOverlayWidget(this);
@@ -396,7 +387,7 @@ export class SuggestDetailsOverlay implements IOverlayWidget {
 		const defaultMinSize = new dom.Dimension(220, 2 * info.lineHeight);
 		const defaultTop = anchorBox.top;
 
-		type Placement = { className: DetailsPlacementClass; top: number; left: number; fit: number; maxSizeTop: dom.Dimension; maxSizeBottom: dom.Dimension; minSize: dom.Dimension };
+		type Placement = { top: number; left: number; fit: number; maxSizeTop: dom.Dimension; maxSizeBottom: dom.Dimension; minSize: dom.Dimension };
 
 		// EAST
 		const eastPlacement: Placement = (function () {
@@ -404,7 +395,7 @@ export class SuggestDetailsOverlay implements IOverlayWidget {
 			const left = -info.borderWidth + anchorBox.left + anchorBox.width;
 			const maxSizeTop = new dom.Dimension(width, bodyBox.height - anchorBox.top - info.borderHeight - info.verticalPadding);
 			const maxSizeBottom = maxSizeTop.with(undefined, anchorBox.top + anchorBox.height - info.borderHeight - info.verticalPadding);
-			return { className: 'details-east', top: defaultTop, left, fit: width - size.width, maxSizeTop, maxSizeBottom, minSize: defaultMinSize.with(Math.min(width, defaultMinSize.width)) };
+			return { top: defaultTop, left, fit: width - size.width, maxSizeTop, maxSizeBottom, minSize: defaultMinSize.with(Math.min(width, defaultMinSize.width)) };
 		})();
 
 		// WEST
@@ -413,7 +404,7 @@ export class SuggestDetailsOverlay implements IOverlayWidget {
 			const left = Math.max(info.horizontalPadding, anchorBox.left - size.width - info.borderWidth);
 			const maxSizeTop = new dom.Dimension(width, bodyBox.height - anchorBox.top - info.borderHeight - info.verticalPadding);
 			const maxSizeBottom = maxSizeTop.with(undefined, anchorBox.top + anchorBox.height - info.borderHeight - info.verticalPadding);
-			return { className: 'details-west', top: defaultTop, left, fit: width - size.width, maxSizeTop, maxSizeBottom, minSize: defaultMinSize.with(Math.min(width, defaultMinSize.width)) };
+			return { top: defaultTop, left, fit: width - size.width, maxSizeTop, maxSizeBottom, minSize: defaultMinSize.with(Math.min(width, defaultMinSize.width)) };
 		})();
 
 		// SOUTH
@@ -421,7 +412,7 @@ export class SuggestDetailsOverlay implements IOverlayWidget {
 			const left = anchorBox.left;
 			const top = -info.borderWidth + anchorBox.top + anchorBox.height;
 			const maxSizeBottom = new dom.Dimension(anchorBox.width - info.borderHeight, bodyBox.height - anchorBox.top - anchorBox.height - info.verticalPadding);
-			return { className: 'details-south', top, left, fit: maxSizeBottom.height - size.height, maxSizeBottom, maxSizeTop: maxSizeBottom, minSize: defaultMinSize.with(maxSizeBottom.width) };
+			return { top, left, fit: maxSizeBottom.height - size.height, maxSizeBottom, maxSizeTop: maxSizeBottom, minSize: defaultMinSize.with(maxSizeBottom.width) };
 		})();
 
 		// NORTH
@@ -429,7 +420,7 @@ export class SuggestDetailsOverlay implements IOverlayWidget {
 			const left = anchorBox.left;
 			const maxSizeTop = new dom.Dimension(anchorBox.width - info.borderHeight, anchorBox.top - info.verticalPadding);
 			const top = Math.max(info.verticalPadding, anchorBox.top - size.height);
-			return { className: 'details-north', top, left, fit: maxSizeTop.height - size.height, maxSizeTop, maxSizeBottom: maxSizeTop, minSize: defaultMinSize.with(maxSizeTop.width) };
+			return { top, left, fit: maxSizeTop.height - size.height, maxSizeTop, maxSizeBottom: maxSizeTop, minSize: defaultMinSize.with(maxSizeTop.width) };
 		})();
 
 		// take first placement that fits or the first with "least bad" fit
@@ -463,8 +454,6 @@ export class SuggestDetailsOverlay implements IOverlayWidget {
 				maxSize = placement.maxSizeTop;
 			}
 		}
-		this._setPlacement(placement.className, alignAtTop ? 'details-align-top' : 'details-align-bottom');
-
 		let { top, left } = placement;
 		if (placement === northPlacement) {
 			// For NORTH placement, position the details above the anchor
@@ -500,23 +489,5 @@ export class SuggestDetailsOverlay implements IOverlayWidget {
 	private _applyTopLeft(topLeft: TopLeftPosition): void {
 		this._topLeft = topLeft;
 		this._editor.layoutOverlayWidget(this);
-	}
-
-	private _setPlacement(placement: DetailsPlacementClass | undefined, alignment?: DetailsAlignmentClass): void {
-		if (this._placement === placement && this._alignment === alignment) {
-			return;
-		}
-		this._placement = placement;
-		this._alignment = alignment;
-		for (const element of [this.widget.domNode, this._suggestWidgetDomNode]) {
-			element.classList.remove(...detailsPlacementClasses);
-			element.classList.remove(...detailsAlignmentClasses);
-			if (placement) {
-				element.classList.add(placement);
-			}
-			if (alignment) {
-				element.classList.add(alignment);
-			}
-		}
 	}
 }
