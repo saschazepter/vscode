@@ -15,7 +15,7 @@ import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { localize } from '../../../../../nls.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
-import type { IAutomation, IAutomationRun } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
+import type { IAutomation, IAutomationRun, AutomationRunStatus, AutomationRunTrigger } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
 import { IAutomationService } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { IAutomationRunner } from '../../../../../workbench/contrib/chat/common/automations/automationRunner.js';
 import { IAutomationDialogService } from '../../../../../workbench/contrib/chat/common/automations/automationDialogService.js';
@@ -24,6 +24,7 @@ import { basename } from '../../../../../base/common/resources.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { status } from '../../../../../base/browser/ui/aria/aria.js';
+import { fromNow, getDurationString } from '../../../../../base/common/date.js';
 import { AbstractChatView, ChatViewKind } from '../../../../browser/parts/chatView.js';
 
 const $ = DOM.$;
@@ -39,8 +40,10 @@ export class AutomationsCardsWidget extends Disposable {
 
 	private readonly cardsContainer: HTMLElement;
 	private readonly emptyContainer: HTMLElement;
+	private readonly historyContainer: HTMLElement;
 	private readonly headerEl: HTMLElement;
 	private readonly cardDisposables = this._register(new DisposableStore());
+	private readonly historyDisposables = this._register(new DisposableStore());
 
 	constructor(
 		@IAutomationService private readonly automationService: IAutomationService,
@@ -59,11 +62,13 @@ export class AutomationsCardsWidget extends Disposable {
 		this.cardsContainer = DOM.append(this.element, $('.automations-cards-grid'));
 		this.emptyContainer = DOM.append(this.element, $('.automations-cards-empty'));
 		this.emptyContainer.style.display = 'none';
+		this.historyContainer = DOM.append(this.element, $('.automations-history'));
 
 		this._register(autorun(reader => {
 			const items = this.automationService.automations.read(reader);
-			this.automationService.runs.read(reader);
+			const allRuns = this.automationService.runs.read(reader);
 			this.renderCards(items);
+			this.renderHistory(allRuns, items);
 		}));
 	}
 
@@ -257,11 +262,162 @@ export class AutomationsCardsWidget extends Disposable {
 		}
 	}
 
+	private renderHistory(runs: readonly IAutomationRun[], automations: readonly IAutomation[]): void {
+		this.historyDisposables.clear();
+		DOM.clearNode(this.historyContainer);
+
+		if (runs.length === 0) {
+			this.historyContainer.style.display = 'none';
+			return;
+		}
+
+		this.historyContainer.style.display = '';
+
+		const headerEl = DOM.append(this.historyContainer, $('.automations-history-header'));
+		headerEl.textContent = localize('historyHeader', "History");
+
+		const automationMap = new Map(automations.map(a => [a.id, a]));
+		const groups = this.groupRunsByDate(runs);
+
+		for (const group of groups) {
+			const groupEl = DOM.append(this.historyContainer, $('.automations-history-group'));
+			const groupHeader = DOM.append(groupEl, $('.automations-history-group-header'));
+			groupHeader.textContent = group.label;
+
+			for (const run of group.runs) {
+				this.renderRunRow(groupEl, run, automationMap);
+			}
+		}
+	}
+
+	private renderRunRow(parent: HTMLElement, run: IAutomationRun, automationMap: Map<string, IAutomation>): void {
+		const row = DOM.append(parent, $('.automations-history-row'));
+
+		const statusInfo = runStatusIcon(run.status);
+		const iconEl = DOM.append(row, $('span.automations-history-status-icon.codicon'));
+		iconEl.classList.add(`codicon-${statusInfo.iconId}`);
+		if (statusInfo.spin) {
+			iconEl.classList.add('codicon-modifier-spin');
+		}
+
+		const nameEl = DOM.append(row, $('.automations-history-name'));
+		const automation = automationMap.get(run.automationId);
+		nameEl.textContent = automation?.name ?? localize('unknownAutomation', "Unknown");
+
+		const metaEl = DOM.append(row, $('.automations-history-meta'));
+
+		const triggerEl = DOM.append(metaEl, $('span'));
+		triggerEl.textContent = runTriggerLabel(run.trigger);
+
+		DOM.append(metaEl, $('.meta-sep')).textContent = '\u00B7';
+
+		const timeEl = DOM.append(metaEl, $('span'));
+		const t = Date.parse(run.startedAt);
+		timeEl.textContent = Number.isNaN(t) ? run.startedAt : fromNow(new Date(t), true);
+
+		const duration = formatRunDuration(run);
+		if (duration) {
+			DOM.append(metaEl, $('.meta-sep')).textContent = '\u00B7';
+			const durEl = DOM.append(metaEl, $('span'));
+			durEl.textContent = duration;
+		}
+
+		const statusLabel = runStatusLabel(run.status);
+		this.historyDisposables.add(
+			this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), row, statusLabel)
+		);
+	}
+
+	private groupRunsByDate(runs: readonly IAutomationRun[]): { label: string; runs: IAutomationRun[] }[] {
+		const now = new Date();
+		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const yesterday = new Date(today.getTime() - 86400000);
+		const lastWeekStart = new Date(today.getTime() - 7 * 86400000);
+
+		const groups: Map<string, { label: string; order: number; runs: IAutomationRun[] }> = new Map();
+
+		for (const run of runs) {
+			const t = Date.parse(run.startedAt);
+			if (Number.isNaN(t)) {
+				continue;
+			}
+			const date = new Date(t);
+			const { label, order } = this.getDateBucket(date, today, yesterday, lastWeekStart);
+
+			let group = groups.get(label);
+			if (!group) {
+				group = { label, order, runs: [] };
+				groups.set(label, group);
+			}
+			group.runs.push(run);
+		}
+
+		return [...groups.values()].sort((a, b) => a.order - b.order);
+	}
+
+	private getDateBucket(date: Date, today: Date, yesterday: Date, lastWeekStart: Date): { label: string; order: number } {
+		if (date >= today) {
+			return { label: localize('today', "Today"), order: 0 };
+		}
+		if (date >= yesterday) {
+			return { label: localize('yesterday', "Yesterday"), order: 1 };
+		}
+		if (date >= lastWeekStart) {
+			return { label: localize('lastWeek', "Last week"), order: 2 };
+		}
+		// Group by month name
+		const monthLabel = date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+		const order = 100 - (date.getFullYear() * 12 + date.getMonth());
+		return { label: monthLabel, order };
+	}
+
 	layout(width: number, height: number): void {
 		this.element.style.width = `${width}px`;
 		this.element.style.height = `${height}px`;
 	}
 }
+
+//#region Run history helpers
+
+function runStatusIcon(status: AutomationRunStatus): { iconId: string; spin: boolean } {
+	switch (status) {
+		case 'pending': return { iconId: 'circle-outline', spin: false };
+		case 'running': return { iconId: 'sync', spin: true };
+		case 'completed': return { iconId: 'check', spin: false };
+		case 'failed': return { iconId: 'error', spin: false };
+	}
+}
+
+function runStatusLabel(status: AutomationRunStatus): string {
+	switch (status) {
+		case 'pending': return localize('runPending', "Pending");
+		case 'running': return localize('runRunning', "Running");
+		case 'completed': return localize('runCompleted', "Completed");
+		case 'failed': return localize('runFailed', "Failed");
+	}
+}
+
+function runTriggerLabel(trigger: AutomationRunTrigger): string {
+	switch (trigger) {
+		case 'schedule': return localize('triggerSchedule', "Scheduled");
+		case 'manual': return localize('triggerManual', "Manual");
+		case 'catch_up': return localize('triggerCatchUp', "Catch-up");
+	}
+}
+
+function formatRunDuration(run: IAutomationRun): string | undefined {
+	if (!run.completedAt) {
+		return undefined;
+	}
+	const startMs = Date.parse(run.startedAt);
+	const endMs = Date.parse(run.completedAt);
+	if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
+		return undefined;
+	}
+	return getDurationString(Math.max(0, endMs - startMs));
+}
+
+//#endregion
 
 //#region AutomationsView
 

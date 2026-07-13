@@ -15,7 +15,8 @@
 /* Centered content band */
 .automations-cards-header,
 .automations-cards-grid,
-.automations-cards-empty {
+.automations-cards-empty,
+.automations-history {
 	width: 100%;
 	max-width: 900px;
 }
@@ -239,4 +240,85 @@
 .automations-cards-create-button .monaco-button {
 	padding: 6px 16px;
 	font-size: 12px;
+}
+
+/* Run History */
+.automations-history {
+	margin-top: 32px;
+}
+
+.automations-history-header {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--vscode-foreground);
+	margin-bottom: 12px;
+}
+
+.automations-history-group {
+	margin-bottom: 16px;
+}
+
+.automations-history-group-header {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--vscode-descriptionForeground);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	margin-bottom: 6px;
+	padding-bottom: 4px;
+	border-bottom: 1px solid var(--vscode-widget-border);
+}
+
+.automations-history-row {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 8px;
+	border-radius: 4px;
+}
+
+.automations-history-row:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.automations-history-status-icon {
+	flex: 0 0 16px;
+	font-size: 14px;
+	text-align: center;
+}
+
+.automations-history-status-icon.codicon-check {
+	color: var(--vscode-testing-iconPassed);
+}
+
+.automations-history-status-icon.codicon-error {
+	color: var(--vscode-errorForeground);
+}
+
+.automations-history-status-icon.codicon-sync {
+	color: var(--vscode-progressBar-background);
+}
+
+.automations-history-name {
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--vscode-foreground);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 200px;
+}
+
+.automations-history-meta {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+}
+
+.automations-history-meta .meta-sep {
+	opacity: 0.6;
 }
