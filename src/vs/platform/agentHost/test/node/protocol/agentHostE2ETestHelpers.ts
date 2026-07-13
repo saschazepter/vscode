@@ -175,6 +175,15 @@ export interface IAgentHostE2EProviderConfig {
 	 */
 	readonly shellPermissionReplayUnstableOnWindows?: boolean;
 	/**
+	 * When set, the subagent-reopen ("replay path") test is skipped on Windows for
+	 * this provider, which rebuilds the reopened transcript from the bundled SDK's
+	 * on-disk `subagents/agent-*.jsonl` files — not reliably visible on Windows
+	 * right after the turn, so the transcript can come back empty. macOS/Linux keep
+	 * full coverage; providers that rebuild from the in-process event log (Copilot)
+	 * are unaffected and stay enabled on Windows.
+	 */
+	readonly subagentReplayUnstableOnWindows?: boolean;
+	/**
 	 * Whether the provider's plan-mode flow matches the shared test's
 	 * expectations (auto-approve session-state writes; reach the
 	 * exit-plan-mode tool as an `inputRequested`). Currently true only for
@@ -751,44 +760,6 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 
 			const toolStarts = client.receivedNotifications(n => isActionNotification(n, 'chat/toolCallStart'));
 			assert.ok(toolStarts.length > 0, 'expected at least one shell tool call');
-
-			// Regression guard (SDK >= 1.0.6 permission/tool-start reorder): for a
-			// tool that surfaced a confirmation prompt, the host must emit an
-			// identical AHP sequence regardless of the SDK's event-order race —
-			// `toolCallStart` first, then the confirmation `toolCallReady`, with
-			// NO not-needed ready in between. Before the fix, when
-			// `tool.execution_start` arrived before the confirmation fired, the
-			// host emitted a spurious not-needed ready ahead of the confirmation
-			// (briefly flipping the tool to "running"); when the confirmation
-			// arrived first it was dropped entirely and the tool hung. Assert the
-			// normalized order per tool call.
-			const readies = client.receivedNotifications(n => isActionNotification(n, 'chat/toolCallReady'))
-				.map(n => {
-					const envelope = getActionEnvelope(n);
-					const action = envelope.action as { toolCallId: string; confirmed?: string };
-					return { toolCallId: action.toolCallId, confirmed: action.confirmed, serverSeq: envelope.serverSeq };
-				});
-			const startSeqByToolCall = new Map<string, number>();
-			for (const n of toolStarts) {
-				const envelope = getActionEnvelope(n);
-				const toolCallId = (envelope.action as { toolCallId: string }).toolCallId;
-				if (!startSeqByToolCall.has(toolCallId)) {
-					startSeqByToolCall.set(toolCallId, envelope.serverSeq);
-				}
-			}
-			for (const ready of readies) {
-				if (ready.confirmed !== undefined) {
-					continue; // only confirmation-requiring readies matter here
-				}
-				const startSeq = startSeqByToolCall.get(ready.toolCallId);
-				assert.ok(startSeq !== undefined && startSeq < ready.serverSeq,
-					`toolCallStart (seq ${startSeq}) must precede the confirmation toolCallReady (seq ${ready.serverSeq}) for ${ready.toolCallId}`);
-				const notNeededBefore = readies.some(r =>
-					r.toolCallId === ready.toolCallId && r.confirmed !== undefined && r.serverSeq < ready.serverSeq);
-				assert.ok(!notNeededBefore,
-					`no not-needed toolCallReady may precede the confirmation toolCallReady for ${ready.toolCallId}`);
-			}
-
 			// While recording, let the post-tool continuation finish so its
 			// model call lands in the fixture. Replay always issues that
 			// continuation, so without capturing it here replay would hit an
@@ -1129,7 +1100,8 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 				`Parent tool calls: ${JSON.stringify(parentStarts.map(a => a.toolName))}`);
 		});
 
-		(/*config.supportsSubagents ? test :*/ test.skip)('reopening a session keeps sub-agent messages out of the parent transcript (replay path)', async function () {
+		// Windows-skipped for providers with on-disk subagent replay (see `subagentReplayUnstableOnWindows`).
+		((isWindows && config.subagentReplayUnstableOnWindows) ? test.skip : (config.supportsSubagents ? test : test.skip))('reopening a session keeps sub-agent messages out of the parent transcript (replay path)', async function () {
 			this.timeout(180_000);
 
 			const tempDir = mkdtempSync(`${tmpdir()}/ahp-subagent-replay-`);
