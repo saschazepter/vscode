@@ -528,11 +528,11 @@ configurationRegistry.registerConfiguration({
 				},
 				approvals: {
 					type: 'string',
-					enum: [ChatPermissionLevel.Default, ChatPermissionLevel.AutoApprove, ChatPermissionLevel.Assisted],
+					enum: [ChatPermissionLevel.Default, ChatPermissionLevel.Assisted, ChatPermissionLevel.AutoApprove],
 					enumDescriptions: [
-						nls.localize('chat.defaultConfiguration.approvals.default', "Default Approvals — Copilot uses your configured settings."),
-						nls.localize('chat.defaultConfiguration.approvals.autoApprove', "Bypass Approvals — all tool calls are approved automatically."),
-						nls.localize('chat.defaultConfiguration.approvals.assisted', "Auto-permissions — delegate approval decisions to the model."),
+						nls.localize('chat.defaultConfiguration.approvals.default', "Default Approvals — asks when approval settings don't apply."),
+						nls.localize('chat.defaultConfiguration.approvals.assisted', "Auto Approvals — evaluates risk before running tools."),
+						nls.localize('chat.defaultConfiguration.approvals.autoApprove', "Bypass Approvals — runs tool calls without asking."),
 					],
 					default: ChatPermissionLevel.Default,
 					description: nls.localize('chat.defaultConfiguration.approvals.description', "The starting approval behavior for new agent sessions. If enterprise policy disables auto approval, new sessions use Default Approvals."),

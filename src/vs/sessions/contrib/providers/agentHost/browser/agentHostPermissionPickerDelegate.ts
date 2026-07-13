@@ -77,8 +77,8 @@ export class AgentHostPermissionPickerDelegate extends Disposable implements IPe
 		const values = schema?.type === 'string' && Array.isArray(schema.enum) ? schema.enum : [];
 		return [
 			ChatPermissionLevel.Default,
-			ChatPermissionLevel.AutoApprove,
 			ChatPermissionLevel.Assisted,
+			ChatPermissionLevel.AutoApprove,
 		].filter(level => values.includes(level));
 	}
 

@@ -23,7 +23,7 @@ import { ISessionsService } from '../../../../../../services/sessions/browser/se
 const PROVIDER_ID = 'local-agent-host';
 const SESSION_ID = 'local-agent-host:s1';
 
-function makeWellKnownConfig(value: string | undefined, levels: readonly string[] = ['default', 'autoApprove', 'assisted']): ResolveSessionConfigResult {
+function makeWellKnownConfig(value: string | undefined, levels: readonly string[] = ['default', 'assisted', 'autoApprove']): ResolveSessionConfigResult {
 	return {
 		schema: {
 			type: 'object',
@@ -157,18 +157,27 @@ suite('AgentHostPermissionPickerDelegate', () => {
 		]);
 	});
 
-	test('offers Auto-permissions after Bypass Approvals', () => {
+	test('offers Default, Auto, and Bypass Approvals in order', () => {
 		const { delegate } = setup(store, makeActiveSession(), 'assisted');
 
 		assert.deepStrictEqual({
 			current: delegate.currentPermissionLevel.get(),
+			metadata: delegate.availableLevels.map(level => {
+				const { label, detail } = getPermissionLevelMeta(level);
+				return { label, detail };
+			}),
 			available: delegate.availableLevels,
 		}, {
 			current: ChatPermissionLevel.Assisted,
+			metadata: [
+				{ label: 'Default Approvals', detail: 'Asks when approval settings don\'t apply' },
+				{ label: 'Auto Approvals', detail: 'Evaluates risk before running tools' },
+				{ label: 'Bypass Approvals', detail: 'Runs tool calls without asking' },
+			],
 			available: [
 				ChatPermissionLevel.Default,
-				ChatPermissionLevel.AutoApprove,
 				ChatPermissionLevel.Assisted,
+				ChatPermissionLevel.AutoApprove,
 			],
 		});
 
@@ -211,7 +220,7 @@ suite('AgentHostPermissionPickerDelegate', () => {
 		);
 	});
 
-	test('provides agent-host-specific hover copy for Auto-permissions', () => {
+	test('provides agent-host-specific hover copy for Auto Approvals', () => {
 		const { delegate } = setup(store, makeActiveSession(), 'assisted');
 
 		assert.strictEqual(
@@ -249,7 +258,7 @@ suite('isWellKnownAutoApproveSchema', () => {
 			title: 'Auto Approve',
 			description: 'desc',
 			type: 'string',
-			enum: ['default', 'autoApprove', 'assisted'],
+			enum: ['default', 'assisted', 'autoApprove'],
 			...overrides,
 		} as SessionConfigPropertySchema;
 	}

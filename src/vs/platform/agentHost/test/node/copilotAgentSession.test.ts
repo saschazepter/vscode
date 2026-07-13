@@ -1915,7 +1915,7 @@ suite('CopilotAgentSession', () => {
 			assert.deepStrictEqual(mockSession.permissionModeSetCalls, ['on']);
 		});
 
-		test('per-request permissions: delegates approvals to the SDK under Auto-permissions', async () => {
+		test('per-request permissions: delegates approvals to the SDK under Auto Approvals', async () => {
 			const { session, mockSession } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -1931,7 +1931,7 @@ suite('CopilotAgentSession', () => {
 			});
 		});
 
-		test('does not send when the SDK rejects experimental mode for Auto-permissions', async () => {
+		test('does not send when the SDK rejects experimental mode for Auto Approvals', async () => {
 			const { session, mockSession } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -1971,7 +1971,7 @@ suite('CopilotAgentSession', () => {
 			});
 		});
 
-		test('switching from Auto-permissions to Default disables SDK experimental mode', async () => {
+		test('switching from Auto Approvals to Default disables SDK experimental mode', async () => {
 			const configValues: Record<string, unknown> = { [SessionConfigKey.AutoApprove]: 'assisted' };
 			const { session, mockSession } = await createAgentSession(disposables, { configValues });
 
@@ -1988,7 +1988,7 @@ suite('CopilotAgentSession', () => {
 			});
 		});
 
-		test('Auto-permissions honors approve recommendations without prompting', async () => {
+		test('Auto Approvals honors approve recommendations without prompting', async () => {
 			const { session, runtime, mockSession, signals } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -2017,7 +2017,7 @@ suite('CopilotAgentSession', () => {
 			});
 		});
 
-		test('Auto-permissions correlates a recommendation event that arrives after the permission callback', async () => {
+		test('Auto Approvals correlates a recommendation event that arrives after the permission callback', async () => {
 			const { session, runtime, mockSession, signals } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -2060,7 +2060,7 @@ suite('CopilotAgentSession', () => {
 			});
 		});
 
-		test('Auto-permissions prompts when the model requires approval', async () => {
+		test('Auto Approvals prompts when the model requires approval', async () => {
 			const { session, runtime, mockSession, waitForSignal } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -2089,7 +2089,7 @@ suite('CopilotAgentSession', () => {
 			assert.strictEqual((await resultPromise).kind, 'approve-once');
 		});
 
-		test('Auto-permissions never bypasses sandbox-escape confirmation', async () => {
+		test('Auto Approvals never bypasses sandbox-escape confirmation', async () => {
 			const { session, runtime, mockSession, waitForSignal } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});

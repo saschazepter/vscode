@@ -37,7 +37,7 @@ suite('AgentHostChatInputPicker - resolveConfigChipValue', () => {
 			description: 'Tool approval behavior for this session',
 			enum: ['default', 'autoApprove'],
 			enumLabels: ['Default Approvals', 'Bypass Approvals'],
-			enumDescriptions: ['Copilot uses your configured settings', 'All tool calls are approved automatically'],
+			enumDescriptions: ['Asks when approval settings don\'t apply', 'Runs tool calls without asking'],
 		} as SessionConfigPropertySchema;
 
 		test('explains the selected approval level on the trigger hover', () => {
@@ -49,7 +49,7 @@ suite('AgentHostChatInputPicker - resolveConfigChipValue', () => {
 
 		test('explains approval choices on item hover', () => {
 			assert.strictEqual(
-				getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'autoApprove', label: 'Bypass Approvals', description: 'All tool calls are approved automatically' }, false),
+				getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'autoApprove', label: 'Bypass Approvals', description: 'Runs tool calls without asking' }, false),
 				'Copilot runs all tools without asking for approval.'
 			);
 		});

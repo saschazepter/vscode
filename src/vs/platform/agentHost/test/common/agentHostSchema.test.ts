@@ -293,6 +293,23 @@ suite('agentHostSchema', () => {
 			assert.strictEqual(platformSessionSchema.validate(SessionConfigKey.AutoApprove, 'bogus'), false);
 		});
 
+		test('exposes approval choices in picker order with current copy', () => {
+			const property = platformSessionSchema.toProtocol().properties[SessionConfigKey.AutoApprove];
+			assert.deepStrictEqual({
+				enum: property.enum,
+				enumLabels: property.enumLabels,
+				enumDescriptions: property.enumDescriptions,
+			}, {
+				enum: ['default', 'assisted', 'autoApprove'],
+				enumLabels: ['Default Approvals', 'Auto Approvals', 'Bypass Approvals'],
+				enumDescriptions: [
+					'Asks when approval settings don\'t apply',
+					'Evaluates risk before running tools',
+					'Runs tool calls without asking',
+				],
+			});
+		});
+
 		test('validates permissions shape', () => {
 			const ok: IPermissionsValue = { allow: ['read'], deny: [] };
 			assert.strictEqual(platformSessionSchema.validate(SessionConfigKey.Permissions, ok), true);

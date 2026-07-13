@@ -480,7 +480,7 @@ request.
 
 Agent-host approval levels map to the Copilot SDK allow-all modes before each
 turn: Default Approvals uses `off`, Bypass Approvals uses `on`, and
-Auto-permissions uses `auto`. Auto-permissions only skips a prompt when the SDK's
+Auto Approvals uses `auto`. Auto Approvals only skips a prompt when the SDK's
 model recommendation is `approve`; every other recommendation follows the normal
 confirmation flow. When the SDK supplies a reason for requiring approval, the
 confirmation renders it in the existing risk-badge position. A live

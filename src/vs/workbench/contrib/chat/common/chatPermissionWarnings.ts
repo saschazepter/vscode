@@ -93,10 +93,10 @@ function getElevatedWarningCopy(level: ChatPermissionLevel, defaultSettingKey: s
 	switch (level) {
 		case ChatPermissionLevel.Assisted:
 			return {
-				title: localize('permissions.assisted.warning.title', "Enable Auto-permissions?"),
+				title: localize('permissions.assisted.warning.title', "Enable Auto Approvals?"),
 				confirm: localize('permissions.assisted.warning.confirm', "Enable"),
 				icon: Codicon.sparkle,
-				detail: localize('permissions.assisted.warning.detail', "Auto-permissions uses model recommendations to approve tool calls. Copilot will still ask when the model requires approval, excludes the request from automatic approval, or cannot make a recommendation.\n\nTo make this the starting permission level for new sessions, change the [{0}](command:workbench.action.openSettings?%5B%22{0}%22%5D) setting.", defaultSettingKey),
+				detail: localize('permissions.assisted.warning.detail', "Auto Approvals uses model recommendations to approve tool calls. Copilot will still ask when the model requires approval, excludes the request from automatic approval, or cannot make a recommendation.\n\nTo make this the starting permission level for new sessions, change the [{0}](command:workbench.action.openSettings?%5B%22{0}%22%5D) setting.", defaultSettingKey),
 			};
 		case ChatPermissionLevel.Autopilot:
 			return {

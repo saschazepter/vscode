@@ -98,14 +98,14 @@ export function getPermissionLevelMeta(level: ChatPermissionLevel): IPermissionL
 	switch (level) {
 		case ChatPermissionLevel.Assisted:
 			return {
-				label: localize('permissions.assisted', "Auto-permissions"),
-				detail: localize('permissions.assisted.subtext', "Delegate approval decisions to the model"),
+				label: localize('permissions.assisted', "Auto Approvals"),
+				detail: localize('permissions.assisted.subtext', "Evaluates risk before running tools"),
 				icon: Codicon.sparkle,
 			};
 		case ChatPermissionLevel.AutoApprove:
 			return {
 				label: localize('permissions.autoApprove', "Bypass Approvals"),
-				detail: localize('permissions.autoApprove.subtext', "All tool calls are approved automatically"),
+				detail: localize('permissions.autoApprove.subtext', "Runs tool calls without asking"),
 				icon: Codicon.warning,
 			};
 		case ChatPermissionLevel.Autopilot:
@@ -119,7 +119,7 @@ export function getPermissionLevelMeta(level: ChatPermissionLevel): IPermissionL
 		default:
 			return {
 				label: localize('permissions.default', "Default Approvals"),
-				detail: localize('permissions.default.subtext', "Copilot uses your configured settings"),
+				detail: localize('permissions.default.subtext', "Asks when approval settings don't apply"),
 				icon: Codicon.shield,
 			};
 	}
