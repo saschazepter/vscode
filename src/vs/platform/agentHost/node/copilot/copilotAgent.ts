@@ -972,7 +972,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 		const sessionSyncAtStartup = this._isSessionSyncEnabled();
 		const rubberDuckAtStartup = this._isRubberDuckEnabled();
 		const copilotSdkLogLevelSettingAtStartup = this._getCopilotSdkLogLevelSetting();
-		const copilotSdkLogLevelAtStartup = this._resolveCopilotSdkLogLevel();
 		const enterpriseHostAtStartup = this._getEnterpriseHost();
 		const clientStarting = (async () => {
 			this._logService.info('[Copilot] Starting CopilotClient...');
@@ -1070,6 +1069,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			this._logService.info(`[Copilot] Resolved CLI path: ${cliPath}`);
 
 			const telemetry = await this._otelService.getSdkTelemetryConfig();
+			const copilotSdkLogLevelAtStartup = this._resolveCopilotSdkLogLevel();
 
 			const clientOptions: CopilotClientOptions = {
 				useLoggedInUser: false,
