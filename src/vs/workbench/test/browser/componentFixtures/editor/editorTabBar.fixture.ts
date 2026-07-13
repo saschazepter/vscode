@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { $, Dimension } from '../../../../../base/browser/dom.js';
-import { toAction } from '../../../../../base/common/actions.js';
+import { SubmenuAction } from '../../../../../base/common/actions.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Event } from '../../../../../base/common/event.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
@@ -14,7 +14,13 @@ import { URI } from '../../../../../base/common/uri.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { mock } from '../../../../../base/test/common/mock.js';
+import { localize2 } from '../../../../../nls.js';
+import { getActionBarActions } from '../../../../../platform/actions/browser/menuEntryActionViewItem.js';
+import { IMenuService, MenuId, MenuRegistry } from '../../../../../platform/actions/common/actions.js';
+import { MenuService } from '../../../../../platform/actions/common/menuService.js';
 import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
+import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyService } from '../../../../../platform/contextkey/browser/contextKeyService.js';
 import { listErrorForeground, listWarningForeground } from '../../../../../platform/theme/common/colors/listColors.js';
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
 import { TestThemeService } from '../../../../../platform/theme/test/common/testThemeService.js';
@@ -206,6 +212,37 @@ function registerFixtureDecorations(decorationsService: IDecorationsService, sto
 }
 
 // ============================================================================
+// Editor-title toolbar actions
+// ============================================================================
+
+/**
+ * Contributes fake actions to `MenuId.EditorTitle` so the editor-actions toolbar
+ * renders through the real menu path (like production): one in the `navigation`
+ * group (shown inline) and one in a non-navigation group (shown in the overflow
+ * `...` menu). None declare a `when` clause so they survive context filtering.
+ */
+function registerFixtureEditorTitleActions(store: DisposableStore): void {
+	store.add(MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
+		command: {
+			id: 'fixture.splitEditorRight',
+			title: localize2('fixtureSplitEditorRight', 'Split Editor Right'),
+			icon: Codicon.splitHorizontal,
+		},
+		group: 'navigation',
+		order: 1,
+	}));
+	store.add(MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
+		command: {
+			id: 'fixture.openEditor',
+			title: localize2('fixtureOpenEditor', 'Open Editor...'),
+			icon: Codicon.goToFile,
+		},
+		group: '1_fixture',
+		order: 1,
+	}));
+}
+
+// ============================================================================
 // Rendering
 // ============================================================================
 
@@ -266,6 +303,16 @@ function renderTabBar(ctx: ComponentFixtureContext, options: IRenderOptions): vo
 	instantiationService.stub(ITreeViewsDnDService, new TreeViewsDnDService());
 	instantiationService.stub(INotebookDocumentService, new NotebookDocumentWorkbenchService());
 
+	// Real menu service (the harness stubs an empty one) + fake `MenuId.EditorTitle` actions so the
+	// editor-actions toolbar is populated through the production menu path. A real context key service
+	// is required too: the mock's `contextMatchesRules` rejects every item (even those without a
+	// `when`), which would filter our actions out of the menu.
+	const contextKeyService = disposableStore.add(instantiationService.createInstance(ContextKeyService));
+	instantiationService.stub(IContextKeyService, contextKeyService);
+	const menuService = disposableStore.add(instantiationService.createInstance(MenuService));
+	instantiationService.stub(IMenuService, menuService);
+	registerFixtureEditorTitleActions(disposableStore);
+
 	// Real decorations service + provider so resource labels get deterministic badges/colors
 	// (the `decorations` setting then has something to toggle).
 	const decorationsService = disposableStore.add(instantiationService.createInstance(DecorationsService));
@@ -276,18 +323,14 @@ function renderTabBar(ctx: ComponentFixtureContext, options: IRenderOptions): vo
 	const model = disposableStore.add(instantiationService.createInstance(EditorGroupModel, undefined));
 	populateModel(model, options.editors ?? defaultEditorSpecs(), disposableStore);
 
-	// A couple of real editor-title actions so the editor-actions toolbar renders (and so the
-	// `editorActionsLocation`/`alwaysShowEditorActions` settings have visible content to change).
-	const createEditorActions = () => ({
-		actions: {
-			primary: [
-				toAction({ id: 'fixture.splitEditorRight', label: 'Split Editor Right', class: ThemeIcon.asClassName(Codicon.splitHorizontal), run: () => { } }),
-				toAction({ id: 'fixture.moreActions', label: 'More Actions...', class: ThemeIcon.asClassName(Codicon.ellipsis), run: () => { } }),
-			],
-			secondary: [],
-		},
-		onDidChange: Event.None,
-	});
+	// Builds the editor-title actions from the real menu, mirroring `EditorGroupView.createEditorActions`:
+	// `navigation`-group items become primary (inline), all others become secondary (overflow `...`).
+	const createEditorActions = (disposables: DisposableStore, menuId: MenuId) => {
+		const menu = disposables.add(menuService.createMenu(menuId, contextKeyService, { emitEventsForSubmenuChanges: true, eventDebounceDelay: 0 }));
+		const shouldInlineGroup = (action: SubmenuAction, group: string) => group === 'navigation' && action.actions.length <= 1;
+		const actions = getActionBarActions(menu.getActions({ shouldForwardArgs: true, renderShortTitle: true }), 'navigation', shouldInlineGroup);
+		return { actions, onDidChange: menu.onDidChange };
+	};
 
 	// Lightweight stand-ins for the production `EditorGroupView` / `EditorPart` views.
 	const groupView = new class extends mock<IEditorGroupView>() {
@@ -305,7 +348,7 @@ function renderTabBar(ctx: ComponentFixtureContext, options: IRenderOptions): vo
 		override isPinned(editorOrIndex: EditorInput | number) { return model.isPinned(editorOrIndex); }
 		override isSticky(editorOrIndex: EditorInput | number) { return model.isSticky(editorOrIndex); }
 		override isSelected(editorOrIndex: EditorInput | number) { return model.isSelected(editorOrIndex); }
-		override createEditorActions() { return createEditorActions(); }
+		override createEditorActions(disposables: DisposableStore, menuId = MenuId.EditorTitle) { return createEditorActions(disposables, menuId); }
 		override relayout() { this.relayoutFn(); }
 	};
 
