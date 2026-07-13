@@ -46,7 +46,7 @@ function buildItems(options: PermissionPickerListFixtureOptions): IActionListIte
 			...actionTemplate,
 			id: 'chat.permissions.default',
 			label: localize('permissions.default', "Default Approvals"),
-			detail: localize('permissions.default.subtext', "Asks when approval settings don't apply"),
+			detail: localize('permissions.default.subtext', "Copilot uses your configured settings"),
 			icon: ThemeIcon.fromId(Codicon.shield.id),
 			checked: true,
 			inlineToggle: showToggle ? {
@@ -57,18 +57,18 @@ function buildItems(options: PermissionPickerListFixtureOptions): IActionListIte
 		}),
 		makeItem({
 			...actionTemplate,
-			id: 'chat.permissions.assisted',
-			label: localize('permissions.assisted', "Auto Approvals"),
-			detail: localize('permissions.assisted.subtext', "Evaluates risk before running tools"),
-			icon: ThemeIcon.fromId(Codicon.sparkle.id),
+			id: 'chat.permissions.autoApprove',
+			label: localize('permissions.autoApprove', "Bypass Approvals"),
+			detail: localize('permissions.autoApprove.subtext', "All tool calls are auto-approved"),
+			icon: ThemeIcon.fromId(Codicon.warning.id),
 			checked: false,
 		}),
 		makeItem({
 			...actionTemplate,
-			id: 'chat.permissions.autoApprove',
-			label: localize('permissions.autoApprove', "Bypass Approvals"),
-			detail: localize('permissions.autoApprove.subtext', "Runs tool calls without asking"),
-			icon: ThemeIcon.fromId(Codicon.warning.id),
+			id: 'chat.permissions.autopilot',
+			label: localize('permissions.autopilot', "Autopilot (Preview)"),
+			detail: localize('permissions.autopilot.subtext', "Autonomously iterates from start to finish"),
+			icon: ThemeIcon.fromId(Codicon.rocket.id),
 			checked: false,
 		}),
 		{
@@ -121,7 +121,7 @@ function renderPermissionPickerList(context: ComponentFixtureContext, options: P
 	container.appendChild(wrapper);
 
 	// Item heights: Default = 70 with inline toggle (inlineToggleItemHeight), else 44 (detail).
-	// Auto + Bypass with detail = 44 each. Separator = 8. Learn more = 24.
+	// Bypass + Autopilot with detail = 44 each. Separator = 8. Learn more = 24.
 	const defaultItemHeight = options.showSandboxToggle ? 70 : 44;
 	const actionHeight = defaultItemHeight + 44 * 2 + 24;
 	const totalHeight = actionHeight + 8;

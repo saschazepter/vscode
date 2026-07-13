@@ -27,7 +27,6 @@ import { reportNewChatPickerClosed } from '../../../chat/browser/newChatPickerTe
 import { ISessionsProvidersService } from '../../../../services/sessions/browser/sessionsProvidersService.js';
 import { IActiveSession } from '../../../../services/sessions/common/sessionsManagement.js';
 import { CopilotChatSessionsProvider } from './copilotChatSessionsProvider.js';
-import { isAutoApprovalsEnabled, isAutoApproveValuePolicyRestricted, isAutoApproveValueVisible } from '../../../../../workbench/contrib/chat/common/agentHostConfigPolicy.js';
 
 const PERMISSION_LEVEL_OPTION_ID = 'permissionLevel';
 
@@ -107,7 +106,7 @@ export function getPermissionLevelMeta(level: ChatPermissionLevel): IPermissionL
 		case ChatPermissionLevel.AutoApprove:
 			return {
 				label: localize('permissions.autoApprove', "Bypass Approvals"),
-				detail: localize('permissions.autoApprove.subtext', "Runs tool calls without asking"),
+				detail: localize('permissions.autoApprove.subtext', "All tool calls are auto-approved"),
 				icon: Codicon.warning,
 			};
 		case ChatPermissionLevel.Autopilot:
@@ -121,7 +120,7 @@ export function getPermissionLevelMeta(level: ChatPermissionLevel): IPermissionL
 		default:
 			return {
 				label: localize('permissions.default', "Default Approvals"),
-				detail: localize('permissions.default.subtext', "Asks when approval settings don't apply"),
+				detail: localize('permissions.default.subtext', "Copilot uses your configured settings"),
 				icon: Codicon.shield,
 			};
 	}
@@ -233,17 +232,14 @@ export class PermissionPicker extends Disposable {
 
 		const policyRestricted = this.configurationService.inspect<boolean>(ChatConfiguration.GlobalAutoApprove).policyValue === false;
 
-		const autoApprovalsEnabled = isAutoApprovalsEnabled(this.configurationService);
-		const levels = (this._delegate.availableLevels ?? DEFAULT_PERMISSION_LEVELS)
-			.filter(level => isAutoApproveValueVisible(level, autoApprovalsEnabled));
+		const levels = this._delegate.availableLevels ?? DEFAULT_PERMISSION_LEVELS;
 		const items: IActionListItem<IPermissionItem>[] = levels.map(level => {
 			const meta = getPermissionLevelMeta(level);
 			// Default is never policy-restricted; elevated levels are disabled
 			// when enterprise policy turns off global auto-approval.
-			const disabled = isAutoApproveValuePolicyRestricted(level, policyRestricted);
-			const policyDescription = localize('permissions.policyDescription', "Disabled by your organization. Contact your administrator.");
+			const disabled = level !== ChatPermissionLevel.Default && policyRestricted;
 			const hover = this._delegate.getPermissionLevelHover
-				? (disabled ? policyDescription : this._getPermissionLevelHover(level, meta))
+				? (disabled ? localize('permissions.policyDescription', "Disabled by enterprise policy") : this._getPermissionLevelHover(level, meta))
 				: meta.hover;
 			return {
 				kind: ActionListItemKind.Action,
@@ -255,7 +251,7 @@ export class PermissionPicker extends Disposable {
 					checked: this._currentLevel === level,
 				},
 				label: meta.label,
-				detail: disabled ? policyDescription : meta.detail,
+				detail: meta.detail,
 				...(hover ? { hover: { content: hover } } : {}),
 				disabled,
 			} satisfies IActionListItem<IPermissionItem>;

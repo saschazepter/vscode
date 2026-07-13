@@ -183,9 +183,9 @@ suite('AgentHostPermissionPickerDelegate', () => {
 		}, {
 			current: ChatPermissionLevel.Assisted,
 			metadata: [
-				{ label: 'Default Approvals', detail: 'Asks when approval settings don\'t apply', hover: undefined },
+				{ label: 'Default Approvals', detail: 'Copilot uses your configured settings', hover: undefined },
 				{ label: 'Auto Approvals', detail: 'Evaluates risk before running tools', hover: 'An LLM judge evaluates each tool call. Tools it doesn\'t approve require your approval.' },
-				{ label: 'Bypass Approvals', detail: 'Runs tool calls without asking', hover: undefined },
+				{ label: 'Bypass Approvals', detail: 'All tool calls are auto-approved', hover: undefined },
 			],
 			available: [
 				ChatPermissionLevel.Default,

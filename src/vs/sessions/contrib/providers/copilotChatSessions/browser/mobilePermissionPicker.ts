@@ -18,7 +18,6 @@ import { ChatConfiguration, ChatPermissionLevel } from '../../../../../workbench
 import { DEFAULT_PERMISSION_LEVELS, getPermissionLevelMeta, IPermissionPickerDelegate, PermissionPicker } from './permissionPicker.js';
 import { isPhoneLayout } from '../../../../browser/parts/mobile/mobileLayout.js';
 import { IMobilePickerSheetItem, showMobilePickerSheet } from '../../../../browser/parts/mobile/mobilePickerSheet.js';
-import { isAutoApprovalsEnabled, isAutoApproveValuePolicyRestricted, isAutoApproveValueVisible } from '../../../../../workbench/contrib/chat/common/agentHostConfigPolicy.js';
 
 const LEARN_MORE_ID = 'learn-more';
 
@@ -58,23 +57,18 @@ export class MobilePermissionPicker extends PermissionPicker {
 
 		const policyRestricted = this.configurationService.inspect<boolean>(ChatConfiguration.GlobalAutoApprove).policyValue === false;
 
-		const autoApprovalsEnabled = isAutoApprovalsEnabled(this.configurationService);
-		const levels = (this._delegate.availableLevels ?? DEFAULT_PERMISSION_LEVELS)
-			.filter(level => isAutoApproveValueVisible(level, autoApprovalsEnabled));
+		const levels = this._delegate.availableLevels ?? DEFAULT_PERMISSION_LEVELS;
 		const items: IMobilePickerSheetItem[] = levels.map(level => {
 			const meta = getPermissionLevelMeta(level);
-			const disabled = isAutoApproveValuePolicyRestricted(level, policyRestricted);
 			return {
 				id: level,
 				label: meta.label,
-				description: disabled
-					? localize('permissions.policyDescription', "Disabled by your organization. Contact your administrator.")
-					: meta.detail,
+				description: meta.detail,
 				icon: meta.icon,
 				checked: this._currentLevel === level,
 				// Default is never policy-restricted; elevated levels are
 				// disabled when enterprise policy turns off auto-approval.
-				...(disabled ? { disabled: true } : {}),
+				...(level !== ChatPermissionLevel.Default && policyRestricted ? { disabled: true } : {}),
 			} satisfies IMobilePickerSheetItem;
 		});
 		items.push({
