@@ -697,6 +697,12 @@ export namespace ConfigKey {
 		export const Gemini3MultiReplaceString = defineSetting<boolean>('chat.edits.gemini3MultiReplaceString', ConfigType.ExperimentBased, false);
 		export const BatchReplaceStringDescriptions = defineSetting<boolean>('chat.edits.batchReplaceStringDescriptions', ConfigType.ExperimentBased, false);
 		export const AgentOmitFileAttachmentContents = defineSetting<boolean>('chat.agent.omitFileAttachmentContents', ConfigType.ExperimentBased, false);
+		/**
+		 * Eval-only: force the agent to use a single edit tool, overriding all model
+		 * family / BYOK / learning heuristics. One of 'insertEdit' | 'replaceString' |
+		 * 'multiReplaceString' | 'applyPatch'. Empty string (default) = no override.
+		 */
+		export const ForceEditTool = defineSetting<string>('chat.advanced.forceEditTool', ConfigType.Simple, '');
 
 		/**
 		 * Settings for switch between old tools and new skills

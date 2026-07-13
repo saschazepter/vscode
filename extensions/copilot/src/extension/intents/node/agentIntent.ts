@@ -234,6 +234,18 @@ export const getAgentTools = async (accessor: ServicesAccessor, request: vscode.
 		}
 	}
 
+	// Eval override: force a single edit tool regardless of model family / BYOK /
+	// learning heuristics. Set via `github.copilot.chat.advanced.forceEditTool`
+	// (insertEdit | replaceString | multiReplaceString | applyPatch). Used to A/B
+	// evaluate edit tools for a fixed model. Empty (default) leaves behavior unchanged.
+	const forcedEditTool = configurationService.getConfig(ConfigKey.Advanced.ForceEditTool);
+	if (forcedEditTool) {
+		allowTools[ToolName.EditFile] = forcedEditTool === 'insertEdit';
+		allowTools[ToolName.ReplaceString] = forcedEditTool === 'replaceString';
+		allowTools[ToolName.MultiReplaceString] = forcedEditTool === 'multiReplaceString';
+		allowTools[ToolName.ApplyPatch] = forcedEditTool === 'applyPatch' && !!toolsService.getTool(ToolName.ApplyPatch);
+	}
+
 	allowTools[ToolName.CoreRunTest] = await testService.hasAnyTests();
 	allowTools[ToolName.CoreRunTask] = tasksService.getTasks().length > 0;
 
