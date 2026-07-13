@@ -491,7 +491,7 @@ suite('AgentHostGitService - worktree helpers (real git)', () => {
 		}
 	});
 
-	(hasGit ? test : test.skip)('addWorktree keeps LFS pointers when git-lfs is unavailable', async () => {
+	(hasGit ? test : test.skip)('worktree creation and recreation keep LFS pointers when git-lfs is unavailable', async () => {
 		const dir = initRepo();
 		const fs = await import('fs/promises');
 		const run = (...args: string[]) => cp.execFileSync('git', args, { cwd: dir, stdio: 'pipe' });
@@ -508,6 +508,9 @@ suite('AgentHostGitService - worktree helpers (real git)', () => {
 		try {
 			svc = createGitService(disposables, Promise.resolve(undefined));
 			await svc.addWorktree(URI.file(dir), URI.file(worktreePath), 'agents/no-lfs', 'main');
+			assert.strictEqual(await fs.readFile(join(worktreePath, 'large.bin'), 'utf8'), pointer);
+			rmDirWithRetry(worktreePath);
+			await svc.addExistingWorktree(URI.file(dir), URI.file(worktreePath), 'agents/no-lfs');
 			assert.strictEqual(await fs.readFile(join(worktreePath, 'large.bin'), 'utf8'), pointer);
 		} finally {
 			try { await svc?.removeWorktree(URI.file(dir), URI.file(worktreePath)); } catch { /* best-effort cleanup */ }
