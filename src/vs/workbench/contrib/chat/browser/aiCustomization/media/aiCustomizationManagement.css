@@ -2477,18 +2477,20 @@ pane is first mounted. View switches inside the modal are not animated. */
  * contextview.ts as `2575 + layer`). DOM order means the dialog
  * shows on top, hiding any popup the chat input chips, the quick
  * input, or a context menu try to open. We can't change the inline
- * z-index from outside, so use `!important` while the dialog service
- * marks the active container as automation-dialog-open.
+ * z-index from outside, so use `!important` on rules scoped to
+ * `body:has(.automation-dialog)`. They only apply while the
+ * automations dialog is on screen, so other dialogs' popup stacking
+ * is untouched.
  */
-.automation-dialog-open .context-view.monaco-component {
+body:has(.automation-dialog) .context-view.monaco-component {
 	z-index: 2600 !important;
 }
 
-.automation-dialog-open .quick-input-widget {
+body:has(.automation-dialog) .quick-input-widget {
 	z-index: 2600 !important;
 }
 
-.automation-dialog-open .monaco-menu-container {
+body:has(.automation-dialog) .monaco-menu-container {
 	z-index: 2600 !important;
 }
 
@@ -2890,7 +2892,41 @@ pane is first mounted. View switches inside the modal are not animated. */
 	gap: 5px;
 }
 
-.automation-form-prompt-host .automation-form-isolation-chip,
+.automation-form-prompt-host .automation-form-isolation-group.sessions-chat-isolation-checkbox .action-label {
+	display: inline-flex;
+	align-items: center;
+	cursor: pointer;
+	touch-action: manipulation;
+	gap: 4px;
+	height: 16px;
+	padding: 3px 6px;
+	font-size: 11px;
+	color: var(--vscode-icon-foreground);
+	background: transparent;
+	border: none;
+	min-width: 0;
+	border-radius: var(--vscode-cornerRadius-small);
+}
+
+.automation-form-prompt-host .automation-form-isolation-group.sessions-chat-isolation-checkbox .action-label:not(.disabled):hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+	color: var(--vscode-foreground);
+}
+
+.automation-form-prompt-host .automation-form-isolation-group.sessions-chat-isolation-checkbox .action-label.disabled {
+	cursor: default;
+}
+
+.automation-form-prompt-host .automation-form-isolation-group.sessions-chat-isolation-checkbox .monaco-checkbox {
+	margin-right: 6px;
+}
+
+.automation-form-prompt-host .automation-form-isolation-group.sessions-chat-isolation-checkbox .sessions-chat-dropdown-label {
+	font-size: 11px;
+	margin-left: 0;
+	cursor: pointer;
+}
+
 .automation-form-prompt-host .automation-form-branch-slot {
 	display: inline-flex;
 	align-items: center;
@@ -2904,33 +2940,14 @@ pane is first mounted. View switches inside the modal are not animated. */
 	min-width: 0;
 }
 
-.automation-form-prompt-host .automation-form-isolation-chip > .codicon,
 .automation-form-prompt-host .automation-form-branch-slot > .codicon {
 	font-size: 12px;
 	color: var(--vscode-icon-foreground);
 	flex-shrink: 0;
 }
 
-.automation-form-prompt-host .automation-form-isolation-chip {
-	cursor: pointer;
-	border-radius: var(--vscode-cornerRadius-small);
-}
-
-.automation-form-prompt-host .automation-form-isolation-chip:not(.automation-form-isolation-chip-disabled):hover {
-	background-color: var(--vscode-toolbar-hoverBackground);
-	color: var(--vscode-foreground);
-}
-
-.automation-form-prompt-host .automation-form-isolation-chip-disabled {
-	cursor: default;
-}
-
-.automation-form-prompt-host .automation-form-isolation-label,
 .automation-form-prompt-host .automation-form-branch-name {
 	font-size: 11px;
-}
-
-.automation-form-prompt-host .automation-form-branch-name {
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -2942,6 +2959,36 @@ pane is first mounted. View switches inside the modal are not animated. */
  * a 1px-wide bar in the gap to the chip's left. */
 .automation-form-prompt-host .automation-form-isolation-group > .automation-form-branch-slot {
 	box-shadow: -5px 0 0 -4px var(--vscode-editorWidget-border);
+}
+
+.automation-form-prompt-host .automation-form-branch-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	cursor: pointer;
+	touch-action: manipulation;
+	border-radius: var(--vscode-cornerRadius-small);
+	padding: 1px 4px;
+}
+
+.automation-form-prompt-host .automation-form-branch-chip:not(.disabled):hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+	color: var(--vscode-foreground);
+}
+
+.automation-form-prompt-host .automation-form-branch-chip:not(.disabled):focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.automation-form-prompt-host .automation-form-branch-chip.disabled {
+	cursor: default;
+	opacity: 0.5;
+}
+
+.automation-form-prompt-host .automation-form-branch-chip > .codicon.codicon-chevron-down-compact {
+	font-size: 12px;
+	margin-left: 2px;
 }
 
 .automation-form-prompt-host .chat-secondary-toolbar .automation-form-harness-chip {
