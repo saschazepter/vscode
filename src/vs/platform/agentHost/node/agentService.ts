@@ -920,16 +920,38 @@ export class AgentService extends Disposable implements IAgentService {
 			config = { ...config, importConversation: { ...config.importConversation, turns: importedTurns } };
 		}
 
-		// Ensure the command auto-approver is ready before any session events
-		// can arrive. This makes shell command auto-approval fully synchronous.
-		// Safe to run in parallel with createSession since no events flow until
-		// sendMessage() is called.
+		// Resolve host-owned isolation before provider creation. Providers such as
+		// Codex may schedule eager prewarming from createSession; marking a
+		// client-chosen worktree session pending first prevents that prewarm from
+		// materializing in the picked folder before the host creates the worktree.
+		const initializeSideEffects = this._sideEffects.initialize();
+		const sessionConfig = await this._resolveCreatedSessionConfig(provider, config);
+		const usesWorktreeIsolation = sessionConfig?.values?.[SessionConfigKey.Isolation] === 'worktree';
+		const requestedPendingSessionId = usesWorktreeIsolation && !config?.fork && !config?.importConversation && config?.session
+			? AgentSession.id(config.session)
+			: undefined;
+		if (requestedPendingSessionId) {
+			this._worktree?.notePending(requestedPendingSessionId);
+		}
+
 		this._logService.trace(`[AgentService] createSession: initializing auto-approver and creating session...`);
-		const [, created] = await Promise.all([
-			this._sideEffects.initialize(),
-			this._createSession(provider, config),
-		]);
+		let created: IAgentCreateSessionResult;
+		try {
+			[, created] = await Promise.all([
+				initializeSideEffects,
+				this._createSession(provider, config),
+			]);
+		} catch (error) {
+			if (requestedPendingSessionId) {
+				this._worktree?.clearPending(requestedPendingSessionId);
+			}
+			throw error;
+		}
 		const session = created.session;
+		const createdSessionId = AgentSession.id(session);
+		if (requestedPendingSessionId && (!created.provisional || requestedPendingSessionId !== createdSessionId)) {
+			this._worktree?.clearPending(requestedPendingSessionId);
+		}
 		this._logService.trace(`[AgentService] createSession: initialization complete`);
 
 		// Cancel any pending GC armed for this URI. A client may be
@@ -968,15 +990,12 @@ export class AgentService extends Disposable implements IAgentService {
 		// `setClientCustomizations`). Subsequent updates flow through the
 		// existing `SessionCustomizationsChanged` / `SessionCustomizationUpdated`
 		// actions published by `PluginController`.
-		const [sessionConfig, initialCustomizations] = await Promise.all([
-			this._resolveCreatedSessionConfig(provider, config),
-			provider.getSessionCustomizations
-				? provider.getSessionCustomizations(session).catch(err => {
-					this._logService.error('[AgentService] createSession: failed to resolve initial customizations', err);
-					return undefined;
-				})
-				: Promise.resolve(undefined),
-		]);
+		const initialCustomizations = await (provider.getSessionCustomizations
+			? provider.getSessionCustomizations(session).catch(err => {
+				this._logService.error('[AgentService] createSession: failed to resolve initial customizations', err);
+				return undefined;
+			})
+			: Promise.resolve(undefined));
 
 		// When forking, populate the new session's protocol state with
 		// the source session's turns so the client sees the forked history.
@@ -1065,8 +1084,8 @@ export class AgentService extends Disposable implements IAgentService {
 			// first send (so the user's prompt can name the branch). Mark it pending
 			// so agents don't prewarm / materialize in the picked folder before the
 			// host resolves the worktree.
-			if (created.provisional && sessionConfig?.values?.[SessionConfigKey.Isolation] === 'worktree') {
-				this._worktree?.notePending(AgentSession.id(session));
+			if (created.provisional && usesWorktreeIsolation) {
+				this._worktree?.notePending(createdSessionId);
 			}
 		}
 		// Persist initial config values so a subsequent `restoreSession` can

@@ -250,6 +250,11 @@ export class WorktreeIsolation extends Disposable {
 		this._pending.add(sessionId);
 	}
 
+	/** Clears a pending marker when a session will not materialize a worktree. */
+	clearPending(sessionId: string): void {
+		this._pending.delete(sessionId);
+	}
+
 	/**
 	 * Whether a session's worktree is still pending creation. The host exposes
 	 * this through {@link IAgentConfigurationService.isWorkingDirectoryPending} so
@@ -276,7 +281,7 @@ export class WorktreeIsolation extends Disposable {
 			try {
 				return await this.resolveWorkingDirectory(request);
 			} finally {
-				this._pending.delete(request.sessionId);
+				this.clearPending(request.sessionId);
 			}
 		});
 	}
@@ -538,6 +543,7 @@ export class WorktreeIsolation extends Disposable {
 	}
 
 	private async _removeCreatedWorktree(sessionId: string): Promise<void> {
+		this.clearPending(sessionId);
 		const worktree = this._createdWorktrees.get(sessionId);
 		if (!worktree) {
 			return;

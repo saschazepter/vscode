@@ -252,6 +252,50 @@ suite('AgentService (node dispatcher)', () => {
 		});
 	});
 
+	test('marks worktree isolation pending before a provisional provider can prewarm', async () => {
+		const session = AgentSession.uri('codex', 'pending-before-create');
+		const workingDirectory = URI.file('/workspace/repo');
+		const gitService = createNoopGitService();
+		gitService.getRepositoryRoot = async () => workingDirectory;
+		gitService.revParse = async () => 'head';
+		gitService.getCurrentBranch = async () => 'feature';
+		gitService.getDefaultBranch = async () => 'main';
+		const localService = disposables.add(new AgentService(new NullLogService(), fileService, nullSessionDataService, { _serviceBrand: undefined } as IProductService, gitService));
+		const isolation = disposables.add(new WorktreeIsolation(
+			{ generateBranchName: async () => 'agents/test' },
+			gitService,
+			new TestCopilotApiService(),
+			nullSessionDataService,
+			new NullLogService(),
+		));
+		localService.setWorktreeIsolation(isolation);
+		let pendingDuringCreate = false;
+		class PrewarmingAgent extends MockAgent {
+			override async createSession(config?: import('../../common/agentService.js').IAgentCreateSessionConfig): Promise<import('../../common/agentService.js').IAgentCreateSessionResult> {
+				pendingDuringCreate = localService.configurationService.isWorkingDirectoryPending(config!.session!.toString());
+				return { ...await super.createSession(config), provisional: true };
+			}
+		}
+		const agent = new PrewarmingAgent('codex');
+		disposables.add(toDisposable(() => agent.dispose()));
+		localService.registerProvider(agent);
+
+		await localService.createSession({
+			provider: 'codex',
+			session,
+			workingDirectory,
+			config: { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' },
+		});
+
+		assert.deepStrictEqual({
+			pendingDuringCreate,
+			pendingAfterCreate: localService.configurationService.isWorkingDirectoryPending(session.toString()),
+		}, {
+			pendingDuringCreate: true,
+			pendingAfterCreate: true,
+		});
+	});
+
 	suite('resourceRead', () => {
 
 		test('maps missing files to NotFound', async () => {

@@ -1040,7 +1040,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 				});
 				try {
 					client.clearReceived();
-					dispatchTurn(client, addedSummary.resource, 'turn-wt-terminal', 'Run the shell command: pwd', 3);
+					dispatchTurn(client, addedSummary.resource, 'turn-wt-terminal', 'Run the shell command `pwd` in the session current working directory. Do not specify a working-directory override.', 3);
 
 					// The `pwd` output can arrive as streaming partial content
 					// (`toolCallContentChanged`) or in the final tool result
@@ -1066,6 +1066,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 					await approvalLoop.stop();
 				}
 				assert.deepStrictEqual(approvalLoop.errors, [], 'no unexpected tool calls should have been denied');
+				await client.waitForNotification(n => isActionNotification(n, 'chat/turnComplete'), 90_000);
 				return;
 			}
 
