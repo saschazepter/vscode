@@ -2500,15 +2500,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	/**
-	 * The session the user is currently LOOKING AT, used to route deferral. Unlike
-	 * {@link _getActiveSessionId} this deliberately ignores the sticky input
-	 * `_targetSession`: the target is where the user's next utterance is SENT, not
-	 * what they are viewing. Browsing another session (e.g. `openSession` in the
-	 * floating voice window) leaves `_targetSession` pointing elsewhere, so keying
-	 * deferral off the active-session chain would (a) play the target's background
-	 * narration live over an unrelated shown session and (b) defer the shown
-	 * session's own reply with no focus change to ever flush it. The awaited reply
-	 * to the user's own utterance is handled separately via `_awaitingReplyForSession`.
+	 * The session the user is currently looking at, used to route deferral.
+	 * Unlike {@link _getActiveSessionId} it ignores the sticky input
+	 * `_targetSession` (where the next utterance is sent, not what is viewed).
 	 */
 	private _shownSessionId(): string | undefined {
 		if (this._externalActiveSessionMode) {
@@ -2536,9 +2530,8 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 	/**
 	 * A response is deferred when it is a background narration for a session the
-	 * user is NOT actively working with. It plays immediately when it is for the
-	 * active session (targeted or focused) or when it is untagged audio we can't
-	 * attribute to any session (chit-chat, greetings, direct answers).
+	 * user is NOT looking at. It plays immediately for the shown session, for a
+	 * reply the user is actively awaiting, or when it is untagged audio.
 	 *
 	 * The decision is made on the first chunk and recorded in `_liveReplyKey`;
 	 * remaining chunks follow the same decision so a response is never split
@@ -2552,15 +2545,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._liveReplyKey = key;
 				return false;
 			}
-			// Play immediately for the session the user is actively looking at,
-			// or the session whose reply they are actively awaiting (they just
-			// spoke to it, so route its answer live even if they glanced away);
-			// defer any other session's narration until the user looks at it.
-			// Key off the SHOWN session, not the active-session chain: the sticky
-			// input `_targetSession` must not force an unrelated background
-			// narration to play live over the session the user is viewing.
-			// Read live so a stale cache can't misroute the decision (e.g. when
-			// the focus event was missed while voice was busy).
+			// Play live for the shown session or an awaited reply; defer the rest.
 			this._focusedSessionId = this._getFocusedSessionId();
 			if (this._shownSessionId() === sessionId || this._awaitingReplyForSession === sessionId) {
 				this._liveReplyKey = key;
@@ -3102,14 +3087,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private _checkSessionStateChanges(): void {
 		// Safety net: if the focus-change event was missed while voice was busy,
 		// flush any buffered response for the session now shown to the user so it
-		// never stays stuck as a pending indicator with no playback. Use the
-		// active session (last-shown / focused) rather than only the raw focused
-		// widget, which can lag when a session is opened without taking DOM focus.
-		// The flush itself matches the buffered key robustly (exact + URI equality).
+		// never stays stuck as a pending indicator with no playback. Use the SHOWN
+		// session (not `_getActiveSessionId()`, which prefers the sticky input
+		// `_targetSession` and would flush a background session's reply over the
+		// one the user is viewing). The flush matches the buffered key robustly.
 		if (this._deferredResponses.size > 0) {
-			const active = this._getActiveSessionId();
-			if (active) {
-				this._flushDeferredResponse(active);
+			const shown = this._shownSessionId();
+			if (shown) {
+				this._flushDeferredResponse(shown);
 			}
 		}
 
