@@ -381,6 +381,17 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private _confirmationNarrationPending: { sessionId: string; at: number; reasserted: boolean } | undefined;
 	private static readonly _CONFIRMATION_REASSERT_WINDOW_MS = 12000;
 
+	/**
+	 * The focused session whose response re-narration we just shipped and expect
+	 * the backend to narrate. Mirrors {@link _confirmationNarrationPending}: if a
+	 * tagged narration for a DIFFERENT session arrives before this one's own
+	 * audio, the backend preempted our re-narration (it narrates one at a time)
+	 * and, because the session stays `idle`, it would be lost — so we re-assert
+	 * once. Cleared when this session's own audio arrives, or when it stops being
+	 * the active/idle session.
+	 */
+	private _responseNarrationPending: { sessionId: string; at: number; reasserted: boolean } | undefined;
+
 	/** Model refs eagerly loaded for sessions awaiting input (no UI focus needed). */
 	private readonly _eagerModelRefs = new Map<string, IChatModelReference>();
 
@@ -1251,6 +1262,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// dropping one when another is in flight. Remove once that lands.
 			if (e.isFirstChunk) {
 				this._reconcileConfirmationNarration(codingSessionId);
+				this._reconcileResponseNarration(codingSessionId);
 			}
 			// If this response is for a session the user isn't currently looking
 			// at, don't play it now: buffer it until that session is focused and
@@ -1462,6 +1474,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (this._stateChangeEmitTimer) { clearTimeout(this._stateChangeEmitTimer); this._stateChangeEmitTimer = undefined; }
 		this._pendingStateChanges.clear();
 		this._confirmationNarrationPending = undefined;
+		this._responseNarrationPending = undefined;
 		for (const ref of this._eagerModelRefs.values()) { ref.dispose(); }
 		this._eagerModelRefs.clear();
 		this._eagerModelLoading.clear();
@@ -2427,8 +2440,8 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * transition (its sole narration trigger) and narrates the reply. The model
 	 * is eagerly loaded so the summary is available for phase two.
 	 */
-	private _narrateResponseViaTwoPhase(key: string, resource: URI): void {
-		this.logService.trace(`[voice] re-narrating unheard response id=${key.slice(-32)}`);
+	private _narrateResponseViaTwoPhase(key: string, resource: URI, isReassert: boolean = false): void {
+		this.logService.trace(`[voice] re-narrating unheard response id=${key.slice(-32)}${isReassert ? ' (re-assert)' : ''}`);
 		this._ensureModelLoaded(resource);
 		// Phase 1: flip is_active while holding the session as `thinking`.
 		this._forceThinkingOnce.add(key);
@@ -2447,8 +2460,60 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			if (this._getActiveSessionId() === key) {
 				this._sendContext();
 				this.voiceClientService.flushSessionContext();
+				// Expect this reply to narrate now; track it so a competing
+				// narration that preempts it can trigger a single re-assert. If
+				// this send is ITSELF the re-assert, mark it consumed so we never
+				// loop re-asserting the same reply.
+				this._responseNarrationPending = { sessionId: key, at: Date.now(), reasserted: isReassert };
 			}
 		}, VoiceSessionController._CONFIRMATION_ACTIVATE_DELAY_MS));
+	}
+
+	/**
+	 * Reconcile a just-shipped response re-narration against an incoming audio
+	 * response, recovering the "focused a completed session but its reply was
+	 * never read" case caused by backend narration preemption. Mirrors
+	 * {@link _reconcileConfirmationNarration}.
+	 *
+	 * - Audio for the SAME session clears the pending marker: its reply narrated.
+	 * - A TAGGED narration for a DIFFERENT session while our response session is
+	 *   still the active, still-idle one means the backend narrated that instead
+	 *   and dropped ours. Re-assert the reply once (fresh `thinking -> idle`
+	 *   transition) so it is read.
+	 *
+	 * The one-shot `reasserted` guard prevents an oscillation loop, and clearing
+	 * on the session's own audio prevents a double-read when it did narrate.
+	 */
+	private _reconcileResponseNarration(codingSessionId: string | undefined): void {
+		const pending = this._responseNarrationPending;
+		if (!pending) {
+			return;
+		}
+		// Our response session's own narration arrived — it was read.
+		if (codingSessionId === pending.sessionId) {
+			this._responseNarrationPending = undefined;
+			return;
+		}
+		// Only a tagged narration for another session is unambiguous evidence of
+		// preemption; ignore untagged audio (can't attribute it).
+		if (!codingSessionId) {
+			return;
+		}
+		const expired = Date.now() - pending.at > VoiceSessionController._CONFIRMATION_REASSERT_WINDOW_MS;
+		const stillActive = this._getActiveSessionId() === pending.sessionId;
+		let stillIdle = false;
+		if (stillActive) {
+			const model = this.chatService.getSession(URI.parse(pending.sessionId));
+			stillIdle = !!model && this._getAgentStateInfo(model).state === 'idle';
+		}
+		if (pending.reasserted || expired || !stillActive || !stillIdle) {
+			// Give up: navigated away, started a new turn, already retried, or timed out.
+			this._responseNarrationPending = undefined;
+			return;
+		}
+		this.logService.trace(`[voice] response for ${pending.sessionId.slice(-32)} preempted by narration for ${codingSessionId.slice(-32)}; re-asserting`);
+		this._responseNarrationPending = undefined;
+		this._narrateResponseViaTwoPhase(pending.sessionId, URI.parse(pending.sessionId), /* isReassert */ true);
 	}
 
 	/**
