@@ -6,9 +6,22 @@
 import { CancellationTokenSource } from '../../../../../../../base/common/cancellation.js';
 import { DisposableStore, toDisposable } from '../../../../../../../base/common/lifecycle.js';
 import { IInstantiationService } from '../../../../../../../platform/instantiation/common/instantiation.js';
-import { IChatToolRiskAssessmentService, ToolRiskPromptKind } from '../../../tools/chatToolRiskAssessmentService.js';
+import { IChatToolRiskAssessmentService, ToolRiskLevel, ToolRiskPromptKind } from '../../../tools/chatToolRiskAssessmentService.js';
 import { ILanguageModelToolsService } from '../../../../common/tools/languageModelToolsService.js';
 import { ToolRiskBadgeWidget } from './toolRiskBadgeWidget.js';
+
+export function createApprovalReasonBadge(
+	store: DisposableStore,
+	instantiationService: IInstantiationService,
+	reason: string | undefined,
+): ToolRiskBadgeWidget | undefined {
+	if (!reason) {
+		return undefined;
+	}
+	const widget = store.add(instantiationService.createInstance(ToolRiskBadgeWidget));
+	widget.setAssessment({ risk: ToolRiskLevel.Orange, explanation: reason });
+	return widget;
+}
 
 /**
  * Creates a {@link ToolRiskBadgeWidget} for a tool confirmation surface, or `undefined` when the

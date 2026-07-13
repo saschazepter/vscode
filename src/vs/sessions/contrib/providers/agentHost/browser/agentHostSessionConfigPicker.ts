@@ -120,6 +120,9 @@ export function getConfigIcon(property: string, value: unknown | undefined): The
 		if (value === 'autoApprove') {
 			return Codicon.warning;
 		}
+		if (value === 'assisted') {
+			return Codicon.sparkle;
+		}
 		return Codicon.shield;
 	}
 	return undefined;
@@ -131,7 +134,7 @@ function toActionItems(property: string, items: readonly IConfigPickerItem[], cu
 		label: item.label,
 		detail: item.description,
 		group: { title: '', icon: getConfigIcon(property, item.value) },
-		disabled: policyRestricted && (item.value === 'autoApprove' || item.value === 'autopilot'),
+		disabled: policyRestricted && property === SessionConfigKey.AutoApprove && item.value !== 'default',
 		item: { ...item, checked: isSelectedValue(currentValue, item.value) },
 	}));
 }
@@ -207,7 +210,7 @@ async function confirmAutoApproveLevel(value: string, dialogService: IDialogServ
  */
 function applyAutoApproveTriggerStyles(trigger: HTMLElement, property: string | undefined, value: unknown | undefined): void {
 	if (property === SessionConfigKey.AutoApprove) {
-		trigger.classList.toggle('warning', value === 'autopilot');
+		trigger.classList.toggle('warning', value === 'autopilot' || value === 'assisted');
 		trigger.classList.toggle('info', value === 'autoApprove');
 	}
 }
@@ -533,7 +536,7 @@ export class AgentHostSessionConfigPicker extends Disposable {
 					isPII: !!schema.enumDynamic,
 				});
 
-				if (isAutoApproveProperty && (item.value === 'autoApprove' || item.value === 'autopilot')) {
+				if (isAutoApproveProperty && item.value !== 'default') {
 					const confirmed = await confirmAutoApproveLevel(item.value, this._dialogService, this._storageService);
 					if (!confirmed) {
 						return;

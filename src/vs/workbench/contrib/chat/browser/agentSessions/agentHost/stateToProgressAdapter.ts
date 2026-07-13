@@ -1732,6 +1732,7 @@ export function toolCallStateToInvocation(tc: ToolCallState, subAgentInvocationI
 			message: isViewUnreviewedCommentsTool(tc.toolName)
 				? localize('agentFeedback.reviewMessage', "Choose which comments to reveal to the agent. Unchecked comments stay hidden.")
 				: stringOrMarkdownToString(tc.invocationMessage, connectionAuthority),
+			approvalReason: tc.approvalReason,
 		};
 		if (tc.options) {
 			confirmationMessages.customOptions = tc.options;

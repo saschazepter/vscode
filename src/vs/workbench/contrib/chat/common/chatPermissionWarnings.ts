@@ -10,7 +10,7 @@ import { ThemeIcon } from '../../../../base/common/themables.js';
 import { localize } from '../../../../nls.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
-import { AUTO_APPROVE_DONT_SHOW_AGAIN_KEY, AUTOPILOT_DONT_SHOW_AGAIN_KEY } from './chatPermissionStorageKeys.js';
+import { ASSISTED_APPROVAL_DONT_SHOW_AGAIN_KEY, AUTO_APPROVE_DONT_SHOW_AGAIN_KEY, AUTOPILOT_DONT_SHOW_AGAIN_KEY } from './chatPermissionStorageKeys.js';
 import { ChatConfiguration, ChatPermissionLevel } from './constants.js';
 
 /**
@@ -30,6 +30,9 @@ function dontShowAgainKey(level: ChatPermissionLevel): string | undefined {
 	}
 	if (level === ChatPermissionLevel.AutoApprove) {
 		return AUTO_APPROVE_DONT_SHOW_AGAIN_KEY;
+	}
+	if (level === ChatPermissionLevel.Assisted) {
+		return ASSISTED_APPROVAL_DONT_SHOW_AGAIN_KEY;
 	}
 	return undefined;
 }
@@ -52,8 +55,9 @@ export function resetShownWarnings(): void {
  * not warned again when stepping between them (e.g. Autopilot → Bypass).
  */
 const ELEVATION_RANK: ReadonlyMap<ChatPermissionLevel, number> = new Map([
-	[ChatPermissionLevel.AutoApprove, 1],
-	[ChatPermissionLevel.Autopilot, 1],
+	[ChatPermissionLevel.Assisted, 1],
+	[ChatPermissionLevel.AutoApprove, 2],
+	[ChatPermissionLevel.Autopilot, 2],
 ]);
 
 export function hasShownElevatedWarning(level: ChatPermissionLevel, storageService: IStorageService): boolean {
@@ -87,6 +91,13 @@ interface IElevatedWarningCopy {
 
 function getElevatedWarningCopy(level: ChatPermissionLevel, defaultSettingKey: string): IElevatedWarningCopy | undefined {
 	switch (level) {
+		case ChatPermissionLevel.Assisted:
+			return {
+				title: localize('permissions.assisted.warning.title', "Enable Auto-permissions?"),
+				confirm: localize('permissions.assisted.warning.confirm', "Enable"),
+				icon: Codicon.sparkle,
+				detail: localize('permissions.assisted.warning.detail', "Auto-permissions uses model recommendations to approve tool calls. Copilot will still ask when the model requires approval, excludes the request from automatic approval, or cannot make a recommendation.\n\nTo make this the starting permission level for new sessions, change the [{0}](command:workbench.action.openSettings?%5B%22{0}%22%5D) setting.", defaultSettingKey),
+			};
 		case ChatPermissionLevel.Autopilot:
 			return {
 				title: localize('permissions.autopilot.warning.title', "Enable Autopilot?"),

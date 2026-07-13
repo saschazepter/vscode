@@ -378,6 +378,7 @@ export function chatReducer(state: ChatState, action: ChatAction, log?: (msg: st
 					invocationMessage: action.invocationMessage,
 					toolInput: action.toolInput,
 					confirmationTitle: action.confirmationTitle,
+					approvalReason: action.approvalReason,
 					edits: action.edits,
 					editable: action.editable,
 					...(action.options ? { options: action.options } : {}),

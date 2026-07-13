@@ -32,7 +32,7 @@ function makeWellKnownConfig(value: string | undefined): ResolveSessionConfigRes
 					title: 'Auto Approve',
 					description: '',
 					type: 'string',
-					enum: ['default', 'autoApprove'],
+					enum: ['default', 'autoApprove', 'assisted'],
 					sessionMutable: true,
 				},
 			},
@@ -147,12 +147,30 @@ suite('AgentHostPermissionPickerDelegate', () => {
 		const { delegate, provider } = setup(store, makeActiveSession(), 'default');
 
 		delegate.setPermissionLevel(ChatPermissionLevel.AutoApprove);
+		delegate.setPermissionLevel(ChatPermissionLevel.Assisted);
 		delegate.setPermissionLevel(ChatPermissionLevel.Default);
 
 		assert.deepStrictEqual(provider.setCalls, [
 			[SESSION_ID, 'autoApprove', 'autoApprove'],
+			[SESSION_ID, 'autoApprove', 'assisted'],
 			[SESSION_ID, 'autoApprove', 'default'],
 		]);
+	});
+
+	test('offers Auto-permissions after Bypass Approvals', () => {
+		const { delegate } = setup(store, makeActiveSession(), 'assisted');
+
+		assert.deepStrictEqual({
+			current: delegate.currentPermissionLevel.get(),
+			available: delegate.availableLevels,
+		}, {
+			current: ChatPermissionLevel.Assisted,
+			available: [
+				ChatPermissionLevel.Default,
+				ChatPermissionLevel.AutoApprove,
+				ChatPermissionLevel.Assisted,
+			],
+		});
 	});
 
 	test('setPermissionLevel is a no-op when there is no active session', () => {
@@ -169,6 +187,15 @@ suite('AgentHostPermissionPickerDelegate', () => {
 		assert.strictEqual(
 			delegate.getPermissionLevelHover(ChatPermissionLevel.AutoApprove, getPermissionLevelMeta(ChatPermissionLevel.AutoApprove)),
 			'Copilot runs all tools without asking for approval.'
+		);
+	});
+
+	test('provides agent-host-specific hover copy for Auto-permissions', () => {
+		const { delegate } = setup(store, makeActiveSession(), 'assisted');
+
+		assert.strictEqual(
+			delegate.getPermissionLevelHover(ChatPermissionLevel.Assisted, getPermissionLevelMeta(ChatPermissionLevel.Assisted)),
+			'Copilot uses model recommendations to approve tool calls, and asks you when approval is still required.'
 		);
 	});
 
@@ -201,12 +228,12 @@ suite('isWellKnownAutoApproveSchema', () => {
 			title: 'Auto Approve',
 			description: 'desc',
 			type: 'string',
-			enum: ['default', 'autoApprove'],
+			enum: ['default', 'autoApprove', 'assisted'],
 			...overrides,
 		} as SessionConfigPropertySchema;
 	}
 
-	test('matches the canonical two-value enum', () => {
+	test('matches the canonical three-value enum', () => {
 		assert.strictEqual(isWellKnownAutoApproveSchema(schema()), true);
 	});
 

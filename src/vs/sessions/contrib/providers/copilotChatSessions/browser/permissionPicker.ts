@@ -96,6 +96,12 @@ export const DEFAULT_PERMISSION_LEVELS: readonly ChatPermissionLevel[] = [
 
 export function getPermissionLevelMeta(level: ChatPermissionLevel): IPermissionLevelMeta {
 	switch (level) {
+		case ChatPermissionLevel.Assisted:
+			return {
+				label: localize('permissions.assisted', "Auto-permissions"),
+				detail: localize('permissions.assisted.subtext', "Delegate approval decisions to the model"),
+				icon: Codicon.sparkle,
+			};
 		case ChatPermissionLevel.AutoApprove:
 			return {
 				label: localize('permissions.autoApprove', "Bypass Approvals"),
@@ -343,7 +349,7 @@ export class PermissionPicker extends Disposable {
 			? localize('permissionPicker.triggerAriaLabelWithDescription', "Pick Permission Level, {0}, {1}", meta.label, hover)
 			: localize('permissionPicker.triggerAriaLabel', "Pick Permission Level, {0}", meta.label);
 
-		trigger.classList.toggle('warning', this._currentLevel === ChatPermissionLevel.Autopilot);
+		trigger.classList.toggle('warning', this._currentLevel === ChatPermissionLevel.Autopilot || this._currentLevel === ChatPermissionLevel.Assisted);
 		trigger.classList.toggle('info', this._currentLevel === ChatPermissionLevel.AutoApprove);
 	}
 

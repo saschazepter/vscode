@@ -989,6 +989,8 @@ export class CopilotAgent extends Disposable implements IAgent {
 			env['COPILOT_CLI_RUN_AS_NODE'] = '1';
 			env['USE_BUILTIN_RIPGREP'] = 'false';
 			env['COPILOT_MCP_APPS'] = 'true';
+			// Required by the currently bundled SDK to enable its experimental auto-approval judge.
+			env['AUTO_APPROVAL'] = 'true';
 			await this._configureProxyEnv(env);
 
 			// On Linux the MXC bubblewrap sandbox backend does not forward a PTY into
@@ -2876,6 +2878,17 @@ export class CopilotAgent extends Disposable implements IAgent {
 				}
 			}
 		}
+	}
+
+	async onSessionConfigChanged(session: URI, config: Record<string, unknown>): Promise<void> {
+		if (!Object.hasOwn(config, SessionConfigKey.AutoApprove)) {
+			return;
+		}
+		const entry = this._sessions.get(AgentSession.id(session));
+		if (!entry) {
+			return;
+		}
+		await Promise.all(entry.allChatSessions().map(chat => chat.syncPermissionMode('config-change')));
 	}
 
 	respondToUserInputRequest(requestId: string, response: ChatInputResponseKind, answers?: Record<string, ChatInputAnswer>): void {

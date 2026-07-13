@@ -352,6 +352,8 @@ export interface IToolConfirmationMessages {
 	/** MUST be set if `title` is also set */
 	message?: string | IMarkdownString;
 	disclaimer?: string | IMarkdownString;
+	/** Model-provided explanation for why automatic approval was not recommended. */
+	approvalReason?: string;
 	allowAutoConfirm?: boolean;
 	terminalCustomActions?: ToolConfirmationAction[];
 	/** If true, confirmation will be requested after the tool executes and before results are sent to the model */

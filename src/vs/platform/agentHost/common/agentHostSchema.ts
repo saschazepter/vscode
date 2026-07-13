@@ -262,7 +262,7 @@ function safeStringify(value: unknown): string {
 
 // ---- Platform-owned schema -------------------------------------------------
 
-export type AutoApproveLevel = 'default' | 'autoApprove';
+export type AutoApproveLevel = 'default' | 'assisted' | 'autoApprove';
 
 export type SessionMode = 'interactive' | 'plan' | 'autopilot';
 
@@ -310,14 +310,16 @@ export const platformSessionSchema = createSchema({
 		type: 'string',
 		title: localize('agentHost.sessionConfig.autoApprove', "Approvals"),
 		description: localize('agentHost.sessionConfig.autoApproveDescription', "Tool approval behavior for this session"),
-		enum: ['default', 'autoApprove'],
+		enum: ['default', 'autoApprove', 'assisted'],
 		enumLabels: [
 			localize('agentHost.sessionConfig.autoApprove.default', "Default Approvals"),
 			localize('agentHost.sessionConfig.autoApprove.bypass', "Bypass Approvals"),
+			localize('agentHost.sessionConfig.autoApprove.assisted', "Auto-permissions"),
 		],
 		enumDescriptions: [
 			localize('agentHost.sessionConfig.autoApprove.defaultDescription', "Copilot uses your configured settings"),
 			localize('agentHost.sessionConfig.autoApprove.bypassDescription', "All tool calls are auto-approved"),
+			localize('agentHost.sessionConfig.autoApprove.assistedDescription', "Delegate approval decisions to the model"),
 		],
 		default: 'default',
 		sessionMutable: true,

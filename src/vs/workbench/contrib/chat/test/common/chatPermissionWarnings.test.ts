@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { InMemoryStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
-import { AUTO_APPROVE_DONT_SHOW_AGAIN_KEY, AUTOPILOT_DONT_SHOW_AGAIN_KEY } from '../../common/chatPermissionStorageKeys.js';
+import { ASSISTED_APPROVAL_DONT_SHOW_AGAIN_KEY, AUTO_APPROVE_DONT_SHOW_AGAIN_KEY, AUTOPILOT_DONT_SHOW_AGAIN_KEY } from '../../common/chatPermissionStorageKeys.js';
 import { hasShownElevatedWarning, resetShownWarnings } from '../../common/chatPermissionWarnings.js';
 import { ChatPermissionLevel } from '../../common/constants.js';
 
@@ -32,6 +32,7 @@ suite('chatPermissionWarnings', () => {
 	test('an unconfirmed elevated level has not been warned', () => {
 		const s = storage();
 		assert.strictEqual(hasShownElevatedWarning(ChatPermissionLevel.AutoApprove, s), false);
+		assert.strictEqual(hasShownElevatedWarning(ChatPermissionLevel.Assisted, s), false);
 		assert.strictEqual(hasShownElevatedWarning(ChatPermissionLevel.Autopilot, s), false);
 	});
 
@@ -43,5 +44,15 @@ suite('chatPermissionWarnings', () => {
 	test('confirming Bypass suppresses the equal-reach Autopilot warning', () => {
 		const s = storage(AUTO_APPROVE_DONT_SHOW_AGAIN_KEY);
 		assert.strictEqual(hasShownElevatedWarning(ChatPermissionLevel.Autopilot, s), true);
+	});
+
+	test('confirming Bypass suppresses the lower-reach Auto-permissions warning', () => {
+		const s = storage(AUTO_APPROVE_DONT_SHOW_AGAIN_KEY);
+		assert.strictEqual(hasShownElevatedWarning(ChatPermissionLevel.Assisted, s), true);
+	});
+
+	test('confirming Auto-permissions does not suppress the Bypass warning', () => {
+		const s = storage(ASSISTED_APPROVAL_DONT_SHOW_AGAIN_KEY);
+		assert.strictEqual(hasShownElevatedWarning(ChatPermissionLevel.AutoApprove, s), false);
 	});
 });

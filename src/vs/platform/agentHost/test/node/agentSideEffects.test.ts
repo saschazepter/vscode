@@ -2681,6 +2681,24 @@ suite('AgentSideEffects', () => {
 				{ requestId: 'tc-mid-1', approved: true },
 			]);
 		});
+
+		test('forwards live approval-level changes to the agent runtime', async () => {
+			const configOnlySession = AgentSession.uri('mock', 'config-only');
+			const action = {
+				type: ActionType.SessionConfigChanged as const,
+				config: { [SessionConfigKey.AutoApprove]: 'default' },
+			};
+
+			sideEffects.handleAction(configOnlySession.toString(), action);
+
+			assert.deepStrictEqual(agent.sessionConfigChangedCalls.map(call => ({
+				session: call.session.toString(),
+				config: call.config,
+			})), [{
+				session: configOnlySession.toString(),
+				config: { [SessionConfigKey.AutoApprove]: 'default' },
+			}]);
+		});
 	});
 
 	// ---- Edit auto-approve ----------------------------------------------

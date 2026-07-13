@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { CopilotSession, SessionEvent, SessionEventHandler, SessionEventPayload, SessionEventType, Tool, ToolResultObject, TypedSessionEventHandler } from '@github/copilot-sdk';
+import type { CopilotSession, PermissionAllowAllMode, SessionEvent, SessionEventHandler, SessionEventPayload, SessionEventType, Tool, ToolResultObject, TypedSessionEventHandler } from '@github/copilot-sdk';
 import assert from 'assert';
 import { DeferredPromise, timeout } from '../../../../base/common/async.js';
 import { encodeBase64, VSBuffer } from '../../../../base/common/buffer.js';
@@ -53,6 +53,10 @@ class MockCopilotSession {
 	readonly sessionId = 'test-session-1';
 	readonly sendRequests: unknown[] = [];
 	readonly modeSetCalls: Array<{ mode: 'interactive' | 'plan' | 'autopilot' }> = [];
+	readonly permissionModeSetCalls: PermissionAllowAllMode[] = [];
+	permissionModeSetSuccess = true;
+	readonly experimentalModeUpdates: boolean[] = [];
+	experimentalModeUpdateSuccess = true;
 	readonly compactCalls: unknown[] = [];
 	readonly commandListCalls: unknown[] = [];
 	readonly commandInvokeCalls: Array<{ name: string; input?: string }> = [];
@@ -128,6 +132,13 @@ class MockCopilotSession {
 				this.modeSetCalls.push({ mode: params.mode });
 			},
 		},
+		permissions: {
+			setAllowAll: async (params: { mode?: PermissionAllowAllMode }) => {
+				const mode = params.mode ?? 'off';
+				this.permissionModeSetCalls.push(mode);
+				return { success: this.permissionModeSetSuccess, enabled: mode === 'on', mode };
+			},
+		},
 		plan: {
 			read: async () => this.planReadResult,
 			update: async (_params: { content: string }) => { /* no-op */ },
@@ -163,10 +174,14 @@ class MockCopilotSession {
 			cancelSamplingExecution: async () => { /* no-op */ },
 		},
 		options: {
-			update: async (params: { sandboxConfig?: unknown }) => {
+			update: async (params: { sandboxConfig?: unknown; isExperimentalMode?: boolean }) => {
 				if (params.sandboxConfig !== undefined) {
 					this.sandboxConfigUpdates.push(params.sandboxConfig);
 				}
+				if (params.isExperimentalMode !== undefined) {
+					this.experimentalModeUpdates.push(params.isExperimentalMode);
+				}
+				return { success: this.experimentalModeUpdateSuccess };
 			},
 		},
 		instructions: {
@@ -190,10 +205,16 @@ class CapturingLogService extends NullLogService {
 	readonly errors: Array<{ first: string | Error; args: unknown[] }> = [];
 	readonly warnings: Array<{ message: string; args: unknown[] }> = [];
 	readonly traces: Array<{ message: string; args: unknown[] }> = [];
+	readonly infos: Array<{ message: string; args: unknown[] }> = [];
 
 	override trace(message: string, ...args: unknown[]): void {
 		this.traces.push({ message, args });
 		super.trace(message, ...args);
+	}
+
+	override info(message: string, ...args: unknown[]): void {
+		this.infos.push({ message, args });
+		super.info(message, ...args);
 	}
 
 	override error(message: string | Error, ...args: unknown[]): void {
@@ -1879,6 +1900,7 @@ suite('CopilotAgentSession', () => {
 				allowBypass: true,
 				userPolicy: { filesystem: {}, network: { allowOutbound: false } },
 			});
+			assert.deepStrictEqual(mockSession.permissionModeSetCalls, ['off']);
 		});
 
 		test('per-request sandbox: disabled under session bypass approvals', async () => {
@@ -1890,17 +1912,258 @@ suite('CopilotAgentSession', () => {
 			await session.send('hello', undefined, 'turn-1');
 
 			assert.deepStrictEqual(mockSession.sandboxConfigUpdates.at(-1), { enabled: false });
+			assert.deepStrictEqual(mockSession.permissionModeSetCalls, ['on']);
 		});
 
-		test('per-request sandbox: disabled under autopilot mode', async () => {
+		test('per-request permissions: delegates approvals to the SDK under Auto-permissions', async () => {
 			const { session, mockSession } = await createAgentSession(disposables, {
-				rootValues: { [AgentHostSandboxConfigKey.Sandbox]: { [AgentHostSandboxKey.Enabled]: AgentSandboxEnabledValue.On } },
-				configValues: { [SessionConfigKey.Mode]: 'autopilot' },
+				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
 
 			await session.send('hello', undefined, 'turn-1');
 
-			assert.deepStrictEqual(mockSession.sandboxConfigUpdates.at(-1), { enabled: false });
+			assert.deepStrictEqual({
+				experimentalModeUpdates: mockSession.experimentalModeUpdates,
+				permissionModes: mockSession.permissionModeSetCalls,
+			}, {
+				experimentalModeUpdates: [true],
+				permissionModes: ['auto'],
+			});
+		});
+
+		test('does not send when the SDK rejects experimental mode for Auto-permissions', async () => {
+			const { session, mockSession } = await createAgentSession(disposables, {
+				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
+			});
+			mockSession.experimentalModeUpdateSuccess = false;
+
+			await assert.rejects(() => session.send('hello', undefined, 'turn-1'), /rejected experimental mode/);
+
+			assert.deepStrictEqual({
+				permissionModes: mockSession.permissionModeSetCalls,
+				sends: mockSession.sendRequests,
+			}, {
+				permissionModes: [],
+				sends: [],
+			});
+		});
+
+		test('switching from Bypass to Default immediately disables SDK allow-all mode', async () => {
+			const configValues: Record<string, unknown> = { [SessionConfigKey.AutoApprove]: 'autoApprove' };
+			const logService = new CapturingLogService();
+			const { session, mockSession } = await createAgentSession(disposables, { configValues, logService });
+
+			await session.send('hello', undefined, 'turn-1');
+			configValues[SessionConfigKey.AutoApprove] = 'default';
+			await session.syncPermissionMode('config-change');
+
+			assert.deepStrictEqual({
+				modes: mockSession.permissionModeSetCalls,
+				logs: logService.infos
+					.map(entry => entry.message)
+					.filter(message => message.includes('Syncing permission mode')),
+			}, {
+				modes: ['on', 'off'],
+				logs: [
+					'[Copilot:test-session-1] Syncing permission mode: source=turn-start, agentMode=interactive, configuredLevel=autoApprove, sdkMode=on, previousSdkMode=unknown, globalAutoApprove=false',
+					'[Copilot:test-session-1] Syncing permission mode: source=config-change, agentMode=interactive, configuredLevel=default, sdkMode=off, previousSdkMode=on, globalAutoApprove=false',
+				],
+			});
+		});
+
+		test('switching from Auto-permissions to Default disables SDK experimental mode', async () => {
+			const configValues: Record<string, unknown> = { [SessionConfigKey.AutoApprove]: 'assisted' };
+			const { session, mockSession } = await createAgentSession(disposables, { configValues });
+
+			await session.syncPermissionMode('turn-start');
+			configValues[SessionConfigKey.AutoApprove] = 'default';
+			await session.syncPermissionMode('config-change');
+
+			assert.deepStrictEqual({
+				experimentalModeUpdates: mockSession.experimentalModeUpdates,
+				permissionModes: mockSession.permissionModeSetCalls,
+			}, {
+				experimentalModeUpdates: [true, false],
+				permissionModes: ['auto', 'off'],
+			});
+		});
+
+		test('Auto-permissions honors approve recommendations without prompting', async () => {
+			const { session, runtime, mockSession, signals } = await createAgentSession(disposables, {
+				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
+			});
+			await session.syncPermissionMode('turn-start');
+			mockSession.fire('permission.requested', {
+				requestId: 'request-1',
+				permissionRequest: { kind: 'read', path: '/workspace/src/file.ts', intention: 'Read the file', toolCallId: 'tc-assisted' },
+				promptRequest: {
+					kind: 'path',
+					accessKind: 'read',
+					paths: ['/workspace/src/file.ts'],
+					toolCallId: 'tc-assisted',
+					autoApproval: { recommendation: 'approve', reason: 'Low risk' },
+				},
+			});
+
+			const result = await runtime.handlePermissionRequest({
+				kind: 'read',
+				path: '/workspace/src/file.ts',
+				toolCallId: 'tc-assisted',
+			});
+
+			assert.deepStrictEqual({ result, signals }, {
+				result: { kind: 'approve-once' },
+				signals: [],
+			});
+		});
+
+		test('Auto-permissions correlates a recommendation event that arrives after the permission callback', async () => {
+			const { session, runtime, mockSession, signals } = await createAgentSession(disposables, {
+				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
+			});
+			await session.syncPermissionMode('turn-start');
+
+			const resultPromise = runtime.handlePermissionRequest({
+				kind: 'write',
+				fileName: '/workspace/package.json',
+				intention: 'Edit file',
+				diff: 'diff',
+				toolCallId: 'tc-assisted-late-event',
+			});
+			mockSession.fire('permission.requested', {
+				requestId: 'request-late-event',
+				permissionRequest: {
+					kind: 'write',
+					fileName: '/workspace/package.json',
+					intention: 'Edit file',
+					diff: 'diff',
+					canOfferSessionApproval: true,
+					toolCallId: 'tc-assisted-late-event',
+				},
+				promptRequest: {
+					kind: 'write',
+					fileName: '/workspace/package.json',
+					intention: 'Edit file',
+					diff: 'diff',
+					canOfferSessionApproval: true,
+					toolCallId: 'tc-assisted-late-event',
+					autoApproval: { recommendation: 'approve', reason: 'Matches the request' },
+				},
+			});
+
+			assert.deepStrictEqual({
+				result: await resultPromise,
+				signals,
+			}, {
+				result: { kind: 'approve-once' },
+				signals: [],
+			});
+		});
+
+		test('Auto-permissions prompts when the model requires approval', async () => {
+			const { session, runtime, mockSession, waitForSignal } = await createAgentSession(disposables, {
+				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
+			});
+			await session.syncPermissionMode('turn-start');
+			mockSession.fire('permission.requested', {
+				requestId: 'request-2',
+				permissionRequest: { kind: 'read', path: '/workspace/src/file.ts', intention: 'Read the file', toolCallId: 'tc-assisted-prompt' },
+				promptRequest: {
+					kind: 'path',
+					accessKind: 'read',
+					paths: ['/workspace/src/file.ts'],
+					toolCallId: 'tc-assisted-prompt',
+					autoApproval: { recommendation: 'requireApproval', reason: 'Needs confirmation' },
+				},
+			});
+
+			const resultPromise = runtime.handlePermissionRequest({
+				kind: 'read',
+				path: '/workspace/src/file.ts',
+				toolCallId: 'tc-assisted-prompt',
+			});
+			const confirmation = await waitForSignal(signal => signal.kind === 'pending_confirmation');
+			assert.strictEqual(confirmation.kind === 'pending_confirmation' ? confirmation.state.approvalReason : undefined, 'Needs confirmation');
+			assert.ok(session.respondToPermissionRequest('tc-assisted-prompt', true));
+
+			assert.strictEqual((await resultPromise).kind, 'approve-once');
+		});
+
+		test('Auto-permissions never bypasses sandbox-escape confirmation', async () => {
+			const { session, runtime, mockSession, waitForSignal } = await createAgentSession(disposables, {
+				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
+			});
+			await session.syncPermissionMode('turn-start');
+			mockSession.fire('permission.requested', {
+				requestId: 'request-3',
+				permissionRequest: {
+					kind: 'shell',
+					canOfferSessionApproval: false,
+					commands: [],
+					fullCommandText: 'curl https://example.com',
+					hasWriteFileRedirection: false,
+					intention: 'Access the network',
+					possiblePaths: [],
+					possibleUrls: [{ url: 'https://example.com' }],
+					requestSandboxBypass: true,
+					toolCallId: 'tc-assisted-bypass',
+				},
+				promptRequest: {
+					kind: 'commands',
+					canOfferSessionApproval: false,
+					commandIdentifiers: ['curl'],
+					fullCommandText: 'curl https://example.com',
+					intention: 'Access the network',
+					toolCallId: 'tc-assisted-bypass',
+					autoApproval: { recommendation: 'approve', reason: 'Incorrect recommendation' },
+				},
+			});
+
+			const resultPromise = runtime.handlePermissionRequest({
+				kind: 'shell',
+				toolCallId: 'tc-assisted-bypass',
+				fullCommandText: 'curl https://example.com',
+				requestSandboxBypass: true,
+			});
+			await waitForSignal(signal => signal.kind === 'pending_confirmation');
+			assert.ok(session.respondToPermissionRequest('tc-assisted-bypass', false));
+
+			assert.strictEqual((await resultPromise).kind, 'reject');
+		});
+
+		test('does not send when the SDK rejects the requested permission mode', async () => {
+			const { session, mockSession } = await createAgentSession(disposables, {
+				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
+			});
+			mockSession.permissionModeSetSuccess = false;
+
+			await assert.rejects(() => session.send('hello', undefined, 'turn-1'), /rejected permission mode 'auto'/);
+
+			assert.deepStrictEqual(mockSession.sendRequests, []);
+		});
+
+		test('per-request permissions: Autopilot with Default Approvals keeps SDK approval mode off', async () => {
+			const { session, mockSession } = await createAgentSession(disposables, {
+				rootValues: { [AgentHostSandboxConfigKey.Sandbox]: { [AgentHostSandboxKey.Enabled]: AgentSandboxEnabledValue.On } },
+				configValues: {
+					[SessionConfigKey.Mode]: 'autopilot',
+					[SessionConfigKey.AutoApprove]: 'default',
+				},
+			});
+
+			await session.send('hello', undefined, 'turn-1');
+
+			assert.deepStrictEqual({
+				permissionModes: mockSession.permissionModeSetCalls,
+				sandbox: mockSession.sandboxConfigUpdates.at(-1),
+			}, {
+				permissionModes: ['off'],
+				sandbox: {
+					enabled: true,
+					allowBypass: true,
+					userPolicy: { filesystem: {}, network: { allowOutbound: false } },
+				},
+			});
 		});
 
 		test('per-request sandbox: disabled under global auto-approve', async () => {
@@ -4563,9 +4826,8 @@ suite('CopilotAgentSession', () => {
 					{
 						id: 'autopilot',
 						label: 'Implement with Autopilot',
-						description: 'Auto-approve all tool calls and continue until done.',
+						description: 'Continue autonomously until done, using the selected approval level.',
 						default: true,
-						permissionLevel: 'autopilot',
 					},
 					{
 						id: 'interactive',
@@ -4610,7 +4872,7 @@ suite('CopilotAgentSession', () => {
 			await responsePromise;
 		});
 
-		test('completing the input request with autopilot resolves with approved + autopilot + autoApproveEdits and syncs mode=autopilot', async () => {
+		test('completing the input request with autopilot preserves Default Approvals and syncs mode=autopilot', async () => {
 			const { session, runtime, waitForSignal, sessionConfigUpdates } = await createAgentSession(disposables);
 
 			const responsePromise = runtime.handleExitPlanModeRequest(planRequestParams({ actions: ['autopilot', 'interactive'], recommendedAction: 'autopilot' }), { sessionId: 'test-session-1' });
@@ -4626,11 +4888,28 @@ suite('CopilotAgentSession', () => {
 				},
 			});
 
-			assert.deepStrictEqual(await responsePromise, { approved: true, selectedAction: 'autopilot', autoApproveEdits: true });
+			assert.deepStrictEqual(await responsePromise, { approved: true, selectedAction: 'autopilot' });
 			// Picking "Implement with Autopilot" flips the AHP mode immediately.
 			assert.deepStrictEqual(sessionConfigUpdates, [
 				{ session: 'copilot:/test-session-1', patch: { mode: 'autopilot' } },
 			]);
+		});
+
+		test('completing the input request with autopilot enables edit auto-approval under Bypass Approvals', async () => {
+			const { session, runtime, waitForSignal } = await createAgentSession(disposables, {
+				configValues: { [SessionConfigKey.AutoApprove]: 'autoApprove' },
+			});
+
+			const responsePromise = runtime.handleExitPlanModeRequest(planRequestParams({ actions: ['autopilot', 'interactive'], recommendedAction: 'autopilot' }), { sessionId: 'test-session-1' });
+			const request = getInputRequest(await waitForSignal(s => isAction(s, ActionType.ChatInputRequested)));
+			session.respondToUserInputRequest(request.id, ChatInputResponseKind.Accept, {
+				[request.questions![0].id]: {
+					state: ChatInputAnswerState.Submitted,
+					value: { kind: ChatInputAnswerValueKind.Selected, value: 'autopilot' },
+				},
+			});
+
+			assert.deepStrictEqual(await responsePromise, { approved: true, selectedAction: 'autopilot', autoApproveEdits: true });
 		});
 
 		test('completing the input request with interactive resolves with approved + interactive (no autoApprove) and syncs mode=interactive', async () => {

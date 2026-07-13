@@ -25,7 +25,7 @@ const REQUIRED_CODEX_APPROVALS_VALUE = 'default';
 /**
  * Returns `true` when an `autoApprove` session-config property uses the
  * shape the unified permission picker expects: a string enum that is a
- * subset of `default | autoApprove | autopilot` and contains at least
+ * subset of `default | assisted | autoApprove | autopilot` and contains at least
  * `default`.
  *
  * Callers use this to decide whether to render the unified
@@ -69,11 +69,12 @@ export class AgentHostPermissionPickerDelegate extends Disposable implements IPe
 
 	/**
 	 * Agent-host sessions expose Autopilot on the orthogonal `mode` axis, so
-	 * the permissions picker offers `Default` / `Bypass` here.
+	 * the permissions picker offers `Default` / `Bypass` / `Auto-permissions` here.
 	 */
 	readonly availableLevels: readonly ChatPermissionLevel[] = [
 		ChatPermissionLevel.Default,
 		ChatPermissionLevel.AutoApprove,
+		ChatPermissionLevel.Assisted,
 	];
 
 	/** Agent-host sessions seed their default approval level from this setting. */
@@ -122,6 +123,8 @@ export class AgentHostPermissionPickerDelegate extends Disposable implements IPe
 				return localize('agentHostPermissionPicker.defaultApprovalsHover', "Copilot asks before running tools unless your configured settings allow the tool.");
 			case ChatPermissionLevel.AutoApprove:
 				return localize('agentHostPermissionPicker.autoApproveHover', "Copilot runs all tools without asking for approval.");
+			case ChatPermissionLevel.Assisted:
+				return localize('agentHostPermissionPicker.assistedHover', "Copilot uses model recommendations to approve tool calls, and asks you when approval is still required.");
 			case ChatPermissionLevel.Autopilot:
 				return localize('agentHostPermissionPicker.autopilotApprovalsHover', "Copilot runs tools without asking for approval and continues until the task is done.");
 		}
