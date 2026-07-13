@@ -37,6 +37,7 @@ export class CopilotSlashCommandProvider {
 			return [];
 		}
 	}
+
 	public async resolveSlashCommand(command: string, maxWaitMs: number | undefined = undefined): Promise<RuntimeSlashCommandInfo | undefined> {
 		const key = this._normalizeSlashCommandKey(command);
 		if (!key) {
