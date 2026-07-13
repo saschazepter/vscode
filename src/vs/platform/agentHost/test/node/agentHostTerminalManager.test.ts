@@ -47,13 +47,6 @@ class TestTerminalDataHandler {
 	readonly dispatched: StateAction[] = [];
 	content: TerminalContentPart[] = [];
 	cwd = '/home/user';
-	/**
-	 * Output captured for each completed command at the moment its
-	 * CommandFinished event is handled — mirrors the `output` field of
-	 * AgentHostTerminalManager's onCommandFinished event, which is what the
-	 * shell tools surface to the model.
-	 */
-	readonly finishedOutputs: string[] = [];
 	private readonly _terminalQueryFilterState: ITerminalQueryFilterState = { pendingData: '' };
 
 	constructor(
@@ -138,7 +131,6 @@ class TestTerminalDataHandler {
 						part.isComplete = true;
 						part.exitCode = event.exitCode;
 						part.durationMs = durationMs;
-						this.finishedOutputs.push(part.output);
 						break;
 					}
 				}
@@ -723,24 +715,41 @@ suite('AgentHostTerminalManager – command detection integration', () => {
 		assert.strictEqual(cmdParts[0].type === 'command' && cmdParts[0].output, 'line1\r\nline2\r\nline3\r\n');
 	});
 
-	test('output and CommandFinished arriving in one PTY read are attributed to the command', () => {
+	test('output and CommandFinished arriving in one PTY read are attributed to the command', async () => {
 		// A fast command (e.g. `echo`) frequently emits its output and the
 		// CommandExecuted/CommandFinished markers in a single PTY read. The
 		// output that precedes the CommandFinished marker must be attributed to
 		// the command before the finished event snapshots it, otherwise it is
 		// lost from the command result (regression for the flaky agent-host
 		// sandbox smoke test, where the shell tool returned an empty output).
-		const handler = createHandler();
+		const logService = new NullLogService();
+		const stateManager = disposables.add(new AgentHostStateManager(logService));
+		const configurationService = disposables.add(new AgentConfigurationService(stateManager, logService));
+		const productService = { _serviceBrand: undefined, applicationName: 'vscode' } as IProductService;
+		const pty = new TestPty();
+		const manager = disposables.add(new TestAgentHostTerminalManager(stateManager, logService, productService, configurationService, pty));
+		const uri = 'agenthost-terminal://test/coalesced-command-finished';
 
-		handler.handlePtyData(
-			`${osc633('E;echo\\x20hi;test-nonce')}${osc633('C')}hi\r\n${osc633('D;0')}`
-		);
+		const createTerminal = manager.createTerminal({
+			channel: uri,
+			claim: { kind: TerminalClaimKind.Client, clientId: 'test-client' },
+			cwd: process.cwd(),
+			cols: 80,
+			rows: 24,
+		}, { shell: '/bin/bash' });
 
-		const cmdParts = handler.content.filter(p => p.type === 'command');
-		assert.strictEqual(cmdParts.length, 1);
-		assert.strictEqual(cmdParts[0].type === 'command' && cmdParts[0].output, 'hi\r\n');
-		// The output captured at CommandFinished time must include the stdout,
-		// mirroring the onCommandFinished event surfaced to the shell tools.
-		assert.deepStrictEqual(handler.finishedOutputs, ['hi\r\n']);
+		await pty.dataListenerRegistered.p;
+		pty.fireData(osc633('A'));
+		await createTerminal;
+
+		const completions: { readonly exitCode: number | undefined; readonly output: string }[] = [];
+		disposables.add(manager.onCommandFinished(uri, event => completions.push({
+			exitCode: event.exitCode,
+			output: event.output,
+		})));
+
+		pty.fireData(`${osc633('C')}hi\r\n${osc633('D;0')}`);
+
+		assert.deepStrictEqual(completions, [{ exitCode: 0, output: 'hi\r\n' }]);
 	});
 });
