@@ -69,6 +69,20 @@ export class ImplicitContextAttachmentWidget extends Disposable {
 		super();
 
 		this.render();
+
+		// A light/dark icon must be reapplied when the color theme changes so the correct uri is used
+		this._register(this.themeService.onDidColorThemeChange(() => {
+			if (this._hasDualPathIcon()) {
+				this.render();
+			}
+		}));
+	}
+
+	private _hasDualPathIcon(): boolean {
+		return this.attachment.values.some(context => {
+			const iconPath = context.iconPath;
+			return !!iconPath && !ThemeIcon.isThemeIcon(iconPath) && !URI.isUri(iconPath);
+		});
 	}
 
 	private render() {

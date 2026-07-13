@@ -30,6 +30,22 @@ import { Mutable } from '../../../../../base/common/types.js';
 export type ChatContextIconPath = ThemeIcon | URI | { light: URI; dark: URI };
 
 /**
+ * Type guard for {@link ChatContextIconPath}. Accepts a {@link ThemeIcon theme icon}, a single
+ * {@link URI} or an object with both `light` and `dark` {@link URI uris}. Rejects `null`, `undefined`
+ * and partially-specified light/dark objects.
+ */
+export function isChatContextIconPath(value: unknown): value is ChatContextIconPath {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	if (ThemeIcon.isThemeIcon(value) || URI.isUri(value)) {
+		return true;
+	}
+	const asDualPath = value as { light?: unknown; dark?: unknown };
+	return URI.isUri(asDualPath.light) && URI.isUri(asDualPath.dark);
+}
+
+/**
  * Resolve a {@link ChatContextIconPath} into a value that can be passed to the `iconPath`
  * option of an icon label, picking the light or dark uri based on the current theme.
  *
@@ -713,7 +729,7 @@ export function isStringImplicitContextValue(value: unknown): value is StringCha
 		(typeof asStringImplicitContextValue.name === 'string' || typeof asStringImplicitContextValue.name === 'undefined') &&
 		(asStringImplicitContextValue.resourceUri === undefined || URI.isUri(asStringImplicitContextValue.resourceUri)) &&
 		(typeof asStringImplicitContextValue.name === 'string' || URI.isUri(asStringImplicitContextValue.resourceUri)) &&
-		(asStringImplicitContextValue.iconPath === undefined || ThemeIcon.isThemeIcon(asStringImplicitContextValue.iconPath) || URI.isUri(asStringImplicitContextValue.iconPath) || (typeof asStringImplicitContextValue.iconPath === 'object' && URI.isUri((asStringImplicitContextValue.iconPath as { dark?: URI }).dark))) &&
+		(asStringImplicitContextValue.iconPath === undefined || isChatContextIconPath(asStringImplicitContextValue.iconPath)) &&
 		URI.isUri(asStringImplicitContextValue.uri) &&
 		typeof asStringImplicitContextValue.handle === 'number'
 	);

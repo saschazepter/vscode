@@ -70,7 +70,7 @@ import { BrowserViewSharingState, IBrowserViewWorkbenchService } from '../../../
 import { IChatContentReference } from '../../common/chatService/chatService.js';
 import { coerceImageBuffer } from '../../common/chatImageExtraction.js';
 import { ChatConfiguration } from '../../common/constants.js';
-import { getImageAttachmentLimit, IChatRequestPasteVariableEntry, IChatRequestVariableEntry, IBrowserViewVariableEntry, IElementVariableEntry, INotebookOutputVariableEntry, IPromptFileVariableEntry, IPromptTextVariableEntry, ISCMHistoryItemVariableEntry, OmittedState, PromptFileVariableKind, ChatRequestToolReferenceEntry, ISCMHistoryItemChangeVariableEntry, ISCMHistoryItemChangeRangeVariableEntry, ITerminalVariableEntry, isStringVariableEntry, resolveChatContextIcon } from '../../common/attachments/chatVariableEntries.js';
+import { getImageAttachmentLimit, IChatRequestPasteVariableEntry, IChatRequestVariableEntry, IBrowserViewVariableEntry, IElementVariableEntry, INotebookOutputVariableEntry, IPromptFileVariableEntry, IPromptTextVariableEntry, ISCMHistoryItemVariableEntry, OmittedState, PromptFileVariableKind, ChatRequestToolReferenceEntry, ISCMHistoryItemChangeVariableEntry, ISCMHistoryItemChangeRangeVariableEntry, ITerminalVariableEntry, isStringVariableEntry, resolveChatContextIcon, ChatContextIconPath } from '../../common/attachments/chatVariableEntries.js';
 import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService, isAutoLanguageModel } from '../../common/languageModels.js';
 import { ILanguageModelToolsService, isToolSet } from '../../common/tools/languageModelToolsService.js';
 import { getCleanPromptName } from '../../common/promptSyntax/config/promptFileLocations.js';
@@ -798,18 +798,13 @@ export class DefaultChatAttachmentWidget extends AbstractChatAttachmentWidget {
 		// Provider-supplied icon path (ThemeIcon | Uri | { light, dark }) for context items
 		const iconPath = (isStringVariableEntry(attachment) || attachment.kind === 'generic') ? attachment.iconPath : undefined;
 
-		if (isStringVariableEntry(attachment) && iconPath && ThemeIcon.isThemeIcon(iconPath) && (ThemeIcon.isFile(iconPath) || ThemeIcon.isFolder(iconPath)) && attachment.resourceUri) {
-			// Derive icon classes from resourceUri for file/folder theme icons
-			const fileKind = ThemeIcon.isFolder(iconPath) ? FileKind.FOLDER : FileKind.FILE;
-			const iconClasses = getIconClasses(this.modelService, this.languageService, attachment.resourceUri, fileKind);
-			this.label.setLabel(attachmentLabel, description, { extraClasses: iconClasses });
-		} else if (iconPath) {
-			const resolvedIcon = resolveChatContextIcon(iconPath, isDark(this.themeService.getColorTheme().type));
-			this.label.setLabel(attachmentLabel, description, { iconPath: resolvedIcon });
-		} else {
-			const withIcon = attachment.icon?.id ? `$(${attachment.icon.id})\u00A0${attachmentLabel}` : attachmentLabel;
-			this.label.setLabel(withIcon, description);
+		this._applyLabel(attachment, attachmentLabel, description, iconPath);
+
+		// A light/dark icon must be reapplied when the color theme changes so the correct uri is used
+		if (iconPath && !ThemeIcon.isThemeIcon(iconPath) && !URI.isUri(iconPath)) {
+			this._register(this.themeService.onDidColorThemeChange(() => this._applyLabel(attachment, attachmentLabel, description, iconPath)));
 		}
+
 		this.element.ariaLabel = this.appendDeletionHint(localize('chat.attachment', "Attached context, {0}", attachment.name));
 
 		if (attachment.kind === 'diagnostic') {
@@ -855,6 +850,21 @@ export class DefaultChatAttachmentWidget extends AbstractChatAttachmentWidget {
 
 		if (resource) {
 			this.addResourceOpenHandlers(resource, range);
+		}
+	}
+
+	private _applyLabel(attachment: IChatRequestVariableEntry, attachmentLabel: string, description: string | undefined, iconPath: ChatContextIconPath | undefined): void {
+		if (isStringVariableEntry(attachment) && iconPath && ThemeIcon.isThemeIcon(iconPath) && (ThemeIcon.isFile(iconPath) || ThemeIcon.isFolder(iconPath)) && attachment.resourceUri) {
+			// Derive icon classes from resourceUri for file/folder theme icons
+			const fileKind = ThemeIcon.isFolder(iconPath) ? FileKind.FOLDER : FileKind.FILE;
+			const iconClasses = getIconClasses(this.modelService, this.languageService, attachment.resourceUri, fileKind);
+			this.label.setLabel(attachmentLabel, description, { extraClasses: iconClasses });
+		} else if (iconPath) {
+			const resolvedIcon = resolveChatContextIcon(iconPath, isDark(this.themeService.getColorTheme().type));
+			this.label.setLabel(attachmentLabel, description, { iconPath: resolvedIcon });
+		} else {
+			const withIcon = attachment.icon?.id ? `$(${attachment.icon.id})\u00A0${attachmentLabel}` : attachmentLabel;
+			this.label.setLabel(withIcon, description);
 		}
 	}
 
