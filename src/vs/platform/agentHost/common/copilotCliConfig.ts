@@ -37,7 +37,7 @@ export const AgentHostOpus48PromptEnabledSettingId = 'chat.agentHost.opus48Promp
 
 export const AgentHostReasoningEffortOverrideSettingId = 'chat.agentHost.reasoningEffortOverride';
 
-export const AgentHostModelCapabilityOverridesSettingId = 'chat.agentHost.modelCapabilityOverrides';
+export const AgentHostCopilotModelCapabilityOverridesSettingId = 'chat.agentHost.copilot.modelCapabilityOverrides';
 
 /** Per-model capability override; the agent-host equivalent of the extension's `IModelCapabilityOverride`. */
 export interface ICopilotCliModelCapabilityOverride {

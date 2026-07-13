@@ -13,7 +13,7 @@ import { IConfigurationService } from '../../../../../../platform/configuration/
 import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { IAgentHostEnablementService } from '../../../../../../platform/agentHost/common/agentHostEnablementService.js';
 import { IAgentHostService } from '../../../../../../platform/agentHost/common/agentService.js';
-import { AgentHostModelCapabilityOverridesSettingId, AgentHostOpus48PromptEnabledSettingId, AgentHostReasoningEffortOverrideSettingId, CopilotCliConfigKey } from '../../../../../../platform/agentHost/common/copilotCliConfig.js';
+import { AgentHostCopilotModelCapabilityOverridesSettingId, AgentHostOpus48PromptEnabledSettingId, AgentHostReasoningEffortOverrideSettingId, CopilotCliConfigKey } from '../../../../../../platform/agentHost/common/copilotCliConfig.js';
 import { IAgentSubscription } from '../../../../../../platform/agentHost/common/state/agentSubscription.js';
 import type { ClientAnnotationsAction, INotification, IRootConfigChangedAction, SessionAction, TerminalAction } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
 import type { ConfigPropertySchema, RootState } from '../../../../../../platform/agentHost/common/state/sessionState.js';
@@ -111,7 +111,7 @@ suite('AgentHostCopilotCliSettingsContribution', () => {
 		const { agentHostService } = setup(disposables, {
 			[AgentHostOpus48PromptEnabledSettingId]: true,
 			[AgentHostReasoningEffortOverrideSettingId]: 'xhigh',
-			[AgentHostModelCapabilityOverridesSettingId]: capabilityOverrides,
+			[AgentHostCopilotModelCapabilityOverridesSettingId]: capabilityOverrides,
 		});
 		agentHostService.setRootState(makeRootStateWithSchema(fullSchema));
 		await flush();
@@ -157,7 +157,7 @@ suite('AgentHostCopilotCliSettingsContribution', () => {
 		const { agentHostService } = setup(disposables, {
 			[AgentHostOpus48PromptEnabledSettingId]: true,
 			[AgentHostReasoningEffortOverrideSettingId]: 'xhigh',
-			[AgentHostModelCapabilityOverridesSettingId]: { 'preview-model-x': { family: 'claude-opus-4-8' } },
+			[AgentHostCopilotModelCapabilityOverridesSettingId]: { 'preview-model-x': { family: 'claude-opus-4-8' } },
 		});
 		agentHostService.setRootState(makeRootStateWithSchema(fullSchema, {
 			[CopilotCliConfigKey.Opus48Prompt]: true,
