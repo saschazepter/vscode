@@ -35,6 +35,7 @@ import { ISessionsService } from '../../../services/sessions/browser/sessionsSer
 import { getUntitledSessionTitle } from '../../../services/sessions/common/session.js';
 import { BlockedSessions } from '../../blockedSessions/browser/blockedSessions.js';
 import { BlockedSessionsList } from './blockedSessionsList.js';
+import { BlockedSessionsCIFixModel } from './blockedSessionsCIFixModel.js';
 import { SessionActionFeedback } from './sessionActionFeedback.js';
 import { AgentSessionApprovalModel } from '../../../../workbench/contrib/chat/browser/agentSessions/agentSessionApprovalModel.js';
 import { BlockedSessionsIndicatorModel, RequiresInputKind } from './blockedSessionsIndicatorModel.js';
@@ -117,6 +118,9 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 	/** Model behind the "N sessions require input" indicator (blocked-session set, blink, labels). */
 	private readonly _blockedIndicator: BlockedSessionsIndicatorModel;
 
+	/** Backs the per-session "Fix CI" row shown for blocked sessions failing CI. */
+	private readonly _ciFixModel: BlockedSessionsCIFixModel;
+
 	/** The currently open blocked-sessions dropdown, if any. */
 	private _openContextView: IOpenContextView | undefined;
 	/** The blocked-sessions list rendered inside the open dropdown, if any. */
@@ -157,6 +161,9 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 		// dismissals, labels and blink detection). The optional `approvalModel` and
 		// `blockedSessions` are test seams forwarded to it so fixtures can preset them.
 		this._blockedIndicator = this._register(this.instantiationService.createInstance(BlockedSessionsIndicatorModel, approvalModel, blockedSessions));
+
+		// Backs the per-session "Fix CI" row rendered in the blocked-sessions dropdown.
+		this._ciFixModel = this._register(this.instantiationService.createInstance(BlockedSessionsCIFixModel));
 
 		// Replay the attention blink when the model reports a genuinely new, not-yet-
 		// visible block. Invalidate the cached render state so the identical pill is
@@ -531,6 +538,7 @@ export class SessionsTitleBarWidget extends BaseActionViewItem {
 				const list = store.add(this.instantiationService.createInstance(BlockedSessionsList, viewContainer, {
 					width,
 					approvalModel: this._blockedIndicator.approvalModel,
+					ciFixModel: this._ciFixModel,
 					onSessionOpen: (resource, preserveFocus, sideBySide) => {
 						this._openContextView?.close();
 						this._openBlockedSession(resource, preserveFocus, sideBySide);
