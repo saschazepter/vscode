@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { IIsolationFormState, IsolationGroupModel } from '../../common/isolationGroupModel.js';
 
@@ -20,6 +21,8 @@ function createState(overrides?: Partial<IIsolationFormState>): IIsolationFormSt
 }
 
 suite('IsolationGroupModel', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('initializes with workspace mode by default', () => {
 		const state = createState();
@@ -180,9 +183,10 @@ suite('IsolationGroupModel', () => {
 		assert.notStrictEqual(state.branch, 'stale-head-at-save-time');
 	});
 
-	test('branchPickerEnabled requires worktree mode and workspace', () => {
+	test('branchPickerEnabled requires worktree mode, workspace, and repository', () => {
 		const state = createState({ folderUri: FOLDER_A, isolationMode: 'worktree' });
 		const model = new IsolationGroupModel(state);
+		model.hasRepository = true;
 		assert.strictEqual(model.branchPickerEnabled, true);
 
 		model.onWorkspaceChanged(undefined);
@@ -192,7 +196,17 @@ suite('IsolationGroupModel', () => {
 	test('branchPickerEnabled is false in workspace mode', () => {
 		const state = createState({ folderUri: FOLDER_A });
 		const model = new IsolationGroupModel(state);
+		model.hasRepository = true;
 		assert.strictEqual(model.branchPickerEnabled, false);
+	});
+
+	test('branchPickerEnabled is false before repository resolves', () => {
+		const state = createState({ folderUri: FOLDER_A, isolationMode: 'worktree' });
+		const model = new IsolationGroupModel(state);
+		assert.strictEqual(model.branchPickerEnabled, false);
+
+		model.hasRepository = true;
+		assert.strictEqual(model.branchPickerEnabled, true);
 	});
 
 	test('checkboxEnabled requires workspace', () => {

@@ -19,6 +19,7 @@ export class IsolationGroupModel {
 	worktreeRequested: boolean;
 	selectedBranch: string | undefined;
 	headBranch: string | undefined;
+	hasRepository: boolean = false;
 
 	constructor(
 		private readonly state: IIsolationFormState,
@@ -38,6 +39,7 @@ export class IsolationGroupModel {
 	onWorkspaceChanged(folder: URI | undefined): void {
 		this.selectedBranch = undefined;
 		this.headBranch = undefined;
+		this.hasRepository = false;
 		if (!folder) {
 			this.worktreeRequested = false;
 		}
@@ -70,7 +72,7 @@ export class IsolationGroupModel {
 
 	get branchPickerEnabled(): boolean {
 		const hasWorkspace = !!this.state.folderUri;
-		return hasWorkspace && this.worktreeRequested;
+		return hasWorkspace && this.worktreeRequested && this.hasRepository;
 	}
 
 	get checkboxEnabled(): boolean {

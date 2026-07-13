@@ -334,6 +334,8 @@ class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 			}
 
 			this.repo = repo;
+			this.model.hasRepository = true;
+			this.updateDOM();
 
 			const watcher = new DisposableStore();
 			watcher.add(autorun(reader => {
