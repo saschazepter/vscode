@@ -8,7 +8,7 @@ import { localize, localize2 } from '../../../../nls.js';
 import { MultiWindowParts, Part } from '../../part.js';
 import { ITitleService } from '../../../services/title/browser/titleService.js';
 import { getWCOTitlebarAreaRect, getZoomFactor, isWCOEnabled } from '../../../../base/browser/browser.js';
-import { MenuBarVisibility, getTitleBarStyle, getMenuBarVisibility, hasCustomTitlebar, hasNativeTitlebar, DEFAULT_CUSTOM_TITLEBAR_HEIGHT, getWindowControlsStyle, WindowControlsStyle, TitlebarStyle, MenuSettings, hasNativeMenu } from '../../../../platform/window/common/window.js';
+import { MenuBarVisibility, getTitleBarStyle, getMenuBarVisibility, hasCustomTitlebar, hasNativeTitlebar, DEFAULT_CUSTOM_TITLEBAR_HEIGHT, getWindowControlsStyle, useWindowControlsOverlay, WindowControlsStyle, TitlebarStyle, MenuSettings, hasNativeMenu } from '../../../../platform/window/common/window.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { StandardMouseEvent } from '../../../../base/browser/mouseEvent.js';
 import { IConfigurationService, IConfigurationChangeEvent } from '../../../../platform/configuration/common/configuration.js';
@@ -821,7 +821,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 				this.element.classList.remove('inactive');
 			}
 
-			const titleBackground = isWindows && this.configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true
+			const titleBackground = isNative && isWindows && useWindowControlsOverlay(this.configurationService) && this.configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true
 				? WORKBENCH_BACKGROUND(this.theme).toString()
 				: this.getColor(this.isInactive ? TITLE_BAR_INACTIVE_BACKGROUND : TITLE_BAR_ACTIVE_BACKGROUND, (color, theme) => {
 					// LCD Rendering Support: the title bar part is a defining its own GPU layer.
