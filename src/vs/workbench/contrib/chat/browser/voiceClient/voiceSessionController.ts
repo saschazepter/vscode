@@ -2348,10 +2348,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._recentlyReadResponse.set(key, { transcript: heard, at: Date.now() });
 			}
 		}
-		// Ask the backend to speak this session's pending item (a completed reply
-		// or a waiting confirmation) now that the user is looking at it. `_narrate`
-		// de-dupes, so a reply already read live is not read again on refocus, and
-		// a session with nothing pending narrates nothing.
+		// Ask the backend to speak this session's pending item now that it's shown; `_narrate` de-dupes so a live-read reply isn't repeated.
 		const narratable = this._currentNarratable(resource);
 		if (narratable) {
 			this._narrate(key, narratable.kind, narratable.text);
@@ -2360,14 +2357,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this.voiceClientService.flushSessionContext();
 	}
 
-	/**
-	 * Ask the backend to narrate a session's pending item, de-duplicated by the
-	 * exact text last spoken for that session (see {@link _lastNarratedText}).
-	 * This is the single narration trigger: called live when an item lands on the
-	 * shown session, and on focus for an item that arrived in the background. The
-	 * dedup makes both paths idempotent, so there is no preemption to recover
-	 * from and no transition to trick the backend into observing.
-	 */
+	/** Ask the backend to narrate a session's pending item, de-duped by the exact text last spoken for it ({@link _lastNarratedText}); the single narration trigger for both live and on-focus paths. */
 	private _narrate(sessionId: string, kind: 'response' | 'confirmation', text: string): void {
 		if (!text) {
 			return;
@@ -2380,14 +2370,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this.voiceClientService.requestNarration(sessionId, kind, text);
 	}
 
-	/**
-	 * The pending item a session would narrate right now: a waiting confirmation's
-	 * prompt, or a completed reply's summary. Prefers the resident chat model;
-	 * falls back to the cached summary / agent-session status when the model has
-	 * been disposed. A confirmation whose detail isn't loaded yet returns
-	 * `undefined` after kicking off the load, so the narration fires once the
-	 * detail is available (via the state-change path while the session is shown).
-	 */
+	/** The pending item a session would narrate now (waiting confirmation prompt or completed reply summary), from the resident model or cached summary/status; returns undefined (kicking off a load) if a confirmation's detail isn't ready. */
 	private _currentNarratable(resource: URI): { kind: 'response' | 'confirmation'; text: string } | undefined {
 		const model = this.chatService.getSession(resource);
 		if (model) {
@@ -2402,8 +2385,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 		const session = this.agentSessionsService.model.sessions.find(s => !s.isArchived() && isEqual(s.resource, resource));
 		if (session?.status === AgentSessionStatus.NeedsInput) {
-			// Detail lives on the model; load it and let the state-change path
-			// narrate once it renders.
+			// Detail lives on the model; load it and let the state-change path narrate once it renders.
 			this._ensureModelLoaded(resource);
 			return undefined;
 		}
@@ -2958,12 +2940,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}, VoiceSessionController._STATE_CHANGE_SETTLE_MS);
 	}
 
-	/**
-	 * React to a session reaching a narratable state. The user only hears an item
-	 * for the session they are looking at; a background item is spoken later when
-	 * they focus that session (see {@link _activateShownSession}). A new turn
-	 * (`thinking`) clears the dedup so a later identical reply still narrates.
-	 */
+	/** React to a session reaching a narratable state: speak it only if it's the shown session (background items wait for focus); a new turn (`thinking`) clears the dedup. */
 	private _handleNarratableStateChange(sessionId: string, currentState: string, detail: string | undefined, lastResponseSummary: string | undefined, shownNow: string | undefined): void {
 		if (currentState === 'thinking') {
 			this._lastNarratedText.delete(sessionId);

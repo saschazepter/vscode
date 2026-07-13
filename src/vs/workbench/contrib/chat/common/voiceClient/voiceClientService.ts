@@ -191,26 +191,7 @@ export interface IVoiceClientService {
 	 */
 	invalidateSessionCache(sessionId: string): void;
 	sendToolResult(callId: string, result: string): void;
-	/**
-	 * Ask the backend to narrate (speak) a specific coding session's pending
-	 * item right now, regardless of which session is currently active or whether
-	 * the backend has already seen this session's state transition.
-	 *
-	 * This is the client's explicit, race-free narration trigger. The backend no
-	 * longer auto-narrates `idle` / `waiting_for_confirmation` transitions; it
-	 * only speaks in response to this request, so the client alone decides *when*
-	 * a reply or confirmation is read — e.g. when the user focuses a session
-	 * whose reply/confirmation arrived while it was in the background, or when one
-	 * lands on the session the user is currently viewing.
-	 *
-	 * `kind` distinguishes a completed reply from a pending confirmation so the
-	 * backend can phrase the narration appropriately. `text` is the exact content
-	 * to speak (the agent's final reply for `'response'`, or the confirmation
-	 * prompt for `'confirmation'`) — passed inline so the backend never depends
-	 * on the latest `session_context` delta having arrived first. The backend
-	 * echoes the resulting audio back as an `audio_response` tagged with
-	 * `codingSessionId` so the client can attribute and de-duplicate it.
-	 */
+	/** Explicitly ask the backend to speak a session's pending `text` now (backend no longer auto-narrates); echoed back as `audio_response` tagged with `codingSessionId`. */
 	requestNarration(codingSessionId: string, kind: 'response' | 'confirmation', text: string): void;
 	/**
 	 * Notify the backend of a session state transition.
