@@ -29,6 +29,7 @@ import { URI } from '../../../../../../base/common/uri.js';
 import { IStorageService } from '../../../../../../platform/storage/common/storage.js';
 import { maybeConfirmElevatedPermissionLevel } from '../../../common/chatPermissionWarnings.js';
 import { AgentSandboxEnabledSettingValue, AgentSandboxEnabledValue, AgentSandboxSettingId, isAgentSandboxEnabledValue } from '../../../../../../platform/sandbox/common/settings.js';
+import { isAutoApprovalsEnabled, isAutoApproveValuePolicyRestricted, isAutoApproveValueVisible } from '../../../common/agentHostConfigPolicy.js';
 
 export interface IExtensionPermissionState {
 	/** Stable identifier for the contributing chat session type, used to namespace action ids. */
@@ -98,7 +99,7 @@ function getPermissionLevelMeta(level: ChatPermissionLevel): IPermissionLevelMet
 				shortLabel: localize('permissions.assisted.label', "Auto Approvals"),
 				detail: localize('permissions.assisted.subtext', "Evaluates risk before running tools"),
 				icon: ThemeIcon.fromId(Codicon.sparkle.id),
-				description: localize('permissions.assisted.description', "Use model recommendations to approve tool calls"),
+				description: localize('permissions.assisted.description', "An LLM judge evaluates each tool call. Tools it doesn't approve require your approval."),
 				elevated: true,
 			};
 		case ChatPermissionLevel.AutoApprove:
@@ -203,12 +204,15 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 						await configurationService.updateValue(getSandboxEnabledSettingId(), target);
 					}
 				};
-				const levels = delegate.availableLevels ?? DEFAULT_PERMISSION_LEVELS;
+				const autoApprovalsEnabled = isAutoApprovalsEnabled(configurationService);
+				const levels = (delegate.availableLevels ?? DEFAULT_PERMISSION_LEVELS)
+					.filter(level => isAutoApproveValueVisible(level, autoApprovalsEnabled));
 				const actions: IActionWidgetDropdownAction[] = levels.map(level => {
 					const meta = getPermissionLevelMeta(level);
-					const disabledByPolicy = meta.elevated && policyRestricted;
+					const disabledByPolicy = isAutoApproveValuePolicyRestricted(level, policyRestricted);
+					const policyDescription = localize('permissions.policyDescription', "Disabled by your organization. Contact your administrator.");
 					const hover = disabledByPolicy
-						? localize('permissions.policyDescription', "Disabled by enterprise policy")
+						? policyDescription
 						: delegate.getPermissionLevelHover?.(level, meta) ?? meta.description;
 
 					// The Default level carries an inline toggle that controls whether
@@ -227,12 +231,12 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 						...action,
 						id: meta.id,
 						label: meta.label,
-						detail: meta.detail,
+						detail: disabledByPolicy ? policyDescription : meta.detail,
 						icon: meta.icon,
 						checked: currentLevel === level,
 						enabled: !disabledByPolicy,
 						inlineToggle,
-						tooltip: disabledByPolicy ? localize('permissions.policyDisabled', "Disabled by enterprise policy") : '',
+						tooltip: disabledByPolicy ? policyDescription : '',
 						hover: {
 							content: hover,
 						},

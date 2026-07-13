@@ -487,6 +487,10 @@ confirmation renders it in the existing risk-badge position. A live
 approval-level change is pushed to every in-memory SDK
 chat immediately, including during an active turn, so leaving Bypass Approvals
 cannot leave the SDK in allow-all mode for later tool calls in that turn.
+`chat.experimental.autoApprovals.enabled` controls whether Auto Approvals is
+offered in approval pickers and defaults on outside Stable builds. Enterprise
+policy still leaves Auto and Bypass Approvals visible, but disables both with an
+administrator-directed explanation and normalizes either value back to Default.
 The agent mode axis is independent: Autopilot with Default Approvals still uses
 SDK permission mode `off` and preserves the configured sandbox policy.
 

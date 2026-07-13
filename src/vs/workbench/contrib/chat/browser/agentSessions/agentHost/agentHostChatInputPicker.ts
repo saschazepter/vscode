@@ -35,7 +35,7 @@ import { IConfigurationService } from '../../../../../../platform/configuration/
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 import type { IChatWidget } from '../../chat.js';
 import { ChatConfiguration, ChatPermissionLevel, isChatPermissionLevel } from '../../../common/constants.js';
-import { isAutoApprovePolicyRestricted, normalizeSessionConfigValue } from '../../../common/agentHostConfigPolicy.js';
+import { isAutoApprovalsEnabled, isAutoApprovePolicyRestricted, isAutoApproveValuePolicyRestricted, isAutoApproveValueVisible, normalizeSessionConfigValue } from '../../../common/agentHostConfigPolicy.js';
 import { maybeConfirmElevatedPermissionLevel } from '../../../common/chatPermissionWarnings.js';
 import { isUntitledChatSession } from '../../../common/model/chatUri.js';
 import { withChatInputPickerMotion } from '../../widget/input/chatInputPickerActionItem.js';
@@ -97,12 +97,12 @@ function getConfigIcon(property: string, value: unknown | undefined): ThemeIcon 
 
 function toActionItems(property: string, items: readonly IConfigPickerItem[], currentValue: unknown | undefined, policyRestricted = false): IActionListItem<IConfigPickerItem>[] {
 	return items.map(item => {
-		const disabled = policyRestricted && property === SessionConfigKey.AutoApprove && item.value !== 'default';
+		const disabled = property === SessionConfigKey.AutoApprove && isAutoApproveValuePolicyRestricted(item.value, policyRestricted);
 		const hover = getConfigPickerItemHover(property, item, disabled);
 		return {
 			kind: ActionListItemKind.Action,
 			label: item.label,
-			detail: item.description,
+			detail: disabled ? hover : item.description,
 			group: { title: '', icon: getConfigIcon(property, item.value) },
 			disabled,
 			...(hover ? { hover: { content: hover } } : {}),
@@ -122,6 +122,8 @@ function getAutoApproveHover(value: unknown | undefined, fallback: string | unde
 	switch (value) {
 		case ChatPermissionLevel.Default:
 			return localize('agentHostChatInputPicker.defaultApprovalsHover', "Copilot asks before running tools unless your configured settings allow the tool.");
+		case ChatPermissionLevel.Assisted:
+			return localize('agentHostChatInputPicker.assistedApprovalsHover', "An LLM judge evaluates each tool call. Tools it doesn't approve require your approval.");
 		case ChatPermissionLevel.AutoApprove:
 			return localize('agentHostChatInputPicker.autoApproveHover', "Copilot runs all tools without asking for approval.");
 		case ChatPermissionLevel.Autopilot:
@@ -155,7 +157,7 @@ export function getConfigPickerTriggerHover(property: string, schema: SessionCon
 
 export function getConfigPickerItemHover(property: string, item: IConfigPickerItem, disabled: boolean): string | undefined {
 	if (disabled) {
-		return localize('agentHostChatInputPicker.policyDisabledHover', "Disabled by enterprise policy");
+		return localize('agentHostChatInputPicker.policyDisabledHover', "Disabled by your organization. Contact your administrator.");
 	}
 	if (property === SessionConfigKey.AutoApprove) {
 		return getAutoApproveHover(item.value, item.description);
@@ -621,16 +623,24 @@ export class AgentHostChatInputPicker extends Disposable {
 					workingDirectory: this._readWorkingDirectory(),
 					config: this._readCurrentValues(),
 				});
-				return result.items.map(item => this._fromCompletion(item));
+				return this._filterAutoApproveItems(result.items.map(item => this._fromCompletion(item)));
 			} catch {
 				// Fall through to the static enum below.
 			}
 		}
-		return (schema.enum ?? []).map((value, index) => ({
+		return this._filterAutoApproveItems((schema.enum ?? []).map((value, index) => ({
 			value: String(value),
 			label: schema.enumLabels?.[index] ?? String(value),
 			description: schema.enumDescriptions?.[index],
-		}));
+		})));
+	}
+
+	private _filterAutoApproveItems(items: readonly IConfigPickerItem[]): readonly IConfigPickerItem[] {
+		if (this._property !== SessionConfigKey.AutoApprove) {
+			return items;
+		}
+		const autoApprovalsEnabled = isAutoApprovalsEnabled(this._configurationService);
+		return items.filter(item => isAutoApproveValueVisible(item.value, autoApprovalsEnabled));
 	}
 
 	private _fromCompletion(item: SessionConfigValueItem): IConfigPickerItem {
@@ -665,6 +675,9 @@ export class AgentHostChatInputPicker extends Disposable {
 	 * pick. Unknown non-default values fall back to the Bypass warning.
 	 */
 	private async _confirmAndSetValue(backendSession: URI, value: string): Promise<void> {
+		if (this._property === SessionConfigKey.AutoApprove && !isAutoApproveValueVisible(value, isAutoApprovalsEnabled(this._configurationService))) {
+			return;
+		}
 		if (this._property === SessionConfigKey.AutoApprove) {
 			const levelToConfirm = isChatPermissionLevel(value)
 				? value

@@ -8,6 +8,8 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/
 import { SessionConfigKey } from '../../../../../../platform/agentHost/common/sessionConfigKeys.js';
 import type { SessionConfigPropertySchema } from '../../../../../../platform/agentHost/common/state/protocol/commands.js';
 import { getConfigPickerItemHover, getConfigPickerTriggerHover, resolveConfigChipValue } from '../../../browser/agentSessions/agentHost/agentHostChatInputPicker.js';
+import { isAutoApproveValuePolicyRestricted, isAutoApproveValueVisible, normalizeSessionConfigValue } from '../../../common/agentHostConfigPolicy.js';
+import { ChatPermissionLevel } from '../../../common/constants.js';
 
 suite('AgentHostChatInputPicker - resolveConfigChipValue', () => {
 
@@ -19,6 +21,37 @@ suite('AgentHostChatInputPicker - resolveConfigChipValue', () => {
 			// Server flips Plan → Autopilot (e.g. user approved a plan); the
 			// overlay still holds the old manually-picked value.
 			assert.strictEqual(resolveConfigChipValue(false, 'autopilot', 'plan', 'interactive'), 'autopilot');
+		});
+
+		suite('AgentHostChatInputPicker - approval controls', () => {
+
+			test('shows Auto Approvals only when the experimental setting is enabled', () => {
+				assert.deepStrictEqual({
+					enabled: isAutoApproveValueVisible(ChatPermissionLevel.Assisted, true),
+					disabled: isAutoApproveValueVisible(ChatPermissionLevel.Assisted, false),
+					bypass: isAutoApproveValueVisible(ChatPermissionLevel.AutoApprove, false),
+				}, {
+					enabled: true,
+					disabled: false,
+					bypass: true,
+				});
+			});
+
+			test('enterprise policy restricts and normalizes Auto and Bypass Approvals equally', () => {
+				assert.deepStrictEqual({
+					autoRestricted: isAutoApproveValuePolicyRestricted(ChatPermissionLevel.Assisted, true),
+					bypassRestricted: isAutoApproveValuePolicyRestricted(ChatPermissionLevel.AutoApprove, true),
+					defaultRestricted: isAutoApproveValuePolicyRestricted(ChatPermissionLevel.Default, true),
+					autoNormalized: normalizeSessionConfigValue(SessionConfigKey.AutoApprove, ChatPermissionLevel.Assisted, true),
+					bypassNormalized: normalizeSessionConfigValue(SessionConfigKey.AutoApprove, ChatPermissionLevel.AutoApprove, true),
+				}, {
+					autoRestricted: true,
+					bypassRestricted: true,
+					defaultRestricted: false,
+					autoNormalized: ChatPermissionLevel.Default,
+					bypassNormalized: ChatPermissionLevel.Default,
+				});
+			});
 		});
 
 		test('falls back to overlay when the server has no value', () => {
@@ -48,9 +81,19 @@ suite('AgentHostChatInputPicker - resolveConfigChipValue', () => {
 		});
 
 		test('explains approval choices on item hover', () => {
+			assert.deepStrictEqual({
+				auto: getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'assisted', label: 'Auto Approvals', description: 'Evaluates risk before running tools' }, false),
+				bypass: getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'autoApprove', label: 'Bypass Approvals', description: 'Runs tool calls without asking' }, false),
+			}, {
+				auto: 'An LLM judge evaluates each tool call. Tools it doesn\'t approve require your approval.',
+				bypass: 'Copilot runs all tools without asking for approval.',
+			});
+		});
+
+		test('directs users to their administrator when approvals are disabled by policy', () => {
 			assert.strictEqual(
-				getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'autoApprove', label: 'Bypass Approvals', description: 'Runs tool calls without asking' }, false),
-				'Copilot runs all tools without asking for approval.'
+				getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'assisted', label: 'Auto Approvals' }, true),
+				'Disabled by your organization. Contact your administrator.'
 			);
 		});
 	});
