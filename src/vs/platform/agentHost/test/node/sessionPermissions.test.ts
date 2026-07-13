@@ -7,6 +7,7 @@ import assert from 'assert';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'fs';
 import { homedir, tmpdir } from 'os';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
+import { Schemas } from '../../../../base/common/network.js';
 import { join } from '../../../../base/common/path.js';
 import { isWindows } from '../../../../base/common/platform.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -145,6 +146,16 @@ suite('SessionPermissionManager', () => {
 		const inside = await permissions.getAutoApproval(readEvent(join(workDir, 'a.txt')), sessionUri);
 		const outside = await permissions.getAutoApproval(readEvent(join(outsideDir, 'a.txt')), sessionUri);
 		assert.deepStrictEqual([inside, outside], [ToolCallConfirmationReason.NotNeeded, undefined]);
+	});
+
+	test('requires confirmation when the working directory is not a file URI', async () => {
+		const remoteSessionUri = URI.from({ scheme: 'copilot', path: '/remote' }).toString();
+		const remoteWorkingDirectory = URI.from({ scheme: Schemas.vscodeRemote, authority: 'ssh-remote+host', path: URI.file(workDir).path });
+		manager.createSession(makeSummary(remoteSessionUri, remoteWorkingDirectory.toString()));
+
+		const result = await permissions.getAutoApproval(readEvent(join(workDir, 'a.txt'), remoteSessionUri), remoteSessionUri);
+
+		assert.strictEqual(result, undefined);
 	});
 
 	test('requires confirmation when a symlinked read ancestor redirects outside the working directory', async () => {

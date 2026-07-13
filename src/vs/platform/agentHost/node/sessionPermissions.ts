@@ -6,9 +6,10 @@
 import { realpath as fsRealpath } from 'fs';
 import { homedir } from 'os';
 import { promisify } from 'util';
-import { match as globMatch, parse as globParse, type ParsedPattern } from '../../../base/common/glob.js';
+import { match as globMatch } from '../../../base/common/glob.js';
 import { untildify } from '../../../base/common/labels.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
+import { Schemas } from '../../../base/common/network.js';
 import * as path from '../../../base/common/path.js';
 import { isMacintosh, isWindows } from '../../../base/common/platform.js';
 import { extUriBiasedIgnorePathCase, normalizePath } from '../../../base/common/resources.js';
@@ -65,15 +66,7 @@ const DEFAULT_EDIT_AUTO_APPROVE_PATTERNS: Readonly<Record<string, boolean>> = {
 	'**/*-lock.{yaml,json}': false,
 };
 
-/**
- * Glob patterns matching dotfiles directly under the user's home directory
- * (e.g. `~/.ssh`, `~/.aws`). Writes to these always require confirmation,
- * even when the working directory sits inside the home directory.
- */
-const HOME_DOTFILE_PATTERNS: readonly ParsedPattern[] = [
-	globParse(homedir() + '/.*'),
-	globParse(homedir() + '/.*/**'),
-];
+const HOME_DIR = URI.file(homedir());
 
 /**
  * Absolute directory prefixes whose contents are platform configuration data
@@ -470,6 +463,9 @@ export class SessionPermissionManager extends Disposable {
 	 */
 	private async _resolveResourcesForApproval(resource: URI): Promise<URI[] | undefined> {
 		const resourcesToCheck = [resource];
+		if (resource.scheme !== Schemas.file) {
+			return resourcesToCheck;
+		}
 		try {
 			const resolved = await resolveRealPathForNonexistent(resource, this._realpath);
 			if (!extUriBiasedIgnorePathCase.isEqual(resolved, resource)) {
@@ -509,7 +505,9 @@ export class SessionPermissionManager extends Disposable {
 	 * allowed only when the working directory itself lives inside them.
 	 */
 	private _isPlatformRestrictedResource(resource: URI, workingDirectory: URI | undefined): boolean {
-		if (HOME_DOTFILE_PATTERNS.some(pattern => pattern(resource.fsPath))) {
+		const relativeToHome = extUriBiasedIgnorePathCase.relativePath(HOME_DIR, resource);
+		const topLevelName = relativeToHome?.split('/')[0];
+		if (extUriBiasedIgnorePathCase.isEqualOrParent(resource, HOME_DIR) && topLevelName?.startsWith('.')) {
 			return true;
 		}
 
