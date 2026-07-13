@@ -159,20 +159,24 @@ export function dimWindowControlsColor(color: string): string {
 	)));
 }
 
-function getWindowControlsSymbolColor(backgroundColor: string, fallbackBackgroundColor: string): string {
-	return (parseCssColor(backgroundColor) ?? parseCssColor(fallbackBackgroundColor))?.isDarker() ? '#FFFFFF' : '#000000';
+function getWindowControlsSymbolColor(backgroundColor: string, backdropColor: string): string {
+	const background = parseCssColor(backgroundColor);
+	const backdrop = parseCssColor(backdropColor);
+	const effectiveBackground = background && backdrop ? background.makeOpaque(backdrop) : background ?? backdrop;
+
+	return effectiveBackground?.isDarker() ? '#FFFFFF' : '#000000';
 }
 
 export function getWindowControlsOverlayColors(colorInfo: Pick<IPartsSplash['colorInfo'], 'editorBackground' | 'titleBarBackground' | 'titleBarForeground' | 'titleBarColorCustomizations' | 'titleBarColorsCustomized'> | undefined, modernUI: boolean, fallbackBackgroundColor: string): { color: string; symbolColor: string } {
 	const titleBarColor = modernUI && !(colorInfo?.titleBarColorCustomizations?.activeBackground ?? colorInfo?.titleBarColorsCustomized === true)
 		? 'transparent'
 		: colorInfo?.titleBarBackground ?? fallbackBackgroundColor;
-	const titleBarSymbolBackground = parseCssColor(titleBarColor)?.rgba.a === 0 ? colorInfo?.editorBackground ?? fallbackBackgroundColor : titleBarColor;
+	const titleBarBackdrop = colorInfo?.editorBackground ?? fallbackBackgroundColor;
 	const titleBarForeground = colorInfo?.titleBarColorCustomizations?.activeForeground ? colorInfo.titleBarForeground : undefined;
 
 	return {
 		color: titleBarColor,
-		symbolColor: titleBarForeground || getWindowControlsSymbolColor(titleBarSymbolBackground, fallbackBackgroundColor)
+		symbolColor: titleBarForeground || getWindowControlsSymbolColor(titleBarColor, titleBarBackdrop)
 	};
 }
 

@@ -38,11 +38,32 @@ suite('Window Controls Overlay', () => {
 				titleBarBackground: 'rgba(invalid)',
 				titleBarForeground: undefined,
 				titleBarColorCustomizations: titleBarCustomizations
-			}, false, '#1E1E1E')
+			}, false, '#1E1E1E'),
+			getWindowControlsOverlayColors({
+				editorBackground: '#FFFFFF',
+				titleBarBackground: 'rgba(0, 0, 0, 0.1)',
+				titleBarForeground: undefined,
+				titleBarColorCustomizations: { ...titleBarCustomizations, activeBackground: true }
+			}, true, '#1E1E1E'),
+			getWindowControlsOverlayColors({
+				editorBackground: '#181818',
+				titleBarBackground: 'rgba(0, 0, 0, 0.1)',
+				titleBarForeground: undefined,
+				titleBarColorCustomizations: { ...titleBarCustomizations, activeBackground: true }
+			}, true, '#1E1E1E'),
+			getWindowControlsOverlayColors({
+				editorBackground: '#FFFFFF',
+				titleBarBackground: undefined,
+				titleBarForeground: undefined,
+				titleBarColorCustomizations: titleBarCustomizations
+			}, false, 'rgba(0, 0, 0, 0.1)')
 		], [
 			{ color: 'transparent', symbolColor: '#000000' },
 			{ color: 'rgba(255, 255, 255, 0.5)', symbolColor: 'rgba(1, 2, 3, 0.5)' },
-			{ color: 'rgba(invalid)', symbolColor: '#FFFFFF' }
+			{ color: 'rgba(invalid)', symbolColor: '#FFFFFF' },
+			{ color: 'rgba(0, 0, 0, 0.1)', symbolColor: '#000000' },
+			{ color: 'rgba(0, 0, 0, 0.1)', symbolColor: '#FFFFFF' },
+			{ color: 'rgba(0, 0, 0, 0.1)', symbolColor: '#000000' }
 		]);
 	});
 
