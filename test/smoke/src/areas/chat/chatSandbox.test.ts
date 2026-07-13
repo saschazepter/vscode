@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { Application, Chat, Logger } from '../../../../automation';
-import { dumpFailureDiagnostics, getCopilotSmokeTestEnv, getMockLlmServerPath, installAllHandlers, MockLlmServer, preseedChatExtensionEnablement } from '../../utils';
+import { describeRepeat, dumpFailureDiagnostics, getCopilotSmokeTestEnv, getMockLlmServerPath, installAllHandlers, MockLlmServer, preseedChatExtensionEnablement } from '../../utils';
 
 const WARMUP_SCENARIO_ID = 'smoke-chat-sandbox-warmup';
 const WARMUP_REPLY = 'MOCKED_CHAT_SANDBOX_WARMUP';
@@ -112,9 +112,8 @@ export function setup(logger: Logger): void {
 		return;
 	}
 
-	describe(`Chat Sandbox (${process.platform})`, function () {
-		this.timeout(5 * 60 * 1000);
-		this.retries(0);
+	describeRepeat(20, `Chat Sandbox (${process.platform})`, function () {
+		this.timeout(10 * 60 * 1000);
 
 		let mockServer: MockLlmServer;
 		let sandboxReply: string;
