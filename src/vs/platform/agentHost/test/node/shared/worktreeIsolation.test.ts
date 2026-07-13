@@ -14,10 +14,10 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/tes
 import { NullLogService } from '../../../../log/common/log.js';
 import { IAgentHostGitService } from '../../../common/agentHostGitService.js';
 import { SessionConfigKey } from '../../../common/sessionConfigKeys.js';
-import { MessageKind, ResponsePartKind, TurnState, type Turn } from '../../../common/state/sessionState.js';
+import { AH_META_IS_ARCHIVED_DB_KEY, AH_META_IS_DONE_DB_KEY, MessageKind, ResponsePartKind, TurnState, type Turn } from '../../../common/state/sessionState.js';
 import { IAgentBranchNameGenerator } from '../../../node/shared/agentBranchNameGenerator.js';
 import { ICopilotApiService } from '../../../node/shared/copilotApiService.js';
-import { WorktreeIsolation, getWorktreeName, getWorktreesRoot } from '../../../node/shared/worktreeIsolation.js';
+import { SessionWorkingDirectoryMissingError, WorktreeIsolation, getWorktreeName, getWorktreesRoot } from '../../../node/shared/worktreeIsolation.js';
 import { TestSessionDatabase, createNoopGitService, createSessionDataService } from '../../common/sessionTestHelpers.js';
 
 /**
@@ -47,6 +47,8 @@ suite('WorktreeIsolation', () => {
 	let addWorktreeCalls: { worktree: URI; branchName: string; startPoint: string }[];
 	let addExistingCalls: { worktree: URI; branchName: string }[];
 	let removeCalls: URI[];
+	let copyIncludeCalls: { repositoryRoot: URI; worktree: URI; globs: readonly string[] }[];
+	let copyIncludeError: Error | undefined;
 	let branchName: string;
 	let hasUncommittedChanges: boolean;
 	let branchExists: boolean;
@@ -68,6 +70,12 @@ suite('WorktreeIsolation', () => {
 			addWorktree: async (_root, worktree, branch, startPoint) => {
 				addWorktreeCalls.push({ worktree, branchName: branch, startPoint });
 				mkdirSync(worktree.fsPath, { recursive: true });
+			},
+			copyWorktreeIncludeFiles: async (repositoryRoot, worktree, globs) => {
+				copyIncludeCalls.push({ repositoryRoot, worktree, globs: [...globs] });
+				if (copyIncludeError) {
+					throw copyIncludeError;
+				}
 			},
 			addExistingWorktree: async (_root, worktree, branch) => {
 				addExistingCalls.push({ worktree, branchName: branch });
@@ -100,6 +108,8 @@ suite('WorktreeIsolation', () => {
 		addWorktreeCalls = [];
 		addExistingCalls = [];
 		removeCalls = [];
+		copyIncludeCalls = [];
+		copyIncludeError = undefined;
 		branchName = 'agents/my-feature';
 		hasUncommittedChanges = false;
 		branchExists = true;
@@ -137,15 +147,15 @@ suite('WorktreeIsolation', () => {
 		const noCommits = await isolation.resolveIsolationConfig({ workingDirectory: repoRoot, config: undefined });
 
 		assert.deepStrictEqual({
-			noRepo: { enum: noRepo.isolationProperty.protocol.enum, value: noRepo.isolationValue, branch: noRepo.branchProperty, prefix: noRepo.worktreeBranchPrefixProperty },
-			repoWorktree: { enum: repoWorktree.isolationProperty.protocol.enum, value: repoWorktree.isolationValue, branchDefault: repoWorktree.branchDefault, branchReadOnly: repoWorktree.branchProperty?.protocol.readOnly, prefixReadOnly: repoWorktree.worktreeBranchPrefixProperty?.protocol.readOnly },
-			repoFolder: { value: repoFolder.isolationValue, branchDefault: repoFolder.branchDefault, branchReadOnly: repoFolder.branchProperty?.protocol.readOnly, hasPrefix: !!repoFolder.worktreeBranchPrefixProperty },
-			noCommits: { enum: noCommits.isolationProperty.protocol.enum, value: noCommits.isolationValue, branch: noCommits.branchProperty, prefix: noCommits.worktreeBranchPrefixProperty },
+			noRepo: { enum: noRepo.isolationProperty.protocol.enum, value: noRepo.isolationValue, branch: noRepo.branchProperty, prefix: noRepo.worktreeBranchPrefixProperty, includeFiles: noRepo.worktreeIncludeFilesProperty },
+			repoWorktree: { enum: repoWorktree.isolationProperty.protocol.enum, value: repoWorktree.isolationValue, branchDefault: repoWorktree.branchDefault, branchReadOnly: repoWorktree.branchProperty?.protocol.readOnly, prefixReadOnly: repoWorktree.worktreeBranchPrefixProperty?.protocol.readOnly, includeFilesReadOnly: repoWorktree.worktreeIncludeFilesProperty?.protocol.readOnly },
+			repoFolder: { value: repoFolder.isolationValue, branchDefault: repoFolder.branchDefault, branchReadOnly: repoFolder.branchProperty?.protocol.readOnly, hasPrefix: !!repoFolder.worktreeBranchPrefixProperty, hasIncludeFiles: !!repoFolder.worktreeIncludeFilesProperty },
+			noCommits: { enum: noCommits.isolationProperty.protocol.enum, value: noCommits.isolationValue, branch: noCommits.branchProperty, prefix: noCommits.worktreeBranchPrefixProperty, includeFiles: noCommits.worktreeIncludeFilesProperty },
 		}, {
-			noRepo: { enum: ['folder'], value: 'folder', branch: undefined, prefix: undefined },
-			repoWorktree: { enum: ['folder', 'worktree'], value: 'worktree', branchDefault: 'main', branchReadOnly: false, prefixReadOnly: true },
-			repoFolder: { value: 'folder', branchDefault: 'feature', branchReadOnly: true, hasPrefix: true },
-			noCommits: { enum: ['folder'], value: 'folder', branch: undefined, prefix: undefined },
+			noRepo: { enum: ['folder'], value: 'folder', branch: undefined, prefix: undefined, includeFiles: undefined },
+			repoWorktree: { enum: ['folder', 'worktree'], value: 'worktree', branchDefault: 'main', branchReadOnly: false, prefixReadOnly: true, includeFilesReadOnly: true },
+			repoFolder: { value: 'folder', branchDefault: 'feature', branchReadOnly: true, hasPrefix: true, hasIncludeFiles: true },
+			noCommits: { enum: ['folder'], value: 'folder', branch: undefined, prefix: undefined, includeFiles: undefined },
 		});
 	});
 
@@ -212,6 +222,144 @@ suite('WorktreeIsolation', () => {
 			addWorktreeCallCount: 0,
 			createdSessions: [],
 		});
+	});
+
+	test('resolveWorkingDirectory copies configured include files and tolerates copy failures', async () => {
+		const isolation = createIsolation(disposables);
+		const includeFiles = ['.env', '.env.local', 'config/**'];
+		copyIncludeError = new Error('copy failed');
+
+		const worktree = await isolation.resolveWorkingDirectory({
+			sessionUri,
+			sessionId,
+			workingDirectory: repoRoot,
+			config: {
+				[SessionConfigKey.Isolation]: 'worktree',
+				[SessionConfigKey.Branch]: 'main',
+				[SessionConfigKey.WorktreeIncludeFiles]: includeFiles,
+			},
+		});
+
+		assert.deepStrictEqual({
+			worktree: worktree?.toString(),
+			copyIncludeCalls: copyIncludeCalls.map(call => ({
+				repositoryRoot: call.repositoryRoot.toString(),
+				worktree: call.worktree.toString(),
+				globs: call.globs,
+			})),
+			createdSessions: isolation.createdWorktreeSessionIds,
+		}, {
+			worktree: URI.joinPath(worktreesRoot, getWorktreeName(branchName)).toString(),
+			copyIncludeCalls: [{
+				repositoryRoot: repoRoot.toString(),
+				worktree: URI.joinPath(worktreesRoot, getWorktreeName(branchName)).toString(),
+				globs: includeFiles,
+			}],
+			createdSessions: [sessionId],
+		});
+	});
+
+	test('resolveWorkingDirectoryForResume recreates a missing live worktree and preserves an existing directory', async () => {
+		const isolation = createIsolation(disposables);
+		const missingWorktree = URI.joinPath(worktreesRoot, 'missing-live-worktree');
+		const existingWorktree = URI.joinPath(worktreesRoot, 'existing-live-worktree');
+		mkdirSync(existingWorktree.fsPath, { recursive: true });
+		await Promise.all([
+			db.setMetadata('copilot.worktree.branchName', 'feature/x'),
+			db.setMetadata('copilot.worktree.path', missingWorktree.toString()),
+			db.setMetadata('copilot.worktree.repositoryRoot', repoRoot.toString()),
+		]);
+
+		const outcomes = {
+			missingWorktreeRecreated: (await isolation.resolveWorkingDirectoryForResume(sessionUri, sessionId, missingWorktree)).toString(),
+			existingWorktreeUsedUnchanged: (await isolation.resolveWorkingDirectoryForResume(sessionUri, sessionId, existingWorktree)).toString(),
+			recreatedWorktrees: addExistingCalls.map(call => ({ worktree: call.worktree.toString(), branchName: call.branchName })),
+		};
+
+		assert.deepStrictEqual(outcomes, {
+			missingWorktreeRecreated: missingWorktree.toString(),
+			existingWorktreeUsedUnchanged: existingWorktree.toString(),
+			recreatedWorktrees: [{ worktree: missingWorktree.toString(), branchName: 'feature/x' }],
+		});
+	});
+
+	test('resolveWorkingDirectoryForResume uses the repository root for archived history', async () => {
+		const isolation = createIsolation(disposables);
+		const missingWorktree = URI.joinPath(worktreesRoot, 'missing-archived-worktree');
+		await Promise.all([
+			db.setMetadata('copilot.worktree.branchName', 'feature/x'),
+			db.setMetadata('copilot.worktree.path', missingWorktree.toString()),
+			db.setMetadata('copilot.worktree.repositoryRoot', repoRoot.toString()),
+			db.setMetadata(AH_META_IS_ARCHIVED_DB_KEY, 'true'),
+		]);
+
+		const resolved = await isolation.resolveWorkingDirectoryForResume(sessionUri, sessionId, missingWorktree);
+
+		assert.deepStrictEqual({ resolved: resolved.toString(), worktreesRecreated: addExistingCalls.length }, {
+			resolved: repoRoot.toString(),
+			worktreesRecreated: 0,
+		});
+	});
+
+	test('resolveWorkingDirectoryForResume falls back to legacy isDone archived metadata', async () => {
+		const isolation = createIsolation(disposables);
+		const missingWorktree = URI.joinPath(worktreesRoot, 'missing-legacy-archived-worktree');
+		await Promise.all([
+			db.setMetadata('copilot.worktree.branchName', 'feature/x'),
+			db.setMetadata('copilot.worktree.path', missingWorktree.toString()),
+			db.setMetadata('copilot.worktree.repositoryRoot', repoRoot.toString()),
+			db.setMetadata(AH_META_IS_DONE_DB_KEY, 'true'),
+		]);
+
+		const resolved = await isolation.resolveWorkingDirectoryForResume(sessionUri, sessionId, missingWorktree);
+
+		assert.strictEqual(resolved.toString(), repoRoot.toString());
+	});
+
+	test('resolveWorkingDirectoryForResume reports a missing preserved branch', async () => {
+		const isolation = createIsolation(disposables);
+		const missingWorktree = URI.joinPath(worktreesRoot, 'missing-branch-worktree');
+		branchExists = false;
+		await Promise.all([
+			db.setMetadata('copilot.worktree.branchName', 'feature/x'),
+			db.setMetadata('copilot.worktree.path', missingWorktree.toString()),
+			db.setMetadata('copilot.worktree.repositoryRoot', repoRoot.toString()),
+		]);
+
+		await assert.rejects(
+			() => isolation.resolveWorkingDirectoryForResume(sessionUri, sessionId, missingWorktree),
+			(error: Error) => error instanceof SessionWorkingDirectoryMissingError
+				&& error.reason !== undefined
+				&& /branch 'feature\/x' no longer exists/.test(error.message),
+		);
+		assert.strictEqual(addExistingCalls.length, 0);
+	});
+
+	test('resolveWorkingDirectoryForResume reports a missing live directory without worktree metadata', async () => {
+		const isolation = createIsolation(disposables);
+		const missingDirectory = URI.joinPath(repoRoot, 'missing-directory');
+
+		await assert.rejects(
+			() => isolation.resolveWorkingDirectoryForResume(sessionUri, sessionId, missingDirectory),
+			(error: Error) => error instanceof SessionWorkingDirectoryMissingError,
+		);
+	});
+
+	test('resolveWorkingDirectoryForResume reports an archived session when its repository root is also missing', async () => {
+		const isolation = createIsolation(disposables);
+		const missingRepositoryRoot = URI.joinPath(repoRoot, 'missing-repository');
+		const missingWorktree = URI.joinPath(worktreesRoot, 'missing-archived-no-root-worktree');
+		await Promise.all([
+			db.setMetadata('copilot.worktree.branchName', 'feature/x'),
+			db.setMetadata('copilot.worktree.path', missingWorktree.toString()),
+			db.setMetadata('copilot.worktree.repositoryRoot', missingRepositoryRoot.toString()),
+			db.setMetadata(AH_META_IS_ARCHIVED_DB_KEY, 'true'),
+		]);
+
+		await assert.rejects(
+			() => isolation.resolveWorkingDirectoryForResume(sessionUri, sessionId, missingWorktree),
+			(error: Error) => error instanceof SessionWorkingDirectoryMissingError,
+		);
 	});
 
 	test('resolveWorktreeProject / createdWorktreeProject expose the repository as the session project', async () => {

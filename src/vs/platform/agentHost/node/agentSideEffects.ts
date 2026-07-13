@@ -28,12 +28,16 @@ import {
 	isAhpChatChannel,
 	isDefaultChatUri,
 	isSubagentChatUri,
+	isChatReadOnly,
+	AH_META_IS_ARCHIVED_DB_KEY,
 	MessageKind,
 	parseChatUri,
 	parseRequiredSessionUriFromChatUri,
 	PendingMessageKind,
 	ResponsePartKind,
 	ROOT_STATE_URI,
+	SessionLifecycle,
+	SessionStatus,
 	ToolCallStatus,
 	ToolResultContentType,
 	type ErrorInfo,
@@ -249,6 +253,25 @@ export class AgentSideEffects extends Disposable {
 		}
 
 		const customizations = await agent.getSessionCustomizations(URI.parse(session));
+
+		// Skip the dispatch when the resolved customizations match what the
+		// session state already holds. A single edit under a shared `~/.claude`
+		// tree fans out to every open session (and, via the agent-level
+		// `onDidCustomizationsChange`, is republished once per session), so
+		// without this guard a single change emitted O(N^2) identical
+		// `SessionCustomizationsChanged` envelopes. Comparing against the
+		// authoritative session state (rather than a side cache) keeps this
+		// correct across idle-eviction + restore: a restored session's state
+		// starts without customizations, so the first successful refresh always
+		// dispatches even if the resolved set matches the prior incarnation.
+		// It also needs no cleanup on session teardown. `undefined` (never
+		// published) never equals a resolved array, so the initial publish
+		// always goes through.
+		const current = this._stateManager.getSessionState(session)?.customizations;
+		if (current && equals(current, customizations)) {
+			return;
+		}
+
 		this._stateManager.dispatchServerAction(session, {
 			type: ActionType.SessionCustomizationsChanged,
 			customizations: [...customizations],
@@ -1163,7 +1186,7 @@ export class AgentSideEffects extends Disposable {
 				break;
 			}
 			case ActionType.SessionIsArchivedChanged: {
-				this._persistSessionFlag(channel, 'isArchived', action.isArchived ? 'true' : '');
+				this._persistSessionFlag(channel, AH_META_IS_ARCHIVED_DB_KEY, action.isArchived ? 'true' : '');
 				// Host-owned worktree lifecycle (agents stay unaware): remove the
 				// clean, branch-preserved worktree on archive and recreate it on
 				// unarchive. Serialized per session inside the controller so it can't
@@ -1370,30 +1393,55 @@ export class AgentSideEffects extends Disposable {
 		turnId: string;
 		senderClientId: string | undefined;
 	}): Promise<void> {
-		const { agent, turnChannel, chat, message, turnId, senderClientId } = options;
+		const { agent, sessionChannel, turnChannel, chat, message, turnId, senderClientId } = options;
+
+		// Read-only chats reject user-dispatched turns. `interactivity` is the
+		// general signal (e.g. subagent worker chats are `ReadOnly`), and an
+		// archived session downgrades its interactive chats to read-only too — so
+		// enforce off the chat's effective interactivity rather than special-casing
+		// archived. This is the enforcement behind the UI hiding the composer, so a
+		// buggy or remote client cannot run work in a read-only or archived session
+		// (which may no longer have its isolated worktree on disk).
+		const chatState = this._stateManager.getChatState(chat);
+		const sessionStatus = this._stateManager.getSessionSummary(options.sessionChannel)?.status ?? 0;
+		const sessionArchived = (sessionStatus & SessionStatus.IsArchived) === SessionStatus.IsArchived;
+		if (isChatReadOnly(chatState?.interactivity, sessionArchived)) {
+			this._logService.warn(`[AgentSideEffects] Rejecting turn on read-only chat=${chat} (archived=${sessionArchived}), turnId=${turnId}`);
+			this._stateManager.dispatchServerAction(turnChannel, {
+				type: ActionType.ChatError,
+				turnId,
+				error: sessionArchived
+					? { errorType: 'archived', message: 'This session is archived and read-only. Restore the session to continue the conversation.' }
+					: { errorType: 'readOnly', message: 'This chat is read-only.' },
+			});
+			this._turnTracker.turnCompleted(turnChannel, turnId, 'error');
+			this._toolCallTracker.clearSession(turnChannel);
+			return;
+		}
 
 		const chatUri = URI.parse(chat);
 
-		// Host-owned working-directory resolution: resolve the session's working
-		// directory before the agent materializes, so the agent runs in it
-		// without ever knowing how it was derived. Returns the created worktree
-		// for worktree sessions (created here on the first send) or the picked
-		// folder for folder sessions; undefined for workspace-less sessions.
-		const resolvedWorkingDirectory = await this._options.resolveWorkingDirectoryBeforeSend?.({ session: options.sessionChannel, chat, turnId, prompt: message.text });
+		try {
+			// Host-owned working-directory resolution: resolve the session's working
+			// directory before the agent materializes, so the agent runs in it
+			// without ever knowing how it was derived. Returns the created worktree
+			// for worktree sessions (created here on the first send) or the picked
+			// folder for folder sessions; undefined for workspace-less sessions.
+			const resolvedWorkingDirectory = await this._options.resolveWorkingDirectoryBeforeSend?.({ session: options.sessionChannel, chat, turnId, prompt: message.text });
 
-		const selectionUpdates: Promise<void>[] = [];
-		if (message.model) {
-			selectionUpdates.push(agent.chats.changeModel(chatUri, message.model).catch(err => {
-				this._logService.error('[AgentSideEffects] changeModel failed', err);
+			const selectionUpdates: Promise<void>[] = [];
+			if (message.model) {
+				selectionUpdates.push(agent.chats.changeModel(chatUri, message.model).catch(err => {
+					this._logService.error('[AgentSideEffects] changeModel failed', err);
+				}));
+			}
+			selectionUpdates.push(agent.chats.changeAgent(chatUri, message.agent).catch(err => {
+				this._logService.error('[AgentSideEffects] changeAgent failed', err);
 			}));
-		}
-		selectionUpdates.push(agent.chats.changeAgent(chatUri, message.agent).catch(err => {
-			this._logService.error('[AgentSideEffects] changeAgent failed', err);
-		}));
 
-		await Promise.all(selectionUpdates);
-
-		await agent.chats.sendMessage(chatUri, message.text, resolvedWorkingDirectory, message.attachments, turnId, senderClientId).catch(err => {
+			await Promise.all(selectionUpdates);
+			await agent.chats.sendMessage(chatUri, message.text, resolvedWorkingDirectory, message.attachments, turnId, senderClientId);
+		} catch (err) {
 			const errCode = (err as { code?: number })?.code;
 			this._logService.error(`[AgentSideEffects] sendMessage failed for session=${turnChannel}: code=${errCode}, message=${err instanceof Error ? err.message : String(err)}, type=${err?.constructor?.name}`, err);
 			this._stateManager.dispatchServerAction(turnChannel, {
@@ -1403,7 +1451,44 @@ export class AgentSideEffects extends Disposable {
 			});
 			this._turnTracker.turnCompleted(turnChannel, turnId, 'error');
 			this._toolCallTracker.clearSession(turnChannel);
+			this._failSessionCreationIfStillCreating(sessionChannel, err);
+		}
+	}
+
+	/**
+	 * Surfaces a failed first turn on a not-yet-materialized session as a
+	 * terminal creation failure.
+	 *
+	 * Provisional sessions defer both their root-catalog `SessionAdded`
+	 * notification and their `Creating -> Ready` lifecycle transition until the
+	 * agent materializes them (worktree setup, SDK session init, …) on the
+	 * first `sendMessage`. When that first send rejects — e.g. worktree/branch
+	 * creation throws — the session never entered the catalog and its lifecycle
+	 * is stuck at `Creating`, so clients that optimistically rendered it as
+	 * in-progress keep spinning forever.
+	 *
+	 * When the failing session is still `Creating`, dispatch
+	 * {@link ActionType.SessionCreationFailed} to move it to a terminal
+	 * `CreationFailed` lifecycle, then announce its catalog entry via
+	 * {@link AgentHostStateManager.markSessionPersisted}. The summary's status
+	 * was already aggregated to `Error` by the preceding `ChatError` dispatch,
+	 * so subscribers render the session as failed immediately rather than
+	 * waiting on a client-side timeout. The provisional session survives on the
+	 * agent, so resending re-attempts materialization.
+	 */
+	private _failSessionCreationIfStillCreating(sessionChannel: ProtocolURI, err: unknown): void {
+		const state = this._stateManager.getSessionState(sessionChannel);
+		if (state?.lifecycle !== SessionLifecycle.Creating) {
+			return;
+		}
+		this._stateManager.dispatchServerAction(sessionChannel, {
+			type: ActionType.SessionCreationFailed,
+			error: buildSendFailedError(err),
 		});
+		const summary = this._stateManager.getSessionSummary(sessionChannel);
+		if (summary) {
+			this._stateManager.markSessionPersisted(sessionChannel, summary);
+		}
 	}
 
 

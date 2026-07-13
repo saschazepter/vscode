@@ -12,7 +12,7 @@ import { CancellationError } from '../../../../base/common/errors.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { combinedDisposable, Disposable, DisposableMap, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../../base/common/map.js';
-import { FileAccess, nodeModulesAsarUnpackedPath, nodeModulesPath } from '../../../../base/common/network.js';
+import { FileAccess } from '../../../../base/common/network.js';
 import { formatTokenCount } from '../../../../base/common/numbers.js';
 import { equals } from '../../../../base/common/objects.js';
 import { autorun, observableValue, type ISettableObservable } from '../../../../base/common/observable.js';
@@ -32,12 +32,13 @@ import { workspacelessScratchDir } from '../workspacelessScratchDir.js';
 import { IAgentHostCheckpointService } from '../../common/agentHostCheckpointService.js';
 import { IAgentHostReviewService } from '../../common/agentHostReviewService.js';
 import { createPricingMetaFromBilling, hasLongContextSurcharge, type ICAPIModelBilling } from '../../common/agentModelPricing.js';
+import { createAgentModelByokMeta } from '../../common/agentModelByokMeta.js';
 import { AgentHostConfigKey, agentHostCustomizationConfigSchema, toContainerCustomization } from '../../common/agentHostCustomizationConfig.js';
 import { CopilotCliConfigKey, copilotCliConfigSchema } from '../../common/copilotCliConfig.js';
 import { AgentHostMcpServersConfigKey, AgentHostPreferLongContextEnabledConfigKey, AgentHostSessionSyncEnabledConfigKey, AutoApproveLevel, SessionMode, migrateLegacyAutopilotConfig, platformRootSchema, platformSessionSchema, type AgentHostMcpServers } from '../../common/agentHostSchema.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { AgentSessionEntry, decodeProviderData, encodeProviderData, type IPersistedChat } from '../agentPeerChats.js';
-import { AgentSession, AgentSignal, AuthenticateParams, IActiveClient, IAgent, IAgentChatDataChange, IAgentChats, IAgentLegacyChat, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../../common/agentService.js';
+import { AgentSession, AgentSignal, AuthenticateParams, IActiveClient, IAgent, IAgentChatDataChange, IAgentChats, IAgentLegacyChat, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentHostNetworkEndpoint, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../../common/agentService.js';
 import { getReasoningEffortDescription, getReasoningEffortLabel } from '../../common/reasoningEffort.js';
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
 import { IAgentHostOTelService } from '../../common/otel/agentHostOTelService.js';
@@ -55,7 +56,7 @@ import { IAgentHostCompletions } from '../agentHostCompletions.js';
 import { IAgentHostGitService } from '../../common/agentHostGitService.js';
 import { findMcpChildId, type IMcpServerRuntimeState } from '../shared/mcpCustomizationController.js';
 import { IByokLmBridgeRegistry } from '../byokLmBridgeRegistry.js';
-import { getWorktreeName, getWorktreesRoot } from '../shared/worktreeIsolation.js';
+import { SessionWorkingDirectoryMissingError } from '../shared/worktreeIsolation.js';
 import { buildSessionEventLogFromTurns } from './buildSessionEvents.js';
 import { CopilotAgentSession, type CopilotSdkMode } from './copilotAgentSession.js';
 import { ICopilotSessionContext, projectFromCopilotContext } from './copilotGitProject.js';
@@ -67,7 +68,7 @@ import { ICopilotApiService } from '../shared/copilotApiService.js';
 import { CopilotSlashCommandCompletionProvider } from './copilotSlashCommandCompletionProvider.js';
 import { DiscoveredType, SessionCustomizationDiscovery, areDiscoveredDirectoriesEqual, type IDiscoveredDirectory } from './sessionCustomizationDiscovery.js';
 import { COPILOT_INTEGRATION_ID } from '../../../endpoint/common/licenseAgreement.js';
-import product from '../../../product/common/product.js';
+import { getAppNodeModulesPath } from '../appNodeModules.js';
 
 const RUNTIME_SLASH_COMMAND_COMPLETION_WAIT_MS = 300;
 const COPILOT_CAPI_URL = 'https://api.githubcopilot.com';
@@ -226,14 +227,6 @@ export interface IExitPlanModeResponse {
 	readonly selectedAction?: string;
 	readonly autoApproveEdits?: boolean;
 	readonly feedback?: string;
-}
-
-export function getCopilotWorktreesRoot(repositoryRoot: URI): URI {
-	return getWorktreesRoot(repositoryRoot);
-}
-
-export function getCopilotWorktreeDirectoryName(branchName: string, branchPrefix: string = ''): string {
-	return getWorktreeName(branchName, branchPrefix);
 }
 
 /**
@@ -558,8 +551,29 @@ export class CopilotAgent extends Disposable implements IAgent {
 	getProtectedResources(): ProtectedResourceMetadata[] {
 		return [
 			this._gitHubEndpointService.getCopilotResource(),
-			this._gitHubEndpointService.getRepoResource()
+			this._gitHubEndpointService.getRepoResource(),
 		];
+	}
+
+	async getNetworkDiagnosticsEndpoints(): Promise<readonly IAgentHostNetworkEndpoint[]> {
+		let capiUrl = process.env['VSCODE_AGENT_HOST_CAPI_URL_OVERRIDE'] || COPILOT_CAPI_URL;
+		if (this._githubToken) {
+			try {
+				capiUrl = await this._copilotApiService.resolveApiEndpoint(this._githubToken) || capiUrl;
+			} catch (error) {
+				this._logService.debug(`[Copilot] CAPI endpoint discovery for network diagnostics failed; using ${capiUrl}: ${error instanceof Error ? error.message : String(error)}`);
+			}
+		}
+		const capiPingUrl = new URL(capiUrl);
+		capiPingUrl.pathname = `${capiPingUrl.pathname.replace(/\/$/, '')}/_ping`;
+		return [
+			{ name: 'GitHub API', url: this._gitHubEndpointService.getApiBaseUri() },
+			{ name: 'Copilot API (CAPI)', url: capiPingUrl.toString() },
+		];
+	}
+
+	async getNetworkDiagnosticsAccount(): Promise<string | undefined> {
+		return this._githubToken ? this._copilotApiService.resolveUserLogin?.(this._githubToken) : undefined;
 	}
 
 	getCustomizations(): readonly Customization[] {
@@ -755,13 +769,17 @@ export class CopilotAgent extends Disposable implements IAgent {
 		if (this._shutdownPromise) {
 			return;
 		}
-		this._byokModels = this._byokBridgeRegistry.getModels().map((m): IAgentModelInfo => ({
-			provider: this.id,
-			id: `${m.vendor}/${m.id}`,
-			name: m.name ?? m.id,
-			maxContextWindow: m.maxContextWindowTokens,
-			supportsVision: m.supportsVision ?? false,
-		}));
+		this._byokModels = this._byokBridgeRegistry.getModels().map((m): IAgentModelInfo => {
+			const byokMeta = createAgentModelByokMeta(m.modelIdentifier);
+			return {
+				provider: this.id,
+				id: `${m.vendor}/${m.id}`,
+				name: m.name ?? m.id,
+				maxContextWindow: m.maxContextWindowTokens,
+				supportsVision: m.supportsVision ?? false,
+				...(byokMeta && { _meta: byokMeta }),
+			};
+		});
 		this._logService.trace(`[Copilot] Found ${this._byokModels.length} BYOK models${this._byokModels.length ? ': ' + this._byokModels.map(m => m.name).join(', ') : ''}`);
 		this._publishModels();
 	}
@@ -911,14 +929,14 @@ export class CopilotAgent extends Disposable implements IAgent {
 			}
 
 			// Resolve the CLI entry point and native SDK binaries from node_modules.
-			// In a built app these live next to the ASAR archive in
+			// In the desktop app these live next to the ASAR archive in
 			// `node_modules.asar.unpacked` (the `@github/copilot-<platform>` CLI and
 			// the `@microsoft/mxc-sdk/bin` executables are unpacked so they can be
-			// spawned), while in dev they live in `node_modules`.
+			// spawned), while in dev and on the server (which has no ASAR) they live
+			// in a plain `node_modules`.
 			// We can't use require.resolve() because @github/copilot's exports map
 			// blocks direct subpath access.
-			const moduleRootPath = product.commit ? nodeModulesAsarUnpackedPath : nodeModulesPath;
-			const nodeModulesUri = FileAccess.asFileUri(moduleRootPath);
+			const nodeModulesUri = FileAccess.asFileUri(getAppNodeModulesPath());
 			const cliPath = await resolveCopilotCliPath(nodeModulesUri);
 
 			// The SDK's sandbox auto-detection looks for `<MXC_BIN_DIR>/<arch>/wxc-exec.exe`
@@ -1996,6 +2014,11 @@ export class CopilotAgent extends Disposable implements IAgent {
 			return [];
 		}
 		const entry = context.target ?? await this._resumeSession(sessionId).catch(err => {
+			if (err instanceof SessionWorkingDirectoryMissingError) {
+				// Unrecoverable: surface to the restore/subscribe path so the
+				// client shows a clear error instead of a silently empty chat.
+				throw err;
+			}
 			this._logService.warn(`[Copilot:${sessionId}] Failed to resume session for message lookup`, err);
 			return undefined;
 		});
@@ -2050,6 +2073,40 @@ export class CopilotAgent extends Disposable implements IAgent {
 			if (isWorkspaceless) {
 				await this._cleanupWorkspacelessScratchDir(this._workspacelessScratchDir(sessionId), sessionId);
 			}
+		});
+	}
+
+	/**
+	 * Non-destructive counterpart to {@link disposeSession}: releases the
+	 * session's in-memory resources (SDK session/connection, cached entry,
+	 * active clients, MCP subscriptions) but preserves all durable data — the
+	 * SDK session log, session database, and worktree stay on disk. The session
+	 * transparently resumes on the next access via {@link _resumeSession}.
+	 *
+	 * No-ops for sessions that have nothing durable to resume from (provisional
+	 * sessions) or that aren't currently held in memory, and for sessions with a
+	 * running turn — disconnecting mid-turn would strand the SDK session.
+	 */
+	async releaseSession(session: URI): Promise<void> {
+		const sessionId = AgentSession.id(session);
+		await this._sessionSequencer.queue(sessionId, async () => {
+			// Provisional sessions were never persisted, so releasing them would
+			// lose state with no way to resume. Leave them in memory.
+			if (this._provisionalSessions.has(sessionId)) {
+				return;
+			}
+			const entry = this._sessions.get(sessionId);
+			if (!entry) {
+				return;
+			}
+			// Defensive active-turn guard: the orchestrator already skips
+			// eviction while a turn is active, but a turn could have started
+			// between that check and this sequenced callback.
+			if (entry.allChatSessions().some(chatSession => chatSession.hasActiveTurn)) {
+				return;
+			}
+			this._logService.info(`[Copilot:${sessionId}] Releasing idle session from memory (durable state preserved)`);
+			await this._releaseSessionResources(sessionId);
 		});
 	}
 
@@ -2724,6 +2781,20 @@ export class CopilotAgent extends Disposable implements IAgent {
 	}
 
 	private async _destroyAndDisposeSession(sessionId: string): Promise<void> {
+		await this._releaseSessionResources(sessionId);
+	}
+
+	/**
+	 * Tears down a session's in-memory resources without deleting any durable
+	 * data: the SDK session is disconnected, peer chats and MCP subscriptions
+	 * are disposed, the `_sessions` entry is dropped, and active clients are
+	 * released. The on-disk SDK session log, session database, and worktree are
+	 * left untouched, so the session can be resumed later via
+	 * {@link _resumeSession}. Shared by the non-destructive {@link releaseSession}
+	 * path and the destructive {@link _destroyAndDisposeSession} path (the
+	 * latter reaps the worktree afterwards).
+	 */
+	private async _releaseSessionResources(sessionId: string): Promise<void> {
 		// Tear down any peer chats owned by this session first so their SDK
 		// chats don't leak when the parent is deleted/disposed
 		// without each chat being individually disposed via `disposeChat`.
@@ -2790,14 +2861,17 @@ export class CopilotAgent extends Disposable implements IAgent {
 		// A workspace-less chat's working directory is a stable per-session scratch dir
 		// that may have been reaped (OS temp cleanup, reboot) while the session
 		// persisted. Recreate it (mkdir -p) so shell/git/scratch ops don't fail.
+		let resolvedWorkingDirectory = workingDirectory;
 		if (storedMetadata.workspaceless) {
 			await this._ensureWorkspacelessScratchDir(workingDirectory, sessionId);
+		} else {
+			resolvedWorkingDirectory = await this._configurationService.resolveWorkingDirectoryForResume(sessionUri.toString(), workingDirectory);
 		}
 		// Anchor customization discovery to the working directory (the worktree for
 		// worktree-isolated sessions), matching how the session was materialized.
 		// Older sessions persisted `customizationDirectory` as the user-picked
 		// folder; preferring the working directory corrects them on resume.
-		const customizationDirectory = workingDirectory;
+		const customizationDirectory = resolvedWorkingDirectory;
 		// Always create an ActiveClient so the snapshot includes host +
 		// session-discovered customizations, even when no client has
 		// registered an active-client handle yet.
@@ -2805,7 +2879,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		activeClient.pluginController.reanchor(customizationDirectory);
 		const snapshot = await activeClient.snapshot();
 
-		const shellManager = this._instantiationService.createInstance(ShellManager, sessionUri, workingDirectory);
+		const shellManager = this._instantiationService.createInstance(ShellManager, sessionUri, resolvedWorkingDirectory);
 		const resolvedAgentName = storedMetadata.agent ? this._resolveAgentName(snapshot, storedMetadata.agent) : undefined;
 		if (storedMetadata.agent && !resolvedAgentName) {
 			this._logService.info(`[Copilot:${sessionId}] Stored custom agent is not available in the current plugin snapshot; resuming without a custom agent`);
@@ -2814,7 +2888,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			kind: 'resume',
 			client,
 			sessionId,
-			workingDirectory,
+			workingDirectory: resolvedWorkingDirectory,
 			resolvedAgentName,
 			snapshot,
 			activeClientToolSet: activeClient.toolSet,
@@ -3092,7 +3166,7 @@ class SessionDiscoveredEntry extends Disposable {
 		super();
 		this._discovery = this._register(instantiationService.createInstance(SessionCustomizationDiscovery, workingDirectory, userHome));
 		this._fileService = instantiationService.invokeFunction(accessor => accessor.get(IFileService));
-		this._settled = this._queueRefresh(false);
+		this._settled = this._queueRefresh(false, 0);
 		this._register(this._discovery.onDidChange(() => {
 			this._settled = this._queueRefresh(true);
 		}));
@@ -3112,7 +3186,7 @@ class SessionDiscoveredEntry extends Disposable {
 		return this._customizations;
 	}
 
-	private _queueRefresh(notify: boolean): Promise<void> {
+	private _queueRefresh(notify: boolean, delay = REFRESH_DEBOUNCE_MS): Promise<void> {
 		this._refreshPromise?.cancel();
 		this._refreshPromise = null;
 		this._pendingRefreshNotify = this._pendingRefreshNotify || notify;
@@ -3120,7 +3194,6 @@ class SessionDiscoveredEntry extends Disposable {
 		return this._refreshDelayer.trigger(() => {
 			const shouldNotify = this._pendingRefreshNotify;
 			this._pendingRefreshNotify = false;
-
 			const refreshPromise = this._refreshPromise = createCancelablePromise(async token => {
 				const didRefresh = await this._refresh(token);
 				if (didRefresh && shouldNotify) {
@@ -3141,7 +3214,7 @@ class SessionDiscoveredEntry extends Disposable {
 				}
 				throw err;
 			});
-		});
+		}, delay);
 	}
 
 	private async _refresh(token: CancellationToken): Promise<boolean> {

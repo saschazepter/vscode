@@ -77,6 +77,9 @@ export interface IAgentConfigurationService {
 	 */
 	isWorkingDirectoryPending(session: ProtocolURI): boolean;
 
+	/** Resolves a persisted working directory, repairing a removed worktree when possible. */
+	resolveWorkingDirectoryForResume(session: ProtocolURI, workingDirectory: URI): Promise<URI>;
+
 	/**
 	 * Merges a partial config patch into a session's values via a
 	 * {@link ActionType.SessionConfigChanged} action. Keys not present in
@@ -206,6 +209,10 @@ export class AgentConfigurationService extends Disposable implements IAgentConfi
 
 	isWorkingDirectoryPending(session: ProtocolURI): boolean {
 		return this._worktree?.isWorkingDirectoryPending(AgentSession.id(session)) ?? false;
+	}
+
+	async resolveWorkingDirectoryForResume(session: ProtocolURI, workingDirectory: URI): Promise<URI> {
+		return this._worktree?.resolveWorkingDirectoryForResume(URI.parse(session), AgentSession.id(session), workingDirectory) ?? workingDirectory;
 	}
 
 	updateSessionConfig(session: ProtocolURI, patch: Record<string, unknown>): void {

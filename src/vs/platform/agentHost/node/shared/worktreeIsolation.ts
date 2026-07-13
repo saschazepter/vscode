@@ -7,6 +7,7 @@ import * as fs from 'fs/promises';
 import { SequencerByKey } from '../../../../base/common/async.js';
 import { appendEscapedMarkdownInlineCode } from '../../../../base/common/htmlContent.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Schemas } from '../../../../base/common/network.js';
 import { basename } from '../../../../base/common/path.js';
 import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
@@ -17,7 +18,7 @@ import { IAgentHostGitService, META_DIFF_BASE_BRANCH } from '../../common/agentH
 import { ISchemaProperty, schemaProperty } from '../../common/agentHostSchema.js';
 import { ISessionDataService } from '../../common/sessionDataService.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
-import { ResponsePart, ResponsePartKind, Turn } from '../../common/state/sessionState.js';
+import { AH_META_IS_ARCHIVED_DB_KEY, AH_META_IS_DONE_DB_KEY, ResponsePart, ResponsePartKind, Turn } from '../../common/state/sessionState.js';
 import { AGENT_BRANCH_PREFIX, AgentBranchNameGenerator, IAgentBranchNameGenerator } from './agentBranchNameGenerator.js';
 import { ICopilotApiService } from './copilotApiService.js';
 
@@ -33,6 +34,16 @@ import { ICopilotApiService } from './copilotApiService.js';
 const WORKTREE_META_BRANCH = 'copilot.worktree.branchName';
 const WORKTREE_META_PATH = 'copilot.worktree.path';
 export const WORKTREE_META_REPOSITORY_ROOT = 'copilot.worktree.repositoryRoot';
+
+/** Thrown when a persisted session working directory is missing and cannot be repaired. */
+export class SessionWorkingDirectoryMissingError extends Error {
+	constructor(readonly workingDirectory: URI, readonly reason?: string) {
+		super(reason
+			? localize('sessionWorkingDirectoryMissingWithReason', "This session couldn't be loaded because its worktree is missing and could not be recreated: {0}", reason)
+			: localize('sessionWorkingDirectoryMissing', "This session couldn't be loaded because its working directory no longer exists: {0}", workingDirectory.fsPath));
+		this.name = 'SessionWorkingDirectoryMissingError';
+	}
+}
 
 /** Default upper bound on branch names returned for the branch picker. */
 const BRANCH_COMPLETION_LIMIT = 25;
@@ -134,6 +145,8 @@ export interface IIsolationConfigContribution {
 	 * isolation (see {@link WorktreeIsolation.resolveWorkingDirectory}).
 	 */
 	readonly worktreeBranchPrefixProperty: ISchemaProperty<string> | undefined;
+	/** Read-only carrier for the client's `git.worktreeIncludeFiles`. */
+	readonly worktreeIncludeFilesProperty: ISchemaProperty<readonly string[]> | undefined;
 	readonly isolationValue: 'folder' | 'worktree';
 	readonly branchDefault: string | undefined;
 }
@@ -299,6 +312,7 @@ export class WorktreeIsolation extends Disposable {
 		let branchProperty: ISchemaProperty<string> | undefined;
 		let branchDefault: string | undefined;
 		let worktreeBranchPrefixProperty: ISchemaProperty<string> | undefined;
+		let worktreeIncludeFilesProperty: ISchemaProperty<readonly string[]> | undefined;
 		if (gitInfo) {
 			const branchReadOnly = isolationValue === 'folder';
 			branchDefault = isolationValue === 'worktree' ? gitInfo.defaultBranch : gitInfo.currentBranch;
@@ -332,9 +346,21 @@ export class WorktreeIsolation extends Disposable {
 				readOnly: true,
 				sessionMutable: false,
 			});
+
+			worktreeIncludeFilesProperty = schemaProperty<readonly string[]>({
+				type: 'array',
+				title: localize('agentHost.sessionConfig.worktreeIncludeFiles', "Worktree Include Files"),
+				description: localize('agentHost.sessionConfig.worktreeIncludeFilesDescription', "Glob patterns for git-ignored files to copy into the isolated worktree."),
+				items: {
+					type: 'string',
+					title: localize('agentHost.sessionConfig.worktreeIncludeFilesItem', "Pattern"),
+				},
+				readOnly: true,
+				sessionMutable: false,
+			});
 		}
 
-		return { isolationProperty, branchProperty, worktreeBranchPrefixProperty, isolationValue, branchDefault };
+		return { isolationProperty, branchProperty, worktreeBranchPrefixProperty, worktreeIncludeFilesProperty, isolationValue, branchDefault };
 	}
 
 	/**
@@ -402,6 +428,17 @@ export class WorktreeIsolation extends Disposable {
 		// runtime accepted undefined when `branch` was not set in config. Preserve
 		// that behavior by passing through whatever value (or undefined) was set.
 		await this._gitService.addWorktree(repositoryRoot, worktree, branchName, baseBranch as string);
+		const worktreeIncludeFiles = Array.isArray(config[SessionConfigKey.WorktreeIncludeFiles])
+			&& config[SessionConfigKey.WorktreeIncludeFiles].every(pattern => typeof pattern === 'string')
+			? config[SessionConfigKey.WorktreeIncludeFiles] as readonly string[]
+			: undefined;
+		if (worktreeIncludeFiles?.length) {
+			try {
+				await this._gitService.copyWorktreeIncludeFiles(repositoryRoot, worktree, worktreeIncludeFiles);
+			} catch (error) {
+				this._logService.warn(`[${this._logLabel}:${sessionId}] Failed to copy worktree include files: ${errorMessage(error)}`);
+			}
+		}
 		this._createdWorktrees.set(sessionId, { repositoryRoot, worktree });
 		// Queue the worktree announcement so the first turn (live) and any
 		// subsequent restore (history) both surface the message in the chat.
@@ -412,6 +449,53 @@ export class WorktreeIsolation extends Disposable {
 			this._logService.warn(`[${this._logLabel}:${sessionId}] Failed to persist worktree branch metadata: ${errorMessage(error)}`);
 		}
 		return worktree;
+	}
+
+	/** Resolves a persisted working directory, repairing a removed worktree when possible. */
+	async resolveWorkingDirectoryForResume(sessionUri: URI, sessionId: string, workingDirectory: URI): Promise<URI> {
+		return this._sequencer.queue(sessionId, () => this._resolveWorkingDirectoryForResume(sessionUri, sessionId, workingDirectory));
+	}
+
+	private async _resolveWorkingDirectoryForResume(sessionUri: URI, sessionId: string, workingDirectory: URI): Promise<URI> {
+		if (workingDirectory.scheme !== Schemas.file) {
+			return workingDirectory;
+		}
+		try {
+			await fs.access(workingDirectory.fsPath);
+			return workingDirectory;
+		} catch {
+			// Repair or fall back below.
+		}
+
+		const meta = await this._readWorktreeMetadata(sessionUri).catch(() => undefined);
+		const archived = await this._isSessionArchived(sessionUri);
+		if (archived) {
+			if (meta?.repositoryRoot) {
+				try {
+					await fs.access(meta.repositoryRoot.fsPath);
+					this._logService.info(`[${this._logLabel}:${sessionId}] Archived session working directory '${workingDirectory.fsPath}' is missing; resuming against repository root '${meta.repositoryRoot.fsPath}' for history`);
+					return meta.repositoryRoot;
+				} catch {
+					// Fall through when the repository root is also gone.
+				}
+			}
+			this._logService.warn(`[${this._logLabel}:${sessionId}] Cannot resume archived session: working directory '${workingDirectory.fsPath}' is missing and no usable repository-root fallback was found`);
+			throw new SessionWorkingDirectoryMissingError(workingDirectory);
+		}
+
+		let recreateFailureReason: string | undefined;
+		if (meta?.worktreePath && meta.repositoryRoot) {
+			const { branchName, worktreePath, repositoryRoot } = meta;
+			const recreated = await this._recreateWorktree(sessionId, { branchName, worktreePath, repositoryRoot });
+			if (recreated.ok) {
+				this._logService.info(`[${this._logLabel}:${sessionId}] Recreated missing worktree '${worktreePath.fsPath}' for a live session on resume`);
+				return worktreePath;
+			}
+			recreateFailureReason = recreated.reason;
+		}
+
+		this._logService.warn(`[${this._logLabel}:${sessionId}] Cannot resume: working directory '${workingDirectory.fsPath}' is missing and its worktree could not be recreated${recreateFailureReason ? `: ${recreateFailureReason}` : ''}`);
+		throw new SessionWorkingDirectoryMissingError(workingDirectory, recreateFailureReason);
 	}
 
 	/**
@@ -540,31 +624,36 @@ export class WorktreeIsolation extends Disposable {
 		if (!meta?.worktreePath || !meta.repositoryRoot) {
 			return;
 		}
-		const { branchName, worktreePath, repositoryRoot } = meta;
-
 		// Skip if the worktree directory already exists — nothing to do.
 		try {
-			await fs.access(worktreePath.fsPath);
+			await fs.access(meta.worktreePath.fsPath);
 			return;
 		} catch {
 			// expected when the worktree was cleaned up on archive
 		}
 
-		// Skip if the branch is missing — we have no commit to attach the
-		// recreated worktree to.
+		const { branchName, worktreePath, repositoryRoot } = meta;
+		await this._recreateWorktree(sessionId, { branchName, worktreePath, repositoryRoot });
+	}
+
+	private async _recreateWorktree(sessionId: string, meta: { readonly branchName: string; readonly worktreePath: URI; readonly repositoryRoot: URI }): Promise<{ readonly ok: true } | { readonly ok: false; readonly reason: string }> {
+		const { branchName, worktreePath, repositoryRoot } = meta;
 		const branchPresent = await this._gitService.branchExists(repositoryRoot, branchName).catch(() => false);
 		if (!branchPresent) {
-			this._logService.info(`[${this._logLabel}:${sessionId}] Skipping worktree recreation: branch '${branchName}' is missing`);
-			return;
+			const reason = localize('worktreeRecreateBranchMissing', "the branch '{0}' no longer exists", branchName);
+			this._logService.info(`[${this._logLabel}:${sessionId}] Cannot recreate worktree: branch '${branchName}' is missing`);
+			return { ok: false, reason };
 		}
-
 		try {
 			await fs.mkdir(URI.joinPath(worktreePath, '..').fsPath, { recursive: true });
 			await this._gitService.addExistingWorktree(repositoryRoot, worktreePath, branchName);
 			this._createdWorktrees.set(sessionId, { repositoryRoot, worktree: worktreePath });
-			this._logService.info(`[${this._logLabel}:${sessionId}] Recreated worktree '${worktreePath.fsPath}' on unarchive`);
+			this._logService.info(`[${this._logLabel}:${sessionId}] Recreated worktree '${worktreePath.fsPath}'`);
+			return { ok: true };
 		} catch (error) {
-			this._logService.warn(`[${this._logLabel}:${sessionId}] Failed to recreate worktree '${worktreePath.fsPath}' on unarchive: ${errorMessage(error)}`);
+			const reason = errorMessage(error);
+			this._logService.warn(`[${this._logLabel}:${sessionId}] Failed to recreate worktree '${worktreePath.fsPath}': ${reason}`);
+			return { ok: false, reason };
 		}
 	}
 
@@ -654,6 +743,22 @@ export class WorktreeIsolation extends Disposable {
 			const worktreePath = worktreePathRaw ? URI.parse(worktreePathRaw) : undefined;
 			const repositoryRoot = repositoryRootRaw ? URI.parse(repositoryRootRaw) : undefined;
 			return { branchName, worktreePath, repositoryRoot };
+		} finally {
+			ref.dispose();
+		}
+	}
+
+	private async _isSessionArchived(sessionUri: URI): Promise<boolean> {
+		const ref = await this._sessionDataService.tryOpenDatabase(sessionUri);
+		if (!ref) {
+			return false;
+		}
+		try {
+			const [isArchived, isDone] = await Promise.all([
+				ref.object.getMetadata(AH_META_IS_ARCHIVED_DB_KEY),
+				ref.object.getMetadata(AH_META_IS_DONE_DB_KEY),
+			]);
+			return isArchived !== undefined ? isArchived === 'true' : isDone === 'true';
 		} finally {
 			ref.dispose();
 		}
