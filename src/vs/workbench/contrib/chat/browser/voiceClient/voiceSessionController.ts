@@ -210,6 +210,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	// --- Audio FIFO queue ---
 	private readonly _audioQueue: { sessionId: string | undefined; chunks: { audio: string; isFirstChunk: boolean; isFinal: boolean; transcript: string | undefined }[] }[] = [];
 	private _currentPlaybackSessionId: string | undefined | null = null; // null = nothing playing
+	// True once the currently-playing response has received its final audio
+	// chunk. A same-session frame arriving after this marks a NEW response and
+	// must be serialized (queued) rather than fast-pathed, or its audio would be
+	// appended into the finalized playback turn and dropped past `node.stop()`.
+	private _currentPlaybackFinalized = false;
 	private _isProcessingQueue = false;
 
 	// True while we're suppressing in-flight assistant audio from the previous
@@ -751,6 +756,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 			this.voicePlaybackService.notifyPlaybackEnd(undefined);
 			this._currentPlaybackSessionId = null;
+			this._currentPlaybackFinalized = false;
 
 			// Check if there's more in the queue
 			if (this._audioQueue.length > 0) {
@@ -2826,7 +2832,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// If nothing is playing and queue is empty, or same session is playing, play immediately
 		const nothingPlaying = this._currentPlaybackSessionId === null;
 		const sameSession = !nothingPlaying && this._currentPlaybackSessionId === sessionId;
-		if ((nothingPlaying && this._audioQueue.length === 0) || sameSession) {
+		// Only fast-path CONTINUATION chunks of the response that is currently
+		// playing (same session AND not yet finalized). Once the current
+		// response's final chunk has been sent, the TTS service's single
+		// playback turn has scheduled `node.stop()` at that response's boundary;
+		// appending a new same-session response's audio into that same buffer
+		// plays it past the stop point, so it's silently dropped. Serializing it
+		// through the queue forces a fresh turn once the current one finishes.
+		const continuationOfCurrent = sameSession && !this._currentPlaybackFinalized;
+		if ((nothingPlaying && this._audioQueue.length === 0) || continuationOfCurrent) {
 			this._playChunk(sessionId, audio, isFirstChunk, isFinal, transcript);
 			return;
 		}
@@ -2872,6 +2886,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// (onPlaybackStopped never fires), deadlocking every other
 			// session's queued audio.
 			this._currentPlaybackSessionId = sessionId;
+			// A same-session frame arriving after the final chunk is a NEW
+			// response and must be serialized (see `_enqueueAudio`).
+			this._currentPlaybackFinalized = isFinal;
 			this._clearAutoListenTimer();
 			this._replyPlayedSinceSend = true;
 			this.micCaptureService.suppressUntil(Date.now() + 800);
@@ -2897,6 +2914,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// TTS enabled but no audio in this frame. Forward it so a final
 			// frame can flush/stop an in-flight playback turn; a non-final
 			// empty frame is a no-op and leaves the slot untouched.
+			// If this empty frame finalizes the currently-playing response,
+			// mark it so a later same-session frame serializes as a new turn.
+			if (isFinal && this._currentPlaybackSessionId === sessionId) {
+				this._currentPlaybackFinalized = true;
+			}
 			this.ttsPlaybackService.playAudioChunk(audio, isFinal, this._window!);
 		}
 	}
