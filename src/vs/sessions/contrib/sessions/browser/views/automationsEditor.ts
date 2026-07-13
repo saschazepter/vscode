@@ -6,6 +6,7 @@
 import '../media/automationsCards.css';
 import * as DOM from '../../../../../base/browser/dom.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
+import { getDefaultHoverDelegate } from '../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
@@ -13,14 +14,8 @@ import { autorun } from '../../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { localize } from '../../../../../nls.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
-import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
-import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
-import { IStorageService } from '../../../../../platform/storage/common/storage.js';
-import { EditorInputCapabilities, IUntypedEditorInput } from '../../../../../workbench/common/editor.js';
-import { EditorInput } from '../../../../../workbench/common/editor/editorInput.js';
-import { EditorPane } from '../../../../../workbench/browser/parts/editor/editorPane.js';
-import { IEditorGroup } from '../../../../../workbench/services/editor/common/editorGroupsService.js';
-import type { IAutomation, IAutomationRun, AutomationRunStatus } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
+import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import type { IAutomation, IAutomationRun } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
 import { IAutomationService } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { IAutomationRunner } from '../../../../../workbench/contrib/chat/common/automations/automationRunner.js';
 import { IAutomationDialogService } from '../../../../../workbench/contrib/chat/common/automations/automationDialogService.js';
@@ -29,13 +24,14 @@ import { basename } from '../../../../../base/common/resources.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { status } from '../../../../../base/browser/ui/aria/aria.js';
+import { AbstractChatView, ChatViewKind } from '../../../../browser/parts/chatView.js';
 
 const $ = DOM.$;
 
 /**
- * Card-style view of automations for the Agents window sessions sidebar.
- * Displays automations as a grid of cards (similar to the Overview page
- * in AI Customization Management Editor).
+ * Card-style view of automations for the Agents window sessions grid.
+ * Uses native VS Code components and styling patterns matching the
+ * automationsListWidget in AI Customization.
  */
 export class AutomationsCardsWidget extends Disposable {
 
@@ -50,6 +46,7 @@ export class AutomationsCardsWidget extends Disposable {
 		@IAutomationService private readonly automationService: IAutomationService,
 		@IAutomationRunner private readonly automationRunner: IAutomationRunner,
 		@IAutomationDialogService private readonly automationDialogService: IAutomationDialogService,
+		@IHoverService private readonly hoverService: IHoverService,
 		@ILogService private readonly logService: ILogService,
 	) {
 		super();
@@ -85,6 +82,9 @@ export class AutomationsCardsWidget extends Disposable {
 		newButton.label = localize('newAutomationShort', "+ New");
 		newButton.element.classList.add('automations-cards-new-button');
 		this._register(newButton.onDidClick(() => this.openCreateDialog()));
+
+		const descEl = DOM.append(this.headerEl, $('p.automations-cards-header-description'));
+		descEl.textContent = localize('automationsDescription', "Schedule agent sessions to run automatically on a cadence you choose.");
 	}
 
 	private async openCreateDialog(): Promise<void> {
@@ -133,59 +133,65 @@ export class AutomationsCardsWidget extends Disposable {
 	}
 
 	private renderCard(automation: IAutomation): void {
-		const card = DOM.append(this.cardsContainer, $('.automations-card'));
+		const wrapper = DOM.append(this.cardsContainer, $('.automations-card-wrapper'));
+		const card = DOM.append(wrapper, $('.automations-card'));
 		card.setAttribute('tabindex', '0');
 		card.setAttribute('role', 'button');
+		card.setAttribute('aria-label', automation.name);
 
-		// Header: name
-		const header = DOM.append(card, $('.automations-card-header'));
-		const nameEl = DOM.append(header, $('span.automations-card-name'));
-		nameEl.textContent = automation.name;
+		const main = DOM.append(card, $('.automations-card-main'));
+
+		// Name row with disabled badge
+		const nameRow = DOM.append(main, $('.automations-card-name'));
+		const nameTextEl = DOM.append(nameRow, $('span.automations-card-name-text'));
+		nameTextEl.textContent = automation.name;
 
 		if (!automation.enabled) {
-			const badge = DOM.append(header, $('span.automations-card-disabled-badge'));
+			const badge = DOM.append(nameRow, $('span.automations-card-disabled-badge'));
 			badge.textContent = localize('disabled', "Disabled");
 		}
 
-		// Schedule info
-		const scheduleEl = DOM.append(card, $('p.automations-card-schedule'));
+		// Metadata row (schedule · folder · last run)
+		const metaEl = DOM.append(main, $('.automations-card-meta'));
+		const scheduleEl = DOM.append(metaEl, $('span'));
 		scheduleEl.textContent = this.formatSchedule(automation);
 
+		const sep1 = DOM.append(metaEl, $('span.automations-card-meta-sep'));
+		sep1.textContent = '·';
+
+		const folderEl = DOM.append(metaEl, $('span'));
+		folderEl.textContent = basename(automation.folderUri);
+
+		const runs = this.automationService.runsFor(automation.id);
+		const latestRun = runs.get()[0];
+		if (latestRun) {
+			const sep2 = DOM.append(metaEl, $('span.automations-card-meta-sep'));
+			sep2.textContent = '·';
+
+			const lastRunEl = DOM.append(metaEl, $('span.automations-card-last-run'));
+			lastRunEl.textContent = this.formatLastRun(latestRun);
+			lastRunEl.classList.toggle('automations-card-run-failed', latestRun.status === 'failed');
+			lastRunEl.classList.toggle('automations-card-run-success', latestRun.status === 'completed');
+		}
+
 		// Prompt preview (truncated)
-		const promptEl = DOM.append(card, $('p.automations-card-prompt'));
+		const promptEl = DOM.append(main, $('.automations-card-prompt'));
 		const maxLength = 120;
 		promptEl.textContent = automation.prompt.length > maxLength
 			? automation.prompt.slice(0, maxLength) + '…'
 			: automation.prompt;
 
-		// Footer: workspace + last run
-		const footer = DOM.append(card, $('.automations-card-footer'));
-		const folderEl = DOM.append(footer, $('span.automations-card-folder'));
-		folderEl.textContent = basename(automation.folderUri);
-
-		const lastRunEl = DOM.append(footer, $('span.automations-card-last-run'));
-		const runs = this.automationService.runsFor(automation.id);
-		const latestRun = runs.get()[0];
-		if (latestRun) {
-			lastRunEl.textContent = this.formatLastRun(latestRun);
-				lastRunEl.classList.toggle('automations-card-run-failed', latestRun.status === 'failed');
-				lastRunEl.classList.toggle('automations-card-run-success', latestRun.status === 'completed');
-		}
-
-		// Actions row
+		// Action buttons (icon-only with hover tooltips)
 		const actions = DOM.append(card, $('.automations-card-actions'));
-		const runBtn = DOM.append(actions, $('button.automations-card-action-btn'));
-		runBtn.textContent = localize('runNow', "Run");
-		runBtn.classList.add(...ThemeIcon.asClassNameArray(Codicon.play));
-		this.cardDisposables.add(DOM.addDisposableListener(runBtn, 'click', (e) => {
-			e.stopPropagation();
+		const runBtn = this.createIconButton(actions, Codicon.play, localize('runNow', "Run now"), false);
+		this.cardDisposables.add(DOM.addStandardDisposableListener(runBtn, 'click', (e) => {
+			DOM.EventHelper.stop(e, true);
 			this.automationRunner.runOnce(automation, 'manual', 0, CancellationToken.None);
 		}));
 
-		const editBtn = DOM.append(actions, $('button.automations-card-action-btn'));
-		editBtn.textContent = localize('edit', "Edit");
-		this.cardDisposables.add(DOM.addDisposableListener(editBtn, 'click', (e) => {
-			e.stopPropagation();
+		const editBtn = this.createIconButton(actions, Codicon.edit, localize('editAutomation', "Edit"), false);
+		this.cardDisposables.add(DOM.addStandardDisposableListener(editBtn, 'click', (e) => {
+			DOM.EventHelper.stop(e, true);
 			this.openEditDialog(automation);
 		}));
 
@@ -193,6 +199,18 @@ export class AutomationsCardsWidget extends Disposable {
 		this.cardDisposables.add(DOM.addDisposableListener(card, 'click', () => {
 			this.openEditDialog(automation);
 		}));
+	}
+
+	private createIconButton(container: HTMLElement, icon: ThemeIcon, tooltip: string, disabled: boolean): HTMLElement {
+		const button = DOM.append(container, $('button.automations-card-action-button', {
+			type: 'button',
+			'aria-label': tooltip,
+			tabindex: '0',
+		})) as HTMLButtonElement;
+		button.classList.add(...ThemeIcon.asClassNameArray(icon));
+		button.disabled = disabled;
+		this.cardDisposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), button, tooltip));
+		return button;
 	}
 
 	private renderEmptyState(): void {
@@ -245,84 +263,41 @@ export class AutomationsCardsWidget extends Disposable {
 	}
 }
 
-//#region Editor Input
+//#region AutomationsView
 
-export const AUTOMATIONS_EDITOR_ID = 'workbench.editor.automations';
-export const AUTOMATIONS_EDITOR_INPUT_ID = 'workbench.editorinputs.automations';
+/**
+ * A chat view that hosts the automations management page within the
+ * sessions grid, following the same pattern as NewChatView/ChatView.
+ */
+export class AutomationsView extends AbstractChatView {
 
-export class AutomationsEditorInput extends EditorInput {
+	static readonly TYPE = 'sessions.automations';
 
-	static readonly ID: string = AUTOMATIONS_EDITOR_INPUT_ID;
+	override readonly kind: ChatViewKind = 'automations';
 
-	readonly resource = undefined;
-
-	override get capabilities(): EditorInputCapabilities {
-		return super.capabilities | EditorInputCapabilities.Singleton;
-	}
-
-	private static _instance: AutomationsEditorInput | undefined;
-
-	static getOrCreate(): AutomationsEditorInput {
-		if (!AutomationsEditorInput._instance || AutomationsEditorInput._instance.isDisposed()) {
-			AutomationsEditorInput._instance = new AutomationsEditorInput();
-		}
-		return AutomationsEditorInput._instance;
-	}
-
-	constructor() {
-		super();
-	}
-
-	override matches(otherInput: EditorInput | IUntypedEditorInput): boolean {
-		return super.matches(otherInput) || otherInput instanceof AutomationsEditorInput;
-	}
-
-	override get typeId(): string {
-		return AutomationsEditorInput.ID;
-	}
-
-	override getName(): string {
-		return localize('automationsEditorName', "Automations");
-	}
-
-	override getIcon(): ThemeIcon {
-		return automationIcon;
-	}
-
-	override async resolve(): Promise<null> {
-		return null;
-	}
-}
-
-//#endregion
-
-//#region Editor Pane
-
-export class AutomationsEditorPane extends EditorPane {
-
-	static readonly ID = AUTOMATIONS_EDITOR_ID;
-
-	private container!: HTMLElement;
-	private widget: AutomationsCardsWidget | undefined;
+	private readonly _widget: AutomationsCardsWidget;
 
 	constructor(
-		group: IEditorGroup,
-		@ITelemetryService telemetryService: ITelemetryService,
-		@IThemeService themeService: IThemeService,
-		@IStorageService storageService: IStorageService,
-		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IInstantiationService instantiationService: IInstantiationService
 	) {
-		super(AutomationsEditorPane.ID, group, telemetryService, themeService, storageService);
+		super();
+
+		this.element.classList.add('chat-view-automations');
+
+		this._widget = this._register(instantiationService.createInstance(AutomationsCardsWidget));
+		this.element.appendChild(this._widget.element);
 	}
 
-	protected createEditor(parent: HTMLElement): void {
-		this.container = DOM.append(parent, DOM.$('.automations-editor-pane'));
-		this.widget = this._register(this.instantiationService.createInstance(AutomationsCardsWidget));
-		this.container.appendChild(this.widget.element);
+	protected override doLayout(width: number, height: number, _top: number, _left: number): void {
+		this._widget.layout(width, height);
 	}
 
-	layout(dimension: DOM.Dimension): void {
-		this.widget?.layout(dimension.width, dimension.height);
+	override toJSON(): object {
+		return { type: AutomationsView.TYPE };
+	}
+
+	override focus(): void {
+		this._widget.element.focus();
 	}
 }
 
