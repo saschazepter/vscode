@@ -906,10 +906,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 						const isTransition = isStateTransition || isDetailTransition;
 						if (isTransition) {
 							this.logService.trace(`[voice] autorun transition id=${sessionId.slice(-32)} ${prev?.state}→${currentState} detailChanged=${isDetailTransition} hasDetail=${!!detail}`);
-							// A genuine new turn (thinking) supersedes the prior narration; clear the
-							// dedup here, before coalescing collapses a fast idle→thinking→idle burst to
-							// net-zero (which would never reach _handleNarratableStateChange with thinking).
-							// Skip while eagerly reloading, whose replay can emit a spurious thinking blip.
+							// A new turn supersedes prior narration; clear dedup here (before coalescing collapses a fast idle→thinking→idle to net-zero), skipping eager-reload wobble.
 							if (currentState === 'thinking' && !this._eagerModelLoading.has(sessionId)) {
 								this._lastNarratedText.delete(sessionId);
 							}
@@ -1010,11 +1007,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					// (archived/removed/disposed), so long-lived voice connections don't
 					// retain summaries or state for sessions that will never be narrated.
 					this._pruneSessionCaches(processedResources);
-					// Session context now tracks per-session state for the backend
-					// (active session, confirmation detail, etc.) but is NO LONGER a
-					// narration trigger — the backend speaks only on an explicit
-					// `request_narration` (see _narrate). We still coalesce rapid
-					// transitions so the shipped context reflects the settled state.
+					// Context tracks per-session state only; it is NO LONGER a narration trigger (backend speaks solely on `request_narration`). Still coalesce so shipped context reflects the settled state.
 					if (stateChanges.length > 0) {
 						// Coalesce rapid transitions into a single settled emission
 						// (see _pendingStateChanges). Buffer the latest change per
@@ -1127,9 +1120,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._enterListenOnSessionInit = false;
 				this._enterAutoListen();
 			}
-			// Retry the shown session's pending item now the socket is (re)established.
-			// A narration requested while the connection was down was dropped without
-			// recording a dedup entry (see _narrate), so this re-sends it exactly once.
+			// Retry the shown session's pending item on (re)connect: one requested while the socket was down was dropped without recording dedup (see _narrate), so re-send it once.
 			const shown = this._shownSessionId();
 			if (shown) {
 				const narratable = this._currentNarratable(URI.parse(shown));
@@ -2380,9 +2371,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return;
 		}
 		this.logService.trace(`[voice] narrate kind=${kind} id=${sessionId.slice(-32)}`);
-		// Only record the dedup entry once the request is actually sent; if the
-		// socket is closed the send is dropped, so leaving the entry unset lets a
-		// later focus/state event retry this item after the connection resumes.
+		// Record dedup only once the request is actually sent; if the socket is closed, leaving it unset lets a later focus/state event retry after resume.
 		if (this.voiceClientService.requestNarration(sessionId, kind, text)) {
 			this._lastNarratedText.set(sessionId, text);
 		}
@@ -3218,10 +3207,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 		if (stateChanges.length > 0) {
 			this.logService.trace(`[voice] onDidChangeSessions detected ${stateChanges.length} state change(s): ${stateChanges.map(c => `${c.label}: ${c.currentState}`).join(', ')}`);
-			// Push fresh context + flush the debounce so the backend picks up the
-			// transition (and its detail / summary) without waiting up to 500 ms.
-			// This only updates tracked state; narration is requested separately
-			// via _handleNarratableStateChange above.
+			// Push fresh context + flush the debounce so the backend picks up the transition without a 500ms wait; this only updates tracked state (narration is requested via _handleNarratableStateChange above).
 			this._sendContext();
 			this.voiceClientService.flushSessionContext();
 			for (const change of stateChanges) {
