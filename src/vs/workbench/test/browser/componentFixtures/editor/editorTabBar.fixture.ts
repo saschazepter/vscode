@@ -119,6 +119,8 @@ interface IEditorSpec {
 	readonly pinned?: boolean;
 	readonly sticky?: boolean;
 	readonly active?: boolean;
+	/** Include this editor in the multi-selection (the active editor is always selected). */
+	readonly selected?: boolean;
 }
 
 function file(path: string): URI {
@@ -182,6 +184,34 @@ function stickyEditorSpecs(): IEditorSpec[] {
 		{ resource: file('/project/package.json'), icon: ThemeIcon.fromId(Codicon.json.id), sticky: true, pinned: true },
 		{ resource: file('/project/src/app/index.ts'), pinned: true, active: true },
 		{ resource: file('/project/src/app/components/button.tsx'), pinned: true },
+	];
+}
+
+/** Editors with several tabs in the multi-selection (active + additional selected). */
+function multiSelectEditorSpecs(): IEditorSpec[] {
+	return [
+		{ resource: file('/project/src/app/main.ts'), icon: ThemeIcon.fromId(Codicon.symbolFile.id), pinned: true, selected: true },
+		{ resource: file('/project/src/app/index.ts'), pinned: true },
+		{ resource: file('/project/README.md'), icon: ThemeIcon.fromId(Codicon.markdown.id), pinned: true, selected: true },
+		{ resource: file('/project/package.json'), icon: ThemeIcon.fromId(Codicon.json.id), pinned: true, dirty: true, active: true, selected: true },
+		{ resource: file('/project/src/app/components/button.tsx'), pinned: true },
+		{ resource: file('/project/tests/app/main.test.ts'), pinned: true, selected: true },
+	];
+}
+
+/** Editors with very long names/paths to exercise tab-label truncation and ellipsis. */
+function longLabelEditorSpecs(): IEditorSpec[] {
+	return [
+		{ resource: file('/project/src/features/authentication/providers/veryLongAuthenticationProviderImplementation.ts'), pinned: true, active: true },
+		{ resource: file('/project/src/features/authentication/providers/anotherExtremelyLongProviderFactoryModule.ts'), pinned: true },
+		{ resource: file('/project/documentation/architecture/decisions/0001-use-a-really-long-descriptive-file-name.md'), icon: ThemeIcon.fromId(Codicon.markdown.id), pinned: true },
+	];
+}
+
+/** A single dirty, pinned editor for the single-tab control. */
+function singleDirtyEditorSpecs(): IEditorSpec[] {
+	return [
+		{ resource: file('/project/src/app/main.ts'), icon: ThemeIcon.fromId(Codicon.symbolFile.id), pinned: true, dirty: true, active: true },
 	];
 }
 
@@ -266,6 +296,7 @@ function createPartOptions(overrides?: Partial<IEditorPartOptions>): IEditorPart
 function populateModel(model: EditorGroupModel, specs: IEditorSpec[], disposableStore: DisposableStore): void {
 	// Open sticky editors first so their indices stay at the front.
 	const ordered = [...specs].sort((a, b) => (a.sticky === b.sticky) ? 0 : a.sticky ? -1 : 1);
+	const inputBySpec = new Map<IEditorSpec, FixtureEditorInput>();
 	for (const spec of ordered) {
 		const input = disposableStore.add(new FixtureEditorInput(spec.resource, {
 			typeId: spec.typeId,
@@ -273,11 +304,18 @@ function populateModel(model: EditorGroupModel, specs: IEditorSpec[], disposable
 			icon: spec.icon,
 			capabilities: spec.capabilities,
 		}));
+		inputBySpec.set(spec, input);
 		model.openEditor(input, {
 			pinned: spec.pinned ?? true,
 			sticky: spec.sticky,
 			active: spec.active,
 		});
+	}
+
+	// Apply multi-selection: the active editor plus any additionally selected ones.
+	const inactiveSelected = ordered.filter(spec => spec.selected && !spec.active).map(spec => inputBySpec.get(spec)!);
+	if (inactiveSelected.length && model.activeEditor) {
+		model.setSelection(model.activeEditor, inactiveSelected);
 	}
 }
 
@@ -426,7 +464,8 @@ function render(options: IRenderOptions): (ctx: ComponentFixtureContext) => void
 }
 
 // ============================================================================
-// Fixtures — at least one per setting that affects the tab bar
+// Fixtures — at least one per setting that affects the tab bar, plus notable
+// UI states / edge cases and setting combinations.
 // ============================================================================
 
 export default defineThemedFixtureGroup({ path: 'editor/editorTabBar/' }, {
@@ -491,4 +530,30 @@ export default defineThemedFixtureGroup({ path: 'editor/editorTabBar/' }, {
 
 	// alwaysShowEditorActions (only affects inactive groups, so render this group inactive)
 	AlwaysShowEditorActions: defineComponentFixture({ render: render({ partOptions: { alwaysShowEditorActions: true }, active: false }) }),
+
+	// --- UI states / edge cases (not tied to a single setting) ---
+
+	// Multi-selection: several tabs in the selected state at once.
+	MultiSelect: defineComponentFixture({ render: render({ editors: multiSelectEditorSpecs() }) }),
+
+	// Inactive group: unfocused tab styling and the unfocused modified-tab borders.
+	InactiveGroup: defineComponentFixture({ render: render({ active: false }) }),
+
+	// Inactive group with dirty editors: exercises the unfocused modified-border color path.
+	InactiveGroupDirty: defineComponentFixture({ render: render({ editors: dirtyEditorSpecs(), active: false }) }),
+
+	// Very long labels: tab-label truncation / ellipsis with shrinking tabs.
+	LongLabelsShrink: defineComponentFixture({ render: render({ partOptions: { tabSizing: 'shrink' }, editors: longLabelEditorSpecs(), width: 520 }) }),
+
+	// --- Notable setting combinations ---
+
+	// Sticky compact tabs with icons disabled: the sticky tab falls back to the
+	// first letter of the name instead of an icon.
+	StickyCompactNoIcons: defineComponentFixture({ render: render({ partOptions: { pinnedTabSizing: 'compact', showIcons: false }, editors: stickyEditorSpecs() }) }),
+
+	// Single-tab mode with a dirty editor: the single tab control renders the dirty dot.
+	SingleTabDirty: defineComponentFixture({ render: render({ partOptions: { showTabs: 'single' }, editors: singleDirtyEditorSpecs() }) }),
+
+	// Pinned tabs on a separate row combined with compact pinned sizing.
+	PinnedSeparateRowCompact: defineComponentFixture({ render: render({ partOptions: { pinnedTabsOnSeparateRow: true, pinnedTabSizing: 'compact' }, editors: stickyEditorSpecs() }) }),
 });
