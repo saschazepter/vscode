@@ -599,8 +599,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		return this._configurationService.getRootValue(copilotCliConfigSchema, CopilotCliConfigKey.CopilotSdkLogLevel) ?? 'default';
 	}
 
-	private _resolveCopilotSdkLogLevel(): CopilotSdkLogLevel {
-		const configured = this._getCopilotSdkLogLevelSetting();
+	private _resolveCopilotSdkLogLevel(configured: CopilotSdkLogLevelSetting): CopilotSdkLogLevel {
 		return configured !== 'default' ? configured : copilotCliLogLevelFor(this._logService.getLevel());
 	}
 
@@ -1069,7 +1068,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			this._logService.info(`[Copilot] Resolved CLI path: ${cliPath}`);
 
 			const telemetry = await this._otelService.getSdkTelemetryConfig();
-			const copilotSdkLogLevelAtStartup = this._resolveCopilotSdkLogLevel();
+			const copilotSdkLogLevelAtStartup = this._resolveCopilotSdkLogLevel(copilotSdkLogLevelSettingAtStartup);
 
 			const clientOptions: CopilotClientOptions = {
 				useLoggedInUser: false,
@@ -1077,7 +1076,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 				env,
 				telemetry,
 				logLevel: copilotSdkLogLevelAtStartup,
-				enableRemoteSessions: this._isSessionSyncEnabled(),
+				enableRemoteSessions: sessionSyncAtStartup,
 			};
 			const client = this._createCopilotClient(clientOptions);
 			await client.start();
