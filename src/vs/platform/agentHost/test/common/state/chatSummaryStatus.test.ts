@@ -53,6 +53,18 @@ function chatState(status: SessionStatus, parts: ResponsePart[]): ChatState {
 	};
 }
 
+/** A restored {@link ChatState} whose active turn is not loaded (as produced by `createChatState`). */
+function restoredChatState(status: SessionStatus): ChatState {
+	return {
+		resource: 'agent-host-copilot:/session-1',
+		title: 'Chat',
+		status,
+		modifiedAt: '2024-01-01T00:00:00.000Z',
+		turns: [],
+		activeTurn: undefined,
+	};
+}
+
 suite('chatSummaryFromState status projection', () => {
 
 	ensureNoDisposablesAreLeakedInTestSuite();
@@ -79,9 +91,14 @@ suite('chatSummaryFromState status projection', () => {
 	});
 
 	test('keeps InputNeeded for a result confirmation even when the call was auto-approved', () => {
-		// `autoApproveBySetting` describes the parameter gate; the post-execution
-		// result gate is always a genuine user prompt and must not be demoted.
+		// The result gate is genuine input even though the parameter gate was auto-approved.
 		const state = chatState(SessionStatus.InputNeeded, [pendingResultToolCall('tc-auto', true)]);
+		assert.strictEqual(chatSummaryFromState(state).status, SessionStatus.InputNeeded);
+	});
+
+	test('preserves InputNeeded for a restored chat with no loaded active turn', () => {
+		// No blocker is attributable (activeTurn not loaded), so the status must not be fabricated.
+		const state = restoredChatState(SessionStatus.InputNeeded);
 		assert.strictEqual(chatSummaryFromState(state).status, SessionStatus.InputNeeded);
 	});
 });

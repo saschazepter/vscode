@@ -628,30 +628,26 @@ export function createDefaultChatSummary(session: SessionSummary, chatUri: Proto
 /** Activity bits (0–4) of {@link SessionStatus}; the high bits carry orthogonal flags (IsRead / IsArchived). */
 const STATUS_ACTIVITY_MASK = (1 << 5) - 1;
 
-/**
- * Whether the chat is genuinely blocked on user input: a pending elicitation,
- * or a tool call awaiting confirmation that is NOT auto-approved by the
- * session's bypass / auto-approve setting.
- *
- * `autoApproveBySetting` describes the *parameter* confirmation gate, so it only
- * discounts a `PendingConfirmation`: such a call transitions briefly through
- * that state while the owning client round-trips the auto-approval but never
- * actually blocks on the user. A `PendingResultConfirmation` is a post-execution
- * gate that always requires the user, so it is always treated as genuine input.
- */
+/** Whether the active turn has a `PendingConfirmation` tool call auto-approved by the session's bypass setting. */
+function hasAutoApprovedPendingConfirmation(state: ChatState): boolean {
+	return !!state.activeTurn?.responseParts.some(part =>
+		part.kind === ResponsePartKind.ToolCall
+		&& part.toolCall.status === ToolCallStatus.PendingConfirmation
+		&& readToolCallMeta(part.toolCall).autoApproveBySetting === true,
+	);
+}
+
+/** Whether the chat is genuinely blocked on user input (a pending elicitation, or a non-auto-approved confirmation gate). */
 function chatAwaitsUserInput(state: ChatState): boolean {
 	if ((state.inputRequests?.length ?? 0) > 0) {
 		return true;
 	}
-	const activeTurn = state.activeTurn;
-	if (!activeTurn) {
-		return false;
-	}
-	return activeTurn.responseParts.some(part => {
+	return !!state.activeTurn?.responseParts.some(part => {
 		if (part.kind !== ResponsePartKind.ToolCall) {
 			return false;
 		}
 		const status = part.toolCall.status;
+		// A result gate always requires the user; a parameter gate only when it was not auto-approved.
 		if (status === ToolCallStatus.PendingResultConfirmation) {
 			return true;
 		}
@@ -661,21 +657,23 @@ function chatAwaitsUserInput(state: ChatState): boolean {
 }
 
 /**
- * Projects a chat's status for the session catalog / summary aggregation,
- * demoting an `InputNeeded` activity that is caused solely by auto-approved tool
- * confirmations back to `InProgress`. Without this, a session running with
- * bypass approvals flashes "input needed" in the sessions list while an
- * auto-approved client tool (e.g. the browser tools) is auto-approved and run.
+ * Projects a chat's status for session-summary aggregation, demoting an
+ * `InputNeeded` back to `InProgress` only when it is caused solely by an
+ * auto-approved confirmation — otherwise a session with bypass approvals flashes
+ * "input needed" in the sessions list while an auto-approved tool runs.
  */
 function chatSummaryStatus(state: ChatState): SessionStatus {
 	const status = state.status;
 	if ((status & SessionStatus.InputNeeded) !== SessionStatus.InputNeeded) {
 		return status;
 	}
-	if (chatAwaitsUserInput(state)) {
-		return status;
+	// Only demote when we can positively attribute the InputNeeded to an
+	// auto-approved confirmation with no genuine blocker present; otherwise (e.g.
+	// a restored summary whose activeTurn is not loaded) preserve the status.
+	if (hasAutoApprovedPendingConfirmation(state) && !chatAwaitsUserInput(state)) {
+		return (status & ~STATUS_ACTIVITY_MASK) | SessionStatus.InProgress;
 	}
-	return (status & ~STATUS_ACTIVITY_MASK) | SessionStatus.InProgress;
+	return status;
 }
 
 /**

@@ -331,23 +331,12 @@ export class AgentSideEffects extends Disposable {
 		const clientExecutionId = this._toolClientExecutionNeededId(chatUri, turnId, toolCallId);
 		const toolCall = this._findToolCall(chatUri, turnId, toolCallId);
 
-		// A tool call auto-approved by the session's bypass / auto-approve
-		// setting is picked up and run automatically by the owning client — the
-		// session is never actually waiting on a user confirmation or a
-		// deliberate client hand-off. It still transitions through
-		// PendingConfirmation (client-side auto-approval) and Running, so
-		// surfacing it here would make the session flash "input needed" in the
-		// sessions list for the whole auto-approval + execution round-trip. Keep
-		// such calls out of the session `inputNeeded` queue entirely.
-		//
-		// `autoApproveBySetting` describes the *parameter* confirmation gate, so
-		// it only suppresses `PendingConfirmation`. A `PendingResultConfirmation`
-		// (a post-execution gate) is always a genuine user prompt and is never
-		// suppressed. Auto-approved calls are also intentionally excluded from
-		// the blocker/stall telemetry driven by `_setSessionInputNeeded`: they
-		// do not block the session on user input, so "blocked past threshold"
-		// telemetry does not apply (execution time is still captured on
-		// completion via `toolInvoked`).
+		// A call auto-approved by the session's bypass setting is run
+		// automatically by the owning client and never blocks on the user, so
+		// keep it out of the session `inputNeeded` queue (which would flash
+		// "input needed" in the sessions list). `autoApproveBySetting` covers
+		// only the parameter gate; a `PendingResultConfirmation` is a genuine
+		// prompt and is still surfaced.
 		const autoApproved = !!toolCall && readToolCallMeta(toolCall).autoApproveBySetting === true;
 
 		const suppressAutoApprovedConfirmation = autoApproved && toolCall?.status === ToolCallStatus.PendingConfirmation;

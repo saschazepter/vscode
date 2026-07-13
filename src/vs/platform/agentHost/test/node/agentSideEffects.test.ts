@@ -3765,11 +3765,7 @@ suite('AgentSideEffects', () => {
 			setupSession();
 			startTurn('turn-1');
 
-			// Auto-approved client tool (bypass approvals): the host tags the
-			// call `autoApproveBySetting` and the client auto-approves + runs it.
-			// It transitions through PendingConfirmation and Running but never
-			// blocks on the user, so it must never appear in `inputNeeded` (which
-			// would flash the session as "input needed" in the sessions list).
+			// Auto-approved calls flow through PendingConfirmation then Running but never block the user.
 			stateManager.dispatchServerAction(defaultChatUri, {
 				type: ActionType.ChatToolCallStart, turnId: 'turn-1',
 				toolCallId: 'tc-auto', toolName: 'browser_navigate', displayName: 'Navigate Browser',
@@ -3794,10 +3790,7 @@ suite('AgentSideEffects', () => {
 			setupSession();
 			startTurn('turn-1');
 
-			// Auto-approved parameter gate — must not surface. But once the tool
-			// runs and requests a post-execution result confirmation, that gate is
-			// a genuine user prompt and must appear even though the call carries
-			// `autoApproveBySetting`.
+			// The auto-approved parameter gate is suppressed, but a post-execution result gate is a genuine prompt.
 			stateManager.dispatchServerAction(defaultChatUri, {
 				type: ActionType.ChatToolCallStart, turnId: 'turn-1',
 				toolCallId: 'tc-auto-result', toolName: 'browser_navigate', displayName: 'Navigate Browser',
