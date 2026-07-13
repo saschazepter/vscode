@@ -950,7 +950,6 @@ export class AgentSideEffects extends Disposable {
 			requestSandboxBypass: e.requestSandboxBypass,
 		};
 		const autoApproval = await this._permissionManager.getAutoApproval(approvalEvent, sessionKey);
-		this._logService.info(`[AgentSideEffects] Tool approval decision: session=${sessionKey}, toolCallId=${e.state.toolCallId}, permissionKind=${e.permissionKind ?? 'none'}, approvalLevel=${this._permissionManager.getEffectiveApprovalLevel(sessionKey)}, globalAutoApprove=${this._permissionManager.isGlobalAutoApproveEnabled()}, decision=${autoApproval ?? 'prompt'}`);
 		const part = this._stateManager.getSessionState(sessionKey)?.activeTurn?.responseParts.find(part => part.kind === ResponsePartKind.ToolCall && part.toolCall.toolCallId === e.state.toolCallId);
 		const toolCall = part?.kind === ResponsePartKind.ToolCall ? part.toolCall : undefined;
 		const contributor = e.state.contributor ?? toolCall?.contributor;
@@ -1193,6 +1192,11 @@ export class AgentSideEffects extends Disposable {
 				const agent = this._options.getAgent(channel);
 				agent?.onSessionConfigChanged?.(URI.parse(channel), action.config).catch(err => {
 					this._logService.error(err, `[AgentSideEffects] Failed to apply session config change for ${channel}`);
+					const currentState = this._stateManager.getSessionState(channel);
+					const aborts = currentState?.chats.map(chat => agent.chats.abort(URI.parse(chat.resource))) ?? [];
+					void Promise.allSettled(aborts)
+						.then(() => agent.releaseSession?.(URI.parse(channel)))
+						.catch(releaseError => this._logService.error(releaseError, `[AgentSideEffects] Failed to release session after config sync failure for ${channel}`));
 				});
 				break;
 			}

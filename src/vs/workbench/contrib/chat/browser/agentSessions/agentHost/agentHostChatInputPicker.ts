@@ -597,8 +597,8 @@ export class AgentHostChatInputPicker extends Disposable {
 				getWidgetAriaLabel: () => localize('agentHostChatInputPicker.ariaLabel', "{0} Picker", ctx.schema.title),
 			},
 			actionItems.length > FILTER_THRESHOLD || ctx.schema.enumDynamic
-				? withChatInputPickerMotion({ showFilter: true, filterPlaceholder: localize('agentHostChatInputPicker.filter', "Filter...") })
-				: withChatInputPickerMotion(undefined),
+				? withChatInputPickerMotion({ showFilter: true, filterPlaceholder: localize('agentHostChatInputPicker.filter', "Filter..."), minWidth: 255 })
+				: withChatInputPickerMotion({ minWidth: 255 }),
 		);
 	}
 

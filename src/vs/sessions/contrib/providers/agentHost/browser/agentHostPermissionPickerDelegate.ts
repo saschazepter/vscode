@@ -67,15 +67,20 @@ export class AgentHostPermissionPickerDelegate extends Disposable implements IPe
 	readonly currentPermissionLevel: IObservable<ChatPermissionLevel>;
 	readonly isApplicable: IObservable<boolean>;
 
-	/**
-	 * Agent-host sessions expose Autopilot on the orthogonal `mode` axis, so
-	 * the permissions picker offers `Default` / `Bypass` / `Auto-permissions` here.
-	 */
-	readonly availableLevels: readonly ChatPermissionLevel[] = [
-		ChatPermissionLevel.Default,
-		ChatPermissionLevel.AutoApprove,
-		ChatPermissionLevel.Assisted,
-	];
+	get availableLevels(): readonly ChatPermissionLevel[] {
+		const session = this._session.get();
+		if (!session) {
+			return [ChatPermissionLevel.Default];
+		}
+		const provider = this._getProvider(session.providerId);
+		const schema = provider?.getSessionConfig(session.sessionId)?.schema.properties[SessionConfigKey.AutoApprove];
+		const values = schema?.type === 'string' && Array.isArray(schema.enum) ? schema.enum : [];
+		return [
+			ChatPermissionLevel.Default,
+			ChatPermissionLevel.AutoApprove,
+			ChatPermissionLevel.Assisted,
+		].filter(level => values.includes(level));
+	}
 
 	/** Agent-host sessions seed their default approval level from this setting. */
 	readonly defaultSettingKey = ChatConfiguration.DefaultConfiguration;
@@ -111,6 +116,9 @@ export class AgentHostPermissionPickerDelegate extends Disposable implements IPe
 		// Defensive: ActionWidgetDropdown picks up Enter/Space on its
 		// label even when `pointer-events: none` is set on the chip.
 		if (provider.isSessionConfigResolving(session.sessionId).get()) {
+			return;
+		}
+		if (!this.availableLevels.includes(level)) {
 			return;
 		}
 		provider.setSessionConfigValue(session.sessionId, SessionConfigKey.AutoApprove, level)

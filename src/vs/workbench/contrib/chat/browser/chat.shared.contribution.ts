@@ -531,7 +531,7 @@ configurationRegistry.registerConfiguration({
 					enum: [ChatPermissionLevel.Default, ChatPermissionLevel.AutoApprove, ChatPermissionLevel.Assisted],
 					enumDescriptions: [
 						nls.localize('chat.defaultConfiguration.approvals.default', "Default Approvals — Copilot uses your configured settings."),
-						nls.localize('chat.defaultConfiguration.approvals.autoApprove', "Bypass Approvals — all tool calls are auto-approved."),
+						nls.localize('chat.defaultConfiguration.approvals.autoApprove', "Bypass Approvals — all tool calls are approved automatically."),
 						nls.localize('chat.defaultConfiguration.approvals.assisted', "Auto-permissions — delegate approval decisions to the model."),
 					],
 					default: ChatPermissionLevel.Default,

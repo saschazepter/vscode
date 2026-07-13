@@ -106,7 +106,7 @@ function getPermissionLevelMeta(level: ChatPermissionLevel): IPermissionLevelMet
 				id: 'chat.permissions.autoApprove',
 				label: localize('permissions.autoApprove', "Bypass Approvals"),
 				shortLabel: localize('permissions.autoApprove.label', "Bypass Approvals"),
-				detail: localize('permissions.autoApprove.subtext', "All tool calls are auto-approved"),
+				detail: localize('permissions.autoApprove.subtext', "All tool calls are approved automatically"),
 				icon: ThemeIcon.fromId(Codicon.warning.id),
 				description: localize('permissions.autoApprove.description', "Auto-approve all tool calls and retry on errors"),
 				elevated: true,

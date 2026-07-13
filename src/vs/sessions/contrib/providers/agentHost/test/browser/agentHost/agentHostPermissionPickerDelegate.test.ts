@@ -23,7 +23,7 @@ import { ISessionsService } from '../../../../../../services/sessions/browser/se
 const PROVIDER_ID = 'local-agent-host';
 const SESSION_ID = 'local-agent-host:s1';
 
-function makeWellKnownConfig(value: string | undefined): ResolveSessionConfigResult {
+function makeWellKnownConfig(value: string | undefined, levels: readonly string[] = ['default', 'autoApprove', 'assisted']): ResolveSessionConfigResult {
 	return {
 		schema: {
 			type: 'object',
@@ -32,7 +32,7 @@ function makeWellKnownConfig(value: string | undefined): ResolveSessionConfigRes
 					title: 'Auto Approve',
 					description: '',
 					type: 'string',
-					enum: ['default', 'autoApprove', 'assisted'],
+					enum: [...levels],
 					sessionMutable: true,
 				},
 			},
@@ -170,6 +170,27 @@ suite('AgentHostPermissionPickerDelegate', () => {
 				ChatPermissionLevel.AutoApprove,
 				ChatPermissionLevel.Assisted,
 			],
+		});
+
+		test('offers only levels advertised by the active schema', () => {
+			const { delegate, provider } = setup(store, makeActiveSession(), 'default');
+			provider.config = makeWellKnownConfig('default', ['default', 'autoApprove']);
+			provider.fireChange();
+
+			assert.deepStrictEqual(delegate.availableLevels, [
+				ChatPermissionLevel.Default,
+				ChatPermissionLevel.AutoApprove,
+			]);
+		});
+
+		test('does not write a level omitted by the active schema', () => {
+			const { delegate, provider } = setup(store, makeActiveSession(), 'default');
+			provider.config = makeWellKnownConfig('default', ['default', 'autoApprove']);
+			provider.fireChange();
+
+			delegate.setPermissionLevel(ChatPermissionLevel.Assisted);
+
+			assert.deepStrictEqual(provider.setCalls, []);
 		});
 	});
 

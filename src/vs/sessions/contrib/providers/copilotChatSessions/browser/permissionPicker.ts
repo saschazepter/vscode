@@ -105,7 +105,7 @@ export function getPermissionLevelMeta(level: ChatPermissionLevel): IPermissionL
 		case ChatPermissionLevel.AutoApprove:
 			return {
 				label: localize('permissions.autoApprove', "Bypass Approvals"),
-				detail: localize('permissions.autoApprove.subtext', "All tool calls are auto-approved"),
+				detail: localize('permissions.autoApprove.subtext', "All tool calls are approved automatically"),
 				icon: Codicon.warning,
 			};
 		case ChatPermissionLevel.Autopilot:

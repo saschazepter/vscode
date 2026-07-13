@@ -59,7 +59,7 @@ function buildItems(options: PermissionPickerListFixtureOptions): IActionListIte
 			...actionTemplate,
 			id: 'chat.permissions.autoApprove',
 			label: localize('permissions.autoApprove', "Bypass Approvals"),
-			detail: localize('permissions.autoApprove.subtext', "All tool calls are auto-approved"),
+			detail: localize('permissions.autoApprove.subtext', "All tool calls are approved automatically"),
 			icon: ThemeIcon.fromId(Codicon.warning.id),
 			checked: false,
 		}),

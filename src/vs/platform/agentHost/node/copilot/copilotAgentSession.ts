@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import type { CopilotSession, ExitPlanModeRequest, MessageOptions, PermissionAllowAllMode, PermissionAutoApproval, PermissionRequestResult, SessionConfig, Tool, ToolResultObject, McpServerStatus as SdkMcpServerStatus } from '@github/copilot-sdk';
-import { DeferredPromise, raceTimeout, Sequencer } from '../../../../base/common/async.js';
+import { DeferredPromise, Sequencer } from '../../../../base/common/async.js';
 import { encodeBase64, VSBuffer } from '../../../../base/common/buffer.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { CancellationError, getErrorMessage } from '../../../../base/common/errors.js';
@@ -1919,10 +1919,7 @@ export class CopilotAgentSession extends Disposable {
 				? await this._takeAutoApproval(toolCallId)
 				: undefined;
 			const recommendation = autoApproval?.recommendation;
-			const configuredLevel = this._getConfiguredApprovalLevel();
-			this._logService.info(`[Copilot:${this.sessionId}] Permission request: toolCallId=${toolCallId}, kind=${request.kind}, agentMode=${this._getConfiguredAgentMode()}, configuredLevel=${configuredLevel}, sdkMode=${this._lastAppliedPermissionMode ?? 'unknown'}, recommendation=${recommendation ?? 'none'}, sandboxBypass=${request.requestSandboxBypass === true}`);
 			if (recommendation === 'approve' && !request.requestSandboxBypass) {
-				this._logService.info(`[Copilot:${this.sessionId}] Auto-approving tool call ${toolCallId} from the SDK model recommendation`);
 				return { kind: 'approve-once' };
 			}
 
@@ -2048,7 +2045,7 @@ export class CopilotAgentSession extends Disposable {
 					invocationMessage,
 					toolInput,
 					confirmationTitle,
-					approvalReason: autoApproval?.reason,
+					approvalReason: recommendation !== 'approve' ? autoApproval?.reason : undefined,
 					edits,
 				},
 				permissionKind,
@@ -2849,7 +2846,7 @@ export class CopilotAgentSession extends Disposable {
 
 		this._register(wrapper.onToolStart(e => {
 			if (isHiddenTool(e.data.toolName)) {
-				this._logService.trace(`[Copilot:${sessionId}] Tool started (hidden): toolCallId=${e.data.toolCallId}, toolName=${e.data.toolName}, agentMode=${this._getConfiguredAgentMode()}, configuredLevel=${this._getConfiguredApprovalLevel()}, sdkMode=${this._lastAppliedPermissionMode ?? 'unknown'}`);
+				this._logService.trace(`[Copilot:${sessionId}] Tool started (hidden): ${e.data.toolName}`);
 				return;
 			}
 			// The client-tool start may already have been synthesized at
@@ -2863,7 +2860,7 @@ export class CopilotAgentSession extends Disposable {
 				this._logService.trace(`[Copilot:${sessionId}] Tool start already emitted for ${e.data.toolCallId}; skipping duplicate.`);
 				return;
 			}
-			this._logService.info(`[Copilot:${sessionId}] Tool started: toolCallId=${e.data.toolCallId}, toolName=${e.data.toolName}, agentMode=${this._getConfiguredAgentMode()}, configuredLevel=${this._getConfiguredApprovalLevel()}, sdkMode=${this._lastAppliedPermissionMode ?? 'unknown'}`);
+			this._logService.info(`[Copilot:${sessionId}] Tool started: ${e.data.toolName}`);
 			let toolArgs = e.data.arguments !== undefined ? tryStringify(e.data.arguments) : undefined;
 			let parameters: Record<string, unknown> | undefined;
 			if (toolArgs) {

@@ -2125,7 +2125,8 @@ suite('CopilotAgentSession', () => {
 				fullCommandText: 'curl https://example.com',
 				requestSandboxBypass: true,
 			});
-			await waitForSignal(signal => signal.kind === 'pending_confirmation');
+			const confirmation = await waitForSignal(signal => signal.kind === 'pending_confirmation');
+			assert.strictEqual(confirmation.kind === 'pending_confirmation' ? confirmation.state.approvalReason : undefined, undefined);
 			assert.ok(session.respondToPermissionRequest('tc-assisted-bypass', false));
 
 			assert.strictEqual((await resultPromise).kind, 'reject');
