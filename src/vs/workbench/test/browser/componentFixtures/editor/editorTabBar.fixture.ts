@@ -4,14 +4,18 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { $, Dimension } from '../../../../../base/browser/dom.js';
+import { toAction } from '../../../../../base/common/actions.js';
+import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Event } from '../../../../../base/common/event.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { Schemas } from '../../../../../base/common/network.js';
 import { basename, dirname } from '../../../../../base/common/resources.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { mock } from '../../../../../base/test/common/mock.js';
 import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
+import { listErrorForeground, listWarningForeground } from '../../../../../platform/theme/common/colors/listColors.js';
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
 import { TestThemeService } from '../../../../../platform/theme/test/common/testThemeService.js';
 import { ITreeViewsDnDService } from '../../../../../editor/common/services/treeViewsDndService.js';
@@ -22,6 +26,8 @@ import { EditorGroupModel } from '../../../../common/editor/editorGroupModel.js'
 import { EDITOR_GROUP_HEADER_NO_TABS_BACKGROUND, EDITOR_GROUP_HEADER_TABS_BACKGROUND } from '../../../../common/theme.js';
 import { DEFAULT_EDITOR_PART_OPTIONS, IEditorGroupsView, IEditorGroupView, IEditorPartsView } from '../../../../browser/parts/editor/editor.js';
 import { EditorTitleControl } from '../../../../browser/parts/editor/editorTitleControl.js';
+import { IDecorationData, IDecorationsProvider, IDecorationsService } from '../../../../services/decorations/common/decorations.js';
+import { DecorationsService } from '../../../../services/decorations/browser/decorationsService.js';
 import { INotebookDocumentService, NotebookDocumentWorkbenchService } from '../../../../services/notebook/common/notebookDocumentService.js';
 import { workbenchInstantiationService } from '../../workbenchTestServices.js';
 import { ComponentFixtureContext, defineComponentFixture, defineThemedFixtureGroup } from '../fixtureUtils.js';
@@ -63,9 +69,26 @@ class FixtureEditorInput extends EditorInput {
 		return basename(this.resource);
 	}
 
-	override getDescription(_verbosity?: Verbosity): string | undefined {
+	/**
+	 * Returns a distinct parent-folder label per {@link Verbosity}, matching how
+	 * real resource editor inputs vary their description. `MultiEditorTabsControl`
+	 * maps `labelFormat` (short/medium/long) to a verbosity, so distinct values
+	 * here are what make the label-format fixtures differ.
+	 */
+	override getDescription(verbosity: Verbosity = Verbosity.MEDIUM): string | undefined {
 		const parent = dirname(this.resource);
-		return parent.path === '/' ? undefined : parent.path.replace(/^\//, '');
+		if (parent.path === '/' || parent.path === '.' || parent.path === '') {
+			return undefined;
+		}
+		switch (verbosity) {
+			case Verbosity.SHORT:
+				return basename(parent); // containing folder name
+			case Verbosity.LONG:
+				return parent.path; // full absolute path
+			case Verbosity.MEDIUM:
+			default:
+				return parent.path.replace(/^\//, ''); // path relative to root
+		}
 	}
 
 	override getIcon(): ThemeIcon | URI | undefined {
@@ -103,7 +126,7 @@ function defaultEditorSpecs(): IEditorSpec[] {
 		{ resource: file('/project/src/app/index.ts'), pinned: true },
 		{ resource: file('/project/README.md'), icon: ThemeIcon.fromId(Codicon.markdown.id), pinned: true },
 		{ resource: file('/project/package.json'), icon: ThemeIcon.fromId(Codicon.json.id), pinned: true, dirty: true, active: true },
-		{ resource: URI.from({ scheme: 'untitled', path: 'Untitled-1' }), typeId: 'workbench.editors.untitledFixture', icon: ThemeIcon.fromId(Codicon.file.id), pinned: false /* preview */ },
+		{ resource: URI.from({ scheme: Schemas.untitled, path: 'Untitled-1' }), typeId: 'workbench.editors.untitledFixture', icon: ThemeIcon.fromId(Codicon.file.id), pinned: false /* preview */ },
 		{ resource: file('/project/.vscode/settings.json'), icon: ThemeIcon.fromId(Codicon.settingsGear.id), pinned: true },
 		{ resource: file('/project/src/app/components/button.tsx'), pinned: true },
 		{ resource: file('/project/tests/app/main.test.ts'), pinned: true },
@@ -157,6 +180,32 @@ function stickyEditorSpecs(): IEditorSpec[] {
 }
 
 // ============================================================================
+// File decorations
+// ============================================================================
+
+/**
+ * Deterministic file decorations (badge letter + color) keyed by resource path.
+ * These drive the resource-label badges/colors that the `decorations` setting
+ * toggles — dirty state alone only affects the separate modified-tab indicator.
+ */
+const FIXTURE_DECORATIONS = new Map<string, IDecorationData>([
+	['/project/package.json', { weight: 10, letter: 'M', color: listWarningForeground, tooltip: 'Modified', bubble: false }],
+	['/project/src/app/main.ts', { weight: 20, letter: '2', color: listErrorForeground, tooltip: '2 problems', bubble: false }],
+	['/project/src/app/index.ts', { weight: 20, letter: 'U', color: listWarningForeground, tooltip: 'Untracked', bubble: false }],
+]);
+
+function registerFixtureDecorations(decorationsService: IDecorationsService, store: DisposableStore): void {
+	const provider: IDecorationsProvider = {
+		label: 'Fixture Decorations',
+		onDidChange: Event.None,
+		provideDecorations(uri: URI, _token: CancellationToken): IDecorationData | undefined {
+			return FIXTURE_DECORATIONS.get(uri.path);
+		},
+	};
+	store.add(decorationsService.registerDecorationsProvider(provider));
+}
+
+// ============================================================================
 // Rendering
 // ============================================================================
 
@@ -164,6 +213,9 @@ interface IRenderOptions {
 	readonly partOptions?: Partial<IEditorPartOptions>;
 	readonly editors?: IEditorSpec[];
 	readonly width?: number;
+	/** Whether this group is the active group. Inactive groups exercise the
+	 *  `alwaysShowEditorActions` filtering and unfocused tab styling. */
+	readonly active?: boolean;
 }
 
 function createPartOptions(overrides?: Partial<IEditorPartOptions>): IEditorPartOptions {
@@ -196,10 +248,10 @@ function renderTabBar(ctx: ComponentFixtureContext, options: IRenderOptions): vo
 	const { container, disposableStore, theme } = ctx;
 
 	const width = options.width ?? 820;
+	const isGroupActive = options.active ?? true;
 	const partOptions = createPartOptions(options.partOptions);
 
-	// Configuration: keep breadcrumbs disabled so the tab bar renders without
-	// pulling in the breadcrumbs picker/model dependencies.
+	// Breadcrumbs are disabled so the tab bar renders without the breadcrumbs picker/model deps.
 	const configurationService = new TestConfigurationService();
 	configurationService.setUserConfiguration('breadcrumbs', { enabled: false });
 
@@ -207,22 +259,37 @@ function renderTabBar(ctx: ComponentFixtureContext, options: IRenderOptions): vo
 		configurationService: () => configurationService,
 	}, disposableStore);
 
-	// Apply the fixture's themed color data to the existing theme service so
-	// that `getColor(...)` in the tab bar returns real colors.
+	// Feed the fixture's themed colors to the shared theme service so tab-bar `getColor(...)` resolves.
 	(instantiationService.get(IThemeService) as TestThemeService).setTheme(theme);
 
-	// Services required transitively by the tab bar that the base workbench test
-	// harness does not stub.
+	// Services the base workbench harness does not stub but the tab bar needs.
 	instantiationService.stub(ITreeViewsDnDService, new TreeViewsDnDService());
 	instantiationService.stub(INotebookDocumentService, new NotebookDocumentWorkbenchService());
+
+	// Real decorations service + provider so resource labels get deterministic badges/colors
+	// (the `decorations` setting then has something to toggle).
+	const decorationsService = disposableStore.add(instantiationService.createInstance(DecorationsService));
+	instantiationService.stub(IDecorationsService, decorationsService);
+	registerFixtureDecorations(decorationsService, disposableStore);
 
 	// Real editor group model populated with the fixture editors.
 	const model = disposableStore.add(instantiationService.createInstance(EditorGroupModel, undefined));
 	populateModel(model, options.editors ?? defaultEditorSpecs(), disposableStore);
 
-	// Lightweight views that delegate reads to the model. These stand in for the
-	// real `EditorGroupView` / `EditorPart` so the title control can render in
-	// isolation.
+	// A couple of real editor-title actions so the editor-actions toolbar renders (and so the
+	// `editorActionsLocation`/`alwaysShowEditorActions` settings have visible content to change).
+	const createEditorActions = () => ({
+		actions: {
+			primary: [
+				toAction({ id: 'fixture.splitEditorRight', label: 'Split Editor Right', class: ThemeIcon.asClassName(Codicon.splitHorizontal), run: () => { } }),
+				toAction({ id: 'fixture.moreActions', label: 'More Actions...', class: ThemeIcon.asClassName(Codicon.ellipsis), run: () => { } }),
+			],
+			secondary: [],
+		},
+		onDidChange: Event.None,
+	});
+
+	// Lightweight stand-ins for the production `EditorGroupView` / `EditorPart` views.
 	const groupView = new class extends mock<IEditorGroupView>() {
 		relayoutFn: () => void = () => { };
 		override get id() { return model.id; }
@@ -238,13 +305,19 @@ function renderTabBar(ctx: ComponentFixtureContext, options: IRenderOptions): vo
 		override isPinned(editorOrIndex: EditorInput | number) { return model.isPinned(editorOrIndex); }
 		override isSticky(editorOrIndex: EditorInput | number) { return model.isSticky(editorOrIndex); }
 		override isSelected(editorOrIndex: EditorInput | number) { return model.isSelected(editorOrIndex); }
-		override createEditorActions() { return { actions: { primary: [], secondary: [] }, onDidChange: Event.None }; }
+		override createEditorActions() { return createEditorActions(); }
 		override relayout() { this.relayoutFn(); }
+	};
+
+	// Separate reference returned as the active group when this group is inactive, so that
+	// `groupsView.activeGroup === groupView` is false and inactive-group behavior is exercised.
+	const otherActiveGroup = new class extends mock<IEditorGroupView>() {
+		override focus() { }
 	};
 
 	const groupsView = new class extends mock<IEditorGroupsView>() {
 		override get partOptions() { return partOptions; }
-		override get activeGroup() { return groupView; }
+		override get activeGroup() { return isGroupActive ? groupView : otherActiveGroup; }
 		override get groups() { return [groupView]; }
 		override readonly onDidChangeEditorPartOptions = Event.None;
 		override readonly onDidVisibilityChange = Event.None;
@@ -255,12 +328,11 @@ function renderTabBar(ctx: ComponentFixtureContext, options: IRenderOptions): vo
 		override getGroup() { return groupView; }
 	};
 
-	// DOM: recreate the ancestor chain the tab bar CSS is scoped to
-	// (`.monaco-workbench .part.editor > .content .editor-group-container > .title`).
-	// The fixture container already carries the `.monaco-workbench` + theme classes.
+	// Recreate the ancestor chain the tab-bar CSS is scoped to; the fixture container already
+	// carries `.monaco-workbench` + theme classes.
 	const editorPart = $('.part.editor');
 	const content = $('.content');
-	const groupContainer = $('.editor-group-container.active');
+	const groupContainer = $(isGroupActive ? '.editor-group-container.active' : '.editor-group-container');
 	const titleContainer = $('.title');
 	titleContainer.classList.toggle('tabs', partOptions.showTabs === 'multiple');
 	titleContainer.classList.toggle('show-file-icons', partOptions.showIcons);
@@ -270,8 +342,6 @@ function renderTabBar(ctx: ComponentFixtureContext, options: IRenderOptions): vo
 		titleContainer.style.backgroundColor = headerBackground.toString();
 	}
 
-	// A small placeholder editor area beneath the tab bar so the tab bar is seen
-	// in place inside a group view.
 	const editorContainer = $('.editor-container');
 	editorContainer.style.height = '96px';
 	editorContainer.style.opacity = '0.6';
@@ -304,6 +374,7 @@ function renderTabBar(ctx: ComponentFixtureContext, options: IRenderOptions): vo
 	groupView.relayoutFn = layout;
 
 	titleControl.openEditors(model.getEditors(EditorsOrder.SEQUENTIAL));
+	titleControl.setActive(isGroupActive);
 	layout();
 }
 
@@ -359,8 +430,8 @@ export default defineThemedFixtureGroup({ path: 'editor/editorTabBar/' }, {
 	// showIcons
 	ShowIconsOff: defineComponentFixture({ render: render({ partOptions: { showIcons: false } }) }),
 
-	// decorations (badges + colors)
-	DecorationsOff: defineComponentFixture({ render: render({ partOptions: { decorations: { badges: false, colors: false } }, editors: dirtyEditorSpecs() }) }),
+	// decorations (file-decoration badges + colors)
+	DecorationsOff: defineComponentFixture({ render: render({ partOptions: { decorations: { badges: false, colors: false } } }) }),
 
 	// pinnedTabSizing
 	PinnedTabSizingCompact: defineComponentFixture({ render: render({ partOptions: { pinnedTabSizing: 'compact' }, editors: stickyEditorSpecs() }) }),
@@ -369,9 +440,12 @@ export default defineThemedFixtureGroup({ path: 'editor/editorTabBar/' }, {
 	// titleScrollbarSizing
 	TitleScrollbarLarge: defineComponentFixture({ render: render({ partOptions: { titleScrollbarSizing: 'large' }, editors: manyEditorSpecs(), width: 520 }) }),
 
+	// titleScrollbarVisibility (always-visible scrollbar with overflowing tabs)
+	TitleScrollbarVisible: defineComponentFixture({ render: render({ partOptions: { titleScrollbarVisibility: 'visible' }, editors: manyEditorSpecs(), width: 520 }) }),
+
 	// editorActionsLocation
 	EditorActionsHidden: defineComponentFixture({ render: render({ partOptions: { editorActionsLocation: 'hidden' } }) }),
 
-	// alwaysShowEditorActions
-	AlwaysShowEditorActions: defineComponentFixture({ render: render({ partOptions: { alwaysShowEditorActions: true } }) }),
+	// alwaysShowEditorActions (only affects inactive groups, so render this group inactive)
+	AlwaysShowEditorActions: defineComponentFixture({ render: render({ partOptions: { alwaysShowEditorActions: true }, active: false }) }),
 });
