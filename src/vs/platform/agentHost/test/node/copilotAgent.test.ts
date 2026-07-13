@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { CopilotClient, CopilotSession, ModelInfo, SessionEvent, SessionEventHandler, SessionEventPayload, SessionEventType, TypedSessionEventHandler } from '@github/copilot-sdk';
+import type { CopilotClient, CopilotSession, ModelInfo, PermissionAllowAllMode, SessionEvent, SessionEventHandler, SessionEventPayload, SessionEventType, TypedSessionEventHandler } from '@github/copilot-sdk';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { CCAModel } from '@vscode/copilot-api';
 import assert from 'assert';
@@ -385,6 +385,14 @@ interface IFakeAgentSession {
 
 class MockCopilotSession {
 	readonly sessionId = 'test-session-1';
+	readonly rpc = {
+		options: {
+			update: async () => ({ success: true }),
+		},
+		permissions: {
+			setAllowAll: async ({ mode }: { mode: PermissionAllowAllMode }) => ({ success: true, mode }),
+		},
+	};
 	private readonly _handlers = new Set<SessionEventHandler>();
 	private readonly _typedHandlers = new Map<SessionEventType, Set<(event: SessionEventPayload<SessionEventType>) => void>>();
 
@@ -1277,56 +1285,69 @@ suite('CopilotAgent', () => {
 
 		test('syncs a session when its approval level changes', async () => {
 			const { agent, configurationService, stateManager } = createTestAgentContext(disposables);
-			const session = AgentSession.uri('copilotcli', 'permission-config');
-			seedSession(stateManager, session);
-			const synced = new DeferredPromise<string>();
-			setDefaultSessionStub(agent, AgentSession.id(session), {
-				syncPermissionMode: async (source: string) => synced.complete(source),
-				dispose() { },
-			});
+			try {
+				const session = AgentSession.uri('copilotcli', 'permission-config');
+				seedSession(stateManager, session);
+				const synced = new DeferredPromise<string>();
+				setDefaultSessionStub(agent, AgentSession.id(session), {
+					syncPermissionMode: async (source: string) => synced.complete(source),
+					dispose() { },
+				});
 
-			configurationService.updateSessionConfig(session.toString(), { [SessionConfigKey.AutoApprove]: 'default' });
+				configurationService.updateSessionConfig(session.toString(), { [SessionConfigKey.AutoApprove]: 'default' });
 
-			assert.strictEqual(await synced.p, 'config-change');
+				assert.strictEqual(await synced.p, 'config-change');
+			} finally {
+				await disposeAgent(agent);
+			}
 		});
 
 		test('syncs active sessions when root approval configuration changes', async () => {
 			const { agent, configurationService } = createTestAgentContext(disposables);
-			const session = AgentSession.uri('copilotcli', 'root-permission-config');
-			const synced = new DeferredPromise<string>();
-			setDefaultSessionStub(agent, AgentSession.id(session), {
-				syncPermissionMode: async (source: string) => synced.complete(source),
-				dispose() { },
-			});
+			try {
+				const session = AgentSession.uri('copilotcli', 'root-permission-config');
+				const synced = new DeferredPromise<string>();
+				setDefaultSessionStub(agent, AgentSession.id(session), {
+					syncPermissionMode: async (source: string) => synced.complete(source),
+					dispose() { },
+				});
 
-			configurationService.updateRootConfig({ [AgentHostGlobalAutoApproveEnabledConfigKey]: true });
+				configurationService.updateRootConfig({ [AgentHostGlobalAutoApproveEnabledConfigKey]: true });
 
-			assert.strictEqual(await synced.p, 'config-change');
+				assert.strictEqual(await synced.p, 'config-change');
+			} finally {
+				await disposeAgent(agent);
+			}
 		});
 
 		test('fails closed when a live permission mode update fails', async () => {
 			const { agent, configurationService, stateManager } = createTestAgentContext(disposables);
-			const session = AgentSession.uri('copilotcli', 'permission-config-failure');
-			seedSession(stateManager, session);
-			const released = new DeferredPromise<void>();
-			let aborted = false;
-			setDefaultSessionStub(agent, AgentSession.id(session), {
-				syncPermissionMode: async () => { throw new Error('permission mode update failed'); },
-				abort: async () => { aborted = true; },
-				destroySession: async () => released.complete(),
-				dispose() { },
-			});
+			try {
+				const session = AgentSession.uri('copilotcli', 'permission-config-failure');
+				seedSession(stateManager, session);
+				const released = new DeferredPromise<void>();
+				let aborted = false;
+				setDefaultSessionStub(agent, AgentSession.id(session), {
+					syncPermissionMode: async () => { throw new Error('permission mode update failed'); },
+					abort: async () => { aborted = true; },
+					destroySession: async () => released.complete(),
+					dispose() { },
+				});
 
-			configurationService.updateSessionConfig(session.toString(), { [SessionConfigKey.AutoApprove]: 'default' });
-			await released.p;
+				configurationService.updateSessionConfig(session.toString(), { [SessionConfigKey.AutoApprove]: 'default' });
+				await released.p;
+				await timeout(0);
 
-			assert.deepStrictEqual({
-				aborted,
-				inMemory: sessionsMap(agent).has(AgentSession.id(session)),
-			}, {
-				aborted: true,
-				inMemory: false,
-			});
+				assert.deepStrictEqual({
+					aborted,
+					inMemory: sessionsMap(agent).has(AgentSession.id(session)),
+				}, {
+					aborted: true,
+					inMemory: false,
+				});
+			} finally {
+				await disposeAgent(agent);
+			}
 		});
 	});
 
