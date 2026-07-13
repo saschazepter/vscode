@@ -269,10 +269,14 @@ suite('AgentService (node dispatcher)', () => {
 			new NullLogService(),
 		));
 		localService.setWorktreeIsolation(isolation);
-		let pendingDuringCreate = false;
+		const pendingDuringCreate: boolean[] = [];
+		let failCreate = false;
 		class PrewarmingAgent extends MockAgent {
 			override async createSession(config?: import('../../common/agentService.js').IAgentCreateSessionConfig): Promise<import('../../common/agentService.js').IAgentCreateSessionResult> {
-				pendingDuringCreate = localService.configurationService.isWorkingDirectoryPending(config!.session!.toString());
+				pendingDuringCreate.push(localService.configurationService.isWorkingDirectoryPending(config!.session!.toString()));
+				if (failCreate) {
+					throw new Error('create failed');
+				}
 				return { ...await super.createSession(config), provisional: true };
 			}
 		}
@@ -286,13 +290,23 @@ suite('AgentService (node dispatcher)', () => {
 			workingDirectory,
 			config: { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' },
 		});
+		const failedSession = AgentSession.uri('codex', 'failed-before-create');
+		failCreate = true;
+		await assert.rejects(localService.createSession({
+			provider: 'codex',
+			session: failedSession,
+			workingDirectory,
+			config: { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' },
+		}), /create failed/);
 
 		assert.deepStrictEqual({
 			pendingDuringCreate,
 			pendingAfterCreate: localService.configurationService.isWorkingDirectoryPending(session.toString()),
+			pendingAfterFailure: localService.configurationService.isWorkingDirectoryPending(failedSession.toString()),
 		}, {
-			pendingDuringCreate: true,
+			pendingDuringCreate: [true, true],
 			pendingAfterCreate: true,
+			pendingAfterFailure: false,
 		});
 	});
 

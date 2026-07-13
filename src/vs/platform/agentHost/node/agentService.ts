@@ -926,32 +926,14 @@ export class AgentService extends Disposable implements IAgentService {
 		// materializing in the picked folder before the host creates the worktree.
 		const initializeSideEffects = this._sideEffects.initialize();
 		const sessionConfig = await this._resolveCreatedSessionConfig(provider, config);
-		const usesWorktreeIsolation = sessionConfig?.values?.[SessionConfigKey.Isolation] === 'worktree';
-		const requestedPendingSessionId = usesWorktreeIsolation && !config?.fork && !config?.importConversation && config?.session
-			? AgentSession.id(config.session)
-			: undefined;
-		if (requestedPendingSessionId) {
-			this._worktree?.notePending(requestedPendingSessionId);
-		}
+		const deferWorktreeCreation = sessionConfig?.values?.[SessionConfigKey.Isolation] === 'worktree' && !config?.fork && !config?.importConversation;
 
 		this._logService.trace(`[AgentService] createSession: initializing auto-approver and creating session...`);
-		let created: IAgentCreateSessionResult;
-		try {
-			[, created] = await Promise.all([
-				initializeSideEffects,
-				this._createSession(provider, config),
-			]);
-		} catch (error) {
-			if (requestedPendingSessionId) {
-				this._worktree?.clearPending(requestedPendingSessionId);
-			}
-			throw error;
-		}
+		const [, created] = await Promise.all([
+			initializeSideEffects,
+			this._createProviderSession(provider, config, deferWorktreeCreation),
+		]);
 		const session = created.session;
-		const createdSessionId = AgentSession.id(session);
-		if (requestedPendingSessionId && (!created.provisional || requestedPendingSessionId !== createdSessionId)) {
-			this._worktree?.clearPending(requestedPendingSessionId);
-		}
 		this._logService.trace(`[AgentService] createSession: initialization complete`);
 
 		// Cancel any pending GC armed for this URI. A client may be
@@ -1079,13 +1061,6 @@ export class AgentService extends Disposable implements IAgentService {
 			state.activeClients = config?.activeClient ? [config.activeClient] : [];
 			if (initialCustomizations && initialCustomizations.length > 0) {
 				state.customizations = [...initialCustomizations];
-			}
-			// A fresh worktree-isolation session defers worktree creation to the
-			// first send (so the user's prompt can name the branch). Mark it pending
-			// so agents don't prewarm / materialize in the picked folder before the
-			// host resolves the worktree.
-			if (created.provisional && usesWorktreeIsolation) {
-				this._worktree?.notePending(createdSessionId);
 			}
 		}
 		// Persist initial config values so a subsequent `restoreSession` can
@@ -1238,8 +1213,25 @@ export class AgentService extends Disposable implements IAgentService {
 		return !!provider.chats;
 	}
 
-	private _createSession(provider: IAgent, config: IAgentCreateSessionConfig | undefined): Promise<IAgentCreateSessionResult> {
-		return provider.createSession(config);
+	private async _createProviderSession(provider: IAgent, config: IAgentCreateSessionConfig | undefined, deferWorktreeCreation: boolean): Promise<IAgentCreateSessionResult> {
+		const requestedSessionId = deferWorktreeCreation && config?.session ? AgentSession.id(config.session) : undefined;
+		if (requestedSessionId) {
+			this._worktree?.notePending(requestedSessionId);
+		}
+
+		let created: IAgentCreateSessionResult | undefined;
+		try {
+			created = await provider.createSession(config);
+			if (deferWorktreeCreation && created.provisional) {
+				this._worktree?.notePending(AgentSession.id(created.session));
+			}
+			return created;
+		} finally {
+			const returnedPendingSessionId = created?.provisional ? AgentSession.id(created.session) : undefined;
+			if (requestedSessionId && requestedSessionId !== returnedPendingSessionId) {
+				this._worktree?.clearPending(requestedSessionId);
+			}
+		}
 	}
 
 	private async _disposeSession(provider: IAgent, session: URI): Promise<void> {
