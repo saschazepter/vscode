@@ -2499,6 +2499,24 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		return this._targetSession.get()?.toString() ?? this._activeSessionShown ?? this._lastShownSessionId ?? this._getFocusedSessionId();
 	}
 
+	/**
+	 * The session the user is currently LOOKING AT, used to route deferral. Unlike
+	 * {@link _getActiveSessionId} this deliberately ignores the sticky input
+	 * `_targetSession`: the target is where the user's next utterance is SENT, not
+	 * what they are viewing. Browsing another session (e.g. `openSession` in the
+	 * floating voice window) leaves `_targetSession` pointing elsewhere, so keying
+	 * deferral off the active-session chain would (a) play the target's background
+	 * narration live over an unrelated shown session and (b) defer the shown
+	 * session's own reply with no focus change to ever flush it. The awaited reply
+	 * to the user's own utterance is handled separately via `_awaitingReplyForSession`.
+	 */
+	private _shownSessionId(): string | undefined {
+		if (this._externalActiveSessionMode) {
+			return this._activeSessionShown;
+		}
+		return this._lastShownSessionId ?? this._getFocusedSessionId();
+	}
+
 	setActiveSessionShown(resource: URI | undefined): void {
 		this._externalActiveSessionMode = true;
 		const key = resource?.toString();
@@ -2534,12 +2552,17 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._liveReplyKey = key;
 				return false;
 			}
-			// Play immediately for the session the user is actively working with;
+			// Play immediately for the session the user is actively looking at,
+			// or the session whose reply they are actively awaiting (they just
+			// spoke to it, so route its answer live even if they glanced away);
 			// defer any other session's narration until the user looks at it.
+			// Key off the SHOWN session, not the active-session chain: the sticky
+			// input `_targetSession` must not force an unrelated background
+			// narration to play live over the session the user is viewing.
 			// Read live so a stale cache can't misroute the decision (e.g. when
 			// the focus event was missed while voice was busy).
 			this._focusedSessionId = this._getFocusedSessionId();
-			if (this._getActiveSessionId() === sessionId) {
+			if (this._shownSessionId() === sessionId || this._awaitingReplyForSession === sessionId) {
 				this._liveReplyKey = key;
 				return false;
 			}
@@ -2554,12 +2577,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (this._liveReplyKey === key) {
 			return false;
 		}
-		// Continuation whose first chunk we never observed: fall back to active.
+		// Continuation whose first chunk we never observed: fall back to the shown
+		// session (mirrors the first-chunk decision above).
 		if (!sessionId) {
 			return false;
 		}
 		this._focusedSessionId = this._getFocusedSessionId();
-		return this._getActiveSessionId() !== sessionId;
+		return !(this._shownSessionId() === sessionId || this._awaitingReplyForSession === sessionId);
 	}
 
 	private _deferResponse(sessionId: string, audio: string, isFirstChunk: boolean, isFinal: boolean, transcript: string | undefined): void {
