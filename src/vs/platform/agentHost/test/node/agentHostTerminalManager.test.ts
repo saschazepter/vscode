@@ -736,7 +736,7 @@ suite('AgentHostTerminalManager – command detection integration', () => {
 			cwd: process.cwd(),
 			cols: 80,
 			rows: 24,
-		}, { shell: '/bin/bash' });
+		}, { shell: process.platform === 'win32' ? 'pwsh.exe' : '/bin/bash' });
 
 		await pty.dataListenerRegistered.p;
 		pty.fireData(osc633('A'));
