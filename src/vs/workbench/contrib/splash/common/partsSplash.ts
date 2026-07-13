@@ -18,6 +18,8 @@ export function getPartsSplashColorInfo(theme: IColorTheme): IPartsSplash['color
 		editorBackground: theme.getColor(editorBackground)?.toString(),
 		titleBarBackground: theme.getColor(themes.TITLE_BAR_ACTIVE_BACKGROUND)?.toString(),
 		titleBarInactiveBackground: theme.getColor(themes.TITLE_BAR_INACTIVE_BACKGROUND)?.toString(),
+		titleBarForeground: theme.getColor(themes.TITLE_BAR_ACTIVE_FOREGROUND)?.toString(),
+		titleBarInactiveForeground: theme.getColor(themes.TITLE_BAR_INACTIVE_FOREGROUND)?.toString(),
 		titleBarBorder: theme.getColor(themes.TITLE_BAR_BORDER)?.toString(),
 		titleBarColorCustomizations,
 		titleBarColorsCustomized: Object.values(titleBarColorCustomizations).some(customized => customized),

@@ -33,7 +33,7 @@ import { ITelemetryService } from '../../telemetry/common/telemetry.js';
 import { ThemeIcon } from '../../../base/common/themables.js';
 import { IThemeMainService } from '../../theme/electron-main/themeMainService.js';
 import { getMenuBarVisibility, IFolderToOpen, INativeWindowConfiguration, IWindowSettings, IWorkspaceToOpen, MenuBarVisibility, hasNativeTitlebar, useNativeFullScreen, useWindowControlsOverlay, DEFAULT_CUSTOM_TITLEBAR_HEIGHT, TitlebarStyle, MenuSettings } from '../../window/common/window.js';
-import { defaultBrowserWindowOptions, getAllWindowsExcludingOffscreen, IWindowsMainService, OpenContext, WindowStateValidator } from './windows.js';
+import { defaultBrowserWindowOptions, dimWindowControlsColor, getAllWindowsExcludingOffscreen, IWindowsMainService, OpenContext, WindowStateValidator } from './windows.js';
 import { ISingleFolderWorkspaceIdentifier, IWorkspaceIdentifier, isSingleFolderWorkspaceIdentifier, isWorkspaceIdentifier, toWorkspaceIdentifier } from '../../workspace/common/workspace.js';
 import { IWorkspacesManagementMainService } from '../../workspaces/electron-main/workspacesManagementMainService.js';
 import { IWindowState, ICodeWindow, ILoadEvent, WindowMode, WindowError, LoadReason, defaultWindowState, IBaseWindow } from '../../window/electron-main/window.js';
@@ -46,7 +46,6 @@ import { IInstantiationService } from '../../instantiation/common/instantiation.
 import { VSBuffer } from '../../../base/common/buffer.js';
 import { errorHandler } from '../../../base/common/errors.js';
 import { FocusMode } from '../../native/common/native.js';
-import { Color } from '../../../base/common/color.js';
 
 export interface IWindowCreationOptions {
 	readonly state: IWindowState;
@@ -435,8 +434,8 @@ export abstract class BaseWindow extends Disposable implements IBaseWindow {
 				this.lastWindowControlColors = { backgroundColor, foregroundColor };
 			}
 
-			const effectiveBackgroundColor = this.windowControlsDimmed && backgroundColor ? this.dimColor(backgroundColor) : backgroundColor;
-			const effectiveForegroundColor = this.windowControlsDimmed && foregroundColor ? this.dimColor(foregroundColor) : foregroundColor;
+			const effectiveBackgroundColor = this.windowControlsDimmed && backgroundColor ? dimWindowControlsColor(backgroundColor) : backgroundColor;
+			const effectiveForegroundColor = this.windowControlsDimmed && foregroundColor ? dimWindowControlsColor(foregroundColor) : foregroundColor;
 
 			win.setTitleBarOverlay({
 				color: effectiveBackgroundColor?.trim() === '' ? undefined : effectiveBackgroundColor,
@@ -458,24 +457,6 @@ export abstract class BaseWindow extends Disposable implements IBaseWindow {
 				win.setWindowButtonPosition({ x: offset + 1, y: offset });
 			}
 		}
-	}
-
-	private dimColor(color: string): string {
-
-		// Blend a CSS color with black at 50% opacity to match the
-		// dimming overlay of `rgba(0, 0, 0, 0.5)` used by modals.
-
-		const parsed = Color.Format.CSS.parse(color);
-		if (!parsed) {
-			return color;
-		}
-
-		const dimFactor = 0.5; // 1 - 0.5 opacity of black overlay
-		const r = Math.round(parsed.rgba.r * dimFactor);
-		const g = Math.round(parsed.rgba.g * dimFactor);
-		const b = Math.round(parsed.rgba.b * dimFactor);
-
-		return `rgb(${r}, ${g}, ${b})`;
 	}
 
 	//#endregion

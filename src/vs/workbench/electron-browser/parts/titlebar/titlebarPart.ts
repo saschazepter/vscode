@@ -260,15 +260,21 @@ export class NativeTitlebarPart extends BrowserTitlebarPart {
 		// Part container
 		if (this.element) {
 			if (useWindowControlsOverlay(this.configurationService)) {
+				const backgroundColor = this.getWindowControlsBackgroundColor();
+				const foregroundColor = this.element.style.color;
 				if (
 					!this.cachedWindowControlStyles ||
-					this.cachedWindowControlStyles.bgColor !== this.getWindowControlsBackgroundColor() ||
-					this.cachedWindowControlStyles.fgColor !== this.element.style.color
+					this.cachedWindowControlStyles.bgColor !== backgroundColor ||
+					this.cachedWindowControlStyles.fgColor !== foregroundColor
 				) {
+					this.cachedWindowControlStyles = {
+						bgColor: backgroundColor,
+						fgColor: foregroundColor
+					};
 					this.nativeHostService.updateWindowControls({
 						targetWindowId: getWindowId(getWindow(this.element)),
-						backgroundColor: this.getWindowControlsBackgroundColor(),
-						foregroundColor: this.element.style.color
+						backgroundColor,
+						foregroundColor
 					});
 				}
 			}
@@ -279,7 +285,7 @@ export class NativeTitlebarPart extends BrowserTitlebarPart {
 		if (getWindow(this.element) === mainWindow && this.configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true) {
 			const titleBarCustomizations = getModernUIColorCustomizations(this.themeService.getColorTheme()).titleBar;
 			if (this.element.classList.contains('inactive') ? !titleBarCustomizations.inactiveBackground : !titleBarCustomizations.activeBackground) {
-				return 'transparent';
+				return '';
 			}
 		}
 

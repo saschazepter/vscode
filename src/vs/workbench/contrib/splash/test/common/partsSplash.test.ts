@@ -64,11 +64,13 @@ suite('Parts Splash', () => {
 		]);
 	});
 
-	test('serializes active and inactive title bar backgrounds', () => {
+	test('serializes active and inactive title bar colors', () => {
 		const themeData = ColorThemeData.createUnloadedTheme('vs-dark default-modern', defaultModernThemeColors);
 		themeData.setCustomColors({
 			'titleBar.activeBackground': '#FF0000',
-			'titleBar.inactiveBackground': '#00FF00'
+			'titleBar.inactiveBackground': '#00FF00',
+			'titleBar.activeForeground': '#0000FF',
+			'titleBar.inactiveForeground': '#FFFF00'
 		});
 
 		const colorInfo = getPartsSplashColorInfo(themeData);
@@ -76,11 +78,15 @@ suite('Parts Splash', () => {
 		assert.deepStrictEqual({
 			titleBarBackground: colorInfo.titleBarBackground,
 			titleBarInactiveBackground: colorInfo.titleBarInactiveBackground,
+			titleBarForeground: colorInfo.titleBarForeground,
+			titleBarInactiveForeground: colorInfo.titleBarInactiveForeground,
 			titleBarColorCustomizations: colorInfo.titleBarColorCustomizations
 		}, {
 			titleBarBackground: '#ff0000',
 			titleBarInactiveBackground: '#00ff00',
-			titleBarColorCustomizations: { ...titleBarDefaults, activeBackground: true, inactiveBackground: true }
+			titleBarForeground: '#0000ff',
+			titleBarInactiveForeground: '#ffff00',
+			titleBarColorCustomizations: { ...titleBarDefaults, activeBackground: true, inactiveBackground: true, activeForeground: true, inactiveForeground: true }
 		});
 	});
 

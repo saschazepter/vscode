@@ -240,6 +240,8 @@ export interface IPartsSplash {
 		editorBackground: string | undefined;
 		titleBarBackground: string | undefined;
 		titleBarInactiveBackground: string | undefined;
+		titleBarForeground: string | undefined;
+		titleBarInactiveForeground: string | undefined;
 		titleBarBorder: string | undefined;
 		titleBarColorCustomizations?: ITitleBarColorCustomizations;
 		titleBarColorsCustomized?: boolean;
