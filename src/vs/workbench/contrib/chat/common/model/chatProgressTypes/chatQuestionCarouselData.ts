@@ -26,6 +26,13 @@ export class ChatQuestionCarouselData implements IChatQuestionCarousel {
 	public dismissedByTerminalInput?: boolean;
 
 	/**
+	 * True when the input was accepted/answered outside the carousel UI (e.g.
+	 * a voice or free-text response the model interpreted) without structured
+	 * answers, so the summary should read "Answered" rather than "Skipped".
+	 */
+	public answeredExternally?: boolean;
+
+	/**
 	 * Marks the carousel as dismissed with the given answers and clears draft
 	 * state. Safe to call multiple times — subsequent calls are no-ops.
 	 */
@@ -60,6 +67,7 @@ export class ChatQuestionCarouselData implements IChatQuestionCarousel {
 			resolveId: this.resolveId,
 			data: this.data,
 			isUsed: this.isUsed,
+			answeredExternally: this.answeredExternally,
 			message: this.message,
 			source: this.source,
 			terminalId: this.terminalId,

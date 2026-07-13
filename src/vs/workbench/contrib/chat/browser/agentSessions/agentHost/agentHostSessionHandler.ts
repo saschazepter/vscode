@@ -2856,6 +2856,12 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		// the carousel with the server's authoritative answers.
 		let latestProtocolAnswers: Record<string, ChatInputAnswer> | undefined = inputReq.answers;
 
+		// Track the last completion outcome seen via `ChatInputCompleted`. An
+		// `Accept` without structured answers means the input was answered
+		// outside the carousel UI (e.g. a voice/free-text response the model
+		// interpreted), which must render as "Answered" rather than "Skipped".
+		let latestResponseKind: ChatInputResponseKind | undefined;
+
 		// Capture protocol answers from `ChatInputCompleted` BEFORE the
 		// reducer drops the request from state — by the time disposal runs,
 		// the action payload is no longer reachable. Also overwrite the
@@ -2868,11 +2874,13 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			if (action.type !== ActionType.ChatInputCompleted || action.requestId !== inputReq.id) {
 				return;
 			}
+			latestResponseKind = action.response;
 			latestProtocolAnswers = action.response === ChatInputResponseKind.Accept
 				? (action as ChatInputCompletedAction).answers ?? latestProtocolAnswers
 				: undefined;
 			const carouselAnswers = convertProtocolAnswers(latestProtocolAnswers);
 			carousel.data = carouselAnswers ?? {};
+			carousel.answeredExternally = latestResponseKind === ChatInputResponseKind.Accept && !carouselAnswers;
 			carousel.draftAnswers = undefined;
 			carousel.draftCurrentIndex = undefined;
 			carousel.draftCollapsed = undefined;
@@ -2922,6 +2930,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			const carouselAnswers = convertProtocolAnswers(latestProtocolAnswers);
 			carousel.data = carouselAnswers ?? {};
 			carousel.isUsed = true;
+			carousel.answeredExternally = latestResponseKind === ChatInputResponseKind.Accept && !carouselAnswers;
 			carousel.draftAnswers = undefined;
 			carousel.draftCurrentIndex = undefined;
 			carousel.draftCollapsed = undefined;
