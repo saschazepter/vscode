@@ -78,12 +78,19 @@ function appendUserSettings(userDataPath: string, settings: Record<string, unkno
 	fs.writeFileSync(settingsPath, `${contents.slice(0, closingBrace)}${entries}${contents.slice(closingBrace)}`);
 }
 
-async function restartWithUpdatedSandboxSettings(app: Application, settings: Record<string, unknown>): Promise<void> {
+async function restartWithUpdatedSandboxSettings(app: Application, logger: Logger, settings: Record<string, unknown>): Promise<void> {
 	assert.ok(app.userDataPath, 'expected a user data path');
 	appendUserSettings(app.userDataPath, settings);
 	await app.restart();
 	await app.workbench.quickaccess.runCommand('workbench.action.chat.open');
 	await app.workbench.chat.waitForChatView();
+	// A full restart tears down the extension host along with the warmed-up
+	// chat participant and its mock LLM connection. `waitForChatView` only
+	// waits for the chat view DOM, not for chat to be ready to answer, so the
+	// first probe message can race an unready chat and never receive a
+	// response. Re-run the same warm-up retry loop used on cold start so the
+	// probe is only sent once chat can reliably reach the mock LLM server.
+	await warmUpChat(app.workbench.chat, logger);
 }
 
 async function warmUpChat(chat: Chat, logger: Logger): Promise<void> {
@@ -319,7 +326,7 @@ export function setup(logger: Logger): void {
 			const app = this.app as Application;
 
 			try {
-				await restartWithUpdatedSandboxSettings(app, {
+				await restartWithUpdatedSandboxSettings(app, logger, {
 					'chat.agent.sandbox.allowNetwork': true,
 				});
 
@@ -374,16 +381,12 @@ export function setup(logger: Logger): void {
 		 * Input: Add the home test file to allowRead and ask chat to read it through the terminal tool.
 		 * Expected result: The sandbox permits the read and its output contains `HOME_READ_ALLOWED_EXIT_CODE=0`.
 		 */
-		// Skipped: flaky after the app restart introduced in #325532 — the
-		// restart tears down the warmed-up chat participant / mock LLM
-		// connection and the probe can time out. Tracked by
-		// https://github.com/microsoft/vscode-engineering/issues/3280.
-		it.skip('allows reading a home directory file configured in allowRead', async function () {
+		it('allows reading a home directory file configured in allowRead', async function () {
 			const app = this.app as Application;
 
 			try {
 				const fileSystemSetting = { allowRead: [homeFilePath] };
-				await restartWithUpdatedSandboxSettings(app, {
+				await restartWithUpdatedSandboxSettings(app, logger, {
 					'chat.agent.sandbox.fileSystem.linux': fileSystemSetting,
 					'chat.agent.sandbox.fileSystem.mac': fileSystemSetting,
 				});
