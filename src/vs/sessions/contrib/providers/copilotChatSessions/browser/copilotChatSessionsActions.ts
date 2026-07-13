@@ -17,7 +17,7 @@ import { Menus } from '../../../../browser/menus.js';
 import { SessionHasGitRepositoryContext, SessionProviderIdContext, SessionTypeContext, IsNewChatSessionContext } from '../../../../common/contextkeys.js';
 import { ISessionsProvidersService } from '../../../../services/sessions/browser/sessionsProvidersService.js';
 import { ISessionsService } from '../../../../services/sessions/browser/sessionsService.js';
-import { BranchPicker, IBranchPickerModel } from './branchPicker.js';
+import { BranchPicker, IBranchPickerModel } from '../../../chat/browser/branchPicker.js';
 import { ClaudePermissionModePicker } from './claudePermissionModePicker.js';
 import { ClaudeCodeSessionType, COPILOT_PROVIDER_ID, CopilotChatSessionsProvider } from './copilotChatSessionsProvider.js';
 import { LocalSessionType } from '../../localChatSessions/browser/localChatSessionsProvider.js';
@@ -207,9 +207,11 @@ class CopilotPickerActionViewItemContribution extends Disposable implements IWor
 					}
 					return {
 						branches: copilotSession.branches,
-						branch: copilotSession.branch,
-						loading: copilotSession.loading,
-						disabled: derived(reader => copilotSession.isolationMode.read(reader) === 'workspace' || copilotSession.branches.read(reader).length === 0),
+						selectedBranch: copilotSession.branch,
+						disabled: derived(reader =>
+							copilotSession.loading.read(reader)
+							|| copilotSession.isolationMode.read(reader) === 'workspace'
+							|| copilotSession.branches.read(reader).length === 0),
 						setBranch: name => copilotSession.setBranch(name),
 					};
 				});
