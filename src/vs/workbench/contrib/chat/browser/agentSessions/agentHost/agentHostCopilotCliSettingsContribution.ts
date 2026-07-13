@@ -34,7 +34,7 @@ export class AgentHostCopilotCliSettingsContribution extends Disposable implemen
 		const keys: readonly IForwardedRootConfigKey[] = [
 			{
 				key: CopilotCliConfigKey.CopilotSdkLogLevel,
-				computeValue: () => this._configurationService.getValue<CopilotSdkLogLevelSetting>(AgentHostCopilotSdkLogLevelSettingId) ?? 'default',
+				computeValue: () => this._configurationService.getValue<CopilotSdkLogLevelSetting>(AgentHostCopilotSdkLogLevelSettingId) ?? 'info',
 				registerTriggers: (store, push) => this._pushOnSettingChange(store, push, AgentHostCopilotSdkLogLevelSettingId),
 			},
 			{

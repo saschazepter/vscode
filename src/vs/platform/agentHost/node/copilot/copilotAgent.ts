@@ -35,7 +35,7 @@ import { IAgentHostReviewService } from '../../common/agentHostReviewService.js'
 import { createPricingMetaFromBilling, hasLongContextSurcharge, type ICAPIModelBilling } from '../../common/agentModelPricing.js';
 import { createAgentModelByokMeta } from '../../common/agentModelByokMeta.js';
 import { AgentHostConfigKey, agentHostCustomizationConfigSchema, toContainerCustomization } from '../../common/agentHostCustomizationConfig.js';
-import { CopilotCliConfigKey, copilotCliConfigSchema, type CopilotSdkLogLevel, type CopilotSdkLogLevelSetting } from '../../common/copilotCliConfig.js';
+import { CopilotCliConfigKey, copilotCliConfigSchema, type CopilotSdkLogLevelSetting } from '../../common/copilotCliConfig.js';
 import { AgentHostMcpServersConfigKey, AgentHostPreferLongContextEnabledConfigKey, AgentHostSessionSyncEnabledConfigKey, AutoApproveLevel, ISchemaProperty, SessionMode, createSchema, migrateLegacyAutopilotConfig, platformRootSchema, platformSessionSchema, schemaProperty, type AgentHostMcpServers } from '../../common/agentHostSchema.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { AgentSessionEntry, decodeProviderData, encodeProviderData, type IPersistedChat } from '../agentPeerChats.js';
@@ -81,24 +81,6 @@ const COPILOT_PROXY_ENV_KEYS = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'htt
  * Proxy env vars we set when injecting the resolved CAPI proxy.
  */
 const COPILOT_PROXY_SET_ENV_KEYS = ['HTTP_PROXY', 'HTTPS_PROXY'] as const;
-
-/**
- * Maps a VS Code {@link LogLevel} to the Copilot CLI runtime's `logLevel`
- * option so the spawned CLI logs (written to `~/.copilot/logs/process-*.log`)
- * match the agent host's configured verbosity. `Trace` maps to the CLI's most
- * verbose `'all'` level so renderer-side trace logging surfaces the CLI's
- * internal diagnostics.
- */
-function copilotCliLogLevelFor(level: LogLevel): CopilotSdkLogLevel {
-	switch (level) {
-		case LogLevel.Off: return 'none';
-		case LogLevel.Trace: return 'all';
-		case LogLevel.Debug: return 'debug';
-		case LogLevel.Info: return 'info';
-		case LogLevel.Warning: return 'warning';
-		case LogLevel.Error: return 'error';
-	}
-}
 
 async function fileExists(filePath: string): Promise<boolean> {
 	try {
@@ -596,11 +578,11 @@ export class CopilotAgent extends Disposable implements IAgent {
 	}
 
 	private _getCopilotSdkLogLevelSetting(): CopilotSdkLogLevelSetting {
-		return this._configurationService.getRootValue(copilotCliConfigSchema, CopilotCliConfigKey.CopilotSdkLogLevel) ?? 'default';
+		return this._configurationService.getRootValue(copilotCliConfigSchema, CopilotCliConfigKey.CopilotSdkLogLevel) ?? 'info';
 	}
 
-	private _resolveCopilotSdkLogLevel(configured: CopilotSdkLogLevelSetting): CopilotSdkLogLevel {
-		return configured !== 'default' ? configured : copilotCliLogLevelFor(this._logService.getLevel());
+	private _resolveCopilotSdkLogLevel(configured: CopilotSdkLogLevelSetting): NonNullable<CopilotClientOptions['logLevel']> {
+		return configured === 'trace' || this._logService.getLevel() === LogLevel.Trace ? 'all' : 'info';
 	}
 
 	private _getEnterpriseHost(): string | undefined {

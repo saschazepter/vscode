@@ -1359,7 +1359,7 @@ suite('CopilotAgent', () => {
 			const client = new TestCopilotClient([]);
 			const { agent, configurationService } = createTestAgentContext(disposables, { copilotClient: client });
 			try {
-				configurationService.updateRootConfig({ [CopilotCliConfigKey.CopilotSdkLogLevel]: 'all' });
+				configurationService.updateRootConfig({ [CopilotCliConfigKey.CopilotSdkLogLevel]: 'trace' });
 				await agent.authenticate('https://api.github.com', 'token');
 				await agent.listSessions();
 
@@ -1369,7 +1369,7 @@ suite('CopilotAgent', () => {
 			}
 		});
 
-		test('uses the agent host log level when the setting is default', async () => {
+		test('uses info when neither the setting nor agent host enables trace', async () => {
 			const client = new TestCopilotClient([]);
 			const { agent } = createTestAgentContext(disposables, { copilotClient: client });
 			try {
@@ -1382,6 +1382,21 @@ suite('CopilotAgent', () => {
 			}
 		});
 
+		test('uses trace when the agent host log level is trace', async () => {
+			const client = new TestCopilotClient([]);
+			const logService = new MutableLogService();
+			logService.setLevel(LogLevel.Trace);
+			const { agent } = createTestAgentContext(disposables, { copilotClient: client, logService });
+			try {
+				await agent.authenticate('https://api.github.com', 'token');
+				await agent.listSessions();
+
+				assert.deepStrictEqual(getCreatedClientOptions(agent).map(options => options.logLevel), ['all']);
+			} finally {
+				await disposeAgent(agent);
+			}
+		});
+
 		test('restarts the client when the Copilot SDK log level changes', async () => {
 			const client = new StopCountingClient([]);
 			const { agent, configurationService } = createTestAgentContext(disposables, { copilotClient: client });
@@ -1389,7 +1404,7 @@ suite('CopilotAgent', () => {
 				await agent.authenticate('https://api.github.com', 'token');
 				await agent.listSessions();
 
-				configurationService.updateRootConfig({ [CopilotCliConfigKey.CopilotSdkLogLevel]: 'debug' });
+				configurationService.updateRootConfig({ [CopilotCliConfigKey.CopilotSdkLogLevel]: 'trace' });
 				await Promise.resolve();
 				await agent.listSessions();
 
@@ -1398,7 +1413,7 @@ suite('CopilotAgent', () => {
 					logLevel: getCreatedClientOptions(agent).at(-1)?.logLevel,
 				}, {
 					stopCount: 1,
-					logLevel: 'debug',
+					logLevel: 'all',
 				});
 			} finally {
 				await disposeAgent(agent);

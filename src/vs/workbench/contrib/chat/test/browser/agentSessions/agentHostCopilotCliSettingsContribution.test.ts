@@ -103,7 +103,7 @@ suite('AgentHostCopilotCliSettingsContribution', () => {
 
 	test('forwards the experimentation settings into root config once the schema advertises them', async () => {
 		const { agentHostService } = setup(disposables, {
-			[AgentHostCopilotSdkLogLevelSettingId]: 'all',
+			[AgentHostCopilotSdkLogLevelSettingId]: 'trace',
 			[AgentHostOpus48PromptEnabledSettingId]: true,
 			[AgentHostReasoningEffortOverrideSettingId]: 'xhigh',
 			[AgentHostModelCapabilityOverridesSettingId]: { 'preview-model-x': { family: 'claude-opus-4-8' } },
@@ -116,7 +116,7 @@ suite('AgentHostCopilotCliSettingsContribution', () => {
 		assert.strictEqual(agentHostService.dispatchedActions.length, 4);
 		const merged = Object.assign({}, ...agentHostService.dispatchedActions.map(a => (a.action as IRootConfigChangedAction).config));
 		assert.deepStrictEqual(merged, {
-			[CopilotCliConfigKey.CopilotSdkLogLevel]: 'all',
+			[CopilotCliConfigKey.CopilotSdkLogLevel]: 'trace',
 			[CopilotCliConfigKey.Opus48Prompt]: true,
 			[CopilotCliConfigKey.ReasoningEffortOverride]: 'xhigh',
 			[CopilotCliConfigKey.ModelCapabilityOverrides]: { 'preview-model-x': { family: 'claude-opus-4-8' } },
@@ -125,7 +125,7 @@ suite('AgentHostCopilotCliSettingsContribution', () => {
 
 	test('forwards only the keys an older host advertises', async () => {
 		const { agentHostService } = setup(disposables, {
-			[AgentHostCopilotSdkLogLevelSettingId]: 'all',
+			[AgentHostCopilotSdkLogLevelSettingId]: 'trace',
 			[AgentHostOpus48PromptEnabledSettingId]: true,
 			[AgentHostReasoningEffortOverrideSettingId]: 'xhigh',
 		});
@@ -142,7 +142,7 @@ suite('AgentHostCopilotCliSettingsContribution', () => {
 
 	test('does not dispatch to a host whose schema does not advertise any key', async () => {
 		const { agentHostService } = setup(disposables, {
-			[AgentHostCopilotSdkLogLevelSettingId]: 'all',
+			[AgentHostCopilotSdkLogLevelSettingId]: 'trace',
 			[AgentHostOpus48PromptEnabledSettingId]: true,
 		});
 		agentHostService.setRootState(makeRootStateWithSchema({}));
@@ -153,13 +153,13 @@ suite('AgentHostCopilotCliSettingsContribution', () => {
 
 	test('does not re-dispatch when the root config already carries structurally equal values', async () => {
 		const { agentHostService } = setup(disposables, {
-			[AgentHostCopilotSdkLogLevelSettingId]: 'all',
+			[AgentHostCopilotSdkLogLevelSettingId]: 'trace',
 			[AgentHostOpus48PromptEnabledSettingId]: true,
 			[AgentHostReasoningEffortOverrideSettingId]: 'xhigh',
 			[AgentHostModelCapabilityOverridesSettingId]: { 'preview-model-x': { family: 'claude-opus-4-8' } },
 		});
 		agentHostService.setRootState(makeRootStateWithSchema(fullSchema, {
-			[CopilotCliConfigKey.CopilotSdkLogLevel]: 'all',
+			[CopilotCliConfigKey.CopilotSdkLogLevel]: 'trace',
 			[CopilotCliConfigKey.Opus48Prompt]: true,
 			[CopilotCliConfigKey.ReasoningEffortOverride]: 'xhigh',
 			[CopilotCliConfigKey.ModelCapabilityOverrides]: { 'preview-model-x': { family: 'claude-opus-4-8' } },

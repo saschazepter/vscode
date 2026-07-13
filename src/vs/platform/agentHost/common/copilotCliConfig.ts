@@ -42,10 +42,7 @@ export const AgentHostReasoningEffortOverrideSettingId = 'chat.agentHost.reasoni
 
 export const AgentHostModelCapabilityOverridesSettingId = 'chat.agentHost.modelCapabilityOverrides';
 
-export const copilotSdkLogLevels = ['none', 'error', 'warning', 'info', 'debug', 'all'] as const;
-export type CopilotSdkLogLevel = typeof copilotSdkLogLevels[number];
-
-export const copilotSdkLogLevelSettingValues = ['default', ...copilotSdkLogLevels] as const;
+export const copilotSdkLogLevelSettingValues = ['info', 'trace'] as const;
 export type CopilotSdkLogLevelSetting = typeof copilotSdkLogLevelSettingValues[number];
 
 /** Per-model capability override; the agent-host equivalent of the extension's `IModelCapabilityOverride`. */
@@ -67,18 +64,13 @@ export const copilotCliConfigSchema = createSchema({
 	[CopilotCliConfigKey.CopilotSdkLogLevel]: schemaProperty<CopilotSdkLogLevelSetting>({
 		type: 'string',
 		title: localize('agentHost.config.copilotSdkLogLevel.title', "Copilot SDK Log Level"),
-		description: localize('agentHost.config.copilotSdkLogLevel.description', "Controls logging from the Copilot SDK runtime. The default follows the agent host's log level."),
+		description: localize('agentHost.config.copilotSdkLogLevel.description', "Controls logging from the Copilot SDK runtime. Agent host trace logging always enables trace output."),
 		enum: [...copilotSdkLogLevelSettingValues],
 		enumLabels: [
-			localize('agentHost.config.copilotSdkLogLevel.default', "Use Agent Host Log Level"),
-			localize('agentHost.config.copilotSdkLogLevel.none', "None"),
-			localize('agentHost.config.copilotSdkLogLevel.error', "Error"),
-			localize('agentHost.config.copilotSdkLogLevel.warning', "Warning"),
 			localize('agentHost.config.copilotSdkLogLevel.info', "Info"),
-			localize('agentHost.config.copilotSdkLogLevel.debug', "Debug"),
-			localize('agentHost.config.copilotSdkLogLevel.all', "All"),
+			localize('agentHost.config.copilotSdkLogLevel.trace', "Trace"),
 		],
-		default: 'default',
+		default: 'info',
 	}),
 	[CopilotCliConfigKey.RubberDuck]: schemaProperty<boolean>({
 		type: 'boolean',
