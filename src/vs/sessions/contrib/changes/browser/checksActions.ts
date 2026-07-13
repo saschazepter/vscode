@@ -116,17 +116,16 @@ export function buildFixChecksPrompt(failedChecks: ReadonlyArray<{ check: IGitHu
 }
 
 /**
- * Submits the `fix-ci` prompt for a session's failing CI checks: fetches each
- * failed check's annotations, builds the prompt, sends it to the given chat
- * widget, and marks the fix as requested so the "Fix Checks" affordances hide
- * until a new commit lands. Shared by the active-session action and the
- * blocked-sessions list's per-session "Fix CI" row.
+ * Builds the `fix-ci` prompt for a CI model's failing checks: fetches each
+ * failed check's annotations and assembles the prompt text. Returns `undefined`
+ * when there are no failing checks. Shared by the widget-based active-session
+ * action and the blocked-sessions list's background fix.
  */
-export async function submitFixCIChecks(ciModel: GitHubPullRequestCIModel, chatWidget: IChatWidget): Promise<void> {
+export async function buildFixCIPrompt(ciModel: GitHubPullRequestCIModel): Promise<string | undefined> {
 	const checks = ciModel.checks.get();
 	const failedChecks = getFailedChecks(checks);
 	if (failedChecks.length === 0) {
-		return;
+		return undefined;
 	}
 
 	const failedCheckDetails = await Promise.all(failedChecks.map(async check => {
@@ -134,7 +133,22 @@ export async function submitFixCIChecks(ciModel: GitHubPullRequestCIModel, chatW
 		return { check, annotations };
 	}));
 
-	const prompt = buildFixChecksPrompt(failedCheckDetails, getPullRequestUrl(ciModel));
+	return buildFixChecksPrompt(failedCheckDetails, getPullRequestUrl(ciModel));
+}
+
+/**
+ * Submits the `fix-ci` prompt for a session's failing CI checks: builds the
+ * prompt, sends it to the given chat widget, and marks the fix as requested so
+ * the "Fix Checks" affordances hide until a new commit lands. Used by the
+ * active-session action; the blocked-sessions list sends in the background via
+ * {@link buildFixCIPrompt} instead.
+ */
+export async function submitFixCIChecks(ciModel: GitHubPullRequestCIModel, chatWidget: IChatWidget): Promise<void> {
+	const prompt = await buildFixCIPrompt(ciModel);
+	if (!prompt) {
+		return;
+	}
+
 	const response = await chatWidget.acceptInput(prompt);
 	if (response) {
 		ciModel.markFixRequested();

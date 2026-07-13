@@ -331,7 +331,7 @@ export interface ISessionCIFixModel {
 	 * failing checks (or the user already requested a fix for the current commit).
 	 */
 	getCIFix(session: ISession): IObservable<ISessionCIFixState | undefined>;
-	/** Kick off the fix-CI flow for the session (opens it and submits the fix prompt). */
+	/** Kick off the fix-CI flow for the session in the background (no session is opened). */
 	fixCI(session: ISession): void;
 }
 

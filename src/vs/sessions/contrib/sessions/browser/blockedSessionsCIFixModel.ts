@@ -3,13 +3,14 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
-import { derived, IObservable } from '../../../../base/common/observable.js';
+import { derived, IObservable, ISettableObservable, observableValue } from '../../../../base/common/observable.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
-import { IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
-import { ISessionsService } from '../../../services/sessions/browser/sessionsService.js';
+import { ChatSendResult, IChatService } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
+import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
 import { ISession } from '../../../services/sessions/common/session.js';
-import { getFailedChecks, submitFixCIChecks } from '../../changes/browser/checksActions.js';
+import { buildFixCIPrompt, getFailedChecks } from '../../changes/browser/checksActions.js';
 import { IGitHubService } from '../../github/browser/githubService.js';
 import { GitHubPullRequestCIModel } from '../../github/browser/models/githubPullRequestCIModel.js';
 import { GitHubCheckStatus } from '../../github/common/types.js';
@@ -18,21 +19,31 @@ import { ISessionCIFixModel, ISessionCIFixState } from './views/sessionsList.js'
 /**
  * Backs the per-session "Fix CI" row shown in the blocked-sessions dropdown for
  * sessions whose pull request has failing CI checks. Exposes a reactive summary
- * of the failing/pending check counts and, on demand, opens the session and
- * submits the `fix-ci` prompt for its failed checks.
+ * of the failing/pending check counts and, on demand, submits the `fix-ci`
+ * prompt to the session's chat **in the background** — the session starts
+ * working without being opened or made visible.
+ *
+ * While a fix is being submitted the session is reported via
+ * {@link hiddenSessions} so the blocked-sessions list can drop it immediately;
+ * by the time the submit resolves the session is in progress and so is no longer
+ * blocked, keeping it out of the list without a flicker.
  */
 export class BlockedSessionsCIFixModel extends Disposable implements ISessionCIFixModel {
 
 	/** Cached CI-state observables, keyed by session, to keep references stable and GC-friendly. */
 	private readonly _states = new WeakMap<ISession, IObservable<ISessionCIFixState | undefined>>();
 
-	/** Session resources with an in-flight fix so repeated clicks don't submit duplicate prompts. */
-	private readonly _fixInFlight = new Set<string>();
+	/**
+	 * Session ids whose fix-CI submission is in flight. Doubles as the guard that
+	 * stops repeated clicks submitting duplicate prompts, and as the set the
+	 * blocked-sessions indicator hides while the background work runs.
+	 */
+	private readonly _hiddenSessions: ISettableObservable<ReadonlySet<string>> = observableValue(this, new Set());
+	readonly hiddenSessions: IObservable<ReadonlySet<string>> = this._hiddenSessions;
 
 	constructor(
 		@IGitHubService private readonly _gitHubService: IGitHubService,
-		@ISessionsService private readonly _sessionsService: ISessionsService,
-		@IChatWidgetService private readonly _chatWidgetService: IChatWidgetService,
+		@IChatService private readonly _chatService: IChatService,
 		@ILogService private readonly _logService: ILogService,
 	) {
 		super();
@@ -77,20 +88,23 @@ export class BlockedSessionsCIFixModel extends Disposable implements ISessionCIF
 	}
 
 	fixCI(session: ISession): void {
-		const key = session.resource.toString();
-		if (this._fixInFlight.has(key)) {
+		if (this._hiddenSessions.get().has(session.sessionId)) {
 			return;
 		}
-		this._fixInFlight.add(key);
+		this._setHidden(session.sessionId, true);
 		this._fixCI(session)
 			.catch(err => this._logService.error('[BlockedSessionsCIFixModel] Failed to fix CI checks', err))
-			.finally(() => this._fixInFlight.delete(key));
+			// Release the optimistic hide once the submit settles: by now the
+			// request has been sent and the session is in progress, so the blocked
+			// model no longer reports it as blocked and it stays out of the list.
+			.finally(() => this._setHidden(session.sessionId, false));
 	}
 
 	private async _fixCI(session: ISession): Promise<void> {
-		// Acquire our own CI-model reference for the duration: opening the session
-		// removes it from the blocked list, which drops the row's observers and
-		// would otherwise release the shared model reference mid-flight.
+		// Hold our own CI-model reference for the whole flow: the session drops out
+		// of the blocked list as soon as we hide it, which releases the row's
+		// reference, so we must keep the model alive to build the prompt and mark
+		// the fix requested.
 		const store = new DisposableStore();
 		try {
 			const ciModel = this._acquireCIModel(session, store);
@@ -98,15 +112,33 @@ export class BlockedSessionsCIFixModel extends Disposable implements ISessionCIF
 				return;
 			}
 
-			await this._sessionsService.openSession(session.resource, { preserveFocus: true });
-
-			const chatWidget = this._chatWidgetService.getWidgetBySessionResource(session.resource);
-			if (!chatWidget) {
-				this._logService.error('[BlockedSessionsCIFixModel] Cannot fix CI checks: no chat widget found for session', session.resource.toString());
+			const prompt = await buildFixCIPrompt(ciModel);
+			if (!prompt) {
 				return;
 			}
 
-			await submitFixCIChecks(ciModel, chatWidget);
+			// Load the session's chat model in the background (without opening it in
+			// the UI) and submit the prompt. `session.resource.scheme` is the agent
+			// id used for routing (matching the agent-host skill-button flow); an
+			// unknown scheme falls back to the default agent.
+			const ref = await this._chatService.acquireOrLoadSession(session.resource, ChatAgentLocation.Chat, CancellationToken.None, 'BlockedSessionsCIFix');
+			if (!ref) {
+				this._logService.error('[BlockedSessionsCIFixModel] Cannot fix CI checks: failed to load session', session.resource.toString());
+				return;
+			}
+			try {
+				let result = await this._chatService.sendRequest(session.resource, prompt, { agentIdSilent: session.resource.scheme });
+				if (ChatSendResult.isQueued(result)) {
+					result = await result.deferred;
+				}
+				if (ChatSendResult.isSent(result)) {
+					ciModel.markFixRequested();
+				} else if (ChatSendResult.isRejected(result)) {
+					this._logService.error('[BlockedSessionsCIFixModel] Fix CI request rejected', result.reason);
+				}
+			} finally {
+				ref.dispose();
+			}
 		} finally {
 			store.dispose();
 		}
@@ -126,5 +158,19 @@ export class BlockedSessionsCIFixModel extends Disposable implements ISessionCIF
 
 		const ciRef = store.add(this._gitHubService.createPullRequestCIModelReference(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number, livePR.headSha));
 		return ciRef.object;
+	}
+
+	private _setHidden(sessionId: string, hidden: boolean): void {
+		const current = this._hiddenSessions.get();
+		if (current.has(sessionId) === hidden) {
+			return;
+		}
+		const next = new Set(current);
+		if (hidden) {
+			next.add(sessionId);
+		} else {
+			next.delete(sessionId);
+		}
+		this._hiddenSessions.set(next, undefined);
 	}
 }
