@@ -2420,9 +2420,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// had its narration dropped by the backend (it narrates one at a time),
 		// leaving nothing to flush. Re-elicit it now via a forced thinking->idle
 		// transition. Guarded by `hadDeferred` (a buffered reply was just flushed
-		// instead) and scoped to the main-window (non-external) flow the bug was
-		// reported in.
-		if (!this._externalActiveSessionMode && !hadDeferred && this._unheardResponseSessions.has(key)) {
+		// instead). Runs in both the main window and the embedder-driven agents
+		// window — mirroring the confirmation two-phase above, which is likewise
+		// unconditional — since the backend drops responses in either mode.
+		if (!hadDeferred && this._unheardResponseSessions.has(key)) {
 			this._unheardResponseSessions.delete(key);
 			this._narrateResponseViaTwoPhase(key, resource);
 			return;
