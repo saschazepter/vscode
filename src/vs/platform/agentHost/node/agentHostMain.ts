@@ -15,6 +15,7 @@ import { URI } from '../../../base/common/uri.js';
 import { generateUuid } from '../../../base/common/uuid.js';
 import * as os from 'os';
 import * as inspector from 'inspector';
+import { findExecutable } from '../../../base/node/processes.js';
 import { AgentHostByokModelsEnabledEnvVar, AgentHostClaudeAgentEnabledEnvVar, AgentHostCodexAgentEnabledEnvVar, AgentHostIpcChannels, IAgentHostInspectInfo, IAgentHostSocketInfo, IAgentService, IConnectionTrackerService, isAgentEnabled } from '../common/agentService.js';
 import { AgentHostCodexEnabledConfigKey, platformRootSchema } from '../common/agentHostSchema.js';
 import { AgentService } from './agentService.js';
@@ -170,7 +171,7 @@ async function startAgentHost(): Promise<void> {
 		diServices.set(IAgentHostFileMonitorService, fileMonitorService);
 		diServices.set(IWindowsMxcTerminalSandboxRuntime, instantiationService.createInstance(WindowsMxcTerminalSandboxRuntime));
 		diServices.set(ISandboxHelperService, new SandboxHelperService());
-		const gitService = instantiationService.createInstance(AgentHostGitService);
+		const gitService = instantiationService.createInstance(AgentHostGitService, findExecutable('git-lfs'));
 		diServices.set(IAgentHostGitService, gitService);
 		// Checkpoint service depends on session data + git services, so
 		// construct it AFTER both are registered. Consumed by CopilotAgent

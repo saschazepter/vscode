@@ -15,6 +15,7 @@ globalThis._VSCODE_FILE_ROOT = fileURLToPath(new URL('../../../..', import.meta.
 
 import * as fs from 'fs';
 import * as os from 'os';
+import { findExecutable } from '../../../base/node/processes.js';
 import type { Event } from '../../../base/common/event.js';
 import { DisposableStore } from '../../../base/common/lifecycle.js';
 import { raceTimeout } from '../../../base/common/async.js';
@@ -243,7 +244,7 @@ async function main(): Promise<void> {
 	diServices.set(IAgentHostFileMonitorService, fileMonitorService);
 	diServices.set(IWindowsMxcTerminalSandboxRuntime, instantiationService.createInstance(WindowsMxcTerminalSandboxRuntime));
 	diServices.set(ISandboxHelperService, new SandboxHelperService());
-	const gitService = instantiationService.createInstance(AgentHostGitService);
+	const gitService = instantiationService.createInstance(AgentHostGitService, findExecutable('git-lfs'));
 	diServices.set(IAgentHostGitService, gitService);
 	const checkpointService = disposables.add(instantiationService.createInstance(AgentHostCheckpointService));
 	diServices.set(IAgentHostCheckpointService, checkpointService);

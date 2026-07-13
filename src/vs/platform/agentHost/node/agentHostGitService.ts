@@ -30,6 +30,7 @@ export class AgentHostGitService implements IAgentHostGitService {
 	private readonly _repositoryRootSequencer = new SequencerByKey<string>();
 
 	constructor(
+		private readonly _gitLfsExecutable: Promise<string | undefined>,
 		@IFileService private readonly _fileService: IFileService,
 		@INativeEnvironmentService private readonly _environmentService: INativeEnvironmentService,
 		@ILogService private readonly _logService: ILogService,
@@ -114,11 +115,12 @@ export class AgentHostGitService implements IAgentHostGitService {
 
 	async addWorktree(repositoryRoot: URI, worktree: URI, branchName: string, startPoint: string): Promise<void> {
 		const resolvedStartPoint = await this._resolveRemoteTrackingBranch(repositoryRoot, startPoint) ?? startPoint;
+		const configArgs = await this._getWorktreeConfigArgs();
 		// Pass --no-track so the new agent branch never picks up upstream
 		// tracking from the start point (e.g. when starting from
 		// 'origin/main', without --no-track git would set the new branch's
 		// upstream to origin/main, which would mis-attribute pushes/pulls).
-		await this._runGit(repositoryRoot, ['-c', 'checkout.workers=0', 'worktree', 'add', '--no-track', '-b', branchName, worktree.fsPath, resolvedStartPoint], { timeout: 180_000, throwOnError: true });
+		await this._runGit(repositoryRoot, [...configArgs, 'worktree', 'add', '--no-track', '-b', branchName, worktree.fsPath, resolvedStartPoint], { timeout: 180_000, throwOnError: true });
 	}
 
 	async copyWorktreeIncludeFiles(repositoryRoot: URI, worktree: URI, globs: readonly string[]): Promise<void> {
@@ -151,11 +153,20 @@ export class AgentHostGitService implements IAgentHostGitService {
 	}
 
 	async addExistingWorktree(repositoryRoot: URI, worktree: URI, branchName: string): Promise<void> {
+		const configArgs = await this._getWorktreeConfigArgs();
 		// `-f` (force) so recreation succeeds even when the worktree directory was
 		// deleted out-of-band but git still has it registered ("missing but
 		// already registered worktree"). This is our own managed per-session
 		// worktree/branch, so overriding git's safeguards here is safe.
-		await this._runGit(repositoryRoot, ['-c', 'checkout.workers=0', 'worktree', 'add', '-f', worktree.fsPath, branchName], { timeout: 180_000, throwOnError: true });
+		await this._runGit(repositoryRoot, [...configArgs, 'worktree', 'add', '-f', worktree.fsPath, branchName], { timeout: 180_000, throwOnError: true });
+	}
+
+	private async _getWorktreeConfigArgs(): Promise<string[]> {
+		const args = ['-c', 'checkout.workers=0'];
+		if (!await this._gitLfsExecutable) {
+			args.push('-c', 'filter.lfs.process=', '-c', 'filter.lfs.smudge=', '-c', 'filter.lfs.required=false');
+		}
+		return args;
 	}
 
 	async removeWorktree(repositoryRoot: URI, worktree: URI): Promise<void> {
