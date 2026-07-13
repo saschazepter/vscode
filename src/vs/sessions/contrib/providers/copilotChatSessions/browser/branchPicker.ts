@@ -14,11 +14,17 @@ import { ActionListItemKind, IActionListDelegate, IActionListItem } from '../../
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { renderIcon } from '../../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { reportNewChatPickerClosed } from '../../../chat/browser/newChatPickerTelemetry.js';
-import { IActiveSession } from '../../../../services/sessions/common/sessionsManagement.js';
-import { ISessionsProvidersService } from '../../../../services/sessions/browser/sessionsProvidersService.js';
-import { CopilotChatSessionsProvider, ICopilotChatSession } from './copilotChatSessionsProvider.js';
 
 const FILTER_THRESHOLD = 10;
+
+/** Minimal contract the BranchPicker needs to render and interact. */
+export interface IBranchPickerModel {
+	readonly branches: IObservable<readonly string[]>;
+	readonly branch: IObservable<string | undefined>;
+	readonly loading: IObservable<boolean>;
+	readonly disabled: IObservable<boolean>;
+	setBranch(name: string): void;
+}
 
 interface IBranchItem {
 	readonly name: string;
@@ -26,8 +32,7 @@ interface IBranchItem {
 
 /**
  * A widget for selecting a git branch.
- * Reads branch list and selected branch from the active session,
- * which is the source of truth for branch state.
+ * Renders branch state from the provided {@link IBranchPickerModel}.
  */
 export class BranchPicker extends Disposable {
 
@@ -36,34 +41,22 @@ export class BranchPicker extends Disposable {
 	private _triggerElement: HTMLElement | undefined;
 
 	constructor(
-		private readonly _session: IObservable<IActiveSession | undefined>,
+		private readonly _model: IObservable<IBranchPickerModel | undefined>,
 		@IActionWidgetService private readonly actionWidgetService: IActionWidgetService,
-		@ISessionsProvidersService private readonly sessionsProvidersService: ISessionsProvidersService,
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 	) {
 		super();
 
 		this._register(autorun(reader => {
-			const session = this._session.read(reader);
-			const provider = session ? this.sessionsProvidersService.getProvider(session.providerId) : undefined;
-			const providerSession = provider instanceof CopilotChatSessionsProvider ? provider.getSession(session!.sessionId) : undefined;
-			if (providerSession) {
-				providerSession.loading.read(reader);
-				providerSession.branches.read(reader);
-				providerSession.branch.read(reader);
-				providerSession.isolationMode.read(reader);
+			const model = this._model.read(reader);
+			if (model) {
+				model.loading.read(reader);
+				model.branches.read(reader);
+				model.branch.read(reader);
+				model.disabled.read(reader);
 			}
 			this._updateTriggerLabel();
 		}));
-	}
-
-	private _getSession(): ICopilotChatSession | undefined {
-		const session = this._session.get();
-		if (!session) {
-			return undefined;
-		}
-		const provider = this.sessionsProvidersService.getProvider(session.providerId);
-		return provider instanceof CopilotChatSessionsProvider ? provider.getSession(session.sessionId) : undefined;
 	}
 
 	render(container: HTMLElement): void {
@@ -96,13 +89,13 @@ export class BranchPicker extends Disposable {
 	}
 
 	showPicker(): void {
-		const session = this._getSession();
-		const branches = session?.branches.get() ?? [];
-		if (!this._triggerElement || this.actionWidgetService.isVisible || branches.length === 0 || session?.isolationMode.get() === 'workspace') {
+		const model = this._model.get();
+		const branches = model?.branches.get() ?? [];
+		if (!this._triggerElement || this.actionWidgetService.isVisible || branches.length === 0 || model?.disabled.get()) {
 			return;
 		}
 
-		const selectedBranch = session?.branch.get();
+		const selectedBranch = model?.branch.get();
 		const items: IActionListItem<IBranchItem>[] = branches.map(branch => ({
 			kind: ActionListItemKind.Action,
 			label: branch,
@@ -123,7 +116,7 @@ export class BranchPicker extends Disposable {
 					optionLabelAfter: item.name,
 					isPII: true,
 				});
-				session?.setBranch(item.name);
+				model?.setBranch(item.name);
 			},
 			onHide: () => { triggerElement.focus(); },
 		};
@@ -152,11 +145,10 @@ export class BranchPicker extends Disposable {
 		}
 		dom.clearNode(this._triggerElement);
 
-		const session = this._getSession();
-		const branches = session?.branches.get() ?? [];
-		const isLoading = session?.loading.get() ?? false;
-		const isDisabled = session?.isolationMode.get() === 'workspace' || branches.length === 0;
-		const label = session?.branch.get() ?? localize('branchPicker.select', "Branch");
+		const model = this._model.get();
+		const isLoading = model?.loading.get() ?? false;
+		const isDisabled = model?.disabled.get() ?? false;
+		const label = model?.branch.get() ?? localize('branchPicker.select', "Branch");
 
 		dom.append(this._triggerElement, renderIcon(Codicon.gitBranch));
 		const labelSpan = dom.append(this._triggerElement, dom.$('span.sessions-chat-dropdown-label'));
