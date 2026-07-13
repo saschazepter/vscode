@@ -578,11 +578,13 @@ export class VoiceClientService extends Disposable implements IVoiceClientServic
 		}
 	}
 
-	requestNarration(codingSessionId: string, kind: 'response' | 'confirmation', text: string): void {
+	requestNarration(codingSessionId: string, kind: 'response' | 'confirmation', text: string): boolean {
 		if (this._ws?.readyState === WebSocket.OPEN) {
 			this._ws.send(JSON.stringify({ type: 'request_narration', coding_session_id: codingSessionId, kind, text }));
 			this._logService.trace(`[voice] request_narration kind=${kind} id=${codingSessionId.slice(-32)}`);
+			return true;
 		}
+		return false;
 	}
 
 	sendSessionStateChange(sessionId: string, newState: string, _label: string, detail?: string, lastResponseSummary?: string): void {

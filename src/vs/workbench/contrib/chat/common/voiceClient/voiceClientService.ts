@@ -191,8 +191,8 @@ export interface IVoiceClientService {
 	 */
 	invalidateSessionCache(sessionId: string): void;
 	sendToolResult(callId: string, result: string): void;
-	/** Explicitly ask the backend to speak a session's pending `text` now (backend no longer auto-narrates); echoed back as `audio_response` tagged with `codingSessionId`. */
-	requestNarration(codingSessionId: string, kind: 'response' | 'confirmation', text: string): void;
+	/** Explicitly ask the backend to speak a session's pending `text` now (backend no longer auto-narrates); echoed back as `audio_response` tagged with `codingSessionId`. Returns `false` if the socket was closed and nothing was sent. */
+	requestNarration(codingSessionId: string, kind: 'response' | 'confirmation', text: string): boolean;
 	/**
 	 * Notify the backend of a session state transition.
 	 *
