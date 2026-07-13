@@ -128,7 +128,6 @@
 /* Debug call-stack session state labels. */
 .style-override .debug-pane .debug-call-stack .session > .state.label,
 /* Settings editor section headers. */
-.style-override .settings-tabs-widget > .monaco-action-bar .action-item .action-label,
 .style-override .monaco-editor .settings-header-widget .title-container .title,
 /* Agent sessions list header ("SESSIONS"). */
 .style-override .chat-viewpane.has-sessions-control .agent-sessions-container .agent-sessions-title-container {
