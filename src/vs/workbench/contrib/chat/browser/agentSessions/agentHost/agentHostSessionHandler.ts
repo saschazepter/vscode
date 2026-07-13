@@ -2856,10 +2856,8 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		// the carousel with the server's authoritative answers.
 		let latestProtocolAnswers: Record<string, ChatInputAnswer> | undefined = inputReq.answers;
 
-		// Track the last completion outcome seen via `ChatInputCompleted`. An
-		// `Accept` without structured answers means the input was answered
-		// outside the carousel UI (e.g. a voice/free-text response the model
-		// interpreted), which must render as "Answered" rather than "Skipped".
+		// An `Accept` without structured answers means the input was answered
+		// outside the carousel UI (e.g. via voice), so render "Answered" not "Skipped".
 		let latestResponseKind: ChatInputResponseKind | undefined;
 
 		// Capture protocol answers from `ChatInputCompleted` BEFORE the

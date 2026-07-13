@@ -483,7 +483,7 @@ export interface IChatQuestionCarousel {
 	data?: IChatQuestionAnswers;
 	/** Whether the carousel has been submitted/skipped */
 	isUsed?: boolean;
-	/** True when the input was accepted/answered outside the carousel UI (e.g. a voice or free-text response the model interpreted) without structured answers. */
+	/** True when accepted/answered outside the carousel UI (e.g. via voice) without structured answers. */
 	answeredExternally?: boolean;
 	/** Top-level message shown above the questions (e.g. from MCP elicitation message) */
 	message?: string | IMarkdownString;

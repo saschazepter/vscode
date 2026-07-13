@@ -27,8 +27,7 @@ export class ChatQuestionCarouselData implements IChatQuestionCarousel {
 
 	/**
 	 * True when the input was accepted/answered outside the carousel UI (e.g.
-	 * a voice or free-text response the model interpreted) without structured
-	 * answers, so the summary should read "Answered" rather than "Skipped".
+	 * via voice) without structured answers, so the summary reads "Answered".
 	 */
 	public answeredExternally?: boolean;
 

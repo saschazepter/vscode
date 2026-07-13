@@ -539,10 +539,10 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		// Dispose interactive UI and clear DOM
 		this.clearInteractiveResources();
 
-		// Hide UI and show skipped message
+		// Hide UI and show terminal-state (Skipped/Answered) message
 		this.domNode.classList.add('chat-question-carousel-used');
 		dom.clearNode(this.domNode);
-		this.renderSkippedMessage();
+		this.renderTerminalStateMessage();
 		this._onDidChangeHeight.fire();
 		return true;
 	}
@@ -1570,22 +1570,21 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 	 * Renders a terminal-state message (Skipped/Answered) when the carousel is
 	 * dismissed without structured answers.
 	 */
-	private renderSkippedMessage(): void {
-		const skippedContainer = dom.$('.chat-question-carousel-summary');
+	private renderTerminalStateMessage(): void {
+		const summaryContainer = dom.$('.chat-question-carousel-summary');
 		const isDismissedByTerminal = this.carousel instanceof ChatQuestionCarouselData && this.carousel.dismissedByTerminalInput;
 		if (this.carousel.answeredExternally) {
-			// Accepted/answered outside the carousel UI (e.g. a voice/free-text response the model interpreted).
 			const answeredMessage = dom.$('.chat-question-summary-answered');
 			answeredMessage.textContent = localize('chat.questionCarousel.answered', 'Answered');
-			skippedContainer.appendChild(answeredMessage);
+			summaryContainer.appendChild(answeredMessage);
 		} else {
 			const skippedMessage = dom.$('.chat-question-summary-skipped');
 			skippedMessage.textContent = isDismissedByTerminal
 				? localize('chat.questionCarousel.deferredToTerminal', "Deferring to user's input in the terminal")
 				: localize('chat.questionCarousel.skipped', 'Skipped');
-			skippedContainer.appendChild(skippedMessage);
+			summaryContainer.appendChild(skippedMessage);
 		}
-		this.domNode.appendChild(skippedContainer);
+		this.domNode.appendChild(summaryContainer);
 	}
 
 	/**
@@ -1595,7 +1594,7 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		// If no answers, show the terminal-state (Skipped/Answered) message
 		if (this._answers.size === 0) {
 			if (this.carousel.isUsed) {
-				this.renderSkippedMessage();
+				this.renderTerminalStateMessage();
 			}
 			return;
 		}
