@@ -2305,12 +2305,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._onSessionShown(widget.viewModel?.sessionResource);
 	}
 
-	/**
-	 * A session became visible in a chat widget (opened/revealed). Treat it like a
-	 * focus change: mark it active, flush any buffered response, clear its pending
-	 * indicator, and re-send context so the backend re-narrates a confirmation it
-	 * had downgraded while the session was unfocused.
-	 */
+	/** A session became visible (opened/revealed): treat like a focus change — make it active, flush any buffered response, clear its pending indicator, and narrate its pending item. */
 	private _onSessionShown(resource: URI | undefined): void {
 		// In embedder-driven mode, widget swaps are not authoritative and can
 		// flush the wrong session or thrash the active one.
@@ -2325,18 +2320,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._activateShownSession(resource!);
 	}
 
-	/**
-	 * Make a shown/focused session the active one: flush its buffered response,
-	 * clear its pending indicator, and re-send context so the backend narrates a
-	 * pending confirmation/response immediately.
-	 *
-	 * If the session awaits confirmation but its model isn't resident yet, we also
-	 * kick off a load so the confirmation detail becomes available. We still send
-	 * context immediately - `_buildSessionContext` holds a confirmation whose
-	 * detail isn't ready as `thinking`, so the backend narrates exactly once (with
-	 * the detail) rather than a detail-less "I don't see an approval" followed by
-	 * the real one.
-	 */
+	/** Make a shown/focused session active: flush its buffered response, clear its pending indicator, and narrate its pending confirmation/response (loading the model first if a confirmation's detail isn't resident). */
 	private _activateShownSession(resource: URI): void {
 		const key = resource.toString();
 		this._lastShownSessionId = key;
@@ -3291,11 +3275,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 						fallbackState = prev.state;
 					}
 				}
-				// A confirmation whose model isn't resident has no detail yet.
-				// Report `thinking` (hold) so the backend doesn't narrate a
-				// detail-less confirmation ("I don't see an approval") now and the
-				// real one moments later; the autorun re-narrates once with detail
-				// after the model loads. Ensure that load is in flight.
+				// A confirmation whose model isn't resident has no detail yet; report `thinking` (and load the model) so the backend's state tracking doesn't briefly show a detail-less confirmation. Narration follows once the detail renders.
 				if (fallbackState === 'waiting_for_confirmation') {
 					this._ensureModelLoaded(s.resource);
 					fallbackState = 'thinking';
@@ -3316,9 +3296,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// Capture the summary while the model is resident so a later
 			// completion reported after the model is disposed can still narrate.
 			this._cacheResponseSummary(s.resource.toString(), stateInfo.state, stateInfo.last_response_summary);
-			// A confirmation whose detail hasn't rendered yet is held as
-			// `thinking` for the same reason as the no-model case above: narrate
-			// exactly once, with the detail, rather than a detail-less one first.
+			// Report a detail-less confirmation as `thinking` so the backend's state tracking doesn't briefly show a confirmation without its detail; narration is driven separately once the detail renders.
 			const detailPending = stateInfo.state === 'waiting_for_confirmation' && !stateInfo.detail;
 			// Hold a summary-less idle while an eager reload is still replaying the
 			// response, so we don't ship (and consume) the idle before the summary
