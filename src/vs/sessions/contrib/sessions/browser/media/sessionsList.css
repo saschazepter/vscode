@@ -335,6 +335,10 @@
 		margin-left: -6px;
 		padding: 4px 4px 4px 8px;
 		box-sizing: border-box;
+		/* Reset the inherited list-row line-height (set to the full row height),
+			otherwise the single-line label's line box grows to the whole row and
+			pushes the content out of the clipped row. */
+		line-height: 18px;
 		border: var(--vscode-strokeThickness) solid var(--vscode-charts-orange);
 		border-radius: var(--vscode-cornerRadius-large);
 		background-color: color-mix(in srgb, var(--vscode-charts-orange) 6%, var(--vscode-editor-background));
