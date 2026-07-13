@@ -3,6 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+.automations-editor-pane {
+	height: 100%;
+	overflow: hidden;
+}
+
 .automations-cards-widget {
 	display: flex;
 	flex-direction: column;
@@ -16,16 +21,16 @@
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	margin-bottom: 4px;
+	margin-bottom: 16px;
 }
 
 .automations-cards-header-icon {
-	font-size: 18px;
-	color: var(--vscode-icon-foreground);
+	font-size: 16px;
+	color: var(--vscode-descriptionForeground);
 }
 
 .automations-cards-header-title {
-	font-size: 18px;
+	font-size: 13px;
 	font-weight: 600;
 	color: var(--vscode-foreground);
 	margin: 0;
@@ -34,21 +39,26 @@
 
 .automations-cards-new-button {
 	flex-shrink: 0;
+	max-width: 140px;
+}
+
+.automations-cards-new-button .monaco-button {
+	padding: 4px 12px;
+	font-size: 12px;
 }
 
 /* Card Grid */
 .automations-cards-grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-	gap: 12px;
-	margin-top: 16px;
+	grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+	gap: 10px;
 }
 
 /* Individual Card */
 .automations-card {
 	display: flex;
 	flex-direction: column;
-	padding: 12px 14px 14px;
+	padding: 10px 12px 12px;
 	border: 1px solid var(--vscode-widget-border);
 	border-radius: 6px;
 	background: var(--vscode-sideBar-background);
@@ -74,8 +84,8 @@
 }
 
 .automations-card-name {
-	font-size: 13px;
-	font-weight: 600;
+	font-size: 12px;
+	font-weight: 500;
 	color: var(--vscode-foreground);
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -84,9 +94,9 @@
 }
 
 .automations-card-disabled-badge {
-	font-size: 11px;
-	padding: 1px 6px;
-	border-radius: 4px;
+	font-size: 10px;
+	padding: 1px 5px;
+	border-radius: 3px;
 	background: var(--vscode-badge-background);
 	color: var(--vscode-badge-foreground);
 	flex-shrink: 0;
@@ -101,9 +111,9 @@
 
 /* Card Prompt */
 .automations-card-prompt {
-	font-size: 12px;
+	font-size: 11px;
 	color: var(--vscode-descriptionForeground);
-	line-height: 1.4;
+	line-height: 1.45;
 	margin: 0;
 	flex: 1;
 	overflow: hidden;
@@ -130,6 +140,7 @@
 
 .automations-card-last-run {
 	flex-shrink: 0;
+	margin-left: auto;
 }
 
 .automations-card-run-failed {
@@ -145,7 +156,7 @@
 	display: flex;
 	align-items: center;
 	gap: 6px;
-	margin-top: 8px;
+	margin-top: 6px;
 }
 
 .automations-card-action-btn {
@@ -158,7 +169,7 @@
 	padding: 3px 8px;
 	border-radius: 4px;
 	background: var(--vscode-button-secondaryBackground);
-	border: 1px solid var(--vscode-button-secondaryBorder, transparent);
+	border: 1px solid var(--vscode-button-secondaryBorder, var(--vscode-button-border, var(--vscode-contrastBorder, transparent)));
 }
 
 .automations-card-action-btn:hover {
@@ -172,30 +183,38 @@
 	align-items: center;
 	justify-content: center;
 	text-align: center;
-	padding: 60px 20px;
+	padding: 48px 20px;
 	gap: 8px;
+	flex: 1;
 }
 
 .automations-cards-empty-icon {
-	font-size: 32px;
+	font-size: 28px;
 	color: var(--vscode-descriptionForeground);
-	margin-bottom: 8px;
+	margin-bottom: 4px;
+	opacity: 0.7;
 }
 
 .automations-cards-empty-title {
-	font-size: 16px;
+	font-size: 14px;
 	font-weight: 600;
 	color: var(--vscode-foreground);
 	margin: 0;
 }
 
 .automations-cards-empty-description {
-	font-size: 13px;
+	font-size: 12px;
 	color: var(--vscode-descriptionForeground);
 	margin: 0 0 12px;
-	max-width: 360px;
+	max-width: 320px;
+	line-height: 1.4;
 }
 
 .automations-cards-create-button {
-	min-width: 160px;
+	max-width: 180px;
+}
+
+.automations-cards-create-button .monaco-button {
+	padding: 6px 16px;
+	font-size: 12px;
 }

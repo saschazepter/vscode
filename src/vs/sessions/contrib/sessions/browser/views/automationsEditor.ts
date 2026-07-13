@@ -74,14 +74,15 @@ export class AutomationsCardsWidget extends Disposable {
 		const titleRow = DOM.append(this.headerEl, $('.automations-cards-header-row'));
 		const iconEl = DOM.append(titleRow, $('span.automations-cards-header-icon'));
 		iconEl.classList.add(...ThemeIcon.asClassNameArray(automationIcon));
-		const titleEl = DOM.append(titleRow, $('h2.automations-cards-header-title'));
+		const titleEl = DOM.append(titleRow, $('span.automations-cards-header-title'));
 		titleEl.textContent = localize('automationsTitle', "Automations");
 
 		const newButton = this._register(new Button(titleRow, {
 			...defaultButtonStyles,
+			secondary: true,
 			title: localize('newAutomation', "New automation"),
 		}));
-		newButton.label = localize('newAutomation', "New automation");
+		newButton.label = localize('newAutomationShort', "+ New");
 		newButton.element.classList.add('automations-cards-new-button');
 		this._register(newButton.onDidClick(() => this.openCreateDialog()));
 	}
