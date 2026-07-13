@@ -3,17 +3,21 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-.automations-editor-pane {
-	height: 100%;
-	overflow: hidden;
-}
-
 .automations-cards-widget {
 	display: flex;
 	flex-direction: column;
+	align-items: center;
 	height: 100%;
 	overflow-y: auto;
-	padding: 20px 24px;
+	padding: 32px 24px;
+}
+
+/* Centered content band */
+.automations-cards-header,
+.automations-cards-grid,
+.automations-cards-empty {
+	width: 100%;
+	max-width: 900px;
 }
 
 /* Header */
@@ -21,7 +25,6 @@
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	margin-bottom: 16px;
 }
 
 .automations-cards-header-icon {
@@ -30,11 +33,18 @@
 }
 
 .automations-cards-header-title {
-	font-size: 13px;
+	font-size: 16px;
 	font-weight: 600;
 	color: var(--vscode-foreground);
 	margin: 0;
 	flex: 1;
+}
+
+.automations-cards-header-description {
+	font-size: 12px;
+	color: var(--vscode-descriptionForeground);
+	margin: 4px 0 16px;
+	line-height: 1.4;
 }
 
 .automations-cards-new-button {
@@ -47,133 +57,145 @@
 	font-size: 12px;
 }
 
-/* Card Grid */
+/* Card Grid — wraps into new rows */
 .automations-cards-grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-	gap: 10px;
+	grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+	gap: 12px;
+}
+
+/* Card Wrapper */
+.automations-card-wrapper {
+	display: flex;
+	flex-direction: column;
+	border-radius: 6px;
+	overflow: hidden;
 }
 
 /* Individual Card */
 .automations-card {
 	display: flex;
-	flex-direction: column;
-	padding: 10px 12px 12px;
+	flex-direction: row;
+	align-items: flex-start;
+	gap: 12px;
+	padding: 12px 16px;
 	border: 1px solid var(--vscode-widget-border);
 	border-radius: 6px;
-	background: var(--vscode-sideBar-background);
 	cursor: pointer;
-	transition: background-color 0.1s ease;
-	gap: 6px;
 }
 
 .automations-card:hover {
-	background: var(--vscode-list-hoverBackground);
+	background-color: var(--vscode-list-hoverBackground);
 }
 
-.automations-card:focus-visible {
+.automations-card:has(:focus-visible) {
 	outline: 1px solid var(--vscode-focusBorder);
 	outline-offset: -1px;
 }
 
-/* Card Header */
-.automations-card-header {
+/* Card Main Content */
+.automations-card-main {
 	display: flex;
-	align-items: center;
-	gap: 8px;
+	flex-direction: column;
+	gap: 4px;
+	flex: 1;
+	min-width: 0;
 }
 
+/* Card Name */
 .automations-card-name {
-	font-size: 12px;
-	font-weight: 500;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+	word-break: break-word;
+}
+
+.automations-card-name-text {
+	font-size: 13px;
+	font-weight: 600;
 	color: var(--vscode-foreground);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	flex: 1;
 }
 
 .automations-card-disabled-badge {
-	font-size: 10px;
-	padding: 1px 5px;
-	border-radius: 3px;
-	background: var(--vscode-badge-background);
-	color: var(--vscode-badge-foreground);
-	flex-shrink: 0;
+	font-size: 12px;
+	font-weight: 400;
+	font-style: italic;
+	color: var(--vscode-descriptionForeground);
 }
 
-/* Card Schedule */
-.automations-card-schedule {
-	font-size: 11px;
+/* Card Metadata */
+.automations-card-meta {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
 	color: var(--vscode-descriptionForeground);
-	margin: 0;
+	flex-wrap: wrap;
+}
+
+.automations-card-meta-sep {
+	opacity: 0.6;
+}
+
+.automations-card-last-run.automations-card-run-failed {
+	color: var(--vscode-errorForeground);
+}
+
+.automations-card-last-run.automations-card-run-success {
+	color: var(--vscode-testing-iconPassed);
 }
 
 /* Card Prompt */
 .automations-card-prompt {
-	font-size: 11px;
+	font-size: 12px;
 	color: var(--vscode-descriptionForeground);
-	line-height: 1.45;
-	margin: 0;
-	flex: 1;
+	margin-top: 2px;
 	overflow: hidden;
+	text-overflow: ellipsis;
+	word-break: break-word;
 	display: -webkit-box;
-	-webkit-line-clamp: 3;
+	-webkit-line-clamp: 2;
 	-webkit-box-orient: vertical;
 }
 
-/* Card Footer */
-.automations-card-footer {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	margin-top: 4px;
-	font-size: 11px;
-	color: var(--vscode-descriptionForeground);
-}
-
-.automations-card-folder {
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.automations-card-last-run {
-	flex-shrink: 0;
-	margin-left: auto;
-}
-
-.automations-card-run-failed {
-	color: var(--vscode-errorForeground);
-}
-
-.automations-card-run-success {
-	color: var(--vscode-testing-iconPassed);
-}
-
-/* Card Actions */
+/* Card Action Buttons (icon-only, matching native pattern) */
 .automations-card-actions {
 	display: flex;
-	align-items: center;
-	gap: 6px;
-	margin-top: 6px;
-}
-
-.automations-card-action-btn {
-	font-size: 11px;
-	color: var(--vscode-button-secondaryForeground);
-	cursor: pointer;
-	display: flex;
-	align-items: center;
+	flex-direction: row;
 	gap: 4px;
-	padding: 3px 8px;
-	border-radius: 4px;
-	background: var(--vscode-button-secondaryBackground);
-	border: 1px solid var(--vscode-button-secondaryBorder, var(--vscode-button-border, var(--vscode-contrastBorder, transparent)));
+	align-items: center;
+	flex: 0 0 auto;
 }
 
-.automations-card-action-btn:hover {
-	background: var(--vscode-button-secondaryHoverBackground);
+.automations-card-action-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--vscode-icon-foreground);
+	cursor: pointer;
+	font-size: 16px;
+}
+
+.automations-card-action-button:hover:not(:disabled) {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.automations-card-action-button:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.automations-card-action-button:disabled {
+	opacity: 0.4;
+	cursor: default;
 }
 
 /* Empty State */
