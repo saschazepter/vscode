@@ -26,7 +26,7 @@ import { isLocation, type Location } from '../../../../../../editor/common/langu
 import type { ITextModel } from '../../../../../../editor/common/model.js';
 import { IModelService } from '../../../../../../editor/common/services/model.js';
 import { localize } from '../../../../../../nls.js';
-import { AgentProvider, AgentSession, CODEX_AGENT_PROVIDER_ID, type IAgentConnection } from '../../../../../../platform/agentHost/common/agentService.js';
+import { AgentProvider, AgentSession, type IAgentConnection } from '../../../../../../platform/agentHost/common/agentService.js';
 import { agentHostAuthority } from '../../../../../../platform/agentHost/common/agentHostUri.js';
 import { AgentFeedbackAttachmentDisplayKind, AgentFeedbackAttachmentMetadataKey } from '../../../../../../platform/agentHost/common/meta/agentFeedbackAttachments.js';
 import { BrowserViewAttachmentDisplayKind, BrowserViewAttachmentMetadataKey } from '../../../../../../platform/agentHost/common/meta/browserViewAttachments.js';
@@ -64,7 +64,7 @@ import {
 } from '../../../common/attachments/chatVariableEntries.js';
 import { coerceImageBuffer } from '../../../common/chatImageExtraction.js';
 import { ChatRequestQueueKind, ConfirmedReason, ElicitationState, IChatProgress, IChatQuestion, IChatQuestionAnswers, IChatService, IChatToolInvocation, ToolConfirmKind, type IChatMcpAuthenticationRequired, type IChatMcpAuthenticationRequiredServer, type IChatMcpStartingServer, type IChatMultiSelectAnswer, type IChatPlanReviewResult, type IChatQuestionAnswerValue, type IChatResponseErrorDetails, type IChatSingleSelectAnswer, type IChatTerminalToolInvocationData } from '../../../common/chatService/chatService.js';
-import { IChatSession, IChatSessionContentProvider, IChatSessionHistoryItem, IChatSessionItem, IChatSessionRequestHistoryItem, isTerminalCommandPrompt, SessionType, type IChatInputCompletionItem, type IChatInputCompletionsParams, type IChatInputCompletionsResult, type IChatSessionServerRequest } from '../../../common/chatSessionsService.js';
+import { IChatSession, IChatSessionContentProvider, IChatSessionHistoryItem, IChatSessionItem, IChatSessionRequestHistoryItem, isTerminalCommandPrompt, type IChatInputCompletionItem, type IChatInputCompletionsParams, type IChatInputCompletionsResult, type IChatSessionServerRequest } from '../../../common/chatSessionsService.js';
 import { IChatEntitlementService } from '../../../../../services/chat/common/chatEntitlementService.js';
 import { IWorkingCopyService } from '../../../../../services/workingCopy/common/workingCopyService.js';
 import { ChatMode } from '../../../common/chatModes.js';
@@ -1175,14 +1175,13 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			return {};
 		}
 
-		// Creating/resuming an agent-host session can take several seconds on
-		// first use (CLI spawn, git worktree, plugin snapshot) — work done below
-		// before any turn progress is emitted. Show a shimmering status only if the
-		// turn is slow to start, cancelled as soon as real progress streams, so
-		// established sessions' fast turns never flash it.
-		const preparingStatus = disposableTimeout(() => {
-			progress([{ kind: 'progressMessage', content: new MarkdownString(localize('agentHost.preparingSession', "Preparing session…")), shimmer: true }]);
-		}, 500);
+		// A "Continue in…" migration from a local chat seeds the whole imported
+		// conversation eagerly (CLI spawn, seeding turns) before any turn progress
+		// streams, leaving the widget transiently empty. Only for that migration
+		// case show a shimmering status if the turn is slow to start, cancelled as
+		// soon as real progress streams. Normal agent-host sessions — whose first
+		// turn is also slow to spawn — never flash it.
+		const preparingStatus = new MutableDisposable();
 
 		try {
 			const resolvedSession = this._resolveSessionUri(request.sessionResource);
@@ -1215,6 +1214,13 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				// If a conversation was imported ("Continue in…") into this
 				// session, seed it as real editable history at creation time.
 				const imported = this._importConversationStore.take(request.sessionResource);
+				if (imported) {
+					// Migration case: materializing the imported conversation is the
+					// slow, visually-blank phase — arm the "Preparing session…" status.
+					preparingStatus.value = disposableTimeout(() => {
+						progress([{ kind: 'progressMessage', content: new MarkdownString(localize('agentHost.preparingSession', "Preparing session…")), shimmer: true }]);
+					}, 500);
+				}
 				const model = imported?.model ?? this._createModelSelection(request.userSelectedModelId, request.modelConfiguration);
 				await this._createAndSubscribe(request.sessionResource, model, undefined, request.agentHostSessionConfig, imported ? { turns: imported.turns, model: imported.model } : undefined);
 			} else {
@@ -1249,7 +1255,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			let firstProgress: number | undefined;
 			const measuredProgress = (parts: IChatProgress[]) => {
 				// Real progress has started — cancel the pending "preparing" status.
-				preparingStatus.dispose();
+				preparingStatus.clear();
 				if (firstProgress === undefined && parts.some(isFirstVisibleProgressPart)) {
 					firstProgress = stopWatch.elapsed();
 				}
@@ -4022,14 +4028,8 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				existingKeys.add(key);
 			}
 		}
-		// Backends that read files from disk can't see an untitled buffer, so don't forward it as a
-		// broken path unless we inline its live text below.
-		const skipUntitled = !this._backendInlinesUnsavedEditors();
 		for (const entry of implicitContext.values) {
 			if (entry.value === undefined) {
-				continue;
-			}
-			if (skipUntitled && entry.uri?.scheme === Schemas.untitled) {
 				continue;
 			}
 			const key = this._fileEntryDedupeKey(entry, request.sessionResource);
@@ -4073,16 +4073,6 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		}
 		const { start, end } = selection.range;
 		return `${uri}#${start.line}:${start.character}-${end.line}:${end.character}`;
-	}
-
-	/**
-	 * Whether this backend reads referenced files from disk (rather than seeing the editor's
-	 * in-memory buffer) and therefore needs the live text of an unsaved / dirty editor inlined as
-	 * an embedded resource. Copilot CLI and Codex both run as separate processes with only disk
-	 * access, so a `@path` mention (or an `untitled:` URI) would give them stale or missing content.
-	 */
-	private _backendInlinesUnsavedEditors(): boolean {
-		return this._config.provider === SessionType.CopilotCLI || this._config.provider === CODEX_AGENT_PROVIDER_ID;
 	}
 
 	/** A resource is unsaved when it's untitled or a saved file with in-memory (dirty) changes. */
@@ -4172,8 +4162,9 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 
 	private _convertVariableToAttachment(v: IChatRequestVariableEntry, sessionResource: URI, messageText?: string): MessageAttachment | MessageAttachment[] | undefined {
 		const referenceRange = this._toAttachmentReferenceRange(messageText, v.range);
-		// Copilot CLI and Codex can't read unsaved content from disk, so inline the live buffer; drop unreadable schemes.
-		if ((v.kind === 'file' || v.kind === 'implicit') && this._backendInlinesUnsavedEditors()) {
+		// Agent-host backends run out-of-process and read referenced files from disk, so inline the live
+		// buffer of an unsaved / dirty editor; drop unreadable schemes.
+		if (v.kind === 'file' || v.kind === 'implicit') {
 			const uri = isLocation(v.value) ? v.value.uri : (v.value instanceof URI ? v.value : undefined);
 			if (uri && this._isUnsavedResource(uri)) {
 				const embedded = this._buildUnsavedEditorAttachment(uri, v, referenceRange);
