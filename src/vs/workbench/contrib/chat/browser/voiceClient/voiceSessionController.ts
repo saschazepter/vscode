@@ -1297,12 +1297,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				return;
 			}
 			if (allowedTools.includes(e.name)) {
-				// Passive, backend-initiated queries (read-only session inspection)
-				// must NOT disturb the user's turn: dispatching them like an action
-				// tool calls _finishPtt() and drives the state machine to idle,
-				// which kills a just-started auto-listen the instant the backend
-				// probes the session on connect. Answer them without touching PTT,
-				// status, awaiting-reply, or voice state.
+				// Answer read-only backend queries without touching PTT/state, so the backend's connect-time probe can't end a just-started auto-listen.
 				const passiveTools = ['get_session_info', 'get_session_changes', 'get_session_thread'];
 				if (passiveTools.includes(e.name)) {
 					this.voiceToolDispatchService.dispatchToolCall(e).then(result => {
@@ -1616,11 +1611,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (!this._pttHeld) { return; }
 		this._clearAutoListenTimer();
 		this._pttHeld = false;
-		// Finishing a turn always ends toggle (hands-free) mode. Clearing it here
-		// centralizes the invariant so callers that finish a turn out-of-band
-		// (e.g. a backend tool_call arriving mid-listen) can't leave a stale
-		// `toggle=true, held=false` state — which makes the next auto-listen's
-		// synthetic pttDown fire as a "second tap" and kill listening instantly.
+		// End toggle (hands-free) mode on every turn-ending path, so an out-of-band finish can't leave a stale toggle that self-kills the next auto-listen.
 		this._pttToggleMode = false;
 		this._telemetryPttUpMs = Date.now();
 		const holdMs = this._telemetryPttDownMs ? Date.now() - this._telemetryPttDownMs : 0;
