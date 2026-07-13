@@ -1873,7 +1873,9 @@ export class CopilotAgentSession extends Disposable {
 					invocationMessage,
 					toolInput,
 					confirmationTitle,
-					approvalReason: recommendation !== 'approve' ? autoApproval?.reason : undefined,
+					confirmationReason: recommendation !== 'approve' && autoApproval?.reason
+						? { kind: ToolCallConfirmationReason.Judge, reason: autoApproval.reason }
+						: undefined,
 					edits,
 				},
 				permissionKind,

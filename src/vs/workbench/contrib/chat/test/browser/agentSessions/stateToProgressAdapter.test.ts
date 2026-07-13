@@ -1481,7 +1481,10 @@ suite('stateToProgressAdapter', () => {
 						invocationMessage: 'Run command',
 						status: ToolCallStatus.PendingConfirmation,
 						confirmationTitle: 'Run command',
-						approvalReason: 'The command removes a project file.',
+						confirmationReason: {
+							kind: ToolCallConfirmationReason.Judge,
+							reason: 'The command removes a project file.',
+						},
 						toolInput: 'echo hello',
 					},
 				},

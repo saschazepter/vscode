@@ -1213,15 +1213,6 @@ export class AgentSideEffects extends Disposable {
 				if (values) {
 					this._persistSessionFlag(channel, 'configValues', JSON.stringify(values));
 				}
-				const agent = this._options.getAgent(channel);
-				agent?.onSessionConfigChanged?.(URI.parse(channel), action.config).catch(err => {
-					this._logService.error(err, `[AgentSideEffects] Failed to apply session config change for ${channel}`);
-					const currentState = this._stateManager.getSessionState(channel);
-					const aborts = currentState?.chats.map(chat => agent.chats.abort(URI.parse(chat.resource))) ?? [];
-					void Promise.allSettled(aborts)
-						.then(() => agent.releaseSession?.(URI.parse(channel)))
-						.catch(releaseError => this._logService.error(releaseError, `[AgentSideEffects] Failed to release session after config sync failure for ${channel}`));
-				});
 				break;
 			}
 			case ActionType.ChatToolCallComplete: {

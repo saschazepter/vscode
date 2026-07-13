@@ -11,7 +11,7 @@ import { Schemas } from '../../../../../../base/common/network.js';
 import { posix, win32 } from '../../../../../../base/common/path.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { generateUuid } from '../../../../../../base/common/uuid.js';
-import { buildSubagentChatUri, MessageKind, ToolCallContributorKind, ToolCallStatus, TurnState, ResponsePartKind, getToolFileEdits, getToolOutputText, getToolSubagentContent, readUsageInfoMeta, type ActiveTurn, type ICompletedToolCall, type Message, type ToolCallState, type ToolResultSubagentContent, type Turn, FileEditKind, ToolResultContentType, type ToolResultContent, type UsageInfo, type UsageInfoMeta } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { buildSubagentChatUri, MessageKind, ToolCallConfirmationReason, ToolCallContributorKind, ToolCallStatus, TurnState, ResponsePartKind, getToolFileEdits, getToolOutputText, getToolSubagentContent, readUsageInfoMeta, type ActiveTurn, type ICompletedToolCall, type Message, type ToolCallState, type ToolResultSubagentContent, type Turn, FileEditKind, ToolResultContentType, type ToolResultContent, type UsageInfo, type UsageInfoMeta } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { getToolKind } from '../../../../../../platform/agentHost/common/state/sessionReducers.js';
 import { readToolCallMeta } from '../../../../../../platform/agentHost/common/meta/agentToolCallMeta.js';
 import { getChatErrorDetailsFromMeta, IChatErrorContext } from '../../../common/chatErrorMessages.js';
@@ -1750,6 +1750,7 @@ export function toolCallStateToInvocation(tc: ToolCallState, subAgentInvocationI
 		// Copilot SDK's `task` tool doesn't request permission, and the event
 		// mapper auto-emits `tool_ready` with `confirmed: NotNeeded` paired
 		// with `tool_start`. So no special-case for subagents is needed here.)
+		const confirmationReason = tc.confirmationReason;
 		const confirmationMessages: IToolConfirmationMessages = {
 			title: isViewUnreviewedCommentsTool(tc.toolName)
 				? localize('agentFeedback.reviewTitle', "Reveal unreviewed comments?")
@@ -1757,7 +1758,7 @@ export function toolCallStateToInvocation(tc: ToolCallState, subAgentInvocationI
 			message: isViewUnreviewedCommentsTool(tc.toolName)
 				? localize('agentFeedback.reviewMessage', "Choose which comments to reveal to the agent. Unchecked comments stay hidden.")
 				: stringOrMarkdownToString(tc.invocationMessage, connectionAuthority),
-			approvalReason: tc.approvalReason,
+			approvalReason: confirmationReason?.kind === ToolCallConfirmationReason.Judge ? confirmationReason.reason : undefined,
 		};
 		if (tc.options) {
 			confirmationMessages.customOptions = tc.options;

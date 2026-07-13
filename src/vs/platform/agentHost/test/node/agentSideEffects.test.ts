@@ -2718,43 +2718,6 @@ suite('AgentSideEffects', () => {
 			]);
 		});
 
-		test('forwards live approval-level changes to the agent runtime', async () => {
-			const configOnlySession = AgentSession.uri('mock', 'config-only');
-			const action = {
-				type: ActionType.SessionConfigChanged as const,
-				config: { [SessionConfigKey.AutoApprove]: 'default' },
-			};
-
-			sideEffects.handleAction(configOnlySession.toString(), action);
-
-			assert.deepStrictEqual(agent.sessionConfigChangedCalls.map(call => ({
-				session: call.session.toString(),
-				config: call.config,
-			})), [{
-				session: configOnlySession.toString(),
-				config: { [SessionConfigKey.AutoApprove]: 'default' },
-			}]);
-		});
-
-		test('fails closed when applying a live approval-level change fails', async () => {
-			setupSession();
-			agent.sessionConfigChangedError = new Error('permission mode update failed');
-			const action = {
-				type: ActionType.SessionConfigChanged as const,
-				config: { [SessionConfigKey.AutoApprove]: 'default' },
-			};
-
-			sideEffects.handleAction(sessionUri.toString(), action);
-			await timeout(0);
-
-			assert.deepStrictEqual({
-				aborted: agent.abortSessionCalls.map(session => session.toString()),
-				released: agent.releaseSessionCalls.map(session => session.toString()),
-			}, {
-				aborted: [sessionUri.toString()],
-				released: [sessionUri.toString()],
-			});
-		});
 	});
 
 	// ---- Edit auto-approve ----------------------------------------------

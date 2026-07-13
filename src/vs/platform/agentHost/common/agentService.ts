@@ -1544,9 +1544,6 @@ export interface IAgent {
 	/** Respond to a pending permission request from the SDK. */
 	respondToPermissionRequest(requestId: string, approved: boolean): void;
 
-	/** Apply a live session configuration change to provider runtime state. */
-	onSessionConfigChanged?(session: URI, config: Record<string, unknown>): Promise<void>;
-
 	/** Respond to a pending user input request from the SDK's ask_user tool. */
 	respondToUserInputRequest(requestId: string, response: ChatInputResponseKind, answers?: Record<string, ChatInputAnswer>): void;
 

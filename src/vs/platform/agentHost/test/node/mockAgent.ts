@@ -64,8 +64,6 @@ export class MockAgent implements IAgent {
 	readonly releaseSessionCalls: URI[] = [];
 	readonly abortSessionCalls: URI[] = [];
 	readonly respondToPermissionCalls: { requestId: string; approved: boolean }[] = [];
-	readonly sessionConfigChangedCalls: { session: URI; config: Record<string, unknown> }[] = [];
-	sessionConfigChangedError: Error | undefined;
 	readonly changeModelCalls: { session: URI; model: ModelSelection; chat?: URI }[] = [];
 	readonly changeAgentCalls: { session: URI; agent: AgentSelection | undefined; chat?: URI }[] = [];
 	readonly authenticateCalls: { resource: string; token: string }[] = [];
@@ -177,13 +175,6 @@ export class MockAgent implements IAgent {
 		// Non-destructive: record the call but keep the session in the catalog
 		// so a later restore/resume still finds its durable data.
 		this.releaseSessionCalls.push(session);
-	}
-
-	async onSessionConfigChanged(session: URI, config: Record<string, unknown>): Promise<void> {
-		this.sessionConfigChangedCalls.push({ session, config });
-		if (this.sessionConfigChangedError) {
-			throw this.sessionConfigChangedError;
-		}
 	}
 
 	async abortSession(session: URI): Promise<void> {

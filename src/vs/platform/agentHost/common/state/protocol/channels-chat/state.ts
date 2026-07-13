@@ -911,6 +911,7 @@ export const enum ToolCallStatus {
  * - `NotNeeded` — No confirmation required (auto-approved)
  * - `UserAction` — User explicitly approved
  * - `Setting` — Approved by a persistent user setting
+ * - `Judge` — A model judge required user confirmation
  *
  * @category Tool Call Types
  */
@@ -918,6 +919,7 @@ export const enum ToolCallConfirmationReason {
 	NotNeeded = 'not-needed',
 	UserAction = 'user-action',
 	Setting = 'setting',
+	Judge = 'judge',
 }
 
 /**
@@ -1086,8 +1088,11 @@ export interface ToolCallPendingConfirmationState extends ToolCallBase, ToolCall
 	status: ToolCallStatus.PendingConfirmation;
 	/** Short title for the confirmation prompt (e.g. `"Run in terminal"`, `"Write file"`) */
 	confirmationTitle?: StringOrMarkdown;
-	/** Model-provided explanation for why automatic approval was not recommended. */
-	approvalReason?: string;
+	/** Why the tool requires user confirmation. */
+	confirmationReason?: {
+		kind: ToolCallConfirmationReason.Judge;
+		reason: string;
+	};
 	/** File edits that this tool call will perform, for preview before confirmation */
 	edits?: { items: FileEdit[] };
 	/** Whether the agent host allows the client to edit the tool's input parameters before confirming */
