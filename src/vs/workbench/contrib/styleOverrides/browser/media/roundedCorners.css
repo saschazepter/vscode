@@ -209,54 +209,6 @@
 	overflow: hidden;
 }
 
-.style-override .editor-widget.suggest-widget.details-east {
-	border-radius: var(--vscode-cornerRadius-large) 0 var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) !important;
-}
-
-.style-override .monaco-editor .suggest-details.details-east {
-	border-radius: 0 var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) !important;
-}
-
-.style-override .editor-widget.suggest-widget.details-east.details-align-bottom {
-	border-radius: var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) 0 var(--vscode-cornerRadius-large) !important;
-}
-
-.style-override .monaco-editor .suggest-details.details-east.details-align-bottom {
-	border-radius: var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) 0 !important;
-}
-
-.style-override .editor-widget.suggest-widget.details-west {
-	border-radius: 0 var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) !important;
-}
-
-.style-override .monaco-editor .suggest-details.details-west {
-	border-radius: var(--vscode-cornerRadius-large) 0 var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) !important;
-}
-
-.style-override .editor-widget.suggest-widget.details-west.details-align-bottom {
-	border-radius: var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) 0 !important;
-}
-
-.style-override .monaco-editor .suggest-details.details-west.details-align-bottom {
-	border-radius: var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) 0 var(--vscode-cornerRadius-large) !important;
-}
-
-.style-override .editor-widget.suggest-widget.details-south {
-	border-radius: var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) 0 0 !important;
-}
-
-.style-override .monaco-editor .suggest-details.details-south {
-	border-radius: 0 0 var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) !important;
-}
-
-.style-override .editor-widget.suggest-widget.details-north {
-	border-radius: 0 0 var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) !important;
-}
-
-.style-override .monaco-editor .suggest-details.details-north {
-	border-radius: var(--vscode-cornerRadius-large) var(--vscode-cornerRadius-large) 0 0 !important;
-}
-
 /* Context menus and general menu surfaces */
 .style-override .monaco-menu .monaco-action-bar.vertical {
 	border-radius: var(--vscode-cornerRadius-large) !important;
