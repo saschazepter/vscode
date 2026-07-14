@@ -6,11 +6,26 @@
 import assert from 'assert';
 import { URI } from '../../../../../../base/common/uri.js';
 import { type ProtectedResourceMetadata } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
+import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
 import { type AgentInfo } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { mock } from '../../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { NullLogService } from '../../../../../../platform/log/common/log.js';
 import { IAuthenticationService } from '../../../../../services/authentication/common/authentication.js';
-import { authenticateProtectedResources, resolveAuthenticationInteractively, resolveTokenForResource, AgentHostAuthTokenCache, agentHostMcpServerId } from '../../../browser/agentSessions/agentHost/agentHostAuth.js';
+import { CHAT_SETUP_ACTION_ID } from '../../../browser/actions/chatActions.js';
+import { authenticateProtectedResources, resolveAuthenticationInteractively, resolveTokenForResource, AgentHostAuthTokenCache, agentHostMcpServerId, type IAgentHostAuthenticationOptions } from '../../../browser/agentSessions/agentHost/agentHostAuth.js';
+
+class TestCommandService extends mock<ICommandService>() {
+	readonly calls: { commandId: string; args: unknown[] }[] = [];
+	result = true;
+	onExecute: (() => void) | undefined;
+
+	override async executeCommand<R = unknown>(commandId: string, ...args: unknown[]): Promise<R | undefined> {
+		this.calls.push({ commandId, args });
+		this.onExecute?.();
+		return this.result as R;
+	}
+}
 
 function createMockAuthService(overrides: {
 	getOrActivateProviderIdForServer?: (serverUri: URI, resourceUri: URI) => Promise<string | undefined>;
@@ -252,7 +267,7 @@ suite('resolveAuthenticationInteractively', () => {
 
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('uses an existing token before prompting for a new session', async () => {
+	test('uses an existing token before prompting and dedupes repeated checks', async () => {
 		let createSessionCalls = 0;
 		const authService = createMockAuthService({
 			getOrActivateProviderIdForServer: () => Promise.resolve('provider-1'),
@@ -269,20 +284,27 @@ suite('resolveAuthenticationInteractively', () => {
 			},
 		});
 		const requests: { resource: string; scopes?: readonly string[]; token: string }[] = [];
+		const cache = new AgentHostAuthTokenCache();
 
-		const success = await resolveAuthenticationInteractively([protectedResource], {
-			authTokenCache: new AgentHostAuthTokenCache(),
+		const options: IAgentHostAuthenticationOptions = {
+			authTokenCache: cache,
 			authenticationService: authService,
 			logPrefix: '[AgentHost]',
 			logService: log,
 			authenticate: async request => {
 				requests.push(request);
 			},
-		});
+		};
+		const results = [
+			await resolveAuthenticationInteractively([protectedResource], options),
+			await resolveAuthenticationInteractively([protectedResource], options),
+		];
 
-		assert.strictEqual(success, true);
-		assert.deepStrictEqual(requests, [{ resource: protectedResource.resource, scopes: ['read'], token: 'existing-token' }]);
-		assert.strictEqual(createSessionCalls, 0);
+		assert.deepStrictEqual({ results, requests, createSessionCalls }, {
+			results: [true, true],
+			requests: [{ resource: protectedResource.resource, scopes: ['read'], token: 'existing-token' }],
+			createSessionCalls: 0,
+		});
 	});
 
 	test('creates a session when no existing token is available', async () => {
@@ -305,5 +327,64 @@ suite('resolveAuthenticationInteractively', () => {
 
 		assert.strictEqual(success, true);
 		assert.deepStrictEqual(requests, [{ resource: protectedResource.resource, scopes: ['read'], token: 'new-token' }]);
+	});
+
+	test('uses the product sign-in flow and forwards its token', async () => {
+		let signedIn = false;
+		const commandService = new TestCommandService();
+		commandService.onExecute = () => signedIn = true;
+		const authService = createMockAuthService({
+			getOrActivateProviderIdForServer: () => Promise.resolve('provider-1'),
+			getSessions: () => Promise.resolve(signedIn ? [{ scopes: ['read'], accessToken: 'signed-in-token' }] : []),
+		});
+		const requests: { resource: string; scopes?: readonly string[]; token: string }[] = [];
+
+		const success = await resolveAuthenticationInteractively([protectedResource], {
+			authTokenCache: new AgentHostAuthTokenCache(),
+			authenticationService: authService,
+			logPrefix: '[AgentHost]',
+			logService: log,
+			authenticate: async request => {
+				requests.push(request);
+			},
+			commandService,
+		});
+
+		assert.deepStrictEqual({ success, commandCalls: commandService.calls, requests }, {
+			success: true,
+			commandCalls: [{
+				commandId: CHAT_SETUP_ACTION_ID,
+				args: [undefined, {
+					forceSignInDialog: true,
+					additionalScopes: ['read'],
+					dialogTitle: 'Sign in to use GitHub Copilot',
+				}],
+			}],
+			requests: [{ resource: protectedResource.resource, scopes: ['read'], token: 'signed-in-token' }],
+		});
+	});
+
+	test('does not fall back to direct provider login when product sign-in is canceled', async () => {
+		const commandService = new TestCommandService();
+		commandService.result = false;
+		let createSessionCalls = 0;
+		const authService = createMockAuthService({
+			getOrActivateProviderIdForServer: () => Promise.resolve('provider-1'),
+			getSessions: () => Promise.resolve([]),
+			createSession: async () => {
+				createSessionCalls++;
+				return { accessToken: 'unexpected-token' };
+			},
+		});
+
+		const success = await resolveAuthenticationInteractively([protectedResource], {
+			authenticationService: authService,
+			logPrefix: '[AgentHost]',
+			logService: log,
+			authenticate: async () => { },
+			commandService,
+		});
+
+		assert.deepStrictEqual({ success, createSessionCalls }, { success: false, createSessionCalls: 0 });
 	});
 });

@@ -20,6 +20,7 @@ import { type ProtectedResourceMetadata } from '../../../../../platform/agentHos
 import { type AgentInfo, type RootState } from '../../../../../platform/agentHost/common/state/sessionState.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { ConfigurationScope, Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../../../../platform/configuration/common/configurationRegistry.js';
+import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
@@ -280,6 +281,7 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 		@IAgentHostTerminalService private readonly _agentHostTerminalService: IAgentHostTerminalService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@IAgentHostActiveClientService private readonly _activeClientService: IAgentHostActiveClientService,
+		@ICommandService private readonly _commandService: ICommandService,
 	) {
 		super();
 
@@ -989,18 +991,14 @@ export class RemoteAgentHostContribution extends Disposable implements IWorkbenc
 	 */
 	private async _resolveAuthenticationInteractively(address: string, connection: IAgentConnection, protectedResources: readonly ProtectedResourceMetadata[]): Promise<boolean> {
 		const authTokenCache = this._connections.get(address)?.authTokenCache;
-		try {
-			return await resolveAuthenticationInteractively(protectedResources, {
-				authTokenCache,
-				authenticationService: this._authenticationService,
-				logPrefix: '[RemoteAgentHost]',
-				logService: this._logService,
-				authenticate: request => connection.authenticate(request),
-			});
-		} catch (err) {
-			this._logService.error('[RemoteAgentHost] Interactive authentication failed', err);
-		}
-		return false;
+		return resolveAuthenticationInteractively(protectedResources, {
+			authTokenCache,
+			authenticationService: this._authenticationService,
+			logPrefix: '[RemoteAgentHost]',
+			logService: this._logService,
+			authenticate: request => connection.authenticate(request),
+			commandService: this._commandService,
+		});
 	}
 }
 

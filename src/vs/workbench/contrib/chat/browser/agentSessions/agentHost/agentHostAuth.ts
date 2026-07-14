@@ -6,14 +6,17 @@
 import { fetchAuthorizationServerMetadata } from '../../../../../../base/common/oauth.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { type ProtectedResourceMetadata } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
+import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
 import { type AgentInfo } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
 import { ILogService } from '../../../../../../platform/log/common/log.js';
+import { localize } from '../../../../../../nls.js';
 import { IAuthenticationMcpAccessService } from '../../../../../services/authentication/browser/authenticationMcpAccessService.js';
 import { IAuthenticationMcpService } from '../../../../../services/authentication/browser/authenticationMcpService.js';
 import { IAuthenticationMcpUsageService } from '../../../../../services/authentication/browser/authenticationMcpUsageService.js';
 import { AuthenticationSession, IAuthenticationService } from '../../../../../services/authentication/common/authentication.js';
+import { CHAT_SETUP_ACTION_ID } from '../../actions/chatActions.js';
 
 /**
  * Stable identity for an agent-host MCP server, used as the key for
@@ -153,6 +156,7 @@ export interface IAgentHostAuthenticationOptions {
 	readonly logPrefix: string;
 	readonly logService: ILogService;
 	readonly authenticate: (request: IAgentHostAuthenticateRequest) => Promise<unknown>;
+	readonly commandService?: ICommandService;
 }
 
 export interface IAgentHostMcpAuthenticationOptionsBase {
@@ -222,10 +226,22 @@ export async function resolveAuthenticationInteractively(
 	protectedResources: readonly ProtectedResourceMetadata[],
 	options: IAgentHostAuthenticationOptions,
 ): Promise<boolean> {
+	const authenticateToken = async (resource: ProtectedResourceMetadata, scopes: readonly string[], token: string): Promise<void> => {
+		if (options.authTokenCache && !options.authTokenCache.updateAndIsChanged(resource.resource, scopes, token)) {
+			return;
+		}
+		try {
+			await options.authenticate({ resource: resource.resource, scopes, token });
+		} catch (err) {
+			options.authTokenCache?.clear(resource.resource, scopes);
+			throw err;
+		}
+	};
+
 	for (const resource of protectedResources) {
 		const resourceUri = URI.parse(resource.resource);
 		const scopes = resource.scopes_supported ?? [];
-		const token = await resolveTokenForResource(
+		let token = await resolveTokenForResource(
 			resourceUri,
 			resource.authorization_servers ?? [],
 			scopes,
@@ -234,8 +250,32 @@ export async function resolveAuthenticationInteractively(
 			options.logPrefix,
 		);
 		if (token) {
-			await options.authenticate({ resource: resource.resource, scopes, token });
-			options.authTokenCache?.updateAndIsChanged(resource.resource, scopes, token);
+			await authenticateToken(resource, scopes, token);
+			options.logService.info(`${options.logPrefix} Interactive authentication succeeded for ${resource.resource}`);
+			return true;
+		}
+
+		if (options.commandService) {
+			const signedIn = await options.commandService.executeCommand<boolean>(CHAT_SETUP_ACTION_ID, undefined, {
+				forceSignInDialog: true,
+				additionalScopes: scopes,
+				dialogTitle: localize('agentHost.signInDialogTitle', "Sign in to use GitHub Copilot"),
+			});
+			if (!signedIn) {
+				return false;
+			}
+			token = await resolveTokenForResource(
+				resourceUri,
+				resource.authorization_servers ?? [],
+				scopes,
+				options.authenticationService,
+				options.logService,
+				options.logPrefix,
+			);
+			if (!token) {
+				return false;
+			}
+			await authenticateToken(resource, scopes, token);
 			options.logService.info(`${options.logPrefix} Interactive authentication succeeded for ${resource.resource}`);
 			return true;
 		}
@@ -252,8 +292,7 @@ export async function resolveAuthenticationInteractively(
 				authorizationServer: serverUri,
 			});
 
-			await options.authenticate({ resource: resource.resource, scopes, token: session.accessToken });
-			options.authTokenCache?.updateAndIsChanged(resource.resource, scopes, session.accessToken);
+			await authenticateToken(resource, scopes, session.accessToken);
 			options.logService.info(`${options.logPrefix} Interactive authentication succeeded for ${resource.resource}`);
 			return true;
 		}

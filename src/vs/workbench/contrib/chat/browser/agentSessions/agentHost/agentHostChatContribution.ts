@@ -13,6 +13,7 @@ import { IAgentHostEnablementService } from '../../../../../../platform/agentHos
 import { type ProtectedResourceMetadata } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { NotificationType } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
 import { type AgentInfo, type RootState } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IDefaultAccountService } from '../../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';
@@ -118,6 +119,7 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 		@IAgentHostActiveClientService private readonly _activeClientService: IAgentHostActiveClientService,
 		@IAgentHostEnablementService agentHostEnablementService: IAgentHostEnablementService,
+		@ICommandService private readonly _commandService: ICommandService,
 	) {
 		super();
 		this._isSessionsWindow = environmentService.isSessionsWindow;
@@ -363,18 +365,14 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 			}
 			return protectedResources.length > 0;
 		}
-		try {
-			return await resolveAuthenticationInteractively(protectedResources, {
-				authTokenCache: this._authTokenCache,
-				authenticationService: this._authenticationService,
-				logPrefix: '[AgentHost]',
-				logService: this._logService,
-				authenticate: request => this._agentHostService.authenticate(request),
-			});
-		} catch (err) {
-			this._logService.error('[AgentHost] Interactive authentication failed', err);
-		}
-		return false;
+		return resolveAuthenticationInteractively(protectedResources, {
+			authTokenCache: this._authTokenCache,
+			authenticationService: this._authenticationService,
+			logPrefix: '[AgentHost]',
+			logService: this._logService,
+			authenticate: request => this._agentHostService.authenticate(request),
+			commandService: this._commandService,
+		});
 	}
 
 	private async _seedTestToken(agents: readonly AgentInfo[], token: string): Promise<void> {
