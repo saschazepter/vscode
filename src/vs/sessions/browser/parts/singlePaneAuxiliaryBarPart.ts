@@ -17,9 +17,7 @@ import { AuxiliaryBarPart } from './auxiliaryBarPart.js';
 export class SinglePaneAuxiliaryBarPart extends AuxiliaryBarPart {
 
 	override create(parent: HTMLElement): void {
-		// No title strip; the single tab bar lives on the editor part. Clearing
-		// `hasTitle` also stops the part layout from reserving the title height,
-		// which otherwise leaves an empty gap at the bottom of the docked panel.
+		// Clear `hasTitle` so PartLayout does not reserve title height (there is no title strip).
 		this.options = { ...this.options, hasTitle: false };
 		super.create(parent);
 	}
