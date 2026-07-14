@@ -4,12 +4,17 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import sinon from 'sinon';
 import { $ } from '../../../../browser/dom.js';
 import { CONTEXT_VIEW_CLOSE_ANIMATION_DURATION_VARIABLE, ContextView, ContextViewDOMPosition, IDelegate } from '../../../../browser/ui/contextview/contextview.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../common/utils.js';
 
 suite('ContextView', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
+
+	teardown(() => {
+		sinon.restore();
+	});
 
 	test('hide() is re-entrant safe and does not double-dispose render result (#319393)', () => {
 		const container = $('.container');
@@ -40,6 +45,7 @@ suite('ContextView', () => {
 	});
 
 	test('hide() delays render disposal for close animations', () => {
+		const clock = sinon.useFakeTimers();
 		const container = $('.container');
 		container.classList.add('style-override', 'monaco-enable-motion');
 		const contextView = new ContextView(container, ContextViewDOMPosition.ABSOLUTE);
@@ -73,7 +79,20 @@ suite('ContextView', () => {
 			animationDuration: '100ms'
 		});
 
+		clock.tick(100);
+
+		assert.deepStrictEqual({
+			disposeCount,
+			hasClosingClass: contextView.getViewElement().classList.contains('closing'),
+			animationDuration: contextView.getViewElement().style.getPropertyValue(CONTEXT_VIEW_CLOSE_ANIMATION_DURATION_VARIABLE)
+		}, {
+			disposeCount: 1,
+			hasClosingClass: false,
+			animationDuration: ''
+		});
+
 		contextView.dispose();
+		assert.strictEqual(disposeCount, 1);
 		container.remove();
 	});
 });

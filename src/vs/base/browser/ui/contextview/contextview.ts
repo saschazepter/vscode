@@ -68,7 +68,9 @@ export interface IContextViewCloseAnimation {
 export const CONTEXT_VIEW_MENU_MOTION_CLASS = 'context-view-menu-motion';
 export const CONTEXT_VIEW_MENU_MOTION_CLOSING_CLASS = 'context-view-menu-motion-closing';
 export const CONTEXT_VIEW_CLOSE_ANIMATION_DURATION_VARIABLE = '--vscode-context-view-close-animation-duration';
-const CONTEXT_VIEW_MENU_MOTION_SHADOW_VARIABLE = '--vscode-context-view-menu-motion-shadow';
+export const CONTEXT_VIEW_MENU_MOTION_SHADOW_VARIABLE = '--vscode-context-view-menu-motion-shadow';
+const CONTEXT_VIEW_MENU_MOTION_CLOSE_START_OPACITY_VARIABLE = '--vscode-context-view-menu-motion-close-start-opacity';
+const CONTEXT_VIEW_MENU_MOTION_CLOSE_START_TRANSFORM_VARIABLE = '--vscode-context-view-menu-motion-close-start-transform';
 
 const CONTEXT_VIEW_MENU_MOTION_OPEN_DURATION_MS = 250;
 const CONTEXT_VIEW_MENU_MOTION_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
@@ -119,8 +121,8 @@ function getContextViewMenuMotionCss(enabledSelectorPrefix: string): string {
 
 	@keyframes context-view-menu-motion-close {
 		0% {
-			opacity: 1;
-			transform: scale(1);
+			opacity: var(${CONTEXT_VIEW_MENU_MOTION_CLOSE_START_OPACITY_VARIABLE}, 1);
+			transform: var(${CONTEXT_VIEW_MENU_MOTION_CLOSE_START_TRANSFORM_VARIABLE}, scale(1));
 		}
 
 		100% {
@@ -285,7 +287,6 @@ export class ContextView extends Disposable {
 
 		// Render content
 		this.toDisposeOnClean = delegate.render(this.view) || Disposable.None;
-		this.prepareMenuMotion();
 
 		// Set active delegate
 		this.delegate = delegate;
@@ -330,11 +331,12 @@ export class ContextView extends Disposable {
 		const anchorPosition = this.delegate!.anchorPosition;
 		const anchorAlignment = this.delegate!.anchorAlignment;
 		const anchorAxisAlignment = this.delegate!.anchorAxisAlignment;
-		const { top, left } = layout2d(viewport, view, anchor, { anchorAlignment, anchorPosition, anchorAxisAlignment });
+		const layoutResult = layout2d(viewport, view, anchor, { anchorAlignment, anchorPosition, anchorAxisAlignment });
+		const { top, left } = layoutResult;
 
 		this.view.classList.remove('top', 'bottom', 'left', 'right');
-		this.view.classList.add(anchorPosition === AnchorPosition.BELOW ? 'bottom' : 'top');
-		this.view.classList.add(anchorAlignment === AnchorAlignment.LEFT ? 'left' : 'right');
+		this.view.classList.add(layoutResult.anchorPosition === AnchorPosition.BELOW ? 'bottom' : 'top');
+		this.view.classList.add(layoutResult.anchorAlignment === AnchorAlignment.LEFT ? 'left' : 'right');
 		this.view.classList.toggle('fixed', this.useFixedPosition);
 
 		const containerPosition = DOM.getDomNodePagePosition(this.container!);
@@ -371,6 +373,7 @@ export class ContextView extends Disposable {
 		const closeAnimation = delegate.closeAnimation;
 		if (!skipAnimation && closeAnimation && closeAnimation.duration > 0 && this.hasRequiredAncestorClasses(closeAnimation.requiredAncestorClasses)) {
 			this.view.style.setProperty(CONTEXT_VIEW_CLOSE_ANIMATION_DURATION_VARIABLE, `${closeAnimation.duration}ms`);
+			this.prepareMenuCloseAnimation();
 			this.view.classList.add(closeAnimation.className);
 			const timeout = setTimeout(() => this.completeHideAnimation(), closeAnimation.duration);
 			this.hidingContextView = {
@@ -399,20 +402,25 @@ export class ContextView extends Disposable {
 		hidingContextView.disposable.dispose();
 		this.view.classList.remove(hidingContextView.className);
 		this.view.style.removeProperty(CONTEXT_VIEW_CLOSE_ANIMATION_DURATION_VARIABLE);
+		this.view.style.removeProperty(CONTEXT_VIEW_MENU_MOTION_CLOSE_START_OPACITY_VARIABLE);
+		this.view.style.removeProperty(CONTEXT_VIEW_MENU_MOTION_CLOSE_START_TRANSFORM_VARIABLE);
 		hidingContextView.toDispose.dispose();
 		DOM.hide(this.view);
 	}
 
-	private prepareMenuMotion(): void {
+	private prepareMenuCloseAnimation(): void {
 		if (!this.view.classList.contains(CONTEXT_VIEW_MENU_MOTION_CLASS)) {
-			this.view.style.removeProperty(CONTEXT_VIEW_MENU_MOTION_SHADOW_VARIABLE);
 			return;
 		}
 
-		this.view.classList.remove(CONTEXT_VIEW_MENU_MOTION_CLASS);
-		const boxShadow = DOM.getWindow(this.view).getComputedStyle(this.view).boxShadow;
-		this.view.classList.add(CONTEXT_VIEW_MENU_MOTION_CLASS);
-		this.view.style.setProperty(CONTEXT_VIEW_MENU_MOTION_SHADOW_VARIABLE, boxShadow);
+		const surface = Array.from(this.view.children).find(element => DOM.isHTMLElement(element) && element.classList.contains('monaco-scrollable-element'));
+		if (!DOM.isHTMLElement(surface)) {
+			return;
+		}
+
+		const computedStyle = DOM.getWindow(surface).getComputedStyle(surface);
+		this.view.style.setProperty(CONTEXT_VIEW_MENU_MOTION_CLOSE_START_OPACITY_VARIABLE, computedStyle.opacity);
+		this.view.style.setProperty(CONTEXT_VIEW_MENU_MOTION_CLOSE_START_TRANSFORM_VARIABLE, computedStyle.transform);
 	}
 
 	private hasRequiredAncestorClasses(classNames: readonly string[] | undefined): boolean {
