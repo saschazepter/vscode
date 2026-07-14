@@ -19,12 +19,11 @@ import { execSync } from 'child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
-import { timeout } from '../../../../../base/common/async.js';
+import { raceTimeout, timeout } from '../../../../../base/common/async.js';
 import { join } from '../../../../../base/common/path.js';
 import { removeAnsiEscapeCodes } from '../../../../../base/common/strings.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
-import { killTree } from '../../../../../base/node/processes.js';
 import { SubscribeResult } from '../../../common/state/protocol/commands.js';
 import { PROTOCOL_VERSION } from '../../../common/state/protocol/version/registry.js';
 import {
@@ -58,6 +57,7 @@ import {
  */
 const RECORD = process.env['AGENT_HOST_REPLAY_RECORD'] === '1';
 const REPLAY_MODE: CapiReplayMode = RECORD ? 'record' : 'replay';
+const SERVER_SHUTDOWN_TIMEOUT_MS = 30_000;
 const TEMP_DIR_CLEANUP_TIMEOUT_MS = 30_000;
 /** Gate for agent host e2e tests whose local execution is POSIX-specific (shell tool
  * calls, git worktrees, `pwd`) and does not reproduce on Windows. */
@@ -71,20 +71,12 @@ async function stopServer(server: IServerHandle | undefined): Promise<void> {
 		return;
 	}
 
-	const pid = serverProcess.pid;
-	if (pid === undefined) {
-		throw new Error('Agent Host server process has no process id.');
-	}
-
 	const serverExit = new Promise<void>(resolve => serverProcess.once('exit', () => resolve()));
-	try {
-		await killTree(pid, true);
-	} catch (error) {
-		if (serverProcess.exitCode === null && serverProcess.signalCode === null) {
-			throw error;
-		}
+	serverProcess.stdin?.end();
+	if (!await raceTimeout(serverExit.then(() => true), SERVER_SHUTDOWN_TIMEOUT_MS)) {
+		serverProcess.kill();
+		await serverExit;
 	}
-	await serverExit;
 }
 
 async function removeTempDirs(tempDirs: string[]): Promise<void> {
