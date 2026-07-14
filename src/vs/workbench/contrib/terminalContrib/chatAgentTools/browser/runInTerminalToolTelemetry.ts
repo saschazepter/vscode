@@ -241,57 +241,21 @@ export class RunInTerminalToolTelemetry {
 	 */
 	logCompaction(report: Report): void {
 		type TelemetryEvent = {
-			applied: boolean;
-			lossless: boolean;
 			commandKinds: TelemetryTrustedValue<string>;
 			originalChars: number;
-			originalBytes: number;
-			originalLines: number;
 			compactedChars: number;
-			compactedBytes: number;
-			compactedLines: number;
-			savedChars: number;
-			savedBytes: number;
-			savedLines: number;
-			reductionCharsPct: number;
-			reductionBytesPct: number;
-			reductionLinesPct: number;
 		};
 		type TelemetryClassification = {
 			owner: 'aiday-mar';
 			comment: 'Measures how effective terminal output compaction is for the runInTerminal tool';
-			applied: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Whether compaction actually changed the output' };
-			lossless: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Whether the compaction preserved all information (no data dropped)' };
 			commandKinds: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The compactor tags that matched the command, encoded as a JSON array' };
 			originalChars: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'The number of UTF-16 characters in the original output' };
-			originalBytes: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'The number of UTF-8 bytes in the original output' };
-			originalLines: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'The number of lines in the original output' };
 			compactedChars: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'The number of UTF-16 characters in the compacted output' };
-			compactedBytes: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'The number of UTF-8 bytes in the compacted output' };
-			compactedLines: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'The number of lines in the compacted output' };
-			savedChars: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'The number of UTF-16 characters removed by compaction' };
-			savedBytes: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'The number of UTF-8 bytes removed by compaction' };
-			savedLines: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'The number of lines removed by compaction' };
-			reductionCharsPct: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'The percentage of characters removed by compaction (0-100)' };
-			reductionBytesPct: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'The percentage of bytes removed by compaction (0-100)' };
-			reductionLinesPct: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'The percentage of lines removed by compaction (0-100)' };
 		};
 		this._telemetryService.publicLog2<TelemetryEvent, TelemetryClassification>('toolUse.runInTerminal.compaction', {
-			applied: report.applied,
-			lossless: report.lossless,
 			commandKinds: new TelemetryTrustedValue(JSON.stringify(report.commandKinds)),
 			originalChars: report.original.chars,
-			originalBytes: report.original.bytes,
-			originalLines: report.original.lines,
-			compactedChars: report.compacted.chars,
-			compactedBytes: report.compacted.bytes,
-			compactedLines: report.compacted.lines,
-			savedChars: report.saved.chars,
-			savedBytes: report.saved.bytes,
-			savedLines: report.saved.lines,
-			reductionCharsPct: report.reduction.charsPct,
-			reductionBytesPct: report.reduction.bytesPct,
-			reductionLinesPct: report.reduction.linesPct,
+			compactedChars: report.compacted.chars
 		});
 	}
 }
