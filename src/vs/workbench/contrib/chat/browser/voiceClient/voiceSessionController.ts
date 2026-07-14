@@ -47,6 +47,22 @@ import {
 
 export type VoiceState = 'idle' | 'listening' | 'processing' | 'speaking' | 'error';
 
+/** One buffered audio chunk of a deferred response. */
+interface IDeferredChunk {
+	readonly audio: string;
+	readonly isFirstChunk: boolean;
+	readonly isFinal: boolean;
+	readonly transcript: string | undefined;
+}
+
+/** One whole deferred response (all its chunks), buffered while its session was
+ *  not shown. `finalized` is set once the response's final chunk has arrived. */
+interface IDeferredResponse {
+	readonly responseId?: string;
+	finalized: boolean;
+	readonly chunks: IDeferredChunk[];
+}
+
 export interface IPendingToolConfirmation {
 	readonly type: 'approval' | 'input';
 	readonly sessionLabel: string;
@@ -248,9 +264,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * Focus/last-shown heuristics are then disabled.
 	 */
 	private _externalActiveSessionMode = false;
-	/** Buffered audio for responses that arrived while their session was not
-	 *  focused. Flushed to playback when the session becomes focused. */
-	private readonly _deferredResponses = new Map<string, { audio: string; isFirstChunk: boolean; isFinal: boolean; transcript: string | undefined; responseId?: string }[]>();
+	/**
+	 * Buffered audio for responses that arrived while their session was not the
+	 * one shown to the user. Keyed by session, each session holds a FIFO list of
+	 * whole responses (a background session that produces several updates before
+	 * the user returns keeps ALL of them, in order). Every response is a group of
+	 * audio chunks plus a `finalized` flag (set on its final chunk) so
+	 * continuation chunks attach to the still-open response rather than starting a
+	 * new one. Flushed - all responses, in order - when the session is shown.
+	 */
+	private readonly _deferredResponses = new Map<string, IDeferredResponse[]>();
 	/**
 	 * Maps a backend chat resource string (bare provider scheme, e.g.
 	 * `copilotcli:/<id>`) to the UI agent-host session resource string
@@ -1244,20 +1267,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				// (matched by content). Drop it so the user never hears it twice.
 				this.logService.trace(`[voice] dropping re-narration for session=${codingSessionId} isFirstChunk=${e.isFirstChunk} isFinal=${e.isFinal}`);
 			} else {
-				// A fresh reply that plays live supersedes any older buffered
-				// response for the same session; drop the stale buffer and its
-				// pending indicator so we don't leave a phantom indicator behind.
-				// Guard on responseId so a response that was just promoted from
-				// deferred to live (same id) doesn't delete its own in-flight
-				// buffer - only a genuinely different response supersedes.
+				// A fresh reply is about to play live for this session. Anything
+				// still buffered for it (earlier background updates the user never
+				// returned to hear) must be played FIRST, in order, so nothing is
+				// lost - then this newer reply plays after. Guard on responseId so a
+				// response being promoted from deferred to live (same id) isn't
+				// flushed-and-replayed as if it were a different, older response.
 				if (e.isFirstChunk && codingSessionId && this._deferredResponses.has(codingSessionId)
 					&& !this._deferredBufferHasResponse(codingSessionId, e.responseId)) {
-					const stale = this._deferredResponses.get(codingSessionId)?.[0]?.responseId;
-					if (stale) {
-						this._responseRoutes.delete(stale);
-					}
-					this._deferredResponses.delete(codingSessionId);
-					this._markPendingResponse(codingSessionId, false);
+					this._flushDeferredResponse(codingSessionId);
 				}
 				this._enqueueAudio(codingSessionId, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
 				if (e.isFinal) {
@@ -2537,28 +2555,31 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		return defer;
 	}
 
-	/** Whether a response for `sessionId` should defer: true unless the session is
-	 *  the one shown or a reply the user is actively awaiting (untagged → live). */
+	/** Whether a response for `sessionId` should defer: true unless it is the
+	 *  session currently shown to the user (untagged audio → play). A reply the
+	 *  user is awaiting is NOT exempted: if they switched away before it arrived,
+	 *  it is deferred like any other background narration and flushed on return. */
 	private _shouldDeferForSession(sessionId: string | undefined): boolean {
 		if (!sessionId) {
 			return false;
 		}
-		return !(this._shownSessionId() === sessionId || this._awaitingReplyForSession === sessionId);
+		return this._shownSessionId() !== sessionId;
 	}
 
-	/** True when the session's buffered response is the SAME stream as `responseId`
-	 *  (so a live chunk for it is a promotion, not a superseding new response). */
+	/** True when one of the session's buffered responses is the SAME stream as
+	 *  `responseId` (so a live chunk for it is a promotion, not a new response). */
 	private _deferredBufferHasResponse(sessionId: string, responseId: string | undefined): boolean {
 		if (!responseId) {
 			return false;
 		}
-		return this._deferredResponses.get(sessionId)?.[0]?.responseId === responseId;
+		return this._deferredResponses.get(sessionId)?.some(r => r.responseId === responseId) ?? false;
 	}
 
 	/**
 	 * A response is deferred when it is a background narration for a session the
-	 * user is NOT looking at. It plays immediately for the shown session, for a
-	 * reply the user is actively awaiting, or when it is untagged audio.
+	 * user is NOT looking at. It plays immediately only for the shown session (or
+	 * when it is untagged audio); a reply the user was awaiting but has since
+	 * switched away from is deferred like any other background narration.
 	 *
 	 * The decision is made on the first chunk and recorded in `_liveReplyKeys`;
 	 * remaining chunks follow the same decision so a response is never split
@@ -2574,7 +2595,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._liveReplyKeys.add(key);
 				return false;
 			}
-			// Play live for the shown session or an awaited reply; defer the rest.
+			// Play live only for the shown session; defer the rest.
 			if (!this._shouldDeferForSession(sessionId)) {
 				this._liveReplyKeys.add(key);
 				return false;
@@ -2596,17 +2617,25 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	private _deferResponse(sessionId: string, audio: string, isFirstChunk: boolean, isFinal: boolean, transcript: string | undefined, responseId?: string): void {
-		let buffer = this._deferredResponses.get(sessionId);
-		if (isFirstChunk || !buffer) {
-			// A new response for this session - start a fresh buffer (dropping any
-			// older un-played response) and flag the sessions list so the pending
-			// indicator shows for the unfocused session.
-			buffer = [];
-			this._deferredResponses.set(sessionId, buffer);
-			this._markPendingResponse(sessionId, true);
-			this.logService.trace(`[voice] deferring response for unfocused session=${sessionId}; showing pending indicator`);
+		let responses = this._deferredResponses.get(sessionId);
+		if (!responses) {
+			responses = [];
+			this._deferredResponses.set(sessionId, responses);
 		}
-		buffer.push({ audio, isFirstChunk, isFinal, transcript, responseId });
+		// A first chunk begins a NEW response (appended after any already buffered
+		// for this session, so all are kept and later played in order); a
+		// continuation attaches to this session's most recent still-open response.
+		let response = isFirstChunk ? undefined : [...responses].reverse().find(r => !r.finalized);
+		if (!response) {
+			response = { responseId, finalized: false, chunks: [] };
+			responses.push(response);
+			this._markPendingResponse(sessionId, true);
+			this.logService.trace(`[voice] deferring response for unfocused session=${sessionId} (buffered=${responses.length}); showing pending indicator`);
+		}
+		response.chunks.push({ audio, isFirstChunk, isFinal, transcript });
+		if (isFinal) {
+			response.finalized = true;
+		}
 	}
 
 	/** Replays any buffered reply for a now-focused session. Returns true when a
@@ -2637,32 +2666,35 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return false;
 		}
 
-		const buffer = this._deferredResponses.get(key);
+		const responses = this._deferredResponses.get(key);
 		this._deferredResponses.delete(key);
 		this._markPendingResponse(key, false);
-		if (!buffer || buffer.length === 0) {
+		if (!responses || responses.length === 0) {
 			return false;
 		}
-		this.logService.trace(`[voice] flushing ${buffer.length} buffered chunk(s) for now-focused session=${key}`);
-		// If this response hasn't finished streaming, promote its route from
+		const totalChunks = responses.reduce((n, r) => n + r.chunks.length, 0);
+		this.logService.trace(`[voice] flushing ${responses.length} buffered response(s) (${totalChunks} chunk(s)) for now-focused session=${key}`);
+		// Promote any still-open (not-yet-finalized) response's route from
 		// 'deferred' to 'live' so the remaining chunks (arriving after this flush)
 		// play immediately instead of being re-buffered - a response is never
 		// split across a focus change. A finished response has no route (retired
 		// on its final chunk), so there is nothing to promote.
-		const bufferResponseId = buffer[buffer.length - 1]?.isFinal ? undefined : buffer[0]?.responseId;
-		if (bufferResponseId) {
-			this._responseRoutes.set(bufferResponseId, 'live');
+		for (const r of responses) {
+			if (r.responseId && !r.finalized) {
+				this._responseRoutes.set(r.responseId, 'live');
+			}
 		}
-		// Record that we just replayed a buffered reply for this session, along
-		// with its transcript, so a backend re-narration (same text) arriving
-		// shortly after is dropped rather than double-read. A genuinely new reply
-		// (different text) is never suppressed. See _recentlyReadResponse.
-		// The final chunk carries the COMPLETE transcript (each chunk's transcript
-		// is cumulative, not a delta), so use the last non-empty one; joining all
-		// chunks would produce a repeated, garbled string that fails to match the
-		// backend's re-narrated transcript and defeats dedup.
+		// Record that we just replayed this session's buffered reply, along with
+		// its transcript, so a backend re-narration (same text) arriving shortly
+		// after is dropped rather than double-read. A genuinely new reply
+		// (different text) is never suppressed. See _recentlyReadResponse. Each
+		// chunk's transcript is cumulative (the last non-empty one holds the
+		// complete text), and across multiple buffered responses the LAST
+		// response is the most recent - the one the backend would re-narrate on
+		// activation - so dedupe against its final transcript.
+		const lastChunks = responses[responses.length - 1].chunks;
 		const flushedTranscript = this._normalizeTranscript(
-			[...buffer].reverse().find(c => c.transcript)?.transcript ?? ''
+			[...lastChunks].reverse().find(c => c.transcript)?.transcript ?? ''
 		);
 		if (flushedTranscript) {
 			this._recentlyReadResponse.set(key, { transcript: flushedTranscript, at: Date.now() });
@@ -2673,8 +2705,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// the buffered chunks can play (see _prepareForPlayback).
 		this._prepareForPlayback();
 
-		for (const chunk of buffer) {
-			this._enqueueAudio(key, chunk.audio, chunk.isFirstChunk, chunk.isFinal, chunk.transcript);
+		// Play every buffered response for this session, in the order they arrived.
+		for (const r of responses) {
+			for (const chunk of r.chunks) {
+				this._enqueueAudio(key, chunk.audio, chunk.isFirstChunk, chunk.isFinal, chunk.transcript);
+			}
 		}
 		return true;
 	}
