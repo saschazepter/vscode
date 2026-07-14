@@ -887,8 +887,37 @@
 	background-color: transparent;
 }
 
+.ai-customization-management-editor .prompt-migration-group-header:focus-within {
+	outline: 1px solid var(--vscode-list-focusOutline);
+	background: var(--vscode-list-focusBackground, var(--vscode-list-hoverBackground));
+}
+
 .ai-customization-management-editor .prompt-migration-group-checkbox {
 	margin-right: 8px;
+}
+
+.ai-customization-management-editor .prompt-migration-group-toggle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: 1;
+	min-width: 0;
+	padding: 0;
+	border: none;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.ai-customization-management-editor .prompt-migration-group-toggle:focus {
+	outline: none;
+}
+
+.ai-customization-management-editor .prompt-migration-group-items {
+	display: flex;
+	flex-direction: column;
 }
 
 .ai-customization-management-editor .prompt-migration-item {

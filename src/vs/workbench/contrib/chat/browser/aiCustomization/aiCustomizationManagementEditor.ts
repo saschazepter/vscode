@@ -333,6 +333,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private migrationSearchInput: InputBox | undefined;
 	private migrationDescriptionElement: HTMLElement | undefined;
 	private migrationSearchQuery = '';
+	private readonly collapsedPromptMigrationGroups = new Set<string>();
 	private selectedPromptMigrationUris = new ResourceSet();
 	private readonly migrationPageDisposables = this._register(new DisposableStore());
 
@@ -1277,7 +1278,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			return checkbox;
 		};
 
-		const renderGroup = (groupLabel: string, promptFiles: readonly IPromptPath[]): void => {
+		const renderGroup = (groupKey: string, groupLabel: string, promptFiles: readonly IPromptPath[]): void => {
 			if (promptFiles.length === 0) {
 				return;
 			}
@@ -1299,14 +1300,41 @@ export class AICustomizationManagementEditor extends EditorPane {
 				}
 				this.renderPromptMigrationPage();
 			}));
-			const groupLabelGroup = DOM.append(groupHeader, $('.group-label-group'));
+			const groupToggle = DOM.append(groupHeader, $('button.prompt-migration-group-toggle')) as HTMLButtonElement;
+			groupToggle.type = 'button';
+			const groupId = `prompt-migration-group-${groupKey}`;
+			const collapsed = this.collapsedPromptMigrationGroups.has(groupId);
+			groupToggle.setAttribute('aria-controls', `${groupId}-items`);
+			groupToggle.setAttribute('aria-expanded', String(!collapsed));
+			const chevron = DOM.append(groupToggle, $('span.group-chevron'));
+			chevron.classList.add(...ThemeIcon.asClassNameArray(collapsed ? Codicon.chevronRight : Codicon.chevronDown));
+			chevron.setAttribute('aria-hidden', 'true');
+			const groupLabelGroup = DOM.append(groupToggle, $('.group-label-group'));
 			const label = DOM.append(groupLabelGroup, $('span.group-label'));
 			label.textContent = groupLabel;
-			const count = DOM.append(groupLabelGroup, $('span.group-count'));
+			const count = DOM.append(groupToggle, $('span.group-count'));
 			count.textContent = String(promptFiles.length);
+			const groupItems = DOM.append(group, $('.prompt-migration-group-items'));
+			groupItems.id = `${groupId}-items`;
+			groupItems.style.display = collapsed ? 'none' : '';
+			this.migrationPageDisposables.add(DOM.addDisposableListener(groupToggle, 'click', () => {
+				if (this.collapsedPromptMigrationGroups.has(groupId)) {
+					this.collapsedPromptMigrationGroups.delete(groupId);
+					groupItems.style.display = '';
+					chevron.classList.remove(...ThemeIcon.asClassNameArray(Codicon.chevronRight));
+					chevron.classList.add(...ThemeIcon.asClassNameArray(Codicon.chevronDown));
+					groupToggle.setAttribute('aria-expanded', 'true');
+				} else {
+					this.collapsedPromptMigrationGroups.add(groupId);
+					groupItems.style.display = 'none';
+					chevron.classList.remove(...ThemeIcon.asClassNameArray(Codicon.chevronDown));
+					chevron.classList.add(...ThemeIcon.asClassNameArray(Codicon.chevronRight));
+					groupToggle.setAttribute('aria-expanded', 'false');
+				}
+			}));
 
 			for (const promptFile of promptFiles) {
-				const row = DOM.append(group, $('div.ai-customization-list-item.prompt-migration-item'));
+				const row = DOM.append(groupItems, $('div.ai-customization-list-item.prompt-migration-item'));
 				const checkbox = renderSelectionCheckbox(row, promptFile);
 				this.migrationPageDisposables.add(DOM.addDisposableListener(row, 'click', event => {
 					if (event.target instanceof Node && checkbox.domNode.contains(event.target)) {
@@ -1326,8 +1354,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 			}
 		};
 
-		renderGroup(localize('promptMigrationWorkspaceGroup', "Workspace"), workspacePromptFiles);
-		renderGroup(localize('promptMigrationUserGroup', "User"), userPromptFiles);
+		renderGroup(PromptsStorage.local, localize('promptMigrationWorkspaceGroup', "Workspace"), workspacePromptFiles);
+		renderGroup(PromptsStorage.user, localize('promptMigrationUserGroup', "User"), userPromptFiles);
 
 		for (const promptFile of filteredPromptFiles.filter(file => file.storage !== PromptsStorage.local && file.storage !== PromptsStorage.user)) {
 			const row = DOM.append(this.migrationListContainer, $('div.ai-customization-list-item.prompt-migration-item'));
