@@ -148,6 +148,16 @@ export interface IVoiceSessionController {
 	setActiveSessionShown(resource: URI | undefined): void;
 
 	/**
+	 * Deterministically route audio to and narrate a session in response to an
+	 * explicit UI action (e.g. clicking a session's pending-voice indicator).
+	 * Unlike the shown/focus heuristics, this activates even when the session is
+	 * already the active/shown one - so a completed background reply the user
+	 * clicks to hear is played rather than silently ignored because no focus or
+	 * view-model change event fired.
+	 */
+	activateSession(resource: URI): void;
+
+	/**
 	 * Submit user feedback along with full diagnostic data (transcript history,
 	 * client state, environment info). Returns success/failure.
 	 */
@@ -2700,21 +2710,39 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return;
 		}
 		this._externalActiveSessionMode = true;
-		if (key === this._activeSessionShown) {
-			// Same session re-pinned. Normally already activated, but a response
-			// can arrive-and-defer for it AFTER it became active if the backend
-			// tagged it with a not-yet-aliased bare id (so the defer decision
-			// couldn't tell it was the shown session). Re-flush any such stranded
-			// buffer so the pending indicator resolves and the reply is heard.
-			if (key && this._matchDeferredKey(key)) {
-				this.logService.trace(`[voice] re-pinned active session=${key} has a stranded buffered response; flushing`);
+		const definedKey = key!;
+		if (definedKey === this._activeSessionShown) {
+			// Same session re-pinned. Normally already activated, but its pending
+			// item may still be unheard: a response can arrive-and-defer for it
+			// AFTER it became active (backend tagged it with a not-yet-aliased bare
+			// id, so the defer decision couldn't tell it was the shown session), or
+			// a completed background reply / confirmation can be pending. Re-activate
+			// so any stranded buffer, pending summary, or pending confirmation
+			// resolves and is heard, rather than being silently stuck.
+			if (this._matchDeferredKey(definedKey)
+				|| this._pendingResponseSummaries.has(definedKey)
+				|| this._confirmationPendingSessions.has(definedKey)) {
+				this.logService.trace(`[voice] re-pinned active session=${definedKey} has pending voice work; re-activating`);
 				this._activateShownSession(resource);
 			}
 			return;
 		}
-		this.logService.trace(`[voice] setActiveSessionShown=${key ?? '<none>'} (was ${this._activeSessionShown ?? '<none>'})`);
-		this._activeSessionShown = key;
+		this.logService.trace(`[voice] setActiveSessionShown=${definedKey} (was ${this._activeSessionShown ?? '<none>'})`);
+		this._activeSessionShown = definedKey;
 		// Route audio here now: flush buffers, clear pending, and re-send context.
+		this._activateShownSession(resource);
+	}
+
+	activateSession(resource: URI): void {
+		const key = resource.toString();
+		this.logService.trace(`[voice] activateSession=${key} (explicit UI action)`);
+		// In embedder-driven (Agents) mode, routing follows _activeSessionShown, so
+		// pin it here too - otherwise a click on an already-active session (whose
+		// activeSession observable didn't change, so setActiveSessionShown was never
+		// re-called) would flush/narrate but audio routing wouldn't point here.
+		if (this._externalActiveSessionMode) {
+			this._activeSessionShown = key;
+		}
 		this._activateShownSession(resource);
 	}
 
