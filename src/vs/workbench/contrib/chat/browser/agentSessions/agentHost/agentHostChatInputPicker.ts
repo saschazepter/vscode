@@ -572,7 +572,7 @@ export class AgentHostChatInputPicker extends Disposable {
 					void this._openerService.open(URI.parse(PERMISSION_MODE_LEARN_MORE_URL));
 					return;
 				}
-				void this._confirmAndSetValue(ctx.backendSession, item.value);
+				void this._confirmAndSetValue(ctx.backendSession, item);
 			},
 			onFilter: ctx.schema.enumDynamic
 				? query => this._filterDelayer.trigger(async () => {
@@ -674,7 +674,8 @@ export class AgentHostChatInputPicker extends Disposable {
 	 * Surfaces the shared elevated-level warning before applying an approval
 	 * pick. Unknown non-default values fall back to the Bypass warning.
 	 */
-	private async _confirmAndSetValue(backendSession: URI, value: string): Promise<void> {
+	private async _confirmAndSetValue(backendSession: URI, item: IConfigPickerItem): Promise<void> {
+		const value = item.value;
 		if (this._property === SessionConfigKey.AutoApprove && !isAutoApproveValueVisible(value, isAutoApprovalsEnabled(this._configurationService))) {
 			return;
 		}
@@ -683,7 +684,10 @@ export class AgentHostChatInputPicker extends Disposable {
 				? value
 				: (value !== ChatPermissionLevel.Default ? ChatPermissionLevel.AutoApprove : undefined);
 			if (levelToConfirm) {
-				const confirmed = await maybeConfirmElevatedPermissionLevel(levelToConfirm, this._dialogService, this._storageService, { defaultSettingKey: ChatConfiguration.DefaultConfiguration });
+				const confirmed = await maybeConfirmElevatedPermissionLevel(levelToConfirm, this._dialogService, this._storageService, {
+					defaultSettingKey: ChatConfiguration.DefaultConfiguration,
+					levelLabel: item.label,
+				});
 				if (!confirmed) {
 					return;
 				}

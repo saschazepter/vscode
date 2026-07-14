@@ -312,9 +312,9 @@ export const platformSessionSchema = createSchema({
 		description: localize('agentHost.sessionConfig.autoApproveDescription', "Tool approval behavior for this session"),
 		enum: ['default', 'assisted', 'autoApprove'],
 		enumLabels: [
-			localize('agentHost.sessionConfig.autoApprove.default', "Default Approvals"),
-			localize('agentHost.sessionConfig.autoApprove.assisted', "Auto Approvals"),
-			localize('agentHost.sessionConfig.autoApprove.bypass', "Bypass Approvals"),
+			localize('agentHost.sessionConfig.autoApprove.default', "Ask When Needed"),
+			localize('agentHost.sessionConfig.autoApprove.assisted', "Approve When Safe"),
+			localize('agentHost.sessionConfig.autoApprove.bypass', "Allow All"),
 		],
 		enumDescriptions: [
 			localize('agentHost.sessionConfig.autoApprove.defaultDescription', "Asks when approval settings don't apply"),
@@ -420,7 +420,7 @@ export const TERMINAL_AUTO_APPROVE_ENABLED_SETTING_ID = 'chat.tools.terminal.ena
  * `chat.tools.global.autoApprove` setting changes. When `true`, the global
  * auto-approve ("approve everything") setting is enabled and the agent host
  * treats every tool call as auto-approved — equivalent to a session running
- * with Bypass Approvals.
+ * with Allow All.
  */
 export const AgentHostGlobalAutoApproveEnabledConfigKey = 'globalAutoApproveEnabled';
 
@@ -680,7 +680,7 @@ export const platformRootSchema = createSchema({
 	[AgentHostGlobalAutoApproveEnabledConfigKey]: schemaProperty<boolean>({
 		type: 'boolean',
 		title: localize('agentHost.config.globalAutoApproveEnabled.title', "Global Auto Approve"),
-		description: localize('agentHost.config.globalAutoApproveEnabled.description', "Whether VS Code's global auto-approve setting is enabled. When `true`, every tool call is auto-approved, equivalent to a session using Bypass Approvals."),
+		description: localize('agentHost.config.globalAutoApproveEnabled.description', "Whether VS Code's global auto-approve setting is enabled. When `true`, every tool call is auto-approved, equivalent to a session using Allow All."),
 		default: false,
 	}),
 	[AgentHostAutoReplyEnabledConfigKey]: schemaProperty<boolean>({

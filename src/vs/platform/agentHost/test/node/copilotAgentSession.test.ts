@@ -1886,7 +1886,7 @@ suite('CopilotAgentSession', () => {
 			assert.deepStrictEqual(mockSession.permissionModeSetCalls, ['on']);
 		});
 
-		test('per-request permissions: delegates approvals to the SDK under Auto Approvals', async () => {
+		test('per-request permissions: delegates approvals to the SDK under Approve When Safe', async () => {
 			const { session, mockSession } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -1902,7 +1902,7 @@ suite('CopilotAgentSession', () => {
 			});
 		});
 
-		test('does not send when the SDK rejects experimental mode for Auto Approvals', async () => {
+		test('does not send when the SDK rejects experimental mode for Approve When Safe', async () => {
 			const { session, mockSession } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -1942,7 +1942,7 @@ suite('CopilotAgentSession', () => {
 			});
 		});
 
-		test('switching from Auto Approvals to Default disables SDK experimental mode', async () => {
+		test('switching from Approve When Safe to Ask When Needed disables SDK experimental mode', async () => {
 			const configValues: Record<string, unknown> = { [SessionConfigKey.AutoApprove]: 'assisted' };
 			const { session, mockSession } = await createAgentSession(disposables, { configValues });
 
@@ -1959,7 +1959,7 @@ suite('CopilotAgentSession', () => {
 			});
 		});
 
-		test('Auto Approvals honors approve recommendations without prompting', async () => {
+		test('Approve When Safe honors approve recommendations without prompting', async () => {
 			const { session, runtime, mockSession, signals } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -1988,7 +1988,7 @@ suite('CopilotAgentSession', () => {
 			});
 		});
 
-		test('Auto Approvals correlates a recommendation event that arrives after the permission callback', async () => {
+		test('Approve When Safe correlates a recommendation event that arrives after the permission callback', async () => {
 			const { session, runtime, mockSession, signals } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -2031,7 +2031,7 @@ suite('CopilotAgentSession', () => {
 			});
 		});
 
-		test('Auto Approvals prompts when the model requires approval', async () => {
+		test('Approve When Safe prompts when the model requires approval', async () => {
 			const { session, runtime, mockSession, waitForSignal } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -2063,7 +2063,7 @@ suite('CopilotAgentSession', () => {
 			assert.strictEqual((await resultPromise).kind, 'approve-once');
 		});
 
-		test('Auto Approvals never bypasses sandbox-escape confirmation', async () => {
+		test('Approve When Safe never bypasses sandbox-escape confirmation', async () => {
 			const { session, runtime, mockSession, waitForSignal } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -2117,7 +2117,7 @@ suite('CopilotAgentSession', () => {
 			assert.deepStrictEqual(mockSession.sendRequests, []);
 		});
 
-		test('per-request permissions: Autopilot with Default Approvals keeps SDK approval mode off', async () => {
+		test('per-request permissions: Autopilot with Ask When Needed keeps SDK approval mode off', async () => {
 			const { session, mockSession } = await createAgentSession(disposables, {
 				rootValues: { [AgentHostSandboxConfigKey.Sandbox]: { [AgentHostSandboxKey.Enabled]: AgentSandboxEnabledValue.On } },
 				configValues: {
@@ -4736,7 +4736,7 @@ suite('CopilotAgentSession', () => {
 			await responsePromise;
 		});
 
-		test('completing the input request with autopilot preserves Default Approvals and syncs mode=autopilot', async () => {
+		test('completing the input request with autopilot preserves Ask When Needed and syncs mode=autopilot', async () => {
 			const { session, runtime, waitForSignal, sessionConfigUpdates } = await createAgentSession(disposables);
 
 			const responsePromise = runtime.handleExitPlanModeRequest(planRequestParams({ actions: ['autopilot', 'interactive'], recommendedAction: 'autopilot' }), { sessionId: 'test-session-1' });
@@ -4759,7 +4759,7 @@ suite('CopilotAgentSession', () => {
 			]);
 		});
 
-		test('completing the input request with autopilot enables edit auto-approval under Bypass Approvals', async () => {
+		test('completing the input request with autopilot enables edit auto-approval under Allow All', async () => {
 			const { session, runtime, waitForSignal } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'autoApprove' },
 			});

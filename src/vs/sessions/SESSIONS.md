@@ -487,19 +487,19 @@ to the parent session URI are invalid and will not resolve the SDK permission
 request.
 
 Agent-host approval levels map to the Copilot SDK allow-all modes before each
-turn: Default Approvals uses `off`, Bypass Approvals uses `on`, and
-Auto Approvals uses `auto`. Auto Approvals only skips a prompt when the SDK's
+turn: Ask When Needed uses `off`, Allow All uses `on`, and Approve When Safe
+uses `auto`. Approve When Safe only skips a prompt when the SDK's
 model recommendation is `approve`; every other recommendation follows the normal
 confirmation flow. When the SDK supplies a reason for requiring approval, the
 confirmation renders it in the existing risk-badge position. A live
 approval-level change is pushed to every in-memory SDK
-chat immediately, including during an active turn, so leaving Bypass Approvals
+chat immediately, including during an active turn, so leaving Allow All
 cannot leave the SDK in allow-all mode for later tool calls in that turn.
-`chat.experimental.autoApprovals.enabled` controls whether Auto Approvals is
+`chat.experimental.autoApprovals.enabled` controls whether Approve When Safe is
 offered in approval pickers and defaults on outside Stable builds. Enterprise
-policy still leaves Auto and Bypass Approvals visible, but disables both with an
-administrator-directed explanation and normalizes either value back to Default.
-The agent mode axis is independent: Autopilot with Default Approvals still uses
+policy still leaves Approve When Safe and Allow All visible, but disables both with an
+administrator-directed explanation and normalizes either value back to Ask When Needed.
+The agent mode axis is independent: Autopilot with Ask When Needed still uses
 SDK permission mode `off` and preserves the configured sandbox policy.
 
 Subagents are modelled as additional chats on the parent session, not as separate

@@ -321,7 +321,7 @@ export class SessionPermissionManager extends Disposable {
 	}
 
 	isSessionAutoApproveEnabled(sessionKey: ProtocolURI): boolean {
-		// `autoApprove` (Bypass Approvals) auto-approves every tool call.
+		// `autoApprove` (Allow All) auto-approves every tool call.
 		return this.getEffectiveApprovalLevel(sessionKey) === 'autoApprove';
 	}
 

@@ -46,12 +46,12 @@ suite('chatPermissionWarnings', () => {
 		assert.strictEqual(hasShownElevatedWarning(ChatPermissionLevel.Autopilot, s), true);
 	});
 
-	test('confirming Bypass suppresses the lower-reach Auto Approvals warning', () => {
+	test('confirming Allow All suppresses the lower-reach Approve When Safe warning', () => {
 		const s = storage(AUTO_APPROVE_DONT_SHOW_AGAIN_KEY);
 		assert.strictEqual(hasShownElevatedWarning(ChatPermissionLevel.Assisted, s), true);
 	});
 
-	test('confirming Auto Approvals does not suppress the Bypass warning', () => {
+	test('confirming Approve When Safe does not suppress the Allow All warning', () => {
 		const s = storage(ASSISTED_APPROVAL_DONT_SHOW_AGAIN_KEY);
 		assert.strictEqual(hasShownElevatedWarning(ChatPermissionLevel.AutoApprove, s), false);
 	});

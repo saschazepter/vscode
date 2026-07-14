@@ -2001,7 +2001,7 @@ export class CopilotAgentSession extends Disposable {
 
 	/**
 	 * `true` when the session runs with bypass approvals — either the global
-	 * auto-approve setting or the session's `autoApprove` ("Bypass Approvals")
+	 * auto-approve setting or the session's `autoApprove` ("Allow All")
 	 * level. Agent mode is an orthogonal axis and does not affect approvals.
 	 */
 	private _isBypassApprovals(): boolean {

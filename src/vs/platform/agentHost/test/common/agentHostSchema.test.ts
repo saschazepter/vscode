@@ -301,7 +301,7 @@ suite('agentHostSchema', () => {
 				enumDescriptions: property.enumDescriptions,
 			}, {
 				enum: ['default', 'assisted', 'autoApprove'],
-				enumLabels: ['Default Approvals', 'Auto Approvals', 'Bypass Approvals'],
+				enumLabels: ['Ask When Needed', 'Approve When Safe', 'Allow All'],
 				enumDescriptions: [
 					'Asks when approval settings don\'t apply',
 					'Evaluates risk before running tools',

@@ -204,11 +204,11 @@ function applyAutoApproveFiltering(
  * picker. Returns `true` when confirmed (or not elevated), `false` when the
  * user cancels.
  */
-async function confirmAutoApproveLevel(value: string, dialogService: IDialogService, storageService: IStorageService): Promise<boolean> {
+async function confirmAutoApproveLevel(value: string, label: string, dialogService: IDialogService, storageService: IStorageService): Promise<boolean> {
 	if (!isChatPermissionLevel(value)) {
 		return true;
 	}
-	return maybeConfirmElevatedPermissionLevel(value, dialogService, storageService, { defaultSettingKey: ChatConfiguration.DefaultConfiguration });
+	return maybeConfirmElevatedPermissionLevel(value, dialogService, storageService, { defaultSettingKey: ChatConfiguration.DefaultConfiguration, levelLabel: label });
 }
 
 /**
@@ -543,7 +543,7 @@ export class AgentHostSessionConfigPicker extends Disposable {
 				});
 
 				if (isAutoApproveProperty && item.value !== 'default') {
-					const confirmed = await confirmAutoApproveLevel(item.value, this._dialogService, this._storageService);
+					const confirmed = await confirmAutoApproveLevel(item.value, item.label, this._dialogService, this._storageService);
 					if (!confirmed) {
 						return;
 					}

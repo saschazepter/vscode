@@ -238,7 +238,10 @@ export class PermissionPickerActionItem extends ChatInputPickerActionViewItem {
 						},
 						run: async () => {
 							// Elevated levels show a one-time confirmation warning.
-							if (meta.elevated && !await maybeConfirmElevatedPermissionLevel(level, this.dialogService, storageService, { defaultSettingKey: delegate.defaultSettingKey })) {
+							if (meta.elevated && !await maybeConfirmElevatedPermissionLevel(level, this.dialogService, storageService, {
+								defaultSettingKey: delegate.defaultSettingKey,
+								levelLabel: meta.label,
+							})) {
 								return;
 							}
 							delegate.setPermissionLevel(level);

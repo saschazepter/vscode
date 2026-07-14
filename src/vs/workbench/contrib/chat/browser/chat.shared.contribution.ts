@@ -505,7 +505,7 @@ configurationRegistry.registerConfiguration({
 		[ChatConfiguration.AutoApprovalsEnabled]: {
 			type: 'boolean',
 			default: product.quality !== 'stable',
-			description: nls.localize('chat.experimental.autoApprovals.enabled', "Controls whether Auto Approvals is shown in approval pickers."),
+			description: nls.localize('chat.experimental.autoApprovals.enabled', "Controls whether Approve When Safe is shown in Agent Host approval pickers."),
 			tags: ['experimental'],
 			experiment: {
 				mode: 'auto'
@@ -539,12 +539,12 @@ configurationRegistry.registerConfiguration({
 					type: 'string',
 					enum: [ChatPermissionLevel.Default, ChatPermissionLevel.Assisted, ChatPermissionLevel.AutoApprove],
 					enumDescriptions: [
-						nls.localize('chat.defaultConfiguration.approvals.default', "Default Approvals — asks when approval settings don't apply."),
-						nls.localize('chat.defaultConfiguration.approvals.assisted', "Auto Approvals — evaluates risk before running tools."),
-						nls.localize('chat.defaultConfiguration.approvals.autoApprove', "Bypass Approvals — runs tool calls without asking."),
+						nls.localize('chat.defaultConfiguration.approvals.default', "Ask When Needed — asks when approval settings don't apply."),
+						nls.localize('chat.defaultConfiguration.approvals.assisted', "Approve When Safe — evaluates risk before running tools."),
+						nls.localize('chat.defaultConfiguration.approvals.autoApprove', "Allow All — runs tool calls without asking."),
 					],
 					default: ChatPermissionLevel.Default,
-					description: nls.localize('chat.defaultConfiguration.approvals.description', "The starting approval behavior for new agent sessions. If enterprise policy disables auto approval, new sessions use Default Approvals."),
+					description: nls.localize('chat.defaultConfiguration.approvals.description', "The starting approval behavior for new agent sessions. If enterprise policy disables auto approval, new sessions use Ask When Needed."),
 				},
 			},
 			default: { mode: 'interactive', approvals: ChatPermissionLevel.Default },

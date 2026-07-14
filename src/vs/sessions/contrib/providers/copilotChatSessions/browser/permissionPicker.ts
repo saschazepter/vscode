@@ -67,6 +67,7 @@ export interface IPermissionPickerDelegate {
 	 * pass `chat.defaultConfiguration`.
 	 */
 	readonly defaultSettingKey?: string;
+	getPermissionLevelMeta?(level: ChatPermissionLevel, meta: IPermissionLevelMeta): IPermissionLevelMeta;
 
 	/**
 	 * Called after the user selects a level (and any required confirmation
@@ -175,7 +176,7 @@ export class PermissionPicker extends Disposable {
 		this._updateTriggerLabel(trigger);
 		if (this._delegate.getPermissionLevelHover) {
 			this._renderDisposables.add(this.hoverService.setupDelayedHover(trigger, () => {
-				const meta = getPermissionLevelMeta(this._currentLevel);
+				const meta = this._getPermissionLevelMeta(this._currentLevel);
 				return { content: this._getPermissionLevelHover(this._currentLevel, meta) ?? '' };
 			}));
 		}
@@ -234,7 +235,7 @@ export class PermissionPicker extends Disposable {
 
 		const levels = this._delegate.availableLevels ?? DEFAULT_PERMISSION_LEVELS;
 		const items: IActionListItem<IPermissionItem>[] = levels.map(level => {
-			const meta = getPermissionLevelMeta(level);
+			const meta = this._getPermissionLevelMeta(level);
 			// Default is never policy-restricted; elevated levels are disabled
 			// when enterprise policy turns off global auto-approval.
 			const disabled = level !== ChatPermissionLevel.Default && policyRestricted;
@@ -305,7 +306,10 @@ export class PermissionPicker extends Disposable {
 	}
 
 	protected async _selectLevel(level: ChatPermissionLevel): Promise<void> {
-		if (!await maybeConfirmElevatedPermissionLevel(level, this.dialogService, this.storageService, { defaultSettingKey: this._delegate.defaultSettingKey })) {
+		if (!await maybeConfirmElevatedPermissionLevel(level, this.dialogService, this.storageService, {
+			defaultSettingKey: this._delegate.defaultSettingKey,
+			levelLabel: this._getPermissionLevelMeta(level).label,
+		})) {
 			reportNewChatPickerClosed(this.telemetryService, {
 				id: 'NewChatPermissionPicker',
 				name: 'NewChatPermissionPicker',
@@ -339,7 +343,7 @@ export class PermissionPicker extends Disposable {
 		}
 
 		dom.clearNode(trigger);
-		const meta = getPermissionLevelMeta(this._currentLevel);
+		const meta = this._getPermissionLevelMeta(this._currentLevel);
 
 		dom.append(trigger, renderIcon(meta.icon));
 		const labelSpan = dom.append(trigger, dom.$('span.sessions-chat-dropdown-label'));
@@ -356,6 +360,11 @@ export class PermissionPicker extends Disposable {
 
 	private _getPermissionLevelHover(level: ChatPermissionLevel, meta: IPermissionLevelMeta): string | undefined {
 		return this._delegate.getPermissionLevelHover?.(level, meta) ?? meta.hover;
+	}
+
+	protected _getPermissionLevelMeta(level: ChatPermissionLevel): IPermissionLevelMeta {
+		const meta = getPermissionLevelMeta(level);
+		return this._delegate.getPermissionLevelMeta?.(level, meta) ?? meta;
 	}
 }
 

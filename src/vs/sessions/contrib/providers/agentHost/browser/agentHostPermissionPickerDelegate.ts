@@ -88,6 +88,19 @@ export class AgentHostPermissionPickerDelegate extends Disposable implements IPe
 	/** Agent-host sessions seed their default approval level from this setting. */
 	readonly defaultSettingKey = ChatConfiguration.DefaultConfiguration;
 
+	getPermissionLevelMeta(level: ChatPermissionLevel, meta: IPermissionLevelMeta): IPermissionLevelMeta {
+		switch (level) {
+			case ChatPermissionLevel.Default:
+				return { ...meta, label: localize('agentHostPermissionPicker.askWhenNeeded', "Ask When Needed"), detail: localize('agentHostPermissionPicker.askWhenNeeded.detail', "Asks when approval settings don't apply") };
+			case ChatPermissionLevel.Assisted:
+				return { ...meta, label: localize('agentHostPermissionPicker.approveWhenSafe', "Approve When Safe"), detail: localize('agentHostPermissionPicker.approveWhenSafe.detail', "Evaluates risk before running tools") };
+			case ChatPermissionLevel.AutoApprove:
+				return { ...meta, label: localize('agentHostPermissionPicker.allowAll', "Allow All"), detail: localize('agentHostPermissionPicker.allowAll.detail', "Runs tool calls without asking") };
+			case ChatPermissionLevel.Autopilot:
+				return meta;
+		}
+	}
+
 	constructor(
 		private readonly _session: IObservable<IActiveSession | undefined>,
 		@ISessionsProvidersService private readonly _sessionsProvidersService: ISessionsProvidersService,
