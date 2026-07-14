@@ -896,6 +896,10 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		}
 	}
 
+	getInput(): string {
+		return this._editor?.getModel()?.getValue() ?? '';
+	}
+
 	sendQuery(text: string): void {
 		// A submit is already in flight (e.g. a rapid second transcript before the
 		// session is created); don't clobber the in-flight text or double-submit.

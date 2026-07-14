@@ -411,7 +411,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 				if (!widget) {
 					return;
 				}
-				const currentInput = widget.getInput().trim();
+				const currentInput = widget.getInput();
 				const nextInput = currentInput ? `${currentInput} ${text}` : text;
 				widget.setInput(nextInput);
 				widget.focusInput();

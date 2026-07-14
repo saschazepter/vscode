@@ -127,14 +127,12 @@ registerAction2(class extends Action2 {
 			icon: Codicon.loading,
 			precondition: ContextKeyExpr.and(
 				ContextKeyExpr.equals('config.agents.voice.enabled', true),
-				AGENTS_VOICE_STT_ONLY.negate(),
 				AGENTS_VOICE_CONNECTING.isEqualTo(true),
 			),
 			menu: {
 				id: MenuId.ChatExecute,
 				when: ContextKeyExpr.and(
 					ContextKeyExpr.equals('config.agents.voice.enabled', true),
-					AGENTS_VOICE_STT_ONLY.negate(),
 					ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 					AGENTS_VOICE_CONNECTING.isEqualTo(true),
 				),
@@ -260,6 +258,7 @@ registerAction2(class extends Action2 {
 					ContextKeyExpr.equals('config.agents.voice.enabled', true),
 					AGENTS_VOICE_STT_ONLY,
 					AGENTS_VOICE_CONNECTING.negate(),
+					AGENTS_VOICE_LISTENING.negate(),
 					ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 					ChatContextKeys.currentlyEditing.negate(),
 				),
@@ -270,10 +269,6 @@ registerAction2(class extends Action2 {
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const voiceController = accessor.get(IVoiceSessionController);
-		if (voiceController.voiceState.get() === 'listening') {
-			voiceController.stopListening();
-			return;
-		}
 		if (!voiceController.isConnected.get()) {
 			await voiceController.connect(mainWindow);
 		}
@@ -282,6 +277,41 @@ registerAction2(class extends Action2 {
 		}
 		voiceController.pttDown();
 		voiceController.pttUp();
+	}
+});
+
+// Stop control shown in place of the mic while dictation is active. A distinct
+// command with its own title/icon so screen reader users hear that activating
+// it stops recording (the icon-only mic would otherwise keep the name "Speech
+// to Text" while acting as a stop button).
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'agentsVoice.speechToTextStopInChatInput',
+			title: nls.localize2('agentsVoice.speechToTextStopInChatInput', "Stop Dictation"),
+			icon: Codicon.stopCircle,
+			precondition: ContextKeyExpr.and(
+				ContextKeyExpr.equals('config.agents.voice.enabled', true),
+				AGENTS_VOICE_STT_ONLY,
+				AGENTS_VOICE_LISTENING,
+				ChatContextKeys.inChatInput,
+			),
+			menu: {
+				id: MenuId.ChatExecute,
+				when: ContextKeyExpr.and(
+					ContextKeyExpr.equals('config.agents.voice.enabled', true),
+					AGENTS_VOICE_STT_ONLY,
+					AGENTS_VOICE_LISTENING,
+					ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
+					ChatContextKeys.currentlyEditing.negate(),
+				),
+				group: 'navigation',
+				order: -10
+			},
+		});
+	}
+	async run(accessor: ServicesAccessor): Promise<void> {
+		accessor.get(IVoiceSessionController).stopListening();
 	}
 });
 
@@ -294,9 +324,12 @@ registerAction2(class extends Action2 {
 			title: nls.localize2('agentsVoice.disconnect', "Disconnect Voice Mode"),
 			icon: Codicon.debugDisconnect,
 			f1: true,
+			// Available whenever a voice session is connected — including STT-only
+			// mode, where `stopListening()` intentionally leaves the socket open,
+			// so the Command Palette is the supported teardown path. The toolbar
+			// item below stays hidden in STT mode.
 			precondition: ContextKeyExpr.and(
 				ContextKeyExpr.equals('config.agents.voice.enabled', true),
-				AGENTS_VOICE_STT_ONLY.negate(),
 				AGENTS_VOICE_CONNECTED.isEqualTo(true),
 			),
 			menu: {
@@ -556,7 +589,7 @@ configurationRegistry.registerConfiguration({
 		},
 		'agents.voice.chatInputSpeechToText.enabled': {
 			type: 'boolean',
-			markdownDescription: nls.localize('agents.voice.chatInputSpeechToText.enabled', "Use the voice backend only for speech-to-text in chat inputs. When enabled, chat shows a microphone action that transcribes speech directly into the input without sending it or speaking assistant replies."),
+			markdownDescription: nls.localize('agents.voice.chatInputSpeechToText.enabled', "Use the voice backend only for speech-to-text in chat inputs. When enabled (and the voice feature `#agents.voice.enabled#` is also on), chat shows a microphone action that transcribes speech directly into the input without sending it or speaking assistant replies."),
 			default: false,
 			scope: ConfigurationScope.APPLICATION,
 			tags: ['advanced'],

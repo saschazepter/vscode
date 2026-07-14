@@ -78,7 +78,7 @@ export function getAccessibilityHelpText(type: 'panelChat' | 'inlineChat' | 'qui
 			content.push(localize('workbench.action.chat.openAgentHostFolderPicker', 'When starting an agent session in a multi-root workspace, you can choose which root folder it runs in by invoking the Folder command{0}, then selecting a folder from the list.', '<keybinding:workbench.action.chat.openAgentHostFolderPicker>'));
 		}
 		content.push(localize('chat.requestHistory', 'In the input box, use up and down arrows to navigate your request history. Edit input and use enter or the submit button to run a new request.'));
-		content.push(localize('chat.speechToTextInput', 'When `agents.voice.chatInputSpeechToText.enabled` is enabled, use the Speech to Text microphone action in the chat input toolbar to transcribe speech into the input without sending.'));
+		content.push(localize('chat.speechToTextInput', 'When both `agents.voice.enabled` and `agents.voice.chatInputSpeechToText.enabled` are enabled, use the Speech to Text microphone action in the chat input toolbar to transcribe speech into the input without sending.'));
 		content.push(localize('chat.attachments.removal', 'To remove attached contexts, focus an attachment and press Delete or Backspace.'));
 		content.push(localize('chat.inspectResponse', 'In the input box, inspect the last response in the accessible view{0}. Thinking content is included in order by default.', '<keybinding:editor.action.accessibleView>'));
 		content.push(localize('chat.inspectResponseThinkingToggle', 'To include or exclude thinking content in the accessible view, run the Toggle Thinking Content in Accessible View command from the Command Palette.'));

@@ -42,6 +42,8 @@ export interface INewChatVoiceComposer {
 	sendQuery(text: string): void;
 	/** Set `text` without submitting. */
 	prefillInput(text: string): void;
+	/** The composer's current draft text (empty when unmounted). */
+	getInput(): string;
 	/** Focus the composer input. */
 	focus(): void;
 }
@@ -106,7 +108,7 @@ const WHEN_VOICE_SURFACE = ContextKeyExpr.equals('newChatVoiceSurface', true);
 
 MenuRegistry.appendMenuItem(SessionsNewChatVoiceMenu, {
 	command: { id: 'agentsVoice.connecting', title: localize('agentsVoice.connecting', "Connecting..."), icon: Codicon.loading },
-	when: ContextKeyExpr.and(WHEN_VOICE_ENABLED, WHEN_STT_ONLY.negate(), WHEN_CONNECTING, WHEN_INITIATED_HERE),
+	when: ContextKeyExpr.and(WHEN_VOICE_ENABLED, WHEN_CONNECTING, WHEN_INITIATED_HERE),
 	group: 'navigation',
 	order: -10,
 });
@@ -141,7 +143,14 @@ MenuRegistry.appendMenuItem(SessionsNewChatVoiceMenu, {
 
 MenuRegistry.appendMenuItem(SessionsNewChatVoiceMenu, {
 	command: { id: 'agentsVoice.speechToTextInChatInput', title: localize('agentsVoice.speechToTextInChatInput', "Speech to Text"), icon: Codicon.mic },
-	when: ContextKeyExpr.and(WHEN_VOICE_ENABLED, WHEN_STT_ONLY, WHEN_VOICE_SURFACE, WHEN_CONNECTING.negate()),
+	when: ContextKeyExpr.and(WHEN_VOICE_ENABLED, WHEN_STT_ONLY, WHEN_VOICE_SURFACE, WHEN_CONNECTING.negate(), WHEN_LISTENING.negate()),
+	group: 'navigation',
+	order: -10,
+});
+
+MenuRegistry.appendMenuItem(SessionsNewChatVoiceMenu, {
+	command: { id: 'agentsVoice.speechToTextStopInChatInput', title: localize('agentsVoice.speechToTextStopInChatInput', "Stop Dictation"), icon: Codicon.stopCircle },
+	when: ContextKeyExpr.and(WHEN_VOICE_ENABLED, WHEN_STT_ONLY, WHEN_VOICE_SURFACE, WHEN_LISTENING),
 	group: 'navigation',
 	order: -10,
 });

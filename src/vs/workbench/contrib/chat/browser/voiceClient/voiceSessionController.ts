@@ -1186,6 +1186,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 			this._updateUserTurn(text, e.committed ?? '', e.status === 'partial');
 			if (e.status !== 'partial') {
+				// Speech-to-text-only mode: the utterance is dictation bound for
+				// the chat input, not a task for the voice LLM. Handle the final
+				// transcript directly and bypass the backend's send_to_chat tool
+				// routing (which would drop utterances classified as chit-chat /
+				// status and keep the conversation state machine — auto-listen,
+				// reply watchdog — alive).
+				if (this._isSpeechToTextInputMode()) {
+					this._finalizeSpeechToTextTurn(text);
+					return;
+				}
 				if (!this._pttHeld) {
 					this._voiceState.set('processing', undefined);
 					this._statusText.set('Processing...', undefined);
@@ -1284,6 +1294,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// commands), not through the generic dispatch service.
 		this._voiceEventDisposables.add(this.voiceClientService.onToolCall(e => {
 			this.logService.trace(`[voice] tool_call received name=${e.name} coding_session_id=${typeof e.args?.['coding_session_id'] === 'string' ? String(e.args['coding_session_id']).slice(-32) : '<none>'} activeId=${this._getActiveSessionId()?.slice(-32) ?? '<none>'}`);
+			// Speech-to-text-only mode bypasses the voice LLM's tool routing
+			// entirely — the final transcript is inserted into the chat input
+			// directly from onTranscription. Ack the call so the backend isn't
+			// left waiting on this callId, but execute nothing.
+			if (this._isSpeechToTextInputMode()) {
+				this.voiceClientService.sendToolResult(e.callId, 'ok');
+				return;
+			}
 			const allowedTools = [
 				'send_to_chat',
 				'get_session_info', 'get_session_changes', 'get_session_thread',
@@ -1717,6 +1735,39 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	/**
+	 * Speech-to-text-only finalization. In this mode the utterance is dictation
+	 * bound for the chat input, not a task for the voice LLM, so the final
+	 * transcript is handled here and the conversation state machine is
+	 * deliberately bypassed: no send_to_chat tool routing, no reply watchdog,
+	 * and no auto-listen re-arm. The turn ends idle with the transcript
+	 * inserted into the focused chat input (existing draft preserved).
+	 */
+	private _finalizeSpeechToTextTurn(text: string): void {
+		// End any in-flight press / toggle and stop the auto-listen loop so the
+		// turn does not re-arm hands-free listening.
+		this._pttToggleMode = false;
+		this._autoListenSuppressed = true;
+		this._clearAutoListenTimer();
+		this._clearAwaitingReply();
+		this._stopBargeInMonitor();
+		if (this._pttHeld) {
+			this._finishPtt('local');
+		}
+		// Persist the user's final transcript (local-only, no backend coordination).
+		this._persistTurn('user', text);
+		// Insert into the focused chat input without submitting. Pass the raw
+		// transcript so the insert command preserves the existing draft verbatim.
+		if (text.trim()) {
+			this.commandService.executeCommand('_chat.voice.insertInput', text).catch(err => {
+				this.logService.warn('[voice] insertInput failed:', err);
+			});
+		}
+		// Explicit idle finalization — STT never enters processing / speaking.
+		this._voiceState.set('idle', undefined);
+		this._statusText.set('Tap to start', undefined);
+	}
+
+	/**
 	 * Strip a trailing stop phrase (e.g. "send it") from a transcript before it
 	 * is sent to chat. The backend is supposed to strip the matched phrase from
 	 * `agents.voice.turn.stopPhrases`, but when it doesn't the raw phrase leaks
@@ -1852,13 +1903,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * Otherwise sends to whatever is currently active via the view pane command.
 	 */
 	private async _sendTranscriptionToChat(text: string): Promise<void> {
-		if (this._isSpeechToTextInputMode()) {
-			await this.commandService.executeCommand('_chat.voice.insertInput', text).catch(err => {
-				this.logService.warn('[voice] insertInput failed:', err);
-			});
-			return;
-		}
-
 		const target = this._targetSession.get();
 		if (target) {
 			// Check if target is the currently visible session
@@ -2914,7 +2958,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				if (!this._isProcessingQueue) {
 					this._processQueue();
 				}
-				if (this._isHandsFreeEnabled()) {
+				if (this._isHandsFreeEnabled() && !this._isSpeechToTextInputMode()) {
 					this._scheduleAutoListen();
 				}
 			}

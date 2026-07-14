@@ -86,15 +86,17 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 			}
 			const composer = this._activeComposerTarget();
 			if (composer) {
-				const widget = this._activeSessionWidget();
-				const currentInput = widget?.getInput().trim() ?? '';
+				// Read and append to the composer's OWN draft — not the parent
+				// session chat's input — so an in-progress composer draft is
+				// preserved verbatim rather than overwritten.
+				const currentInput = composer.getInput();
 				composer.prefillInput(currentInput ? `${currentInput} ${text}` : text);
 				composer.focus();
 				return;
 			}
 			const widget = this._activeSessionWidget() ?? this.chatWidgetService.lastFocusedWidget;
 			if (widget?.viewModel) {
-				const currentInput = widget.getInput().trim();
+				const currentInput = widget.getInput();
 				const nextInput = currentInput ? `${currentInput} ${text}` : text;
 				widget.setInput(nextInput);
 				widget.focusInput();
