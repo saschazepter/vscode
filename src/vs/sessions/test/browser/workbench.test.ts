@@ -123,6 +123,7 @@ suite('Sessions - Workbench', () => {
 		const events: IPartVisibilityChangeEvent[] = [];
 		const classToggles: { name: string; force: boolean }[] = [];
 		const counts = { save: 0, layout: 0 };
+		const sidePaneReveals: boolean[] = [];
 		const viewSizes = new Map<object, IViewSize>([
 			[editorPartView, { width: options.editorWidth ?? 0, height: 800 }],
 			[sessionsPartView, { width: options.sessionsWidth ?? 1000, height: 800 }],
@@ -165,6 +166,7 @@ suite('Sessions - Workbench', () => {
 			// stubs for the heavy base helpers the hooks call
 			_savePartVisibility: () => { counts.save++; },
 			_fireDidChangePartVisibility: (partId: Parts, visible: boolean) => { events.push({ partId, visible }); },
+			_onDidRevealSidePane: { fire: () => { sidePaneReveals.push(true); } },
 			_notifyContainerDidLayout: () => { },
 			_layoutDockedAuxBar: () => { counts.layout++; },
 			layoutMobileSidebar: () => { },
