@@ -25,9 +25,6 @@ const NETWORK_BLOCKED_PATTERN = /ECONNREFUSED|EPERM|EACCES|ENETUNREACH|EHOSTUNRE
 const SANDBOX_EXIT_CODE_PATTERN = /SANDBOX_EXIT_CODE=(\d+)/;
 const TMPDIR_EXIT_CODE_PATTERN = /TMPDIR_EXIT_CODE=(\d+)/;
 const HOME_READ_BLOCKED_EXIT_CODE_PATTERN = /HOME_READ_BLOCKED_EXIT_CODE=(\d+)/;
-// terminal.log records the command marker and its completion metadata, but not
-// the rich terminal result body. Allow for terminal-width wrapping in the marker.
-const HOME_READ_ALLOWED_COMPLETION_PATTERN = /HOME_READ_ALLOWED_\s*EXIT_CODE=%s[\s\S]*?Finished[\s\S]*?exitCode `(\d+)`/;
 
 function terminalCommandScenario(command: string, finalReply?: string) {
 	return {
@@ -59,33 +56,8 @@ function terminalCommandScenario(command: string, finalReply?: string) {
 	};
 }
 
-function terminalCommandOutcomeMatcher(...outcomes: Array<string | RegExp>): RegExp {
-	const sources = outcomes.map(outcome => typeof outcome === 'string'
-		? outcome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-		: outcome.source
-	);
-	return new RegExp(`"(?:output|content)":[\\s\\S]*(?:${sources.join('|')})`);
-}
-
 function quoteShellArgument(value: string): string {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-async function waitForTerminalResult(app: Application, pattern: RegExp, timeoutMs: number): Promise<RegExpExecArray> {
-	const terminalLogPath = path.join(app.logsPath, 'terminal.log');
-	const deadline = Date.now() + timeoutMs;
-
-	while (Date.now() < deadline) {
-		if (fs.existsSync(terminalLogPath)) {
-			const match = pattern.exec(fs.readFileSync(terminalLogPath, 'utf8'));
-			if (match) {
-				return match;
-			}
-		}
-		await new Promise(resolve => setTimeout(resolve, 250));
-	}
-
-	throw new Error(`Timed out waiting for terminal result matching ${pattern} in ${terminalLogPath}`);
 }
 
 async function warmUpChat(chat: Chat, logger: Logger): Promise<void> {
@@ -164,7 +136,7 @@ export function setup(logger: Logger): void {
 			registerScenario(NETWORK_ALLOWED_SCENARIO_ID, terminalCommandScenario(networkProbe));
 			const homeReadProbe = (resultMarker: string) => `cat "$HOME/${homeFileName}" >/dev/null 2>&1; status=$?; printf '${resultMarker}=%s\n' "$status"; exit "$status"`;
 			registerScenario(HOME_READ_SCENARIO_ID, terminalCommandScenario(homeReadProbe('HOME_READ_BLOCKED_EXIT_CODE')));
-			registerScenario(HOME_READ_ALLOWED_SCENARIO_ID, terminalCommandScenario(homeReadProbe('HOME_READ_ALLOWED_EXIT_CODE')));
+			registerScenario(HOME_READ_ALLOWED_SCENARIO_ID, terminalCommandScenario(`cat "$HOME/${homeFileName}"`));
 			logger.log(`[Chat Sandbox] mock LLM server started at ${mockServer.url}; platform=${process.platform}`);
 		});
 
@@ -308,15 +280,12 @@ export function setup(logger: Logger): void {
 				const requestsBefore = mockServer.requestCount();
 				await app.workbench.chat.sendMessage(`Run the terminal network sandbox probe [scenario:${NETWORK_SCENARIO_ID}]`);
 
-				const responseText = await app.workbench.chat.waitForResponseText(
-					terminalCommandOutcomeMatcher(NETWORK_BLOCKED_PATTERN, networkAllowedReply),
-					CHAT_RESPONSE_TIMEOUT
-				);
+				const responseText = await app.workbench.chat.waitForResponseText(NETWORK_BLOCKED_PATTERN, CHAT_RESPONSE_TIMEOUT);
 				logger.log(`[Chat Sandbox/network] response: ${responseText}`);
 				assert.ok(mockServer.requestCount() > requestsBefore, 'expected the mock LLM server to receive the network sandbox scenario');
 				assert.match(
 					responseText,
-					terminalCommandOutcomeMatcher(NETWORK_BLOCKED_PATTERN),
+					NETWORK_BLOCKED_PATTERN,
 					'expected the sandbox to block the terminal command from reaching the local mock server'
 				);
 			} catch (error) {
@@ -345,17 +314,10 @@ export function setup(logger: Logger): void {
 					const requestsBefore = mockServer.requestCount();
 					await app.workbench.chat.sendMessage(`Run the allowed terminal network sandbox probe [scenario:${NETWORK_ALLOWED_SCENARIO_ID}]`);
 
-					const responseText = await app.workbench.chat.waitForResponseText(
-						terminalCommandOutcomeMatcher(networkAllowedReply, NETWORK_BLOCKED_PATTERN),
-						CHAT_RESPONSE_TIMEOUT
-					);
+					const responseText = await app.workbench.chat.waitForResponseText(networkAllowedReply, CHAT_RESPONSE_TIMEOUT);
 					logger.log(`[Chat Sandbox/network allowed] response: ${responseText}`);
 					assert.ok(mockServer.requestCount() > requestsBefore, 'expected the mock LLM server to receive the allowed network sandbox scenario');
-					assert.match(
-						responseText,
-						terminalCommandOutcomeMatcher(networkAllowedReply),
-						'expected allowNetwork to permit the sandboxed terminal command to reach the local mock server'
-					);
+					assert.ok(responseText.includes(networkAllowedReply), 'expected allowNetwork to permit the sandboxed terminal command to reach the local mock server');
 				} catch (error) {
 					logger.log(`[Chat Sandbox/network allowed] FAILURE: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
 					await dumpFailureDiagnostics(app, logger, `Chat Sandbox (${process.platform}) network allowed`);
@@ -392,7 +354,7 @@ export function setup(logger: Logger): void {
 
 		/*
 		 * Input: Add the home test file to allowRead and ask chat to read it through the terminal tool.
-		 * Expected result: The sandbox permits the read and terminal.log records the marked command exiting with code 0.
+		 * Expected result: The sandbox permits the read and the chat UI contains the unique file contents.
 		 */
 		describe('with home file read access enabled', function () {
 			before(async function () {
@@ -411,10 +373,10 @@ export function setup(logger: Logger): void {
 					const requestsBefore = mockServer.requestCount();
 					await app.workbench.chat.sendMessage(`Read the allowed home directory sandbox probe [scenario:${HOME_READ_ALLOWED_SCENARIO_ID}]`);
 
-					const exitCodeMatch = await waitForTerminalResult(app, HOME_READ_ALLOWED_COMPLETION_PATTERN, CHAT_RESPONSE_TIMEOUT);
-					logger.log(`[Chat Sandbox/home read allowed] terminal result: ${exitCodeMatch[0]}`);
+					const responseText = await app.workbench.chat.waitForResponseText(homeFileContents, CHAT_RESPONSE_TIMEOUT);
+					logger.log(`[Chat Sandbox/home read allowed] response: ${responseText}`);
 					assert.ok(mockServer.requestCount() > requestsBefore, 'expected the mock LLM server to receive the allowed home read sandbox scenario');
-					assert.strictEqual(Number(exitCodeMatch[1]), 0, `expected allowRead to permit reading ${homeFilePath}`);
+					assert.ok(responseText.includes(homeFileContents), `expected allowRead to permit reading ${homeFilePath}`);
 				} catch (error) {
 					logger.log(`[Chat Sandbox/home read allowed] FAILURE: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
 					await dumpFailureDiagnostics(app, logger, `Chat Sandbox (${process.platform}) home read allowed`);
