@@ -5,7 +5,7 @@
 
 import assert from 'assert';
 import { $ } from '../../../../browser/dom.js';
-import { ContextView, ContextViewDOMPosition, IDelegate } from '../../../../browser/ui/contextview/contextview.js';
+import { CONTEXT_VIEW_CLOSE_ANIMATION_DURATION_VARIABLE, ContextView, ContextViewDOMPosition, IDelegate } from '../../../../browser/ui/contextview/contextview.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../common/utils.js';
 
 suite('ContextView', () => {
@@ -61,13 +61,16 @@ suite('ContextView', () => {
 
 		contextView.show(delegate);
 		contextView.hide();
+		contextView.hide();
 
 		assert.deepStrictEqual({
 			disposeCount,
-			hasClosingClass: contextView.getViewElement().classList.contains('closing')
+			hasClosingClass: contextView.getViewElement().classList.contains('closing'),
+			animationDuration: contextView.getViewElement().style.getPropertyValue(CONTEXT_VIEW_CLOSE_ANIMATION_DURATION_VARIABLE)
 		}, {
 			disposeCount: 0,
-			hasClosingClass: true
+			hasClosingClass: true,
+			animationDuration: '100ms'
 		});
 
 		contextView.dispose();

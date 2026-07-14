@@ -3,10 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IContextViewCloseAnimation } from '../../../base/browser/ui/contextview/contextview.js';
+import { CONTEXT_VIEW_MENU_MOTION_CLASS, CONTEXT_VIEW_MENU_MOTION_CLOSING_CLASS, IContextViewCloseAnimation } from '../../../base/browser/ui/contextview/contextview.js';
 
-export const WORKBENCH_MENU_MOTION_CLASS = 'workbench-menu-motion';
-export const WORKBENCH_MENU_MOTION_CLOSING_CLASS = 'workbench-menu-motion-closing';
+export const WORKBENCH_MENU_MOTION_CLASS = CONTEXT_VIEW_MENU_MOTION_CLASS;
+export const WORKBENCH_MENU_MOTION_CLOSING_CLASS = CONTEXT_VIEW_MENU_MOTION_CLOSING_CLASS;
 export const WORKBENCH_MENU_MOTION_CLOSE_ANIMATION_DURATION = 150;
 export const WORKBENCH_MENU_MOTION_ANCESTOR_CLASSES = ['style-override', 'monaco-enable-motion'];
 

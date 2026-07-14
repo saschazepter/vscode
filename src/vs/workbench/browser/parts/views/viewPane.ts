@@ -41,7 +41,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { IDropdownMenuActionViewItemOptions } from '../../../../base/browser/ui/dropdown/dropdownActionViewItem.js';
-import { IWorkbenchToolBarOptions, WorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
+import { WorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
 import { FilterWidget, IFilterWidgetOptions } from './viewFilter.js';
 import { BaseActionViewItem } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { ServiceCollection } from '../../../../platform/instantiation/common/serviceCollection.js';
@@ -462,15 +462,10 @@ export abstract class ViewPane extends Pane implements IView {
 		const actions = append(container, $('.actions'));
 		actions.classList.toggle('show-always', this.showActions === ViewPaneShowActions.Always);
 		actions.classList.toggle('show-expanded', this.showActions === ViewPaneShowActions.WhenExpanded);
-		const toolbarOptions = this.getToolbarOptions();
 		this.toolbar = this.instantiationService.createInstance(WorkbenchToolBar, actions, {
 			orientation: ActionsOrientation.HORIZONTAL,
 			actionViewItemProvider: (action, options) => {
-				const item = this.createActionViewItem(action, {
-					...options,
-					menuClassName: toolbarOptions.dropdownMenuClassName,
-					closeAnimation: toolbarOptions.dropdownMenuCloseAnimation
-				});
+				const item = this.createActionViewItem(action, options);
 				if (item) {
 					this.headerActionViewItems.set(item.action.id, item);
 				}
@@ -480,8 +475,7 @@ export abstract class ViewPane extends Pane implements IView {
 			getKeyBinding: action => this.keybindingService.lookupKeybinding(action.id),
 			renderDropdownAsChildElement: true,
 			actionRunner: this.getActionRunner(),
-			resetMenu: this.menuActions.menuId,
-			...toolbarOptions
+			resetMenu: this.menuActions.menuId
 		});
 
 		this._register(this.toolbar);
@@ -712,10 +706,6 @@ export abstract class ViewPane extends Pane implements IView {
 	protected updateActions(): void {
 		this.setActions();
 		this._onDidChangeTitleArea.fire();
-	}
-
-	protected getToolbarOptions(): Partial<IWorkbenchToolBarOptions> {
-		return {};
 	}
 
 	createActionViewItem(action: IAction, options?: IDropdownMenuActionViewItemOptions): IActionViewItem | undefined {
