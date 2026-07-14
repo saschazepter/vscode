@@ -1236,10 +1236,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					// Record this heard reply so an immediate backend re-narration
 					// of it (on activation) is dropped as a re-read, and so later
 					// on-focus re-reads of it are deduped by content. Untagged
-					// audio that plays live still belongs to the active session, so
-					// attribute it there; otherwise a later TAGGED re-narration of
-					// the same reply would not match and be read a second time.
-					const heardSessionId = codingSessionId ?? this._getActiveSessionId();
+					// audio that plays live belongs to the session the user is
+					// awaiting a reply for, else the one they're viewing — the same
+					// notion the deferral uses. Do NOT use the sticky
+					// `_getActiveSessionId()` (input-routing) here: it can point at a
+					// not-currently-viewed session and poison another session's dedup
+					// (dropping its next reply / misrouting this one). See
+					// _reconcileConfirmationIndicators for the same caveat.
+					const heardSessionId = codingSessionId ?? this._awaitingReplyForSession ?? this._shownSessionId();
 					if (heardSessionId && e.transcript) {
 						const heard = this._normalizeTranscript(e.transcript);
 						if (heard) {
@@ -2315,7 +2319,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private _activateShownSession(resource: URI): void {
 		const key = resource.toString();
 		this._lastShownSessionId = key;
-		this._flushDeferredResponse(key);
+		const flushedResponse = this._flushDeferredResponse(key);
 		this._clearConfirmationIndicator(key);
 		if (this._confirmationDetailPending(resource)) {
 			this._ensureModelLoaded(resource);
@@ -2328,10 +2332,18 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._recentlyReadResponse.set(key, { transcript: heard, at: Date.now() });
 			}
 		}
-		// Ask the backend to speak this session's pending item now that it's shown; `_narrate` de-dupes so a live-read reply isn't repeated.
+		// Ask the backend to speak this session's pending item now that it's shown.
+		// If we just replayed a buffered reply, that IS this session's response
+		// read: don't also request narration of the same reply (a double-read).
+		// Record it as narrated so a later idle-transition narrate is de-duped too.
+		// A confirmation is a distinct item and still narrates.
 		const narratable = this._currentNarratable(resource);
 		if (narratable) {
-			this._narrate(key, narratable.kind, narratable.text);
+			if (flushedResponse && narratable.kind === 'response') {
+				this._lastNarratedText.set(key, narratable.text);
+			} else {
+				this._narrate(key, narratable.kind, narratable.text);
+			}
 		}
 		this._sendContext();
 		this.voiceClientService.flushSessionContext();
@@ -2502,8 +2514,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		buffer.push({ audio, isFirstChunk, isFinal, transcript });
 	}
 
-	/** Play the buffered response for a session that just became focused. */
-	private _flushDeferredResponse(sessionId: string): void {
+	/** Replays any buffered reply for a now-focused session. Returns true when a
+	 *  response was actually flushed, so the caller can skip a redundant
+	 *  on-focus `_narrate` of the same reply (the buffered audio IS the read). */
+	private _flushDeferredResponse(sessionId: string): boolean {
 		// Match the buffered key robustly: try the exact string first, then fall
 		// back to URI equality so a trivial serialization difference between the
 		// backend's coding_session_id and the focused widget's sessionResource
@@ -2525,14 +2539,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			if (this._deferredResponses.size > 0) {
 				this.logService.trace(`[voice] no buffered response matches focused=${sessionId}; pending keys=[${[...this._deferredResponses.keys()].join(', ')}]`);
 			}
-			return;
+			return false;
 		}
 
 		const buffer = this._deferredResponses.get(key);
 		this._deferredResponses.delete(key);
 		this._markPendingResponse(key, false);
 		if (!buffer || buffer.length === 0) {
-			return;
+			return false;
 		}
 		this.logService.trace(`[voice] flushing ${buffer.length} buffered chunk(s) for now-focused session=${key}`);
 		// Record that we just replayed a buffered reply for this session, along
@@ -2573,6 +2587,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		for (const chunk of buffer) {
 			this._enqueueAudio(key, chunk.audio, chunk.isFirstChunk, chunk.isFinal, chunk.transcript);
 		}
+		return true;
 	}
 
 	/**
