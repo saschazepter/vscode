@@ -5,14 +5,20 @@
 
 import assert from 'assert';
 import { mainWindow } from '../../../../../base/browser/window.js';
+import { DeferredPromise, timeout } from '../../../../../base/common/async.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { observableValue } from '../../../../../base/common/observable.js';
+import { mock } from '../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { IInlineCompletionsService } from '../../../../../editor/browser/services/inlineCompletionsService.js';
+import { ConfigurationTarget, type IConfigurationOverrides, type IConfigurationValue } from '../../../../../platform/configuration/common/configuration.js';
+import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
 import { IMarkdownRendererService } from '../../../../../platform/markdown/browser/markdownRenderer.js';
+import product from '../../../../../platform/product/common/product.js';
 import { ChatEntitlement, IChatEntitlementService } from '../../../../services/chat/common/chatEntitlementService.js';
+import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { workbenchInstantiationService } from '../../../../test/browser/workbenchTestServices.js';
 import { ChatStatusDashboard, IChatStatusDashboardOptions } from '../../../chat/browser/chatStatus/chatStatusDashboard.js';
 import { IChatStatusItemService } from '../../../chat/browser/chatStatus/chatStatusItemService.js';
@@ -109,11 +115,87 @@ const dashboardOptions: IChatStatusDashboardOptions = {
 	disableCompletionsSnooze: true,
 };
 
+class TestCompletionsConfigurationService extends TestConfigurationService {
+
+	private pendingUpdate: { value: Record<string, boolean>; target: ConfigurationTarget; deferred: DeferredPromise<void> } | undefined;
+
+	constructor(
+		private readonly settingId: string,
+		private readonly defaultValue: Record<string, boolean>,
+		private userValue: Record<string, boolean>,
+	) {
+		super();
+	}
+
+	override getValue<T>(arg1?: string | IConfigurationOverrides, arg2?: IConfigurationOverrides): T | undefined {
+		if (arg1 === this.settingId) {
+			return { ...this.defaultValue, ...this.userValue } as T;
+		}
+		return super.getValue<T>(arg1, arg2);
+	}
+
+	override inspect<T>(key: string, overrides?: IConfigurationOverrides): IConfigurationValue<T> {
+		if (key === this.settingId) {
+			return {
+				defaultValue: this.defaultValue as T,
+				userValue: this.userValue as T,
+				userLocalValue: this.userValue as T,
+				value: { ...this.defaultValue, ...this.userValue } as T,
+			};
+		}
+		return super.inspect<T>(key, overrides);
+	}
+
+	override updateValue(key: string, value: unknown, target?: ConfigurationTarget): Promise<void> {
+		if (key !== this.settingId || typeof value !== 'object' || value === null || this.pendingUpdate) {
+			throw new Error('Unexpected configuration update');
+		}
+
+		const deferred = new DeferredPromise<void>();
+		this.pendingUpdate = {
+			value: { ...value } as Record<string, boolean>,
+			target: target ?? ConfigurationTarget.USER_LOCAL,
+			deferred,
+		};
+		return deferred.p;
+	}
+
+	async completeUpdate(): Promise<void> {
+		if (!this.pendingUpdate) {
+			await timeout(0);
+		}
+		const pendingUpdate = this.pendingUpdate;
+		if (!pendingUpdate) {
+			throw new Error('No configuration update is pending');
+		}
+
+		this.pendingUpdate = undefined;
+		this.userValue = pendingUpdate.value;
+		this.onDidChangeConfigurationEmitter.fire({
+			source: pendingUpdate.target,
+			affectedKeys: new Set([this.settingId]),
+			change: { keys: [this.settingId], overrides: [] },
+			affectsConfiguration: candidate => candidate === this.settingId,
+		});
+		await pendingUpdate.deferred.complete(undefined);
+		await timeout(0);
+	}
+
+	get configuredValue(): Record<string, boolean> {
+		return this.userValue;
+	}
+}
+
 suite('ChatStatusDashboard', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
-	function createDashboard(entitlementService: IChatEntitlementService): ChatStatusDashboard {
-		const instantiationService = workbenchInstantiationService(undefined, store);
+	function createDashboard(entitlementService: IChatEntitlementService, options: {
+		dashboardOptions?: IChatStatusDashboardOptions;
+		configurationService?: TestConfigurationService;
+		activeTextEditorLanguageId?: string;
+	} = {}): ChatStatusDashboard {
+		const configurationService = options.configurationService;
+		const instantiationService = workbenchInstantiationService(configurationService ? { configurationService: () => configurationService } : undefined, store);
 
 		instantiationService.stub(IChatEntitlementService, entitlementService);
 		instantiationService.stub(IChatStatusItemService, {
@@ -133,14 +215,148 @@ suite('ChatStatusDashboard', () => {
 		instantiationService.stub(IMarkdownRendererService, {
 			_serviceBrand: undefined,
 		});
+		if (options.activeTextEditorLanguageId) {
+			const activeTextEditorLanguageId = options.activeTextEditorLanguageId;
+			instantiationService.stub(IEditorService, new class extends mock<IEditorService>() {
+				override readonly activeTextEditorLanguageId = activeTextEditorLanguageId;
+			});
+		}
 
-		const dashboard = store.add(instantiationService.createInstance(ChatStatusDashboard, dashboardOptions));
+		const dashboard = store.add(instantiationService.createInstance(ChatStatusDashboard, options.dashboardOptions ?? dashboardOptions));
 
 		mainWindow.document.body.appendChild(dashboard.element);
 		store.add({ dispose: () => dashboard.element.remove() });
 
 		return dashboard;
 	}
+
+	test('commits inline suggestion language setting changes coherently', async () => {
+		const defaultChat = product.defaultChatAgent;
+		assert.ok(defaultChat);
+
+		const configurationService = new TestCompletionsConfigurationService(
+			defaultChat.completionsEnablementSetting,
+			{ '*': true, markdown: false },
+			{ '*': true, markdown: false },
+		);
+		const dashboard = createDashboard(createEntitlementService({ entitlement: ChatEntitlement.Pro }), {
+			dashboardOptions: {
+				...dashboardOptions,
+				disableInlineSuggestionsSettings: false,
+			},
+			configurationService,
+			activeTextEditorLanguageId: 'markdown',
+		});
+
+		const languageCheckbox = dashboard.element.querySelectorAll<HTMLElement>('.settings .monaco-checkbox').item(1);
+		const overriddenHint = dashboard.element.querySelector<HTMLElement>('.setting-overridden');
+		const status = dashboard.element.querySelector<HTMLElement>('.collapsible-status');
+		assert.ok(languageCheckbox && overriddenHint && status);
+		const getState = () => ({
+			ariaChecked: languageCheckbox.getAttribute('aria-checked'),
+			className: languageCheckbox.className,
+			status: status.textContent,
+			overriddenHint: overriddenHint.textContent,
+			configuredValue: { ...configurationService.configuredValue },
+		});
+
+		languageCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const pointerRequestedState = getState();
+		await configurationService.completeUpdate();
+		const pointerCommittedState = getState();
+
+		const spaceEvent = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, shiftKey: true });
+		Object.defineProperty(spaceEvent, 'keyCode', { value: 32 });
+		languageCheckbox.dispatchEvent(spaceEvent);
+		const keyboardRequestedState = getState();
+		await configurationService.completeUpdate();
+		const keyboardCommittedState = getState();
+
+		languageCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const pointerUncheckedRequestedState = getState();
+		await configurationService.completeUpdate();
+		const pointerUncheckedCommittedState = getState();
+
+		assert.deepStrictEqual({
+			pointerRequested: pointerRequestedState,
+			pointerCommitted: pointerCommittedState,
+			keyboardRequested: keyboardRequestedState,
+			keyboardCommitted: keyboardCommittedState,
+			pointerUncheckedRequested: pointerUncheckedRequestedState,
+			pointerUncheckedCommitted: pointerUncheckedCommittedState,
+		}, {
+			pointerRequested: {
+				ariaChecked: 'mixed',
+				className: 'monaco-custom-toggle monaco-checkbox codicon codicon-dash',
+				status: 'Disabled',
+				overriddenHint: '(overridden)',
+				configuredValue: { '*': true, markdown: false },
+			},
+			pointerCommitted: {
+				ariaChecked: 'mixed',
+				className: 'monaco-custom-toggle monaco-checkbox codicon codicon-dash',
+				status: 'Disabled',
+				overriddenHint: '',
+				configuredValue: { '*': true },
+			},
+			keyboardRequested: {
+				ariaChecked: 'true',
+				className: 'monaco-custom-toggle monaco-checkbox checked codicon codicon-check',
+				status: 'Disabled',
+				overriddenHint: '',
+				configuredValue: { '*': true },
+			},
+			keyboardCommitted: {
+				ariaChecked: 'true',
+				className: 'monaco-custom-toggle monaco-checkbox checked codicon codicon-check',
+				status: 'Enabled',
+				overriddenHint: '',
+				configuredValue: { '*': true, markdown: true },
+			},
+			pointerUncheckedRequested: {
+				ariaChecked: 'false',
+				className: 'monaco-custom-toggle monaco-checkbox',
+				status: 'Enabled',
+				overriddenHint: '',
+				configuredValue: { '*': true, markdown: true },
+			},
+			pointerUncheckedCommitted: {
+				ariaChecked: 'false',
+				className: 'monaco-custom-toggle monaco-checkbox',
+				status: 'Disabled',
+				overriddenHint: '(overridden)',
+				configuredValue: { '*': true, markdown: false },
+			},
+		});
+
+		for (let i = 0; i < 3; i++) {
+			languageCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		}
+		const rapidRequestedState = getState();
+		for (let i = 0; i < 3; i++) {
+			await configurationService.completeUpdate();
+		}
+
+		assert.deepStrictEqual({
+			requested: rapidRequestedState,
+			committed: getState(),
+		}, {
+			requested: {
+				ariaChecked: 'false',
+				className: 'monaco-custom-toggle monaco-checkbox',
+				status: 'Disabled',
+				overriddenHint: '(overridden)',
+				configuredValue: { '*': true, markdown: false },
+			},
+			committed: {
+				ariaChecked: 'false',
+				className: 'monaco-custom-toggle monaco-checkbox',
+				status: 'Disabled',
+				overriddenHint: '(overridden)',
+				configuredValue: { '*': true, markdown: false },
+			},
+		});
+	});
 
 	// --- COPILOT FREE ---
 
