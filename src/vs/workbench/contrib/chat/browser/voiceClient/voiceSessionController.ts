@@ -1105,6 +1105,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					// Keep the sessions-list pending indicator in sync with the set
 					// of sessions awaiting confirmation while unfocused.
 					this._reconcileConfirmationIndicators(stillWaiting);
+					this._reconcileResponseIndicators();
 					for (const id of [...this._confirmationFlushWatchdogs.keys()]) {
 						if (!stillWaiting.has(id)) {
 							const t = this._confirmationFlushWatchdogs.get(id);
@@ -1722,15 +1723,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 	}
 
-	/** True while the user is producing a turn (PTT held, incoming audio
-	 *  suppressed for capture, or awaiting the reply to their own utterance).
-	 *  A background session's completed reply must not be narrated in this window
-	 *  - the backend would drop the request - so it is held and read once the
-	 *  turn settles (see _enterAutoListen). */
-	private _isCapturingUserSpeech(): boolean {
-		return this._pttHeld || this._suppressIncomingAudio || this._awaitingReplyAudio;
-	}
-
 	markUserCancelled(sessionId: string): void {
 		const existing = this._userCancelledSessions.get(sessionId);
 		if (existing) { clearTimeout(existing); }
@@ -1817,24 +1809,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (this.ttsPlaybackService.isPlaying || this._audioQueue.length > 0 || this._currentPlaybackSessionId !== null) {
 			this.logService.trace(`[voice] _enterAutoListen skipped: audio busy (playing=${this.ttsPlaybackService.isPlaying} queue=${this._audioQueue.length} pbSession=${this._currentPlaybackSessionId !== null})`);
 			return;
-		}
-		// The user's turn has settled (nothing playing, PTT not held). If the
-		// session they're viewing has a completed reply we couldn't read earlier
-		// (e.g. its on-focus narration was held because the user was mid-utterance),
-		// read it now - before listening - so a pending response is never lost to
-		// PTT timing. Clear it only once the narration was actually requested.
-		const shown = this._shownSessionId();
-		if (shown) {
-			const pending = this._pendingResponseSummaries.get(shown);
-			if (pending) {
-				this.logService.trace(`[voice] reading held pending response for shown session=${shown.slice(-32)} before listening`);
-				this._prepareForPlayback();
-				this._narrate(shown, 'response', pending);
-				if (this._lastNarratedText.get(shown) === pending) {
-					this._clearPendingResponse(shown);
-				}
-				return;
-			}
 		}
 		this.logService.trace('[voice] _enterAutoListen entering listening');
 		this.pttDown();
@@ -2467,34 +2441,23 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				&& flushResult.finalTranscripts.includes(this._normalizeTranscript(narratable.text));
 			if (wasJustPlayed) {
 				this._lastNarratedText.set(key, narratable.text);
-				this._clearPendingResponse(key);
-			} else if (narratable.kind === 'response' && this._isCapturingUserSpeech()) {
-				// The user is mid-utterance (PTT held / capturing / awaiting their
-				// own reply). Requesting narration now would be dropped by the
-				// backend (busy with the user's turn) and the reply lost. Keep the
-				// pending summary + indicator so it is read once the turn settles
-				// (see _enterAutoListen) - tracked regardless of PTT state.
-				this._pendingResponseSummaries.set(key, narratable.text);
-				this._markPendingResponse(key, true);
-				this.logService.trace(`[voice] holding pending response for shown session=${key.slice(-32)} until user turn settles`);
 			} else {
 				// About to narrate a fresh item for the now-shown session. Get out
 				// of listening/auto-listen first, or the echoed audio is suppressed
 				// and the user hears nothing. This matters especially for a
 				// confirmation: it has no buffered audio, so the flush path (which
 				// normally does this) returned early without exiting listening.
+				// Responses are narrated on focus exactly like confirmations - an
+				// unconditional request now that the session is shown.
 				this._prepareForPlayback();
 				this._narrate(key, narratable.kind, narratable.text);
-				// Clear the pending-response indicator only once the narration was
-				// actually requested (a response whose text is now recorded as
-				// narrated); if the request couldn't be sent, keep it for retry.
-				if (narratable.kind !== 'response' || this._lastNarratedText.get(key) === narratable.text) {
-					this._clearPendingResponse(key);
-				}
 			}
-		} else {
-			this._clearPendingResponse(key);
 		}
+		// This session is now focused: its completed reply (if any) has just been
+		// played or requested above, so its pending indicator is cleared here
+		// unconditionally - identical to how the confirmation indicator is cleared
+		// on focus (see _clearConfirmationIndicator, above).
+		this._clearPendingResponse(key);
 		this._sendContext();
 		this.voiceClientService.flushSessionContext();
 	}
@@ -3017,6 +2980,28 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._maybeHideIndicator(sessionId);
 	}
 
+	/**
+	 * Keep the completed-reply (response) indicator in sync the same way
+	 * {@link _reconcileConfirmationIndicators} does for confirmations: the
+	 * session the user is now viewing must not show a pending-response
+	 * indicator. Runs on every poll/autorun so the indicator clears promptly
+	 * when the session is focused, independent of whether the on-focus
+	 * narration path fired (which can be missed on reconnect/model-load races).
+	 */
+	private _reconcileResponseIndicators(): void {
+		const activeId = this._externalActiveSessionMode
+			? this._activeSessionShown
+			: this._getFocusedSessionId();
+		if (!activeId) {
+			return;
+		}
+		for (const sessionId of [...this._pendingResponseSummaries.keys()]) {
+			if (this._isSameSession(sessionId, activeId)) {
+				this._clearPendingResponse(sessionId);
+			}
+		}
+	}
+
 	/** Drop a session's pending-response (completed-reply) indicator/summary. */
 	private _clearPendingResponse(sessionId: string): void {
 		if (!this._pendingResponseSummaries.delete(sessionId)) {
@@ -3537,6 +3522,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// arrive on sessions detected here (e.g. remote/unloaded sessions surfaced
 		// via onDidChangeSessions or the periodic poll rather than the autorun).
 		this._reconcileConfirmationIndicators(waitingSessionIds);
+		this._reconcileResponseIndicators();
 
 		// Speak the settled item for the shown session; completions surfaced ONLY
 		// here (e.g. remote/unloaded sessions) are covered too. Background sessions
