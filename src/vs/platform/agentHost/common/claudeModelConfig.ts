@@ -27,7 +27,7 @@ export type ClaudeEffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 /**
  * The effort union the SDK's runtime hot-swap setter
  * `Query.applyFlagSettings({ effortLevel })` is *declared* to accept. Note it
- * excludes `'max'` — but see {@link clampEffortForRuntime}: a `'max'` value can
+ * excludes `'max'` — but see {@link toRuntimeEffortLevel}: a `'max'` value can
  * still flow through this type at runtime, because the SDK's declared type is
  * narrower than what the API actually accepts.
  */
@@ -52,7 +52,7 @@ export type ClaudeRuntimeEffortLevel = 'low' | 'medium' | 'high' | 'xhigh';
  * `Settings.effortLevel` type is corrected upstream
  * (anthropics/claude-agent-sdk-typescript#377).
  */
-export function clampEffortForRuntime(effort: ClaudeEffortLevel | undefined): ClaudeRuntimeEffortLevel | undefined {
+export function toRuntimeEffortLevel(effort: ClaudeEffortLevel | undefined): ClaudeRuntimeEffortLevel | undefined {
 	return effort as ClaudeRuntimeEffortLevel | undefined;
 }
 

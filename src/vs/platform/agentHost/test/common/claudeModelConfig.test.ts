@@ -5,7 +5,7 @@
 
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
-import { CLAUDE_THINKING_LEVEL_KEY, clampEffortForRuntime, createClaudeThinkingLevelSchema, isClaudeEffortLevel, resolveClaudeEffort, type ClaudeEffortLevel } from '../../common/claudeModelConfig.js';
+import { CLAUDE_THINKING_LEVEL_KEY, toRuntimeEffortLevel, createClaudeThinkingLevelSchema, isClaudeEffortLevel, resolveClaudeEffort, type ClaudeEffortLevel } from '../../common/claudeModelConfig.js';
 import type { ModelSelection } from '../../common/state/protocol/state.js';
 
 suite('resolveClaudeEffort (Phase 6.1 / Cycle E)', () => {
@@ -39,7 +39,7 @@ suite('resolveClaudeEffort (Phase 6.1 / Cycle E)', () => {
 	});
 });
 
-suite('clampEffortForRuntime', () => {
+suite('toRuntimeEffortLevel', () => {
 
 	ensureNoDisposablesAreLeakedInTestSuite();
 
@@ -51,7 +51,7 @@ suite('clampEffortForRuntime', () => {
 		// carried at runtime does not.
 		const inputs: readonly (ClaudeEffortLevel | undefined)[] = [undefined, 'low', 'medium', 'high', 'xhigh', 'max'];
 		assert.deepStrictEqual(
-			inputs.map(clampEffortForRuntime),
+			inputs.map(toRuntimeEffortLevel),
 			[undefined, 'low', 'medium', 'high', 'xhigh', 'max'],
 		);
 	});
