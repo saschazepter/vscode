@@ -61,7 +61,7 @@ Key properties:
 | `capiWireCodec.ts` | SSE codecs. Aggregates recorded SSE → a normalized turn, and regenerates SSE from a turn on replay, for both `anthropic` and `responses` dialects. |
 | `capiStubs.ts` | Hardcoded responses for ancillary bootstrap endpoints (`/models`, token, user, `/models/session`, telemetry, agents). |
 | `testHelpers.ts` | `startRealServer(...)` (wires the proxy + env), the mock LLM server, `TestProtocolClient`. |
-| `agentHostE2ETestHelpers.ts` | `defineAgentHostE2ETests(config)` — the cross-provider suite, record/replay plumbing, per-provider config. |
+| `agentHostE2ETestHelpers.ts` | `defineAgentHostE2ETests(config)` — the cross-provider suite, record/replay plumbing, per-provider config, and `AgentHostE2EServerLease` (the per-test vs shared server lifecycle — see [Server lifecycle](#server-lifecycle)). |
 | `{claude,copilot,codex}AgentHostE2E.integrationTest.ts` | Per-provider entry points: resolve the SDK, define the config, add provider-specific tests. |
 | `captures/agentHostE2E/*.yaml` | The committed fixtures, one per `(provider, test)`. |
 
@@ -117,6 +117,22 @@ Provider availability:
 - **Copilot** (`copilotcli`) — always enabled (the CLI is a dev dependency).
 - **Claude** — enabled when `node_modules/@anthropic-ai/claude-agent-sdk` is present (dev dep).
 - **Codex** — shared suite enabled when `node_modules/@openai/codex` is present. Codex-specific *steering* tests (real-time, non-deterministic) are extra and gated behind `AGENT_HOST_REAL_CODEX=1`.
+
+---
+
+## Server lifecycle
+
+Each test needs an agent host server (a forked subprocess) fronted by a `CapiReplayProxy`. `AgentHostE2EServerLease` (in `agentHostE2ETestHelpers.ts`) owns that lifecycle and picks one of two strategies:
+
+- **Per-test** (default, and always while recording) — fork a fresh server + proxy for every test and kill it in teardown. Full isolation: a test that leaves the agent host wedged (e.g. a mid-turn dispose) can't poison the next test, because the next test gets a pristine process. The cost is that every test re-pays the server fork **and** the provider SDK/CLI cold start (`_ensureClient` spawns and caches the CLI subprocess per server).
+
+- **Shared** (opt-in via the `supportsSharedReplayServer` provider flag, **replay only**) — fork the server + proxy **once** for the whole suite, then between tests swap the per-test fixture and reconnect a fresh client. The agent host's cached SDK client / CLI subprocess is reused, so only the first test pays that startup. This roughly halves the Copilot suite's wall-clock.
+
+The swap is what makes sharing cheap and safe: the proxy is an `http.Server` running **inside the test process**, so `CapiReplayProxy.resetForReplay(fixturePath)` is a plain in-process method call — no IPC, no re-fork. It reloads the replay buckets and clears the cache-miss log while keeping the **same proxy URL**, so the long-lived agent host (forked against that URL) keeps talking to the same proxy and just receives the next fixture's recorded responses. Teardown calls `assertNoCacheMisses()` to verify a test's traffic *without* stopping the server (vs `stop()`, which verifies then closes); the suite's `suiteTeardown` closes it via `close()`.
+
+**Why it's opt-in per provider:** sharing keeps the provider's agent + SDK client alive across tests, so it's only safe when `disposeSession` reliably returns the agent to a clean state. Currently **only Copilot** sets the flag. Claude stays per-test: its mid-turn dispose can wedge the shared agent host process, and per-test kill-and-refork isolation is what guards against that. Recording always uses a fresh proxy + fixture per test regardless of the flag (a proxy records to one fixture at a time).
+
+> A corollary for test authors: a shared-server test must not return mid-turn. Drain each turn to `turnComplete` before the test ends, or teardown's abort of the in-flight turn can wedge the reused client. (This is why the permission test drains its post-tool continuation even in replay.)
 
 ---
 
@@ -176,6 +192,7 @@ Guidelines:
 | `supportsSubagents` | Gates the two subagent tests. |
 | `supportsWorktreeIsolation` | Gates the worktree test. |
 | `supportsPlanMode` | Gates the plan-mode test. |
+| `supportsSharedReplayServer` | Reuse one server across the whole suite (replay only) instead of restarting per test — see [Server lifecycle](#server-lifecycle). Only for providers whose `disposeSession` reliably returns the agent to a clean state (currently Copilot). |
 | `shellPermissionReplayUnstableOnWindows` | Skips the shell-permission test on **Windows** for that provider (e.g. Codex's `exec_command` tool call isn't emitted by the Codex CLI on Windows). |
 | `subagentReplayUnstableOnWindows` | Skips the subagent-reopen ("replay path") test on **Windows** for that provider (e.g. Claude rebuilds the transcript from the SDK's on-disk `subagents/*.jsonl`, not reliably visible there right after the turn). |
 | `RECORD` (env) | The `can abort a running turn` test is record-only — replay serves the truncated response instantly, so there's no window to abort. |
@@ -233,6 +250,10 @@ Subagent flows are the most SDK-version-sensitive: the parent's and child's `/v1
 ### Everything suddenly reaches "real CAPI" / 401s locally
 
 You're accidentally in record mode (`AGENT_HOST_REPLAY_RECORD` set) without a token, or an env override isn't pointing at the proxy. Unset the var to replay.
+
+### A test passes alone but fails only when run after another test (shared server)
+
+Only happens for providers with `supportsSharedReplayServer` (see [Server lifecycle](#server-lifecycle)): state leaked across tests because the server (and its cached SDK client) is reused. The usual cause is a prior test that returned **mid-turn**, so teardown's abort wedged the reused client. Drain that test's turn to `turnComplete` before it ends. (Verify by re-running the pair with `--grep "<first>|<second>"`; if it then passes alone but fails paired, it's a leak, not the fixture.)
 
 ### CI infra flakes (not your code)
 
