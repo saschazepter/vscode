@@ -424,7 +424,7 @@ suite('AgentHostClientTools', () => {
 			disposables: DisposableStore,
 			tools: IToolData[],
 			toolServiceOptions?: { requireConfirmation?: boolean; throwBeforeConfirmation?: Error },
-			activeClientCustomizations?: readonly ClientPluginCustomization[],
+			activeClientState?: { tools?: readonly ToolDefinition[]; customizations?: readonly ClientPluginCustomization[] },
 		) {
 			const instantiationService = disposables.add(new TestInstantiationService());
 			const connection = new MockAgentHostConnection();
@@ -519,17 +519,20 @@ suite('AgentHostClientTools', () => {
 
 			// Use the real active-client service so the handler's tools autorun
 			// observes the mocked ILanguageModelToolsService tool sets. Tests that
-			// exercise the on-open customization publish override it with a mock
-			// that returns a fixed customizations set.
-			if (activeClientCustomizations) {
+			// exercise the active-client publish on open override it with a mock
+			// that returns a fixed tools + customizations set.
+			if (activeClientState) {
+				const activeClientTools = activeClientState.tools ?? [];
+				const activeClientCustomizations = activeClientState.customizations ?? [];
+				const toolsObs = constObservable(activeClientTools);
 				const customizationsObs = constObservable(activeClientCustomizations);
 				instantiationService.stub(IAgentHostActiveClientService, new class extends mock<IAgentHostActiveClientService>() {
 					override registerForAgent() { return { syncProvider: undefined!, dispose() { } }; }
 					override getActiveClient(_sessionType: string, clientId: string): SessionActiveClient {
-						return { clientId, tools: [], customizations: [...activeClientCustomizations] };
+						return { clientId, tools: [...activeClientTools], customizations: [...activeClientCustomizations] };
 					}
 					override getCustomizations() { return customizationsObs; }
-					override getClientTools() { return constObservable<readonly ToolDefinition[]>([]); }
+					override getClientTools() { return toolsObs; }
 				}());
 			} else {
 				const activeClientService = disposables.add(instantiationService.createInstance(AgentHostActiveClientService));
@@ -647,7 +650,7 @@ suite('AgentHostClientTools', () => {
 			assert.strictEqual(runTestsDef.description, 'Runs unit tests');
 		});
 
-		test('publishes client customizations without tools when opening an existing session', async () => {
+		test('publishes the client active-client entry (tools and customizations) when opening an existing session', async () => {
 			const customization: ClientPluginCustomization = {
 				type: CustomizationType.Plugin,
 				id: 'plugin-1',
@@ -655,7 +658,8 @@ suite('AgentHostClientTools', () => {
 				name: 'Inbox',
 				enabled: true,
 			};
-			const { handler, connection } = createHandlerWithMocks(disposables, [], undefined, [customization]);
+			const tool: ToolDefinition = { name: 'runTask', description: 'Runs a VS Code task' };
+			const { handler, connection } = createHandlerWithMocks(disposables, [], undefined, { tools: [tool], customizations: [customization] });
 
 			await handler.provideChatSessionContent(URI.parse('agent-host-copilot:/session-1'), CancellationToken.None);
 			await timeout(0);
@@ -664,7 +668,19 @@ suite('AgentHostClientTools', () => {
 			assert.ok(entry && entry.action.type === ActionType.SessionActiveClientSet, 'expected a SessionActiveClientSet dispatch on open');
 			assert.deepStrictEqual(
 				{ tools: entry.action.activeClient.tools, customizations: entry.action.activeClient.customizations },
-				{ tools: [], customizations: [customization] },
+				{ tools: [tool], customizations: [customization] },
+			);
+		});
+
+		test('does not register an empty active client when opening a session with nothing to contribute', async () => {
+			const { handler, connection } = createHandlerWithMocks(disposables, [], undefined, { tools: [], customizations: [] });
+
+			await handler.provideChatSessionContent(URI.parse('agent-host-copilot:/session-1'), CancellationToken.None);
+			await timeout(0);
+
+			assert.ok(
+				!connection.dispatchedActions.some(e => e.action.type === ActionType.SessionActiveClientSet),
+				'expected no SessionActiveClientSet dispatch when there is nothing to contribute',
 			);
 		});
 
