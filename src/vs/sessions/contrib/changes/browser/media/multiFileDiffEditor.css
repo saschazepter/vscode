@@ -132,7 +132,7 @@
 	cursor: pointer;
 	color: var(--vscode-foreground);
 	border-radius: var(--vscode-cornerRadius-small);
-	border: 1px solid var(--vscode-toolbar-hoverBackground);
+	border: var(--vscode-strokeThickness) solid var(--vscode-toolbar-hoverBackground);
 	height: 20px;
 }
 

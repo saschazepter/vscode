@@ -398,9 +398,7 @@ class ChangesetReviewActionViewItem extends CheckboxActionViewItem {
 	override updateChecked(): void {
 		super.updateChecked();
 
-		// The tooltip depends on the checked state, but the base class only refreshes
-		// the tooltip on label/tooltip changes (not on checked changes), so re-run it
-		// here to keep the hover and aria-label in sync with the reviewed state.
+		this.updateAriaLabel();
 		this.updateTooltip();
 	}
 
