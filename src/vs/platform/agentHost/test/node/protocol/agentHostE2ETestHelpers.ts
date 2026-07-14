@@ -204,19 +204,6 @@ export interface IAgentHostE2EProviderConfig {
 	readonly supportsPlanMode: boolean;
 
 	/**
-	 * Reuse one agent host server (and its cached provider SDK client / CLI
-	 * subprocess) across all tests in the suite instead of restarting per test,
-	 * swapping the replay fixture between tests via {@link CapiReplayProxy.resetForReplay}.
-	 * A large speedup (server fork + SDK client startup are paid once). Safe as
-	 * long as no test returns mid-turn: since one server serves every test, a
-	 * turn left in flight leaks its continuation HTTP call into the next test's
-	 * fixture window (a strict cache miss). Every shared test therefore drains
-	 * its turns to `turnComplete`. Ignored while recording (each recording needs
-	 * its own fresh proxy + fixture). Enabled for all three providers.
-	 */
-	readonly supportsSharedReplayServer?: boolean;
-
-	/**
 	 * The github token to use. If not provided, the test will attempt to resolve it from the environment or `gh auth token`.
 	 */
 	readonly githubToken?: string;
@@ -590,14 +577,16 @@ export function startBackgroundApprovalLoop(c: TestProtocolClient, options: IBac
  * Manages the agent host server + connected client lifecycle for one e2e test,
  * hiding the difference between two strategies:
  *
- * - **Per-test** (default, and always while recording): start a fresh server +
- *   proxy for each test and kill it in teardown. Full isolation; every test pays
- *   server fork + provider SDK client startup.
- * - **Shared** (opt-in via {@link IAgentHostE2EProviderConfig.supportsSharedReplayServer},
- *   replay only): start the server + proxy once, then swap the per-test fixture
- *   via {@link CapiReplayProxy.resetForReplay} and reconnect a fresh client each
- *   test. The agent host's cached SDK client / CLI subprocess is reused, so only
- *   the first test pays that startup.
+ * - **Per-test** (always while recording): start a fresh server + proxy for
+ *   each test and kill it in teardown. Full isolation; every test pays server
+ *   fork + provider SDK client startup.
+ * - **Shared** (the default in replay): start the server + proxy once, then swap
+ *   the per-test fixture via {@link CapiReplayProxy.resetForReplay} and reconnect
+ *   a fresh client each test. The agent host's cached SDK client / CLI subprocess
+ *   is reused, so only the first test pays that startup. Safe as long as no test
+ *   returns mid-turn (see the drain note on the permission test): one server
+ *   serves every test, so a turn left in flight would leak its continuation into
+ *   the next test's fixture window as a strict cache miss.
  *
  * Both strategies dispose each test's sessions (abort-first, then
  * `disposeSession`) and verify the replay traffic; the shared strategy verifies
@@ -614,7 +603,9 @@ export class AgentHostE2EServerLease {
 	) {
 		// Server reuse is a replay-only optimization: recording writes one fixture
 		// per proxy and so needs a fresh proxy (hence a fresh server) per test.
-		this._shared = !!_config.supportsSharedReplayServer && !RECORD;
+		// In replay it is always safe because every test drains its turns, so the
+		// reused server carries no in-flight work across tests.
+		this._shared = !RECORD;
 	}
 
 	/** Acquire a server + connected client for a test, returning both. */
@@ -717,10 +708,10 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 		});
 
 		suiteTeardown(async function () {
-			// When a provider opts into `supportsSharedReplayServer`, the server is
-			// started once and reused across tests (swapping the replay fixture per
-			// test); tear it down here. Otherwise the lease already killed the
-			// per-test server in each teardown and this is a no-op.
+			// In replay the lease reuses one server across the suite (swapping the
+			// replay fixture per test); tear it down here. While recording the
+			// lease already killed the per-test server in each teardown and this is
+			// a no-op.
 			this.timeout(60_000);
 			await lease.dispose();
 		});
