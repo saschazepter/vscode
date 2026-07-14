@@ -22,19 +22,7 @@ import { InspectorDataProvider } from './inspector';
 import { ThrottledDebouncer } from './throttledDebounce';
 import { ContextItemResultBuilder, ContextItemSummary, ResolvedRunnableResult, type OnCachePopulatedEvent, type OnContextComputedEvent, type OnContextComputedOnTimeoutEvent } from './types';
 
-const currentTokenBudget: number = 8 * 1024;
-
-enum ExecutionTarget {
-	Semantic,
-	Syntax
-}
-
-type ExecConfig = {
-	readonly lowPriority?: boolean;
-	readonly nonRecoverable?: boolean;
-	readonly cancelOnResourceChange?: vscode.Uri;
-	readonly executionTarget?: ExecutionTarget;
-};
+export const currentTokenBudget: number = 8 * 1024;
 
 enum ErrorLocation {
 	Client = 'client',
@@ -1061,31 +1049,7 @@ class NeighborFileModel implements vscode.Disposable {
 	}
 }
 
-type ComputeContextRequestArgs = Omit<protocol.ComputeContextRequestArgs, 'file' | 'projectFileName' | 'line' | 'offset'> & {
-	file: vscode.Uri;
-	line: number;
-	offset: number;
-	$traceId?: string;
-};
-namespace ComputeContextRequestArgs {
-	export function create(document: vscode.TextDocument, position: vscode.Position, context: RequestContext, startTime: number, timeBudget: number, willLogRequestTelemetry: boolean, neighborFiles: readonly string[] | undefined, clientSideRunnableResults: readonly protocol.CachedContextRunnableResult[] | undefined, includeDocumentation: boolean): ComputeContextRequestArgs {
-		return {
-			file: vscode.Uri.file(document.fileName),
-			line: position.line + 1,
-			offset: position.character + 1,
-			startTime: startTime,
-			timeBudget: timeBudget,
-			primaryCharacterBudget: (context.tokenBudget ?? 7 * 1024) * 4,
-			secondaryCharacterBudget: (currentTokenBudget * 4),
-			includeDocumentation: includeDocumentation,
-			neighborFiles: neighborFiles !== undefined && neighborFiles.length > 0 ? neighborFiles : undefined,
-			clientSideRunnableResults: clientSideRunnableResults,
-			$traceId: willLogRequestTelemetry ? context.requestId : undefined
-		};
-	}
-}
-
-class PendingRequestInfo {
+export class PendingRequestInfo {
 
 	public readonly document: string;
 	public readonly version: number;
@@ -1100,7 +1064,7 @@ class PendingRequestInfo {
 	}
 }
 
-class InflightRequestInfo {
+export class InflightRequestInfo {
 
 	public readonly document: string;
 	public readonly position: vscode.Position;
@@ -1132,7 +1096,7 @@ class InflightRequestInfo {
 	}
 }
 
-class OnTimeoutData {
+export class OnTimeoutData {
 
 	private readonly document: string;
 	private readonly version: number;
@@ -1160,13 +1124,13 @@ class OnTimeoutData {
 	}
 }
 
-enum ContextItemUsageMode {
+export enum ContextItemUsageMode {
 	minimal = 'minimal',
 	double = 'double',
 	fillHalf = 'fillHalf',
 	fill = 'fill'
 }
-namespace ContextItemUsageMode {
+export namespace ContextItemUsageMode {
 	export function fromString(value: string): ContextItemUsageMode {
 		switch (value) {
 			case 'minimal': return ContextItemUsageMode.minimal;
@@ -1178,7 +1142,7 @@ namespace ContextItemUsageMode {
 	}
 }
 
-class CharacterBudget {
+export class CharacterBudget {
 
 	public readonly overall: number;
 	private mandatory: number;
@@ -1207,6 +1171,113 @@ class CharacterBudget {
 
 	public fresh(): CharacterBudget {
 		return new CharacterBudget(this.start.mandatory, this.start.optional);
+	}
+}
+
+export abstract class TSLanguageContextService implements Omit<ILanguageContextService, '_serviceBrand' | 'isActivated'>, vscode.Disposable {
+
+	private static readonly defaultCachePopulationBudget: number = 500;
+
+	protected readonly disposables: DisposableStore;
+	protected readonly telemetrySender: TelemetrySender;
+	protected readonly neighborFileModel: NeighborFileModel;
+	protected readonly runnableResultManager: RunnableResultManager;
+	protected readonly logService: ILogService;
+	protected readonly configurationService: IConfigurationService;
+	protected readonly experimentationService: IExperimentationService;
+
+	protected usageMode: ContextItemUsageMode;
+	protected cachePopulationTimeout: number;
+	protected includeDocumentation: boolean;
+
+
+	protected _onCachePopulated: vscode.EventEmitter<OnCachePopulatedEvent>;
+	public readonly onCachePopulated: vscode.Event<OnCachePopulatedEvent>;
+
+	protected _onContextComputed: vscode.EventEmitter<OnContextComputedEvent>;
+	public readonly onContextComputed: vscode.Event<OnContextComputedEvent>;
+
+	protected _onContextComputedOnTimeout: vscode.EventEmitter<OnContextComputedOnTimeoutEvent>;
+	public readonly onContextComputedOnTimeout: vscode.Event<OnContextComputedOnTimeoutEvent>;
+
+	constructor(
+		telemetryService: ITelemetryService,
+		logService: ILogService,
+		configurationService: IConfigurationService,
+		experimentationService: IExperimentationService
+	) {
+		this.disposables = new DisposableStore();
+
+		this.configurationService = configurationService;
+		this.experimentationService = experimentationService;
+		this.logService = logService;
+		this.telemetrySender = new TelemetrySender(telemetryService, logService);
+		this.neighborFileModel = new NeighborFileModel();
+		this.runnableResultManager = new RunnableResultManager();
+
+		this.usageMode = this.getUsageMode();
+		this.cachePopulationTimeout = this.getCachePopulationBudget();
+		this.includeDocumentation = this.getIncludeDocumentation();
+
+		this.disposables.add(this.configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration(ConfigKey.TypeScriptLanguageContextMode.fullyQualifiedId)) {
+				this.usageMode = this.getUsageMode();
+			} else if (e.affectsConfiguration(ConfigKey.TypeScriptLanguageContextCacheTimeout.fullyQualifiedId)) {
+				this.cachePopulationTimeout = this.getCachePopulationBudget();
+			} else if (e.affectsConfiguration(ConfigKey.TypeScriptLanguageContextIncludeDocumentation.fullyQualifiedId)) {
+				this.includeDocumentation = this.getIncludeDocumentation();
+			}
+		}));
+
+
+		this._onCachePopulated = this.disposables.add(new vscode.EventEmitter<OnCachePopulatedEvent>());
+		this.onCachePopulated = this._onCachePopulated.event;
+
+		this._onContextComputed = this.disposables.add(new vscode.EventEmitter<OnContextComputedEvent>());
+		this.onContextComputed = this._onContextComputed.event;
+
+		this._onContextComputedOnTimeout = this.disposables.add(new vscode.EventEmitter<OnContextComputedOnTimeoutEvent>());
+		this.onContextComputedOnTimeout = this._onContextComputedOnTimeout.event;
+	}
+
+	public dispose(): void {
+		this.disposables.dispose();
+	}
+
+	public abstract populateCache(document: vscode.TextDocument, position: vscode.Position, context: RequestContext): Promise<void>;
+
+	public abstract getContext(document: vscode.TextDocument, position: vscode.Position, context: RequestContext, token: vscode.CancellationToken): AsyncIterable<ContextItem>;
+
+	public abstract getContextOnTimeout(document: vscode.TextDocument, position: vscode.Position, context: RequestContext): readonly ContextItem[] | undefined;
+
+	private getCachePopulationBudget(): number {
+		const result = this.configurationService.getExperimentBasedConfig(ConfigKey.TypeScriptLanguageContextCacheTimeout, this.experimentationService);
+		return result ?? TSLanguageContextService.defaultCachePopulationBudget;
+	}
+
+	private getUsageMode(): ContextItemUsageMode {
+		const value = this.configurationService.getExperimentBasedConfig(ConfigKey.TypeScriptLanguageContextMode, this.experimentationService);
+		return ContextItemUsageMode.fromString(value);
+	}
+
+	private getIncludeDocumentation(): boolean {
+		return this.configurationService.getExperimentBasedConfig<boolean>(ConfigKey.TypeScriptLanguageContextIncludeDocumentation, this.experimentationService);
+	}
+
+	protected getCharacterBudget(context: RequestContext, document: vscode.TextDocument): CharacterBudget {
+		const chars = (context.tokenBudget ?? currentTokenBudget) * 4;
+		switch (this.usageMode) {
+			case ContextItemUsageMode.minimal:
+				return new CharacterBudget(chars, 0);
+			case ContextItemUsageMode.double:
+				return new CharacterBudget(chars, Math.min(chars, document.getText().length));
+			case ContextItemUsageMode.fillHalf:
+				return new CharacterBudget(chars, Math.floor(chars / 2));
+			case ContextItemUsageMode.fill:
+				return new CharacterBudget(chars, chars);
+			default:
+				return new CharacterBudget(chars, chars);
+		}
 	}
 }
 
@@ -1844,7 +1915,7 @@ export class InlineCompletionContribution implements vscode.Disposable, TokenBud
 	private typeScriptFileOpen(): void {
 		this.checkRegistration();
 		this.disposables.add(this.configurationService.onDidChangeConfiguration((e) => {
-			if (e.affectsConfiguration(ConfigKey.TypeScriptLanguageContext.fullyQualifiedId)) {
+			if (e.affectsConfiguration(ConfigKey.TypeScriptLanguageContext.fullyQualifiedId) || e.affectsConfiguration('js/ts.experimental.useTsgo')) {
 				this.checkRegistration();
 			}
 		}));
@@ -1987,9 +2058,12 @@ export class InlineCompletionContribution implements vscode.Disposable, TokenBud
 
 	private async isTypeScriptRunning(): Promise<boolean> {
 		// Check that the TypeScript extension is installed and runs in the same extension host.
-		const typeScriptExtension = vscode.extensions.getExtension('vscode.typescript-language-features');
+		const useTypeScript7 = this.useTypeScript7();
+		const typeScriptExtension = useTypeScript7
+			? vscode.extensions.getExtension('typescriptteam.native-preview')
+			: vscode.extensions.getExtension('vscode.typescript-language-features');
 		if (typeScriptExtension === undefined) {
-			this.telemetrySender.sendActivationFailedTelemetry(ErrorLocation.Client, ErrorPart.TypescriptPlugin, 'TypeScript extension not found', undefined);
+			this.telemetrySender.sendActivationFailedTelemetry(ErrorLocation.Client, ErrorPart.TypescriptPlugin, 'TypeScript extension not found', useTypeScript7 ? 'ts6' : 'ts7');
 			this.logService.error('TypeScript extension not found');
 			return false;
 		}
@@ -1998,10 +2072,10 @@ export class InlineCompletionContribution implements vscode.Disposable, TokenBud
 			return true;
 		} catch (error) {
 			if (error instanceof Error) {
-				this.telemetrySender.sendActivationFailedTelemetry(ErrorLocation.Client, ErrorPart.TypescriptPlugin, error.message, error.stack);
+				this.telemetrySender.sendActivationFailedTelemetry(ErrorLocation.Client, ErrorPart.TypescriptPlugin, error.message, error.stack, useTypeScript7 ? 'ts6' : 'ts7');
 				this.logService.error('Error checking if TypeScript plugin is installed:', error.message);
 			} else {
-				this.telemetrySender.sendActivationFailedTelemetry(ErrorLocation.Client, ErrorPart.TypescriptPlugin, 'Unknown error', undefined);
+				this.telemetrySender.sendActivationFailedTelemetry(ErrorLocation.Client, ErrorPart.TypescriptPlugin, 'Unknown error', undefined, useTypeScript7 ? 'ts6' : 'ts7');
 				this.logService.error('Error checking if TypeScript plugin is installed: Unknown error');
 			}
 			return false;
@@ -2117,5 +2191,10 @@ export class InlineCompletionContribution implements vscode.Disposable, TokenBud
 			return Math.max(1, Math.min(100, value));
 		}
 		return 1;
+	}
+
+	private useTypeScript7(): boolean {
+		const value = vscode.workspace.getConfiguration('js/ts.experimental').get<boolean>('useTsgo', false);
+		return value === true;
 	}
 }
