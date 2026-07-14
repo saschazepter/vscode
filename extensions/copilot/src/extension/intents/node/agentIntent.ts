@@ -255,7 +255,7 @@ export const getAgentTools = async (accessor: ServicesAccessor, request: vscode.
 
 		// Only look up endpoints when a subagent that depends on model availability
 		// could actually be enabled, since the lookup is otherwise unnecessary.
-		const allEndpoints = isGptOrAnthropic && (searchSubagentEnabled || executionSubagentEnabled)
+		const allEndpoints = searchSubagentEnabled || (isGptOrAnthropic && executionSubagentEnabled)
 			? await endpointProvider.getAllChatEndpoints().catch(err => {
 				logService.warn(`getAgentTools: failed to fetch chat endpoints, disabling availability-gated subagents: ${err}`);
 				return [] as IChatEndpoint[];
@@ -263,8 +263,8 @@ export const getAgentTools = async (accessor: ServicesAccessor, request: vscode.
 			: [];
 
 		const searchAgentAvailable = allEndpoints.some(e => e.family === SEARCH_AGENT_FAMILY);
-		allowTools[ToolName.SearchSubagent] = isGptOrAnthropic && searchSubagentEnabled && exploreAgentEnabled && searchAgentAvailable;
-		allowTools[ToolName.ExploreSubagent] = isGptOrAnthropic && searchSubagentEnabled && !exploreAgentEnabled && searchAgentAvailable;
+		allowTools[ToolName.SearchSubagent] = searchSubagentEnabled && exploreAgentEnabled && searchAgentAvailable;
+		allowTools[ToolName.ExploreSubagent] = searchSubagentEnabled && !exploreAgentEnabled && searchAgentAvailable;
 
 		// The execution subagent is powered by gemini-3-flash, so it can only be
 		// offered when that model is actually available to the user. If it isn't

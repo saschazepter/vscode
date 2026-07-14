@@ -58,8 +58,9 @@ describe('getAgentTools search subagent gating', () => {
 		instantiationService = accessor.get(IInstantiationService);
 		configService = accessor.get(IConfigurationService);
 
-		// User-selected model: must be gpt/anthropic family for the subagent gates to even consider enabling.
-		userEndpoint = instantiationService.createInstance(MockEndpoint, 'gpt-5');
+		// User-selected model: CAPI-backed, but intentionally not a gpt/anthropic family.
+		userEndpoint = instantiationService.createInstance(MockEndpoint, 'gemini-3-pro');
+		(userEndpoint as { family: string }).family = 'gemini-3-pro';
 		(userEndpoint as { urlOrRequestMetadata: RequestMetadata }).urlOrRequestMetadata = { type: RequestType.ChatCompletions };
 		searchAgentEndpoint = instantiationService.createInstance(MockEndpoint, SEARCH_AGENT_FAMILY);
 	});
