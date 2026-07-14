@@ -1958,20 +1958,24 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	 * applies to the next tool this turn, not only from the next `send()`
 	 * (issue #321691). Only fires for client-originated changes (the host routes
 	 * internal server writes elsewhere), so this can forward without re-entering
-	 * a `canUseTool` callback. No-op until the session is materialized — the
-	 * first `send()` seeds the mode into `Options.permissionMode`. Fire-and-
-	 * forget: the SDK control round-trip isn't awaited here; the pipeline caches
-	 * the mode so a later rebind / send re-applies it.
+	 * a `canUseTool` callback.
+	 *
+	 * `permissionMode` is the live `Query`'s mode, and each chat has its own
+	 * `Query`, so this forwards to the single chat the change is scoped to
+	 * (resolved from the channel), not every chat in the session. A `replace`
+	 * that deletes the key resolves to the same `permissionModeFallback` the next
+	 * `send()` would apply, so live state mirrors the reducer. No-op until that
+	 * chat is materialized — its first `send()` seeds the mode into
+	 * `Options.permissionMode`. Fire-and-forget: the SDK control round-trip isn't
+	 * awaited here; the pipeline caches the mode so a later rebind / send
+	 * re-applies it.
 	 */
 	onSessionConfigChanged(session: URI, values: Record<string, unknown>): void {
-		const mode = narrowClaudePermissionMode(values[ClaudeSessionConfigKey.PermissionMode]);
-		if (!mode) {
-			return;
-		}
 		const target = this._getChatContext(session).target;
 		if (!target?.isPipelineReady) {
 			return;
 		}
+		const mode = narrowClaudePermissionMode(values[ClaudeSessionConfigKey.PermissionMode]) ?? target.permissionModeFallback;
 		target.setPermissionMode(mode).catch(err => {
 			this._logService.warn(`[Claude:${target.sessionId}] mid-turn setPermissionMode(${mode}) failed`, err);
 		});

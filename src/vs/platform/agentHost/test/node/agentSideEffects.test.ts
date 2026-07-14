@@ -3195,7 +3195,10 @@ suite('AgentSideEffects', () => {
 				createdAt: new Date().toISOString(),
 				modifiedAt: new Date().toISOString(),
 			});
-			session.config = { schema: { type: 'object', properties: {} }, values: { permissionMode: 'default' } };
+			// Seed a second key the patch does NOT touch: if the hook received the
+			// raw patch instead of the merged values, `autoApprove` would be
+			// missing — so asserting it survives pins the "merged values" contract.
+			session.config = { schema: { type: 'object', properties: {} }, values: { permissionMode: 'default', autoApprove: 'default' } };
 
 			localStateManager.dispatchClientAction(sessionUri.toString(), {
 				type: ActionType.SessionConfigChanged,
@@ -3208,7 +3211,7 @@ suite('AgentSideEffects', () => {
 
 			assert.deepStrictEqual(localAgent.onSessionConfigChangedCalls.map(c => ({ session: c.session.toString(), values: c.values })), [{
 				session: sessionUri.toString(),
-				values: { permissionMode: 'bypassPermissions' },
+				values: { permissionMode: 'bypassPermissions', autoApprove: 'default' },
 			}]);
 		});
 	});

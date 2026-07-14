@@ -3168,11 +3168,12 @@ suite('ClaudeAgent', () => {
 		});
 	});
 
-	test('onSessionConfigChanged forwards a mid-turn picker permissionMode change to the live Query (issue #321691)', async () => {
+	test('onSessionConfigChanged forwards a mid-turn picker change and reverts to the fallback when the key is deleted (issue #321691)', async () => {
 		// The host calls this hook for user/picker changes only (internal server
-		// writes like ExitPlanMode never route here), so it must forward the new
-		// mode to the running SDK so the next tool this turn auto-approves —
-		// without waiting for the next send().
+		// writes like ExitPlanMode never route here), so it forwards the new mode
+		// to the live Query so the next tool this turn auto-approves — without
+		// waiting for the next send(). A `replace` that deletes `permissionMode`
+		// reverts the Query to the fallback the next send() would apply.
 		const { agent, sdk } = createTestContext(disposables);
 		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
 
@@ -3196,8 +3197,11 @@ suite('ClaudeAgent', () => {
 		const turn = agent.chats.sendMessage(defaultChatUri(created.session), 'edit a file', undefined, undefined, 't1');
 		await reached.p;
 
-		// Host delivers the user's picker change mid-turn.
+		// Picker switches to Bypass Permissions...
 		agent.onSessionConfigChanged(created.session, { permissionMode: 'bypassPermissions' });
+		await tick();
+		// ...then a `replace` deletes the key, reverting to the 'default' fallback.
+		agent.onSessionConfigChanged(created.session, {});
 		await tick();
 
 		const recordedMidTurn = [...(sdk.warmQueries.at(-1)?.produced?.recordedPermissionModes ?? [])];
@@ -3205,7 +3209,7 @@ suite('ClaudeAgent', () => {
 		release.complete();
 		await turn;
 
-		assert.deepStrictEqual(recordedMidTurn, ['bypassPermissions']);
+		assert.deepStrictEqual(recordedMidTurn, ['bypassPermissions', 'default']);
 	});
 
 	test('shutdown drains a mix of provisional and materialized sessions', async () => {
