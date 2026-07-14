@@ -26,7 +26,6 @@ import { localize } from '../../../../../nls.js';
 import { MenuId, IMenuService, MenuItemAction } from '../../../../../platform/actions/common/actions.js';
 import { MenuWorkbenchToolBar } from '../../../../../platform/actions/browser/toolbar.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
-import { ISessionsPartService } from '../../../../services/sessions/browser/sessionsPartService.js';
 import { IContextKeyService, RawContextKey } from '../../../../../platform/contextkey/common/contextkey.js';
 import { MarshalledId } from '../../../../../base/common/marshallingIds.js';
 import { SessionProviderIdContext, SessionSupportsDeleteContext, SessionSupportsRenameContext, SessionTypeContext, IsPhoneLayoutContext, SessionIsArchivedContext, SessionIsReadContext, SessionHasPullRequestContext } from '../../../../common/contextkeys.js';
@@ -82,6 +81,7 @@ import { buildSessionHoverContent } from '../sessionHoverContent.js';
 import { SessionStatusIcon } from '../../../../browser/sessionStatusIcon.js';
 import { automationIcon } from '../../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationIcons.js';
 import { ChatAutomationsEnabledContext } from '../../../../../workbench/contrib/chat/common/automations/automationsEnabled.js';
+import { IAutomationService } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
 
 const $ = DOM.$;
 
@@ -154,7 +154,18 @@ export interface ISessionPlaceholder {
 	readonly label: string;
 }
 
-export type SessionListItem = ISession | ISessionSection | ISessionGroupItem | ISessionShowMore | ISessionPlaceholder;
+/** An automation run shown as a child of the Automations section. */
+export interface IAutomationRunItem {
+	readonly automationRun: true;
+	readonly id: string;
+	readonly name: string;
+	readonly status: string;
+	readonly startedAt: string;
+	readonly errorMessage?: string;
+	readonly sessionResource?: string;
+}
+
+export type SessionListItem = ISession | ISessionSection | ISessionGroupItem | ISessionShowMore | ISessionPlaceholder | IAutomationRunItem;
 
 function isSessionGroupItem(item: SessionListItem): item is ISessionGroupItem {
 	return 'group' in item;
@@ -172,8 +183,12 @@ function isSessionPlaceholder(item: SessionListItem): item is ISessionPlaceholde
 	return 'placeholder' in item && (item as ISessionPlaceholder).placeholder === true;
 }
 
+function isAutomationRunItem(item: SessionListItem): item is IAutomationRunItem {
+	return 'automationRun' in item && (item as IAutomationRunItem).automationRun === true;
+}
+
 function isSessionItem(item: SessionListItem): item is ISession {
-	return !isSessionGroupItem(item) && !isSessionSection(item) && !isSessionShowMore(item) && !isSessionPlaceholder(item);
+	return !isSessionGroupItem(item) && !isSessionSection(item) && !isSessionShowMore(item) && !isSessionPlaceholder(item) && !isAutomationRunItem(item);
 }
 
 const SHOW_MORE_FOLDERS_LABEL = '__more_folders__';
@@ -220,6 +235,9 @@ class SessionsTreeDelegate implements IListVirtualDelegate<SessionListItem> {
 		if (isSessionPlaceholder(element)) {
 			return SessionsTreeDelegate.PLACEHOLDER_HEIGHT;
 		}
+		if (isAutomationRunItem(element)) {
+			return SessionsTreeDelegate.PLACEHOLDER_HEIGHT;
+		}
 
 		let height = this._isPhone() ? SessionsTreeDelegate.ITEM_HEIGHT_PHONE : SessionsTreeDelegate.ITEM_HEIGHT;
 		if (this._approvalModel) {
@@ -250,6 +268,9 @@ class SessionsTreeDelegate implements IListVirtualDelegate<SessionListItem> {
 		}
 		if (isSessionPlaceholder(element)) {
 			return SessionPlaceholderRenderer.TEMPLATE_ID;
+		}
+		if (isAutomationRunItem(element)) {
+			return AutomationRunRenderer.TEMPLATE_ID;
 		}
 		return SessionItemRenderer.TEMPLATE_ID;
 	}
@@ -895,7 +916,7 @@ class SessionSectionRenderer implements ITreeRenderer<SessionListItem, FuzzyScor
 		this.templatesByElement.set(element, template);
 		this.templatesById.set(element.id, template);
 		template.container.classList.remove(SESSION_HEADER_DROP_TARGET_CLASS);
-		template.container.classList.toggle('session-section-shortcut', element.id === AUTOMATIONS_SECTION_ID);
+		template.container.classList.remove('session-section-shortcut');
 
 		// Leading icon for the "Pinned" and "Chats" (quick chats) section headers.
 		// Templates are reused across rows, so recompute the icon every render.
@@ -922,9 +943,7 @@ class SessionSectionRenderer implements ITreeRenderer<SessionListItem, FuzzyScor
 		SessionSectionTypeContext.bindTo(template.contextKeyService).set(sectionType);
 		template.toolbar.context = element;
 
-		// The automations row is a flat shortcut — no toolbar or chevron.
-		const isAutomation = element.id === AUTOMATIONS_SECTION_ID;
-		template.chevron.style.display = isAutomation ? 'none' : '';
+		template.chevron.style.display = '';
 	}
 
 	/**
@@ -1177,6 +1196,60 @@ class SessionPlaceholderRenderer implements ITreeRenderer<SessionListItem, Fuzzy
 	disposeTemplate(_template: HTMLElement): void { }
 }
 
+interface IAutomationRunTemplate {
+	readonly container: HTMLElement;
+	readonly statusIcon: HTMLElement;
+	readonly label: HTMLElement;
+	readonly time: HTMLElement;
+}
+
+class AutomationRunRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, IAutomationRunTemplate> {
+	static readonly TEMPLATE_ID = 'automation-run';
+	readonly templateId = AutomationRunRenderer.TEMPLATE_ID;
+
+	renderTemplate(container: HTMLElement): IAutomationRunTemplate {
+		container.classList.add('automation-run-item');
+		const statusIcon = DOM.append(container, $('span.automation-run-status-icon'));
+		const label = DOM.append(container, $('span.automation-run-label'));
+		const time = DOM.append(container, $('span.automation-run-time'));
+		return { container, statusIcon, label, time };
+	}
+
+	renderElement(node: ITreeNode<SessionListItem, FuzzyScore>, _index: number, template: IAutomationRunTemplate): void {
+		const element = node.element;
+		if (!isAutomationRunItem(element)) {
+			return;
+		}
+		const iconId = element.status === 'completed' ? 'pass'
+			: element.status === 'failed' ? 'error'
+				: element.status === 'running' ? 'sync~spin'
+					: 'circle-outline';
+		template.statusIcon.className = `automation-run-status-icon codicon codicon-${iconId}`;
+		template.label.textContent = element.name;
+		template.time.textContent = this.formatTime(element.startedAt);
+		if (element.errorMessage) {
+			template.time.textContent += ` · ${element.errorMessage}`;
+		}
+	}
+
+	private formatTime(iso: string): string {
+		const date = new Date(iso);
+		const now = new Date();
+		const isToday = date.toDateString() === now.toDateString();
+		if (isToday) {
+			return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+		}
+		const yesterday = new Date(now);
+		yesterday.setDate(yesterday.getDate() - 1);
+		if (date.toDateString() === yesterday.toDateString()) {
+			return `Yesterday ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+		}
+		return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+	}
+
+	disposeTemplate(_template: IAutomationRunTemplate): void { }
+}
+
 //#region Accessibility
 
 class SessionsAccessibilityProvider {
@@ -1208,6 +1281,9 @@ class SessionsAccessibilityProvider {
 		}
 		if (isSessionPlaceholder(element)) {
 			return element.label;
+		}
+		if (isAutomationRunItem(element)) {
+			return `${element.name}, ${element.status}`;
 		}
 		const title = element.title.get();
 		const updated = fromNow(element.updatedAt.get(), true);
@@ -1290,6 +1366,9 @@ class SessionsListDragAndDrop extends Disposable implements ITreeDragAndDrop<Ses
 			return null;
 		}
 		if (isSessionPlaceholder(element)) {
+			return null;
+		}
+		if (isAutomationRunItem(element)) {
 			return null;
 		}
 		return element.resource.toString();
@@ -1708,7 +1787,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 		@IMenuService private readonly menuService: IMenuService,
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
 		@ICommandService private readonly commandService: ICommandService,
-		@ISessionsPartService private readonly sessionsPartService: ISessionsPartService,
+		@IAutomationService private readonly automationService: IAutomationService,
 		@IWorkbenchAssignmentService private readonly assignmentService: IWorkbenchAssignmentService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 	) {
@@ -1779,6 +1858,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 		const showMoreRenderer = new SessionShowMoreRenderer();
 		const placeholderRenderer = new SessionPlaceholderRenderer();
+		const automationRunRenderer = new AutomationRunRenderer();
 		const sectionRenderer = new SessionSectionRenderer(true /* hideSectionCount */, instantiationService, contextKeyService);
 		this._sectionRenderer = sectionRenderer;
 		const groupRenderer = new SessionGroupRenderer({
@@ -1804,6 +1884,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 				groupRenderer,
 				showMoreRenderer,
 				placeholderRenderer,
+				automationRunRenderer,
 			],
 			{
 				accessibilityProvider: new SessionsAccessibilityProvider(),
@@ -1832,6 +1913,9 @@ export class SessionsList extends Disposable implements ISessionsList {
 						if (isSessionPlaceholder(element)) {
 							return `placeholder:${element.sectionId}`;
 						}
+						if (isAutomationRunItem(element)) {
+							return `automation-run:${element.id}`;
+						}
 						return element.resource.toString();
 					},
 					getGroupId: (element: SessionListItem) => {
@@ -1845,6 +1929,9 @@ export class SessionsList extends Disposable implements ISessionsList {
 							return NotSelectableGroupId;
 						}
 						if (isSessionPlaceholder(element)) {
+							return NotSelectableGroupId;
+						}
+						if (isAutomationRunItem(element)) {
 							return NotSelectableGroupId;
 						}
 						// Use a distinct group for archived (done) sessions so that
@@ -1879,6 +1966,9 @@ export class SessionsList extends Disposable implements ISessionsList {
 						if (isSessionPlaceholder(element)) {
 							return element.label;
 						}
+						if (isAutomationRunItem(element)) {
+							return element.name;
+						}
 						return element.title.get();
 					}
 				},
@@ -1909,10 +1999,10 @@ export class SessionsList extends Disposable implements ISessionsList {
 			if (isSessionPlaceholder(element)) {
 				return;
 			}
-			if (isSessionSection(element) && element.id === AUTOMATIONS_SECTION_ID) {
-					this.tree.setSelection([]);
-					this.tree.setFocus([]);
-					this.sessionsPartService.showAutomationsPage();
+			if (isAutomationRunItem(element)) {
+				if (element.sessionResource) {
+					this.options.onSessionOpen(URI.parse(element.sessionResource), false, false);
+				}
 				return;
 			}
 			if (!isSessionSection(element) && !isSessionGroupItem(element)) {
@@ -2265,14 +2355,25 @@ export class SessionsList extends Disposable implements ISessionsList {
 		};
 
 		const renderSection = (section: ISessionSection): IObjectTreeElement<SessionListItem> => {
-			// The "Automations" section is a non-expandable shortcut row that
-			// opens the automations management editor on click.
+			// The "Automations" section is expandable and shows recent runs.
 			if (section.id === AUTOMATIONS_SECTION_ID) {
+				const runs = this.automationService.runs.get();
+				const automations = this.automationService.automations.get();
+				const automationNames = new Map(automations.map(a => [a.id, a.name]));
+				const recentRuns = runs.slice(0, 5).map(run => ({
+					automationRun: true as const,
+					id: run.id,
+					name: automationNames.get(run.automationId) ?? 'Unknown',
+					status: run.status,
+					startedAt: run.startedAt,
+					errorMessage: run.errorMessage,
+					sessionResource: run.sessionResource,
+				}));
 				return {
 					element: section as SessionListItem,
-					collapsible: false,
-					collapsed: false,
-					children: [],
+					collapsible: true,
+					collapsed: this.getSavedCollapseState(section.id) ?? ObjectTreeElementCollapseState.PreserveOrExpanded,
+					children: recentRuns.map(run => ({ element: run as SessionListItem })),
 				};
 			}
 
@@ -2740,6 +2841,10 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 		if (isSessionGroupItem(element)) {
 			this.showGroupContextMenu(element, e.anchor);
+			return;
+		}
+
+		if (isAutomationRunItem(element)) {
 			return;
 		}
 
