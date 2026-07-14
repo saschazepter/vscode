@@ -54,7 +54,6 @@ const completionsConfigurationTargets = [
 	ConfigurationTarget.WORKSPACE,
 	ConfigurationTarget.USER_REMOTE,
 	ConfigurationTarget.USER_LOCAL,
-	ConfigurationTarget.USER,
 	ConfigurationTarget.APPLICATION,
 ] as const;
 
@@ -1038,7 +1037,7 @@ export class ChatStatusDashboard extends DomWidget {
 		const writeState = async (state: boolean | 'mixed') => {
 			const configuredValue = this.findConfiguredCompletionsValue(modeId) ?? this.findConfiguredCompletionsValue();
 			if (state === 'mixed') {
-				if (configuredValue && Object.prototype.hasOwnProperty.call(configuredValue.value, modeId)) {
+				for (const configuredValue of this.findConfiguredCompletionsValues(modeId)) {
 					const { [modeId]: _, ...rest } = configuredValue.value;
 					await this.configurationService.updateValue(settingId, rest, configuredValue.target);
 				}
@@ -1071,6 +1070,7 @@ export class ChatStatusDashboard extends DomWidget {
 			}).catch(error => {
 				if (pendingWrites === 0) {
 					renderState(getState());
+					onStateChange();
 				}
 				this.notificationService.error(error);
 			});
@@ -1110,14 +1110,19 @@ export class ChatStatusDashboard extends DomWidget {
 	}
 
 	private findConfiguredCompletionsValue(modeId?: string): { target: ConfigurationTarget; value: Record<string, boolean> } | undefined {
+		return this.findConfiguredCompletionsValues(modeId)[0];
+	}
+
+	private findConfiguredCompletionsValues(modeId?: string): { target: ConfigurationTarget; value: Record<string, boolean> }[] {
 		const inspected = this.configurationService.inspect<Record<string, boolean>>(defaultChat.completionsEnablementSetting);
+		const result: { target: ConfigurationTarget; value: Record<string, boolean> }[] = [];
 		for (const target of completionsConfigurationTargets) {
 			const value = getConfigValueInTarget(inspected, target);
 			if (isObject(value) && (!modeId || Object.prototype.hasOwnProperty.call(value, modeId))) {
-				return { target, value };
+				result.push({ target, value });
 			}
 		}
-		return undefined;
+		return result;
 	}
 
 	private getCompletionsSettingAccessor(modeId = '*'): ISettingsAccessor {

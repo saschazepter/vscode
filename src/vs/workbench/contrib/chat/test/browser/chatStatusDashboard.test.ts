@@ -123,24 +123,27 @@ class TestCompletionsConfigurationService extends TestConfigurationService {
 		private readonly settingId: string,
 		private readonly defaultValue: Record<string, boolean>,
 		private userValue: Record<string, boolean>,
+		private workspaceValue?: Record<string, boolean>,
 	) {
 		super();
 	}
 
 	override getValue<T>(arg1?: string | IConfigurationOverrides, arg2?: IConfigurationOverrides): T | undefined {
 		if (arg1 === this.settingId) {
-			return { ...this.defaultValue, ...this.userValue } as T;
+			return { ...this.defaultValue, ...this.userValue, ...this.workspaceValue } as T;
 		}
 		return super.getValue<T>(arg1, arg2);
 	}
 
 	override inspect<T>(key: string, overrides?: IConfigurationOverrides): IConfigurationValue<T> {
 		if (key === this.settingId) {
+			const userValue = this.userValue as T;
 			return {
 				defaultValue: this.defaultValue as T,
-				userValue: this.userValue as T,
-				userLocalValue: this.userValue as T,
-				value: { ...this.defaultValue, ...this.userValue } as T,
+				userValue,
+				userLocalValue: userValue,
+				workspaceValue: this.workspaceValue as T | undefined,
+				value: { ...this.defaultValue, ...this.userValue, ...this.workspaceValue } as T,
 			};
 		}
 		return super.inspect<T>(key, overrides);
@@ -170,7 +173,13 @@ class TestCompletionsConfigurationService extends TestConfigurationService {
 		}
 
 		this.pendingUpdate = undefined;
-		this.userValue = pendingUpdate.value;
+		if (pendingUpdate.target === ConfigurationTarget.WORKSPACE) {
+			this.workspaceValue = pendingUpdate.value;
+		} else if (pendingUpdate.target === ConfigurationTarget.USER_LOCAL) {
+			this.userValue = pendingUpdate.value;
+		} else {
+			throw new Error(`Unexpected configuration target: ${pendingUpdate.target}`);
+		}
 		this.onDidChangeConfigurationEmitter.fire({
 			source: pendingUpdate.target,
 			affectedKeys: new Set([this.settingId]),
@@ -181,8 +190,26 @@ class TestCompletionsConfigurationService extends TestConfigurationService {
 		await timeout(0);
 	}
 
+	async failUpdate(error: Error): Promise<void> {
+		if (!this.pendingUpdate) {
+			await timeout(0);
+		}
+		const pendingUpdate = this.pendingUpdate;
+		if (!pendingUpdate) {
+			throw new Error('No configuration update is pending');
+		}
+
+		this.pendingUpdate = undefined;
+		await pendingUpdate.deferred.error(error);
+		await timeout(0);
+	}
+
 	get configuredValue(): Record<string, boolean> {
 		return this.userValue;
+	}
+
+	get configuredWorkspaceValue(): Record<string, boolean> | undefined {
+		return this.workspaceValue;
 	}
 }
 
@@ -345,6 +372,102 @@ suite('ChatStatusDashboard', () => {
 				overriddenHint: '(overridden)',
 				configuredValue: { '*': true, markdown: false },
 			},
+		});
+	});
+
+	test('removes inherited language overrides from every configured scope', async () => {
+		const defaultChat = product.defaultChatAgent;
+		assert.ok(defaultChat);
+
+		const configurationService = new TestCompletionsConfigurationService(
+			defaultChat.completionsEnablementSetting,
+			{ '*': true, markdown: false },
+			{ '*': true, markdown: true },
+			{ markdown: false },
+		);
+		const dashboard = createDashboard(createEntitlementService({ entitlement: ChatEntitlement.Pro }), {
+			dashboardOptions: {
+				...dashboardOptions,
+				disableInlineSuggestionsSettings: false,
+			},
+			configurationService,
+			activeTextEditorLanguageId: 'markdown',
+		});
+
+		const languageCheckbox = dashboard.element.querySelectorAll<HTMLElement>('.settings .monaco-checkbox').item(1);
+		const overriddenHint = dashboard.element.querySelector<HTMLElement>('.setting-overridden');
+		assert.ok(languageCheckbox && overriddenHint);
+
+		languageCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		await configurationService.completeUpdate();
+		const intermediateState = {
+			ariaChecked: languageCheckbox.getAttribute('aria-checked'),
+			overriddenHint: overriddenHint.textContent,
+			userValue: { ...configurationService.configuredValue },
+			workspaceValue: { ...configurationService.configuredWorkspaceValue },
+		};
+
+		await configurationService.completeUpdate();
+
+		assert.deepStrictEqual({
+			intermediate: intermediateState,
+			committed: {
+				ariaChecked: languageCheckbox.getAttribute('aria-checked'),
+				overriddenHint: overriddenHint.textContent,
+				userValue: configurationService.configuredValue,
+				workspaceValue: configurationService.configuredWorkspaceValue,
+			},
+		}, {
+			intermediate: {
+				ariaChecked: 'mixed',
+				overriddenHint: '(overridden)',
+				userValue: { '*': true, markdown: true },
+				workspaceValue: {},
+			},
+			committed: {
+				ariaChecked: 'mixed',
+				overriddenHint: '',
+				userValue: { '*': true },
+				workspaceValue: {},
+			},
+		});
+	});
+
+	test('restores the override hint when the final queued write fails', async () => {
+		const defaultChat = product.defaultChatAgent;
+		assert.ok(defaultChat);
+
+		const configurationService = new TestCompletionsConfigurationService(
+			defaultChat.completionsEnablementSetting,
+			{ '*': true, markdown: false },
+			{ '*': true, markdown: false },
+		);
+		const dashboard = createDashboard(createEntitlementService({ entitlement: ChatEntitlement.Pro }), {
+			dashboardOptions: {
+				...dashboardOptions,
+				disableInlineSuggestionsSettings: false,
+			},
+			configurationService,
+			activeTextEditorLanguageId: 'markdown',
+		});
+
+		const languageCheckbox = dashboard.element.querySelectorAll<HTMLElement>('.settings .monaco-checkbox').item(1);
+		const overriddenHint = dashboard.element.querySelector<HTMLElement>('.setting-overridden');
+		assert.ok(languageCheckbox && overriddenHint);
+
+		languageCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		languageCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		await configurationService.completeUpdate();
+		await configurationService.failUpdate(new Error('Unable to update configuration'));
+
+		assert.deepStrictEqual({
+			ariaChecked: languageCheckbox.getAttribute('aria-checked'),
+			overriddenHint: overriddenHint.textContent,
+			configuredValue: configurationService.configuredValue,
+		}, {
+			ariaChecked: 'mixed',
+			overriddenHint: '',
+			configuredValue: { '*': true },
 		});
 	});
 
