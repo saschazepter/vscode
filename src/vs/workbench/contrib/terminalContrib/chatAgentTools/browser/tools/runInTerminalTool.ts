@@ -86,6 +86,7 @@ import { isSessionAutoApproveLevel, isTerminalAutoApproveAllowed, isToolEligible
 import type { IJSONSchemaMap } from '../../../../../../base/common/jsonSchema.js';
 import { ChatElicitationRequestPart } from '../../../../chat/common/model/chatProgressTypes/chatElicitationRequestPart.js';
 import { getSandboxPrecheckInputsForToolInvocation } from '../../../../chat/browser/tools/toolHelpers.js';
+import { compact } from './console-compactor/console-compactor.browser.js';
 
 // #region Tool data
 
@@ -2494,8 +2495,17 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		if (outputAnalyzerMessage) {
 			resultText.push(`${outputAnalyzerMessage}\n`);
 		}
+		let outputForResult = terminalResult;
+		if (this._configurationService.getValue<boolean>(TerminalChatAgentToolsSettingId.OutputCompaction) === true) {
+			const commandForCompaction = toolSpecificData.commandLine.forDisplay ?? command;
+			const report = compact(commandForCompaction, terminalResult);
+			this._telemetry.logCompaction(report);
+			if (report.applied) {
+				outputForResult = report.compactedOutput;
+			}
+		}
 		// Process large output: write to file if needed, then truncate with file path
-		const processedOutput = await this._largeOutputFileWriter.processOutput(terminalResult);
+		const processedOutput = await this._largeOutputFileWriter.processOutput(outputForResult);
 		resultText.push(processedOutput);
 
 		const isError = exitCode !== undefined && exitCode !== 0;
@@ -2516,7 +2526,7 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 			},
 			toolResultDetails: isError ? {
 				input: command,
-				output: [{ type: 'embed', isText: true, value: terminalResult }],
+				output: [{ type: 'embed', isText: true, value: outputForResult }],
 				isError: true
 			} : undefined,
 			content: [
