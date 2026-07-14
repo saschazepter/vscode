@@ -43,10 +43,6 @@ import { MobileSessionFilterChips } from '../../../../browser/parts/mobile/mobil
 import { IMobileSortGroupSheetItem, showMobileSortGroupSheet } from '../../../../browser/parts/mobile/mobileSortGroupSheet.js';
 import { isPhoneLayout } from '../../../../browser/parts/mobile/mobileLayout.js';
 import { IsPhoneLayoutContext } from '../../../../common/contextkeys.js';
-import { ISessionsPartService } from '../../../../services/sessions/browser/sessionsPartService.js';
-import { ChatAutomationsEnabledContext } from '../../../../../workbench/contrib/chat/common/automations/automationsEnabled.js';
-import { ThemeIcon } from '../../../../../base/common/themables.js';
-import { automationIcon } from '../../../../../workbench/contrib/chat/browser/aiCustomization/aiCustomizationIcons.js';
 
 const $ = DOM.$;
 export const SessionsViewId = 'sessions.workbench.view.sessionsView';
@@ -82,7 +78,6 @@ export class SessionsView extends ViewPane {
 	private sidebarSplitViewContainer: HTMLElement | undefined;
 	private sidebarSplitView: SplitView | undefined;
 	private sessionsControlContainer: HTMLElement | undefined;
-	private automationsButton: HTMLElement | undefined;
 	private findWidgetContainer: HTMLElement | undefined;
 	private headerRow: HTMLElement | undefined;
 	private headerLabel: HTMLElement | undefined;
@@ -113,7 +108,6 @@ export class SessionsView extends ViewPane {
 		@IHoverService hoverService: IHoverService,
 		@ISessionsManagementService private readonly sessionsManagementService: ISessionsManagementService,
 		@ISessionsService private readonly sessionsService: ISessionsService,
-		@ISessionsPartService private readonly sessionsPartService: ISessionsPartService,
 		@IHostService private readonly hostService: IHostService,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
 		@IStorageService private readonly storageService: IStorageService,
@@ -174,20 +168,6 @@ export class SessionsView extends ViewPane {
 		// Sessions content container
 		const sessionsContent = DOM.append(sessionsSection, $('.agent-sessions-content'));
 
-		// Automations button — standalone row above the "Sessions" header, gated by feature flag
-		if (this.scopedContextKeyService.getContextKeyValue<boolean>(ChatAutomationsEnabledContext.key)) {
-			const automationsRow = this.automationsButton = DOM.append(sessionsContent, $('.automations-sidebar-button'));
-			const icon = DOM.append(automationsRow, $('span.automations-sidebar-button-icon'));
-			icon.classList.add(...ThemeIcon.asClassNameArray(automationIcon));
-			const label = DOM.append(automationsRow, $('span.automations-sidebar-button-label'));
-			label.textContent = localize('automations', "Automations");
-			this._register(DOM.addDisposableListener(automationsRow, DOM.EventType.CLICK, () => {
-				this.setAutomationsActive(true);
-				this.sessionsControl?.clearFocus();
-				this.sessionsPartService.showAutomationsPage();
-			}));
-		}
-
 		// Header row: "Sessions" label (left) + compact "New" button (right)
 		const headerRow = this.headerRow = DOM.append(sessionsContent, $('.agent-sessions-header-row'));
 		const headerLabel = this.headerLabel = DOM.append(headerRow, $('.agent-sessions-header-label'));
@@ -233,8 +213,7 @@ export class SessionsView extends ViewPane {
 			sorting: () => this.currentSorting,
 			findWidgetContainer,
 			onSessionOpen: (resource, preserveFocus, sideBySide) => {
-					this.setAutomationsActive(false);
-					const onOpened = () => {
+				const onOpened = () => {
 					if (isWeb && isPhoneLayout(this.layoutService)) {
 						this.layoutService.setPartHidden(true, Parts.SIDEBAR_PART);
 					}
@@ -622,13 +601,6 @@ export class SessionsView extends ViewPane {
 		}
 		this.updateHeaderLayout();
 		this.sessionsControl?.openFind();
-	}
-
-	private setAutomationsActive(active: boolean): void {
-		if (!this.automationsButton) {
-			return;
-		}
-		this.automationsButton.classList.toggle('active', active);
 	}
 
 	private updateHeaderLayout(): void {
