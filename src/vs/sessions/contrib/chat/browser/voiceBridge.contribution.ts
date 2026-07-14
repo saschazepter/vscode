@@ -80,6 +80,27 @@ class SessionsVoiceBridgeContribution extends Disposable implements IWorkbenchCo
 			}
 		}));
 
+		this._commandDisposables.add(CommandsRegistry.registerCommand('_chat.voice.insertInput', (_accessor, text: string) => {
+			if (!text) {
+				return;
+			}
+			const composer = this._activeComposerTarget();
+			if (composer) {
+				const widget = this._activeSessionWidget();
+				const currentInput = widget?.getInput().trim() ?? '';
+				composer.prefillInput(currentInput ? `${currentInput} ${text}` : text);
+				composer.focus();
+				return;
+			}
+			const widget = this._activeSessionWidget() ?? this.chatWidgetService.lastFocusedWidget;
+			if (widget?.viewModel) {
+				const currentInput = widget.getInput().trim();
+				const nextInput = currentInput ? `${currentInput} ${text}` : text;
+				widget.setInput(nextInput);
+				widget.focusInput();
+			}
+		}));
+
 		// Report the shown session (the active Agents session), not DOM focus.
 		// Before a session exists, report the composer sentinel so dictation uses it.
 		this._commandDisposables.add(CommandsRegistry.registerCommand('_chat.voice.getCurrentSession', (): string | undefined => {

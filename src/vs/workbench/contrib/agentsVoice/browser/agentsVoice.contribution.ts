@@ -52,6 +52,7 @@ export const AGENTS_VOICE_WIDGET_FOCUSED = new RawContextKey<boolean>('agentsVoi
 const AGENTS_VOICE_CONNECTED = new RawContextKey<boolean>('agentsVoiceConnected', false);
 const AGENTS_VOICE_CONNECTING = new RawContextKey<boolean>('agentsVoiceConnecting', false);
 const AGENTS_VOICE_LISTENING = new RawContextKey<boolean>('agentsVoiceListening', false);
+const AGENTS_VOICE_STT_ONLY = ContextKeyExpr.equals('config.agents.voice.chatInputSpeechToText.enabled', true);
 
 // --- Context Key Binding ---
 
@@ -126,12 +127,14 @@ registerAction2(class extends Action2 {
 			icon: Codicon.loading,
 			precondition: ContextKeyExpr.and(
 				ContextKeyExpr.equals('config.agents.voice.enabled', true),
+				AGENTS_VOICE_STT_ONLY.negate(),
 				AGENTS_VOICE_CONNECTING.isEqualTo(true),
 			),
 			menu: {
 				id: MenuId.ChatExecute,
 				when: ContextKeyExpr.and(
 					ContextKeyExpr.equals('config.agents.voice.enabled', true),
+					AGENTS_VOICE_STT_ONLY.negate(),
 					ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 					AGENTS_VOICE_CONNECTING.isEqualTo(true),
 				),
@@ -151,11 +154,15 @@ registerAction2(class extends Action2 {
 			id: 'agentsVoice.startVoiceInChat',
 			title: nls.localize2('agentsVoice.startVoiceInChat', "Voice Mode"),
 			icon: Codicon.voiceMode,
-			precondition: ContextKeyExpr.equals('config.agents.voice.enabled', true),
+			precondition: ContextKeyExpr.and(
+				ContextKeyExpr.equals('config.agents.voice.enabled', true),
+				AGENTS_VOICE_STT_ONLY.negate(),
+			),
 			menu: {
 				id: MenuId.ChatExecute,
 				when: ContextKeyExpr.and(
 					ContextKeyExpr.equals('config.agents.voice.enabled', true),
+					AGENTS_VOICE_STT_ONLY.negate(),
 					ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 					ChatContextKeys.currentlyEditing.negate(),
 					AGENTS_VOICE_LISTENING.negate(),
@@ -196,12 +203,14 @@ registerAction2(class extends Action2 {
 			icon: Codicon.voiceMode,
 			precondition: ContextKeyExpr.and(
 				ContextKeyExpr.equals('config.agents.voice.enabled', true),
+				AGENTS_VOICE_STT_ONLY.negate(),
 				AGENTS_VOICE_LISTENING.isEqualTo(true),
 			),
 			menu: {
 				id: MenuId.ChatExecute,
 				when: ContextKeyExpr.and(
 					ContextKeyExpr.equals('config.agents.voice.enabled', true),
+					AGENTS_VOICE_STT_ONLY.negate(),
 					ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 					ChatContextKeys.currentlyEditing.negate(),
 					AGENTS_VOICE_LISTENING.isEqualTo(true),
@@ -217,6 +226,7 @@ registerAction2(class extends Action2 {
 				},
 				when: ContextKeyExpr.and(
 					ContextKeyExpr.equals('config.agents.voice.enabled', true),
+					AGENTS_VOICE_STT_ONLY.negate(),
 					ChatContextKeys.inChatInput,
 					AGENTS_VOICE_LISTENING.isEqualTo(true),
 				),
@@ -232,6 +242,49 @@ registerAction2(class extends Action2 {
 	}
 });
 
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'agentsVoice.speechToTextInChatInput',
+			title: nls.localize2('agentsVoice.speechToTextInChatInput', "Speech to Text"),
+			icon: Codicon.mic,
+			precondition: ContextKeyExpr.and(
+				ContextKeyExpr.equals('config.agents.voice.enabled', true),
+				AGENTS_VOICE_STT_ONLY,
+				AGENTS_VOICE_CONNECTING.negate(),
+				ChatContextKeys.inChatInput,
+			),
+			menu: {
+				id: MenuId.ChatExecute,
+				when: ContextKeyExpr.and(
+					ContextKeyExpr.equals('config.agents.voice.enabled', true),
+					AGENTS_VOICE_STT_ONLY,
+					AGENTS_VOICE_CONNECTING.negate(),
+					ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
+					ChatContextKeys.currentlyEditing.negate(),
+				),
+				group: 'navigation',
+				order: -10
+			},
+		});
+	}
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const voiceController = accessor.get(IVoiceSessionController);
+		if (voiceController.voiceState.get() === 'listening') {
+			voiceController.stopListening();
+			return;
+		}
+		if (!voiceController.isConnected.get()) {
+			await voiceController.connect(mainWindow);
+		}
+		if (!voiceController.isConnected.get() || voiceController.isConnecting.get()) {
+			return;
+		}
+		voiceController.pttDown();
+		voiceController.pttUp();
+	}
+});
+
 // --- Disconnect Voice (command palette + separate toolbar button when connected) ---
 
 registerAction2(class extends Action2 {
@@ -243,12 +296,14 @@ registerAction2(class extends Action2 {
 			f1: true,
 			precondition: ContextKeyExpr.and(
 				ContextKeyExpr.equals('config.agents.voice.enabled', true),
+				AGENTS_VOICE_STT_ONLY.negate(),
 				AGENTS_VOICE_CONNECTED.isEqualTo(true),
 			),
 			menu: {
 				id: MenuId.ChatExecute,
 				when: ContextKeyExpr.and(
 					ContextKeyExpr.equals('config.agents.voice.enabled', true),
+					AGENTS_VOICE_STT_ONLY.negate(),
 					ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 					ChatContextKeys.currentlyEditing.negate(),
 					AGENTS_VOICE_CONNECTED.isEqualTo(true),
@@ -264,6 +319,7 @@ registerAction2(class extends Action2 {
 				primary: KeyCode.Escape,
 				when: ContextKeyExpr.and(
 					ContextKeyExpr.equals('config.agents.voice.enabled', true),
+					AGENTS_VOICE_STT_ONLY.negate(),
 					ChatContextKeys.inChatInput,
 					AGENTS_VOICE_CONNECTED.isEqualTo(true),
 					EditorContextKeys.hoverVisible.toNegated(),
@@ -293,6 +349,7 @@ registerAction2(class extends Action2 {
 				id: MenuId.ChatExecute,
 				when: ContextKeyExpr.and(
 					ContextKeyExpr.equals('config.agents.voice.enabled', true),
+					AGENTS_VOICE_STT_ONLY.negate(),
 					ChatContextKeys.location.isEqualTo(ChatAgentLocation.Chat),
 					ChatContextKeys.currentlyEditing.negate(),
 					AGENTS_VOICE_CONNECTED.isEqualTo(true),
@@ -496,6 +553,13 @@ configurationRegistry.registerConfiguration({
 			markdownDescription: nls.localize('agents.voice.showTranscript', "Show the voice transcript overlay in the chat input area while voice mode is active. Enable this to read responses as text when `#agents.voice.speakResponses#` is disabled."),
 			default: false,
 			scope: ConfigurationScope.APPLICATION,
+		},
+		'agents.voice.chatInputSpeechToText.enabled': {
+			type: 'boolean',
+			markdownDescription: nls.localize('agents.voice.chatInputSpeechToText.enabled', "Use the voice backend only for speech-to-text in chat inputs. When enabled, chat shows a microphone action that transcribes speech directly into the input without sending it or speaking assistant replies."),
+			default: false,
+			scope: ConfigurationScope.APPLICATION,
+			tags: ['advanced'],
 		},
 		'agents.voice.handsFree': {
 			type: 'boolean',

@@ -1712,6 +1712,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		return this.configurationService.getValue<boolean>('agents.voice.handsFree') !== false;
 	}
 
+	private _isSpeechToTextInputMode(): boolean {
+		return this.configurationService.getValue<boolean>('agents.voice.chatInputSpeechToText.enabled') === true;
+	}
+
 	/**
 	 * Strip a trailing stop phrase (e.g. "send it") from a transcript before it
 	 * is sent to chat. The backend is supposed to strip the matched phrase from
@@ -1848,6 +1852,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * Otherwise sends to whatever is currently active via the view pane command.
 	 */
 	private async _sendTranscriptionToChat(text: string): Promise<void> {
+		if (this._isSpeechToTextInputMode()) {
+			await this.commandService.executeCommand('_chat.voice.insertInput', text).catch(err => {
+				this.logService.warn('[voice] insertInput failed:', err);
+			});
+			return;
+		}
+
 		const target = this._targetSession.get();
 		if (target) {
 			// Check if target is the currently visible session
@@ -2878,7 +2889,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this.voicePlaybackService.notifyPlaybackStart(sessionResource, transcript);
 		}
 
-		const speakResponsesEnabled = this.configurationService.getValue<boolean>('agents.voice.speakResponses') !== false;
+		const speakResponsesEnabled = this.configurationService.getValue<boolean>('agents.voice.speakResponses') !== false && !this._isSpeechToTextInputMode();
 		if (speakResponsesEnabled && audio) {
 			// Claim the playback slot only when we actually have audio to play.
 			// A transcript-only frame (empty audio) must NOT claim it, or the

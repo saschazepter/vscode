@@ -402,6 +402,20 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 					}
 				}
 			}));
+			this._voiceBarDisposables.add(CommandsRegistry.registerCommand('_chat.voice.insertInput', (accessor, text: string) => {
+				if (!text) {
+					return;
+				}
+				const chatWidgetService = accessor.get(IChatWidgetService);
+				const widget = chatWidgetService.lastFocusedWidget ?? this._widget;
+				if (!widget) {
+					return;
+				}
+				const currentInput = widget.getInput().trim();
+				const nextInput = currentInput ? `${currentInput} ${text}` : text;
+				widget.setInput(nextInput);
+				widget.focusInput();
+			}));
 			this._voiceBarDisposables.add(CommandsRegistry.registerCommand('_chat.voice.switchToSession', (_accessor, resourceStr: string): boolean => {
 				if (!resourceStr) {
 					return false;
