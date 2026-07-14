@@ -535,6 +535,8 @@ export interface IChatThinkingPart {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	metadata?: { readonly [key: string]: any };
 	generatedTitle?: string;
+	/** Elapsed reasoning time in milliseconds, persisted so the duration survives reload. */
+	reasoningDurationMs?: number;
 }
 
 /**
@@ -1234,6 +1236,7 @@ export interface IChatMcpAuthenticationRequiredServer {
 	readonly name: string;
 	readonly resource: string;
 	readonly authorizationServers?: readonly string[];
+	readonly supportedScopes?: readonly string[];
 	readonly requiredScopes?: readonly string[];
 	readonly reason?: string;
 }

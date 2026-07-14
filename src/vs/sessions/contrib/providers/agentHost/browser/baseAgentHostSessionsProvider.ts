@@ -287,7 +287,7 @@ class AdditionalChat extends Disposable {
 	private readonly _interactivity: ISettableObservable<ChatInteractivity>;
 	private readonly _isNew: ISettableObservable<boolean>;
 
-	constructor(resource: URI, summary: ChatSummary, isNew: boolean = false, parentChat?: URI, sessionIsArchived: IObservable<boolean> = constObservable(false), lastTurnChanges?: IObservable<readonly ISessionFileChange[]>) {
+	constructor(resource: URI, summary: ChatSummary, isNew: boolean = false, parentChat?: URI, sessionIsArchived: IObservable<boolean> = constObservable(false), lastTurnChanges?: IObservable<readonly ISessionFileChange[]>, lastTurnBrowserUrl?: IObservable<string | undefined>) {
 		super();
 		const modifiedAt = summary.modifiedAt ? new Date(summary.modifiedAt) : new Date();
 		this._title = observableValue('chatTitle', summary.title || localize('newChatTab', "New Chat"));
@@ -307,6 +307,7 @@ class AdditionalChat extends Disposable {
 			status: derived(reader => this._isNew.read(reader) ? SessionStatus.Untitled : this._status.read(reader)),
 			changes: constObservable([]),
 			lastTurnChanges,
+			lastTurnBrowserUrl,
 			checkpoints: observableValue(this, undefined),
 			modelId: this._modelId,
 			mode: this._mode,
@@ -696,6 +697,7 @@ export class AgentHostSessionAdapter extends Disposable implements ISession {
 			status: derived(this, reader => this._defaultChatStatusOverride.read(reader) ?? this.status.read(reader)),
 			changes: this.changes,
 			lastTurnChanges: sessionOutput.getLastTurnChanges(URI.parse(buildDefaultChatUri(sessionUri))),
+			lastTurnBrowserUrl: sessionOutput.getLastTurnBrowserUrl(URI.parse(buildDefaultChatUri(sessionUri))),
 			checkpoints: observableValue(this, undefined),
 			modelId: this.modelId,
 			mode: this.mode,
@@ -840,7 +842,8 @@ export class AgentHostSessionAdapter extends Disposable implements ISession {
 	private _createAdditionalChat(chatId: string, summary: ChatSummary): AdditionalChat {
 		const resource = URI.from({ scheme: this._resourceScheme, path: `/${this._rawId}`, fragment: chatId });
 		const lastTurnChanges = this._sessionOutput.getLastTurnChanges(URI.parse(summary.resource));
-		return new AdditionalChat(resource, summary, this._newChatIds.has(chatId), this._resolveParentChatResource(summary.origin), this.isArchived, lastTurnChanges);
+		const lastTurnBrowserUrl = this._sessionOutput.getLastTurnBrowserUrl(URI.parse(summary.resource));
+		return new AdditionalChat(resource, summary, this._newChatIds.has(chatId), this._resolveParentChatResource(summary.origin), this.isArchived, lastTurnChanges, lastTurnBrowserUrl);
 	}
 
 	/**
@@ -2363,8 +2366,12 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 	 *
 	 * The agent-host defaults are controlled by the single
 	 * `chat.defaultConfiguration` object setting (with `mode` and
-	 * `approvals` properties), which takes precedence over remembered values.
-	 * The local-only `chat.permissions.default` setting is intentionally NOT
+	 * `approvals` properties). Per axis the precedence is: enterprise
+	 * **policy** value > the user's **remembered** last pick > the ordinary
+	 * configured **setting** value (treated as a plain default) > schema
+	 * default. So a normal setting behaves as a default that the remembered
+	 * pick overrides, while an enterprise policy still wins outright. The
+	 * local-only `chat.permissions.default` setting is intentionally NOT
 	 * consulted here.
 	 *
 	 * If enterprise policy disables global auto-approval
@@ -2380,11 +2387,9 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		const config = Object.create(null) as Record<string, unknown>;
 		const policyRestricted = isAutoApprovePolicyRestricted(this._baseConfigurationService);
 
-		// Seed session config values from the last user picks, then migrate any
+		// Seed session config values from the last user picks, migrating any
 		// legacy `autoApprove='autopilot'` remembered value into the new
-		// `mode='autopilot'` shape *first*, so the configured agent-host
-		// defaults applied below cleanly take precedence over it (rather than
-		// the migration overwriting a configured mode afterwards).
+		// `mode='autopilot'` shape before the per-axis precedence below runs.
 		const rememberedValues = this._storageService.getObject<Record<string, unknown>>(STORAGE_KEY_REMEMBERED_SESSION_CONFIG_VALUES, StorageScope.PROFILE, {});
 		for (const [property, value] of Object.entries(rememberedValues)) {
 			if (typeof value === 'string' && isSafeSessionConfigKey(property)) {
@@ -2393,25 +2398,34 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		}
 		const remembered = migrateLegacyAutopilotConfig(config);
 
-		// Configured agent-host defaults (a single object setting controlling
-		// both axes) win over remembered values.
-		const configuredDefaults = this._baseConfigurationService.getValue<IChatDefaultConfiguration>(ChatConfiguration.DefaultConfiguration);
+		// `chat.defaultConfiguration` controls both axes. Per axis the
+		// precedence is: enterprise policy > remembered pick > effective
+		// configured value (`inspect().value`, which is the user's setting or
+		// the schema default). `inspect().value` is used instead of
+		// `getValue()` only so the policy layer can be lifted above the
+		// remembered pick.
+		const inspected = this._baseConfigurationService.inspect<IChatDefaultConfiguration>(ChatConfiguration.DefaultConfiguration);
+		const policyDefaults = inspected.policyValue;
+		const effectiveDefaults = inspected.value;
 
-		// Approval axis.
-		const normalizedConfiguredAutoApprove = normalizeAutoApproveValue(configuredDefaults?.approvals, policyRestricted);
-		const normalizedRememberedAutoApprove = normalizeAutoApproveValue(remembered[SessionConfigKey.AutoApprove], policyRestricted);
-		if (normalizedConfiguredAutoApprove) {
-			remembered[SessionConfigKey.AutoApprove] = normalizedConfiguredAutoApprove;
-		} else if (normalizedRememberedAutoApprove) {
-			remembered[SessionConfigKey.AutoApprove] = normalizedRememberedAutoApprove;
+		// Approval axis: policy > remembered > effective.
+		const resolvedAutoApprove =
+			normalizeAutoApproveValue(policyDefaults?.approvals, policyRestricted)
+			?? normalizeAutoApproveValue(remembered[SessionConfigKey.AutoApprove], policyRestricted)
+			?? normalizeAutoApproveValue(effectiveDefaults?.approvals, policyRestricted);
+		if (resolvedAutoApprove) {
+			remembered[SessionConfigKey.AutoApprove] = resolvedAutoApprove;
 		} else {
 			delete remembered[SessionConfigKey.AutoApprove];
 		}
 
-		// Mode axis.
-		const configuredMode = configuredDefaults?.mode;
-		if (typeof configuredMode === 'string' && KNOWN_MODE_VALUES.has(configuredMode)) {
-			remembered[SessionConfigKey.Mode] = configuredMode;
+		// Mode axis: policy > remembered > effective.
+		const resolvedMode = [policyDefaults?.mode, remembered[SessionConfigKey.Mode], effectiveDefaults?.mode]
+			.find((value): value is string => typeof value === 'string' && KNOWN_MODE_VALUES.has(value));
+		if (resolvedMode) {
+			remembered[SessionConfigKey.Mode] = resolvedMode;
+		} else {
+			delete remembered[SessionConfigKey.Mode];
 		}
 
 		// Worktree branch prefix, forwarded from `git.branchPrefix`. Seeded
@@ -3361,7 +3375,8 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		if (this._newSessions.get(newSession.sessionId) === newSession) {
 			this._newSessions.deleteAndDispose(newSession.sessionId);
 		}
-		return skeleton;
+		this._onDidChangeSessions.fire({ added: [], removed: [skeleton], changed: [] });
+		throw new Error(localize('sessionNotCommitted', "Agent host session was not committed."));
 	}
 
 	/** Localized error message when sendRequest is invoked without a connection. Subclasses can override. */
