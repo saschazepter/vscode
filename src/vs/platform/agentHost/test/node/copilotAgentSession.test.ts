@@ -26,7 +26,7 @@ import { AgentFeedbackAttachmentDisplayKind } from '../../common/meta/agentFeedb
 import { IDiffComputeService } from '../../common/diffComputeService.js';
 import { ISessionDataService } from '../../common/sessionDataService.js';
 import { ActionType, type ChatDeltaAction, type ChatErrorAction, type ChatInputRequestedAction, type ChatResponsePartAction, type ChatToolCallCompleteAction, type ChatToolCallReadyAction, type ChatToolCallStartAction, type ChatTurnCompleteAction, type ChatUsageAction, type SessionAction } from '../../common/state/sessionActions.js';
-import { MessageAttachmentKind, MessageKind, ResponsePartKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, ToolCallConfirmationReason, ToolCallContributorKind, ToolCallStatus, ToolResultContentType, buildDefaultChatUri, readUsageInfoMeta, type ToolDefinition, type ToolResultContent, type ToolResultFileEditContent, type UsageInfoMeta } from '../../common/state/sessionState.js';
+import { MessageAttachmentKind, MessageKind, ResponsePartKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, ToolCallConfirmationReason, ToolCallJudgeConfirmationReasonStatus, ToolCallContributorKind, ToolCallStatus, ToolResultContentType, buildDefaultChatUri, readUsageInfoMeta, type ToolDefinition, type ToolResultContent, type ToolResultFileEditContent, type UsageInfoMeta } from '../../common/state/sessionState.js';
 import { CustomizationType, McpAuthRequiredReason, McpServerStatus } from '../../common/state/protocol/channels-session/state.js';
 import { CopilotAgentSession } from '../../node/copilot/copilotAgentSession.js';
 import { ActiveClientToolSet } from '../../node/activeClientState.js';
@@ -2055,8 +2055,10 @@ suite('CopilotAgentSession', () => {
 			});
 			const confirmation = await waitForSignal(signal => signal.kind === 'pending_confirmation');
 			assert.deepStrictEqual(confirmation.kind === 'pending_confirmation' ? confirmation.state.confirmationReason : undefined, {
-				kind: ToolCallConfirmationReason.Judge,
+				kind: 'judge',
+				status: ToolCallJudgeConfirmationReasonStatus.Complete,
 				reason: 'Needs confirmation',
+				safety: 0,
 			});
 			assert.ok(session.respondToPermissionRequest('tc-assisted-prompt', true));
 

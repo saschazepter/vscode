@@ -490,8 +490,10 @@ Agent-host approval levels map to the Copilot SDK allow-all modes before each
 turn: Ask When Needed uses `off`, Allow All uses `on`, and Approve When Safe
 uses `auto`. Approve When Safe only skips a prompt when the SDK's
 model recommendation is `approve`; every other recommendation follows the normal
-confirmation flow. When the SDK supplies a reason for requiring approval, the
-confirmation renders it in the existing risk-badge position. A live
+confirmation flow. Judge rationale can arrive asynchronously: the confirmation
+reason is `loading` until the completed result supplies its explanation and a
+normalized safety score (`0` unsafe, `1` safe). Clients render that result in the
+existing risk-badge position with safety-appropriate visuals. A live
 approval-level change is pushed to every in-memory SDK
 chat immediately, including during an active turn, so leaving Allow All
 cannot leave the SDK in allow-all mode for later tool calls in that turn.

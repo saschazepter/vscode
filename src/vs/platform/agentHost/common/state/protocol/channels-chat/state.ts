@@ -911,7 +911,6 @@ export const enum ToolCallStatus {
  * - `NotNeeded` — No confirmation required (auto-approved)
  * - `UserAction` — User explicitly approved
  * - `Setting` — Approved by a persistent user setting
- * - `Judge` — A model judge required user confirmation
  *
  * @category Tool Call Types
  */
@@ -919,8 +918,30 @@ export const enum ToolCallConfirmationReason {
 	NotNeeded = 'not-needed',
 	UserAction = 'user-action',
 	Setting = 'setting',
-	Judge = 'judge',
 }
+
+export const enum ToolCallJudgeConfirmationReasonStatus {
+	Loading = 'loading',
+	Complete = 'complete',
+}
+
+export interface ToolCallJudgeConfirmationReasonLoadingState {
+	kind: 'judge';
+	status: ToolCallJudgeConfirmationReasonStatus.Loading;
+}
+
+export interface ToolCallJudgeConfirmationReasonCompleteState {
+	kind: 'judge';
+	status: ToolCallJudgeConfirmationReasonStatus.Complete;
+	reason: StringOrMarkdown;
+	/**
+	 * The judge's normalized safety score, where `0` is unsafe and `1` is safe.
+	 * @format float
+	 */
+	safety: number;
+}
+
+export type ToolCallJudgeConfirmationReason = ToolCallJudgeConfirmationReasonLoadingState | ToolCallJudgeConfirmationReasonCompleteState;
 
 /**
  * Why a tool call was cancelled.
@@ -1089,10 +1110,7 @@ export interface ToolCallPendingConfirmationState extends ToolCallBase, ToolCall
 	/** Short title for the confirmation prompt (e.g. `"Run in terminal"`, `"Write file"`) */
 	confirmationTitle?: StringOrMarkdown;
 	/** Why the tool requires user confirmation. */
-	confirmationReason?: {
-		kind: ToolCallConfirmationReason.Judge;
-		reason: string;
-	};
+	confirmationReason?: ToolCallJudgeConfirmationReason;
 	/** File edits that this tool call will perform, for preview before confirmation */
 	edits?: { items: FileEdit[] };
 	/** Whether the agent host allows the client to edit the tool's input parameters before confirming */
