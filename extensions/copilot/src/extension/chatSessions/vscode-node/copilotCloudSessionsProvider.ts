@@ -2672,9 +2672,7 @@ export class CopilotCloudSessionsProvider extends Disposable implements vscode.C
 			return {};
 		}
 
-		// True mid-turn steering: if a stream is already rendering this task (the session's
-		// activeResponseCallback is live), just POST the steer and return. The running stream
-		// renders the injected result, so we must NOT start a second streamer here.
+		// Active stream present: only POST the steer; that stream renders the injection (no second streamer).
 		if (this._activeTaskStreams.has(taskId)) {
 			stream.progress(vscode.l10n.t('Steering'));
 			const steerResult = await backend.sendFollowUpToTask(taskId, prompt);
@@ -2700,11 +2698,11 @@ export class CopilotCloudSessionsProvider extends Disposable implements vscode.C
 		}
 		const priorTurnCount = before.task.sessions?.length ?? 0;
 		const seedEventIds = new Set(priorEvents.map(e => e.id));
-		// If the latest turn is already active, this steer injects into the *current* turn (no new
-		// `task.sessions[]` row appears), so render `mode:'current'` — waiting for a new turn
-		// (`mode:'next'`) would time out. Only a steer onto a settled task starts a new turn.
+		// A steer into a genuinely active turn injects into the current turn (no new `task.sessions[]`
+		// row), so render `mode:'current'`; `mode:'next'` would time out. Require both the task and its
+		// latest turn to be active so a terminal task with a stale `in_progress` latest turn isn't misread.
 		const latestBefore = before.task.sessions?.[before.task.sessions.length - 1];
-		const isMidTurnSteer = !!latestBefore && isActiveTaskState(latestBefore.state);
+		const isMidTurnSteer = isActiveTaskState(before.task.state) && !!latestBefore && isActiveTaskState(latestBefore.state);
 
 		stream.progress(vscode.l10n.t('Delegating'));
 		const result = await backend.sendFollowUpToTask(taskId, prompt);
@@ -2713,11 +2711,8 @@ export class CopilotCloudSessionsProvider extends Disposable implements vscode.C
 			return {};
 		}
 
-		// Stream the follow-up turn, but stay yield-aware (mirrors the CLI provider): while the
-		// stream renders, VS Code sets `context.yieldRequested = true` when the user steers again.
-		// On yield we cancel our local streamer and return, so the chat service can flush the
-		// queued steering message immediately (which re-enters here and POSTs the next /steer)
-		// instead of waiting for this turn to settle. The remote turn keeps running server-side.
+		// Stay yield-aware (mirrors the CLI provider): steering must cancel only this local streamer,
+		// so the chat service can flush the next steer while the remote turn keeps running server-side.
 		const yieldCts = new vscode.CancellationTokenSource();
 		const disposables = new DisposableStore();
 		disposables.add(toDisposable(() => yieldCts.dispose()));

@@ -162,6 +162,8 @@ export class ChatService extends Disposable implements IChatService {
 	private readonly _sessionModels: ChatModelStore;
 	private readonly _pendingRequests = this._register(new DisposableResourceMap<CancellableRequest>());
 	private readonly _queuedRequestDeferreds = new Map<string, DeferredPromise<ChatSendResult>>();
+	/** Pending requests that are synthetic streamed-turn trackers (not real in-flight requests). */
+	private readonly _syntheticPendingRequests = new WeakSet<CancellableRequest>();
 
 	/**
 	 * In-flight untitled→real materializations, keyed by the original untitled
@@ -869,6 +871,7 @@ export class ChatService extends Disposable implements IChatService {
 
 			const trackNewCancellableRequest = () => {
 				const cancellableRequest = this.instantiationService.createInstance(CancellableRequest, new CancellationTokenSource(), undefined, undefined, undefined);
+				this._syntheticPendingRequests.add(cancellableRequest);
 				this._pendingRequests.set(model.sessionResource, cancellableRequest);
 				this.telemetryService.publicLog2<ChatPendingRequestChangeEvent, ChatPendingRequestChangeClassification>(ChatPendingRequestChangeEventName, { action: 'add', source: 'remoteSession', chatSessionId: chatSessionResourceToId(model.sessionResource) });
 				cancellationListener.value = createCancellationListener(cancellableRequest.cancellationTokenSource.token);
@@ -922,18 +925,10 @@ export class ChatService extends Disposable implements IChatService {
 				}));
 			}
 
-			// True mid-turn steering for streamed (activeResponseCallback) sessions.
-			// While a streamed turn is in progress the session holds a *synthetic* pending
-			// request (created by trackNewCancellableRequest; it has no `requestId`), so a
-			// message the user sends mid-turn is queued as a Steering message. For
-			// non-server-managed sessions (agent-host queues are drained by the server)
-			// dispatch that steering message to the participant immediately instead of waiting
-			// for the turn to complete, so the provider can inject it into the live server-side
-			// turn (e.g. POST /tasks/{id}/steer). The active stream keeps rendering the result.
-			//
-			// We only dispatch when the in-flight pending request is the synthetic tracker
-			// (`requestId === undefined`) or there is none — never when a *real* request is in
-			// flight (that would dispose it); those steers flush normally on completion.
+			// Mid-turn steering for streamed sessions: dispatch a queued Steering message immediately
+			// (the provider POSTs it server-side) rather than waiting for the turn to complete, but only
+			// when the in-flight request is the synthetic streamed-turn tracker (or none), never a real
+			// request. Server-managed (agent-host) queues are drained by the server, so they're excluded.
 			if (!this._isServerManagedQueue(model.sessionResource)) {
 				let dispatchingImmediateSteer = false;
 				const canImmediatelyDispatch = () => {
@@ -941,26 +936,30 @@ export class ChatService extends Disposable implements IChatService {
 						return false;
 					}
 					const pending = this._pendingRequests.get(model.sessionResource);
-					return !pending || pending.requestId === undefined;
+					return !pending || this._syntheticPendingRequests.has(pending);
 				};
 				disposables.add(model.onDidChangePendingRequests(() => {
 					if (dispatchingImmediateSteer || !canImmediatelyDispatch()) {
 						return;
 					}
 					dispatchingImmediateSteer = true;
-					// Defer to a microtask: this event fires *during* addPendingRequest, so
-					// dispatching synchronously would re-enter the model mid-mutation.
+					// Defer past the in-progress addPendingRequest mutation to avoid re-entrancy.
 					queueMicrotask(() => {
 						dispatchingImmediateSteer = false;
 						if (this._sessionModels.get(model.sessionResource) !== model || !canImmediatelyDispatch()) {
 							return;
 						}
-						// Release the synthetic pending request (if any) so the queue processor
-						// can run, then dispatch. Re-tracking happens on the next progress tick.
+						// Release the synthetic tracker so the queue processor can run, then dispatch.
 						if (this._pendingRequests.has(model.sessionResource)) {
 							this._pendingRequests.deleteAndDispose(model.sessionResource);
 						}
 						this.processNextPendingRequest(model);
+						// Restore tracking when the dispatched request settles (stream still active).
+						this._pendingRequests.get(model.sessionResource)?.responseCompletePromise?.finally(() => {
+							if (this._sessionModels.get(model.sessionResource) === model && !(providedSession.isCompleteObs?.get() ?? false)) {
+								ensureCancellationTracking();
+							}
+						});
 					});
 				}));
 			}
@@ -970,9 +969,7 @@ export class ChatService extends Disposable implements IChatService {
 				const progressArray = providedSession.progressObs?.read(reader) ?? [];
 				const isComplete = providedSession.isCompleteObs?.read(reader) ?? false;
 
-				// Keep the streamed turn tracked as in-progress even if an immediate steer
-				// dispatch briefly cleared the pending request (so `requestInProgress` stays
-				// true and subsequent messages continue to route through steering).
+				// Backstop: keep the streamed turn tracked as in-progress across immediate-steer dispatches.
 				if (!isComplete) {
 					ensureCancellationTracking();
 				}
