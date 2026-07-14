@@ -39,12 +39,14 @@ import { ActiveSessionContextKeys } from '../common/changes.js';
 import { IChangesViewService } from '../common/changesViewService.js';
 import { ChangesActionsBar, ChangesActionsBarActionViewItem, CHANGES_HEADER_ACTIONS_ID } from './changesView.js';
 import { SessionChangesEditorInput } from './sessionChangesEditorInput.js';
-import { CHANGESET_REVIEW_ACTION_ID, ChangesetReviewActionViewItem } from './changesetReviewActions.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { IAction } from '../../../../base/common/actions.js';
 import { IActionViewItemOptions, IBaseActionViewItemOptions } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { IActionViewItem } from '../../../../base/browser/ui/actionbar/actionbar.js';
 import { MenuItemAction } from '../../../../platform/actions/common/actions.js';
+import { CheckboxActionViewItem } from '../../../../base/browser/ui/toggle/toggle.js';
+import { defaultCheckboxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
+import { localize } from '../../../../nls.js';
 
 const HEADER_HEIGHT = 35;
 
@@ -369,5 +371,42 @@ export class SessionChangesEditor extends AbstractEditorWithViewState<IMultiDiff
 		// so the diff fills the full dimension; otherwise reserve the internal header.
 		const bodyHeight = this._singlePane ? dimension.height : Math.max(0, dimension.height - HEADER_HEIGHT);
 		this.widget?.layout(new Dimension(dimension.width, bodyHeight));
+	}
+}
+
+export const CHANGESET_REVIEW_ACTION_ID = 'changeset.review';
+
+/**
+ * Renders the per-file "Mark as Viewed" toggle in the Changes editor file header
+ * as a checkbox with a static "Viewed" label (mirroring the GitHub pull request
+ * "Viewed" checkbox), instead of the default icon-only toolbar button. The
+ * command's toggling title ("Mark as Viewed" / "Mark as Not Viewed") is kept as
+ * the accessible name so the action is announced, while the checkbox state
+ * conveys the reviewed state.
+ */
+class ChangesetReviewActionViewItem extends CheckboxActionViewItem {
+
+	constructor(action: MenuItemAction, options: IActionViewItemOptions) {
+		super(undefined, action, { ...options, label: true, checkboxStyles: { ...defaultCheckboxStyles, size: 14 } });
+	}
+
+	override render(container: HTMLElement): void {
+		super.render(container);
+		container.classList.add('changeset-review-action');
+	}
+
+	override updateChecked(): void {
+		super.updateChecked();
+
+		// The tooltip depends on the checked state, but the base class only refreshes
+		// the tooltip on label/tooltip changes (not on checked changes), so re-run it
+		// here to keep the hover and aria-label in sync with the reviewed state.
+		this.updateTooltip();
+	}
+
+	override getTooltip(): string {
+		return this.action.checked
+			? localize('changeset.viewed.tooltip', "Mark as Not Viewed")
+			: localize('changeset.notViewed.tooltip', "Mark as Viewed");
 	}
 }
