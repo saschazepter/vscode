@@ -7,8 +7,7 @@
     "typescript": "^6.0.3"
   },
   "scripts": {
-    "postinstall": "node ./postinstall.mjs",
-    "tsc:version": "tsc --version"
+    "postinstall": "node ./postinstall.mjs"
   },
   "devDependencies": {
     "@parcel/watcher": "^2.5.6",
