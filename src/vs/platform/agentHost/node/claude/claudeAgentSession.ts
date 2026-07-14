@@ -736,9 +736,8 @@ export class ClaudeAgentSession extends Disposable {
 	 *   startup picks it up via `Options.model` / `Options.effort`.
 	 * - Post-materialize: queue the change on the pipeline; the SDK
 	 *   applies it on the NEXT user request via
-	 *   `Query.setModel` / `Query.applyFlagSettings`. `'max'` effort is
-	 *   clamped to `'xhigh'` on the runtime path (CAPI lacks a `'max'`
-	 *   tier today).
+	 *   `Query.setModel` / `Query.applyFlagSettings`. `'max'` flows through
+	 *   unchanged — see {@link clampEffortForRuntime}.
 	 *
 	 * In both cases the new model is persisted to the per-session
 	 * metadata overlay so a later resume sees the user's choice.
@@ -746,11 +745,6 @@ export class ClaudeAgentSession extends Disposable {
 	async setModel(model: ModelSelection): Promise<void> {
 		this._provisionalModel = model;
 		if (this._pipeline) {
-			const requestedEffort = resolveClaudeEffort(model);
-			const runtimeEffort = clampEffortForRuntime(requestedEffort);
-			if (requestedEffort === 'max') {
-				this._logService.warn(`[Claude:${this.sessionId}] setModel: 'max' effort clamped to 'xhigh' (Copilot CAPI has no 'max' model yet)`);
-			}
 			await this._pipeline.setModel(toSdkModelId(model.id));
 			// Always push the resolved effort, including `undefined`. Switching
 			// to a model that does not support reasoning effort (e.g. Haiku)
@@ -758,7 +752,7 @@ export class ClaudeAgentSession extends Disposable {
 			// SDK is still applying from a prior effort-capable model — otherwise
 			// the next turn replays e.g. `'high'` onto Haiku and the API 400s
 			// (`output_config.effort ... does not support reasoning effort`).
-			await this._pipeline.setEffort(runtimeEffort);
+			await this._pipeline.setEffort(clampEffortForRuntime(resolveClaudeEffort(model)));
 		}
 		await this._metadataStore.write(this._storageUri, { model });
 	}
