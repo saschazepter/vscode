@@ -25,19 +25,6 @@ import type { WorktreeIsolation } from './shared/worktreeIsolation.js';
 export const IAgentConfigurationService = createDecorator<IAgentConfigurationService>('agentConfigurationService');
 
 /**
- * Payload for {@link IAgentConfigurationService.onDidSessionConfigChange}: the
- * session (or chat) channel whose config changed, the post-reducer merged
- * `values` (not the raw patch, so a merge and a full `replace` are reported
- * uniformly), and whether the change was client-originated (a user/picker edit)
- * versus an internal server-side write.
- */
-export interface ISessionConfigChangeEvent {
-	readonly session: ProtocolURI;
-	readonly values: Record<string, unknown>;
-	readonly isClientOriginated: boolean;
-}
-
-/**
  * Cohesive read/write surface for agent-host configuration.
  *
  * All platform-layer consumers (tool auto-approval, side effects, future
@@ -60,16 +47,6 @@ export interface IAgentConfigurationService {
 	 * re-read any root config values they depend on.
 	 */
 	readonly onDidRootConfigChange: Event<void>;
-
-	/**
-	 * Fires whenever a {@link ActionType.SessionConfigChanged} action is
-	 * processed for a session, carrying the affected session (or chat)
-	 * channel, the post-reducer merged config values, and whether the change
-	 * was client-originated. Lets agents propagate a live, session-mutable
-	 * config change (e.g. Claude's `permissionMode`) to a running SDK mid-turn,
-	 * instead of waiting for the next turn.
-	 */
-	readonly onDidSessionConfigChange: Event<ISessionConfigChangeEvent>;
 
 	/**
 	 * Returns the effective value of `key` for `session`, walking the
@@ -156,9 +133,6 @@ export class AgentConfigurationService extends Disposable implements IAgentConfi
 	private readonly _onDidRootConfigChange = this._register(new Emitter<void>());
 	readonly onDidRootConfigChange: Event<void> = this._onDidRootConfigChange.event;
 
-	private readonly _onDidSessionConfigChange = this._register(new Emitter<ISessionConfigChangeEvent>());
-	readonly onDidSessionConfigChange: Event<ISessionConfigChangeEvent> = this._onDidSessionConfigChange.event;
-
 	/**
 	 * Host-owned worktree isolation controller. Injected after construction (via
 	 * {@link setWorktreeIsolation}) because it only becomes available once the
@@ -196,15 +170,6 @@ export class AgentConfigurationService extends Disposable implements IAgentConfi
 		this._register(this._stateManager.onDidEmitEnvelope(envelope => {
 			if (envelope.action.type === ActionType.RootConfigChanged) {
 				this._onDidRootConfigChange.fire();
-			} else if (envelope.action.type === ActionType.SessionConfigChanged) {
-				this._onDidSessionConfigChange.fire({
-					session: envelope.channel,
-					// Post-reducer merged values so a merge and a full `replace`
-					// look the same to consumers; fall back to the raw patch when
-					// the session has no live state (e.g. not yet registered).
-					values: this.getSessionConfigValues(envelope.channel) ?? envelope.action.config,
-					isClientOriginated: envelope.origin !== undefined,
-				});
 			}
 		}));
 	}

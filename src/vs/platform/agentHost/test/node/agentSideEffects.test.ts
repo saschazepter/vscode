@@ -3170,6 +3170,47 @@ suite('AgentSideEffects', () => {
 			assert.ok(persisted);
 			assert.deepStrictEqual(JSON.parse(persisted!), { autoApprove: 'autoApprove' });
 		});
+
+		test('SessionConfigChanged notifies the agent with the post-reducer merged values', async () => {
+			// The client-action side-effects path is where a picker edit lands
+			// (internal server writes use `dispatchServerAction` and never reach
+			// `handleAction`), so forwarding a live config change to the provider
+			// from here is inherently client-only. Pins that `onSessionConfigChanged`
+			// receives the full merged config, not just the patch.
+			const localStateManager = disposables.add(new AgentHostStateManager(new NullLogService()));
+			const localAgent = new MockAgent();
+			disposables.add(toDisposable(() => localAgent.dispose()));
+			const localSideEffects = createTestSideEffects(disposables, localStateManager, {
+				getAgent: () => localAgent,
+				agents: observableValue<readonly IAgent[]>('agents', [localAgent]),
+				sessionDataService: createSessionDataService(sessionDb),
+				onTurnComplete: () => { },
+			});
+
+			const session = localStateManager.createSession({
+				resource: sessionUri.toString(),
+				provider: 'mock',
+				title: 'Initial',
+				status: SessionStatus.Idle,
+				createdAt: new Date().toISOString(),
+				modifiedAt: new Date().toISOString(),
+			});
+			session.config = { schema: { type: 'object', properties: {} }, values: { permissionMode: 'default' } };
+
+			localStateManager.dispatchClientAction(sessionUri.toString(), {
+				type: ActionType.SessionConfigChanged,
+				config: { permissionMode: 'bypassPermissions' },
+			}, { clientId: 'test-client', clientSeq: 1 });
+			localSideEffects.handleAction(sessionUri.toString(), {
+				type: ActionType.SessionConfigChanged,
+				config: { permissionMode: 'bypassPermissions' },
+			});
+
+			assert.deepStrictEqual(localAgent.onSessionConfigChangedCalls.map(c => ({ session: c.session.toString(), values: c.values })), [{
+				session: sessionUri.toString(),
+				values: { permissionMode: 'bypassPermissions' },
+			}]);
+		});
 	});
 
 	// ---- Subagent sessions ----------------------------------------------

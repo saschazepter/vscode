@@ -3168,12 +3168,12 @@ suite('ClaudeAgent', () => {
 		});
 	});
 
-	test('mid-turn permissionMode: forwards a client (picker) change to the live Query, ignores internal server writes (issue #321691)', async () => {
-		// A picker change mid-turn must reach the running SDK so the next tool
-		// auto-approves; an internal server-side write (e.g. ExitPlanMode) must
-		// NOT forward, since a control request from inside its open canUseTool
-		// callback can hang the turn (claudeCanUseTool.ts). Told apart by origin.
-		const { agent, sdk, stateManager } = createTestContext(disposables);
+	test('onSessionConfigChanged forwards a mid-turn picker permissionMode change to the live Query (issue #321691)', async () => {
+		// The host calls this hook for user/picker changes only (internal server
+		// writes like ExitPlanMode never route here), so it must forward the new
+		// mode to the running SDK so the next tool this turn auto-approves —
+		// without waiting for the next send().
+		const { agent, sdk } = createTestContext(disposables);
 		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
 
 		const created = await agent.createSession({
@@ -3181,21 +3181,6 @@ suite('ClaudeAgent', () => {
 			config: { permissionMode: 'default' },
 		});
 		const sessionId = AgentSession.id(created.session);
-
-		// Register + seed config so the reducer merges writes and the change
-		// event carries post-reducer values (mirrors AgentService).
-		const state = stateManager.createSession({
-			resource: created.session.toString(),
-			provider: 'claude',
-			title: 't',
-			status: SessionStatus.Idle,
-			createdAt: new Date().toISOString(),
-			modifiedAt: new Date().toISOString(),
-		});
-		(state as { config?: SessionConfigState }).config = {
-			schema: { type: 'object', properties: {} },
-			values: { permissionMode: 'default' },
-		};
 
 		// Park the turn mid-flight (materialized, query live) until released.
 		const reached = new DeferredPromise<void>();
@@ -3211,10 +3196,8 @@ suite('ClaudeAgent', () => {
 		const turn = agent.chats.sendMessage(defaultChatUri(created.session), 'edit a file', undefined, undefined, 't1');
 		await reached.p;
 
-		// Internal server-side write (ExitPlanMode-style): must NOT forward.
-		stateManager.dispatchServerAction(created.session.toString(), { type: ActionType.SessionConfigChanged, config: { permissionMode: 'acceptEdits' } });
-		// User picker change (client-originated): must forward.
-		stateManager.dispatchClientAction(created.session.toString(), { type: ActionType.SessionConfigChanged, config: { permissionMode: 'bypassPermissions' } }, { clientId: 'c1', clientSeq: 1 });
+		// Host delivers the user's picker change mid-turn.
+		agent.onSessionConfigChanged(created.session, { permissionMode: 'bypassPermissions' });
 		await tick();
 
 		const recordedMidTurn = [...(sdk.warmQueries.at(-1)?.produced?.recordedPermissionModes ?? [])];

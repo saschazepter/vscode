@@ -478,29 +478,6 @@ export class ClaudeAgent extends Disposable implements IAgent {
 				}
 			}
 		}));
-		// Forward a mid-turn `permissionMode` switch (approvals picker) to the
-		// running SDK so it applies to the next tool this turn, not only from the
-		// next `send()` (issue #321691). Only user/picker (client-originated)
-		// changes forward: internal server writes (e.g. ExitPlanMode persisting
-		// `acceptEdits`) must NOT issue a control request from inside their still-
-		// open `canUseTool` callback — that can hang the turn (see the NOTE in
-		// `claudeCanUseTool.ts`); the next `send()` carries those between turns.
-		this._register(this._configurationService.onDidSessionConfigChange(e => {
-			if (!e.isClientOriginated) {
-				return;
-			}
-			const mode = narrowClaudePermissionMode(e.values[ClaudeSessionConfigKey.PermissionMode]);
-			if (!mode) {
-				return;
-			}
-			const target = this._getChatContext(URI.parse(e.session)).target;
-			if (!target?.isPipelineReady) {
-				return;
-			}
-			target.setPermissionMode(mode).catch(err => {
-				this._logService.warn(`[Claude:${target.sessionId}] mid-turn setPermissionMode(${mode}) failed`, err);
-			});
-		}));
 		if (this._transportMode === 'native') {
 			// Only native bootstraps its model list here. Proxy mode fetches
 			// models from CAPI, which needs the GitHub token — so its first
@@ -1974,6 +1951,30 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		if (steeringMessage) {
 			target.injectSteering(steeringMessage);
 		}
+	}
+
+	/**
+	 * Forward a user/picker `permissionMode` change to the running SDK so it
+	 * applies to the next tool this turn, not only from the next `send()`
+	 * (issue #321691). Only fires for client-originated changes (the host routes
+	 * internal server writes elsewhere), so this can forward without re-entering
+	 * a `canUseTool` callback. No-op until the session is materialized — the
+	 * first `send()` seeds the mode into `Options.permissionMode`. Fire-and-
+	 * forget: the SDK control round-trip isn't awaited here; the pipeline caches
+	 * the mode so a later rebind / send re-applies it.
+	 */
+	onSessionConfigChanged(session: URI, values: Record<string, unknown>): void {
+		const mode = narrowClaudePermissionMode(values[ClaudeSessionConfigKey.PermissionMode]);
+		if (!mode) {
+			return;
+		}
+		const target = this._getChatContext(session).target;
+		if (!target?.isPipelineReady) {
+			return;
+		}
+		target.setPermissionMode(mode).catch(err => {
+			this._logService.warn(`[Claude:${target.sessionId}] mid-turn setPermissionMode(${mode}) failed`, err);
+		});
 	}
 
 	private async _changeModel(chat: URI, model: ModelSelection): Promise<void> {
