@@ -15,6 +15,7 @@ import { isAuthorizationProtectedResourceMetadata } from '../../../../base/commo
 import { safeStringify } from '../../../../base/common/objects.js';
 import { isAbsolute, join } from '../../../../base/common/path.js';
 import { extUriBiasedIgnorePathCase, normalizePath } from '../../../../base/common/resources.js';
+import { StopWatch } from '../../../../base/common/stopwatch.js';
 import { splitLinesIncludeSeparators } from '../../../../base/common/strings.js';
 import { hasKey, isDefined, isObject, isString, type Mutable } from '../../../../base/common/types.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -85,6 +86,17 @@ interface IPendingMcpAuthRequest {
 const COPILOT_HOME_DIRECTORY = '.copilot';
 const SESSION_STATE_DIRECTORY = join(COPILOT_HOME_DIRECTORY, 'session-state');
 const EMPTY_TOOL_RESULT_TEXT = '<empty />';
+const DEFAULT_GITHUB_MCP_SERVER_URL = 'https://api.githubcopilot.com/mcp';
+
+function normalizeMcpServerUrl(value: string): string | undefined {
+	if (!URL.canParse(value)) {
+		return undefined;
+	}
+	const url = new URL(value);
+	url.hash = '';
+	url.pathname = url.pathname.replace(/\/+$/, '');
+	return url.href;
+}
 
 type IMappedSessionEvents = { turns: Turn[]; subagentTurnsByToolCallId: ReadonlyMap<string, Turn[]> };
 
@@ -397,6 +409,7 @@ interface UsageContext {
 class CopilotTurn {
 
 	private _state: CopilotTurnState = 'pending';
+	private readonly _stopWatch = StopWatch.create(false);
 
 	/**
 	 * Accumulated Copilot usage for this turn, in nano-AIU, keyed by scope.
@@ -445,6 +458,7 @@ class CopilotTurn {
 	get state(): CopilotTurnState { return this._state; }
 	get isPending(): boolean { return this._state === 'pending'; }
 	get isRunning(): boolean { return this._state === 'running'; }
+	get duration(): number { return Math.max(0, this._stopWatch.elapsed()); }
 
 	/** Transition `pending → running` on the first SDK event. No-op once running/finished. */
 	markRunning(): void {
@@ -744,15 +758,18 @@ export class CopilotAgentSession extends Disposable {
 	private _beginSteeringTurn(steering: PendingMessage): string {
 		const previousTurnId = this._turnId;
 		if (previousTurnId) {
+			const previousDuration = this._currentTurn?.duration ?? 0;
 			this._emitAction({
 				type: ActionType.ChatTurnComplete,
 				turnId: previousTurnId,
+				duration: previousDuration,
 			});
 		}
 		const newTurnId = generateUuid();
 		this._emitAction({
 			type: ActionType.ChatTurnStarted,
 			turnId: newTurnId,
+			startedAt: new Date().toISOString(),
 			message: steering.message,
 			queuedMessageId: steering.id,
 		});
@@ -857,6 +874,7 @@ export class CopilotAgentSession extends Disposable {
 		this._emitAction({
 			type: ActionType.ChatTurnComplete,
 			turnId: turn.id,
+			duration: turn.duration,
 		});
 		this._currentTurn = undefined;
 	}
@@ -1107,8 +1125,13 @@ export class CopilotAgentSession extends Disposable {
 	}
 
 	private async _handleMcpAuthRequest(request: McpAuthRequest): Promise<McpAuthResult | null | undefined> {
+		const githubToken = this._initialGitHubMcpToken(request);
+		if (githubToken) {
+			this._logService.info(`[Copilot:${this.sessionId}] Reusing the existing GitHub token for initial GitHub MCP authentication`);
+			return { kind: 'token', accessToken: githubToken };
+		}
 		const resource = this._protectedResourceFromMcpAuthRequest(request);
-		const requiredScopes = this._requiredScopesFromMcpAuthRequest(request, resource);
+		const requiredScopes = this._scopesFromChallenge(request.wwwAuthenticateParams?.scope);
 		const deferred = new DeferredPromise<McpAuthResult | null | undefined>();
 		this._pendingMcpAuthRequests.set(request.requestId, {
 			serverName: request.serverName,
@@ -1130,6 +1153,15 @@ export class CopilotAgentSession extends Disposable {
 		return deferred.p.finally(() => this._pendingMcpAuthRequests.delete(request.requestId));
 	}
 
+	private _initialGitHubMcpToken(request: McpAuthRequest): string | undefined {
+		if (request.reason !== 'initial' || this._scopesFromChallenge(request.wwwAuthenticateParams?.scope).length !== 0) {
+			return undefined;
+		}
+		const requestUrl = normalizeMcpServerUrl(request.serverUrl);
+		const configuredUrl = normalizeMcpServerUrl(DEFAULT_GITHUB_MCP_SERVER_URL);
+		return requestUrl !== undefined && requestUrl === configuredUrl ? this._launchPlan.githubToken : undefined;
+	}
+
 	private _protectedResourceFromMcpAuthRequest(request: McpAuthRequest): ProtectedResourceMetadata {
 		if (request.resourceMetadata) {
 			try {
@@ -1148,11 +1180,6 @@ export class CopilotAgentSession extends Disposable {
 			resource_name: request.serverName,
 			scopes_supported: scopes.length ? scopes.slice() : undefined,
 		};
-	}
-
-	private _requiredScopesFromMcpAuthRequest(request: McpAuthRequest, resource: ProtectedResourceMetadata): readonly string[] {
-		const challengeScopes = this._scopesFromChallenge(request.wwwAuthenticateParams?.scope);
-		return challengeScopes.length ? challengeScopes : resource.scopes_supported ?? [];
 	}
 
 	private _scopesFromChallenge(scope: string | undefined): readonly string[] {
@@ -2464,6 +2491,7 @@ export class CopilotAgentSession extends Disposable {
 			this._emitAction({
 				type: ActionType.ChatTurnStarted,
 				turnId,
+				startedAt: new Date().toISOString(),
 				message: {
 					text: notification.messageText,
 					origin: { kind: MessageKind.SystemNotification },
@@ -2914,6 +2942,7 @@ export class CopilotAgentSession extends Disposable {
 			this._emitAction({
 				type: ActionType.ChatError,
 				turnId: this._turnId,
+				duration: this._currentTurn?.duration ?? 0,
 				error: {
 					errorType: e.data.errorType,
 					message: stripProxyErrorMarker(e.data.message),
