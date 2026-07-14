@@ -54,7 +54,7 @@ const listSessionsInputSchema: ToolDefinition['inputSchema'] = {
 		status: {
 			type: 'array',
 			items: { type: 'string', enum: [...listSessionsStatusValues] },
-			description: 'Only return sessions whose status matches one of these (e.g. `inputNeeded` for sessions awaiting a reply, `inProgress` for running ones). Omit to return every status.',
+			description: 'Only return sessions whose status matches one of these (e.g. `inputNeeded` for sessions awaiting a reply, `inProgress` for running ones, `archived` for sessions marked Done/completed — implies `includeArchived`). Omit to return every status.',
 		},
 		workspace: { type: 'string', description: 'Only return sessions whose working directory is this folder — an absolute path or a workspace URI.' },
 		withChanges: { type: 'boolean', description: 'When true, only return sessions that have pending worktree changes.' },
@@ -455,6 +455,11 @@ export function filterSessions(sessions: readonly IAgentSessionMetadata[], args:
 	return sessions.filter(session => {
 		if (args.status) {
 			const names = session.status !== undefined ? describeSessionStatus(session.status).split(',') : [];
+			// `sessionIsArchived` also considers the metadata flag, which the
+			// status bit-flags alone (decoded above) do not always capture.
+			if (sessionIsArchived(session) && !names.includes('archived')) {
+				names.push('archived');
+			}
 			if (!names.some(name => args.status!.has(name))) {
 				return false;
 			}
@@ -471,8 +476,9 @@ export function filterSessions(sessions: readonly IAgentSessionMetadata[], args:
 		if (args.withPullRequest && !readSessionGitHubState(session._meta)?.pullRequestUrl) {
 			return false;
 		}
-		// Archived sessions are hidden unless explicitly requested.
-		if (args.includeArchived !== true && sessionIsArchived(session)) {
+		// Archived sessions are hidden unless explicitly requested, either via
+		// `includeArchived` or by asking for the `archived` status directly.
+		if (args.includeArchived !== true && !args.status?.has('archived') && sessionIsArchived(session)) {
 			return false;
 		}
 		if (args.createdAfter !== undefined && session.startTime < args.createdAfter) {

@@ -187,6 +187,7 @@ suite('SessionServerTools', () => {
 
 		assert.deepStrictEqual({
 			byStatus: await ids({ status: ['inputNeeded'] }),
+			byArchivedStatus: await ids({ status: ['archived'] }),
 			byWorkspace: await ids({ workspace: workspace.toString() }),
 			withChanges: await ids({ withChanges: true }),
 			unread: await ids({ unread: true }),
@@ -198,6 +199,7 @@ suite('SessionServerTools', () => {
 			all: await ids({}),
 		}, {
 			byStatus: ['copilot:/needsInput'],
+			byArchivedStatus: ['copilot:/archived'],
 			byWorkspace: ['copilot:/idle', 'copilot:/needsInput', 'copilot:/withPr'],
 			withChanges: ['copilot:/idle'],
 			unread: ['copilot:/needsInput'],
