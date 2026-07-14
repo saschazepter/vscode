@@ -26,13 +26,15 @@ export const IAgentConfigurationService = createDecorator<IAgentConfigurationSer
 
 /**
  * Payload for {@link IAgentConfigurationService.onDidSessionConfigChange}: the
- * session (or chat) channel whose config was mutated, plus the raw patch that
- * was merged. Consumers narrow the keys they care about (e.g. Claude's
- * `permissionMode`) from `config`.
+ * session (or chat) channel whose config changed, the post-reducer merged
+ * `values` (not the raw patch, so a merge and a full `replace` are reported
+ * uniformly), and whether the change was client-originated (a user/picker edit)
+ * versus an internal server-side write.
  */
 export interface ISessionConfigChangeEvent {
 	readonly session: ProtocolURI;
-	readonly config: Record<string, unknown>;
+	readonly values: Record<string, unknown>;
+	readonly isClientOriginated: boolean;
 }
 
 /**
@@ -62,9 +64,10 @@ export interface IAgentConfigurationService {
 	/**
 	 * Fires whenever a {@link ActionType.SessionConfigChanged} action is
 	 * processed for a session, carrying the affected session (or chat)
-	 * channel and the config patch that was merged. Lets agents propagate a
-	 * live, session-mutable config change (e.g. Claude's `permissionMode`)
-	 * to a running SDK mid-turn, instead of waiting for the next turn.
+	 * channel, the post-reducer merged config values, and whether the change
+	 * was client-originated. Lets agents propagate a live, session-mutable
+	 * config change (e.g. Claude's `permissionMode`) to a running SDK mid-turn,
+	 * instead of waiting for the next turn.
 	 */
 	readonly onDidSessionConfigChange: Event<ISessionConfigChangeEvent>;
 
@@ -194,7 +197,14 @@ export class AgentConfigurationService extends Disposable implements IAgentConfi
 			if (envelope.action.type === ActionType.RootConfigChanged) {
 				this._onDidRootConfigChange.fire();
 			} else if (envelope.action.type === ActionType.SessionConfigChanged) {
-				this._onDidSessionConfigChange.fire({ session: envelope.channel, config: envelope.action.config });
+				this._onDidSessionConfigChange.fire({
+					session: envelope.channel,
+					// Post-reducer merged values so a merge and a full `replace`
+					// look the same to consumers; fall back to the raw patch when
+					// the session has no live state (e.g. not yet registered).
+					values: this.getSessionConfigValues(envelope.channel) ?? envelope.action.config,
+					isClientOriginated: envelope.origin !== undefined,
+				});
 			}
 		}));
 	}

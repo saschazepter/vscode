@@ -480,10 +480,16 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		}));
 		// Forward a mid-turn `permissionMode` switch (approvals picker) to the
 		// running SDK so it applies to the next tool this turn, not only from the
-		// next `send()` (issue #321691). Fire-and-forget so the SDK control request
-		// never interleaves with a parked `canUseTool`; no-op until materialized.
+		// next `send()` (issue #321691). Only user/picker (client-originated)
+		// changes forward: internal server writes (e.g. ExitPlanMode persisting
+		// `acceptEdits`) must NOT issue a control request from inside their still-
+		// open `canUseTool` callback — that can hang the turn (see the NOTE in
+		// `claudeCanUseTool.ts`); the next `send()` carries those between turns.
 		this._register(this._configurationService.onDidSessionConfigChange(e => {
-			const mode = narrowClaudePermissionMode(e.config[ClaudeSessionConfigKey.PermissionMode]);
+			if (!e.isClientOriginated) {
+				return;
+			}
+			const mode = narrowClaudePermissionMode(e.values[ClaudeSessionConfigKey.PermissionMode]);
 			if (!mode) {
 				return;
 			}

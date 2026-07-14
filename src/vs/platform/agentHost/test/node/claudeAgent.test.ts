@@ -3168,21 +3168,12 @@ suite('ClaudeAgent', () => {
 		});
 	});
 
-	test('mid-turn permissionMode change forwards setPermissionMode to the live Query (issue #321691)', async () => {
-		// Regression for #321691. A user who starts a turn under
-		// "Ask Before Edits" (`default`), sees a tool confirmation, then
-		// switches to "Bypass Permissions" mid-turn must have the new mode
-		// reach the running SDK so the NEXT tool auto-approves. Before the
-		// fix, `permissionMode` was only forwarded to the live `Query` at
-		// the start of the next `send()`, so the SDK kept asking for
-		// permission for the rest of the in-flight turn.
-		//
-		// Setup: materialize a `default`-mode session and park its turn
-		// in-flight (mirrors a confirmation being shown). While parked,
-		// dispatch the `SessionConfigChanged` the picker would emit and
-		// assert the fake `Query` recorded a live `setPermissionMode`
-		// BEFORE the turn ends — i.e. without waiting for the next send.
-		const { agent, sdk, configService } = createTestContext(disposables);
+	test('mid-turn permissionMode: forwards a client (picker) change to the live Query, ignores internal server writes (issue #321691)', async () => {
+		// A picker change mid-turn must reach the running SDK so the next tool
+		// auto-approves; an internal server-side write (e.g. ExitPlanMode) must
+		// NOT forward, since a control request from inside its open canUseTool
+		// callback can hang the turn (claudeCanUseTool.ts). Told apart by origin.
+		const { agent, sdk, stateManager } = createTestContext(disposables);
 		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
 
 		const created = await agent.createSession({
@@ -3191,10 +3182,22 @@ suite('ClaudeAgent', () => {
 		});
 		const sessionId = AgentSession.id(created.session);
 
-		// Park the turn's iterator at the result message so the turn stays in
-		// flight (materialized, mid-turn) until the test releases it. Signalling
-		// `reached` from inside the gate guarantees the pipeline is live before
-		// the config change fires.
+		// Register + seed config so the reducer merges writes and the change
+		// event carries post-reducer values (mirrors AgentService).
+		const state = stateManager.createSession({
+			resource: created.session.toString(),
+			provider: 'claude',
+			title: 't',
+			status: SessionStatus.Idle,
+			createdAt: new Date().toISOString(),
+			modifiedAt: new Date().toISOString(),
+		});
+		(state as { config?: SessionConfigState }).config = {
+			schema: { type: 'object', properties: {} },
+			values: { permissionMode: 'default' },
+		};
+
+		// Park the turn mid-flight (materialized, query live) until released.
 		const reached = new DeferredPromise<void>();
 		const release = new DeferredPromise<void>();
 		sdk.queryAdvance = async (idx: number) => {
@@ -3206,11 +3209,12 @@ suite('ClaudeAgent', () => {
 		sdk.nextQueryMessages = [makeSystemInitMessage(sessionId), makeResultSuccess(sessionId)];
 
 		const turn = agent.chats.sendMessage(defaultChatUri(created.session), 'edit a file', undefined, undefined, 't1');
-		// Wait until the turn is genuinely parked mid-flight (pipeline is live).
 		await reached.p;
 
-		// User flips "Ask Before Edits" → "Bypass Permissions" mid-turn.
-		configService.updateSessionConfig(created.session.toString(), { permissionMode: 'bypassPermissions' });
+		// Internal server-side write (ExitPlanMode-style): must NOT forward.
+		stateManager.dispatchServerAction(created.session.toString(), { type: ActionType.SessionConfigChanged, config: { permissionMode: 'acceptEdits' } });
+		// User picker change (client-originated): must forward.
+		stateManager.dispatchClientAction(created.session.toString(), { type: ActionType.SessionConfigChanged, config: { permissionMode: 'bypassPermissions' } }, { clientId: 'c1', clientSeq: 1 });
 		await tick();
 
 		const recordedMidTurn = [...(sdk.warmQueries.at(-1)?.produced?.recordedPermissionModes ?? [])];
