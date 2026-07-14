@@ -1237,10 +1237,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			if (e.isFirstChunk || e.isFinal) {
 				this.logService.trace(`[voice] audio_response codingSessionId=${codingSessionId ?? '<none>'} responseId=${e.responseId?.slice(0, 8) ?? '<none>'} shown=${this._shownSessionId() ?? '<none>'} focused=${this._getFocusedSessionId() ?? '<none>'} external=${this._activeSessionShown ?? '<none>'} awaiting=${this._awaitingReplyForSession ?? '<none>'} isFirstChunk=${e.isFirstChunk} isFinal=${e.isFinal} suppress=${this._suppressIncomingAudio} defer=${defer}`);
 			}
-			// Retire the per-response route once its stream ends.
-			if (e.isFinal && e.responseId) {
-				this._responseRoutes.delete(e.responseId);
-			}
 			if (defer) {
 				this._deferResponse(codingSessionId!, e.audio, e.isFirstChunk, e.isFinal, e.transcript, e.responseId);
 			} else if (this._isRenarration(codingSessionId, e.transcript, e.isFirstChunk, e.isFinal)) {
@@ -1289,6 +1285,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// On the final chunk we have the complete assistant transcript to persist.
 			if (e.isFinal && e.transcript) {
 				this._persistTurn('assistant', e.transcript);
+			}
+			// Retire the per-response route once its stream ends. Done last so the
+			// route stays inspectable for the whole handler (defer/dedupe/enqueue).
+			if (e.isFinal && e.responseId) {
+				this._responseRoutes.delete(e.responseId);
 			}
 		}));
 
@@ -2380,6 +2381,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			if (flushedResponse && narratable.kind === 'response') {
 				this._lastNarratedText.set(key, narratable.text);
 			} else {
+				// About to narrate a fresh item for the now-shown session. Get out
+				// of listening/auto-listen first, or the echoed audio is suppressed
+				// and the user hears nothing. This matters especially for a
+				// confirmation: it has no buffered audio, so the flush path (which
+				// normally does this) returned early without exiting listening.
+				this._prepareForPlayback();
 				this._narrate(key, narratable.kind, narratable.text);
 			}
 		}
@@ -2662,9 +2669,26 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this._lastHeardTranscriptById.set(key, flushedTranscript);
 		}
 
-		// Exit any active listening / auto-listen so playback can take over.
-		// If we don't, the controller can sit in listening and the buffered
-		// audio is suppressed instead of played (leaving the user stuck).
+		// Exit any active listening / auto-listen and reset the playback slot so
+		// the buffered chunks can play (see _prepareForPlayback).
+		this._prepareForPlayback();
+
+		for (const chunk of buffer) {
+			this._enqueueAudio(key, chunk.audio, chunk.isFirstChunk, chunk.isFinal, chunk.transcript);
+		}
+		return true;
+	}
+
+	/**
+	 * Get the controller out of listening/auto-listen and ready the playback slot
+	 * so an about-to-arrive (or just-buffered) narration actually plays instead of
+	 * being suppressed. Used before flushing a deferred response AND before
+	 * narrating a freshly-shown session's pending item (e.g. a confirmation, which
+	 * carries no buffered audio and so never hits the flush path) - otherwise the
+	 * controller can sit in listening and the echoed audio is dropped, leaving the
+	 * user staring at a focused session that never speaks.
+	 */
+	private _prepareForPlayback(): void {
 		this._clearAutoListenTimer();
 		this._autoListenSuppressed = false;
 		if (this._pttHeld) {
@@ -2673,22 +2697,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._pttToggleMode = false;
 		this._pttHeld = false;
 		this._suppressIncomingAudio = false;
-
-		// Force-reset the playback slot when nothing is actually playing so
-		// `_enqueueAudio` can claim it and drive the state machine to 'speaking'.
-		// (`undefined` from a prior generic response is NOT `null`, so an
-		// explicit reset is required - otherwise the fast-path is skipped and
-		// the queue never processes.)
-		if (!this.ttsPlaybackService.isPlaying) {
-			this._audioQueue.length = 0;
+		// Reset the playback slot when nothing is actually playing so `_enqueueAudio`
+		// can claim it and drive the state machine to 'speaking'. A prior generic
+		// response leaves the slot `undefined` (not `null`), which skips the
+		// fast-path, so an explicit reset is required. Do NOT wipe `_audioQueue`:
+		// valid audio can be pending during the ~500ms post-playback re-process gap
+		// (isPlaying is false but the queue is non-empty), and clearing it here
+		// would silently drop those responses.
+		if (!this.ttsPlaybackService.isPlaying && this._currentPlaybackSessionId !== null) {
 			this._currentPlaybackSessionId = null;
-			this._isProcessingQueue = false;
 		}
-
-		for (const chunk of buffer) {
-			this._enqueueAudio(key, chunk.audio, chunk.isFirstChunk, chunk.isFinal, chunk.transcript);
-		}
-		return true;
 	}
 
 	/**
