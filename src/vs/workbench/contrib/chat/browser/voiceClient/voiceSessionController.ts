@@ -227,8 +227,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private _suppressIncomingAudio = false;
 
 	// --- Deferred responses for non-focused sessions ---
-	/** Session resource string currently focused/visible in the chat pane. */
-	private _focusedSessionId: string | undefined;
 	/**
 	 * Session resource string most recently *shown* to the user in any chat
 	 * widget - updated on focus AND on a widget's view-model swap. `chatWidgetService`
@@ -270,13 +268,19 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 *  awaiting confirmation while unfocused (client-driven, no audio needed). */
 	private readonly _confirmationPendingSessions = new Set<string>();
 	/**
-	 * Key (session resource string, or ``''`` for untagged audio) of the response
+	 * Keys (session resource string, or ``''`` for untagged audio) of responses
 	 * we are currently playing live rather than deferring. Recorded on the first
 	 * chunk so the remaining chunks of that response follow the same decision and
 	 * a response is never split between playback and the deferred buffer.
-	 * ``undefined`` when no response is playing live.
+	 *
+	 * A SET rather than a single key so overlapping responses for DIFFERENT
+	 * sessions each keep their own routing: a live reply for session B must not
+	 * clear the live route of an in-flight reply for session A (which would send
+	 * A's continuation chunks down the focus-based fallback). Two concurrent
+	 * responses for the SAME session still can't be told apart without a backend
+	 * response/turn id; that remains a known limitation.
 	 */
-	private _liveReplyKey: string | undefined;
+	private readonly _liveReplyKeys = new Set<string>();
 
 	/**
 	 * Per-session record of the reply we most recently read for a session (played
@@ -1214,7 +1218,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// notify with a short audio cue instead.
 			const defer = this._shouldDeferResponse(codingSessionId, e.isFirstChunk);
 			if (e.isFirstChunk || e.isFinal) {
-				this.logService.trace(`[voice] audio_response codingSessionId=${codingSessionId ?? '<none>'} focused=${this._focusedSessionId ?? '<none>'} isFirstChunk=${e.isFirstChunk} isFinal=${e.isFinal} suppress=${this._suppressIncomingAudio} defer=${defer}`);
+				this.logService.trace(`[voice] audio_response codingSessionId=${codingSessionId ?? '<none>'} shown=${this._shownSessionId() ?? '<none>'} focused=${this._getFocusedSessionId() ?? '<none>'} external=${this._activeSessionShown ?? '<none>'} awaiting=${this._awaitingReplyForSession ?? '<none>'} isFirstChunk=${e.isFirstChunk} isFinal=${e.isFinal} suppress=${this._suppressIncomingAudio} defer=${defer}`);
 			}
 			if (defer) {
 				this._deferResponse(codingSessionId!, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
@@ -1232,7 +1236,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				}
 				this._enqueueAudio(codingSessionId, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
 				if (e.isFinal) {
-					this._liveReplyKey = undefined;
+					this._liveReplyKeys.delete(codingSessionId ?? '');
 					// Record this heard reply so an immediate backend re-narration
 					// of it (on activation) is dropped as a re-read, and so later
 					// on-focus re-reads of it are deduped by content. Untagged
@@ -1405,7 +1409,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._suppressIncomingAudio = false;
 		this._clearDeferredResponses();
 		this._uiResourceByBackendId.clear();
-		this._liveReplyKey = undefined;
+		this._liveReplyKeys.clear();
 		this._lastShownSessionId = undefined;
 		// Terminal disconnect: drop embedder-driven active-session state too, so a
 		// later reconnect starts from focus-based detection until the embedder
@@ -2278,7 +2282,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return;
 		}
 		const focused = this._getFocusedSessionId();
-		this._focusedSessionId = focused;
 		if (focused) {
 			this._activateShownSession(URI.parse(focused));
 			return;
@@ -2479,7 +2482,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * user is NOT looking at. It plays immediately for the shown session, for a
 	 * reply the user is actively awaiting, or when it is untagged audio.
 	 *
-	 * The decision is made on the first chunk and recorded in `_liveReplyKey`;
+	 * The decision is made on the first chunk and recorded in `_liveReplyKeys`;
 	 * remaining chunks follow the same decision so a response is never split
 	 * between playback and the deferred buffer.
 	 */
@@ -2488,16 +2491,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (isFirstChunk) {
 			// Untagged audio can't be attributed to a session — always play it.
 			if (!sessionId) {
-				this._liveReplyKey = key;
+				this._liveReplyKeys.add(key);
 				return false;
 			}
 			// Play live for the shown session or an awaited reply; defer the rest.
-			this._focusedSessionId = this._getFocusedSessionId();
 			if (this._shownSessionId() === sessionId || this._awaitingReplyForSession === sessionId) {
-				this._liveReplyKey = key;
+				this._liveReplyKeys.add(key);
 				return false;
 			}
-			this._liveReplyKey = undefined;
+			this._liveReplyKeys.delete(key);
 			return true;
 		}
 
@@ -2505,7 +2507,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (this._deferredResponses.has(key)) {
 			return true;
 		}
-		if (this._liveReplyKey === key) {
+		if (this._liveReplyKeys.has(key)) {
 			return false;
 		}
 		// Continuation whose first chunk we never observed: fall back to the shown
@@ -2513,7 +2515,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (!sessionId) {
 			return false;
 		}
-		this._focusedSessionId = this._getFocusedSessionId();
 		return !(this._shownSessionId() === sessionId || this._awaitingReplyForSession === sessionId);
 	}
 
@@ -2662,9 +2663,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// chunks (if any) until final. The marker is left in place so repeated
 		// re-narrations within the window are also dropped; it expires by time or
 		// is overwritten when a new reply is read.
-		if (this._liveReplyKey === sessionId) {
-			this._liveReplyKey = undefined;
-		}
+		this._liveReplyKeys.delete(sessionId);
 		if (!isFinal) {
 			this._droppingRenarration.add(sessionId);
 		}
