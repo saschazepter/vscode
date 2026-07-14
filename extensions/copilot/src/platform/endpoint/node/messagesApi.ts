@@ -37,6 +37,13 @@ export function buildToolInputSchema(schema: Record<string, unknown> | undefined
 	return { type: 'object', properties: {}, ...rest };
 }
 
+/**
+ * Anthropic only accepts ASCII letters, digits, underscores, and hyphens in tool call IDs.
+ */
+function sanitizeToolCallId(id: string): string {
+	return id.replace(/[^a-zA-Z0-9_-]/gu, '_');
+}
+
 /** IP Code Citation annotation from Messages API copilot_annotations */
 interface AnthropicIPCodeCitation {
 	id: number;
@@ -292,7 +299,7 @@ export function rawMessagesToMessagesAPI(messages: readonly Raw.ChatMessage[], v
 						}
 						content.push({
 							type: 'tool_use',
-							id: toolCall.id,
+							id: sanitizeToolCallId(toolCall.id),
 							name: toolCall.function.name,
 							input: parsedInput,
 						});
@@ -338,7 +345,7 @@ export function rawMessagesToMessagesAPI(messages: readonly Raw.ChatMessage[], v
 
 					const toolResultBlock: ToolResultBlockParam = {
 						type: 'tool_result',
-						tool_use_id: message.toolCallId,
+						tool_use_id: sanitizeToolCallId(message.toolCallId),
 						content: validContent.length > 0 ? validContent : undefined,
 					};
 					if (hasCacheControl) {
