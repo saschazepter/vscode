@@ -32,12 +32,27 @@ import { EN_US_DARWIN_LAYOUT } from '../../../services/keybinding/browser/keyboa
 import { EN_US_LINUX_LAYOUT } from '../../../services/keybinding/browser/keyboardLayouts/en.linux.js';
 import { KeybindingIO, OutputBuilder } from '../../../services/keybinding/common/keybindingIO.js';
 import { getAllUnboundCommands } from '../../../services/keybinding/browser/unboundCommands.js';
+import { IWorkbenchEnvironmentService } from '../../../services/environment/common/environmentService.js';
+
+interface IDefaultKeybindingsExportTarget {
+	readonly os: OperatingSystem;
+	readonly filename: string;
+}
+
+export function getDefaultKeybindingsExportTargets(isSessionsWindow: boolean): readonly IDefaultKeybindingsExportTarget[] {
+	return [
+		{ os: OperatingSystem.Windows, filename: isSessionsWindow ? 'doc.keybindings.agents.win.json' : 'doc.keybindings.win.json' },
+		{ os: OperatingSystem.Macintosh, filename: isSessionsWindow ? 'doc.keybindings.agents.osx.json' : 'doc.keybindings.osx.json' },
+		{ os: OperatingSystem.Linux, filename: isSessionsWindow ? 'doc.keybindings.agents.linux.json' : 'doc.keybindings.linux.json' },
+	];
+}
 
 export class KeybindingsExportContribution extends Disposable implements IWorkbenchContribution {
 	static readonly ID = 'workbench.contrib.keybindingsExport';
 
 	constructor(
 		@INativeEnvironmentService private readonly nativeEnvironmentService: INativeEnvironmentService,
+		@IWorkbenchEnvironmentService private readonly workbenchEnvironmentService: IWorkbenchEnvironmentService,
 		@IFileService private readonly fileService: IFileService,
 		@INativeHostService private readonly nativeHostService: INativeHostService,
 		@IProductService private readonly productService: IProductService,
@@ -66,19 +81,18 @@ export class KeybindingsExportContribution extends Disposable implements IWorkbe
 
 	private async exportDefaultKeybindingsAndQuit(outputPath: string): Promise<void> {
 		try {
-			const platforms: { os: OperatingSystem; filename: string }[] = [
-				{ os: OperatingSystem.Windows, filename: 'doc.keybindings.win.json' },
-				{ os: OperatingSystem.Macintosh, filename: 'doc.keybindings.osx.json' },
-				{ os: OperatingSystem.Linux, filename: 'doc.keybindings.linux.json' },
-			];
-
+			const isSessionsWindow = this.workbenchEnvironmentService.isSessionsWindow;
 			const extensions = this.extensionService.extensions;
 
-			for (const { os, filename } of platforms) {
+			for (const { os, filename } of getDefaultKeybindingsExportTargets(isSessionsWindow)) {
 				const content = KeybindingsExportContribution._getDefaultKeybindingsContentForOS(os, extensions);
 				const filePath = join(outputPath, filename);
 				await this.fileService.writeFile(URI.file(filePath), VSBuffer.fromString(content));
 				this.logService.info(`[${KeybindingsExportContribution.ID}] Wrote ${filePath}`);
+			}
+
+			if (!isSessionsWindow) {
+				await this.nativeHostService.openAgentsWindow();
 			}
 
 			await this.nativeHostService.closeWindow();
