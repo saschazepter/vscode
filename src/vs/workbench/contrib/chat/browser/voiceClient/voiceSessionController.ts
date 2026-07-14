@@ -449,6 +449,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 */
 	private readonly _solicitedNarrationIds = new Set<string>();
 
+	/**
+	 * Narrations that could not be sent because the socket was closed (see
+	 * {@link _narrate}). Replayed once on the next `session_init` so a reply or
+	 * confirmation that landed during a disconnect is still spoken on reconnect.
+	 */
+	private readonly _pendingNarrationRetries = new Map<string, { kind: 'response' | 'confirmation'; text: string }>();
+
 
 	// --- Telemetry tracking ---
 	private _telemetrySessionIndex = 0;
@@ -1197,18 +1204,26 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// point at which the mic/handshake is settled and a turn will stick,
 		// so enter hands-free listening here (armed in the connect handler).
 		this._voiceEventDisposables.add(this.voiceClientService.onSessionInit(() => {
-			this.logService.trace(`[voice] session_init received; armListen=${this._enterListenOnSessionInit}`);
-			if (this._enterListenOnSessionInit) {
+			this.logService.trace(`[voice] session_init received; armListen=${this._enterListenOnSessionInit} pendingRetries=${this._pendingNarrationRetries.size}`);
+			// Replay any narration that was dropped because the socket was closed
+			// (see _narrate). Do this BEFORE entering listening: a real pending
+			// narration should play now (its playback drives re-listen) rather
+			// than being torn down right after we start listening. On a normal
+			// first connect there are no pending retries, so listening is entered
+			// as usual.
+			let narrated = false;
+			if (this._pendingNarrationRetries.size > 0) {
+				const retries = [...this._pendingNarrationRetries.entries()];
+				this._pendingNarrationRetries.clear();
+				for (const [sessionId, item] of retries) {
+					narrated = this._narrate(sessionId, item.kind, item.text) || narrated;
+				}
+			}
+			if (this._enterListenOnSessionInit && !narrated) {
 				this._enterListenOnSessionInit = false;
 				this._enterAutoListen();
-			}
-			// Retry the shown session's pending item on (re)connect: one requested while the socket was down was dropped without recording dedup (see _narrate), so re-send it once.
-			const shown = this._shownSessionId();
-			if (shown) {
-				const narratable = this._currentNarratable(URI.parse(shown));
-				if (narratable) {
-					this._narrate(shown, narratable.kind, narratable.text);
-				}
+			} else if (narrated) {
+				this._enterListenOnSessionInit = false;
 			}
 		}));
 
@@ -1533,6 +1548,8 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._pendingIdleNarration.clear();
 		this._lastResponseSummaryById.clear();
 		this._lastNarratedText.clear();
+		this._solicitedNarrationIds.clear();
+		this._pendingNarrationRetries.clear();
 		this._userLogin = undefined;
 		this._lastPersistedTurnId = undefined;
 		this._pendingPriorTimeline = [];
@@ -2528,28 +2545,36 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this.voiceClientService.flushSessionContext();
 	}
 
-	/** Ask the backend to narrate a session's pending item, de-duped by the exact text last spoken for it ({@link _lastNarratedText}); the single narration trigger for both live and on-focus paths. */
-	private _narrate(sessionId: string, kind: 'response' | 'confirmation', text: string): void {
+	/** Ask the backend to narrate a session's pending item, de-duped by the exact text last spoken for it ({@link _lastNarratedText}); the single narration trigger for both live and on-focus paths. Returns `true` when a request was actually sent. */
+	private _narrate(sessionId: string, kind: 'response' | 'confirmation', text: string): boolean {
 		if (!text) {
-			return;
+			return false;
 		}
 		if (this._lastNarratedText.get(sessionId) === text) {
-			return;
+			return false;
 		}
 		this.logService.trace(`[voice] narrate kind=${kind} id=${sessionId.slice(-32)}`);
-		// Get out of listening/auto-listen before the narration audio arrives, or
-		// the echoed audio is suppressed (or captured as the user's own turn)
-		// while PTT/mic capture is active. Centralized here so EVERY narration
-		// path (live, on-focus, on-reconnect retry) is prepared, not just focus.
-		this._prepareForPlayback();
-		// Record dedup only once the request is actually sent; if the socket is closed, leaving it unset lets a later focus/state event retry after resume.
 		const narrationId = this.voiceClientService.requestNarration(sessionId, kind, text);
-		if (narrationId) {
-			this._lastNarratedText.set(sessionId, text);
-			// A narration WE solicited must always play - shield its echoed audio
-			// from the legacy content-based re-narration heuristic.
-			this._solicitedNarrationIds.add(narrationId);
+		if (!narrationId) {
+			// Socket was closed, so nothing was sent: don't touch playback/listening
+			// state (that would tear down a freshly-entered listen on connect).
+			// Remember the item so the next session_init replays it after resume;
+			// leaving the dedup unset lets a later focus/state event retry too.
+			this._pendingNarrationRetries.set(sessionId, { kind, text });
+			return false;
 		}
+		// The narration audio is now inbound. Get out of listening/auto-listen so
+		// the echoed audio isn't suppressed (or captured as the user's own turn)
+		// while PTT/mic capture is active. Done here so EVERY narration path
+		// (live, on-focus, on-reconnect retry) is prepared, not just focus - but
+		// only once a request is actually in flight.
+		this._prepareForPlayback();
+		this._pendingNarrationRetries.delete(sessionId);
+		this._lastNarratedText.set(sessionId, text);
+		// A narration WE solicited must always play - shield its echoed audio
+		// from the legacy content-based re-narration heuristic.
+		this._solicitedNarrationIds.add(narrationId);
+		return true;
 	}
 
 	/** The pending item a session would narrate now (waiting confirmation prompt or completed reply summary), from the resident model or cached summary/status; returns undefined (kicking off a load) if a confirmation's detail isn't ready. */
