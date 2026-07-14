@@ -2666,6 +2666,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			if (summary) {
 				return { kind: 'response', text: summary };
 			}
+			// The reply summary lives on the model and wasn't cached (the session
+			// never went resident this turn, e.g. a remote/Copilot reply that
+			// completed while unfocused). Load it and let the on-focus re-activation
+			// in _ensureModelLoaded narrate it once it renders - mirrors the
+			// NeedsInput branch above so a completed background reply is read when
+			// focused instead of staying silent.
+			this._ensureModelLoaded(resource);
+			return undefined;
 		}
 		return undefined;
 	}
@@ -3970,6 +3978,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					this._checkSessionStateChanges();
 					this._sendContext();
 					this.voiceClientService.flushSessionContext();
+					// If the user is looking at this session, narrate its now-resident
+					// pending item directly. _checkSessionStateChanges only narrates on
+					// a state transition, but a completed reply focused after it settled
+					// shows no idle->idle transition and would otherwise stay silent.
+					// _narrate's _lastNarratedText guard prevents double-reading an
+					// already-read reply; this mirrors the confirmation-on-focus path.
+					if (this._shownSessionId() === key) {
+						this._activateShownSession(resource);
+					}
 				}
 			} else {
 				// Load failed; stop suppressing the coarse idle for this session.
