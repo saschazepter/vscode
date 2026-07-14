@@ -39,6 +39,15 @@ export interface IVoiceAudioResponse {
 	readonly isFinal: boolean;
 	readonly codingSessionId?: string;
 	readonly transcript?: string;
+	/**
+	 * Stable id correlating all chunks of ONE narration/response stream, echoed
+	 * by the backend from the `narration_id` the client sent on
+	 * `request_narration` (or the backend's own `turn_id`). Lets playback routing
+	 * decide a response's fate once and keep every chunk on that decision, even
+	 * when responses for different sessions interleave. Absent for untagged
+	 * direct replies and for backends that don't yet echo it (legacy fallback).
+	 */
+	readonly responseId?: string;
 }
 
 export interface IVoiceToolCall {
@@ -191,8 +200,8 @@ export interface IVoiceClientService {
 	 */
 	invalidateSessionCache(sessionId: string): void;
 	sendToolResult(callId: string, result: string): void;
-	/** Explicitly ask the backend to speak a session's pending `text` now (backend no longer auto-narrates); echoed back as `audio_response` tagged with `codingSessionId`. Returns `false` if the socket was closed and nothing was sent. */
-	requestNarration(codingSessionId: string, kind: 'response' | 'confirmation', text: string): boolean;
+	/** Explicitly ask the backend to speak a session's pending `text` now (backend no longer auto-narrates); echoed back as `audio_response` tagged with `codingSessionId` and the returned narration id. Returns the generated narration id, or `undefined` if the socket was closed and nothing was sent. */
+	requestNarration(codingSessionId: string, kind: 'response' | 'confirmation', text: string): string | undefined;
 	/**
 	 * Notify the backend of a session state transition.
 	 *

@@ -5,6 +5,7 @@
 
 import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
+import { generateUuid } from '../../../../../base/common/uuid.js';
 import { mainWindow } from '../../../../../base/browser/window.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
@@ -230,6 +231,7 @@ export class VoiceClientService extends Disposable implements IVoiceClientServic
 				committed?: string;
 				reason?: string;
 				turn_id?: string;
+				narration_id?: string;
 			};
 			try {
 				msg = JSON.parse(evt.data as string);
@@ -268,6 +270,7 @@ export class VoiceClientService extends Disposable implements IVoiceClientServic
 						isFinal: msg.is_final ?? false,
 						codingSessionId: msg.coding_session_id,
 						transcript: msg.transcript,
+						responseId: msg.narration_id ?? msg.turn_id,
 					});
 					break;
 				case 'tool_call':
@@ -578,13 +581,14 @@ export class VoiceClientService extends Disposable implements IVoiceClientServic
 		}
 	}
 
-	requestNarration(codingSessionId: string, kind: 'response' | 'confirmation', text: string): boolean {
+	requestNarration(codingSessionId: string, kind: 'response' | 'confirmation', text: string): string | undefined {
 		if (this._ws?.readyState === WebSocket.OPEN) {
-			this._ws.send(JSON.stringify({ type: 'request_narration', coding_session_id: codingSessionId, kind, text }));
-			this._logService.trace(`[voice] request_narration kind=${kind} id=${codingSessionId.slice(-32)}`);
-			return true;
+			const narrationId = generateUuid();
+			this._ws.send(JSON.stringify({ type: 'request_narration', coding_session_id: codingSessionId, kind, text, narration_id: narrationId }));
+			this._logService.trace(`[voice] request_narration kind=${kind} id=${codingSessionId.slice(-32)} narration_id=${narrationId.slice(0, 8)}`);
+			return narrationId;
 		}
-		return false;
+		return undefined;
 	}
 
 	sendSessionStateChange(sessionId: string, newState: string, _label: string, detail?: string, lastResponseSummary?: string): void {
