@@ -2749,11 +2749,12 @@ suite('LayoutController (desktop)', () => {
 		await settle();
 		assert.strictEqual(hasFilesTab(), true);
 
-		// A real file opens into a visible editor area.
+		// A real file opens into a visible editor area. Production fires
+		// onWillOpenEditor *before* the editor is added to the group.
 		const realEditor = store.add(new TestStubEditorInput(URI.file('/repo/a.ts')));
-		harness.activeGroupEditors.push(realEditor);
 		harness.partVisibility.set(Parts.EDITOR_PART, true);
 		openEditor(realEditor);
+		harness.activeGroupEditors.push(realEditor);
 		harness.onDidEditorsChange.fire();
 		await settle();
 		const filesRemoved = !hasFilesTab();
@@ -2781,24 +2782,33 @@ suite('LayoutController (desktop)', () => {
 		harness.activeSessionObs.set(makeSession(URI.parse('session:1')), undefined);
 		await settle();
 
-		// A real file opens and tidies away the auto Files placeholder.
+		// A real file opens and tidies away the auto Files placeholder. Production
+		// fires onWillOpenEditor *before* the editor is added to the group.
 		const realEditor = store.add(new TestStubEditorInput(URI.file('/repo/a.ts')));
-		harness.activeGroupEditors.push(realEditor);
 		harness.partVisibility.set(Parts.EDITOR_PART, true);
 		openEditor(realEditor);
+		harness.activeGroupEditors.push(realEditor);
 		harness.onDidEditorsChange.fire();
 		await settle();
 		assert.strictEqual(hasFilesTab(), false);
 
 		// The user explicitly adds the Files tab via `+` (opens an EmptyFileEditorInput).
 		const userFilesTab = store.add(new EmptyFileEditorInput());
-		harness.activeGroupEditors.push(userFilesTab);
 		openEditor(userFilesTab);
+		harness.activeGroupEditors.push(userFilesTab);
 		harness.onDidEditorsChange.fire();
 		await settle();
 
 		// It must NOT be tidied away — the `+` add is not a real-file open.
 		assert.strictEqual(hasFilesTab(), true, 'a user-added Files tab stays while a real file is open');
+
+		// Re-activating the already-open real file (e.g. selecting its tab) fires
+		// onWillOpenEditor while it is still in the group; the guard must treat this
+		// as an activation, not a new open, so the user-added Files tab survives.
+		openEditor(realEditor);
+		harness.onDidActiveEditorChange.fire();
+		await settle();
+		assert.strictEqual(hasFilesTab(), true, 're-activating an open file must not tidy the user-added Files tab');
 	});
 
 	test('[managed tabs / Scenario 9] keeps the Files tab when a non-file editor (e.g. the browser) opens', async () => {

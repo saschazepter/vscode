@@ -64,6 +64,7 @@ suite('Sessions - Workbench', () => {
 		readonly events: IPartVisibilityChangeEvent[];
 		readonly classToggles: { name: string; force: boolean }[];
 		readonly counts: { save: number; layout: number };
+		readonly sidePaneReveals: boolean[];
 		setEditorHidden(hidden: boolean, explicit?: boolean): void;
 		setAuxiliaryBarHidden(hidden: boolean): void;
 	}
@@ -177,6 +178,7 @@ suite('Sessions - Workbench', () => {
 			events,
 			classToggles,
 			counts,
+			sidePaneReveals,
 		};
 
 		Object.setPrototypeOf(host, options.single ? SinglePaneWorkbench.prototype : Workbench.prototype);
@@ -543,6 +545,37 @@ suite('Sessions - Workbench', () => {
 			{ partId: Parts.EDITOR_PART, visible: false },
 			{ partId: Parts.EDITOR_PART, visible: true },
 		]);
+	});
+
+	test('fires onDidRevealSidePane only when the side pane transitions from fully hidden to visible', () => {
+		const host = createHost({ single: true, sessionsWidth: 1000, partVisibility: { editor: false, auxiliaryBar: false } });
+		const counts: number[] = [];
+
+		// From fully closed, revealing the editor fires the reveal.
+		setEditorHidden.call(host, false);
+		counts.push(host.sidePaneReveals.length);
+		// The aux bar then also showing does NOT fire again — the pane is already visible.
+		setAuxiliaryBarHidden.call(host, false);
+		counts.push(host.sidePaneReveals.length);
+		// Fully close the pane (hide the aux first while the editor is still visible, then
+		// the editor) so it reaches the fully-hidden state without an auto-reveal.
+		setAuxiliaryBarHidden.call(host, true);
+		setEditorHidden.call(host, true);
+		counts.push(host.sidePaneReveals.length);
+		// Revealing again from fully hidden fires a second time.
+		setEditorHidden.call(host, false);
+		counts.push(host.sidePaneReveals.length);
+
+		assert.deepStrictEqual(counts, [1, 1, 1, 2]);
+	});
+
+	test('does not fire onDidRevealSidePane in the base (non-docked) layout', () => {
+		const host = createHost({ sessionsWidth: 1000, partVisibility: { editor: false, auxiliaryBar: false } });
+
+		setAuxiliaryBarHidden.call(host, false);
+		setEditorHidden.call(host, false);
+
+		assert.strictEqual(host.sidePaneReveals.length, 0);
 	});
 
 	test('shrinks the docked editor node to the detail width when hiding the editor', () => {

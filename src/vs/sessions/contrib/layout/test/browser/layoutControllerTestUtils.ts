@@ -306,6 +306,7 @@ export function createTestHarness(store: DisposableStore, options: ICreateOption
 		override get editors() { return harness.activeGroupEditors as IEditorGroup['editors']; }
 		override get count() { return harness.activeGroupEditors.length; }
 		override get isEmpty() { return harness.activeGroupEditors.length === 0; }
+		override contains(editor: EditorInput) { return harness.activeGroupEditors.includes(editor as EditorInput); }
 		override isPinned() { return true; }
 		override pinEditor() { }
 		override getIndexOfEditor(editor: EditorInput) { return harness.activeGroupEditors.indexOf(editor); }
@@ -528,6 +529,7 @@ export function createTestHarness(store: DisposableStore, options: ICreateOption
 			return new class extends mock<IEditorGroupsService['mainPart']>() {
 				override get groups() { return groups; }
 				override get activeGroup() { return testActiveGroup; }
+				override getGroup(id: number) { return id === testActiveGroup.id ? testActiveGroup : undefined; }
 			};
 		}
 		override get groups() { return [{ isEmpty: !harness.editorGroupsHaveContent }] as unknown as IEditorGroupsService['groups']; }

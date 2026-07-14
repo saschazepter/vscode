@@ -30,8 +30,8 @@ import { ISinglePaneLayoutContext, SinglePaneDockedTabsCoordinator, SinglePaneLa
 /** Options to open the Changes tab pinned first, inactive (the workbench auto-activates it only when the group is empty). */
 const CHANGES_TAB_OPTIONS: IEditorOptions = { pinned: true, index: 0, inactive: true, preserveFocus: true, activation: EditorActivation.PRESERVE, isExplicit: false };
 
-/** Options to open the Changes tab pinned first *and active* (used on submit, where the group already holds the Files tab so it would otherwise stay inactive). */
-const CHANGES_TAB_ACTIVE_OPTIONS: IEditorOptions = { pinned: true, index: 0, isExplicit: false };
+/** Options to open the Changes tab pinned first *and active* (used on submit, where the group already holds the Files tab so it would otherwise stay inactive). Keeps `preserveFocus` so activating the tab for detail mapping never steals focus from the just-submitted chat. */
+const CHANGES_TAB_ACTIVE_OPTIONS: IEditorOptions = { pinned: true, index: 0, preserveFocus: true, isExplicit: false };
 
 /** Options to open the Files placeholder tab, pinned and inactive. */
 const FILES_TAB_OPTIONS: IEditorOptions = { pinned: true, inactive: true, preserveFocus: true, activation: EditorActivation.PRESERVE, isExplicit: false };
@@ -77,22 +77,8 @@ interface IPendingReconcile {
 
 /**
  * Owns the two managed docked tabs — the pinned Changes multi-diff tab (created
- * sessions) and the empty Files placeholder tab (any workspace session).
- *
- * Rules:
- *  1. The default tabs are opened **only into an empty group**, and only on a
- *     *view-open* trigger (session switch, side-pane reveal, or a layout-driven
- *     editor change). This makes them user-closable with no dismissal bookkeeping:
- *     closing one while another remains leaves the group non-empty (not re-added);
- *     closing the last closes the side pane; reopening (empty group) restores them.
- *  2. A **details-only reveal** (aux detail panel shown without the editor area)
- *     ensures both docked inputs even in a non-empty group — the panel shows them.
- *  3. **Submit** (uncreated → created) ensures the Changes tab, opened active.
- *  4. A foreign/stale Changes editor (another session's, or any while uncreated)
- *     is always closed. Opening a real workspace file removes the empty Files
- *     placeholder (a tidy `[Changes][file]` strip) as a **one-shot** reaction to
- *     that open — so the user can still add the Files tab via `+` while a file is
- *     open; it is not re-added when the file closes.
+ * sessions) and the empty Files placeholder tab (any workspace session). See
+ * `SINGLE_PANE_SCENARIOS.md` for the full reconcile rules.
  */
 export class SinglePaneManagedTabsStrategy extends SinglePaneLayoutStrategy {
 
@@ -175,12 +161,19 @@ export class SinglePaneManagedTabsStrategy extends SinglePaneLayoutStrategy {
 
 		// [Tidy strip] Opening a real workspace file makes the empty Files
 		// placeholder redundant, so remove it (a tidy `[Changes][file]` strip).
-		// This is a **one-shot reaction to the file open**, not a standing rule:
-		// the user can still add the Files tab via `+` while a file is open (that
-		// opens an EmptyFileEditorInput, not a real file, so it is not removed). A
-		// restore-driven open (working-set apply) is excluded.
+		// This is a **one-shot reaction to a genuinely new file open**, not a
+		// standing rule: the user can still add the Files tab via `+` while a file
+		// is open (that opens an EmptyFileEditorInput, not a real file, so it is
+		// not removed). Skipped when the editor is merely *re-activated* (selecting
+		// an already-open file, or a close revealing the next editor — both fire
+		// `onWillOpenEditor` while the editor is already in the group), when it
+		// targets a non-main-part group, or during a restore-driven open.
 		this._register(this._editorService.onWillOpenEditor(e => {
 			if (this._ctx.isRestoringSessionLayout || !this._isWorkspaceFileEditor(e.editor)) {
+				return;
+			}
+			const group = this._editorGroupsService.mainPart.getGroup(e.groupId);
+			if (!group || group.contains(e.editor)) {
 				return;
 			}
 			void this._coordinator.sequencer.queue(() => this._removeFilesTab(this._editorGroupsService.mainPart.activeGroup)).catch(onUnexpectedError);
@@ -338,14 +331,9 @@ export class SinglePaneManagedTabsStrategy extends SinglePaneLayoutStrategy {
 		}
 	}
 
-	/** Closes editors we own, tracking them as internal closes so they are not mistaken for user dismissals. */
+	/** Closes editors we own, preserving focus so a transient close never steals it. */
 	private async _closeManagedEditors(group: IEditorGroup, editors: EditorInput[]): Promise<void> {
-		editors.forEach(editor => this._coordinator.internallyClosingEditors.add(editor));
-		try {
-			await this._editorService.closeEditors(editors.map(editor => ({ groupId: group.id, editor })), { preserveFocus: true });
-		} finally {
-			editors.forEach(editor => this._coordinator.internallyClosingEditors.delete(editor));
-		}
+		await this._editorService.closeEditors(editors.map(editor => ({ groupId: group.id, editor })), { preserveFocus: true });
 	}
 
 	private _pinFirst(group: IEditorGroup, editor: EditorInput): void {

@@ -101,12 +101,10 @@ export class SinglePaneEditorAreaCollapseStrategy extends SinglePaneLayoutStrate
 		}
 
 		this._coordinator.collapsedEditors = captured;
-		toClose.forEach(editor => this._coordinator.internallyClosingEditors.add(editor));
 		const suppressEditorPartAutoVisibility = this._layoutService.suppressEditorPartAutoVisibility();
 		try {
 			await this._editorService.closeEditors(toClose.map(editor => ({ groupId: group.id, editor })), { preserveFocus: true });
 		} finally {
-			toClose.forEach(editor => this._coordinator.internallyClosingEditors.delete(editor));
 			suppressEditorPartAutoVisibility.dispose();
 		}
 	}
