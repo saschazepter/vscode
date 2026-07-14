@@ -8,6 +8,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/c
 import { changesetReducer, chatReducer, sessionReducer } from '../../common/state/protocol/reducers.js';
 import { ActionType } from '../../common/state/sessionActions.js';
 import { ChangesetStatus, ChangesetOperationStatus, CustomizationLoadStatus, MessageKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, ChatOriginKind, SessionLifecycle, SessionStatus, ToolCallConfirmationReason, ToolCallJudgeConfirmationReasonStatus, ResponsePartKind, ToolCallStatus, type AgentCustomization, type ChangesetState, type Customization, type PluginCustomization, type ChatState, type SessionState } from '../../common/state/sessionState.js';
+
 import { CustomizationType } from '../../common/state/protocol/state.js';
 
 function makeSession(): SessionState {
@@ -39,6 +40,7 @@ function withActiveTurnAndToolCall(state: ChatState): ChatState {
 	state = chatReducer(state, {
 		type: ActionType.ChatTurnStarted,
 		turnId: 'turn-1',
+		startedAt: '2025-01-01T00:00:00.000Z',
 		message: { text: 'hello', origin: { kind: MessageKind.User } },
 	});
 	state = chatReducer(state, {
@@ -54,6 +56,56 @@ function withActiveTurnAndToolCall(state: ChatState): ChatState {
 suite('chatReducer – summaryStatus with tool call confirmations and input requests', () => {
 
 	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('preserves turn start timestamp and duration after completion', () => {
+		let state = chatReducer(makeChat(), {
+			type: ActionType.ChatTurnStarted,
+			turnId: 'turn-1',
+			startedAt: '2025-01-01T00:00:00.000Z',
+			message: { text: 'hello', origin: { kind: MessageKind.User } },
+		});
+		const activeStartedAt = state.activeTurn?.startedAt;
+		state = chatReducer(state, {
+			type: ActionType.ChatTurnComplete,
+			turnId: 'turn-1',
+			duration: 150_000,
+		});
+
+		assert.deepStrictEqual({
+			activeStartedAt,
+			completedStartedAt: state.turns[0].startedAt,
+			duration: state.turns[0].duration,
+		}, {
+			activeStartedAt: '2025-01-01T00:00:00.000Z',
+			completedStartedAt: '2025-01-01T00:00:00.000Z',
+			duration: 150_000,
+		});
+	});
+
+	test('clamps negative terminal duration', () => {
+		const active = chatReducer(makeChat(), {
+			type: ActionType.ChatTurnStarted,
+			turnId: 'turn-1',
+			startedAt: '2025-01-01T00:00:00.000Z',
+			message: { text: 'hello', origin: { kind: MessageKind.User } },
+		});
+		const afterNegativeDuration = chatReducer(active, {
+			type: ActionType.ChatTurnComplete,
+			turnId: 'turn-1',
+			duration: -5,
+		});
+
+		assert.deepStrictEqual(afterNegativeDuration.turns[0], {
+			id: 'turn-1',
+			startedAt: '2025-01-01T00:00:00.000Z',
+			duration: 0,
+			message: { text: 'hello', origin: { kind: MessageKind.User } },
+			responseParts: [],
+			usage: undefined,
+			state: TurnState.Complete,
+			error: undefined,
+		});
+	});
 
 	test('Chat status is InputNeeded when a tool call is PendingConfirmation', () => {
 		let state = withActiveTurnAndToolCall(makeChat());
