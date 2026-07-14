@@ -168,6 +168,12 @@
 	gap: 4px;
 	align-items: center;
 	flex: 0 0 auto;
+	opacity: 0;
+}
+
+.automations-card:hover .automations-card-actions,
+.automations-card:has(:focus-visible) .automations-card-actions {
+	opacity: 1;
 }
 
 .automations-card-action-button {
@@ -264,53 +270,55 @@
 	color: var(--vscode-descriptionForeground);
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
-	margin-bottom: 6px;
+	margin-bottom: 8px;
 	padding-bottom: 4px;
 	border-bottom: 1px solid var(--vscode-widget-border);
 }
 
-.automations-history-row {
+/* Run cards grid — rectangular cards in a vertical list */
+.automations-run-cards-grid {
 	display: flex;
-	flex-direction: row;
-	align-items: center;
+	flex-direction: column;
 	gap: 8px;
-	padding: 6px 8px;
-	border-radius: 4px;
 }
 
-.automations-history-row:hover {
+.automations-run-card {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 10px 14px;
+	border: 1px solid var(--vscode-widget-border);
+	border-radius: 6px;
+	cursor: pointer;
+}
+
+.automations-run-card:hover {
 	background-color: var(--vscode-list-hoverBackground);
 }
 
-.automations-history-status-icon {
-	flex: 0 0 16px;
-	font-size: 14px;
-	text-align: center;
+.automations-run-card:has(:focus-visible) {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
 }
 
-.automations-history-status-icon.codicon-check {
-	color: var(--vscode-testing-iconPassed);
-}
-
-.automations-history-status-icon.codicon-error {
-	color: var(--vscode-errorForeground);
-}
-
-.automations-history-status-icon.codicon-sync {
-	color: var(--vscode-progressBar-background);
-}
-
-.automations-history-name {
+.automations-run-card-name {
 	font-size: 13px;
-	font-weight: 500;
 	color: var(--vscode-foreground);
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
-	max-width: 200px;
 }
 
-.automations-history-meta {
+.automations-run-card-name-title {
+	font-weight: 500;
+}
+
+.automations-run-card-name-workspace {
+	font-weight: 400;
+	color: var(--vscode-descriptionForeground);
+}
+
+.automations-run-card-status-row {
 	display: flex;
 	flex-direction: row;
 	align-items: center;
@@ -319,6 +327,34 @@
 	color: var(--vscode-descriptionForeground);
 }
 
-.automations-history-meta .meta-sep {
+.automations-run-card-status-row .meta-sep {
 	opacity: 0.6;
+}
+
+.automations-run-card-icon {
+	font-size: 14px;
+}
+
+.automations-run-card-icon.codicon-check {
+	color: var(--vscode-testing-iconPassed);
+}
+
+.automations-run-card-icon.codicon-error {
+	color: var(--vscode-errorForeground);
+}
+
+.automations-run-card-icon.codicon-sync {
+	color: var(--vscode-progressBar-background);
+}
+
+.automations-run-card-workspace {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	opacity: 0.8;
+}
+
+.automations-run-card-error {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }

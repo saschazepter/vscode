@@ -15,7 +15,7 @@ import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { localize } from '../../../../../nls.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
-import type { IAutomation, IAutomationRun, AutomationRunStatus, AutomationRunTrigger } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
+import type { IAutomation, IAutomationRun, AutomationRunStatus } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
 import { IAutomationService } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { IAutomationRunner } from '../../../../../workbench/contrib/chat/common/automations/automationRunner.js';
 import { IAutomationDialogService } from '../../../../../workbench/contrib/chat/common/automations/automationDialogService.js';
@@ -24,7 +24,7 @@ import { basename } from '../../../../../base/common/resources.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { status } from '../../../../../base/browser/ui/aria/aria.js';
-import { fromNow, getDurationString } from '../../../../../base/common/date.js';
+
 import { AbstractChatView, ChatViewKind } from '../../../../browser/parts/chatView.js';
 
 const $ = DOM.$;
@@ -81,10 +81,9 @@ export class AutomationsCardsWidget extends Disposable {
 
 		const newButton = this._register(new Button(titleRow, {
 			...defaultButtonStyles,
-			secondary: true,
 			title: localize('newAutomation', "New automation"),
 		}));
-		newButton.label = localize('newAutomationShort', "+ New");
+		newButton.label = localize('newAutomationLabel', "New Automation");
 		newButton.element.classList.add('automations-cards-new-button');
 		this._register(newButton.onDidClick(() => this.openCreateDialog()));
 
@@ -284,57 +283,55 @@ export class AutomationsCardsWidget extends Disposable {
 			const groupHeader = DOM.append(groupEl, $('.automations-history-group-header'));
 			groupHeader.textContent = group.label;
 
+			const groupGrid = DOM.append(groupEl, $('.automations-run-cards-grid'));
 			for (const run of group.runs) {
-				this.renderRunRow(groupEl, run, automationMap);
+				this.renderRunRow(groupGrid, run, automationMap, group.kind);
 			}
 		}
 	}
 
-	private renderRunRow(parent: HTMLElement, run: IAutomationRun, automationMap: Map<string, IAutomation>): void {
-		const row = DOM.append(parent, $('.automations-history-row'));
+	private renderRunRow(parent: HTMLElement, run: IAutomationRun, automationMap: Map<string, IAutomation>, bucketKind: DateBucketKind): void {
+		const card = DOM.append(parent, $('.automations-run-card'));
+
+		const automation = automationMap.get(run.automationId);
+
+		// Name + workspace on same line
+		const nameEl = DOM.append(card, $('.automations-run-card-name'));
+		const title = automation?.name ?? localize('unknownAutomation', "Unknown");
+		const titleSpan = DOM.append(nameEl, $('span.automations-run-card-name-title'));
+		titleSpan.textContent = title;
+		if (automation?.folderUri) {
+			const suffixSpan = DOM.append(nameEl, $('span.automations-run-card-name-workspace'));
+			suffixSpan.textContent = ` in ${basename(automation.folderUri)}`;
+		}
+
+		// Status icon + timestamp + error (single row)
+		const statusRow = DOM.append(card, $('.automations-run-card-status-row'));
 
 		const statusInfo = runStatusIcon(run.status);
-		const iconEl = DOM.append(row, $('span.automations-history-status-icon.codicon'));
+		const iconEl = DOM.append(statusRow, $('span.automations-run-card-icon.codicon'));
 		iconEl.classList.add(`codicon-${statusInfo.iconId}`);
 		if (statusInfo.spin) {
 			iconEl.classList.add('codicon-modifier-spin');
 		}
 
-		const nameEl = DOM.append(row, $('.automations-history-name'));
-		const automation = automationMap.get(run.automationId);
-		nameEl.textContent = automation?.name ?? localize('unknownAutomation', "Unknown");
+		const timeEl = DOM.append(statusRow, $('span.automations-run-card-time'));
+		timeEl.textContent = formatTimestamp(run.startedAt, bucketKind);
 
-		const metaEl = DOM.append(row, $('.automations-history-meta'));
-
-		const triggerEl = DOM.append(metaEl, $('span'));
-		triggerEl.textContent = runTriggerLabel(run.trigger);
-
-		DOM.append(metaEl, $('.meta-sep')).textContent = '\u00B7';
-
-		const timeEl = DOM.append(metaEl, $('span'));
-		const t = Date.parse(run.startedAt);
-		timeEl.textContent = Number.isNaN(t) ? run.startedAt : fromNow(new Date(t), true);
-
-		const duration = formatRunDuration(run);
-		if (duration) {
-			DOM.append(metaEl, $('.meta-sep')).textContent = '\u00B7';
-			const durEl = DOM.append(metaEl, $('span'));
-			durEl.textContent = duration;
+		if (run.errorMessage) {
+			DOM.append(statusRow, $('.meta-sep')).textContent = '\u00B7';
+			const errorEl = DOM.append(statusRow, $('span.automations-run-card-error'));
+			errorEl.textContent = run.errorMessage;
 		}
-
-		const statusLabel = runStatusLabel(run.status);
-		this.historyDisposables.add(
-			this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), row, statusLabel)
-		);
 	}
 
-	private groupRunsByDate(runs: readonly IAutomationRun[]): { label: string; runs: IAutomationRun[] }[] {
+	private groupRunsByDate(runs: readonly IAutomationRun[]): { label: string; kind: DateBucketKind; runs: IAutomationRun[] }[] {
 		const now = new Date();
 		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 		const yesterday = new Date(today.getTime() - 86400000);
 		const lastWeekStart = new Date(today.getTime() - 7 * 86400000);
 
-		const groups: Map<string, { label: string; order: number; runs: IAutomationRun[] }> = new Map();
+		const groups: Map<string, { label: string; kind: DateBucketKind; order: number; runs: IAutomationRun[] }> = new Map();
 
 		for (const run of runs) {
 			const t = Date.parse(run.startedAt);
@@ -342,11 +339,11 @@ export class AutomationsCardsWidget extends Disposable {
 				continue;
 			}
 			const date = new Date(t);
-			const { label, order } = this.getDateBucket(date, today, yesterday, lastWeekStart);
+			const { label, kind, order } = this.getDateBucket(date, today, yesterday, lastWeekStart);
 
 			let group = groups.get(label);
 			if (!group) {
-				group = { label, order, runs: [] };
+				group = { label, kind, order, runs: [] };
 				groups.set(label, group);
 			}
 			group.runs.push(run);
@@ -355,20 +352,19 @@ export class AutomationsCardsWidget extends Disposable {
 		return [...groups.values()].sort((a, b) => a.order - b.order);
 	}
 
-	private getDateBucket(date: Date, today: Date, yesterday: Date, lastWeekStart: Date): { label: string; order: number } {
+	private getDateBucket(date: Date, today: Date, yesterday: Date, lastWeekStart: Date): { label: string; kind: DateBucketKind; order: number } {
 		if (date >= today) {
-			return { label: localize('today', "Today"), order: 0 };
+			return { label: localize('today', "Today"), kind: 'today', order: 0 };
 		}
 		if (date >= yesterday) {
-			return { label: localize('yesterday', "Yesterday"), order: 1 };
+			return { label: localize('yesterday', "Yesterday"), kind: 'yesterday', order: 1 };
 		}
 		if (date >= lastWeekStart) {
-			return { label: localize('lastWeek', "Last week"), order: 2 };
+			return { label: localize('lastWeek', "Last week"), kind: 'week', order: 2 };
 		}
-		// Group by month name
 		const monthLabel = date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 		const order = 100 - (date.getFullYear() * 12 + date.getMonth());
-		return { label: monthLabel, order };
+		return { label: monthLabel, kind: 'month', order };
 	}
 
 	layout(width: number, height: number): void {
@@ -379,6 +375,8 @@ export class AutomationsCardsWidget extends Disposable {
 
 //#region Run history helpers
 
+type DateBucketKind = 'today' | 'yesterday' | 'week' | 'month';
+
 function runStatusIcon(status: AutomationRunStatus): { iconId: string; spin: boolean } {
 	switch (status) {
 		case 'pending': return { iconId: 'circle-outline', spin: false };
@@ -388,33 +386,23 @@ function runStatusIcon(status: AutomationRunStatus): { iconId: string; spin: boo
 	}
 }
 
-function runStatusLabel(status: AutomationRunStatus): string {
-	switch (status) {
-		case 'pending': return localize('runPending', "Pending");
-		case 'running': return localize('runRunning', "Running");
-		case 'completed': return localize('runCompleted', "Completed");
-		case 'failed': return localize('runFailed', "Failed");
+function formatTimestamp(iso: string, kind: DateBucketKind): string {
+	const t = Date.parse(iso);
+	if (Number.isNaN(t)) {
+		return iso;
 	}
-}
+	const date = new Date(t);
+	const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
-function runTriggerLabel(trigger: AutomationRunTrigger): string {
-	switch (trigger) {
-		case 'schedule': return localize('triggerSchedule', "Scheduled");
-		case 'manual': return localize('triggerManual', "Manual");
-		case 'catch_up': return localize('triggerCatchUp', "Catch-up");
+	switch (kind) {
+		case 'today':
+		case 'yesterday':
+			return time;
+		case 'week':
+			return `${date.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`;
+		case 'month':
+			return `${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${time}`;
 	}
-}
-
-function formatRunDuration(run: IAutomationRun): string | undefined {
-	if (!run.completedAt) {
-		return undefined;
-	}
-	const startMs = Date.parse(run.startedAt);
-	const endMs = Date.parse(run.completedAt);
-	if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
-		return undefined;
-	}
-	return getDurationString(Math.max(0, endMs - startMs));
 }
 
 //#endregion

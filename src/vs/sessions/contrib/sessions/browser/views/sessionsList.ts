@@ -1910,6 +1910,8 @@ export class SessionsList extends Disposable implements ISessionsList {
 				return;
 			}
 			if (isSessionSection(element) && element.id === AUTOMATIONS_SECTION_ID) {
+					this.tree.setSelection([]);
+					this.tree.setFocus([]);
 					this.sessionsPartService.showAutomationsPage();
 				return;
 			}
