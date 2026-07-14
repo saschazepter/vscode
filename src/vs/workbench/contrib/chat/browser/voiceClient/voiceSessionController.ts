@@ -1407,6 +1407,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._uiResourceByBackendId.clear();
 		this._liveReplyKey = undefined;
 		this._lastShownSessionId = undefined;
+		// Terminal disconnect: drop embedder-driven active-session state too, so a
+		// later reconnect starts from focus-based detection until the embedder
+		// re-asserts the active session (rather than pinning a stale one and
+		// silently ignoring focus events).
+		this._activeSessionShown = undefined;
+		this._externalActiveSessionMode = false;
 		this._recentlyReadResponse.clear();
 		this._droppingRenarration.clear();
 		this._lastHeardTranscriptById.clear();
@@ -2441,20 +2447,31 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	setActiveSessionShown(resource: URI | undefined): void {
-		this._externalActiveSessionMode = true;
 		const key = resource?.toString();
+		// `undefined` means the embedder has no active session to pin (e.g. a
+		// draft composer). Per the interface contract this RESTORES focus-based
+		// detection: leaving external mode on while blanking `_activeSessionShown`
+		// would wedge narration - `_shownSessionId()` returns undefined, so no
+		// session is ever "shown", every tagged reply defers forever, and both
+		// focus paths stay gated off. Reset to focus-based instead.
+		if (!resource) {
+			if (!this._externalActiveSessionMode && this._activeSessionShown === undefined) {
+				return;
+			}
+			this.logService.trace(`[voice] setActiveSessionShown=<none>; restoring focus-based detection (was ${this._activeSessionShown ?? '<none>'})`);
+			this._externalActiveSessionMode = false;
+			this._activeSessionShown = undefined;
+			this._onFocusedSessionChanged();
+			return;
+		}
+		this._externalActiveSessionMode = true;
 		if (key === this._activeSessionShown) {
 			return;
 		}
 		this.logService.trace(`[voice] setActiveSessionShown=${key ?? '<none>'} (was ${this._activeSessionShown ?? '<none>'})`);
 		this._activeSessionShown = key;
-		if (resource) {
-			// Route audio here now: flush buffers, clear pending, and re-send context.
-			this._activateShownSession(resource);
-		} else {
-			this._sendContext();
-			this.voiceClientService.flushSessionContext();
-		}
+		// Route audio here now: flush buffers, clear pending, and re-send context.
+		this._activateShownSession(resource);
 	}
 
 	/**
@@ -2553,8 +2570,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// with its transcript, so a backend re-narration (same text) arriving
 		// shortly after is dropped rather than double-read. A genuinely new reply
 		// (different text) is never suppressed. See _recentlyReadResponse.
+		// The final chunk carries the COMPLETE transcript (each chunk's transcript
+		// is cumulative, not a delta), so use the last non-empty one; joining all
+		// chunks would produce a repeated, garbled string that fails to match the
+		// backend's re-narrated transcript and defeats dedup.
 		const flushedTranscript = this._normalizeTranscript(
-			buffer.map(c => c.transcript ?? '').join(' ')
+			[...buffer].reverse().find(c => c.transcript)?.transcript ?? ''
 		);
 		if (flushedTranscript) {
 			this._recentlyReadResponse.set(key, { transcript: flushedTranscript, at: Date.now() });
