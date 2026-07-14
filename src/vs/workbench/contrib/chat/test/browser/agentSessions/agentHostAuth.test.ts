@@ -10,10 +10,14 @@ import { ICommandService } from '../../../../../../platform/commands/common/comm
 import { type AgentInfo } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { mock } from '../../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { NullLogService } from '../../../../../../platform/log/common/log.js';
+import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
+import { ILogService, NullLogService } from '../../../../../../platform/log/common/log.js';
+import { IAuthenticationMcpAccessService } from '../../../../../services/authentication/browser/authenticationMcpAccessService.js';
+import { IAuthenticationMcpService } from '../../../../../services/authentication/browser/authenticationMcpService.js';
+import { IAuthenticationMcpUsageService } from '../../../../../services/authentication/browser/authenticationMcpUsageService.js';
 import { IAuthenticationService } from '../../../../../services/authentication/common/authentication.js';
 import { CHAT_SETUP_ACTION_ID } from '../../../browser/actions/chatActions.js';
-import { authenticateProtectedResources, resolveAuthenticationInteractively, resolveTokenForResource, AgentHostAuthTokenCache, agentHostMcpServerId, type IAgentHostAuthenticationOptions } from '../../../browser/agentSessions/agentHost/agentHostAuth.js';
+import { authenticateProtectedResources, resolveAuthenticationInteractively, resolveTokenForResource, AgentHostAuthTokenCache, agentHostMcpServerId, resolveMcpServerAuthentication, type IAgentHostAuthenticationOptions } from '../../../browser/agentSessions/agentHost/agentHostAuth.js';
 
 class TestCommandService extends mock<ICommandService>() {
 	readonly calls: { commandId: string; args: unknown[] }[] = [];
@@ -26,7 +30,6 @@ class TestCommandService extends mock<ICommandService>() {
 		return this.result as R;
 	}
 }
-
 function createMockAuthService(overrides: {
 	getOrActivateProviderIdForServer?: (serverUri: URI, resourceUri: URI) => Promise<string | undefined>;
 	getSessions?: (providerId: string, scopes: string[] | undefined, options: any, activate: boolean) => Promise<readonly { scopes: string[]; accessToken: string }[]>;
@@ -204,6 +207,49 @@ suite('AgentHostAuthTokenCache', () => {
 		cache.clear();
 		assert.strictEqual(cache.updateAndIsChanged('https://api.example.com', ['read'], 'tok1'), true);
 		assert.strictEqual(cache.updateAndIsChanged('https://other.example.com', ['read'], 'tok2'), true);
+	});
+});
+
+suite('resolveMcpServerAuthentication', () => {
+
+	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('uses challenge scopes without replacing the protected resource scope catalog', async () => {
+		const requestedScopes: (readonly string[] | undefined)[] = [];
+		const authService = createMockAuthService({
+			getOrActivateProviderIdForServer: () => Promise.resolve('provider-1'),
+			getSessions: (_providerId, scopes) => {
+				requestedScopes.push(scopes);
+				return Promise.resolve([]);
+			},
+		});
+		const instantiationService = disposables.add(new TestInstantiationService());
+		instantiationService.stub(IAuthenticationService, authService);
+		instantiationService.stub(IAuthenticationMcpAccessService, {});
+		instantiationService.stub(IAuthenticationMcpService, {
+			getAccountPreference: () => undefined,
+		});
+		instantiationService.stub(IAuthenticationMcpUsageService, {});
+		instantiationService.stub(ILogService, new NullLogService());
+
+		const result = await instantiationService.invokeFunction(resolveMcpServerAuthentication, {
+			resource: 'https://mcp.example.com',
+			authorization_servers: ['https://auth.example.com'],
+			scopes_supported: ['repo', 'read:org', 'notifications'],
+		}, {
+			allowInteraction: false,
+			logPrefix: '[AgentHost]',
+			mcpServerId: 'server-id',
+			mcpServerName: 'Example',
+			mcpServerUrl: 'https://mcp.example.com',
+			scopes: ['notifications'],
+			authenticate: async () => { },
+		});
+
+		assert.deepStrictEqual({ result, requestedScopes }, {
+			result: false,
+			requestedScopes: [['notifications']],
+		});
 	});
 });
 
