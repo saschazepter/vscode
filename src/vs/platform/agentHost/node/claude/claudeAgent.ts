@@ -478,6 +478,23 @@ export class ClaudeAgent extends Disposable implements IAgent {
 				}
 			}
 		}));
+		// Forward a mid-turn `permissionMode` switch (approvals picker) to the
+		// running SDK so it applies to the next tool this turn, not only from the
+		// next `send()` (issue #321691). Fire-and-forget so the SDK control request
+		// never interleaves with a parked `canUseTool`; no-op until materialized.
+		this._register(this._configurationService.onDidSessionConfigChange(e => {
+			const mode = narrowClaudePermissionMode(e.config[ClaudeSessionConfigKey.PermissionMode]);
+			if (!mode) {
+				return;
+			}
+			const target = this._getChatContext(URI.parse(e.session)).target;
+			if (!target?.isPipelineReady) {
+				return;
+			}
+			target.setPermissionMode(mode).catch(err => {
+				this._logService.warn(`[Claude:${target.sessionId}] mid-turn setPermissionMode(${mode}) failed`, err);
+			});
+		}));
 		if (this._transportMode === 'native') {
 			// Only native bootstraps its model list here. Proxy mode fetches
 			// models from CAPI, which needs the GitHub token — so its first

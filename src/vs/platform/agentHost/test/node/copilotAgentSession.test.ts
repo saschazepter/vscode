@@ -7,7 +7,7 @@ import type { CopilotSession, SessionEvent, SessionEventHandler, SessionEventPay
 import assert from 'assert';
 import { DeferredPromise, timeout } from '../../../../base/common/async.js';
 import { encodeBase64, VSBuffer } from '../../../../base/common/buffer.js';
-import { Emitter } from '../../../../base/common/event.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { join, sep } from '../../../../base/common/path.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -367,6 +367,7 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 	const fakeConfigurationService: IAgentConfigurationService = {
 		_serviceBrand: undefined,
 		onDidRootConfigChange: new Emitter<void>().event,
+		onDidSessionConfigChange: Event.None,
 		// Simple per-key map suffices for tests; the real service walks
 		// session → parent → host and validates against the schema, but
 		// neither matters here — we just need to surface a value the

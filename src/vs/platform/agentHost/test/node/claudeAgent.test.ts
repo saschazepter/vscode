@@ -3168,6 +3168,59 @@ suite('ClaudeAgent', () => {
 		});
 	});
 
+	test('mid-turn permissionMode change forwards setPermissionMode to the live Query (issue #321691)', async () => {
+		// Regression for #321691. A user who starts a turn under
+		// "Ask Before Edits" (`default`), sees a tool confirmation, then
+		// switches to "Bypass Permissions" mid-turn must have the new mode
+		// reach the running SDK so the NEXT tool auto-approves. Before the
+		// fix, `permissionMode` was only forwarded to the live `Query` at
+		// the start of the next `send()`, so the SDK kept asking for
+		// permission for the rest of the in-flight turn.
+		//
+		// Setup: materialize a `default`-mode session and park its turn
+		// in-flight (mirrors a confirmation being shown). While parked,
+		// dispatch the `SessionConfigChanged` the picker would emit and
+		// assert the fake `Query` recorded a live `setPermissionMode`
+		// BEFORE the turn ends — i.e. without waiting for the next send.
+		const { agent, sdk, configService } = createTestContext(disposables);
+		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
+
+		const created = await agent.createSession({
+			workingDirectory: URI.file('/work'),
+			config: { permissionMode: 'default' },
+		});
+		const sessionId = AgentSession.id(created.session);
+
+		// Park the turn's iterator at the result message so the turn stays in
+		// flight (materialized, mid-turn) until the test releases it. Signalling
+		// `reached` from inside the gate guarantees the pipeline is live before
+		// the config change fires.
+		const reached = new DeferredPromise<void>();
+		const release = new DeferredPromise<void>();
+		sdk.queryAdvance = async (idx: number) => {
+			if (idx === 1) {
+				reached.complete();
+				await release.p;
+			}
+		};
+		sdk.nextQueryMessages = [makeSystemInitMessage(sessionId), makeResultSuccess(sessionId)];
+
+		const turn = agent.chats.sendMessage(defaultChatUri(created.session), 'edit a file', undefined, undefined, 't1');
+		// Wait until the turn is genuinely parked mid-flight (pipeline is live).
+		await reached.p;
+
+		// User flips "Ask Before Edits" → "Bypass Permissions" mid-turn.
+		configService.updateSessionConfig(created.session.toString(), { permissionMode: 'bypassPermissions' });
+		await tick();
+
+		const recordedMidTurn = [...(sdk.warmQueries.at(-1)?.produced?.recordedPermissionModes ?? [])];
+
+		release.complete();
+		await turn;
+
+		assert.deepStrictEqual(recordedMidTurn, ['bypassPermissions']);
+	});
+
 	test('shutdown drains a mix of provisional and materialized sessions', async () => {
 		// Phase 6 §5.1 Test 13. The shutdown spec is two-phase:
 		//  1) Provisional sessions: abort each AbortController + clear
