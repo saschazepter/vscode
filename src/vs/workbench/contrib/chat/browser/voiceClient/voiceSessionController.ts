@@ -1139,7 +1139,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					// Keep the sessions-list pending indicator in sync with the set
 					// of sessions awaiting confirmation while unfocused.
 					this._reconcileConfirmationIndicators(stillWaiting);
-					this._reconcileResponseIndicators();
 					for (const id of [...this._confirmationFlushWatchdogs.keys()]) {
 						if (!stillWaiting.has(id)) {
 							const t = this._confirmationFlushWatchdogs.get(id);
@@ -2543,9 +2542,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				// listening/auto-listen first (so the echoed audio isn't suppressed
 				// or captured as the user's turn), then requests narration -
 				// responses on focus are narrated exactly like confirmations.
+				const alreadyNarrated = narratable.kind === 'response'
+					&& this._lastNarratedText.get(key) === narratable.text;
 				const requested = this._narrate(key, narratable.kind, narratable.text);
 				if (narratable.kind === 'response') {
-					handledResponse = requested;
+					// Treat an already-narrated reply as handled too: _narrate
+					// returns false when it de-dupes, but the reply WAS read, so its
+					// indicator should still clear (only a socket-closed retry or a
+					// not-yet-loaded model should retain it).
+					handledResponse = requested || alreadyNarrated;
 				}
 			}
 		}
@@ -3134,28 +3139,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._maybeHideIndicator(sessionId);
 	}
 
-	/**
-	 * Keep the completed-reply (response) indicator in sync the same way
-	 * {@link _reconcileConfirmationIndicators} does for confirmations: the
-	 * session the user is now viewing must not show a pending-response
-	 * indicator. Runs on every poll/autorun so the indicator clears promptly
-	 * when the session is focused, independent of whether the on-focus
-	 * narration path fired (which can be missed on reconnect/model-load races).
-	 */
-	private _reconcileResponseIndicators(): void {
-		const activeId = this._externalActiveSessionMode
-			? this._activeSessionShown
-			: this._getFocusedSessionId();
-		if (!activeId) {
-			return;
-		}
-		for (const sessionId of [...this._pendingResponseSummaries.keys()]) {
-			if (this._isSameSession(sessionId, activeId)) {
-				this._clearPendingResponse(sessionId);
-			}
-		}
-	}
-
 	/** Drop a session's pending-response (completed-reply) indicator/summary. */
 	private _clearPendingResponse(sessionId: string): void {
 		if (!this._pendingResponseSummaries.delete(sessionId)) {
@@ -3439,11 +3422,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return;
 		}
 		if (currentState === 'idle' && lastResponseSummary) {
-			this._narrate(sessionId, 'response', lastResponseSummary);
-			// The shown session's reply has now been read (or was already, and
-			// _narrate de-duped it): drop any stored pending summary/indicator so
-			// a later focus/poll never resurfaces and re-reads the same reply.
-			this._clearPendingResponse(sessionId);
+			// Clear the pending indicator only once the reply was actually sent
+			// (or was already read, and _narrate de-duped it). If the request
+			// couldn't be sent (socket closed - kept in _pendingNarrationRetries),
+			// retain the summary so a later focus/state event can retry it, instead
+			// of dropping the only record of the unread reply.
+			const alreadyNarrated = this._lastNarratedText.get(sessionId) === lastResponseSummary;
+			const requested = this._narrate(sessionId, 'response', lastResponseSummary);
+			if (requested || alreadyNarrated) {
+				this._clearPendingResponse(sessionId);
+			}
 		} else if (currentState === 'waiting_for_confirmation' && detail) {
 			this._narrate(sessionId, 'confirmation', detail);
 		}
@@ -3683,7 +3671,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// arrive on sessions detected here (e.g. remote/unloaded sessions surfaced
 		// via onDidChangeSessions or the periodic poll rather than the autorun).
 		this._reconcileConfirmationIndicators(waitingSessionIds);
-		this._reconcileResponseIndicators();
 
 		// Speak the settled item for the shown session; completions surfaced ONLY
 		// here (e.g. remote/unloaded sessions) are covered too. Background sessions
