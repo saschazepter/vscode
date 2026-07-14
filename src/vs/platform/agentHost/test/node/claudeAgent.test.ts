@@ -3168,6 +3168,50 @@ suite('ClaudeAgent', () => {
 		});
 	});
 
+	test('onSessionConfigChanged forwards a mid-turn picker change and reverts to the fallback when the key is deleted (issue #321691)', async () => {
+		// The host calls this hook for user/picker changes only (internal server
+		// writes like ExitPlanMode never route here), so it forwards the new mode
+		// to the live Query so the next tool this turn auto-approves — without
+		// waiting for the next send(). A `replace` that deletes `permissionMode`
+		// reverts the Query to the fallback the next send() would apply.
+		const { agent, sdk } = createTestContext(disposables);
+		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
+
+		const created = await agent.createSession({
+			workingDirectory: URI.file('/work'),
+			config: { permissionMode: 'default' },
+		});
+		const sessionId = AgentSession.id(created.session);
+
+		// Park the turn mid-flight (materialized, query live) until released.
+		const reached = new DeferredPromise<void>();
+		const release = new DeferredPromise<void>();
+		sdk.queryAdvance = async (idx: number) => {
+			if (idx === 1) {
+				reached.complete();
+				await release.p;
+			}
+		};
+		sdk.nextQueryMessages = [makeSystemInitMessage(sessionId), makeResultSuccess(sessionId)];
+
+		const turn = agent.chats.sendMessage(defaultChatUri(created.session), 'edit a file', undefined, undefined, 't1');
+		await reached.p;
+
+		// Picker switches to Bypass Permissions...
+		agent.onSessionConfigChanged(created.session, { permissionMode: 'bypassPermissions' });
+		await tick();
+		// ...then a `replace` deletes the key, reverting to the 'default' fallback.
+		agent.onSessionConfigChanged(created.session, {});
+		await tick();
+
+		const recordedMidTurn = [...(sdk.warmQueries.at(-1)?.produced?.recordedPermissionModes ?? [])];
+
+		release.complete();
+		await turn;
+
+		assert.deepStrictEqual(recordedMidTurn, ['bypassPermissions', 'default']);
+	});
+
 	test('shutdown drains a mix of provisional and materialized sessions', async () => {
 		// Phase 6 §5.1 Test 13. The shutdown spec is two-phase:
 		//  1) Provisional sessions: abort each AbortController + clear
@@ -5430,9 +5474,8 @@ suite('ClaudeAgent (Phase 9 — runtime mutation surface)', () => {
 		});
 	});
 
-	test('changeModel with `max` effort clamps to `xhigh` on the runtime path and warns', async () => {
-		const log = new CapturingLogService();
-		const { ctx, sessionUri, query, advance } = await materialize({ logService: log });
+	test('changeModel with `max` effort passes `max` through on the runtime path', async () => {
+		const { ctx, sessionUri, query, advance } = await materialize();
 
 		await ctx.agent.chats.changeModel(defaultChatUri(sessionUri), { id: 'claude-opus-4.6', config: { thinkingLevel: 'max' } });
 		const p2 = ctx.agent.chats.sendMessage(defaultChatUri(sessionUri), 'next', undefined, undefined, 'turn-2');
@@ -5440,8 +5483,7 @@ suite('ClaudeAgent (Phase 9 — runtime mutation surface)', () => {
 		advance.complete();
 		await p2;
 
-		assert.deepStrictEqual(query.recordedFlagSettings.map(s => s.effortLevel), ['xhigh']);
-		assert.ok(log.warns.some(w => w.includes('clamped to')), `expected clamp warning, got: ${log.warns.join(' | ')}`);
+		assert.deepStrictEqual(query.recordedFlagSettings.map(s => s.effortLevel), ['max']);
 	});
 
 	test('changeModel with same id and unchanged effort skips the SDK setters', async () => {
