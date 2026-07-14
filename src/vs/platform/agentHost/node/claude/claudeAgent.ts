@@ -1960,25 +1960,35 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	 * internal server writes elsewhere), so this can forward without re-entering
 	 * a `canUseTool` callback.
 	 *
-	 * `permissionMode` is the live `Query`'s mode, and each chat has its own
-	 * `Query`, so this forwards to the single chat the change is scoped to
-	 * (resolved from the channel), not every chat in the session. A `replace`
-	 * that deletes the key resolves to the same `permissionModeFallback` the next
-	 * `send()` would apply, so live state mirrors the reducer. No-op until that
-	 * chat is materialized — its first `send()` seeds the mode into
-	 * `Options.permissionMode`. Fire-and-forget: the SDK control round-trip isn't
-	 * awaited here; the pipeline caches the mode so a later rebind / send
-	 * re-applies it.
+	 * `permissionMode` is a **session-scoped** config value today (AHP has no
+	 * per-chat config), so — matching Copilot's session-scoped approvals — we
+	 * apply it to EVERY materialized chat's `Query` in the session, not just the
+	 * one the change arrived on. A `replace` that deletes the key resolves to the
+	 * chat's `permissionModeFallback`, the same value the next `send()` would
+	 * apply, so live state mirrors the reducer. Provisional chats are skipped —
+	 * their first `send()` seeds the mode into `Options.permissionMode`. Fire-and-
+	 * forget: the SDK control round-trip isn't awaited here; the pipeline caches
+	 * the mode so a later rebind / send re-applies it.
+	 *
+	 * TODO: adopt per-chat config when the protocol allows for such — see
+	 * https://github.com/microsoft/agent-host-protocol/issues/335 — so a picker
+	 * change scopes to its own chat instead of the whole session.
 	 */
 	onSessionConfigChanged(session: URI, values: Record<string, unknown>): void {
-		const target = this._getChatContext(session).target;
-		if (!target?.isPipelineReady) {
+		const entry = this._sessions.get(this._getChatContext(session).sessionId);
+		if (!entry) {
 			return;
 		}
-		const mode = narrowClaudePermissionMode(values[ClaudeSessionConfigKey.PermissionMode]) ?? target.permissionModeFallback;
-		target.setPermissionMode(mode).catch(err => {
-			this._logService.warn(`[Claude:${target.sessionId}] mid-turn setPermissionMode(${mode}) failed`, err);
-		});
+		const narrowed = narrowClaudePermissionMode(values[ClaudeSessionConfigKey.PermissionMode]);
+		for (const chat of entry.allChatSessions()) {
+			if (!chat.isPipelineReady) {
+				continue;
+			}
+			const mode = narrowed ?? chat.permissionModeFallback;
+			chat.setPermissionMode(mode).catch(err => {
+				this._logService.warn(`[Claude:${chat.sessionId}] mid-turn setPermissionMode(${mode}) failed`, err);
+			});
+		}
 	}
 
 	private async _changeModel(chat: URI, model: ModelSelection): Promise<void> {
