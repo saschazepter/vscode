@@ -17,7 +17,7 @@
 import assert from 'assert';
 import { execSync } from 'child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
-import { tmpdir, homedir } from 'os';
+import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import { join } from '../../../../../base/common/path.js';
 import { removeAnsiEscapeCodes } from '../../../../../base/common/strings.js';
@@ -600,12 +600,15 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 
 		setup(async function () {
 			this.timeout(60_000);
+			const testDataDir = mkdtempSync(join(tmpdir(), 'vscode-agent-host-e2e-'));
+			tempDirs.push(testDataDir);
 			server = await startRealServer({
 				claudeSdkRoot: config.claudeSdkRoot,
 				codexSdkRoot: config.codexSdkRoot,
-				// Normalize the real home + temp roots out of recorded request
+				homeDir: testDataDir,
+				userDataDir: join(testDataDir, 'user-data'),
+				// Normalize the isolated home + temp roots out of recorded request
 				// bodies so committed fixtures carry no local absolute paths.
-				homeDir: homedir(),
 				capiReplay: capiReplayFor(config.provider, this.currentTest?.title ?? 'unknown'),
 			});
 			client = new TestProtocolClient(server.port);
@@ -639,15 +642,18 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			try {
 				await server?.capiReplay?.stop();
 			} finally {
-				server?.process.kill();
-			}
+				const serverProcess = server?.process;
+				const serverExit = serverProcess && serverProcess.exitCode === null && serverProcess.signalCode === null
+					? new Promise<void>(resolve => serverProcess.once('exit', () => resolve()))
+					: undefined;
+				serverProcess?.kill();
+				await serverExit;
 
-			for (const dir of tempDirs) {
-				try {
+				for (const dir of tempDirs) {
 					rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-				} catch { /* best-effort */ }
+				}
+				tempDirs.length = 0;
 			}
-			tempDirs.length = 0;
 		});
 
 		test('sends a simple message and receives a response', async function () {
