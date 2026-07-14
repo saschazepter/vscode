@@ -5,14 +5,15 @@
 
 import assert from 'assert';
 import { autorun } from '../../../../../../base/common/observable.js';
+import { hasKey } from '../../../../../../base/common/types.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import type { IMarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { fromAgentHostUri } from '../../../../../../platform/agentHost/common/agentHostUri.js';
-import { buildSubagentChatUri, MessageKind, ToolCallStatus, ToolCallConfirmationReason, ToolResultContentType, TurnState, ResponsePartKind, type ActiveTurn, type ICompletedToolCall, type ToolCallRunningState, type Turn, type ToolCallResponsePart, ToolCallCancellationReason, type Message } from '../../../../../../platform/agentHost/common/state/sessionState.js';
-import { IChatToolInvocation, IChatToolInvocationSerialized, type IChatMarkdownContent, type IChatThinkingPart, type IChatUsage } from '../../../common/chatService/chatService.js';
+import { fromAgentHostUri, toAgentHostUri } from '../../../../../../platform/agentHost/common/agentHostUri.js';
+import { buildSubagentChatUri, MessageKind, ToolCallContributorKind, ToolCallStatus, ToolCallConfirmationReason, ToolResultContentType, TurnState, ResponsePartKind, readUsageInfoMeta, type ActiveTurn, type ICompletedToolCall, type ToolCallRunningState, type Turn, type ToolCallResponsePart, ToolCallCancellationReason, type Message } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { IChatToolInvocation, IChatToolInvocationSerialized, type IChatMarkdownContent, type IChatTerminalToolInvocationData, type IChatThinkingPart, type IChatUsage } from '../../../common/chatService/chatService.js';
 import { isToolResultInputOutputDetails, type IToolResultInputOutputDetails, ToolDataSource, ToolInvocationPresentation } from '../../../common/tools/languageModelToolsService.js';
-import { turnsToHistory as rawTurnsToHistory, activeTurnToProgress as rawActiveTurnToProgress, toolCallStateToInvocation as rawToolCallStateToInvocation, finalizeToolInvocation as rawFinalizeToolInvocation, updateRunningToolSpecificData as rawUpdateRunningToolSpecificData, usageInfoToQuotas, formatTurnResponseDetails, rewriteAgentHostLinkTarget, rewriteMarkdownLinks } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
+import { turnsToHistory as rawTurnsToHistory, activeTurnToProgress as rawActiveTurnToProgress, toolCallStateToInvocation as rawToolCallStateToInvocation, finalizeToolInvocation as rawFinalizeToolInvocation, updateRunningToolSpecificData as rawUpdateRunningToolSpecificData, usageInfoToAutoModeResolution, usageInfoToQuotas, formatTurnResponseDetails, rewriteAgentHostLinkTarget, rewriteMarkdownLinks, type TurnModelLookup } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
 
 // ---- Helper factories -------------------------------------------------------
 
@@ -53,6 +54,13 @@ function createTurn(overrides?: Partial<Turn>): Turn {
 	};
 }
 
+function getSerializedTerminalData(serialized: IChatToolInvocationSerialized): IChatTerminalToolInvocationData {
+	const toolSpecificData = serialized.toolSpecificData;
+	assert.strictEqual(toolSpecificData?.kind, 'terminal');
+	assert.ok(toolSpecificData && hasKey(toolSpecificData, { commandLine: true }));
+	return toolSpecificData;
+}
+
 function message(text: string, kind = MessageKind.User): Message {
 	return { text, origin: { kind } };
 }
@@ -75,7 +83,7 @@ function turnsToHistory(backendSession: Parameters<typeof rawTurnsToHistory>[0],
  * mirrors the real handler's "use summary.model when usage hasn't reported
  * yet" behavior.
  */
-function makeLookup(prefix: string, displayNames: Record<string, string>, fallbackRawModelId?: string): Parameters<typeof rawTurnsToHistory>[4] {
+function makeLookup(prefix: string, displayNames: Record<string, string>, fallbackRawModelId?: string): TurnModelLookup {
 	const resolveRaw = (raw: string | undefined): string | undefined => raw ?? fallbackRawModelId;
 	return {
 		toLanguageModelId: (raw) => {
@@ -85,6 +93,10 @@ function makeLookup(prefix: string, displayNames: Record<string, string>, fallba
 		toResponseDetails: (raw) => {
 			const r = resolveRaw(raw);
 			return r ? displayNames[r] : undefined;
+		},
+		toAutoModeResolution: usage => {
+			const raw = readUsageInfoMeta(usage).autoModeResolved?.chosenModel;
+			return usageInfoToAutoModeResolution(usage, raw ? displayNames[raw] : undefined);
 		},
 	};
 }
@@ -346,6 +358,35 @@ suite('stateToProgressAdapter', () => {
 					{ type: 'response', details: 'Claude Opus 4.7' },
 				],
 			);
+		});
+
+		test('restores Auto model routing with the shared chat UI part', () => {
+			const turn = createTurn({
+				usage: {
+					model: 'gpt-5.4-mini',
+					_meta: {
+						autoModeResolved: {
+							chosenModel: 'gpt-5.4-mini',
+							predictedLabel: 'no_reasoning',
+							confidence: 0.98,
+						},
+					},
+				},
+			});
+			const lookup = makeLookup('agent-host-copilot:', { 'gpt-5.4-mini': 'GPT-5.4 mini' });
+
+			const history = turnsToHistory(URI.file('/'), [turn], 'p', lookup);
+			const response = history[1];
+			assert.strictEqual(response.type, 'response');
+			if (response.type !== 'response') { return; }
+
+			assert.deepStrictEqual(response.parts, [{
+				kind: 'autoModeResolution',
+				resolvedModel: 'gpt-5.4-mini',
+				resolvedModelName: 'GPT-5.4 mini',
+				predictedLabel: 'no_reasoning',
+				confidence: 0.98,
+			}]);
 		});
 
 		test('falls back to session-level model when turn has no usage.model', () => {
@@ -830,6 +871,51 @@ suite('stateToProgressAdapter', () => {
 				assert.strictEqual(invocation.toolSpecificData.description, 'Review code');
 				assert.strictEqual(invocation.toolSpecificData.agentName, 'code-reviewer');
 			}
+		});
+
+		test('sets MCP App toolSpecificData for running MCP tool calls', () => {
+			const invocation = toolCallStateToInvocation(createToolCallState({
+				toolInput: '{"topic":"metadata"}',
+				contributor: { kind: ToolCallContributorKind.MCP, customizationId: 'docs-customization' },
+				_meta: {
+					ui: {
+						resourceUri: 'ui://docs/app',
+						channel: 'mcp://copilot/test-session-1/docs',
+					},
+				},
+			}));
+
+			assert.deepStrictEqual(invocation.toolSpecificData, {
+				kind: 'input',
+				rawInput: { topic: 'metadata' },
+				mcpAppData: {
+					kind: 'agentHost',
+					resourceUri: 'ui://docs/app',
+					serverId: 'docs-customization',
+					channel: 'mcp://copilot/test-session-1/docs',
+				},
+			});
+		});
+
+		test('does not set MCP App toolSpecificData for a streaming MCP tool call', () => {
+			// A `Streaming` call is created in the UI's `Executing` state before
+			// it may transition to confirmation, so the App must not mount yet.
+			const invocation = toolCallStateToInvocation({
+				toolCallId: 'tc-1',
+				toolName: 'test_tool',
+				displayName: 'Test Tool',
+				invocationMessage: 'Running test tool...',
+				status: ToolCallStatus.Streaming,
+				contributor: { kind: ToolCallContributorKind.MCP, customizationId: 'docs-customization' },
+				_meta: {
+					ui: {
+						resourceUri: 'ui://docs/app',
+						channel: 'mcp://copilot/test-session-1/docs',
+					},
+				},
+			});
+
+			assert.strictEqual(invocation.toolSpecificData, undefined);
 		});
 
 		test('synthesizes subagent chatResource from the tool call id when no discovery content block is present', () => {
@@ -1406,6 +1492,41 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(invocation.toolSpecificData.kind, 'input');
 		});
 
+		test('preserves create metadata and proposed content for pending file confirmations', () => {
+			const invocation = toolCallStateToInvocation({
+				toolCallId: 'tc-create',
+				toolName: 'write',
+				displayName: 'Write',
+				invocationMessage: 'Creating package.json',
+				status: ToolCallStatus.PendingConfirmation,
+				confirmationTitle: 'Create file?',
+				edits: {
+					items: [{
+						after: {
+							uri: 'file:///workspace/package.json',
+							content: { uri: 'pending-edit-content://session/tc-create/package.json' },
+						},
+					}],
+				},
+			});
+
+			assert.deepStrictEqual(invocation.toolSpecificData, {
+				kind: 'modifiedFilesConfirmation',
+				options: ['Allow'],
+				modifiedFiles: [{
+					uri: URI.file('/workspace/package.json'),
+					editKind: 'create',
+					originalUri: undefined,
+					modifiedContentUri: toAgentHostUri(URI.parse('pending-edit-content://session/tc-create/package.json'), 'local'),
+					originalContentUri: undefined,
+					insertions: undefined,
+					deletions: undefined,
+					title: 'package.json',
+					description: '/workspace/package.json',
+				}],
+			});
+		});
+
 		test('includes all parts in correct order', () => {
 			const result = activeTurnToProgress(URI.file('/'), createActiveTurnState([
 				{ kind: ResponsePartKind.Reasoning, id: 'r-1', content: 'Thinking...' },
@@ -1493,13 +1614,66 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(termData.terminalCommandOutput?.text, 'text-output');
 		});
 
-		test('uses shell_exit exit code for completed SDK shell tool history', () => {
+		test('uses terminal completion exit code for completed SDK shell tool history', () => {
 			const tc = createCompletedToolCall({
 				_meta: { toolKind: 'terminal' },
 				toolInput: 'gti status',
 				content: [
-					{ type: ToolResultContentType.Text, text: 'command not found\n' },
-					{ type: ToolResultContentType.ShellExit, shellId: '0', exitCode: 127, cwd: '/repo', outputPreview: 'preview only\n' },
+					{ type: ToolResultContentType.Text, text: 'command not found\n<shellId: 104 completed with exit code 127>' },
+					{ type: ToolResultContentType.TerminalComplete, exitCode: 127, cwd: URI.file('/repo').toString(), preview: 'preview only\n', truncated: true },
+				],
+				success: true,
+			});
+
+			const turn = createTurn({
+				responseParts: [{ kind: ResponsePartKind.ToolCall, toolCall: tc } as ToolCallResponsePart],
+			});
+
+			const history = turnsToHistory(URI.file('/'), [turn], 'p');
+			const response = history[1];
+			assert.strictEqual(response.type, 'response');
+			if (response.type !== 'response') { return; }
+			const serialized = response.parts[0] as IChatToolInvocationSerialized;
+			const termData = getSerializedTerminalData(serialized);
+			assert.strictEqual(termData.terminalCommandState?.exitCode, 127);
+			assert.strictEqual(termData.terminalCommandOutput?.text, 'preview only\r\n');
+			assert.strictEqual(termData.terminalCommandOutput?.truncated, true);
+			assert.ok(!termData.terminalCommandOutput?.text.includes('shellId'));
+		});
+
+		test('strips legacy shell completion marker from terminal fallback output', () => {
+			const tc = createCompletedToolCall({
+				_meta: { toolKind: 'terminal' },
+				toolInput: 'ehco hi',
+				content: [
+					{ type: ToolResultContentType.Text, text: 'bash: line 1: ehco: command not found\n<shellId: 104 completed with exit code 127>' },
+					{ type: ToolResultContentType.TerminalComplete, exitCode: 127, cwd: URI.file('/repo').toString() },
+				],
+				success: true,
+			});
+
+			const turn = createTurn({
+				responseParts: [{ kind: ResponsePartKind.ToolCall, toolCall: tc } as ToolCallResponsePart],
+			});
+
+			const history = turnsToHistory(URI.file('/'), [turn], 'p');
+			const response = history[1];
+			assert.strictEqual(response.type, 'response');
+			if (response.type !== 'response') { return; }
+			const serialized = response.parts[0] as IChatToolInvocationSerialized;
+			const termData = getSerializedTerminalData(serialized);
+			assert.strictEqual(termData.terminalCommandState?.exitCode, 127);
+			assert.strictEqual(termData.terminalCommandOutput?.text, 'bash: line 1: ehco: command not found\r\n');
+			assert.ok(!termData.terminalCommandOutput?.text.includes('shellId'));
+		});
+
+		test('keeps zero terminal completion exit code as success for completed SDK shell tool history', () => {
+			const tc = createCompletedToolCall({
+				_meta: { toolKind: 'terminal' },
+				toolInput: 'pwd',
+				content: [
+					{ type: ToolResultContentType.Text, text: '/repo\n' },
+					{ type: ToolResultContentType.TerminalComplete, exitCode: 0, cwd: URI.file('/repo').toString() },
 				],
 				success: true,
 			});
@@ -1514,18 +1688,17 @@ suite('stateToProgressAdapter', () => {
 			if (response.type !== 'response') { return; }
 			const serialized = response.parts[0] as IChatToolInvocationSerialized;
 			assert.strictEqual(serialized.toolSpecificData?.kind, 'terminal');
-			const termData = serialized.toolSpecificData as { kind: 'terminal'; terminalCommandOutput?: { text: string }; terminalCommandState?: { exitCode: number } };
-			assert.strictEqual(termData.terminalCommandState?.exitCode, 127);
-			assert.strictEqual(termData.terminalCommandOutput?.text, 'command not found\r\n');
+			const termData = serialized.toolSpecificData as { kind: 'terminal'; terminalCommandState?: { exitCode: number } };
+			assert.strictEqual(termData.terminalCommandState?.exitCode, 0);
 		});
 
-		test('keeps zero shell_exit exit code as success for completed SDK shell tool history', () => {
+		test('falls back to tool success when terminal completion has no exit code', () => {
 			const tc = createCompletedToolCall({
 				_meta: { toolKind: 'terminal' },
 				toolInput: 'pwd',
 				content: [
 					{ type: ToolResultContentType.Text, text: '/repo\n' },
-					{ type: ToolResultContentType.ShellExit, shellId: '0', exitCode: 0, cwd: '/repo' },
+					{ type: ToolResultContentType.TerminalComplete, cwd: URI.file('/repo').toString() },
 				],
 				success: true,
 			});
@@ -1595,7 +1768,7 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(termData.terminalCommandState?.exitCode, 0);
 		});
 
-		test('finalize uses shell_exit exit code over SDK tool success', () => {
+		test('finalize uses terminal completion exit code over SDK tool success', () => {
 			const tc = createToolCallState({
 				_meta: { toolKind: 'terminal' },
 				toolInput: 'false',
@@ -1616,7 +1789,7 @@ suite('stateToProgressAdapter', () => {
 				pastTenseMessage: 'Ran false',
 				content: [
 					{ type: ToolResultContentType.Text, text: '' },
-					{ type: ToolResultContentType.ShellExit, shellId: '0', exitCode: 1, cwd: '/repo' },
+					{ type: ToolResultContentType.TerminalComplete, exitCode: 1, cwd: URI.file('/repo').toString() },
 				],
 			});
 
@@ -1735,6 +1908,57 @@ suite('stateToProgressAdapter', () => {
 			if (invocation.toolSpecificData?.kind === 'subagent') {
 				assert.strictEqual(invocation.toolSpecificData.modelName, 'Claude Sonnet 4', 'model name should survive a toolSpecificData refresh');
 			}
+		});
+
+		test('mounts MCP App toolSpecificData when a confirmed MCP tool starts running', () => {
+			// The MCP App channel is present in `_meta.ui` from the first tool
+			// state (a tool cannot start until its server is Ready), but the App
+			// is only mounted once the tool leaves confirmation and starts
+			// running.
+			const meta = {
+				ui: {
+					resourceUri: 'ui://docs/app',
+					channel: 'mcp://copilot/test-session-1/docs',
+				},
+			};
+			const invocation = toolCallStateToInvocation({
+				toolCallId: 'tc-1',
+				toolName: 'test_tool',
+				displayName: 'Test Tool',
+				invocationMessage: 'Running test tool...',
+				status: ToolCallStatus.PendingConfirmation,
+				toolInput: '{"topic":"metadata"}',
+				contributor: { kind: ToolCallContributorKind.MCP, customizationId: 'docs-customization' },
+				_meta: meta,
+			});
+			// Confirmation state carries the raw input but does not mount the App.
+			assert.deepStrictEqual(invocation.toolSpecificData, { kind: 'input', rawInput: { topic: 'metadata' } });
+
+			let stateChanged = false;
+			const disposable = autorun(r => {
+				invocation.state.read(r);
+				stateChanged = true;
+			});
+			stateChanged = false;
+
+			updateRunningToolSpecificData(invocation, createToolCallState({
+				toolInput: '{"topic":"metadata"}',
+				contributor: { kind: ToolCallContributorKind.MCP, customizationId: 'docs-customization' },
+				_meta: meta,
+			}));
+
+			assert.strictEqual(stateChanged, true, 'state observers should be notified');
+			assert.deepStrictEqual(invocation.toolSpecificData, {
+				kind: 'input',
+				rawInput: { topic: 'metadata' },
+				mcpAppData: {
+					kind: 'agentHost',
+					resourceUri: 'ui://docs/app',
+					serverId: 'docs-customization',
+					channel: 'mcp://copilot/test-session-1/docs',
+				},
+			});
+			disposable.dispose();
 		});
 
 		test('does not notify when no subagent content is present', () => {
