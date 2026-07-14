@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { Application, Chat, Logger } from '../../../../automation';
-import { dumpFailureDiagnostics, getCopilotSmokeTestEnv, getMockLlmServerPath, installAllHandlers, MockLlmServer, preseedChatExtensionEnablement } from '../../utils';
+import { describeRepeat, dumpFailureDiagnostics, getCopilotSmokeTestEnv, getMockLlmServerPath, installAllHandlers, MockLlmServer, preseedChatExtensionEnablement } from '../../utils';
 
 const WARMUP_SCENARIO_ID = 'smoke-chat-sandbox-warmup';
 const WARMUP_REPLY = 'MOCKED_CHAT_SANDBOX_WARMUP';
@@ -20,6 +20,7 @@ const NETWORK_SCENARIO_ID = 'smoke-chat-sandbox-network';
 const NETWORK_ALLOWED_SCENARIO_ID = 'smoke-chat-sandbox-network-allowed';
 const HOME_READ_SCENARIO_ID = 'smoke-chat-sandbox-home-read';
 const HOME_READ_ALLOWED_SCENARIO_ID = 'smoke-chat-sandbox-home-read-allowed';
+const TEST_ITERATIONS = 20;
 const CHAT_RESPONSE_TIMEOUT = 120_000;
 const NETWORK_BLOCKED_PATTERN = /ECONNREFUSED|EPERM|EACCES|ENETUNREACH|EHOSTUNREACH|ENETDOWN|EAI_AGAIN/;
 const SANDBOX_EXIT_CODE_PATTERN = /SANDBOX_EXIT_CODE=(\d+)/;
@@ -96,8 +97,8 @@ export function setup(logger: Logger): void {
 		return;
 	}
 
-	describe(`Chat Sandbox (${process.platform})`, function () {
-		this.timeout(5 * 60 * 1000);
+	describeRepeat(TEST_ITERATIONS, `Chat Sandbox (${process.platform})`, function () {
+		this.timeout(TEST_ITERATIONS * 5 * 60 * 1000);
 		this.retries(0);
 
 		let mockServer: MockLlmServer;
@@ -115,7 +116,7 @@ export function setup(logger: Logger): void {
 			homeFileContents = `MOCKED_CHAT_SANDBOX_HOME_FILE_${process.platform}_${process.pid}_${Date.now()}`;
 			const homeFileName = `.vscode-chat-sandbox-smoke-${process.pid}-${Date.now()}.txt`;
 			homeFilePath = path.join(os.homedir(), homeFileName);
-			fs.writeFileSync(homeFilePath, homeFileContents);
+			fs.writeFileSync(homeFilePath, `${homeFileContents}\n`);
 			const tempFileName = `.vscode-chat-sandbox-tmp-${process.pid}-${Date.now()}.txt`;
 			hostTempFilePath = path.join(os.tmpdir(), tempFileName);
 			fs.rmSync(hostTempFilePath, { force: true });
