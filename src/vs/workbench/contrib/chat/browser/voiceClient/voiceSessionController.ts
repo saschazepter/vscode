@@ -357,6 +357,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 *  echoes one (so a different same-session response streaming concurrently is
 	 *  NOT dropped), else by sessionId as a fallback. */
 	private readonly _droppingRenarration = new Set<string>();
+	/** Narration ids this client explicitly requested via {@link _narrate} (the
+	 *  `narration_id` we sent on `request_narration`, which the backend echoes as
+	 *  `responseId` on the audio it produces). Audio whose `responseId` is one of
+	 *  these was solicited by us and must never be classified as an unsolicited
+	 *  duplicate re-narration, even when its transcript matches content we recently
+	 *  read (e.g. narrating a completed reply on focus). Ids are pruned when their
+	 *  stream ends (final chunk) and cleared on disconnect. */
+	private readonly _solicitedNarrationIds = new Set<string>();
 	private static readonly RENARRATION_DEDUPE_WINDOW_MS = 6000;
 
 	/**
@@ -1523,6 +1531,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._externalActiveSessionMode = false;
 		this._recentlyReadResponse.clear();
 		this._droppingRenarration.clear();
+		this._solicitedNarrationIds.clear();
 		this._lastHeardTranscriptById.clear();
 		this._awaitingReplyForSession = undefined;
 		this._prevSessionStates.clear();
@@ -2465,7 +2474,19 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return;
 		}
 		const key = resource?.toString();
-		if (!key || key === this._lastShownSessionId) {
+		if (!key) {
+			return;
+		}
+		// A duplicate "shown" event for the same session is normally a no-op, but
+		// only skip it when there's no outstanding work: an earlier activation for
+		// this key may have run before the model/deferred buffer was ready (widget
+		// view-model swaps can fire before the reply lands), leaving a pending
+		// summary/confirmation or buffered audio that a re-activation must still
+		// pick up. Re-activating is idempotent when nothing is pending.
+		if (key === this._lastShownSessionId
+			&& !this._matchDeferredKey(key)
+			&& !this._pendingResponseSummaries.has(key)
+			&& !this._confirmationPendingSessions.has(key)) {
 			return;
 		}
 		this.logService.trace(`[voice] session shown=${key}; flushing/re-sending context`);
@@ -2512,24 +2533,34 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				narratable = { kind: 'response', text: pendingSummary };
 			}
 		}
+		let handledResponse = flushResult.flushed;
 		if (narratable) {
 			const wasJustPlayed = narratable.kind === 'response'
 				&& flushResult.finalTranscripts.includes(this._normalizeTranscript(narratable.text));
 			if (wasJustPlayed) {
 				this._lastNarratedText.set(key, narratable.text);
+				handledResponse = true;
 			} else {
 				// Narrate a fresh item for the now-shown session. _narrate exits
 				// listening/auto-listen first (so the echoed audio isn't suppressed
 				// or captured as the user's turn), then requests narration -
 				// responses on focus are narrated exactly like confirmations.
-				this._narrate(key, narratable.kind, narratable.text);
+				const requested = this._narrate(key, narratable.kind, narratable.text);
+				if (narratable.kind === 'response') {
+					handledResponse = requested;
+				}
 			}
 		}
-		// This session is now focused: its completed reply (if any) has just been
-		// played or requested above, so its pending indicator is cleared here
-		// unconditionally - identical to how the confirmation indicator is cleared
-		// on focus (see _clearConfirmationIndicator, above).
-		this._clearPendingResponse(key);
+		// Clear this session's pending reply indicator/summary only once its reply
+		// was actually handled (played from the buffer, or a narration request was
+		// really sent). If nothing was narratable yet (model still loading) or the
+		// request couldn't be sent (socket closed - kept in _pendingNarrationRetries),
+		// the durable summary is retained so a later focus/state event can retry;
+		// otherwise the reply would be lost and never read. Mirrors how the
+		// confirmation indicator is cleared on focus (see _clearConfirmationIndicator).
+		if (handledResponse) {
+			this._clearPendingResponse(key);
+		}
 		this._sendContext();
 		this.voiceClientService.flushSessionContext();
 	}
@@ -2560,6 +2591,18 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._prepareForPlayback();
 		this._pendingNarrationRetries.delete(sessionId);
 		this._lastNarratedText.set(sessionId, text);
+		// Remember this id so the echoed audio (responseId === narrationId) is
+		// never dropped as an unsolicited duplicate by _isRenarration, even when
+		// its transcript matches a reply we recently read for this session. Bound
+		// the set so ids that never yield audio (legacy backends that don't echo
+		// them, interrupted streams) can't leak across a long session.
+		if (this._solicitedNarrationIds.size >= 64) {
+			const oldest = this._solicitedNarrationIds.values().next().value;
+			if (oldest !== undefined) {
+				this._solicitedNarrationIds.delete(oldest);
+			}
+		}
+		this._solicitedNarrationIds.add(narrationId);
 		return true;
 	}
 
@@ -2968,6 +3011,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// response streaming concurrently isn't dropped just because an earlier one
 		// was a re-narration; fall back to sessionId when no id was echoed.
 		const dropKey = responseId ?? sessionId;
+		// Audio we explicitly solicited (its responseId is one we sent on
+		// request_narration) is always allowed to play - it can't be an
+		// unsolicited duplicate. Retire the id once its stream ends.
+		if (responseId && this._solicitedNarrationIds.has(responseId)) {
+			if (isFinal) {
+				this._solicitedNarrationIds.delete(responseId);
+			}
+			return false;
+		}
 		// Continuation of a re-narration we're already dropping.
 		if (!isFirstChunk && this._droppingRenarration.has(dropKey)) {
 			if (isFinal) {
