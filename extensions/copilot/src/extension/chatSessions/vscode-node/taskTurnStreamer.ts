@@ -14,6 +14,7 @@ import {
 } from '../common/sessionEventRenderer';
 import { TaskCloudAgentBackend } from '../vscode/cloudAgentBackend';
 import { isActiveTaskState, isFailedTaskState } from '../vscode/copilotCodingAgentUtils';
+import { ICloudBackendInstrumentation } from './cloudBackendTelemetry';
 import { ChatSessionContentBuilder, extractTaskErrorDetail, formatTaskStoppedMessage } from './copilotCloudSessionContentBuilder';
 
 /**
@@ -90,6 +91,13 @@ export class TaskTurnStreamer {
 		private readonly _backend: TaskCloudAgentBackend,
 		private readonly _contentBuilder: ChatSessionContentBuilder,
 		private readonly _logService: ILogService,
+		/** Telemetry surface used to emit the v2 "session activated" funnel signal. */
+		private readonly _instrumentation: ICloudBackendInstrumentation,
+		/**
+		 * Task ids already reported as activated, owned by the caller so the emit stays idempotent
+		 * across stream runs (re-opens of an in-progress first turn create a fresh streamer).
+		 */
+		private readonly _activatedTaskIds: Set<string>,
 		private readonly _pollIntervalMs: number = TaskTurnStreamer.DEFAULT_POLL_INTERVAL_MS,
 	) { }
 
@@ -151,6 +159,15 @@ export class TaskTurnStreamer {
 				sink.flush();
 
 				const sessions = task?.sessions;
+				// v2 activation signal: the task's first (and only) turn is streaming, i.e. it has
+				// started producing output. Mirrors v1's PR-becoming-available moment. Deduped per task
+				// via the caller-owned set so re-opens/ticks emit once. Follow-up turns (`mode: 'next'`)
+				// have `sessions.length >= 2`, so they never qualify.
+				if (task && sessions?.length === 1 && !this._activatedTaskIds.has(task.id)) {
+					this._activatedTaskIds.add(task.id);
+					const createdAtMs = task.created_at ? Date.parse(task.created_at) : NaN;
+					this._instrumentation.sessionActivated(Number.isNaN(createdAtMs) ? 0 : Math.max(0, Date.now() - createdAtMs));
+				}
 				const latestTurn = sessions?.[sessions.length - 1];
 				// Settle when the task itself reached a terminal state, even if its latest turn's
 				// session state is still active. A task that failed to launch (e.g. "Failed to

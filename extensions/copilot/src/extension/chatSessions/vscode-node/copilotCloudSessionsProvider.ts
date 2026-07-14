@@ -380,6 +380,13 @@ export class CopilotCloudSessionsProvider extends Disposable implements vscode.C
 	/** Resolved Cloud Agent backend version (`v1` Jobs API | `v2` Task API) for this provider instance. */
 	private readonly _backendVersion: CloudBackendVersion;
 
+	/**
+	 * Task ids for which the v2 "session activated" signal has already been emitted, keeping the
+	 * live {@link TaskTurnStreamer} emission idempotent across re-opens and repeated stream ticks.
+	 * Owned here (rather than in the per-run streamer) so it persists across stream runs.
+	 */
+	private readonly _activatedTaskIds = new Set<string>();
+
 	constructor(
 		@IOctoKitService private readonly _octoKitService: IOctoKitService,
 		@IGitService private readonly _gitService: IGitService,
@@ -1630,7 +1637,18 @@ export class CopilotCloudSessionsProvider extends Disposable implements vscode.C
 			}
 			this._activeTaskStreams.add(taskId);
 			try {
-				const streamer = new TaskTurnStreamer(backend, new ChatSessionContentBuilder(CopilotCloudSessionsProvider.TYPE, this._gitService, this.logService), this.logService);
+				// CloudBackendInstrumentation is a stateless wrapper over the telemetry/OTel services and
+				// backend version the provider already holds, so we build it from those rather than keeping
+				// a dedicated field. The streamer emits the v2 "session activated" signal itself, deduped
+				// per task via the shared _activatedTaskIds so re-opens/ticks don't double-count.
+				const instrumentation = new CloudBackendInstrumentation(this._backendVersion, this.telemetry, this._otelService);
+				const streamer = new TaskTurnStreamer(
+					backend,
+					new ChatSessionContentBuilder(CopilotCloudSessionsProvider.TYPE, this._gitService, this.logService),
+					this.logService,
+					instrumentation,
+					this._activatedTaskIds,
+				);
 				await streamer.stream(stream, taskId, baseline, token);
 			} finally {
 				this._activeTaskStreams.delete(taskId);
