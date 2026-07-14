@@ -441,15 +441,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private readonly _lastNarratedText = new Map<string, string>();
 
 	/**
-	 * Narration ids (returned by {@link IVoiceClientService.requestNarration})
-	 * for narrations WE explicitly solicited. Their echoed `audio_response` must
-	 * never be dropped by the legacy content-based re-narration heuristic
-	 * ({@link _isRenarration}) - it is exactly the audio we asked for. Entries are
-	 * retired when the stream ends (its final chunk).
-	 */
-	private readonly _solicitedNarrationIds = new Set<string>();
-
-	/**
 	 * Narrations that could not be sent because the socket was closed (see
 	 * {@link _narrate}). Replayed once on the next `session_init` so a reply or
 	 * confirmation that landed during a disconnect is still spoken on reconnect.
@@ -1369,7 +1360,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// route stays inspectable for the whole handler (defer/dedupe/enqueue).
 			if (e.isFinal && e.responseId) {
 				this._responseRoutes.delete(e.responseId);
-				this._solicitedNarrationIds.delete(e.responseId);
 			}
 		}));
 
@@ -1548,7 +1538,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._pendingIdleNarration.clear();
 		this._lastResponseSummaryById.clear();
 		this._lastNarratedText.clear();
-		this._solicitedNarrationIds.clear();
 		this._pendingNarrationRetries.clear();
 		this._userLogin = undefined;
 		this._lastPersistedTurnId = undefined;
@@ -2571,9 +2560,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._prepareForPlayback();
 		this._pendingNarrationRetries.delete(sessionId);
 		this._lastNarratedText.set(sessionId, text);
-		// A narration WE solicited must always play - shield its echoed audio
-		// from the legacy content-based re-narration heuristic.
-		this._solicitedNarrationIds.add(narrationId);
 		return true;
 	}
 
@@ -2996,11 +2982,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (this._awaitingReplyAudio && this._awaitingReplyForSession === sessionId) {
 			return false;
 		}
-		// A narration WE explicitly solicited (via requestNarration) is exactly
-		// the audio we asked for - never treat it as a duplicate re-narration.
-		if (responseId && this._solicitedNarrationIds.has(responseId)) {
-			return false;
-		}
 		const recent = this._recentlyReadResponse.get(sessionId);
 		if (recent === undefined) {
 			return false;
@@ -3391,6 +3372,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 		if (currentState === 'idle' && lastResponseSummary) {
 			this._narrate(sessionId, 'response', lastResponseSummary);
+			// The shown session's reply has now been read (or was already, and
+			// _narrate de-duped it): drop any stored pending summary/indicator so
+			// a later focus/poll never resurfaces and re-reads the same reply.
+			this._clearPendingResponse(sessionId);
 		} else if (currentState === 'waiting_for_confirmation' && detail) {
 			this._narrate(sessionId, 'confirmation', detail);
 		}
