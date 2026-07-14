@@ -299,6 +299,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	/** Sessions currently showing a pending-response indicator because they are
 	 *  awaiting confirmation while unfocused (client-driven, no audio needed). */
 	private readonly _confirmationPendingSessions = new Set<string>();
+	/** Sessions showing a pending-response indicator because a reply COMPLETED
+	 *  while they were unfocused (client-driven, mirrors the confirmation
+	 *  indicator). Maps to the response summary to narrate when the session is
+	 *  focused - stored so playback is reliable even if the model has since
+	 *  unloaded. Independent of the audio-defer buffer ({@link _deferredResponses}),
+	 *  which only exists when the backend proactively sent audio. */
+	private readonly _pendingResponseSummaries = new Map<string, string>();
 	/**
 	 * Keys (session resource string, or ``''`` for untagged audio) of responses
 	 * we are currently playing live rather than deferring. Recorded on the first
@@ -2416,7 +2423,18 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// BUT only when the current summary is actually one of the responses we
 		// just played - if the model advanced between buffering and focus, the
 		// current summary is newer/unplayed and must still narrate.
-		const narratable = this._currentNarratable(resource);
+		let narratable = this._currentNarratable(resource);
+		// If the model isn't resident to surface a completed reply, fall back to
+		// the summary stored when the reply completed while this session was
+		// unfocused (the source of its pending indicator). Skip this when buffered
+		// audio was just flushed - that audio already was the reply, so narrating
+		// the stored summary too would read it twice.
+		if (!narratable && !flushResult.flushed) {
+			const pendingSummary = this._pendingResponseSummaries.get(key);
+			if (pendingSummary) {
+				narratable = { kind: 'response', text: pendingSummary };
+			}
+		}
 		if (narratable) {
 			const wasJustPlayed = narratable.kind === 'response'
 				&& flushResult.finalTranscripts.includes(this._normalizeTranscript(narratable.text));
@@ -2432,6 +2450,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._narrate(key, narratable.kind, narratable.text);
 			}
 		}
+		// This session is now focused: its completed reply (if any) has just been
+		// played or requested above, so it no longer needs a pending indicator.
+		this._clearPendingResponse(key);
 		this._sendContext();
 		this.voiceClientService.flushSessionContext();
 	}
@@ -2516,7 +2537,18 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	/**
-	 * The session the user is currently looking at, used to route deferral.
+	 * The session the user is currently looking at, used to route deferral and
+	 * decide which completions narrate immediately vs. defer + indicate.
+	 *
+	 * In focus-based (main-window) mode this is the LIVE focused session, NOT the
+	 * sticky `_lastShownSessionId`: that field is updated by any tracked chat
+	 * widget's view-model swap (see `_trackWidgetSession`), so while the backend
+	 * works a background session it can transiently point there and make that
+	 * session look "shown" - which suppressed deferral, the pending indicator, and
+	 * on-focus playback for responses. The confirmation indicator has always used
+	 * live focus (see `_reconcileConfirmationIndicators`) and worked correctly;
+	 * this keeps responses consistent with it. Opening a session still flushes its
+	 * buffer directly via `_onSessionShown`, so the sticky value isn't needed here.
 	 * Unlike {@link _getActiveSessionId} it ignores the sticky input
 	 * `_targetSession` (where the next utterance is sent, not what is viewed).
 	 */
@@ -2524,7 +2556,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (this._externalActiveSessionMode) {
 			return this._activeSessionShown;
 		}
-		return this._lastShownSessionId ?? this._getFocusedSessionId();
+		return this._getFocusedSessionId();
 	}
 
 	setActiveSessionShown(resource: URI | undefined): void {
@@ -2748,7 +2780,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 		const responses = this._deferredResponses.get(key);
 		this._deferredResponses.delete(key);
-		this._markPendingResponse(key, false);
+		this._maybeHideIndicator(key);
 		if (!responses || responses.length === 0) {
 			return { flushed: false, finalTranscripts: [] };
 		}
@@ -2940,10 +2972,25 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (!this._confirmationPendingSessions.delete(sessionId)) {
 			return;
 		}
-		// Don't clear the visible indicator if there is still buffered audio
-		// waiting to be played for this session - that indicator is owned by the
-		// deferred-response flush path.
-		if (!this._deferredResponses.has(sessionId)) {
+		this._maybeHideIndicator(sessionId);
+	}
+
+	/** Drop a session's pending-response (completed-reply) indicator/summary. */
+	private _clearPendingResponse(sessionId: string): void {
+		if (!this._pendingResponseSummaries.delete(sessionId)) {
+			return;
+		}
+		this._maybeHideIndicator(sessionId);
+	}
+
+	/** Hide the sessions-list indicator only when no owner still needs it. The
+	 *  same visible indicator is shared by three independent sources - an
+	 *  unfocused confirmation, buffered deferred audio, and a completed
+	 *  background reply - so it must stay visible until all are resolved. */
+	private _maybeHideIndicator(sessionId: string): void {
+		if (!this._confirmationPendingSessions.has(sessionId)
+			&& !this._deferredResponses.has(sessionId)
+			&& !this._pendingResponseSummaries.has(sessionId)) {
 			this._markPendingResponse(sessionId, false);
 		}
 	}
@@ -2958,6 +3005,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this._markPendingResponse(sessionId, false);
 		}
 		this._confirmationPendingSessions.clear();
+		for (const sessionId of this._pendingResponseSummaries.keys()) {
+			this._markPendingResponse(sessionId, false);
+		}
+		this._pendingResponseSummaries.clear();
 	}
 
 	// --- Audio FIFO queue ---
@@ -3173,12 +3224,34 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}, VoiceSessionController._STATE_CHANGE_SETTLE_MS);
 	}
 
-	/** React to a session reaching a narratable state: speak it only if it's the shown session (background items wait for focus); a new turn (`thinking`) clears the dedup. */
+	/** React to a session reaching a narratable state. If it's the shown session, speak it now; a completed reply on a background session instead shows the sessions-list pending indicator and is read when focused. A new turn (`thinking`) clears both the dedup and any stale pending indicator. */
 	private _handleNarratableStateChange(sessionId: string, currentState: string, detail: string | undefined, lastResponseSummary: string | undefined, shownNow: string | undefined): void {
 		if (currentState === 'thinking') {
 			this._lastNarratedText.delete(sessionId);
+			// A new turn supersedes any completed reply that was waiting to be
+			// read on focus - drop the stale pending-response indicator.
+			this._clearPendingResponse(sessionId);
 		}
 		if (sessionId !== shownNow) {
+			// Background session. A completed reply must not play now: show the
+			// sessions-list indicator and remember the summary so focusing the
+			// session reads it (mirrors the confirmation indicator, which is
+			// client-driven and does not depend on the backend sending audio).
+			// Confirmations get their own indicator via
+			// _reconcileConfirmationIndicators, so only responses are handled here.
+			if (currentState === 'idle' && lastResponseSummary) {
+				// Skip a reply already read for this session (its exact text is in
+				// _lastNarratedText). That map is cleared when the session starts a
+				// new turn (thinking, above), so a genuinely new reply still shows
+				// the indicator; this only suppresses re-indicating an old reply
+				// resurfaced by a reconnect/poll state sync.
+				const alreadyRead = this._lastNarratedText.get(sessionId) === lastResponseSummary;
+				if (!alreadyRead && this._pendingResponseSummaries.get(sessionId) !== lastResponseSummary) {
+					this._pendingResponseSummaries.set(sessionId, lastResponseSummary);
+					this._markPendingResponse(sessionId, true);
+					this.logService.trace(`[voice] response completed for unfocused session=${sessionId.slice(-32)}; showing pending indicator`);
+				}
+			}
 			return;
 		}
 		if (currentState === 'idle' && lastResponseSummary) {
