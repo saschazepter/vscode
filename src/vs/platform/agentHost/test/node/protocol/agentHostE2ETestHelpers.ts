@@ -19,10 +19,12 @@ import { execSync } from 'child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
+import { timeout } from '../../../../../base/common/async.js';
 import { join } from '../../../../../base/common/path.js';
 import { removeAnsiEscapeCodes } from '../../../../../base/common/strings.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
+import { killTree } from '../../../../../base/node/processes.js';
 import { SubscribeResult } from '../../../common/state/protocol/commands.js';
 import { PROTOCOL_VERSION } from '../../../common/state/protocol/version/registry.js';
 import {
@@ -56,11 +58,62 @@ import {
  */
 const RECORD = process.env['AGENT_HOST_REPLAY_RECORD'] === '1';
 const REPLAY_MODE: CapiReplayMode = RECORD ? 'record' : 'replay';
+const TEMP_DIR_CLEANUP_TIMEOUT_MS = 30_000;
 /** Gate for agent host e2e tests whose local execution is POSIX-specific (shell tool
  * calls, git worktrees, `pwd`) and does not reproduce on Windows. */
 const isWindows = process.platform === 'win32';
 /** A synthetic token used on replay (no real credential needed). */
 export const REPLAY_PLACEHOLDER_TOKEN = 'replay-no-token';
+
+async function stopServer(server: IServerHandle | undefined): Promise<void> {
+	const serverProcess = server?.process;
+	if (!serverProcess || serverProcess.exitCode !== null || serverProcess.signalCode !== null) {
+		return;
+	}
+
+	const pid = serverProcess.pid;
+	if (pid === undefined) {
+		throw new Error('Agent Host server process has no process id.');
+	}
+
+	const serverExit = new Promise<void>(resolve => serverProcess.once('exit', () => resolve()));
+	try {
+		await killTree(pid, true);
+	} catch (error) {
+		if (serverProcess.exitCode === null && serverProcess.signalCode === null) {
+			throw error;
+		}
+	}
+	await serverExit;
+}
+
+async function removeTempDirs(tempDirs: string[]): Promise<void> {
+	const pendingDirs = tempDirs.splice(0);
+	const errors = new Map<string, Error>();
+	const deadline = Date.now() + TEMP_DIR_CLEANUP_TIMEOUT_MS;
+	while (pendingDirs.length > 0) {
+		for (let index = pendingDirs.length - 1; index >= 0; index--) {
+			const dir = pendingDirs[index];
+			try {
+				rmSync(dir, { recursive: true, force: true });
+				pendingDirs.splice(index, 1);
+				errors.delete(dir);
+			} catch (error) {
+				errors.set(dir, error instanceof Error ? error : new Error(String(error)));
+			}
+		}
+		if (pendingDirs.length === 0) {
+			return;
+		}
+		if (Date.now() >= deadline) {
+			throw new AggregateError(
+				Array.from(errors.values()),
+				`Failed to remove Agent Host E2E temporary directories: ${pendingDirs.join(', ')}`,
+			);
+		}
+		await timeout(500);
+	}
+}
 
 /**
  * Fixtures live in the source tree (committed) though the compiled test runs
@@ -620,7 +673,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			// test for Claude, where the model hasn't yielded `turnComplete`)
 			// has to abort an in-flight SDK query before disposeSession
 			// resolves, which can take longer than the default 5s.
-			this.timeout(60_000);
+			this.timeout(90_000);
 			for (const session of createdSessions) {
 				try {
 					// Abort first so the SDK query unwinds cleanly before we
@@ -642,17 +695,11 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			try {
 				await server?.capiReplay?.stop();
 			} finally {
-				const serverProcess = server?.process;
-				const serverExit = serverProcess && serverProcess.exitCode === null && serverProcess.signalCode === null
-					? new Promise<void>(resolve => serverProcess.once('exit', () => resolve()))
-					: undefined;
-				serverProcess?.kill();
-				await serverExit;
-
-				for (const dir of tempDirs) {
-					rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+				try {
+					await stopServer(server);
+				} finally {
+					await removeTempDirs(tempDirs);
 				}
-				tempDirs.length = 0;
 			}
 		});
 
