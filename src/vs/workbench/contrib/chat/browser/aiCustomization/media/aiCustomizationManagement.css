@@ -861,11 +861,18 @@
 	box-sizing: border-box;
 }
 
+.ai-customization-management-editor .prompt-migration-list-scrollable {
+	position: relative;
+	flex: 1;
+	min-height: 0;
+}
+
 .ai-customization-management-editor .prompt-migration-list {
+	position: absolute;
+	inset: 0;
 	display: flex;
 	flex-direction: column;
-	flex: 1;
-	overflow: auto;
+	overflow: hidden;
 	padding-bottom: 6px;
 }
 
