@@ -1909,12 +1909,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 			if (isSessionPlaceholder(element)) {
 				return;
 			}
-			if (isSessionSection(element) && element.id === AUTOMATIONS_SECTION_ID) {
-					this.tree.setSelection([]);
-					this.tree.setFocus([]);
-					this.sessionsPartService.showAutomationsPage();
-				return;
-			}
 			if (!isSessionSection(element) && !isSessionGroupItem(element)) {
 				this.markRead(element);
 				// A deliberate left mouse click on a session should move keyboard
@@ -2323,11 +2317,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 				children: renderSessionChildren(groupItem.sessions, `group:${groupItem.group.id}`, groupItem.group.name, !this.hasFindPattern && this.workspaceGroupCapped),
 			};
 		};
-
-		// Automations shortcut — always first, gated by the enabled context key.
-		if (this.contextKeyService.getContextKeyValue<boolean>(ChatAutomationsEnabledContext.key)) {
-			children.push(renderSection({ id: AUTOMATIONS_SECTION_ID, label: localize('automations', "Automations"), sessions: [] }));
-		}
 
 		const pinnedSection = sections.find(s => s.id === 'pinned');
 		if (pinnedSection) {
