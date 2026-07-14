@@ -2539,25 +2539,29 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			}
 		}
 		// Ask the backend to speak this session's pending item now that it's shown.
-		// If we just replayed a buffered reply, that IS this session's response
-		// read: don't also request narration of the same reply (a double-read).
-		// Record it as narrated so a later idle-transition narrate is de-duped too.
-		// BUT only when the current summary is actually one of the responses we
-		// just played - if the model advanced between buffering and focus, the
-		// current summary is newer/unplayed and must still narrate.
+		// If we just replayed this session's completed reply, that IS the response
+		// read - don't also narrate the stored summary (a double-read). But decide
+		// that by TRANSCRIPT IDENTITY, not the mere fact that some audio was
+		// flushed: the buffer may have held a different, partial, or older response
+		// (e.g. the user clicked while a second reply was still streaming), and the
+		// stored summary is the authoritative, complete text - it must still be
+		// narrated unless its own transcript was among those just played.
 		let narratable = this._currentNarratable(resource);
-		// If the model isn't resident to surface a completed reply, fall back to
-		// the summary stored when the reply completed while this session was
-		// unfocused (the source of its pending indicator). Skip this when buffered
-		// audio was just flushed - that audio already was the reply, so narrating
-		// the stored summary too would read it twice.
-		if (!narratable && !flushResult.flushed) {
-			const pendingSummary = this._pendingResponseSummaries.get(key);
-			if (pendingSummary) {
-				narratable = { kind: 'response', text: pendingSummary };
-			}
+		const pendingSummary = this._pendingResponseSummaries.get(key);
+		const pendingSummaryFlushed = !!pendingSummary
+			&& flushResult.finalTranscripts.includes(this._normalizeTranscript(pendingSummary));
+		// Fall back to the stored summary (the source of the pending indicator)
+		// when the model isn't resident to surface the completed reply - but only
+		// if that exact summary wasn't just flushed as audio (else it'd read twice).
+		if (!narratable && pendingSummary && !pendingSummaryFlushed) {
+			narratable = { kind: 'response', text: pendingSummary };
 		}
-		let handledResponse = flushResult.flushed;
+		// Only treat the response as handled (and clear its indicator below) when
+		// its own reply was actually accounted for: the stored summary's transcript
+		// was just played, OR a narration is issued/deduped for the narratable item.
+		// Never initialize this from flushResult.flushed - partial/other buffered
+		// audio must not be taken as "this session's reply was read".
+		let handledResponse = pendingSummaryFlushed;
 		if (narratable) {
 			const wasJustPlayed = narratable.kind === 'response'
 				&& flushResult.finalTranscripts.includes(this._normalizeTranscript(narratable.text));
@@ -2577,7 +2581,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					// returns false when it de-dupes, but the reply WAS read, so its
 					// indicator should still clear (only a socket-closed retry or a
 					// not-yet-loaded model should retain it).
-					handledResponse = requested || alreadyNarrated;
+					handledResponse = handledResponse || requested || alreadyNarrated;
 				}
 			}
 		}
