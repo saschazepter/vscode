@@ -88,6 +88,41 @@
 		display: none;
 	}
 
+	/* Automations sidebar button — standalone clickable row above "Sessions" header */
+	.automations-sidebar-button {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 12px;
+		cursor: pointer;
+		user-select: none;
+		-webkit-user-select: none;
+		border-radius: 4px;
+		margin: 4px 8px;
+	}
+
+	.automations-sidebar-button:hover {
+		background-color: var(--vscode-list-hoverBackground);
+	}
+
+	.automations-sidebar-button.active {
+		background-color: var(--vscode-list-activeSelectionBackground);
+		color: var(--vscode-list-activeSelectionForeground);
+		outline: 1px solid var(--vscode-focusBorder);
+		outline-offset: -1px;
+	}
+
+	.automations-sidebar-button-icon {
+		font-size: 16px;
+		display: flex;
+		align-items: center;
+	}
+
+	.automations-sidebar-button-label {
+		font-size: var(--vscode-agents-fontSize-label1, 12px);
+		font-weight: var(--vscode-agents-fontWeight-semiBold, 600);
+	}
+
 	/* Header row: label + action buttons */
 	.agent-sessions-header-row {
 		display: flex;
