@@ -6,6 +6,8 @@
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../../base/common/lifecycle.js';
 import { IObservable, observableValue, autorun, transaction, observableSignalFromEvent } from '../../../../../base/common/observable.js';
 import { disposableWindowInterval } from '../../../../../base/browser/dom.js';
+import { alert as ariaAlert } from '../../../../../base/browser/ui/aria/aria.js';
+import { localize } from '../../../../../nls.js';
 import { disposableTimeout } from '../../../../../base/common/async.js';
 import { CancellationTokenSource } from '../../../../../base/common/cancellation.js';
 import { URI } from '../../../../../base/common/uri.js';
@@ -437,6 +439,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * identical reply later still narrates.
 	 */
 	private readonly _lastNarratedText = new Map<string, string>();
+
+	/**
+	 * Narration ids (returned by {@link IVoiceClientService.requestNarration})
+	 * for narrations WE explicitly solicited. Their echoed `audio_response` must
+	 * never be dropped by the legacy content-based re-narration heuristic
+	 * ({@link _isRenarration}) - it is exactly the audio we asked for. Entries are
+	 * retired when the stream ends (its final chunk).
+	 */
+	private readonly _solicitedNarrationIds = new Set<string>();
 
 
 	// --- Telemetry tracking ---
@@ -1343,6 +1354,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// route stays inspectable for the whole handler (defer/dedupe/enqueue).
 			if (e.isFinal && e.responseId) {
 				this._responseRoutes.delete(e.responseId);
+				this._solicitedNarrationIds.delete(e.responseId);
 			}
 		}));
 
@@ -1577,7 +1589,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this.logService.warn(`[voice] fatal disconnect code=${code} reason=${reason}; tearing down (no reconnect)`);
 		this._fatalDisconnect = true;
 		// No reconnect is coming: release the mic and playback so the OS
-		// mic-in-use indicator clears and no stale audio lingers.
+		// mic-in-use indicator clears and no stale audio lingers. Drop any
+		// queued/pending audio BEFORE closing the context: closeContext()
+		// synchronously fires onPlaybackStopped while audio is active, and that
+		// handler re-schedules _processQueue() ~500ms later when the queue is
+		// non-empty - which would recreate the context and play stale audio
+		// after this terminal disconnect.
+		this._audioQueue.length = 0;
+		this._currentPlaybackSessionId = null;
+		this._isProcessingQueue = false;
 		this.ttsPlaybackService.closeContext();
 		this.micCaptureService.stopCapture();
 		this._pttHeld = false;
@@ -1591,9 +1611,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// Code 4008 = the session was taken over by another window. Surface an
 		// actionable message; any other fatal code shows the server reason.
 		const message = code === 4008
-			? 'Voice moved to another window. Tap to start.'
-			: (reason || 'Voice disconnected. Tap to start.');
+			? localize('voice.movedToAnotherWindow', "Voice moved to another window. Tap to start.")
+			: (reason || localize('voice.fatalDisconnect', "Voice disconnected. Tap to start."));
 		this._statusText.set(message, undefined);
+		// The status text only renders into a plain div, so screen-reader users
+		// otherwise get no notification that recording stopped or that another
+		// window took over. Announce it assertively via ARIA.
+		ariaAlert(message);
 	}
 
 	private _onConnectionLost(): void {
@@ -2488,14 +2512,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			if (wasJustPlayed) {
 				this._lastNarratedText.set(key, narratable.text);
 			} else {
-				// About to narrate a fresh item for the now-shown session. Get out
-				// of listening/auto-listen first, or the echoed audio is suppressed
-				// and the user hears nothing. This matters especially for a
-				// confirmation: it has no buffered audio, so the flush path (which
-				// normally does this) returned early without exiting listening.
-				// Responses are narrated on focus exactly like confirmations - an
-				// unconditional request now that the session is shown.
-				this._prepareForPlayback();
+				// Narrate a fresh item for the now-shown session. _narrate exits
+				// listening/auto-listen first (so the echoed audio isn't suppressed
+				// or captured as the user's turn), then requests narration -
+				// responses on focus are narrated exactly like confirmations.
 				this._narrate(key, narratable.kind, narratable.text);
 			}
 		}
@@ -2517,9 +2537,18 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return;
 		}
 		this.logService.trace(`[voice] narrate kind=${kind} id=${sessionId.slice(-32)}`);
+		// Get out of listening/auto-listen before the narration audio arrives, or
+		// the echoed audio is suppressed (or captured as the user's own turn)
+		// while PTT/mic capture is active. Centralized here so EVERY narration
+		// path (live, on-focus, on-reconnect retry) is prepared, not just focus.
+		this._prepareForPlayback();
 		// Record dedup only once the request is actually sent; if the socket is closed, leaving it unset lets a later focus/state event retry after resume.
-		if (this.voiceClientService.requestNarration(sessionId, kind, text)) {
+		const narrationId = this.voiceClientService.requestNarration(sessionId, kind, text);
+		if (narrationId) {
 			this._lastNarratedText.set(sessionId, text);
+			// A narration WE solicited must always play - shield its echoed audio
+			// from the legacy content-based re-narration heuristic.
+			this._solicitedNarrationIds.add(narrationId);
 		}
 	}
 
@@ -2942,6 +2971,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (this._awaitingReplyAudio && this._awaitingReplyForSession === sessionId) {
 			return false;
 		}
+		// A narration WE explicitly solicited (via requestNarration) is exactly
+		// the audio we asked for - never treat it as a duplicate re-narration.
+		if (responseId && this._solicitedNarrationIds.has(responseId)) {
+			return false;
+		}
 		const recent = this._recentlyReadResponse.get(sessionId);
 		if (recent === undefined) {
 			return false;
@@ -3119,13 +3153,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		const nothingPlaying = this._currentPlaybackSessionId === null;
 		const sameSession = !nothingPlaying && this._currentPlaybackSessionId === sessionId;
 		// Only fast-path CONTINUATION chunks of the response that is currently
-		// playing (same session AND not yet finalized). Once the current
-		// response's final chunk has been sent, the TTS service's single
-		// playback turn has scheduled `node.stop()` at that response's boundary;
-		// appending a new same-session response's audio into that same buffer
-		// plays it past the stop point, so it's silently dropped. Serializing it
-		// through the queue forces a fresh turn once the current one finishes.
-		const continuationOfCurrent = sameSession && !this._currentPlaybackFinalized;
+		// playing (same session, not a first chunk, and not yet finalized). A
+		// first chunk always begins a NEW response: even for the same session it
+		// must never be appended to the current playback turn, or an overlapping
+		// response's audio is pushed past the current turn's scheduled
+		// `node.stop()` boundary and one of the two streams is silently dropped.
+		// Once the current response's final chunk has been sent, the TTS
+		// service's single playback turn has scheduled `node.stop()` at that
+		// response's boundary, so a continuation must serialize through the queue
+		// too - forcing a fresh turn once the current one finishes.
+		const continuationOfCurrent = sameSession && !isFirstChunk && !this._currentPlaybackFinalized;
 		if ((nothingPlaying && this._audioQueue.length === 0) || continuationOfCurrent) {
 			this._playChunk(sessionId, audio, isFirstChunk, isFinal, transcript);
 			return;
@@ -3832,6 +3869,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		for (const id of this._lastNarratedText.keys()) {
 			if (!liveSessionIds.has(id)) {
 				this._lastNarratedText.delete(id);
+			}
+		}
+		// A background session that completed a reply but was archived/removed
+		// before being focused would otherwise keep its pending-response summary
+		// and sessions-list indicator for the life of the voice connection.
+		// _clearPendingResponse drops the summary and hides the indicator (only
+		// when no other owner still needs it).
+		for (const id of [...this._pendingResponseSummaries.keys()]) {
+			if (!liveSessionIds.has(id)) {
+				this._clearPendingResponse(id);
 			}
 		}
 	}
