@@ -1307,7 +1307,6 @@ export class AICustomizationManagementEditor extends EditorPane {
 			groupToggle.setAttribute('aria-controls', `${groupId}-items`);
 			groupToggle.setAttribute('aria-expanded', String(!collapsed));
 			const chevron = DOM.append(groupToggle, $('span.group-chevron'));
-			chevron.classList.add(...ThemeIcon.asClassNameArray(collapsed ? Codicon.chevronRight : Codicon.chevronDown));
 			chevron.setAttribute('aria-hidden', 'true');
 			const groupLabelGroup = DOM.append(groupToggle, $('.group-label-group'));
 			const label = DOM.append(groupLabelGroup, $('span.group-label'));
@@ -1316,20 +1315,20 @@ export class AICustomizationManagementEditor extends EditorPane {
 			count.textContent = String(promptFiles.length);
 			const groupItems = DOM.append(group, $('.prompt-migration-group-items'));
 			groupItems.id = `${groupId}-items`;
-			groupItems.style.display = collapsed ? 'none' : '';
+			const setGroupCollapsed = (collapsed: boolean): void => {
+				groupItems.style.display = collapsed ? 'none' : '';
+				chevron.className = 'group-chevron';
+				chevron.classList.add(...ThemeIcon.asClassNameArray(collapsed ? Codicon.chevronRight : Codicon.chevronDown));
+				groupToggle.setAttribute('aria-expanded', String(!collapsed));
+			};
+			setGroupCollapsed(collapsed);
 			this.migrationPageDisposables.add(DOM.addDisposableListener(groupToggle, 'click', () => {
 				if (this.collapsedPromptMigrationGroups.has(groupId)) {
 					this.collapsedPromptMigrationGroups.delete(groupId);
-					groupItems.style.display = '';
-					chevron.classList.remove(...ThemeIcon.asClassNameArray(Codicon.chevronRight));
-					chevron.classList.add(...ThemeIcon.asClassNameArray(Codicon.chevronDown));
-					groupToggle.setAttribute('aria-expanded', 'true');
+					setGroupCollapsed(false);
 				} else {
 					this.collapsedPromptMigrationGroups.add(groupId);
-					groupItems.style.display = 'none';
-					chevron.classList.remove(...ThemeIcon.asClassNameArray(Codicon.chevronDown));
-					chevron.classList.add(...ThemeIcon.asClassNameArray(Codicon.chevronRight));
-					groupToggle.setAttribute('aria-expanded', 'false');
+					setGroupCollapsed(true);
 				}
 			}));
 

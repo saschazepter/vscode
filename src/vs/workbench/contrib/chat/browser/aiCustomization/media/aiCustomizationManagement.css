@@ -911,8 +911,9 @@
 	cursor: pointer;
 }
 
-.ai-customization-management-editor .prompt-migration-group-toggle:focus {
-	outline: none;
+.ai-customization-management-editor .prompt-migration-group-toggle:focus-visible {
+	outline: 1px solid var(--vscode-list-focusOutline);
+	outline-offset: 2px;
 }
 
 .ai-customization-management-editor .prompt-migration-group-items {
