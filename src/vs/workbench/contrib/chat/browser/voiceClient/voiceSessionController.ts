@@ -184,6 +184,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private readonly _isReconnecting = observableValue<boolean>(this, false);
 	readonly isReconnecting: IObservable<boolean> = this._isReconnecting;
 
+	/** Set when the connection closed terminally (e.g. another window took over
+	 *  the session). Suppresses the reconnect display path so the controller
+	 *  settles to a clean, restartable state instead of a stuck "Reconnecting...".
+	 *  Cleared on the next {@link connect}. */
+	private _fatalDisconnect = false;
+
 	private readonly _pendingToolConfirmations = observableValue<readonly IPendingToolConfirmation[]>(this, []);
 	readonly pendingToolConfirmations: IObservable<readonly IPendingToolConfirmation[]> = this._pendingToolConfirmations;
 
@@ -688,6 +694,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 		this._window = window;
 		this._onFocusedSessionChanged();
+		this._fatalDisconnect = false;
 		this._isConnecting.set(true, undefined);
 		this._statusText.set('Connecting...', undefined);
 		this._voiceState.set('idle', undefined);
@@ -1154,6 +1161,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 						}
 					}, 750));
 				}
+			} else if (this._fatalDisconnect) {
+				// Terminal close already handled by _handleFatalDisconnect: stay in
+				// the clean, restartable state and do NOT enter the reconnect path
+				// (which would strand the UI on "Reconnecting..." with no reconnect).
 			} else if (this._isConnected.get()) {
 				this._onConnectionLost();
 			} else if (this._isReconnecting.get()) {
@@ -1432,6 +1443,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			}
 		}));
 
+		this._voiceEventDisposables.add(this.voiceClientService.onFatalDisconnect(e => {
+			this._handleFatalDisconnect(e.code, e.reason);
+		}));
+
 		await this.voiceClientService.connect(window, authToken);
 
 		// Timeout: if still connecting after 10s, give up
@@ -1548,6 +1563,37 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				{ speaker: 'assistant', text: 'I\'ll create a Dashboard component with some widgets...', committed: '', isPartial: false },
 			], undefined);
 		}, 4500));
+	}
+
+	/**
+	 * Handle a terminal, non-recoverable close (e.g. another window took over the
+	 * single voice session -> backend closes this one with 4008). Unlike a
+	 * transient drop (see {@link _onConnectionLost}), there is no reconnect, so
+	 * fully tear down capture/playback and settle to a clean, restartable state
+	 * instead of leaving the UI stuck on "Reconnecting...". Fires before the
+	 * connection-state change, so `_fatalDisconnect` short-circuits that path.
+	 */
+	private _handleFatalDisconnect(code: number, reason: string): void {
+		this.logService.warn(`[voice] fatal disconnect code=${code} reason=${reason}; tearing down (no reconnect)`);
+		this._fatalDisconnect = true;
+		// No reconnect is coming: release the mic and playback so the OS
+		// mic-in-use indicator clears and no stale audio lingers.
+		this.ttsPlaybackService.closeContext();
+		this.micCaptureService.stopCapture();
+		this._pttHeld = false;
+		this._pttToggleMode = false;
+		transaction(tx => {
+			this._isConnecting.set(false, tx);
+			this._isReconnecting.set(false, tx);
+			this._isConnected.set(false, tx);
+		});
+		this._voiceState.set('error', undefined);
+		// Code 4008 = the session was taken over by another window. Surface an
+		// actionable message; any other fatal code shows the server reason.
+		const message = code === 4008
+			? 'Voice moved to another window. Tap to start.'
+			: (reason || 'Voice disconnected. Tap to start.');
+		this._statusText.set(message, undefined);
 	}
 
 	private _onConnectionLost(): void {

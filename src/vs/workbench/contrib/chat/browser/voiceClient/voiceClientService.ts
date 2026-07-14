@@ -23,6 +23,7 @@ import {
 	IVoiceTurnConfig,
 	IVoiceTurnAutoEnded,
 	IVoiceTurnAutoEndReason,
+	IVoiceFatalDisconnect,
 } from '../../common/voiceClient/voiceClientService.js';
 import { InstantiationType, registerSingleton } from '../../../../../platform/instantiation/common/extensions.js';
 
@@ -79,6 +80,9 @@ export class VoiceClientService extends Disposable implements IVoiceClientServic
 
 	private readonly _onDidChangeConnectionState = this._register(new Emitter<boolean>());
 	readonly onDidChangeConnectionState: Event<boolean> = this._onDidChangeConnectionState.event;
+
+	private readonly _onFatalDisconnect = this._register(new Emitter<IVoiceFatalDisconnect>());
+	readonly onFatalDisconnect: Event<IVoiceFatalDisconnect> = this._onFatalDisconnect.event;
 
 	private readonly _onTurnAutoEnded = this._register(new Emitter<IVoiceTurnAutoEnded>());
 	readonly onTurnAutoEnded: Event<IVoiceTurnAutoEnded> = this._onTurnAutoEnded.event;
@@ -307,10 +311,15 @@ export class VoiceClientService extends Disposable implements IVoiceClientServic
 					return;
 				}
 
-				// Fatal errors that should NOT trigger reconnection
+				// Fatal errors that should NOT trigger reconnection. These are
+				// terminal: emit a dedicated fatal-disconnect signal (distinct
+				// from a transient drop) so the controller tears down to a clean,
+				// recoverable state instead of showing "Reconnecting..." forever.
+				// The common cause is another window taking over the single voice
+				// session (backend evicts this one with 4008).
 				if (evt.code === 4001 || evt.code === 4008 || evt.code === 4029) {
 					this._logService.warn(`[voice] fatal close code ${evt.code}: ${evt.reason}, not reconnecting`);
-					this._onError.fire(evt.reason || `Connection rejected (code ${evt.code})`);
+					this._onFatalDisconnect.fire({ code: evt.code, reason: evt.reason ?? '' });
 					this._cleanup();
 					return;
 				}

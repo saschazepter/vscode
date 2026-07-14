@@ -96,6 +96,17 @@ export interface IVoiceTurnAutoEnded {
 }
 
 /**
+ * Payload for a terminal, non-recoverable websocket close (see
+ * {@link IVoiceClientService.onFatalDisconnect}). `code` is the websocket close
+ * code (e.g. 4008 when another window takes over the session); `reason` is the
+ * server-provided close reason, if any.
+ */
+export interface IVoiceFatalDisconnect {
+	readonly code: number;
+	readonly reason: string;
+}
+
+/**
  * One entry in the cross-session timeline the FE replays to the BE on
  * ``start_session``. The BE's coding_agent renders these into a
  * ``[PRIOR_CONTEXT]`` block on the *first* command after reconnect so the
@@ -228,6 +239,13 @@ export interface IVoiceClientService {
 	readonly onSessionInit: Event<IVoiceSessionInit>;
 	readonly onError: Event<string>;
 	readonly onDidChangeConnectionState: Event<boolean>;
+	/**
+	 * Fired on a terminal, non-recoverable close (e.g. code 4008 when another
+	 * window takes over the single voice session). Distinct from a transient
+	 * disconnect: consumers should tear down to a clean, restartable state
+	 * rather than entering a reconnect loop.
+	 */
+	readonly onFatalDisconnect: Event<IVoiceFatalDisconnect>;
 	/**
 	 * Fired when the backend ends a held turn on its own (server VAD silence or
 	 * a matched stop phrase). Consumers stop capturing for that turn and clear
