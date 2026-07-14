@@ -88,6 +88,28 @@ suite('agentHostClientByokLmChannel', () => {
 		]);
 	});
 
+	test('coalesces a burst of changes so the final snapshot reflects the latest models', async () => {
+		const onDidChange = store.add(new Emitter<void>());
+		let models: IByokLmModelInfo[] = [{ vendor: 'acme', id: 'v1' }];
+		const connection = bridge(handlerOf(async () => ({ content: '' }), async () => models, onDidChange.event));
+
+		const pushed: IByokLmModelInfo[][] = [];
+		const sub = connection.onDidChangeModels(snapshot => pushed.push(snapshot));
+		await flush();
+
+		// A rapid burst: several changes fire before any enumeration settles. The
+		// throttler serializes them, so the last snapshot must reflect the latest
+		// models rather than a stale enumeration finishing out of order.
+		models = [{ vendor: 'acme', id: 'v2' }];
+		onDidChange.fire();
+		models = [{ vendor: 'acme', id: 'v3' }];
+		onDidChange.fire();
+		await flush();
+
+		sub.dispose();
+		assert.deepStrictEqual(pushed.at(-1), [{ vendor: 'acme', id: 'v3' }]);
+	});
+
 	test('rejects unknown channel commands', async () => {
 		const server = new AgentHostClientByokLmChannel(handlerOf(async () => ({ content: '' })), new NullLogService());
 		await assert.rejects(() => server.call(null, 'frobnicate'), /Unknown command/);
