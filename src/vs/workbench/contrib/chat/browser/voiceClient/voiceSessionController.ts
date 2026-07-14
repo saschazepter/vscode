@@ -1001,7 +1001,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 							this.logService.trace(`[voice] autorun transition id=${sessionId.slice(-32)} ${prev?.state}→${currentState} detailChanged=${isDetailTransition} hasDetail=${!!detail}`);
 							// A new turn supersedes prior narration; clear dedup here (before coalescing collapses a fast idle→thinking→idle to net-zero), skipping eager-reload wobble.
 							if (currentState === 'thinking' && !this._eagerModelLoading.has(sessionId)) {
-								this._lastNarratedText.delete(sessionId);
+								this._clearLastNarratedText(sessionId);
 							}
 							const cancelExpiry = this._userCancelledSessions.get(sessionId);
 							if (cancelExpiry) {
@@ -2547,9 +2547,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// stored summary is the authoritative, complete text - it must still be
 		// narrated unless its own transcript was among those just played.
 		let narratable = this._currentNarratable(resource);
-		const pendingSummary = this._pendingResponseSummaries.get(key);
+		const pendingKey = this._matchPendingSummaryKey(key);
+		const pendingSummary = pendingKey ? this._pendingResponseSummaries.get(pendingKey) : undefined;
 		const pendingSummaryFlushed = !!pendingSummary
 			&& flushResult.finalTranscripts.includes(this._normalizeTranscript(pendingSummary));
+		this.logService.trace(`[voice] activate shown=${key.slice(-32)} pendingKey=${pendingKey ? pendingKey.slice(-32) : '<none>'} narratable=${narratable?.kind ?? '<none>'} flushedFinal=${flushResult.finalTranscripts.length} pendingFlushed=${pendingSummaryFlushed}`);
 		// Fall back to the stored summary (the source of the pending indicator)
 		// when the model isn't resident to surface the completed reply - but only
 		// if that exact summary wasn't just flushed as audio (else it'd read twice).
@@ -2574,7 +2576,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				// or captured as the user's turn), then requests narration -
 				// responses on focus are narrated exactly like confirmations.
 				const alreadyNarrated = narratable.kind === 'response'
-					&& this._lastNarratedText.get(key) === narratable.text;
+					&& this._getLastNarratedText(key) === narratable.text;
 				const requested = this._narrate(key, narratable.kind, narratable.text);
 				if (narratable.kind === 'response') {
 					// Treat an already-narrated reply as handled too: _narrate
@@ -2593,7 +2595,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// otherwise the reply would be lost and never read. Mirrors how the
 		// confirmation indicator is cleared on focus (see _clearConfirmationIndicator).
 		if (handledResponse) {
-			this._clearPendingResponse(key);
+			this._clearPendingResponse(pendingKey ?? key);
 		}
 		this._sendContext();
 		this.voiceClientService.flushSessionContext();
@@ -2604,7 +2606,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (!text) {
 			return false;
 		}
-		if (this._lastNarratedText.get(sessionId) === text) {
+		if (this._getLastNarratedText(sessionId) === text) {
 			return false;
 		}
 		this.logService.trace(`[voice] narrate kind=${kind} id=${sessionId.slice(-32)}`);
@@ -2756,7 +2758,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// so any stranded buffer, pending summary, or pending confirmation
 			// resolves and is heard, rather than being silently stuck.
 			if (this._matchDeferredKey(definedKey)
-				|| this._pendingResponseSummaries.has(definedKey)
+				|| !!this._matchPendingSummaryKey(definedKey)
 				|| this._confirmationPendingSessions.has(definedKey)) {
 				this.logService.trace(`[voice] re-pinned active session=${definedKey} has pending voice work; re-activating`);
 				this._activateShownSession(resource);
@@ -2821,6 +2823,46 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return isEqual(URI.parse(a), URI.parse(b));
 		} catch {
 			return false;
+		}
+	}
+
+	/** Alias-aware lookup of a stored pending-response summary key. The summary can
+	 *  be keyed by a different id (backend coding_session_id vs UI resource) than
+	 *  the one a focus/click passes, so match by {@link _isSameSession} - mirrors
+	 *  {@link _matchDeferredKey} for deferred audio. Returns the stored key. */
+	private _matchPendingSummaryKey(sessionId: string): string | undefined {
+		if (this._pendingResponseSummaries.has(sessionId)) {
+			return sessionId;
+		}
+		for (const candidate of this._pendingResponseSummaries.keys()) {
+			if (this._isSameSession(candidate, sessionId)) {
+				return candidate;
+			}
+		}
+		return undefined;
+	}
+
+	/** Alias-aware read of the last text narrated for a session (may be stored
+	 *  under either id space), used for exactly-once dedupe. */
+	private _getLastNarratedText(sessionId: string): string | undefined {
+		const exact = this._lastNarratedText.get(sessionId);
+		if (exact !== undefined) {
+			return exact;
+		}
+		for (const [candidate, text] of this._lastNarratedText) {
+			if (this._isSameSession(candidate, sessionId)) {
+				return text;
+			}
+		}
+		return undefined;
+	}
+
+	/** Alias-aware clear of the last-narrated dedupe for a session (any id space). */
+	private _clearLastNarratedText(sessionId: string): void {
+		for (const candidate of [...this._lastNarratedText.keys()]) {
+			if (this._isSameSession(candidate, sessionId)) {
+				this._lastNarratedText.delete(candidate);
+			}
 		}
 	}
 
@@ -3435,12 +3477,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	/** React to a session reaching a narratable state. If it's the shown session, speak it now; a completed reply on a background session instead shows the sessions-list pending indicator and is read when focused. A new turn (`thinking`) clears both the dedup and any stale pending indicator. */
 	private _handleNarratableStateChange(sessionId: string, currentState: string, detail: string | undefined, lastResponseSummary: string | undefined, shownNow: string | undefined): void {
 		if (currentState === 'thinking') {
-			this._lastNarratedText.delete(sessionId);
+			this._clearLastNarratedText(sessionId);
 			// A new turn supersedes any completed reply that was waiting to be
 			// read on focus - drop the stale pending-response indicator.
-			this._clearPendingResponse(sessionId);
+			const pendingKey = this._matchPendingSummaryKey(sessionId) ?? sessionId;
+			this._clearPendingResponse(pendingKey);
 		}
-		if (sessionId !== shownNow) {
+		if (!this._isSameSession(sessionId, shownNow)) {
 			// Background session. A completed reply must not play now: show the
 			// sessions-list indicator and remember the summary so focusing the
 			// session reads it (mirrors the confirmation indicator, which is
@@ -3453,9 +3496,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				// new turn (thinking, above), so a genuinely new reply still shows
 				// the indicator; this only suppresses re-indicating an old reply
 				// resurfaced by a reconnect/poll state sync.
-				const alreadyRead = this._lastNarratedText.get(sessionId) === lastResponseSummary;
-				if (!alreadyRead && this._pendingResponseSummaries.get(sessionId) !== lastResponseSummary) {
-					this._pendingResponseSummaries.set(sessionId, lastResponseSummary);
+				const alreadyRead = this._getLastNarratedText(sessionId) === lastResponseSummary;
+				const existingKey = this._matchPendingSummaryKey(sessionId);
+				const existingSummary = existingKey ? this._pendingResponseSummaries.get(existingKey) : undefined;
+				if (!alreadyRead && existingSummary !== lastResponseSummary) {
+					this._pendingResponseSummaries.set(existingKey ?? sessionId, lastResponseSummary);
 					this._markPendingResponse(sessionId, true);
 					this.logService.trace(`[voice] response completed for unfocused session=${sessionId.slice(-32)}; showing pending indicator`);
 				}
@@ -3468,10 +3513,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// couldn't be sent (socket closed - kept in _pendingNarrationRetries),
 			// retain the summary so a later focus/state event can retry it, instead
 			// of dropping the only record of the unread reply.
-			const alreadyNarrated = this._lastNarratedText.get(sessionId) === lastResponseSummary;
+			const alreadyNarrated = this._getLastNarratedText(sessionId) === lastResponseSummary;
 			const requested = this._narrate(sessionId, 'response', lastResponseSummary);
 			if (requested || alreadyNarrated) {
-				this._clearPendingResponse(sessionId);
+				const pendingKey = this._matchPendingSummaryKey(sessionId) ?? sessionId;
+				this._clearPendingResponse(pendingKey);
 			}
 		} else if (currentState === 'waiting_for_confirmation' && detail) {
 			this._narrate(sessionId, 'confirmation', detail);
