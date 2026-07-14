@@ -2474,19 +2474,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return;
 		}
 		const key = resource?.toString();
-		if (!key) {
-			return;
-		}
-		// A duplicate "shown" event for the same session is normally a no-op, but
-		// only skip it when there's no outstanding work: an earlier activation for
-		// this key may have run before the model/deferred buffer was ready (widget
-		// view-model swaps can fire before the reply lands), leaving a pending
-		// summary/confirmation or buffered audio that a re-activation must still
-		// pick up. Re-activating is idempotent when nothing is pending.
-		if (key === this._lastShownSessionId
-			&& !this._matchDeferredKey(key)
-			&& !this._pendingResponseSummaries.has(key)
-			&& !this._confirmationPendingSessions.has(key)) {
+		if (!key || key === this._lastShownSessionId) {
 			return;
 		}
 		this.logService.trace(`[voice] session shown=${key}; flushing/re-sending context`);
