@@ -484,6 +484,17 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 		return provider.forkChat(session.sessionId, sourceChat, turnId);
 	}
 
+	async createSideChatInSession(session: ISession, sourceChat: URI, turnId: string): Promise<IChat> {
+		const provider = this._getProvider(session);
+		if (!provider) {
+			throw new Error(`Provider '${session.providerId}' not found for session '${session.sessionId}'`);
+		}
+		if (!session.capabilities.get().supportsSideChat) {
+			throw new Error(`Session '${session.sessionId}' does not support side chats`);
+		}
+		return provider.createSideChat(session.sessionId, sourceChat, turnId);
+	}
+
 	/**
 	 * For a `/troubleshoot` request, strip any `#session` marker attachments and
 	 * append a `Session log:` line with the resolved host-local `events.jsonl`

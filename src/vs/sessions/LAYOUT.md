@@ -276,6 +276,7 @@ Contributions are registered via module imports in entry points (`sessions.commo
 Key UI surfaces:
 - **Sessions View** — sidebar, shows sessions grouped by workspace with pinned section
 - **Changes View** — auxiliary bar, shows file changes for the active session
+- **Side Chat editor** — top-level editor tab beside Changes/Files, shows the active session's newest `/btw` side chat, see [§10](#side-chat-editor-tab)
 - **Chat / New Chat views** — hosted inside each `SessionView` in the Sessions Part, registered via `IChatViewFactory` from `contrib/chat/`
 
 All session-window contributions use `WindowVisibility.Sessions` to only appear in the Agents Window.
@@ -317,6 +318,29 @@ The Changes view's body is a vertical `SplitView` of File Changes, Other Files, 
 **Editor maximized:** While the editor area is maximized (`IAgentWorkbenchLayoutService.isEditorMaximized()`), the Changes view is always shown in the auxiliary bar, **irrespective of the session's previous or saved state**. This is driven directly from the auxiliary-bar sync autorun, so it holds across session changes and changes-state updates while maximized. The forced visibility is never captured as the session's per-session preference, so when the editor is un-maximized the autorun re-runs and restores the session's real auxiliary bar state.
 
 `setEditorMaximized` (in `browser/workbench.ts`) treats maximize as a fully reversible state: on entering it snapshots the editor part's size and the surrounding parts' visibility, and on exiting it restores the auxiliary bar to its pre-maximize visibility and resizes the editor part back to its captured width. Without this, the auxiliary bar that the controller forces visible while maximized would otherwise remain (and shrink the editor) after un-maximizing, so the editor would not return to its previous size.
+
+### Side Chat Editor Tab
+
+The **Side Chat** surface is a singleton editor tab (`contrib/sideChat/`) in the
+same top-level tab strip as Changes, Files, Browser, and Search. It is not an
+auxiliary-bar view: registering it there nests the chat beside the active
+Changes/Files detail instead of giving it a peer tab. `SideChatEditor` wraps a
+normal `ChatView`/`ChatWidget` (created via
+`IChatViewFactory.createChatView()`, the same factory used for chats hosted in
+a `SessionView`), so side chats get the full chat UI (composer, tool calls,
+model/agent pickers) for free.
+
+The view reactively shows the **active session's newest side chat**: it reads
+`ISessionsService.activeSession`'s `chats`, filters to
+`origin?.kind === ChatOriginKind.SideChat`, and binds the last (most recently
+created) match via `ChatView.setChat(chat, sessionId)`. Because it always shows
+the *newest* side chat for the currently active session, switching sessions or
+creating another side chat (via another `/btw`) reactively swaps the hosted
+chat — there is no per-side-chat tab strip. `/btw` opens the singleton
+`SideChatEditorInput` through `IEditorService`, appending it to the active main
+editor group when it is not already open. In single-pane mode the Side Chat tab,
+like Browser, temporarily hides the docked Changes/Files detail so the chat owns
+the full side pane; returning to a managed tab restores the contextual detail.
 
 ### Panel
 

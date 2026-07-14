@@ -380,6 +380,8 @@ export function toSessionChatOriginKind(kind: string): ChatOriginKind {
 			return ChatOriginKind.Tool;
 		case ChatOriginKind.Fork:
 			return ChatOriginKind.Fork;
+		case ChatOriginKind.SideChat:
+			return ChatOriginKind.SideChat;
 		default:
 			return ChatOriginKind.User;
 	}
@@ -732,6 +734,7 @@ export class AgentHostSessionAdapter extends Disposable implements ISession {
 			return {
 				supportsMultipleChats: !this._kind.isQuickChat && (agentCapabilities?.multipleChats !== undefined),
 				supportsFork: agentCapabilities?.multipleChats?.fork ?? false,
+				supportsSideChat: agentCapabilities?.multipleChats?.sideChat ?? false,
 				supportsRename: true,
 				supportsDelete: true,
 			};
@@ -784,12 +787,15 @@ export class AgentHostSessionAdapter extends Disposable implements ISession {
 		this._defaultChatTitleOverride.set(defaultSummary?.title || undefined, undefined);
 		this._defaultChatInteractivity.set(toChatInteractivity(defaultSummary?.interactivity), undefined);
 
-		// Subagent (tool-origin) chats always surface as read-only peers; other
-		// non-default chats surface only when the session supports multiple chats.
+		// Subagent (tool-origin) and side (`/btw`) chats always surface as
+		// read-only/peer entries; other non-default chats surface only when the
+		// session supports multiple chats.
 		const surfacesAsPeer = (summary: ChatSummary): boolean =>
 			!isDefault(summary)
 			&& !!parseChatUri(summary.resource)?.chatId
-			&& (this.capabilities.get().supportsMultipleChats || summary.origin?.kind === ProtocolChatOriginKind.Tool);
+			&& (this.capabilities.get().supportsMultipleChats
+				|| summary.origin?.kind === ProtocolChatOriginKind.Tool
+				|| summary.origin?.kind === ProtocolChatOriginKind.SideChat);
 
 		if (!state.chats.some(surfacesAsPeer)) {
 			// Single visible chat: the default chat is the session, so let it
@@ -858,7 +864,10 @@ export class AgentHostSessionAdapter extends Disposable implements ISession {
 	 * resource; peer chats carry their chatId in the resource fragment.
 	 */
 	private _resolveParentChatResource(origin: ChatSummary['origin']): URI | undefined {
-		const parentUri = origin && (origin.kind === ProtocolChatOriginKind.Tool || origin.kind === ProtocolChatOriginKind.Fork)
+		const parentUri = origin && (
+			origin.kind === ProtocolChatOriginKind.Tool
+			|| origin.kind === ProtocolChatOriginKind.Fork
+			|| origin.kind === ProtocolChatOriginKind.SideChat)
 			? origin.chat
 			: undefined;
 		if (!parentUri) {
@@ -3292,6 +3301,55 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		);
 
 		await this._chatSessionsService.getOrCreateChatSession(chat.resource, CancellationToken.None);
+		return chat;
+	}
+
+	async createSideChat(sessionId: string, sourceChat: URI, turnId: string): Promise<IChat> {
+		const connection = this.connection;
+		if (!connection) {
+			throw new Error(this._notConnectedSendErrorMessage());
+		}
+		const rawId = this._rawIdFromChatId(sessionId);
+		const cached = rawId ? this._sessionCache.get(rawId) : undefined;
+		if (!rawId || !cached) {
+			throw new Error(`Session '${sessionId}' not found`);
+		}
+		if (!cached.capabilities.get().supportsSideChat) {
+			throw new Error(`Session '${sessionId}' does not support side chats`);
+		}
+
+		const sessionUri = AgentSession.uri(cached.agentProvider, rawId);
+		const newChatId = generateUuid();
+		const chatUri = URI.parse(buildChatUri(sessionUri, newChatId));
+		// Map the UI source chat resource to its backend chat URI: a fragment
+		// addresses a peer chat, otherwise the session's default chat.
+		const sourceBackendUri = sourceChat.fragment
+			? URI.parse(buildChatUri(sessionUri, sourceChat.fragment))
+			: sessionUri;
+
+		// Inherit the source chat's own model/agent selection (which may differ
+		// from the session's default), not the session-level fallback.
+		const selectedModelId = cached.getChatModelId(sourceChat);
+		const selectedAgentUri = cached.getChatMode(sourceChat)?.id;
+
+		// Keep the session-state subscription alive so the `chatAdded` it emits
+		// flows into `_applyChatCatalogFromState` and updates `cached.chats`.
+		this._keepSessionStateAlive(cached.sessionId);
+		await connection.createChat(sessionUri, chatUri, {
+			model: cached.modelSelection,
+			sideChat: { source: sourceBackendUri, turnId },
+		});
+
+		const chat = await waitForState(
+			cached.chats.map(chats => chats.find(c => c.resource.fragment === newChatId)),
+			c => !!c,
+		);
+
+		cached.setChatModelId(chat.resource, selectedModelId);
+		cached.setChatAgent(chat.resource, selectedAgentUri ? { uri: selectedAgentUri, name: '' } : undefined);
+
+		await this._chatSessionsService.getOrCreateChatSession(chat.resource, CancellationToken.None);
+		await this._updateChatSessionState(chat.resource, selectedModelId, selectedAgentUri);
 		return chat;
 	}
 

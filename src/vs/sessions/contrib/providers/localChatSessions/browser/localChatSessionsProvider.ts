@@ -906,6 +906,10 @@ export class LocalChatSessionsProvider extends Disposable implements ISessionsPr
 		throw new Error(`Session '${sessionId}' does not support forking into a chat`);
 	}
 
+	async createSideChat(sessionId: string, _sourceChat: URI, _turnId: string): Promise<IChat> {
+		throw new Error(`Session '${sessionId}' does not support side chats`);
+	}
+
 	async renameChat(_sessionId: string, chatUri: URI, title: string): Promise<void> {
 		this.chatService.setSessionTitle(chatUri, title);
 		const session = this._findSessionByResource(chatUri);

@@ -25,11 +25,12 @@ import { CHANGES_VIEW_CONTAINER_ID } from '../../../changes/common/changes.js';
 import { ISessionChangesService } from '../../../changes/browser/sessionChangesService.js';
 import { EmptyFileEditorInput } from '../../../editor/browser/emptyFileEditorInput.js';
 import { SESSIONS_FILES_CONTAINER_ID } from '../../../files/browser/files.contribution.js';
+import { SideChatEditorInput } from '../../../sideChat/browser/sideChatEditorInput.js';
 import { ISinglePaneLayoutContext, SinglePaneLayoutStrategy } from './singlePaneLayoutStrategy.js';
 
 const enum DetailPanelTarget {
 	Hidden,
-	BrowserHidden,
+	FullWidthEditor,
 	Changes,
 	ChangesForced,
 	Files,
@@ -42,15 +43,15 @@ const enum DetailPanelTarget {
  * reveals/hides the auxiliary bar accordingly. A created single-pane session
  * defaults to the Changes editor with the detail closed; a Changes/file editor
  * becoming active never force-reveals a hidden detail (except restoring it after
- * a transient browser-tab hide). Opening the empty Files placeholder (making it
- * the active editor) reveals the Files detail, since its content lives there.
+ * a full-width editor temporarily hides it). Opening the empty Files placeholder
+ * (making it the active editor) reveals the Files detail, since its content lives there.
  */
 export class SinglePaneDetailPanelStrategy extends SinglePaneLayoutStrategy {
 
 	private _hasDockedDetailsContext: IContextKey<boolean> | undefined;
 	private readonly _detailSequencer = new Sequencer();
 	private _detailGeneration = 0;
-	private _hiddenByBrowser = false;
+	private _hiddenByFullWidthEditor = false;
 
 	constructor(
 		ctx: ISinglePaneLayoutContext,
@@ -122,8 +123,8 @@ export class SinglePaneDetailPanelStrategy extends SinglePaneLayoutStrategy {
 			return activeSession?.isCreated.read(reader) ? DetailPanelTarget.Changes : DetailPanelTarget.Files;
 		}
 
-		if (activeEditor instanceof BrowserEditorInput) {
-			return DetailPanelTarget.BrowserHidden;
+		if (activeEditor instanceof BrowserEditorInput || activeEditor instanceof SideChatEditorInput) {
+			return DetailPanelTarget.FullWidthEditor;
 		}
 
 		if (this._isChangesEditor(activeEditor)) {
@@ -157,16 +158,16 @@ export class SinglePaneDetailPanelStrategy extends SinglePaneLayoutStrategy {
 				if (this._layoutService.isVisible(Parts.AUXILIARYBAR_PART)) {
 					this._layoutService.setPartHidden(true, Parts.AUXILIARYBAR_PART);
 				}
-				this._hiddenByBrowser = false;
+				this._hiddenByFullWidthEditor = false;
 				return;
-			case DetailPanelTarget.BrowserHidden:
+			case DetailPanelTarget.FullWidthEditor:
 				if (this._layoutService.isVisible(Parts.AUXILIARYBAR_PART)) {
 					this._layoutService.setPartHidden(true, Parts.AUXILIARYBAR_PART);
 				}
-				this._hiddenByBrowser = true;
+				this._hiddenByFullWidthEditor = true;
 				return;
 			case DetailPanelTarget.Changes:
-				if (!auxBarVisible && this._hiddenByBrowser) {
+				if (!auxBarVisible && this._hiddenByFullWidthEditor) {
 					this._layoutService.setPartHidden(false, Parts.AUXILIARYBAR_PART);
 					auxBarVisible = true;
 				}
@@ -176,13 +177,13 @@ export class SinglePaneDetailPanelStrategy extends SinglePaneLayoutStrategy {
 					return;
 				}
 				await this._viewsService.openViewContainer(CHANGES_VIEW_CONTAINER_ID, false);
-				this._hiddenByBrowser = false;
+				this._hiddenByFullWidthEditor = false;
 				return;
 			case DetailPanelTarget.ChangesForced:
 				await this._syncForcedDetailTarget(CHANGES_VIEW_CONTAINER_ID, auxBarVisible);
 				return;
 			case DetailPanelTarget.Files:
-				if (!auxBarVisible && this._hiddenByBrowser) {
+				if (!auxBarVisible && this._hiddenByFullWidthEditor) {
 					this._layoutService.setPartHidden(false, Parts.AUXILIARYBAR_PART);
 					auxBarVisible = true;
 				}
@@ -190,13 +191,13 @@ export class SinglePaneDetailPanelStrategy extends SinglePaneLayoutStrategy {
 					return;
 				}
 				await this._viewsService.openViewContainer(SESSIONS_FILES_CONTAINER_ID, false);
-				this._hiddenByBrowser = false;
+				this._hiddenByFullWidthEditor = false;
 				return;
 			case DetailPanelTarget.FilesForced:
 				await this._syncForcedDetailTarget(SESSIONS_FILES_CONTAINER_ID, auxBarVisible);
 				return;
 			case DetailPanelTarget.Preserve:
-				this._hiddenByBrowser = false;
+				this._hiddenByFullWidthEditor = false;
 				return;
 		}
 	}
@@ -207,10 +208,10 @@ export class SinglePaneDetailPanelStrategy extends SinglePaneLayoutStrategy {
 			// editor with the detail closed, and an explicit / per-session hide is
 			// respected — so a Changes/file editor becoming active never
 			// force-reveals the detail. The one exception is restoring the detail
-			// after a *transient* browser-tab hide (`_hiddenByBrowser`). Never reveal
+			// after a full-width editor temporarily hides it. Never reveal
 			// while the whole side pane is closed (the editor content is also hidden)
 			// or during a session-switch layout restore.
-			if (!this._hiddenByBrowser
+			if (!this._hiddenByFullWidthEditor
 				|| !this._layoutService.isVisible(Parts.EDITOR_PART, mainWindow)
 				|| this._ctx.isRestoringSessionLayout) {
 				return;
@@ -218,7 +219,7 @@ export class SinglePaneDetailPanelStrategy extends SinglePaneLayoutStrategy {
 			this._layoutService.setPartHidden(false, Parts.AUXILIARYBAR_PART);
 		}
 		await this._viewsService.openViewContainer(viewContainerId, false);
-		this._hiddenByBrowser = false;
+		this._hiddenByFullWidthEditor = false;
 	}
 
 	private _isChangesEditor(editor: EditorInput): boolean {

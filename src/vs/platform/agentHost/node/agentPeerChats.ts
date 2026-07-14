@@ -4,7 +4,65 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable, DisposableMap, IDisposable } from '../../../base/common/lifecycle.js';
-import { type ModelSelection } from '../common/state/protocol/state.js';
+import { renderResponseMarkdown } from '../common/agentHostConversationContext.js';
+import { type ModelSelection, type Turn } from '../common/state/protocol/state.js';
+
+const SIDE_CHAT_CONTEXT_START = '<side-chat-context>';
+const SIDE_CHAT_CONTEXT_END = '</side-chat-context>';
+const SIDE_CHAT_GUIDANCE = 'This is a side conversation. Prefer explanation over action; do not make changes or carry out work unless the user explicitly asks.';
+
+export interface IPersistedSideChat {
+	readonly source: string;
+	readonly turnId: string;
+	readonly inheritedTurnCount: number;
+	readonly partialResponse?: string;
+}
+
+export function injectSideChatContext(prompt: string, partialResponse?: string): string {
+	const context = [SIDE_CHAT_GUIDANCE];
+	if (partialResponse) {
+		context.push(
+			'',
+			'The side chat was created while the source assistant was still responding.',
+			'The user-visible response had produced the following text at that moment:',
+			'',
+			partialResponse,
+		);
+	}
+	return [SIDE_CHAT_CONTEXT_START, ...context, SIDE_CHAT_CONTEXT_END, '', prompt].join('\n');
+}
+
+export function prepareSideChatPrompt(prompt: string, turns: readonly Turn[], sideChat: IPersistedSideChat | undefined): string {
+	if (!sideChat || turns.length > sideChat.inheritedTurnCount) {
+		return prompt;
+	}
+	let partialResponse = sideChat.partialResponse;
+	if (partialResponse) {
+		const sourceTurn = turns.find(turn => turn.id === sideChat.turnId);
+		const inheritedResponse = sourceTurn ? renderResponseMarkdown(sourceTurn.responseParts) : '';
+		if (inheritedResponse.includes(partialResponse)) {
+			partialResponse = undefined;
+		}
+	}
+	return injectSideChatContext(prompt, partialResponse);
+}
+
+export function stripSideChatContext(turns: readonly Turn[], sideChat: IPersistedSideChat | undefined): readonly Turn[] {
+	if (!sideChat || turns.length === 0) {
+		return turns;
+	}
+	const first = turns[0];
+	const text = first.message.text;
+	if (!text.startsWith(SIDE_CHAT_CONTEXT_START)) {
+		return turns;
+	}
+	const endIndex = text.indexOf(SIDE_CHAT_CONTEXT_END);
+	if (endIndex < 0) {
+		return turns;
+	}
+	const userPrompt = text.slice(endIndex + SIDE_CHAT_CONTEXT_END.length).trimStart();
+	return [{ ...first, message: { ...first.message, text: userPrompt } }, ...turns.slice(1)];
+}
 
 /**
  * In-memory backing for an additional (non-default) peer chat. Records the SDK
@@ -16,6 +74,7 @@ import { type ModelSelection } from '../common/state/protocol/state.js';
 export interface IPersistedChat {
 	readonly sdkSessionId: string;
 	readonly model?: ModelSelection;
+	readonly sideChat?: IPersistedSideChat;
 }
 
 export interface IResolvedAgentChat<TSession extends IDisposable> {
@@ -39,7 +98,7 @@ export function encodeProviderData(backing: IPersistedChat): string {
  */
 export function decodeProviderData(providerData: string): IPersistedChat | undefined {
 	try {
-		const value = JSON.parse(providerData) as { sdkSessionId?: unknown; model?: unknown };
+		const value = JSON.parse(providerData) as { sdkSessionId?: unknown; model?: unknown; sideChat?: unknown };
 		if (!value || typeof value !== 'object') {
 			return undefined;
 		}
@@ -53,7 +112,15 @@ export function decodeProviderData(providerData: string): IPersistedChat | undef
 		const validModel = model && typeof model === 'object' && typeof (model as { id?: unknown }).id === 'string'
 			? model as ModelSelection
 			: undefined;
-		return { sdkSessionId, ...(validModel ? { model: validModel } : {}) };
+		const sideChat = value.sideChat as { source?: unknown; turnId?: unknown; inheritedTurnCount?: unknown; partialResponse?: unknown } | undefined;
+		const validSideChat = sideChat
+			&& typeof sideChat.source === 'string'
+			&& typeof sideChat.turnId === 'string'
+			&& typeof sideChat.inheritedTurnCount === 'number'
+			&& (sideChat.partialResponse === undefined || typeof sideChat.partialResponse === 'string')
+			? { source: sideChat.source, turnId: sideChat.turnId, inheritedTurnCount: sideChat.inheritedTurnCount, ...(sideChat.partialResponse ? { partialResponse: sideChat.partialResponse } : {}) }
+			: undefined;
+		return { sdkSessionId, ...(validModel ? { model: validModel } : {}), ...(validSideChat ? { sideChat: validSideChat } : {}) };
 	} catch {
 		return undefined;
 	}

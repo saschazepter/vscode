@@ -172,6 +172,7 @@ class TestSessionsProvider extends mock<ISessionsProvider>() {
 	override async sendRequest(_sessionId: string, _chatResource: URI, _options: ISendRequestOptions): Promise<ISession> { return this._session; }
 	override async createNewChat(): Promise<IChat> { return this._session.mainChat.get(); }
 	override async forkChat(_sessionId: string, _sourceChat: URI, _turnId: string): Promise<IChat> { throw new Error('not implemented'); }
+	override async createSideChat(_sessionId: string, _sourceChat: URI, _turnId: string): Promise<IChat> { throw new Error('not implemented'); }
 }
 
 function createSessionsManagementService(session: ISession, disposables: ReturnType<typeof ensureNoDisposablesAreLeakedInTestSuite>, provider: ISessionsProvider = new TestSessionsProvider(session)): { service: ISessionsManagementService; view: SessionsService; chatWidgetService: TestChatWidgetService; chatService: TestChatService } {
@@ -1824,6 +1825,49 @@ suite('SessionsManagementService', () => {
 			const { service } = createSessionsManagementService(session, disposables);
 
 			await assert.rejects(() => service.forkChatInSession(session, URI.parse('test:///source'), 'turn-1'), /does not support forking into a chat/);
+		});
+	});
+
+	suite('createSideChatInSession', () => {
+
+		test('asks the provider to create the side chat when the session supports it', async () => {
+			const sourceChat = URI.parse('test:///source');
+			const sideChat: IChat = { ...stubChat, resource: URI.parse('test:///side') };
+			const session = stubSession({ sessionId: 'side', providerId: 'test', capabilities: constObservable({ supportsMultipleChats: true, supportsSideChat: true }) });
+			let createSideChatArgs: readonly [string, URI, string] | undefined;
+			const provider = new class extends TestSessionsProvider {
+				constructor() { super(session); }
+				override async createSideChat(sessionId: string, sourceChat: URI, turnId: string): Promise<IChat> {
+					createSideChatArgs = [sessionId, sourceChat, turnId];
+					return sideChat;
+				}
+			};
+			const { service } = createSessionsManagementService(session, disposables, provider);
+
+			const result = await service.createSideChatInSession(session, sourceChat, 'turn-1');
+
+			assert.deepStrictEqual({
+				result: result.resource.toString(),
+				args: createSideChatArgs?.map(arg => URI.isUri(arg) ? arg.toString() : arg),
+			}, {
+				result: sideChat.resource.toString(),
+				args: ['side', sourceChat.toString(), 'turn-1'],
+			});
+		});
+
+		test('throws when the provider is not found', async () => {
+			const session = stubSession({ sessionId: 'orphan', providerId: 'missing-provider', capabilities: constObservable({ supportsMultipleChats: true, supportsSideChat: true }) });
+			const provider = new TestSessionsProvider(stubSession({ sessionId: 'other', providerId: 'test' }));
+			const { service } = createSessionsManagementService(session, disposables, provider);
+
+			await assert.rejects(() => service.createSideChatInSession(session, URI.parse('test:///source'), 'turn-1'), /Provider 'missing-provider' not found/);
+		});
+
+		test('throws when the session does not support side chats', async () => {
+			const session = stubSession({ sessionId: 'no-side-chat', providerId: 'test', capabilities: constObservable({ supportsMultipleChats: true, supportsSideChat: false }) });
+			const { service } = createSessionsManagementService(session, disposables);
+
+			await assert.rejects(() => service.createSideChatInSession(session, URI.parse('test:///source'), 'turn-1'), /does not support side chats/);
 		});
 	});
 

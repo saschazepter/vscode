@@ -370,6 +370,7 @@ export const enum ChatOriginKind {
 	Tool = 'tool',
 	User = 'user',
 	Fork = 'fork',
+	SideChat = 'sideChat',
 }
 
 export interface IChatOrigin {
@@ -576,6 +577,13 @@ export interface ISessionCapabilities {
 	 * it. Defaults to falsy (no fork) when omitted.
 	 */
 	readonly supportsFork?: boolean;
+	/**
+	 * Whether this session supports creating a side chat from a turn (via
+	 * `/btw`). Side chats inherit the source chat's model/agent and are shown
+	 * in a dedicated top-level Side Chat editor, never in the conversation tab
+	 * strip. Defaults to falsy (no side chat) when omitted.
+	 */
+	readonly supportsSideChat?: boolean;
 	/**
 	 * Whether this session's title can be renamed. The agents-window UI
 	 * (session header inline edit, sessions-list `Rename...` action) gates

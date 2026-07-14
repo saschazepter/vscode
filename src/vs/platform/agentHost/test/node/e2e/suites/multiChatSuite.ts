@@ -9,10 +9,11 @@ import { tmpdir } from 'os';
 import { join } from '../../../../../../base/common/path.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ActionType, type ChatErrorAction, type ChatToolCallReadyAction } from '../../../../common/state/sessionActions.js';
-import { CompletionItemKind, type CompletionsResult, type ListSessionsResult, type SubscribeResult } from '../../../../common/state/protocol/commands.js';
+import { ChatSourceKind, CompletionItemKind, type CompletionsResult, type ListSessionsResult, type SubscribeResult } from '../../../../common/state/protocol/commands.js';
 import {
 	buildChatUri,
 	buildDefaultChatUri,
+	ChatOriginKind,
 	isAhpChatChannel,
 	MessageAttachmentKind,
 	MessageKind,
@@ -46,12 +47,12 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		return { sessionUri, defaultChatUri: buildDefaultChatUri(sessionUri), workspace };
 	}
 
-	async function createPeer(sessionUri: string, id: string, source?: { chat: string; turnId: string }): Promise<string> {
+	async function createPeer(sessionUri: string, id: string, source?: { chat: string; turnId: string; kind?: ChatSourceKind }): Promise<string> {
 		const chat = buildChatUri(sessionUri, id);
 		await context.client.call('createChat', {
 			channel: sessionUri,
 			chat,
-			...(source ? { source } : {}),
+			...(source ? { source: { kind: source.kind ?? ChatSourceKind.Fork, chat: source.chat, turnId: source.turnId } } : {}),
 		}, 30_000);
 		return chat;
 	}
@@ -622,6 +623,41 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 
 		assert.strictEqual(messages.some(message => message.content.includes('DEFAULTSECRET')), false);
 	}, config.supportsMultipleChats && config.provider !== 'claude');
+
+	providerTest('side chat receives bounded source context without copied history', async function () {
+		const { sessionUri, defaultChatUri } = await createSession('side-context');
+		await driveTurn(defaultChatUri, 'turn-source', 'Remember the exact token SIDECHAT42 for a later question. Reply with exactly "ready".', 1);
+
+		const sideChatUri = await createPeer(sessionUri, 'side', {
+			kind: ChatSourceKind.SideChat,
+			chat: defaultChatUri,
+			turnId: 'turn-source',
+		});
+		await context.client.call<SubscribeResult>('subscribe', { channel: sideChatUri });
+
+		const response = await driveTurn(sideChatUri, 'turn-side', 'What exact token did I ask you to remember? Reply with only the token.', 2);
+		const [sourceState, sideState, session] = await Promise.all([
+			chatState(defaultChatUri),
+			chatState(sideChatUri),
+			sessionState(sessionUri),
+		]);
+
+		assert.deepStrictEqual({
+			responseIncludesCode: /SIDECHAT42/i.test(response),
+			sourceTurnCount: sourceState.turns.length,
+			sideTurnCount: sideState.turns.length,
+			origin: session.chats.find(chat => chat.resource === sideChatUri)?.origin,
+			firstMessage: sideState.turns[0]?.message.text,
+			firstAttachments: sideState.turns[0]?.message.attachments ?? [],
+		}, {
+			responseIncludesCode: true,
+			sourceTurnCount: 1,
+			sideTurnCount: 1,
+			origin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turnId: 'turn-source' },
+			firstMessage: 'What exact token did I ask you to remember? Reply with only the token.',
+			firstAttachments: [],
+		});
+	}, config.supportsMultipleChats && !!config.supportsSideChats);
 
 	providerTest('two peer chats keep independent provider contexts', async function () {
 		const { sessionUri } = await createSession('two-contexts');

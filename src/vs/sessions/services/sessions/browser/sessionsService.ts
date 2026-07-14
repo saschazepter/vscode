@@ -536,7 +536,7 @@ export class SessionsService extends Disposable implements ISessionsService {
 		store.add(autorun(reader => {
 			const active = this._visibility.activeSession.read(reader);
 			if (active && active.sessionId === followId) {
-				const chats = active.chats.read(reader);
+				const chats = active.openChats.read(reader);
 				const lastChat = chats[chats.length - 1];
 				if (lastChat) {
 					this._visibility.setActiveChat(active, lastChat);
@@ -662,8 +662,9 @@ export class SessionsService extends Disposable implements ISessionsService {
 		}
 		// Subagent (tool-origin) chats are hidden by default and toggled via an
 		// in-memory shown set, not the persisted closed set, so they never
-		// participate in closed-chat persistence.
-		if (chat.origin?.kind === ChatOriginKind.Tool) {
+		// participate in closed-chat persistence. Side chats (via `/btw`) never
+		// appear as tabs at all, so they never participate either.
+		if (chat.origin?.kind === ChatOriginKind.Tool || chat.origin?.kind === ChatOriginKind.SideChat) {
 			return;
 		}
 		const existing = this._sessionStates.get(session.resource);

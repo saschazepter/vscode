@@ -504,6 +504,84 @@ context is bounded to the same character budget (middle-truncated) as first-turn
 refinement, so it costs at most one small-model call, and a concurrent manual
 `/rename` suppresses it.
 
+#### Side chats (`/btw`)
+
+A **side chat** is a peer chat branched from an existing chat's latest turn
+to ask an unrelated, "by the way" question without polluting the source
+conversation. Unlike a fork (which continues the same line of work as a new
+chat), a side chat is surfaced in a dedicated, provider-agnostic **Side Chat**
+editor tab rather than the normal conversation tab strip — see
+[LAYOUT.md](LAYOUT.md#side-chat-editor-tab).
+
+Capability: `ISessionCapabilities.supportsSideChat`, derived by the agent host
+provider from `agentCapabilities.multipleChats.sideChat` (mirroring
+`supportsMultipleChats`/`fork`). Only providers with a complete side-chat
+context/restore implementation advertise it (currently Claude and Copilot).
+
+Origin: side chats carry `IChat.origin.kind === ChatOriginKind.SideChat`. Like
+subagent (`Tool`) chats, side-chat peers are **excluded** from the normal
+sessions surfaces that assume a user-facing conversation: the chat tab strip
+(`shouldShowChatTabs`/`openChats`), the **Conversations** menu
+(`SessionConversationsMenuContribution`), the active-chat fallback when closing
+a chat, and `committedChatCount` (so a session with only a main chat plus side
+chats does not appear to "support multiple chats" in the UI). They still
+appear in `ISession.chats` so the Side Chat editor can find them.
+
+Creation: `ISessionsManagementService.createSideChatInSession(session,
+sourceChat, turnId)` → `ISessionsProvider.createSideChat`. The service throws
+if the provider or session doesn't support side chats (mirroring
+`forkChatInSession`); it never returns `undefined`. On the agent host,
+`createSideChat` mints a client-chosen chat URI and calls
+`connection.createChat(sessionUri, chatUri, { model, sideChat: { source,
+turnId } })` — analogous to `forkChat`'s `{ fork: { source, turnId } }`, but
+the new chat inherits the **source chat's own** model/agent selection (not the
+session-level default), read via `getChatModelId(sourceChat)`/
+`getChatMode(sourceChat)` and re-applied to the new chat once it appears in the
+catalog (`setChatModelId`/`setChatAgent`/`_updateChatSessionState`), matching
+the plan's "inherits model/agent" requirement for a side chat asking a
+tangential question with the same context as the turn it branched from.
+The host records the `SideChat` origin but does not mutate the first user
+message. Claude and Copilot use their SDK fork primitives to inherit source
+context privately, persist the inherited-prefix length in providerData, and
+filter those inherited turns from `getMessages()` so the Side Chat editor only
+shows turns authored in that side chat.
+
+Invocation: the `/btw` slash command (registered against the core
+`IChatSlashCommandService`, in `contrib/chat/browser/btwSlashCommand.contribution.ts`
+— a sessions-owned contribution, not a change to the core `chatSlashCommands.ts`)
+is only offered in the Agents window, on created (non-`Untitled`), non-archived
+sessions whose provider `supportsSideChat` (`when` gates the completion; the
+callback re-checks all three at execution time, since `when` is not
+re-evaluated when a command actually runs). It is `silent: true` (no
+request/response row is added to the **source** chat) and
+`executeDuringRequest: true`, so the chat widget invokes it directly instead of
+queueing or steering it behind an active source turn. It anchors to the source
+chat's latest request, including an in-progress turn; only a chat with no turns
+shows a localized warning.
+Each invocation creates a **fresh** side chat (there is no "reuse the last side
+chat" behavior). After creating the chat, it opens/focuses the singleton Side
+Chat editor tab (`IEditorService.openEditor(SideChatEditorInput)`) and, if the user typed
+text after `/btw `, sends it as a background request
+(`sessionsManagementService.sendRequest(session, sideChat, { query, background:
+true })`) so the Side Chat editor's `ChatWidget` shows the request without
+navigating away from the source chat.
+
+The agent host accepts the anchor when it is either in `turns` or
+`activeTurn`. Claude and Copilot serialize side-chat creation on the new chat's
+key rather than the source session's send key, allowing their native fork
+primitive to snapshot all provider transcript/events written up to that moment
+while the source turn continues. Native Copilot forks do not persist streamed
+assistant deltas before the final assistant message, so AgentService separately
+captures the active turn's user-visible markdown (bounded to 20,000 characters).
+The provider wraps the first SDK prompt in a private `<side-chat-context>`
+block. Every side chat receives the succinct instruction: "Prefer explanation
+over action; do not make changes or carry out work unless the user explicitly
+asks." When present, the partial-response snapshot follows that instruction.
+Provider reconstruction strips the whole block from the first visible side-chat
+turn, so the UI and restored transcript continue to show only the user's `/btw`
+question. Reasoning, tool payloads, and other non-markdown response parts are
+deliberately not injected.
+
 The session handler (`agentHostSessionHandler.ts`) routes each chat widget to its
 own AHP chat channel. Session-scoped reads (`summary`/`config`/`activeClient`)
 stay on the session URI, while conversation reads/dispatches

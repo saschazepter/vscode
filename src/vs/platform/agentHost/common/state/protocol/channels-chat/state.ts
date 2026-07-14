@@ -167,6 +167,8 @@ export const enum ChatOriginKind {
 	User = 'user',
 	/** Forked from an existing chat at a specific turn. */
 	Fork = 'fork',
+	/** Created as an independent side conversation from a specific turn. */
+	SideChat = 'sideChat',
 	/** Spawned by a tool call running in another chat (e.g. a sub-agent delegation). */
 	Tool = 'tool',
 }
@@ -186,6 +188,7 @@ export const enum ChatOriginKind {
 export type ChatOrigin =
 	| { kind: ChatOriginKind.User }
 	| { kind: ChatOriginKind.Fork; chat: URI; turnId: string }
+	| { kind: ChatOriginKind.SideChat; chat: URI; turnId: string }
 	| { kind: ChatOriginKind.Tool; chat: URI; toolCallId: string };
 
 /**
@@ -505,6 +508,8 @@ export const enum MessageAttachmentKind {
 	Resource = 'resource',
 	/** An attachment that references annotations on an annotations channel. */
 	Annotations = 'annotations',
+	/** An attachment that references a bounded transcript from another chat. */
+	Chat = 'chat',
 }
 
 /**
@@ -768,6 +773,30 @@ export interface MessageAnnotationsAttachment extends MessageAttachmentBase {
 }
 
 /**
+ * An attachment that references a chat transcript through a fixed completed
+ * turn.
+ *
+ * The referenced chat MUST belong to the same session as the message's chat.
+ * The host resolves the transcript from its first retained turn through
+ * `endTurn`, inclusive, when accepting the message. Later turns do not
+ * change the context represented by an already-sent attachment.
+ *
+ * Hosts MUST NOT recursively expand chat attachments found inside the
+ * referenced transcript. Clients SHOULD keep rendering `label` if the
+ * referenced chat is later pruned, and treat opening `resource` as best-effort.
+ *
+ * @category Turn Types
+ */
+export interface MessageChatAttachment extends MessageAttachmentBase {
+	/** Discriminant */
+	type: MessageAttachmentKind.Chat;
+	/** URI of the referenced chat. */
+	resource: URI;
+	/** Last completed turn included in the referenced transcript. */
+	endTurn: string;
+}
+
+/**
  * An attachment associated with a {@link Message}.
  *
  * @category Turn Types
@@ -776,7 +805,8 @@ export type MessageAttachment =
 	| SimpleMessageAttachment
 	| MessageEmbeddedResourceAttachment
 	| MessageResourceAttachment
-	| MessageAnnotationsAttachment;
+	| MessageAnnotationsAttachment
+	| MessageChatAttachment;
 
 // ─── Response Parts ──────────────────────────────────────────────────────────
 

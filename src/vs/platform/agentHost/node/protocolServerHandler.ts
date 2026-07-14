@@ -54,6 +54,7 @@ import {
 	type OtlpLogLevelName,
 } from '../common/otlp/otlpLogEmitter.js';
 import { isFileResourceRead } from '../common/resourceReadLogging.js';
+import { ChatSourceKind } from '../common/state/protocol/channels-chat/commands.js';
 
 /** Default capacity of the server-side action replay buffer. */
 const REPLAY_BUFFER_CAPACITY = 1000;
@@ -1210,7 +1211,8 @@ export class ProtocolServerHandler extends Disposable {
 				URI.parse(params.channel),
 				URI.parse(params.chat),
 				{
-					...(params.source ? { fork: { source: URI.parse(params.source.chat), turnId: params.source.turnId } } : {}),
+					...(params.source?.kind === ChatSourceKind.Fork ? { fork: { source: URI.parse(params.source.chat), turnId: params.source.turnId } } : {}),
+					...(params.source?.kind === ChatSourceKind.SideChat ? { sideChat: { source: URI.parse(params.source.chat), turnId: params.source.turnId } } : {}),
 				},
 			);
 			return null;

@@ -347,6 +347,17 @@ export interface ISessionsProvider {
 	forkChat(sessionId: string, sourceChat: URI, turnId: string): Promise<IChat>;
 
 	/**
+	 * Create a side chat from an existing chat's turn, inheriting the source
+	 * chat's model/agent selection. Unlike {@link forkChat}, a side chat is
+	 * never shown as a tab in its session — it is only ever shown in the Side
+	 * Chat auxiliary view.
+	 * @param sessionId The ID of the session containing the source chat.
+	 * @param sourceChat The resource URI of the chat to branch from.
+	 * @param turnId The ID of the turn to branch from.
+	 */
+	createSideChat(sessionId: string, sourceChat: URI, turnId: string): Promise<IChat>;
+
+	/**
 	 * Send a request for a chat within a session.
 	 *
 	 * @param sessionId The ID of the session containing the chat.
