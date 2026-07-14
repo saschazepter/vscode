@@ -63,6 +63,11 @@ const CODEX_CONFIG: IAgentHostE2EProviderConfig = {
 	// Codex's `exec_command` shell tool call is not emitted by the bundled Codex
 	// CLI on Windows during replay, so the shell-permission test is POSIX-only.
 	shellPermissionReplayUnstableOnWindows: true,
+	// Reuse one server across the suite. The replay suite has no mid-turn
+	// dispose (every turn drains to `turnComplete` before teardown), so the
+	// reused app-server subprocess stays clean. See "Server lifecycle" in the
+	// protocol README.
+	supportsSharedReplayServer: true,
 };
 
 defineAgentHostE2ETests(CODEX_CONFIG);

@@ -207,12 +207,12 @@ export interface IAgentHostE2EProviderConfig {
 	 * Reuse one agent host server (and its cached provider SDK client / CLI
 	 * subprocess) across all tests in the suite instead of restarting per test,
 	 * swapping the replay fixture between tests via {@link CapiReplayProxy.resetForReplay}.
-	 * A large speedup (server fork + SDK client startup are paid once), but it
-	 * shares agent state across tests, so it is only safe for providers whose
-	 * session dispose reliably returns the agent to a clean state. Ignored while
-	 * recording (each recording needs its own fresh proxy + fixture). Currently
-	 * true only for Copilot; Claude's mid-turn dispose can wedge the agent host,
-	 * which is exactly what per-test isolation guards against.
+	 * A large speedup (server fork + SDK client startup are paid once). Safe as
+	 * long as no test returns mid-turn: since one server serves every test, a
+	 * turn left in flight leaks its continuation HTTP call into the next test's
+	 * fixture window (a strict cache miss). Every shared test therefore drains
+	 * its turns to `turnComplete`. Ignored while recording (each recording needs
+	 * its own fresh proxy + fixture). Enabled for all three providers.
 	 */
 	readonly supportsSharedReplayServer?: boolean;
 
@@ -720,10 +720,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			// When a provider opts into `supportsSharedReplayServer`, the server is
 			// started once and reused across tests (swapping the replay fixture per
 			// test); tear it down here. Otherwise the lease already killed the
-			// per-test server in each teardown and this is a no-op — per-test
-			// isolation is what guards providers (notably Claude, whose mid-turn
-			// dispose can wedge the agent host) from one broken test poisoning the
-			// rest.
+			// per-test server in each teardown and this is a no-op.
 			this.timeout(60_000);
 			await lease.dispose();
 		});
@@ -879,15 +876,18 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			const toolStarts = client.receivedNotifications(n => isActionNotification(n, 'chat/toolCallStart'));
 			assert.ok(toolStarts.length > 0, 'expected at least one shell tool call');
 
-			// Let the post-tool continuation finish so the turn reaches
-			// `turnComplete` and the session ends cleanly. While recording this
-			// also lands the continuation's model call in the fixture. Draining
-			// matters most for the shared replay server: returning mid-turn would
-			// leave the turn in-flight, and teardown's abort of a mid-turn turn can
-			// wedge the reused SDK client and break the next test. Replay always
-			// issues the continuation and serves it from the fixture, so the wait
-			// is fast there. Bounded + best-effort: some providers' continuations
-			// for a trivial prompt can run long while recording.
+			// Drain the post-tool continuation to `turnComplete` so the turn ends
+			// within this test's window. This is required for the shared replay
+			// server (all providers now reuse one server across the suite):
+			// returning mid-turn leaves the SDK query in flight, and its
+			// continuation HTTP call fires *after* the fixture is swapped for the
+			// next test — landing in that test's fixture window as an unrecorded
+			// call and failing the strict cache-miss check. Draining keeps every
+			// request/response inside the test that owns it. Replay serves the
+			// continuation from the fixture instantly; while recording it also
+			// lands that model call in the fixture. Bounded + best-effort: some
+			// providers' continuations for a trivial prompt can run long while
+			// recording.
 			try {
 				await client.waitForNotification(n =>
 					isActionNotification(n, 'chat/turnComplete') || isActionNotification(n, 'chat/error'),

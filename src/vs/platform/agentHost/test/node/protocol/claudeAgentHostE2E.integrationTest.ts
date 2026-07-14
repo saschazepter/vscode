@@ -77,6 +77,13 @@ const CLAUDE_CONFIG: IAgentHostE2EProviderConfig = {
 	// shared test's Copilot-flavoured prompt doesn't reliably drive Claude
 	// to invoke it. TODO: rework the prompt for Claude conventions.
 	supportsPlanMode: false,
+	// Reuse one server across the suite. The historical "Claude mid-turn
+	// dispose wedges the agent host" hazard dates from the live real-SDK era;
+	// in the deterministic replay suite there is no mid-turn dispose (the abort
+	// test is record-only and every turn drains to `turnComplete` before
+	// teardown), so a reused server stays clean. See "Server lifecycle" in the
+	// protocol README.
+	supportsSharedReplayServer: true,
 };
 
 defineAgentHostE2ETests(CLAUDE_CONFIG);
