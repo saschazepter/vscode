@@ -39,10 +39,12 @@ import { ActiveSessionContextKeys } from '../common/changes.js';
 import { IChangesViewService } from '../common/changesViewService.js';
 import { ChangesActionsBar, ChangesActionsBarActionViewItem, CHANGES_HEADER_ACTIONS_ID } from './changesView.js';
 import { SessionChangesEditorInput } from './sessionChangesEditorInput.js';
+import { CHANGESET_REVIEW_ACTION_ID, ChangesetReviewActionViewItem } from './changesetReviewActions.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { IAction } from '../../../../base/common/actions.js';
-import { IBaseActionViewItemOptions } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
+import { IActionViewItemOptions, IBaseActionViewItemOptions } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { IActionViewItem } from '../../../../base/browser/ui/actionbar/actionbar.js';
+import { MenuItemAction } from '../../../../platform/actions/common/actions.js';
 
 const HEADER_HEIGHT = 35;
 
@@ -78,6 +80,13 @@ class SessionChangesUIElementFactory implements IWorkbenchUIElementFactory {
 				label.dispose();
 			}
 		};
+	}
+
+	createToolbarActionViewItem(action: IAction, options: IActionViewItemOptions): IActionViewItem | undefined {
+		if (action.id === CHANGESET_REVIEW_ACTION_ID && action instanceof MenuItemAction) {
+			return this.instantiationService.createInstance(ChangesetReviewActionViewItem, action, options);
+		}
+		return undefined;
 	}
 }
 
