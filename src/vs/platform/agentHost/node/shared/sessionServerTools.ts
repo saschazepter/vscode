@@ -331,7 +331,7 @@ export function getCreateSessionArgs(rawArgs: unknown, sessions: readonly IAgent
 }
 
 /** Decodes the {@link SessionStatus} bit-flags into readable names for the agent. */
-function describeSessionStatus(status: SessionStatus): string {
+function describeSessionStatusBits(status: SessionStatus): string[] {
 	const names: string[] = [];
 	// `InputNeeded` is a superset of the `InProgress` bit, so it must be matched
 	// with an exact-bits check before falling back to plain `InProgress`.
@@ -348,8 +348,33 @@ function describeSessionStatus(status: SessionStatus): string {
 	if (status & SessionStatus.IsArchived) {
 		names.push('archived');
 	}
-	return names.join(',') || 'unknown';
+	return names;
 }
+
+/**
+ * Decodes a session's status into readable names, used by both filtering and
+ * serialization so they agree on which sessions are considered `archived`.
+ * This combines the {@link SessionStatus} bit-flags with the `isArchived`
+ * metadata flag (see {@link sessionIsArchived}), since a session can be
+ * archived through either mechanism.
+ */
+function describeSessionStatusNames(session: IAgentSessionMetadata): string[] {
+	const names = session.status !== undefined ? describeSessionStatusBits(session.status) : [];
+	if (sessionIsArchived(session) && !names.includes('archived')) {
+		names.push('archived');
+	}
+	return names;
+}
+
+/** Renders a session's status names as the compact string used in tool results. */
+function describeSessionStatus(session: IAgentSessionMetadata): string | undefined {
+	const names = describeSessionStatusNames(session);
+	if (names.length > 0) {
+		return names.join(',');
+	}
+	return session.status !== undefined ? 'unknown' : undefined;
+}
+
 
 /** Filters accepted by `list_sessions` to narrow the returned set. */
 export interface IListSessionsArgs {
@@ -454,12 +479,7 @@ export function filterSessions(sessions: readonly IAgentSessionMetadata[], args:
 	}
 	return sessions.filter(session => {
 		if (args.status) {
-			const names = session.status !== undefined ? describeSessionStatus(session.status).split(',') : [];
-			// `sessionIsArchived` also considers the metadata flag, which the
-			// status bit-flags alone (decoded above) do not always capture.
-			if (sessionIsArchived(session) && !names.includes('archived')) {
-				names.push('archived');
-			}
+			const names = describeSessionStatusNames(session);
 			if (!names.some(name => args.status!.has(name))) {
 				return false;
 			}
@@ -521,10 +541,11 @@ function serializeGitHubState(session: IAgentSessionMetadata): ISerializedGitHub
 function serializeSession(session: IAgentSessionMetadata): ISerializedSession {
 	const git = serializeGitState(session);
 	const github = serializeGitHubState(session);
+	const status = describeSessionStatus(session);
 	return {
 		session: session.session.toString(),
 		...(session.summary !== undefined ? { title: session.summary } : {}),
-		...(session.status !== undefined ? { status: describeSessionStatus(session.status) } : {}),
+		...(status !== undefined ? { status } : {}),
 		...(session.activity !== undefined ? { activity: session.activity } : {}),
 		...(session.workingDirectory !== undefined ? { workingDirectory: session.workingDirectory.toString() } : {}),
 		...(session.project !== undefined ? { project: session.project.displayName } : {}),
