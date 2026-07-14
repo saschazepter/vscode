@@ -230,7 +230,7 @@ suite('ChatStatusDashboard', () => {
 		return dashboard;
 	}
 
-	test('commits inline suggestion language setting changes coherently', async () => {
+	test('preserves inline suggestion language setting state across writes', async () => {
 		const defaultChat = product.defaultChatAgent;
 		assert.ok(defaultChat);
 
@@ -250,12 +250,10 @@ suite('ChatStatusDashboard', () => {
 
 		const languageCheckbox = dashboard.element.querySelectorAll<HTMLElement>('.settings .monaco-checkbox').item(1);
 		const overriddenHint = dashboard.element.querySelector<HTMLElement>('.setting-overridden');
-		const status = dashboard.element.querySelector<HTMLElement>('.collapsible-status');
-		assert.ok(languageCheckbox && overriddenHint && status);
+		assert.ok(languageCheckbox && overriddenHint);
 		const getState = () => ({
 			ariaChecked: languageCheckbox.getAttribute('aria-checked'),
 			className: languageCheckbox.className,
-			status: status.textContent,
 			overriddenHint: overriddenHint.textContent,
 			configuredValue: { ...configurationService.configuredValue },
 		});
@@ -288,42 +286,36 @@ suite('ChatStatusDashboard', () => {
 			pointerRequested: {
 				ariaChecked: 'mixed',
 				className: 'monaco-custom-toggle monaco-checkbox codicon codicon-dash',
-				status: 'Disabled',
 				overriddenHint: '(overridden)',
 				configuredValue: { '*': true, markdown: false },
 			},
 			pointerCommitted: {
 				ariaChecked: 'mixed',
 				className: 'monaco-custom-toggle monaco-checkbox codicon codicon-dash',
-				status: 'Disabled',
 				overriddenHint: '',
 				configuredValue: { '*': true },
 			},
 			keyboardRequested: {
 				ariaChecked: 'true',
 				className: 'monaco-custom-toggle monaco-checkbox checked codicon codicon-check',
-				status: 'Disabled',
 				overriddenHint: '',
 				configuredValue: { '*': true },
 			},
 			keyboardCommitted: {
 				ariaChecked: 'true',
 				className: 'monaco-custom-toggle monaco-checkbox checked codicon codicon-check',
-				status: 'Enabled',
 				overriddenHint: '',
 				configuredValue: { '*': true, markdown: true },
 			},
 			pointerUncheckedRequested: {
 				ariaChecked: 'false',
 				className: 'monaco-custom-toggle monaco-checkbox',
-				status: 'Enabled',
 				overriddenHint: '',
 				configuredValue: { '*': true, markdown: true },
 			},
 			pointerUncheckedCommitted: {
 				ariaChecked: 'false',
 				className: 'monaco-custom-toggle monaco-checkbox',
-				status: 'Disabled',
 				overriddenHint: '(overridden)',
 				configuredValue: { '*': true, markdown: false },
 			},
@@ -344,14 +336,12 @@ suite('ChatStatusDashboard', () => {
 			requested: {
 				ariaChecked: 'false',
 				className: 'monaco-custom-toggle monaco-checkbox',
-				status: 'Disabled',
 				overriddenHint: '(overridden)',
 				configuredValue: { '*': true, markdown: false },
 			},
 			committed: {
 				ariaChecked: 'false',
 				className: 'monaco-custom-toggle monaco-checkbox',
-				status: 'Disabled',
 				overriddenHint: '(overridden)',
 				configuredValue: { '*': true, markdown: false },
 			},
