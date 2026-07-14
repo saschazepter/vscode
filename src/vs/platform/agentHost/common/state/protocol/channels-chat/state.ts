@@ -926,19 +926,45 @@ export const enum ToolCallConfirmationReason {
 	Setting = 'setting',
 }
 
-export const enum ToolCallJudgeConfirmationReasonStatus {
+/**
+ * Identifies a model judge as the source of a confirmation requirement.
+ *
+ * @category Tool Call Types
+ */
+export const enum ToolCallRiskAssessmentKind {
+	Judge = 'judge',
+}
+
+/**
+ * Lifecycle status of an asynchronous model-judge confirmation decision.
+ *
+ * @category Tool Call Types
+ */
+export const enum ToolCallRiskAssessmentStatus {
 	Loading = 'loading',
 	Complete = 'complete',
 }
 
-export interface ToolCallJudgeConfirmationReasonLoadingState {
-	kind: 'judge';
-	status: ToolCallJudgeConfirmationReasonStatus.Loading;
+interface ToolCallRiskAssessmentBase {
+	kind: ToolCallRiskAssessmentKind;
 }
 
-export interface ToolCallJudgeConfirmationReasonCompleteState {
-	kind: 'judge';
-	status: ToolCallJudgeConfirmationReasonStatus.Complete;
+/**
+ * The model judge is still evaluating the tool call.
+ *
+ * @category Tool Call Types
+ */
+export interface ToolCallRiskAssessmentLoadingState extends ToolCallRiskAssessmentBase {
+	status: ToolCallRiskAssessmentStatus.Loading;
+}
+
+/**
+ * The model judge has completed its evaluation.
+ *
+ * @category Tool Call Types
+ */
+export interface ToolCallRiskAssessmentCompleteState extends ToolCallRiskAssessmentBase {
+	status: ToolCallRiskAssessmentStatus.Complete;
 	reason: StringOrMarkdown;
 	/**
 	 * The judge's normalized safety score, where `0` is unsafe and `1` is safe.
@@ -947,7 +973,9 @@ export interface ToolCallJudgeConfirmationReasonCompleteState {
 	safety: number;
 }
 
-export type ToolCallJudgeConfirmationReason = ToolCallJudgeConfirmationReasonLoadingState | ToolCallJudgeConfirmationReasonCompleteState;
+export type ToolCallRiskAssessment =
+	| ToolCallRiskAssessmentLoadingState
+	| ToolCallRiskAssessmentCompleteState;
 
 /**
  * Why a tool call was cancelled.
@@ -1115,8 +1143,8 @@ export interface ToolCallPendingConfirmationState extends ToolCallBase, ToolCall
 	status: ToolCallStatus.PendingConfirmation;
 	/** Short title for the confirmation prompt (e.g. `"Run in terminal"`, `"Write file"`) */
 	confirmationTitle?: StringOrMarkdown;
-	/** Why the tool requires user confirmation. */
-	confirmationReason?: ToolCallJudgeConfirmationReason;
+	/** Risk assessment that informed the confirmation requirement. */
+	riskAssessment?: ToolCallRiskAssessment;
 	/** File edits that this tool call will perform, for preview before confirmation */
 	edits?: { items: FileEdit[] };
 	/** Whether the agent host allows the client to edit the tool's input parameters before confirming */

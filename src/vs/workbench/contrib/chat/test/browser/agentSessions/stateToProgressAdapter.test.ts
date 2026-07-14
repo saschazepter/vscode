@@ -10,7 +10,7 @@ import { URI } from '../../../../../../base/common/uri.js';
 import type { IMarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { fromAgentHostUri, toAgentHostUri } from '../../../../../../platform/agentHost/common/agentHostUri.js';
-import { buildSubagentChatUri, MessageKind, ToolCallContributorKind, ToolCallJudgeConfirmationReasonStatus, ToolCallStatus, ToolCallConfirmationReason, ToolResultContentType, TurnState, ResponsePartKind, readUsageInfoMeta, type ActiveTurn, type ICompletedToolCall, type ToolCallRunningState, type Turn, type ToolCallResponsePart, ToolCallCancellationReason, type Message } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { buildSubagentChatUri, MessageKind, ToolCallContributorKind, ToolCallRiskAssessmentKind, ToolCallRiskAssessmentStatus, ToolCallStatus, ToolCallConfirmationReason, ToolResultContentType, TurnState, ResponsePartKind, readUsageInfoMeta, type ActiveTurn, type ICompletedToolCall, type ToolCallRunningState, type Turn, type ToolCallResponsePart, ToolCallCancellationReason, type Message } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { IChatToolInvocation, IChatToolInvocationSerialized, type IChatMarkdownContent, type IChatTerminalToolInvocationData, type IChatThinkingPart, type IChatUsage } from '../../../common/chatService/chatService.js';
 import { isToolResultInputOutputDetails, type IToolResultInputOutputDetails, ToolDataSource, ToolInvocationPresentation } from '../../../common/tools/languageModelToolsService.js';
 import { turnsToHistory as rawTurnsToHistory, activeTurnToProgress as rawActiveTurnToProgress, toolCallStateToInvocation as rawToolCallStateToInvocation, finalizeToolInvocation as rawFinalizeToolInvocation, updateRunningToolSpecificData as rawUpdateRunningToolSpecificData, usageInfoToAutoModeResolution, usageInfoToQuotas, formatTurnResponseDetails, rewriteAgentHostLinkTarget, rewriteMarkdownLinks, type TurnModelLookup } from '../../../browser/agentSessions/agentHost/stateToProgressAdapter.js';
@@ -1499,9 +1499,9 @@ suite('stateToProgressAdapter', () => {
 						invocationMessage: 'Run command',
 						status: ToolCallStatus.PendingConfirmation,
 						confirmationTitle: 'Run command',
-						confirmationReason: {
-							kind: 'judge',
-							status: ToolCallJudgeConfirmationReasonStatus.Complete,
+						riskAssessment: {
+							kind: ToolCallRiskAssessmentKind.Judge,
+							status: ToolCallRiskAssessmentStatus.Complete,
 							reason: 'The command removes a project file.',
 							safety: 0.15,
 						},
@@ -1530,9 +1530,9 @@ suite('stateToProgressAdapter', () => {
 				invocationMessage: 'Run command',
 				status: ToolCallStatus.PendingConfirmation,
 				confirmationTitle: 'Run command',
-				confirmationReason: {
-					kind: 'judge',
-					status: ToolCallJudgeConfirmationReasonStatus.Loading,
+				riskAssessment: {
+					kind: ToolCallRiskAssessmentKind.Judge,
+					status: ToolCallRiskAssessmentStatus.Loading,
 				},
 				toolInput: 'echo hello',
 			});
@@ -1551,9 +1551,9 @@ suite('stateToProgressAdapter', () => {
 				invocationMessage: 'Run command',
 				status: ToolCallStatus.PendingConfirmation,
 				confirmationTitle: 'Run command',
-				confirmationReason: {
-					kind: 'judge',
-					status: ToolCallJudgeConfirmationReasonStatus.Loading,
+				riskAssessment: {
+					kind: ToolCallRiskAssessmentKind.Judge,
+					status: ToolCallRiskAssessmentStatus.Loading,
 				},
 				toolInput: 'echo hello',
 			});

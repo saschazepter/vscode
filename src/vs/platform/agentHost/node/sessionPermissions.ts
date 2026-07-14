@@ -343,7 +343,7 @@ export class SessionPermissionManager extends Disposable {
 				invocationMessage: state.invocationMessage,
 				toolInput: state.toolInput,
 				confirmationTitle: state.confirmationTitle,
-				confirmationReason: state.confirmationReason,
+				riskAssessment: state.riskAssessment,
 				edits: state.edits,
 				editable: state.editable,
 				...(state._meta ? { _meta: state._meta } : {}),

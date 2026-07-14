@@ -365,7 +365,11 @@ export function chatReducer(state: ChatState, action: ChatAction, log?: (msg: st
 
 		case ActionType.ChatToolCallReady:
 			return refreshSummaryStatus(updateToolCallInParts(state, action.turnId, action.toolCallId, tc => {
-				if (tc.status !== ToolCallStatus.Streaming && tc.status !== ToolCallStatus.Running && tc.status !== ToolCallStatus.PendingConfirmation) {
+				if (
+					tc.status !== ToolCallStatus.Streaming
+					&& tc.status !== ToolCallStatus.Running
+					&& tc.status !== ToolCallStatus.PendingConfirmation
+				) {
 					return tc;
 				}
 				const base = tcBaseWithMeta(tc, action._meta);
@@ -378,16 +382,18 @@ export function chatReducer(state: ChatState, action: ChatAction, log?: (msg: st
 						confirmed: action.confirmed,
 					};
 				}
+				const pending = tc.status === ToolCallStatus.PendingConfirmation ? tc : undefined;
+				const options = action.options ?? pending?.options;
 				return {
 					status: ToolCallStatus.PendingConfirmation,
 					...base,
 					invocationMessage: action.invocationMessage,
-					toolInput: action.toolInput,
-					confirmationTitle: action.confirmationTitle,
-					confirmationReason: action.confirmationReason,
-					edits: action.edits,
-					editable: action.editable,
-					...(action.options ? { options: action.options } : {}),
+					toolInput: action.toolInput ?? pending?.toolInput,
+					confirmationTitle: action.confirmationTitle ?? pending?.confirmationTitle,
+					riskAssessment: action.riskAssessment ?? pending?.riskAssessment,
+					edits: action.edits ?? pending?.edits,
+					editable: action.editable ?? pending?.editable,
+					...(options ? { options } : {}),
 				};
 			}));
 

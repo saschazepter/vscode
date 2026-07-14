@@ -7,7 +7,7 @@ import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { changesetReducer, chatReducer, sessionReducer } from '../../common/state/protocol/reducers.js';
 import { ActionType } from '../../common/state/sessionActions.js';
-import { ChangesetStatus, ChangesetOperationStatus, CustomizationLoadStatus, MessageKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, ChatOriginKind, SessionLifecycle, SessionStatus, ToolCallConfirmationReason, ToolCallJudgeConfirmationReasonStatus, ResponsePartKind, ToolCallStatus, type AgentCustomization, type ChangesetState, type Customization, type PluginCustomization, type ChatState, type SessionState } from '../../common/state/sessionState.js';
+import { ChangesetStatus, ChangesetOperationStatus, CustomizationLoadStatus, MessageKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, ChatOriginKind, SessionLifecycle, SessionStatus, ToolCallConfirmationReason, ToolCallRiskAssessmentKind, ToolCallRiskAssessmentStatus, ResponsePartKind, ToolCallStatus, type AgentCustomization, type ChangesetState, type Customization, type PluginCustomization, type ChatState, type SessionState } from '../../common/state/sessionState.js';
 
 import { CustomizationType } from '../../common/state/protocol/state.js';
 
@@ -283,9 +283,11 @@ suite('chatReducer – summaryStatus with tool call confirmations and input requ
 			turnId: 'turn-1',
 			toolCallId: 'tc-1',
 			invocationMessage: 'Read file?',
-			confirmationReason: {
-				kind: 'judge',
-				status: ToolCallJudgeConfirmationReasonStatus.Loading,
+			confirmationTitle: 'Read file',
+			toolInput: '/foo.ts',
+			riskAssessment: {
+				kind: ToolCallRiskAssessmentKind.Judge,
+				status: ToolCallRiskAssessmentStatus.Loading,
 			},
 		});
 		const complete = chatReducer(loading, {
@@ -293,9 +295,9 @@ suite('chatReducer – summaryStatus with tool call confirmations and input requ
 			turnId: 'turn-1',
 			toolCallId: 'tc-1',
 			invocationMessage: 'Read file?',
-			confirmationReason: {
-				kind: 'judge',
-				status: ToolCallJudgeConfirmationReasonStatus.Complete,
+			riskAssessment: {
+				kind: ToolCallRiskAssessmentKind.Judge,
+				status: ToolCallRiskAssessmentStatus.Complete,
 				reason: 'This reads a sensitive file.',
 				safety: 0.2,
 			},
@@ -303,11 +305,19 @@ suite('chatReducer – summaryStatus with tool call confirmations and input requ
 		const part = complete.activeTurn?.responseParts.find(part => part.kind === ResponsePartKind.ToolCall && part.toolCall.toolCallId === 'tc-1');
 		assert.ok(part?.kind === ResponsePartKind.ToolCall && part.toolCall.status === ToolCallStatus.PendingConfirmation);
 
-		assert.deepStrictEqual(part.toolCall.confirmationReason, {
-			kind: 'judge',
-			status: ToolCallJudgeConfirmationReasonStatus.Complete,
-			reason: 'This reads a sensitive file.',
-			safety: 0.2,
+		assert.deepStrictEqual({
+			confirmationTitle: part.toolCall.confirmationTitle,
+			toolInput: part.toolCall.toolInput,
+			riskAssessment: part.toolCall.riskAssessment,
+		}, {
+			confirmationTitle: 'Read file',
+			toolInput: '/foo.ts',
+			riskAssessment: {
+				kind: ToolCallRiskAssessmentKind.Judge,
+				status: ToolCallRiskAssessmentStatus.Complete,
+				reason: 'This reads a sensitive file.',
+				safety: 0.2,
+			},
 		});
 	});
 });

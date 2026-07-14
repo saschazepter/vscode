@@ -11,7 +11,7 @@ import { Schemas } from '../../../../../../base/common/network.js';
 import { posix, win32 } from '../../../../../../base/common/path.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { generateUuid } from '../../../../../../base/common/uuid.js';
-import { buildSubagentChatUri, MessageKind, ToolCallContributorKind, ToolCallJudgeConfirmationReasonStatus, ToolCallStatus, TurnState, ResponsePartKind, getToolFileEdits, getToolOutputText, getToolSubagentContent, readUsageInfoMeta, type ActiveTurn, type ICompletedToolCall, type Message, type ToolCallPendingConfirmationState, type ToolCallState, type ToolResultSubagentContent, type Turn, FileEditKind, ToolResultContentType, type ToolResultContent, type UsageInfo, type UsageInfoMeta } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { buildSubagentChatUri, MessageKind, ToolCallContributorKind, ToolCallRiskAssessmentStatus, ToolCallStatus, TurnState, ResponsePartKind, getToolFileEdits, getToolOutputText, getToolSubagentContent, readUsageInfoMeta, type ActiveTurn, type ICompletedToolCall, type Message, type ToolCallPendingConfirmationState, type ToolCallState, type ToolResultSubagentContent, type Turn, FileEditKind, ToolResultContentType, type ToolResultContent, type UsageInfo, type UsageInfoMeta } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { getToolKind } from '../../../../../../platform/agentHost/common/state/sessionReducers.js';
 import { readToolCallMeta } from '../../../../../../platform/agentHost/common/meta/agentToolCallMeta.js';
 import { getChatErrorDetailsFromMeta, IChatErrorContext } from '../../../common/chatErrorMessages.js';
@@ -1860,15 +1860,15 @@ export function toolCallStateToInvocation(tc: ToolCallState, subAgentInvocationI
 }
 
 export function toolCallConfirmationMessages(tc: ToolCallPendingConfirmationState, connectionAuthority: string): IToolConfirmationMessages {
-	const confirmationReason = tc.confirmationReason;
+	const riskAssessment = tc.riskAssessment;
 	let approvalReason: IToolConfirmationMessages['approvalReason'];
-	if (confirmationReason?.status === ToolCallJudgeConfirmationReasonStatus.Loading) {
+	if (riskAssessment?.status === ToolCallRiskAssessmentStatus.Loading) {
 		approvalReason = { status: 'loading' };
-	} else if (confirmationReason?.status === ToolCallJudgeConfirmationReasonStatus.Complete) {
+	} else if (riskAssessment?.status === ToolCallRiskAssessmentStatus.Complete) {
 		approvalReason = {
 			status: 'complete',
-			explanation: stringOrMarkdownToString(confirmationReason.reason, connectionAuthority),
-			safety: confirmationReason.safety,
+			explanation: stringOrMarkdownToString(riskAssessment.reason, connectionAuthority),
+			safety: riskAssessment.safety,
 		};
 	}
 	return {

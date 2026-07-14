@@ -26,7 +26,7 @@ import { AgentFeedbackAttachmentDisplayKind } from '../../common/meta/agentFeedb
 import { IDiffComputeService } from '../../common/diffComputeService.js';
 import { ISessionDataService } from '../../common/sessionDataService.js';
 import { ActionType, type ChatDeltaAction, type ChatErrorAction, type ChatInputRequestedAction, type ChatResponsePartAction, type ChatToolCallCompleteAction, type ChatToolCallReadyAction, type ChatToolCallStartAction, type ChatTurnCompleteAction, type ChatUsageAction, type SessionAction } from '../../common/state/sessionActions.js';
-import { MessageAttachmentKind, MessageKind, ResponsePartKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, ToolCallConfirmationReason, ToolCallJudgeConfirmationReasonStatus, ToolCallContributorKind, ToolCallStatus, ToolResultContentType, buildDefaultChatUri, readUsageInfoMeta, type ToolDefinition, type ToolResultContent, type ToolResultFileEditContent, type UsageInfoMeta } from '../../common/state/sessionState.js';
+import { MessageAttachmentKind, MessageKind, ResponsePartKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, ToolCallConfirmationReason, ToolCallRiskAssessmentKind, ToolCallRiskAssessmentStatus, ToolCallContributorKind, ToolCallStatus, ToolResultContentType, buildDefaultChatUri, readUsageInfoMeta, type ToolDefinition, type ToolResultContent, type ToolResultFileEditContent, type UsageInfoMeta } from '../../common/state/sessionState.js';
 import { CustomizationType, McpAuthRequiredReason, McpServerStatus } from '../../common/state/protocol/channels-session/state.js';
 import { CopilotAgentSession } from '../../node/copilot/copilotAgentSession.js';
 import { ActiveClientToolSet } from '../../node/activeClientState.js';
@@ -2054,9 +2054,9 @@ suite('CopilotAgentSession', () => {
 				toolCallId: 'tc-assisted-prompt',
 			});
 			const confirmation = await waitForSignal(signal => signal.kind === 'pending_confirmation');
-			assert.deepStrictEqual(confirmation.kind === 'pending_confirmation' ? confirmation.state.confirmationReason : undefined, {
-				kind: 'judge',
-				status: ToolCallJudgeConfirmationReasonStatus.Complete,
+			assert.deepStrictEqual(confirmation.kind === 'pending_confirmation' ? confirmation.state.riskAssessment : undefined, {
+				kind: ToolCallRiskAssessmentKind.Judge,
+				status: ToolCallRiskAssessmentStatus.Complete,
 				reason: 'Needs confirmation',
 				safety: 0,
 			});
@@ -2102,7 +2102,7 @@ suite('CopilotAgentSession', () => {
 				requestSandboxBypass: true,
 			});
 			const confirmation = await waitForSignal(signal => signal.kind === 'pending_confirmation');
-			assert.strictEqual(confirmation.kind === 'pending_confirmation' ? confirmation.state.confirmationReason : undefined, undefined);
+			assert.strictEqual(confirmation.kind === 'pending_confirmation' ? confirmation.state.riskAssessment : undefined, undefined);
 			assert.ok(session.respondToPermissionRequest('tc-assisted-bypass', false));
 
 			assert.strictEqual((await resultPromise).kind, 'reject');
