@@ -76,6 +76,9 @@ function createAgentFeedbackService(): IAgentFeedbackService {
 		override getFeedback() {
 			return [];
 		}
+		override getNavigationBearing() {
+			return { activeIdx: -1, totalCount: 0 };
+		}
 	}();
 }
 
