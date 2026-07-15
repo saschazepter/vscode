@@ -243,7 +243,7 @@ export class AutomationsCardsWidget extends Disposable {
 			case 'daily': return localize('scheduleDaily', "Runs daily");
 			case 'weekly': return localize('scheduleWeekly', "Runs weekly");
 			case 'manual': return localize('scheduleManual', "Manual only");
-			default: return String(interval);
+			default: return localize('scheduleManual', "Manual only");
 		}
 	}
 
