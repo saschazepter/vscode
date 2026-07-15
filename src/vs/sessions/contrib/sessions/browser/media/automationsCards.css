@@ -139,7 +139,9 @@
 	flex-wrap: wrap;
 }
 
-.automations-card-meta-sep {
+.automations-card-meta-item + .automations-card-meta-item::before {
+	content: '·';
+	margin-right: 6px;
 	opacity: 0.6;
 }
 

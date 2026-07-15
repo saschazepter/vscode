@@ -74,8 +74,6 @@ export class AutomationsCardsWidget extends Disposable {
 
 	private renderHeader(): void {
 		const titleRow = DOM.append(this.headerEl, $('.automations-cards-header-row'));
-		const iconEl = DOM.append(titleRow, $('span.automations-cards-header-icon'));
-		iconEl.classList.add(...ThemeIcon.asClassNameArray(automationIcon));
 		const titleEl = DOM.append(titleRow, $('span.automations-cards-header-title'));
 		titleEl.textContent = localize('automationsTitle', "Automations");
 
@@ -157,22 +155,16 @@ export class AutomationsCardsWidget extends Disposable {
 
 		// Metadata row (schedule · folder · last run)
 		const metaEl = DOM.append(main, $('.automations-card-meta'));
-		const scheduleEl = DOM.append(metaEl, $('span'));
+		const scheduleEl = DOM.append(metaEl, $('span.automations-card-meta-item'));
 		scheduleEl.textContent = this.formatSchedule(automation);
 
-		const sep1 = DOM.append(metaEl, $('span.automations-card-meta-sep'));
-		sep1.textContent = '·';
-
-		const folderEl = DOM.append(metaEl, $('span'));
+		const folderEl = DOM.append(metaEl, $('span.automations-card-meta-item'));
 		folderEl.textContent = basename(automation.folderUri);
 
 		const runs = this.automationService.runsFor(automation.id);
 		const latestRun = runs.get()[0];
 		if (latestRun) {
-			const sep2 = DOM.append(metaEl, $('span.automations-card-meta-sep'));
-			sep2.textContent = '·';
-
-			const lastRunEl = DOM.append(metaEl, $('span.automations-card-last-run'));
+			const lastRunEl = DOM.append(metaEl, $('span.automations-card-meta-item.automations-card-last-run'));
 			lastRunEl.textContent = this.formatLastRun(latestRun);
 			lastRunEl.classList.toggle('automations-card-run-failed', latestRun.status === 'failed');
 			lastRunEl.classList.toggle('automations-card-run-success', latestRun.status === 'completed');
@@ -242,8 +234,8 @@ export class AutomationsCardsWidget extends Disposable {
 			case 'hourly': return localize('scheduleHourly', "Runs hourly");
 			case 'daily': return localize('scheduleDaily', "Runs daily");
 			case 'weekly': return localize('scheduleWeekly', "Runs weekly");
-			case 'manual': return localize('scheduleManual', "Manual only");
-			default: return localize('scheduleManual', "Manual only");
+			case 'manual': return localize('scheduleManual', "Manual");
+			default: return localize('scheduleManual', "Manual");
 		}
 	}
 
