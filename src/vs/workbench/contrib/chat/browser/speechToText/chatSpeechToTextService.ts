@@ -3,8 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable } from '../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
+import { VSBuffer } from '../../../../../base/common/buffer.js';
+import { joinPath } from '../../../../../base/common/resources.js';
 import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IContextKey, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
@@ -16,6 +18,8 @@ import { IProductService } from '../../../../../platform/product/common/productS
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IStorageService, StorageScope } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
+import { IEnvironmentService } from '../../../../../platform/environment/common/environment.js';
+import { ILocalTranscriptionService } from '../../../../../platform/localTranscription/common/localTranscription.js';
 import { AgentsVoiceStorageKeys } from '../../../agentsVoice/common/agentsVoice.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 
@@ -116,8 +120,18 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private _processorNode: ScriptProcessorNode | undefined;
 	private _socket: WebSocket | undefined;
 
+	/** True while the active session uses the on-device (local model) path. */
+	private _useLocal = false;
+	private readonly _localSessionDisposables = this._register(new DisposableStore());
+
 	get isConfigured(): boolean {
-		return this._configurationService.getValue<boolean>(ENABLED_SETTING) !== false && !!this._getServerUrl();
+		if (this._configurationService.getValue<boolean>(ENABLED_SETTING) === false) {
+			return false;
+		}
+		// On-device transcription (when available) needs no configuration — the
+		// model downloads on first use. Otherwise fall back to a configured
+		// cloud backend URL.
+		return this._localTranscription.isSupported || !!this._getServerUrl();
 	}
 
 	/** Finalized (committed) utterances, space-joined. */
@@ -143,6 +157,8 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		@IDefaultAccountService private readonly _defaultAccountService: IDefaultAccountService,
 		@IStorageService private readonly _storageService: IStorageService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
+		@IEnvironmentService private readonly _environmentService: IEnvironmentService,
+		@ILocalTranscriptionService private readonly _localTranscription: ILocalTranscriptionService,
 	) {
 		super();
 		this._recordingContextKey = ChatContextKeys.speechToTextRecording.bindTo(contextKeyService);
@@ -192,8 +208,12 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			return;
 		}
 
-		const serverUrl = this._getServerUrl();
-		if (!serverUrl) {
+		if (this._configurationService.getValue<boolean>(ENABLED_SETTING) === false) {
+			return;
+		}
+
+		this._useLocal = this._localTranscription.isSupported;
+		if (!this._useLocal && !this._getServerUrl()) {
 			this._notificationService.notify({
 				severity: Severity.Warning,
 				message: localize('chatStt.notConfigured', "Speech-to-text is not configured. Set chat.speechToText.serverUrl to your transcription backend."),
@@ -221,18 +241,41 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		this._mediaStream = stream;
 
 		try {
-			await this._openSocket(serverUrl, window);
+			if (this._useLocal) {
+				await this._startLocalSession();
+			} else {
+				await this._openSocket(this._getServerUrl(), window);
+			}
 		} catch (err) {
 			this._teardown();
 			this._sessionErrorCode = this._sessionErrorCode || 'connect';
 			this._logSessionTelemetry('error');
-			this._logService.error('[chat-stt] failed to connect to transcription backend', err);
-			this._notificationService.error(localize('chatStt.connectError', "Could not connect to the speech-to-text backend: {0}", toErrorMessage(err)));
+			this._logService.error('[chat-stt] failed to start transcription', err);
+			this._notificationService.error(localize('chatStt.connectError', "Could not start speech-to-text: {0}", toErrorMessage(err)));
 			throw err;
 		}
 
 		this._startCapture(window, stream);
 		this._setState(ChatSpeechToTextState.Recording);
+	}
+
+	/**
+	 * Begin an on-device transcription session in the utility process and pipe
+	 * its interim/final results onto the shared cumulative-transcript surface.
+	 */
+	private async _startLocalSession(): Promise<void> {
+		const local = this._localTranscription;
+		this._localSessionDisposables.add(local.onDidTranscribe(result => {
+			// The local service returns the full cumulative transcript each time.
+			this._finalizedText = result.text;
+			this._deltaText = '';
+			if (!result.isFinal) {
+				this._sessionSegments++;
+			}
+			this._onDidUpdateTranscript.fire(this._transcript);
+		}));
+		const cacheDir = joinPath(this._environmentService.cacheHome, 'chatDictationModels').fsPath;
+		await local.start({ cacheDir });
 	}
 
 	async stopAndTranscribe(): Promise<string | undefined> {
@@ -242,6 +285,23 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 
 		this._setState(ChatSpeechToTextState.Transcribing);
 		this._stopCapture();
+
+		if (this._useLocal) {
+			let text = this._transcript;
+			try {
+				const finalText = await this._localTranscription.stop();
+				if (finalText) {
+					text = finalText;
+				}
+			} catch (err) {
+				this._sessionErrorCode = this._sessionErrorCode || 'transcribe';
+				this._logService.error('[chat-stt] on-device final transcription failed', err);
+			}
+			this._logSessionTelemetry(this._sessionErrorCode ? 'error' : 'completed');
+			this._teardown();
+			this._setState(ChatSpeechToTextState.Idle);
+			return text || undefined;
+		}
 
 		// Ask the backend to flush the final utterance, then wait for it to
 		// close (bounded) so the last `segment` lands before we return.
@@ -268,6 +328,9 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 
 	cancel(): void {
 		this._logSessionTelemetry('cancelled');
+		if (this._useLocal) {
+			this._localTranscription.cancel();
+		}
 		this._teardown();
 		this._finalizedText = '';
 		this._deltaText = '';
@@ -362,11 +425,15 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		this._processorNode = processor;
 
 		processor.onaudioprocess = e => {
+			const samples = e.inputBuffer.getChannelData(0);
+			if (this._useLocal) {
+				this._localTranscription.pushAudio(encodeRawPcm16Buffer(samples));
+				return;
+			}
 			const socket = this._socket;
 			if (!socket || socket.readyState !== socket.OPEN) {
 				return;
 			}
-			const samples = e.inputBuffer.getChannelData(0);
 			socket.send(JSON.stringify({ type: 'audio', data: encodeRawPcm16Base64(samples, window) }));
 		};
 
@@ -390,6 +457,8 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 
 	private _teardown(): void {
 		this._stopCapture();
+		this._localSessionDisposables.clear();
+		this._useLocal = false;
 		if (this._socket) {
 			this._socket.onopen = null;
 			this._socket.onmessage = null;
@@ -471,6 +540,16 @@ function encodeRawPcm16Base64(samples: Float32Array, win: Window & typeof global
 		binaryStr += String.fromCharCode(bytes[i]);
 	}
 	return win.btoa(binaryStr);
+}
+
+function encodeRawPcm16Buffer(samples: Float32Array): VSBuffer {
+	const bytes = new Uint8Array(samples.length * 2);
+	const view = new DataView(bytes.buffer);
+	for (let i = 0; i < samples.length; i++) {
+		const s = Math.max(-1, Math.min(1, samples[i]));
+		view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+	}
+	return VSBuffer.wrap(bytes);
 }
 
 function timeout(ms: number): Promise<void> {
