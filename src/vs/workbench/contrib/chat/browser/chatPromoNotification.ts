@@ -13,6 +13,7 @@ import { ChatInputNotificationActionKind, ChatInputNotificationSeverity, IChatIn
 
 const PROMO_NOTIFICATION_ID = 'copilot.promoNotification';
 const DISMISSED_PROMOS_STORAGE_KEY = 'chat.dismissedPromoIds';
+const DISABLE_PROMO_DISMISSAL_PERSISTENCE = true;
 
 /**
  * Watches for models with active promotions and surfaces a chat input
@@ -112,6 +113,9 @@ export class ChatPromoNotificationContribution extends Disposable implements IWo
 	}
 
 	private _persistDismissedPromo(promoId: string): void {
+		if (DISABLE_PROMO_DISMISSAL_PERSISTENCE) {
+			return;
+		}
 		const dismissed = this._getDismissedPromoIds();
 		if (dismissed.has(promoId)) {
 			return;
@@ -126,6 +130,9 @@ export class ChatPromoNotificationContribution extends Disposable implements IWo
 	}
 
 	private _getDismissedPromoIds(): Set<string> {
+		if (DISABLE_PROMO_DISMISSAL_PERSISTENCE) {
+			return new Set();
+		}
 		const raw = this._storageService.get(DISMISSED_PROMOS_STORAGE_KEY, StorageScope.APPLICATION);
 		if (!raw) {
 			return new Set();

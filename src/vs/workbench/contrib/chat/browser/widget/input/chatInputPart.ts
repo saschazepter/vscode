@@ -29,7 +29,7 @@ import { ResourceSet } from '../../../../../../base/common/map.js';
 import { MarshalledId } from '../../../../../../base/common/marshallingIds.js';
 import { Schemas } from '../../../../../../base/common/network.js';
 import { mixin } from '../../../../../../base/common/objects.js';
-import { autorun, constObservable, derived, derivedOpts, IObservable, ISettableObservable, observableFromEvent, observableValue } from '../../../../../../base/common/observable.js';
+import { autorun, constObservable, derived, derivedOpts, IObservable, ISettableObservable, ITransaction, observableFromEvent, observableValue, transaction } from '../../../../../../base/common/observable.js';
 import { isMacintosh } from '../../../../../../base/common/platform.js';
 import { isEqual } from '../../../../../../base/common/resources.js';
 import { ScrollbarVisibility } from '../../../../../../base/common/scrollable.js';
@@ -663,8 +663,19 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	 * therefore cannot tell an explicit pick from a restored default.
 	 */
 	private _userExplicitlySelectedModel = false;
-	private _pendingDelegationTarget: AgentSessionTarget | undefined = undefined;
-	private _currentSessionType: string | undefined = undefined;
+	private readonly _pendingDelegationTargetObservable = observableValue<AgentSessionTarget | undefined>(this, undefined);
+	private get _pendingDelegationTarget(): AgentSessionTarget | undefined { return this._pendingDelegationTargetObservable.get(); }
+	private set _pendingDelegationTarget(value: AgentSessionTarget | undefined) { this._pendingDelegationTargetObservable.set(value, undefined); }
+
+	private readonly _currentSessionTypeObservable = observableValue<string | undefined>(this, undefined);
+	private get _currentSessionType(): string | undefined { return this._currentSessionTypeObservable.get(); }
+	private set _currentSessionType(value: string | undefined) { this._currentSessionTypeObservable.set(value, undefined); }
+
+	private readonly _notificationModelTargetChatSessionType = derived(this, reader =>
+		this._pendingDelegationTargetObservable.read(reader)
+		?? this._currentSessionTypeObservable.read(reader)
+		?? this.getCurrentSessionType()
+	);
 	/**
 	 * Decisions for the session switch currently being wired through the input.
 	 * The object's presence does not mean persistence is suppressed or a restore is required; read its fields for those decisions.
@@ -767,9 +778,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 				this.checkModeInSessionPool(newSessionType);
 				this.revalidateModelForSessionType();
 				this.refreshChatSessionPickers();
-				// Re-evaluate session-type-gated input notifications (e.g. the
-				// Open-in-Agents-Window tip) when the user changes mode.
-				this._notificationWidget.value?.rerender();
 			}));
 		}
 
@@ -1951,10 +1959,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		return this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.();
 	}
 
-	private getNotificationModelTargetChatSessionType(): string | undefined {
-		return this._pendingDelegationTarget ?? this._currentSessionType ?? this.getCurrentSessionType();
-	}
-
 	private isModelValidForCurrentSession(model: ILanguageModelChatMetadataAndIdentifier): boolean {
 		return isModelValidForSession(model, this.getAllMergedModels(), this.getCurrentSessionType());
 	}
@@ -2903,7 +2907,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		this.updateWidgetLockStateFromSessionType(provider);
 		this.updateAgentSessionTypeContextKey();
 		this.refreshChatSessionPickers();
-		this._notificationWidget.value?.rerender();
 	}
 
 	/**
@@ -2918,7 +2921,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			// the user creates a session and `sessionTypes`-gated
 			// notifications never render.
 			this._notificationWidget.value = this.instantiationService.createInstance(ChatInputNotificationWidget, {
-				getModelTargetChatSessionType: () => this.getNotificationModelTargetChatSessionType(),
+				modelTargetChatSessionType: this._notificationModelTargetChatSessionType,
 				openModelPicker: () => this.openModelPicker(),
 				switchToModel: modelIdentifier => this.switchModelByIdentifier(modelIdentifier, /* storeSelection */ true, /* isUserAction */ true),
 			});
@@ -2998,27 +3001,29 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	}
 
 	private handleViewModelChange(e: IChatWidgetViewModelChangeEvent): void {
-		try {
-			this.updateInputEditorFontFamily();
-			this.resetPendingDelegationForViewModelChange();
-			this.refreshViewModelScopedState();
-			this.clearQuestionCarouselIfSessionChanged(e);
-			this.clearPlanReviewIfSessionChanged(e);
-			// Swap the visible tool confirmation carousel for the new session
-			this._syncToolConfirmationCarouselForSession();
-			this.reconcileSessionTypeForViewModelChange(e);
-			// For contributed sessions with history, pre-select the model
-			// from the last request so the user resumes with the same model.
-			this.preselectModelFromSessionHistory();
-		} finally {
-			// Always finish the session switch, even on an exception before this point, so an
-			// explicit user model pick after the switch persists normally.
-			this._modelSelectionSessionSwitch = undefined;
-		}
+		transaction(observableTransaction => {
+			try {
+				this.updateInputEditorFontFamily();
+				this.resetPendingDelegationForViewModelChange(observableTransaction);
+				this.refreshViewModelScopedState();
+				this.clearQuestionCarouselIfSessionChanged(e);
+				this.clearPlanReviewIfSessionChanged(e);
+				// Swap the visible tool confirmation carousel for the new session
+				this._syncToolConfirmationCarouselForSession();
+				this.reconcileSessionTypeForViewModelChange(e, observableTransaction);
+				// For contributed sessions with history, pre-select the model
+				// from the last request so the user resumes with the same model.
+				this.preselectModelFromSessionHistory();
+			} finally {
+				// Always finish the session switch, even on an exception before this point, so an
+				// explicit user model pick after the switch persists normally.
+				this._modelSelectionSessionSwitch = undefined;
+			}
+		});
 	}
 
-	private resetPendingDelegationForViewModelChange(): void {
-		this._pendingDelegationTarget = undefined;
+	private resetPendingDelegationForViewModelChange(transaction: ITransaction): void {
+		this._pendingDelegationTargetObservable.set(undefined, transaction);
 		this.chatHasPendingDelegationTargetKey.set(false);
 	}
 
@@ -3060,21 +3065,20 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		}
 	}
 
-	private reconcileSessionTypeForViewModelChange(e: IChatWidgetViewModelChangeEvent): void {
+	private reconcileSessionTypeForViewModelChange(e: IChatWidgetViewModelChangeEvent, transaction: ITransaction): void {
 		// Track the current session type and re-initialize model selection
 		// when the session type changes (different session types may have
 		// different model pools via targetChatSessionType).
 		const newSessionType = this.getCurrentSessionType();
 		if (e.currentSessionResource && this._currentSessionType && newSessionType !== this._currentSessionType) {
 			logChangesToStateModel(this._inputModel, `[CVVM].1 onDidChangeViewModel -> session change: ${this._currentSessionType} -> ${newSessionType} in ${this._currentSessionKey}, ${e.currentSessionResource.toString()}`, undefined, this._inputModel?.state.get(), this.logService);
-			this._currentSessionType = newSessionType;
+			this._currentSessionTypeObservable.set(newSessionType, transaction);
 			this.initSelectedModel();
 			this.checkModelInSessionPool();
 			this.checkModeInSessionPool();
-			this._notificationWidget.value?.rerender();
 		} else if (e.currentSessionResource) {
 			logChangesToStateModel(this._inputModel, `[CVVM].2 onDidChangeViewModel -> session change: ${this._currentSessionType} -> ${newSessionType} in ${this._currentSessionKey}, ${e.currentSessionResource.toString()}`, undefined, this._inputModel?.state.get(), this.logService);
-			this._currentSessionType = newSessionType;
+			this._currentSessionTypeObservable.set(newSessionType, transaction);
 			this.restorePerTypeModelAfterViewModelAssignment();
 		}
 	}

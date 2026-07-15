@@ -10,6 +10,7 @@ import { WorkbenchActionExecutedClassification, WorkbenchActionExecutedEvent } f
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { isMarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { Disposable, DisposableStore } from '../../../../../../base/common/lifecycle.js';
+import { autorun, IObservable } from '../../../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { localize } from '../../../../../../nls.js';
 import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
@@ -61,7 +62,7 @@ const severityToIcon: Record<ChatInputNotificationSeverity, ThemeIcon> = {
 
 /** Input-local capabilities used to filter and execute semantic notification actions. */
 export interface IChatInputNotificationDelegate {
-	readonly getModelTargetChatSessionType?: () => string | undefined;
+	readonly modelTargetChatSessionType?: IObservable<string | undefined>;
 	readonly openModelPicker?: () => void;
 	/** Returns false to open this input's model picker as a fallback. */
 	readonly switchToModel?: (modelIdentifier: string) => boolean | Promise<boolean>;
@@ -78,6 +79,7 @@ export class ChatInputNotificationWidget extends Disposable {
 
 	private readonly _contentDisposables = this._register(new DisposableStore());
 	private _lastShownTelemetryData: ChatInputNotificationTelemetryEvent | undefined;
+	private _modelTargetChatSessionType: string | undefined;
 
 	constructor(
 		private readonly _delegate: IChatInputNotificationDelegate | undefined,
@@ -93,12 +95,10 @@ export class ChatInputNotificationWidget extends Disposable {
 		this.domNode = $('.chat-input-notification-widget');
 
 		this._register(this._notificationService.onDidChange(() => this._render()));
-		this._render();
-	}
-
-	/** Re-evaluates which notification (if any) to display. Safe to call externally when the owner's model target changes. */
-	rerender(): void {
-		this._render();
+		this._register(autorun(reader => {
+			this._modelTargetChatSessionType = this._delegate?.modelTargetChatSessionType?.read(reader);
+			this._render();
+		}));
 	}
 
 	private _render(): void {
@@ -121,7 +121,7 @@ export class ChatInputNotificationWidget extends Disposable {
 	}
 
 	private _matchesSession(notification: IChatInputNotification): boolean {
-		return isChatInputNotificationApplicableToSessionType(notification, this._delegate?.getModelTargetChatSessionType?.());
+		return isChatInputNotificationApplicableToSessionType(notification, this._modelTargetChatSessionType);
 	}
 
 	private _renderNotification(notification: IChatInputNotification): void {
@@ -269,14 +269,15 @@ export class ChatInputNotificationWidget extends Disposable {
 				} catch (error) {
 					this._logActionError(error);
 				}
-				return;
+				break;
 			case ChatInputNotificationActionKind.OpenModelPicker:
 				this._openModelPicker();
-				return;
+				break;
 			case ChatInputNotificationActionKind.SwitchToModel:
 				await this._switchToModel(action.modelIdentifier);
-				return;
+				break;
 		}
+		this._notificationService.dismissNotification(notification.id);
 	}
 
 	private async _switchToModel(modelIdentifier: string): Promise<void> {

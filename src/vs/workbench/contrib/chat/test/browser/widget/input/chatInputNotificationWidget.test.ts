@@ -6,6 +6,7 @@
 import assert from 'assert';
 import { Emitter, Event } from '../../../../../../../base/common/event.js';
 import { IDisposable } from '../../../../../../../base/common/lifecycle.js';
+import { constObservable, observableValue } from '../../../../../../../base/common/observable.js';
 import { URI } from '../../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../../base/test/common/utils.js';
 import { ICommandEvent, ICommandService } from '../../../../../../../platform/commands/common/commands.js';
@@ -77,15 +78,15 @@ suite('ChatInputNotificationWidget', () => {
 		return notificationService;
 	}
 
-	test('rerender applies session type filter when pending delegation target changes', () => {
-		let currentSessionType = localChatSessionType;
+	test('reactively applies session type filter when pending delegation target changes', () => {
+		const currentSessionType = observableValue<string | undefined>('currentSessionType', localChatSessionType);
 		const notificationService = createNotificationService();
 		const instantiationService = store.add(workbenchInstantiationService(undefined, store));
 		instantiationService.stub(IChatInputNotificationService, notificationService);
 		instantiationService.stub(ICommandService, new TestCommandService());
 		instantiationService.stub(ITelemetryService, NullTelemetryService);
 
-		const widget = store.add(instantiationService.createInstance(ChatInputNotificationWidget, { getModelTargetChatSessionType: () => currentSessionType }));
+		const widget = store.add(instantiationService.createInstance(ChatInputNotificationWidget, { modelTargetChatSessionType: currentSessionType }));
 
 		notificationService.setNotification({
 			id: 'local-only',
@@ -100,12 +101,10 @@ suite('ChatInputNotificationWidget', () => {
 
 		assert.strictEqual(widget.domNode.querySelector('.chat-input-notification')?.textContent, 'Local only');
 
-		currentSessionType = SessionType.AgentHostCopilot;
-		widget.rerender();
+		currentSessionType.set(SessionType.AgentHostCopilot, undefined);
 		assert.strictEqual(widget.domNode.querySelector('.chat-input-notification'), null);
 
-		currentSessionType = localChatSessionType;
-		widget.rerender();
+		currentSessionType.set(localChatSessionType, undefined);
 		assert.strictEqual(widget.domNode.querySelector('.chat-input-notification')?.textContent, 'Local only');
 	});
 
@@ -188,7 +187,7 @@ suite('ChatInputNotificationWidget', () => {
 		instantiationService.stub(ICommandService, commandService);
 		instantiationService.stub(ITelemetryService, NullTelemetryService);
 
-		const widget = store.add(instantiationService.createInstance(ChatInputNotificationWidget, { getModelTargetChatSessionType: () => localChatSessionType }));
+		const widget = store.add(instantiationService.createInstance(ChatInputNotificationWidget, { modelTargetChatSessionType: constObservable(localChatSessionType) }));
 
 		notificationService.set({
 			id: 'promo',
@@ -217,7 +216,7 @@ suite('ChatInputNotificationWidget', () => {
 		instantiationService.stub(ICommandService, commandService);
 		instantiationService.stub(ITelemetryService, NullTelemetryService);
 
-		const widget = store.add(instantiationService.createInstance(ChatInputNotificationWidget, { getModelTargetChatSessionType: () => localChatSessionType }));
+		const widget = store.add(instantiationService.createInstance(ChatInputNotificationWidget, { modelTargetChatSessionType: constObservable(localChatSessionType) }));
 
 		notificationService.set({
 			id: 'info',
@@ -382,7 +381,7 @@ suite('ChatInputNotificationWidget', () => {
 	test('matches Agent Host notifications against the resource scheme', () => {
 		const sessionResource = URI.from({ scheme: 'agent-host-copilotcli', path: '/untitled-session' });
 		const { notificationService, widget } = createWidget({
-			delegate: { getModelTargetChatSessionType: () => getChatSessionType(sessionResource) },
+			delegate: { modelTargetChatSessionType: constObservable(getChatSessionType(sessionResource)) },
 		});
 
 		showNotification(notificationService, {
@@ -396,7 +395,7 @@ suite('ChatInputNotificationWidget', () => {
 	});
 
 	test('announces only the notification rendered in the current session', () => {
-		let currentSessionType = localChatSessionType;
+		const currentSessionType = observableValue<string | undefined>('currentSessionType', localChatSessionType);
 		const notificationService = createRecordingNotificationService();
 
 		const instantiationService = store.add(workbenchInstantiationService(undefined, store));
@@ -404,7 +403,7 @@ suite('ChatInputNotificationWidget', () => {
 		instantiationService.stub(ICommandService, new TestCommandService());
 		instantiationService.stub(ITelemetryService, NullTelemetryService);
 
-		const widget = store.add(instantiationService.createInstance(ChatInputNotificationWidget, { getModelTargetChatSessionType: () => currentSessionType }));
+		store.add(instantiationService.createInstance(ChatInputNotificationWidget, { modelTargetChatSessionType: currentSessionType }));
 		const lastAnnounced = () => notificationService.announced[notificationService.announced.length - 1];
 
 		// A promo scoped to the Copilot harness must not be announced while the
@@ -421,8 +420,7 @@ suite('ChatInputNotificationWidget', () => {
 		});
 		assert.strictEqual(lastAnnounced(), undefined, 'nothing should be announced in a non-matching session');
 
-		currentSessionType = SessionType.AgentHostCopilot;
-		widget.rerender();
+		currentSessionType.set(SessionType.AgentHostCopilot, undefined);
 		assert.strictEqual(lastAnnounced()?.id, 'copilot-promo', 'the promo should be announced once its session is active');
 	});
 });
