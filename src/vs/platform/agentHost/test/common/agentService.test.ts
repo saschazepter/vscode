@@ -7,8 +7,9 @@ import assert from 'assert';
 import { URI } from '../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { IConfigurationService } from '../../../configuration/common/configuration.js';
-import { AgentHostByokModelsEnabledEnvVar, AgentSession, AgentHostOTelEnvVars, buildAgentHostOTelEnv, buildAgentSdkEnv, isAgentEnabled, readAgentHostOTelPolicySettings, sanitizeAgentHostOTelPolicySettings } from '../../common/agentService.js';
+import { AgentHostByokModelsEnabledEnvVar, AgentSession, AgentHostOTelEnvVars, buildAgentHostOTelEnv, buildAgentSdkEnv, ClaudePreferAgentHostAgentsSettingId, ClaudePreferAgentHostEditorSettingId, CodexPreferAgentHostAgentsSettingId, CodexPreferAgentHostEditorSettingId, isAgentEnabled, readAgentHostOTelPolicySettings, sanitizeAgentHostOTelPolicySettings, shouldSurfaceLocalAgentHostProvider } from '../../common/agentService.js';
 import { buildChatUri, buildDefaultChatUri, resolveChatUri } from '../../common/state/sessionState.js';
+import { TestConfigurationService } from '../../../configuration/test/common/testConfigurationService.js';
 
 suite('AgentSession namespace', () => {
 
@@ -67,6 +68,34 @@ suite('isAgentEnabled', () => {
 			assert.strictEqual(isAgentEnabled(envValue, defaultEnabled), expected);
 		});
 	}
+});
+
+suite('shouldSurfaceLocalAgentHostProvider', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('uses provider- and window-specific preferences', () => {
+		const configurationService = new TestConfigurationService({
+			[ClaudePreferAgentHostAgentsSettingId]: true,
+			[ClaudePreferAgentHostEditorSettingId]: false,
+			[CodexPreferAgentHostAgentsSettingId]: false,
+			[CodexPreferAgentHostEditorSettingId]: true,
+		});
+
+		assert.deepStrictEqual({
+			agentsClaude: shouldSurfaceLocalAgentHostProvider('claude', configurationService, true),
+			editorClaude: shouldSurfaceLocalAgentHostProvider('claude', configurationService, false),
+			agentsCodex: shouldSurfaceLocalAgentHostProvider('codex', configurationService, true),
+			editorCodex: shouldSurfaceLocalAgentHostProvider('codex', configurationService, false),
+			otherProvider: shouldSurfaceLocalAgentHostProvider('copilot', configurationService, true),
+		}, {
+			agentsClaude: true,
+			editorClaude: false,
+			agentsCodex: false,
+			editorCodex: true,
+			otherProvider: true,
+		});
+	});
 });
 
 suite('buildAgentHostOTelEnv', () => {
