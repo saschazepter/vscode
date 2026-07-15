@@ -69,7 +69,7 @@ suite('AgentHostChatInputPicker - resolveConfigChipValue', () => {
 			title: 'Approvals',
 			description: 'Tool approval behavior for this session',
 			enum: ['default', 'autoApprove'],
-			enumLabels: ['Ask When Needed', 'Allow All'],
+			enumLabels: ['Default approvals', 'Allow all'],
 			enumDescriptions: ['Asks when approval settings don\'t apply', 'Runs tool calls without asking'],
 		} as SessionConfigPropertySchema;
 
@@ -82,8 +82,8 @@ suite('AgentHostChatInputPicker - resolveConfigChipValue', () => {
 
 		test('explains approval choices on item hover', () => {
 			assert.deepStrictEqual({
-				auto: getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'assisted', label: 'Approve When Safe', description: 'Evaluates risk before running tools' }, false),
-				bypass: getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'autoApprove', label: 'Allow All', description: 'Runs tool calls without asking' }, false),
+				auto: getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'assisted', label: 'Assisted permissions', description: 'Evaluates risk before running tools' }, false),
+				bypass: getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'autoApprove', label: 'Allow all', description: 'Runs tool calls without asking' }, false),
 			}, {
 				auto: 'An LLM judge evaluates each tool call. Tools it doesn\'t approve require your approval.',
 				bypass: 'Copilot runs all tools without asking for approval.',
@@ -92,7 +92,7 @@ suite('AgentHostChatInputPicker - resolveConfigChipValue', () => {
 
 		test('directs users to their administrator when approvals are disabled by policy', () => {
 			assert.strictEqual(
-				getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'assisted', label: 'Approve When Safe' }, true),
+				getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'assisted', label: 'Assisted permissions' }, true),
 				'Disabled by your organization. Contact your administrator.'
 			);
 		});

@@ -19,12 +19,12 @@ suite('Copilot PermissionPicker', () => {
 		})), [
 			{
 				level: ChatPermissionLevel.Default,
-				label: 'Default Approvals',
+				label: 'Default approvals',
 				detail: 'Copilot uses your configured settings',
 			},
 			{
 				level: ChatPermissionLevel.AutoApprove,
-				label: 'Bypass Approvals',
+				label: 'Allow all',
 				detail: 'All tool calls are auto-approved',
 			},
 			{

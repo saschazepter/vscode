@@ -67,7 +67,7 @@ export interface IPermissionPickerDelegate {
 	 * pass `chat.defaultConfiguration`.
 	 */
 	readonly defaultSettingKey?: string;
-	getPermissionLevelMeta?(level: ChatPermissionLevel, meta: IPermissionLevelMeta): IPermissionLevelMeta;
+	getPermissionLevelMeta(level: ChatPermissionLevel, meta: IPermissionLevelMeta): IPermissionLevelMeta;
 
 	/**
 	 * Called after the user selects a level (and any required confirmation
@@ -99,14 +99,14 @@ export function getPermissionLevelMeta(level: ChatPermissionLevel): IPermissionL
 	switch (level) {
 		case ChatPermissionLevel.Assisted:
 			return {
-				label: localize('permissions.assisted', "Auto Approvals"),
+				label: localize('permissions.assisted', "Assisted permissions"),
 				detail: localize('permissions.assisted.subtext', "Evaluates risk before running tools"),
 				icon: Codicon.sparkle,
 				hover: localize('permissions.assisted.description', "An LLM judge evaluates each tool call. Tools it doesn't approve require your approval."),
 			};
 		case ChatPermissionLevel.AutoApprove:
 			return {
-				label: localize('permissions.autoApprove', "Bypass Approvals"),
+				label: localize('permissions.autoApprove', "Allow all"),
 				detail: localize('permissions.autoApprove.subtext', "All tool calls are auto-approved"),
 				icon: Codicon.warning,
 			};
@@ -120,7 +120,7 @@ export function getPermissionLevelMeta(level: ChatPermissionLevel): IPermissionL
 		case ChatPermissionLevel.Default:
 		default:
 			return {
-				label: localize('permissions.default', "Default Approvals"),
+				label: localize('permissions.default', "Default approvals"),
 				detail: localize('permissions.default.subtext', "Copilot uses your configured settings"),
 				icon: Codicon.shield,
 			};
@@ -364,7 +364,7 @@ export class PermissionPicker extends Disposable {
 
 	protected _getPermissionLevelMeta(level: ChatPermissionLevel): IPermissionLevelMeta {
 		const meta = getPermissionLevelMeta(level);
-		return this._delegate.getPermissionLevelMeta?.(level, meta) ?? meta;
+		return this._delegate.getPermissionLevelMeta(level, meta);
 	}
 }
 
@@ -378,6 +378,10 @@ export class PermissionPicker extends Disposable {
 export class CopilotPermissionPickerDelegate extends Disposable implements IPermissionPickerDelegate {
 
 	readonly currentPermissionLevel: IObservable<ChatPermissionLevel | undefined>;
+
+	getPermissionLevelMeta(_level: ChatPermissionLevel, meta: IPermissionLevelMeta): IPermissionLevelMeta {
+		return meta;
+	}
 
 	constructor(
 		private readonly _session: IObservable<IActiveSession | undefined>,

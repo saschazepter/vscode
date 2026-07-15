@@ -7,7 +7,7 @@ import type { CopilotSession, PermissionAllowAllMode, SessionEvent, SessionEvent
 import assert from 'assert';
 import { DeferredPromise, timeout } from '../../../../base/common/async.js';
 import { encodeBase64, VSBuffer } from '../../../../base/common/buffer.js';
-import { Emitter, Event } from '../../../../base/common/event.js';
+import { Emitter } from '../../../../base/common/event.js';
 import { DisposableStore } from '../../../../base/common/lifecycle.js';
 import { join, sep } from '../../../../base/common/path.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -57,6 +57,7 @@ class MockCopilotSession {
 	permissionModeSetSuccess = true;
 	readonly experimentalModeUpdates: boolean[] = [];
 	experimentalModeUpdateSuccess = true;
+	abortCalls = 0;
 	readonly compactCalls: unknown[] = [];
 	readonly commandListCalls: unknown[] = [];
 	readonly commandInvokeCalls: Array<{ name: string; input?: string }> = [];
@@ -120,7 +121,7 @@ class MockCopilotSession {
 		this.sendRequests.push(request);
 		return `message-${this.sendRequests.length}`;
 	}
-	async abort() { }
+	async abort() { this.abortCalls++; }
 	async setModel() { }
 	async getEvents(): Promise<SessionEvent[]> { return this.messages; }
 	async disconnect() { }
@@ -303,6 +304,10 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 	signals: AgentSignal[];
 	waitForSignal: (predicate: (signal: AgentSignal) => boolean) => Promise<AgentSignal>;
 	sessionConfigUpdates: ReadonlyArray<{ session: string; patch: Record<string, unknown> }>;
+	setConfigValue: (key: string, value: unknown) => void;
+	setRootValue: (key: string, value: unknown) => void;
+	fireRootConfigChange: () => void;
+	fireSessionConfigChange: (config: Record<string, unknown>, session?: string) => void;
 }> {
 	const progressEmitter = disposables.add(new Emitter<AgentSignal>());
 	const signals: AgentSignal[] = [];
@@ -386,10 +391,12 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 	const sessionConfigUpdates: Array<{ session: string; patch: Record<string, unknown> }> = [];
 	const configValues = options?.configValues ?? {};
 	const rootValues = options?.rootValues ?? {};
+	const rootConfigEmitter = disposables.add(new Emitter<void>());
+	const sessionConfigEmitter = disposables.add(new Emitter<{ session: string; config: Record<string, unknown> }>());
 	const fakeConfigurationService: IAgentConfigurationService = {
 		_serviceBrand: undefined,
-		onDidRootConfigChange: new Emitter<void>().event,
-		onDidSessionConfigChange: Event.None,
+		onDidRootConfigChange: rootConfigEmitter.event,
+		onDidSessionConfigChange: sessionConfigEmitter.event,
 		// Simple per-key map suffices for tests; the real service walks
 		// session → parent → host and validates against the schema, but
 		// neither matters here — we just need to surface a value the
@@ -438,7 +445,18 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 	await session.initializeSession();
 	assert.ok(launchedRuntime);
 
-	return { session, runtime: launchedRuntime, mockSession, signals, waitForSignal, sessionConfigUpdates };
+	return {
+		session,
+		runtime: launchedRuntime,
+		mockSession,
+		signals,
+		waitForSignal,
+		sessionConfigUpdates,
+		setConfigValue: (key, value) => { configValues[key] = value; },
+		setRootValue: (key, value) => { rootValues[key] = value; },
+		fireRootConfigChange: () => rootConfigEmitter.fire(),
+		fireSessionConfigChange: (config, session = sessionUri.toString()) => sessionConfigEmitter.fire({ session, config }),
+	};
 }
 
 // ---- Tests ------------------------------------------------------------------
@@ -2102,7 +2120,12 @@ suite('CopilotAgentSession', () => {
 				requestSandboxBypass: true,
 			});
 			const confirmation = await waitForSignal(signal => signal.kind === 'pending_confirmation');
-			assert.strictEqual(confirmation.kind === 'pending_confirmation' ? confirmation.state.riskAssessment : undefined, undefined);
+			assert.deepStrictEqual(confirmation.kind === 'pending_confirmation' ? confirmation.state.riskAssessment : undefined, {
+				kind: ToolCallRiskAssessmentKind.Judge,
+				status: ToolCallRiskAssessmentStatus.Complete,
+				reason: 'Incorrect recommendation',
+				safety: 1,
+			});
 			assert.ok(session.respondToPermissionRequest('tc-assisted-bypass', false));
 
 			assert.strictEqual((await resultPromise).kind, 'reject');
@@ -2117,6 +2140,57 @@ suite('CopilotAgentSession', () => {
 			await assert.rejects(() => session.send('hello', undefined, 'turn-1'), /rejected permission mode 'auto'/);
 
 			assert.deepStrictEqual(mockSession.sendRequests, []);
+		});
+
+		test('syncs permission mode when the session approval level changes', async () => {
+			const { session, mockSession, setConfigValue, fireSessionConfigChange } = await createAgentSession(disposables, {
+				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
+			});
+			await session.syncPermissionMode('turn-start');
+			setConfigValue(SessionConfigKey.AutoApprove, 'default');
+
+			fireSessionConfigChange({ [SessionConfigKey.AutoApprove]: 'default' });
+			await timeout(0);
+
+			assert.deepStrictEqual(mockSession.permissionModeSetCalls, ['auto', 'off']);
+		});
+
+		test('ignores approval changes for other sessions', async () => {
+			const { session, mockSession, setConfigValue, fireSessionConfigChange } = await createAgentSession(disposables, {
+				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
+			});
+			await session.syncPermissionMode('turn-start');
+			setConfigValue(SessionConfigKey.AutoApprove, 'default');
+
+			fireSessionConfigChange({ [SessionConfigKey.AutoApprove]: 'default' }, AgentSession.uri('copilot', 'other-session').toString());
+			await timeout(0);
+
+			assert.deepStrictEqual(mockSession.permissionModeSetCalls, ['auto']);
+		});
+
+		test('syncs permission mode when root approval configuration changes', async () => {
+			const { session, mockSession, setRootValue, fireRootConfigChange } = await createAgentSession(disposables);
+			await session.syncPermissionMode('turn-start');
+			setRootValue(AgentHostGlobalAutoApproveEnabledConfigKey, true);
+
+			fireRootConfigChange();
+			await timeout(0);
+
+			assert.deepStrictEqual(mockSession.permissionModeSetCalls, ['off', 'on']);
+		});
+
+		test('aborts when a live permission mode update fails', async () => {
+			const { session, mockSession, setConfigValue, fireSessionConfigChange } = await createAgentSession(disposables, {
+				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
+			});
+			await session.syncPermissionMode('turn-start');
+			mockSession.permissionModeSetSuccess = false;
+			setConfigValue(SessionConfigKey.AutoApprove, 'default');
+
+			fireSessionConfigChange({ [SessionConfigKey.AutoApprove]: 'default' });
+			await timeout(0);
+
+			assert.strictEqual(mockSession.abortCalls, 1);
 		});
 
 		test('per-request permissions: Autopilot with Ask When Needed keeps SDK approval mode off', async () => {

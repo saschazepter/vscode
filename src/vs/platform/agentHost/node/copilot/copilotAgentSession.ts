@@ -728,7 +728,6 @@ export class CopilotAgentSession extends Disposable {
 			}));
 		}
 		this._register(toDisposable(() => this._cancelPendingClientToolCalls()));
-		this._register(toDisposable(() => this._autoApprovals.clear()));
 		this._register(toDisposable(() => {
 			for (const pending of this._pendingAutoApprovals.values()) {
 				pending.complete(undefined);
@@ -1101,6 +1100,7 @@ export class CopilotAgentSession extends Disposable {
 		this._subscribeForLogging();
 		this._subscribeForMemoInvalidation();
 		this._subscribeForInstructionsCollectedTelemetry();
+		this._subscribeToPermissionConfigChanges();
 
 		// Advertise the agent host's server tools for this session so clients
 		// see them as server-provided. Execution happens in-process via the SDK
@@ -1900,12 +1900,12 @@ export class CopilotAgentSession extends Disposable {
 					invocationMessage,
 					toolInput,
 					confirmationTitle,
-					riskAssessment: recommendation !== 'approve' && autoApproval?.reason
+					riskAssessment: autoApproval?.reason
 						? {
 							kind: ToolCallRiskAssessmentKind.Judge,
 							status: ToolCallRiskAssessmentStatus.Complete,
 							reason: autoApproval.reason,
-							safety: 0,
+							safety: recommendation === 'approve' ? 1 : 0,
 						}
 						: undefined,
 					edits,
@@ -2038,6 +2038,30 @@ export class CopilotAgentSession extends Disposable {
 
 	private _getConfiguredAgentMode(): string {
 		return this._configurationService.getEffectiveValue(this.sessionUri.toString(), platformSessionSchema, SessionConfigKey.Mode) ?? 'interactive';
+	}
+
+	private _subscribeToPermissionConfigChanges(): void {
+		this._register(this._configurationService.onDidRootConfigChange(() => {
+			void this._syncPermissionModeAfterConfigChange();
+		}));
+		this._register(this._configurationService.onDidSessionConfigChange(event => {
+			if (event.session === this.sessionUri.toString() && Object.hasOwn(event.config, SessionConfigKey.AutoApprove)) {
+				void this._syncPermissionModeAfterConfigChange();
+			}
+		}));
+	}
+
+	private async _syncPermissionModeAfterConfigChange(): Promise<void> {
+		try {
+			await this.syncPermissionMode('config-change');
+		} catch (error) {
+			this._logService.error(error, `[Copilot:${this.sessionId}] Failed to apply permission config change; aborting active turn`);
+			try {
+				await this.abort();
+			} catch (abortError) {
+				this._logService.error(abortError, `[Copilot:${this.sessionId}] Failed to abort after permission config sync failure`);
+			}
+		}
 	}
 
 	private async _takeAutoApproval(toolCallId: string): Promise<PermissionAutoApproval | undefined> {
@@ -2691,6 +2715,7 @@ export class CopilotAgentSession extends Disposable {
 			}, parentToolCallId);
 		}));
 
+		// TODO@connor4312: Remove this correlation once the SDK permission callback includes auto-approval data.
 		this._register(wrapper.onPermissionRequested(e => {
 			const toolCallId = e.data.permissionRequest.toolCallId;
 			if (toolCallId) {
