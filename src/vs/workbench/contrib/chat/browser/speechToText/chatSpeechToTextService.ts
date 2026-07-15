@@ -259,6 +259,10 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private _startCapture(window: Window & typeof globalThis, stream: MediaStream): void {
 		const ctx = new window.AudioContext({ sampleRate: SAMPLE_RATE });
 		this._audioContext = ctx;
+		// The context is created several awaits after the user gesture (mic
+		// acquisition + socket handshake), so it can start suspended; resume it
+		// or `onaudioprocess` never fires and no audio is streamed.
+		ctx.resume().catch(() => { /* ignore */ });
 		const source = ctx.createMediaStreamSource(stream);
 		this._sourceNode = source;
 		const processor = ctx.createScriptProcessor(4096, 1, 1);

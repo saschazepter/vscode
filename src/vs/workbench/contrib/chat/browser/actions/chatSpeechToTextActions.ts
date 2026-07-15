@@ -49,6 +49,22 @@ class ToggleChatSpeechToTextAction extends Action2 {
 				when: ChatSpeechToTextConfigured,
 				group: 'navigation',
 			}],
+			keybinding: {
+				weight: KeybindingWeight.WorkbenchContrib,
+				// Press-to-toggle, mirroring Voice Mode's chord (Cmd+Shift+Space).
+				// Voice Mode binds the same chord in the chat input, so dictation
+				// only claims it when Voice Mode is not enabled — otherwise the two
+				// bindings would be ambiguous.
+				when: ContextKeyExpr.and(
+					ChatSpeechToTextConfigured,
+					ChatContextKeys.inChatInput,
+					ContextKeyExpr.notEquals('config.agents.voice.enabled', true),
+				),
+				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.Space,
+				linux: {
+					primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyMod.Shift | KeyCode.Space,
+				},
+			},
 		});
 	}
 
@@ -85,14 +101,6 @@ class HoldToSpeechToTextAction extends Action2 {
 			title: localize2('chat.speechToText.hold', "Hold to Dictate (Speech to Text)"),
 			category: CHAT_CATEGORY,
 			f1: false,
-			keybinding: {
-				weight: KeybindingWeight.WorkbenchContrib,
-				when: ContextKeyExpr.and(ChatSpeechToTextConfigured, ChatContextKeys.inChatInput),
-				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.Space,
-				linux: {
-					primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyMod.Shift | KeyCode.Space,
-				},
-			},
 		});
 	}
 

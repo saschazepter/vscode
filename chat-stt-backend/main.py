@@ -234,26 +234,40 @@ async def transcribe_stream(client_ws: WebSocket) -> None:
             await azure_ws.send(json.dumps(_SESSION_UPDATE))
             await client_ws.send_json({"type": "ready"})
 
+            audio_frames = 0
+            pending_since_commit = 0
+
             async def pump_client_to_azure() -> None:
+                nonlocal audio_frames, pending_since_commit
                 while True:
                     msg = await client_ws.receive_json()
                     mtype = msg.get("type")
                     if mtype == "audio":
-                        await azure_ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": msg.get("data", "")}))
+                        data = msg.get("data", "")
+                        await azure_ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": data}))
+                        audio_frames += 1
+                        pending_since_commit += len(data)
                     elif mtype == "stop":
-                        # Flush whatever is buffered so the final utterance is transcribed.
-                        await azure_ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+                        print(f"[stt] stop received; audio_frames={audio_frames} pending_bytes={pending_since_commit}", flush=True)
+                        # Only commit when audio has been appended since the last
+                        # (VAD) commit; committing an empty buffer errors.
+                        if pending_since_commit > 0:
+                            await azure_ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
                         return
 
             async def pump_azure_to_client() -> None:
+                nonlocal pending_since_commit
                 async for raw in azure_ws:
                     evt = json.loads(raw)
                     etype = evt.get("type")
-                    if etype == "conversation.item.input_audio_transcription.delta":
+                    if etype == "input_audio_buffer.committed":
+                        pending_since_commit = 0
+                    elif etype == "conversation.item.input_audio_transcription.delta":
                         await client_ws.send_json({"type": "delta", "text": evt.get("delta", "")})
                     elif etype == "conversation.item.input_audio_transcription.completed":
                         await client_ws.send_json({"type": "segment", "text": evt.get("transcript", "")})
                     elif etype == "error":
+                        print(f"[stt] azure error: {evt.get('error')}", flush=True)
                         await client_ws.send_json({"type": "error", "message": str(evt.get("error", "realtime error"))})
 
             client_task = asyncio.create_task(pump_client_to_azure())
