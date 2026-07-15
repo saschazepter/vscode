@@ -19,7 +19,8 @@ import { IDefaultAccountService } from '../../../../../platform/defaultAccount/c
 import { IStorageService, StorageScope } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IEnvironmentService } from '../../../../../platform/environment/common/environment.js';
-import { ILocalTranscriptionService } from '../../../../../platform/localTranscription/common/localTranscription.js';
+import { IProgressService, ProgressLocation } from '../../../../../platform/progress/common/progress.js';
+import { ILocalTranscriptionService, LocalTranscriptionModelState } from '../../../../../platform/localTranscription/common/localTranscription.js';
 import { AgentsVoiceStorageKeys } from '../../../agentsVoice/common/agentsVoice.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 
@@ -32,6 +33,8 @@ const SAMPLE_RATE = 16000;
 const ENABLED_SETTING = 'chat.speechToText.enabled';
 /** Developer override for the transcription backend URL. */
 const SERVER_URL_SETTING = 'chat.speechToText.serverUrl';
+/** On-device Whisper model to use for dictation. */
+const MODEL_SETTING = 'chat.speechToText.model';
 
 type SpeechToTextSessionEvent = {
 	outcome: 'completed' | 'cancelled' | 'error';
@@ -123,6 +126,8 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	/** True while the active session uses the on-device (local model) path. */
 	private _useLocal = false;
 	private readonly _localSessionDisposables = this._register(new DisposableStore());
+	/** Resolves the in-flight model-preparation progress, if any. */
+	private _resolveModelProgress: (() => void) | undefined;
 
 	get isConfigured(): boolean {
 		if (this._configurationService.getValue<boolean>(ENABLED_SETTING) === false) {
@@ -158,6 +163,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		@IStorageService private readonly _storageService: IStorageService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@IEnvironmentService private readonly _environmentService: IEnvironmentService,
+		@IProgressService private readonly _progressService: IProgressService,
 		@ILocalTranscriptionService private readonly _localTranscription: ILocalTranscriptionService,
 	) {
 		super();
@@ -275,7 +281,52 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			this._onDidUpdateTranscript.fire(this._transcript);
 		}));
 		const cacheDir = joinPath(this._environmentService.cacheHome, 'chatDictationModels').fsPath;
-		await local.start({ cacheDir });
+		const model = this._getModelId();
+		await local.start({ cacheDir, model });
+
+		// The model loads in the utility process in the background (start()
+		// returns immediately). On first use it may download hundreds of MB, so
+		// surface progress until it is ready; recording proceeds meanwhile and
+		// interim transcripts begin once the model finishes loading.
+		const status = await local.getModelStatus();
+		if (status.state !== LocalTranscriptionModelState.Ready && status.state !== LocalTranscriptionModelState.Error) {
+			this._showModelProgress();
+		}
+	}
+
+	private _getModelId(): string | undefined {
+		const value = this._configurationService.getValue<string>(MODEL_SETTING);
+		return value ? value.trim() || undefined : undefined;
+	}
+
+	/**
+	 * Show a background notification with model download/load progress. Resolves
+	 * when the model becomes ready or errors, or when the session is torn down.
+	 */
+	private _showModelProgress(): void {
+		this._progressService.withProgress({
+			location: ProgressLocation.Notification,
+			title: localize('chatStt.preparingModel', "Preparing on-device speech-to-text model…"),
+		}, progress => new Promise<void>(resolve => {
+			this._resolveModelProgress = resolve;
+			this._localSessionDisposables.add(this._localTranscription.onDidChangeModelStatus(status => {
+				switch (status.state) {
+					case LocalTranscriptionModelState.Downloading: {
+						const pct = typeof status.progress === 'number' ? Math.round(status.progress * 100) : undefined;
+						progress.report({ message: pct !== undefined ? localize('chatStt.downloadingPct', "Downloading model… {0}%", pct) : localize('chatStt.downloading', "Downloading model…") });
+						break;
+					}
+					case LocalTranscriptionModelState.Loading:
+						progress.report({ message: localize('chatStt.loadingModel', "Loading model…") });
+						break;
+					case LocalTranscriptionModelState.Ready:
+					case LocalTranscriptionModelState.Error:
+						this._resolveModelProgress = undefined;
+						resolve();
+						break;
+				}
+			}));
+		}));
 	}
 
 	async stopAndTranscribe(): Promise<string | undefined> {
@@ -457,6 +508,8 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 
 	private _teardown(): void {
 		this._stopCapture();
+		this._resolveModelProgress?.();
+		this._resolveModelProgress = undefined;
 		this._localSessionDisposables.clear();
 		this._useLocal = false;
 		if (this._socket) {
