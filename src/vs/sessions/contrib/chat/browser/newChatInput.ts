@@ -911,9 +911,9 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 			// Preserve any manually typed text. Voice dictation only knows about the
 			// spoken phrase, so append it to whatever the user already typed instead
 			// of overwriting it, otherwise the typed portion is dropped from the query.
-			const existing = model.getValue().trimEnd();
-			const combined = existing ? `${existing} ${text}` : text;
-			model.setValue(combined);
+const existing = model.getValue();
+			const separator = existing && !/\s$/.test(existing) ? ' ' : '';
+			model.setValue(`${existing}${separator}${text}`);
 			this._send();
 		}
 	}
