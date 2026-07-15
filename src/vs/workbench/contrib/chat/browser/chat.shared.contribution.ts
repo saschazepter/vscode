@@ -253,28 +253,10 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('chat.fontFamily', "Controls the font family in chat messages."),
 			default: 'default'
 		},
-		'chat.speechToText.azure.endpoint': {
+		'chat.speechToText.serverUrl': {
 			type: 'string',
-			markdownDescription: nls.localize('chat.speechToText.azure.endpoint', "Azure OpenAI resource endpoint used to transcribe dictated audio in chat inputs, e.g. `https://my-resource.openai.azure.com`. The microphone button in the chat input appears once this and `#chat.speechToText.azure.apiKey#` are set."),
+			markdownDescription: nls.localize('chat.speechToText.serverUrl', "URL of the transcription backend that converts dictated chat-input audio to text. The recorded audio is POSTed here with the user's GitHub token in the `Authorization` header; the backend holds the model credentials and returns `{{ \"text\": \"...\" }}`. The microphone button appears in the chat input once this is set."),
 			default: '',
-			tags: ['experimental']
-		},
-		'chat.speechToText.azure.deployment': {
-			type: 'string',
-			markdownDescription: nls.localize('chat.speechToText.azure.deployment', "Name of the Azure OpenAI transcription deployment to use (for example a `gpt-4o-mini-transcribe` deployment)."),
-			default: 'gpt-4o-mini-transcribe',
-			tags: ['experimental']
-		},
-		'chat.speechToText.azure.apiKey': {
-			type: 'string',
-			markdownDescription: nls.localize('chat.speechToText.azure.apiKey', "API key for the Azure OpenAI resource used for chat input speech-to-text. Stored in plain text in your settings."),
-			default: '',
-			tags: ['experimental']
-		},
-		'chat.speechToText.azure.apiVersion': {
-			type: 'string',
-			markdownDescription: nls.localize('chat.speechToText.azure.apiVersion', "Azure OpenAI API version query parameter used for the `audio/transcriptions` request."),
-			default: '2025-03-01-preview',
 			tags: ['experimental']
 		},
 		'chat.editor.fontSize': {

@@ -254,6 +254,7 @@ export interface IProductConfiguration {
 	readonly chatSessionRecommendations?: IChatSessionRecommendation[];
 	readonly emergencyAlertUrl?: string;
 	readonly voiceWsUrl?: string;
+	readonly chatSpeechToTextUrl?: string;
 
 	readonly remoteDefaultExtensionsIfInstalledLocally?: string[];
 

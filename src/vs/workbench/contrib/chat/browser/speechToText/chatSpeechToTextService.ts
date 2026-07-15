@@ -11,6 +11,8 @@ import { IConfigurationService } from '../../../../../platform/configuration/com
 import { INotificationService, Severity } from '../../../../../platform/notification/common/notification.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { localize } from '../../../../../nls.js';
+import { IAuthenticationService } from '../../../../services/authentication/common/authentication.js';
+import { IProductService } from '../../../../../platform/product/common/productService.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 
 export const IChatSpeechToTextService = createDecorator<IChatSpeechToTextService>('chatSpeechToTextService');
@@ -47,13 +49,6 @@ export interface IChatSpeechToTextService {
 	cancel(): void;
 }
 
-interface IAzureTranscriptionConfig {
-	readonly endpoint: string;
-	readonly deployment: string;
-	readonly apiKey: string;
-	readonly apiVersion: string;
-}
-
 export class ChatSpeechToTextService extends Disposable implements IChatSpeechToTextService {
 
 	declare readonly _serviceBrand: undefined;
@@ -78,6 +73,8 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		@INotificationService private readonly _notificationService: INotificationService,
 		@ILogService private readonly _logService: ILogService,
 		@IContextKeyService contextKeyService: IContextKeyService,
+		@IAuthenticationService private readonly _authenticationService: IAuthenticationService,
+		@IProductService private readonly _productService: IProductService,
 	) {
 		super();
 		this._recordingContextKey = ChatContextKeys.speechToTextRecording.bindTo(contextKeyService);
@@ -138,15 +135,19 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			return undefined;
 		}
 
-		const config = this._readConfig();
-		if (!config) {
+		const serverUrl = this._getServerUrl();
+		if (!serverUrl) {
+			this._notificationService.notify({
+				severity: Severity.Warning,
+				message: localize('chatStt.notConfigured', "Speech-to-text is not configured. Set chat.speechToText.serverUrl to your transcription backend."),
+			});
 			this._setState(ChatSpeechToTextState.Idle);
 			return undefined;
 		}
 
 		this._setState(ChatSpeechToTextState.Transcribing);
 		try {
-			return await this._transcribe(blob, config);
+			return await this._transcribe(blob, serverUrl);
 		} catch (err) {
 			this._logService.error('[chat-stt] transcription failed', err);
 			this._notificationService.error(localize('chatStt.transcribeError', "Speech-to-text transcription failed: {0}", toErrorMessage(err)));
@@ -176,33 +177,34 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		this._mediaRecorder = undefined;
 	}
 
-	private _readConfig(): IAzureTranscriptionConfig | undefined {
-		const endpoint = (this._configurationService.getValue<string>('chat.speechToText.azure.endpoint') ?? '').trim();
-		const apiKey = (this._configurationService.getValue<string>('chat.speechToText.azure.apiKey') ?? '').trim();
-		const deployment = (this._configurationService.getValue<string>('chat.speechToText.azure.deployment') ?? '').trim();
-		const apiVersion = (this._configurationService.getValue<string>('chat.speechToText.azure.apiVersion') ?? '').trim();
-
-		if (!endpoint || !apiKey || !deployment || !apiVersion) {
-			this._notificationService.notify({
-				severity: Severity.Warning,
-				message: localize('chatStt.notConfigured', "Speech-to-text is not configured. Set chat.speechToText.azure.endpoint, .apiKey, .deployment and .apiVersion in your settings."),
-			});
-			return undefined;
-		}
-		return { endpoint, apiKey, deployment, apiVersion };
+	private _getServerUrl(): string {
+		const configured = (this._configurationService.getValue<string>('chat.speechToText.serverUrl') ?? '').trim();
+		return configured || this._productService.chatSpeechToTextUrl || '';
 	}
 
-	private async _transcribe(blob: Blob, config: IAzureTranscriptionConfig): Promise<string | undefined> {
-		const base = config.endpoint.replace(/\/+$/, '');
-		const url = `${base}/openai/deployments/${encodeURIComponent(config.deployment)}/audio/transcriptions?api-version=${encodeURIComponent(config.apiVersion)}`;
+	private async _getAuthToken(): Promise<string | undefined> {
+		try {
+			const sessions = await this._authenticationService.getSessions('github');
+			return sessions[0]?.accessToken;
+		} catch (err) {
+			this._logService.warn('[chat-stt] failed to resolve github session', err);
+			return undefined;
+		}
+	}
 
+	private async _transcribe(blob: Blob, serverUrl: string): Promise<string | undefined> {
 		const form = new FormData();
 		form.append('file', blob, `audio.${extensionForMime(this._mimeType)}`);
-		form.append('response_format', 'json');
 
-		const response = await fetch(url, {
+		const headers: Record<string, string> = {};
+		const authToken = await this._getAuthToken();
+		if (authToken) {
+			headers['Authorization'] = `Bearer ${authToken}`;
+		}
+
+		const response = await fetch(serverUrl, {
 			method: 'POST',
-			headers: { 'api-key': config.apiKey },
+			headers,
 			body: form,
 		});
 

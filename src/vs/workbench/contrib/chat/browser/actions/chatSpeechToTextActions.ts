@@ -19,10 +19,7 @@ import { IChatExecuteActionContext } from './chatExecuteActions.js';
 import { IChatWidget, IChatWidgetService } from '../chat.js';
 import { ChatSpeechToTextState, IChatSpeechToTextService } from '../speechToText/chatSpeechToTextService.js';
 
-export const ChatSpeechToTextConfigured = ContextKeyExpr.and(
-	ContextKeyExpr.has('config.chat.speechToText.azure.endpoint'),
-	ContextKeyExpr.has('config.chat.speechToText.azure.apiKey'),
-);
+export const ChatSpeechToTextConfigured = ContextKeyExpr.has('config.chat.speechToText.serverUrl');
 
 /** Releases shorter than this are treated as an accidental tap and discarded. */
 const HOLD_TO_TALK_THRESHOLD_MS = 500;
