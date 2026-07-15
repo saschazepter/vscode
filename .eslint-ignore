@@ -60,6 +60,3 @@
 # Vendored third-party libraries
 src/vs/base/common/lit-html/**
 src/vs/base/common/signals-core/**
-
-# Generated wasm-bindgen output
-src/vs/workbench/contrib/terminalContrib/chatAgentTools/browser/tools/console-compactor/**

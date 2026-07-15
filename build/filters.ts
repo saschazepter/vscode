@@ -157,7 +157,6 @@ export const indentationFilter = Object.freeze<string[]>([
 	'!**/*.tiff',
 
 	// except for built files
-	'!src/vs/workbench/contrib/terminalContrib/chatAgentTools/browser/tools/console-compactor/**',
 	'!extensions/mermaid-markdown-features/chat-webview-out/*.js',
 	'!extensions/mermaid-markdown-features/markdown-preview-out/*.js',
 	'!extensions/mermaid-markdown-features/notebook-out/*.js',
