@@ -7,74 +7,43 @@ import * as dom from '../../../../../../base/browser/dom.js';
 import { renderIcon } from '../../../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { Gesture, EventType as TouchEventType } from '../../../../../../base/browser/touch.js';
 import { BaseActionViewItem } from '../../../../../../base/browser/ui/actionbar/actionViewItems.js';
-import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Disposable, DisposableMap, DisposableStore } from '../../../../../../base/common/lifecycle.js';
 import { autorun, IObservable } from '../../../../../../base/common/observable.js';
-import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { localize, localize2 } from '../../../../../../nls.js';
 import { IActionViewItemService } from '../../../../../../platform/actions/browser/actionViewItemService.js';
 import { Action2, registerAction2 } from '../../../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
-import { IStorageService, StorageScope } from '../../../../../../platform/storage/common/storage.js';
 import { SessionConfigKey } from '../../../../../../platform/agentHost/common/sessionConfigKeys.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../../../workbench/common/contributions.js';
-import { type ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../../../../workbench/contrib/chat/common/languageModels.js';
+import { type ILanguageModelChatMetadataAndIdentifier } from '../../../../../../workbench/contrib/chat/common/languageModels.js';
 import { IChatPhoneInputPresenter } from '../../../../../../workbench/contrib/chat/browser/widget/input/chatPhoneInputPresenter.js';
-import { getModelProviderIcon } from '../../../../../../workbench/contrib/chat/browser/widget/input/modelProviderIcons.js';
+import { getModelProviderIcon } from '../../../../../../workbench/contrib/chat/browser/widget/input/modelPicker/modelProviderIcons.js';
 import { Menus } from '../../../../../browser/menus.js';
 import { SessionUsesCombinedConfigPickerContext, IsPhoneLayoutContext } from '../../../../../common/contextkeys.js';
 import { type IAgentHostSessionsProvider, isAgentHostProvider, isAgentHostProviderId } from '../../../../../common/agentHostSessionsProvider.js';
 import { IActiveSession } from '../../../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsService } from '../../../../../services/sessions/browser/sessionsService.js';
 import { ISessionsProvidersService } from '../../../../../services/sessions/browser/sessionsProvidersService.js';
-import { type ISession } from '../../../../../services/sessions/common/session.js';
 import { ISessionContext } from '../../../../../services/sessions/browser/sessionContext.js';
 import { isWellKnownModeSchema } from '../agentHostPermissionPickerDelegate.js';
-import { agentHostModelPickerStorageKey, setAgentHostModelSelection } from '../agentHostModelPicker.js';
+import { getAgentHostModeIcon } from '../agentHostModeIcon.js';
 import { INewChatModelPickerService } from '../../../../chat/browser/newChatModelPicker.js';
+import { ISessionModelSelectionModel } from '../../../../chat/browser/modelPickerModel.js';
 import { reportNewChatPickerClosed } from '../../../../chat/browser/newChatPickerTelemetry.js';
+import { createChatPhoneInputTarget, matchesChatPhoneInputTarget } from './mobileChatPhoneInputTarget.js';
 
 const MOBILE_CHAT_INPUT_CONFIG_PICKER_ID = 'sessions.agentHost.mobileChatInputConfigPicker';
 
-function getModeIcon(value: string | undefined): ThemeIcon | undefined {
-	switch (value) {
-		case 'plan': return Codicon.checklist;
-		case 'autopilot': return Codicon.rocket;
-		case 'interactive': return Codicon.comment;
-		default: return undefined;
-	}
-}
-
-/**
- * Returns the language models registered for the session's resource scheme.
- * This mirrors the logic in {@link AgentHostModelPickerContribution} so the
- * mobile picker shows the same models as the desktop picker would.
- */
-function getAgentHostModels(
-	languageModelsService: ILanguageModelsService,
-	session: ISession | undefined,
-): ILanguageModelChatMetadataAndIdentifier[] {
-	if (!session) {
-		return [];
-	}
-	const resourceScheme = session.resource.scheme;
-	return languageModelsService.getLanguageModelIds()
-		.map(id => {
-			const metadata = languageModelsService.lookupLanguageModel(id);
-			return metadata ? { metadata, identifier: id } : undefined;
-		})
-		.filter((m): m is ILanguageModelChatMetadataAndIdentifier => !!m && m.metadata.targetChatSessionType === resourceScheme);
-}
-
 interface IMobileConfigContext {
 	readonly provider: IAgentHostSessionsProvider;
-	readonly session: ISession;
+	readonly session: IActiveSession;
 	readonly modeItems: readonly { value: string; label: string; description?: string }[];
 	readonly currentMode: string | undefined;
 	readonly modelItems: readonly ILanguageModelChatMetadataAndIdentifier[];
 	readonly currentModelId: string | undefined;
+	readonly showAutoModel: boolean;
 }
 
 /**
@@ -82,8 +51,8 @@ interface IMobileConfigContext {
  * pickers into a single chip trigger that opens a unified bottom sheet.
  *
  * Desktop renders Mode and Model as two separate pickers in the input
- * toolbar (see {@link AgentHostModePicker} and the model picker factory
- * in `agentHostModelPicker.ts`). On phone those two desktop pickers are
+ * toolbar (see {@link AgentHostModePicker} and the sessions-core model
+ * picker). On phone those two desktop pickers are
  * gated off via `when: IsPhoneLayoutContext.negate()` and this single
  * combined picker takes their slot — same data, different presentation,
  * matching the MOBILE.md core principle.
@@ -105,12 +74,11 @@ class MobileChatInputConfigPicker extends Disposable {
 
 	constructor(
 		private readonly _session: IObservable<IActiveSession | undefined>,
-		@ILanguageModelsService private readonly _languageModelsService: ILanguageModelsService,
 		@ISessionsProvidersService private readonly _sessionsProvidersService: ISessionsProvidersService,
-		@IStorageService private readonly _storageService: IStorageService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@IChatPhoneInputPresenter private readonly _phonePresenter: IChatPhoneInputPresenter,
 		@INewChatModelPickerService private readonly _newChatModelPickerService: INewChatModelPickerService,
+		@ISessionModelSelectionModel private readonly _selectionModel: ISessionModelSelectionModel,
 	) {
 		super();
 		this._register(this._newChatModelPickerService.registerModelPicker({
@@ -120,18 +88,15 @@ class MobileChatInputConfigPicker extends Disposable {
 
 		// Re-render the trigger whenever the active session, its config,
 		// its model, or the available language models change. The
-		// `_resolveAndPushModel` call inside `_updateTrigger` also
-		// auto-selects a remembered/first model on session switch so
-		// the next send goes out with the correct model — mirroring
-		// the desktop {@link AgentHostModelPickerContribution} init
-		// flow, which the gated-off desktop picker no longer runs on
-		// phone.
+		// The input-scoped selection model owns model initialization even when
+		// the desktop picker is gated off, so this surface only renders it.
 		this._register(autorun(reader => {
-			const session = this._session.read(reader);
-			session?.modelId.read(reader);
+			this._session.read(reader);
+			this._selectionModel.currentModel.read(reader);
+			this._selectionModel.models.read(reader);
+			this._selectionModel.options.read(reader);
 			this._updateTrigger();
 		}));
-		this._register(this._languageModelsService.onDidChangeLanguageModels(() => this._updateTrigger()));
 		this._register(this._sessionsProvidersService.onDidChangeProviders(e => {
 			for (const provider of e.removed) {
 				this._providerListeners.deleteAndDispose(provider.id);
@@ -217,10 +182,11 @@ class MobileChatInputConfigPicker extends Disposable {
 			: modeItems[0]?.value;
 
 		// Model
-		const modelItems = getAgentHostModels(this._languageModelsService, session);
-		const currentModelId = session.modelId.get() ?? this._storageService.get(agentHostModelPickerStorageKey(session.resource.scheme), StorageScope.PROFILE);
+		const modelItems = this._selectionModel.models.get();
+		const currentModelId = this._selectionModel.currentModel.get()?.identifier;
+		const showAutoModel = this._selectionModel.options.get().showAutoModel;
 
-		return { provider, session, modeItems, currentMode, modelItems, currentModelId };
+		return { provider, session, modeItems, currentMode, modelItems, currentModelId, showAutoModel };
 	}
 
 	private _updateTrigger(): void {
@@ -235,7 +201,7 @@ class MobileChatInputConfigPicker extends Disposable {
 		// `.action-item` that `MenuWorkbenchToolBar` created — hiding
 		// only the inner slot leaves the wrapper occupying its
 		// `min-width` floor and produces a visible empty gap.
-		if (!ctx || (ctx.modeItems.length === 0 && ctx.modelItems.length === 0)) {
+		if (!ctx || (ctx.modeItems.length === 0 && ctx.modelItems.length === 0 && ctx.showAutoModel)) {
 			this._slotElement.style.display = 'none';
 			this._containerElement.style.display = 'none';
 			return;
@@ -243,21 +209,11 @@ class MobileChatInputConfigPicker extends Disposable {
 		this._slotElement.style.display = '';
 		this._containerElement.style.display = '';
 
-		// Auto-resolve the model: if the session has no explicit model
-		// selection yet, push the remembered model (or first available)
-		// into the provider so the next send goes out with that model.
-		// Mirrors `AgentHostModelPickerContribution`'s `initModel` which
-		// no longer runs on phone (the desktop picker is gated off).
-		// Without this, a fresh session would show "Auto" but the
-		// provider would still be on its built-in default — divergent
-		// from desktop behavior.
-		const resolvedModelId = this._resolveAndPushModel(ctx);
-
 		dom.clearNode(this._triggerElement);
 
 		// Leading icon: the current mode's icon if a mode is selected,
 		// otherwise nothing.
-		const modeIcon = ctx.currentMode ? getModeIcon(ctx.currentMode) : undefined;
+		const modeIcon = ctx.currentMode ? getAgentHostModeIcon(ctx.currentMode) : undefined;
 		if (modeIcon) {
 			dom.append(this._triggerElement, renderIcon(modeIcon));
 		}
@@ -265,14 +221,16 @@ class MobileChatInputConfigPicker extends Disposable {
 		// Label: the current model name (or "Auto" placeholder when no
 		// model is available). Mode is surfaced via the icon, not
 		// duplicated in the label, to keep the chip compact.
-		const currentModel = resolvedModelId
-			? ctx.modelItems.find(m => m.identifier === resolvedModelId)
+		const currentModel = ctx.currentModelId
+			? ctx.modelItems.find(m => m.identifier === ctx.currentModelId)
 			: undefined;
 		if (currentModel) {
 			dom.append(this._triggerElement, renderIcon(getModelProviderIcon(currentModel)));
 		}
 		const labelText = currentModel?.metadata.name
-			?? localize('mobileChatInputConfigPicker.autoLabel', "Auto");
+			?? (ctx.showAutoModel
+				? localize('mobileChatInputConfigPicker.autoLabel', "Auto")
+				: localize('mobileChatInputConfigPicker.noModelsLabel', "No models available"));
 		const labelSpan = dom.append(this._triggerElement, dom.$('span.chat-input-picker-label'));
 		labelSpan.textContent = labelText;
 
@@ -297,35 +255,8 @@ class MobileChatInputConfigPicker extends Disposable {
 		this._triggerElement.setAttribute('aria-disabled', isResolving ? 'true' : 'false');
 	}
 
-	/**
-	 * If the active session has no explicit model selected yet, pick a
-	 * model (remembered from profile storage, or the first available)
-	 * and push it into the provider so the next send uses it. Returns
-	 * the effective model id (or `undefined` when no models are
-	 * available at all).
-	 */
-	private _resolveAndPushModel(ctx: IMobileConfigContext): string | undefined {
-		// If the session already has a model set by the user, leave it
-		// alone — `currentModelId` came from `session.modelId.get()`.
-		if (ctx.session.modelId.get()) {
-			return ctx.currentModelId;
-		}
-		if (ctx.modelItems.length === 0) {
-			return undefined;
-		}
-		const remembered = this._storageService.get(agentHostModelPickerStorageKey(ctx.session.resource.scheme), StorageScope.PROFILE);
-		const rememberedModel = remembered ? ctx.modelItems.find(m => m.identifier === remembered) : undefined;
-		const resolved = rememberedModel ?? ctx.modelItems[0];
-		ctx.provider.setModel(ctx.session.sessionId, resolved.identifier);
-		return resolved.identifier;
-	}
-
 	private _switchToModel(modelIdentifier: string): boolean {
-		const ctx = this._getContext();
-		if (!ctx) {
-			return false;
-		}
-		return setAgentHostModelSelection(ctx.session, ctx.modelItems, modelIdentifier, ctx.provider, this._storageService);
+		return this._selectionModel.selectModel(modelIdentifier);
 	}
 
 	private async _showSheet(): Promise<void> {
@@ -342,10 +273,10 @@ class MobileChatInputConfigPicker extends Disposable {
 		// Delegate sheet construction to the shared phone presenter so
 		// the new-session chip and the opened-chat chip render the exact
 		// same Mode + Model rows. The presenter's agent-host branch
-		// reads the active session's config + filtered models and
-		// handles the writes (provider mode/model + shared storage key).
+		// reads the active session's provider-owned config and models.
 		const trigger = this._triggerElement;
 		const beforeCtx = ctx;
+		const target = createChatPhoneInputTarget(beforeCtx?.session);
 		const beforeMode = beforeCtx?.currentMode;
 		const beforeModeItem = beforeCtx?.modeItems.find(i => i.value === beforeMode);
 		const beforeModelId = beforeCtx?.currentModelId;
@@ -354,7 +285,7 @@ class MobileChatInputConfigPicker extends Disposable {
 		try {
 			await this._phonePresenter.showCombinedModeAndModelSheet(trigger, undefined, undefined);
 			const afterCtx = this._getContext();
-			if (beforeCtx && afterCtx) {
+			if (beforeCtx && afterCtx && matchesChatPhoneInputTarget(target, afterCtx.session)) {
 				if (beforeCtx.modeItems.length > 0) {
 					const afterMode = afterCtx.currentMode;
 					const afterModeItem = afterCtx.modeItems.find(i => i.value === afterMode);
@@ -417,8 +348,7 @@ registerAction2(class extends Action2 {
  * into the new-session config toolbar. Registers an action view item
  * factory for the mobile-only command id; the action's `when` clause
  * (above) ensures the picker is only displayed on phone layouts. On
- * desktop, the existing mode + model picker registrations
- * (`agentHostSessionConfigPicker.ts` and `agentHostModelPicker.ts`)
+ * desktop, the existing mode and sessions-core model picker registrations
  * provide the toolbar items as before.
  */
 class MobileChatInputConfigPickerContribution extends Disposable implements IWorkbenchContribution {

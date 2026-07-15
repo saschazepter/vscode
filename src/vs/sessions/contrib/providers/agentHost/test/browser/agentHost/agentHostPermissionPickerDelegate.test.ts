@@ -12,7 +12,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../../ba
 import { TestInstantiationService } from '../../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { ResolveSessionConfigResult, SessionConfigPropertySchema } from '../../../../../../../platform/agentHost/common/state/protocol/commands.js';
 import { ChatPermissionLevel } from '../../../../../../../workbench/contrib/chat/common/constants.js';
-import { AgentHostPermissionPickerDelegate, isWellKnownAutoApproveSchema, isWellKnownClaudePermissionModeSchema, isWellKnownModeSchema } from '../../../browser/agentHostPermissionPickerDelegate.js';
+import { AgentHostPermissionPickerDelegate, isWellKnownAutoApproveSchema, isWellKnownClaudePermissionModeSchema, isWellKnownModeSchema, isWellKnownModeValue } from '../../../browser/agentHostPermissionPickerDelegate.js';
 import { getPermissionLevelMeta } from '../../../../copilotChatSessions/browser/permissionPicker.js';
 import { IAgentHostSessionsProvider } from '../../../../../../common/agentHostSessionsProvider.js';
 import { ISessionsProvidersChangeEvent, ISessionsProvidersService } from '../../../../../../services/sessions/browser/sessionsProvidersService.js';
@@ -263,6 +263,20 @@ suite('isWellKnownModeSchema', () => {
 		assert.strictEqual(isWellKnownModeSchema(schema({ type: 'number' as 'string' })), false);
 		assert.strictEqual(isWellKnownModeSchema(schema({ enum: undefined })), false);
 		assert.strictEqual(isWellKnownModeSchema(schema({ enum: [] })), false);
+	});
+
+	test('accepts only values still present in the current schema', () => {
+		assert.deepStrictEqual({
+			interactive: isWellKnownModeValue(schema(), 'interactive'),
+			plan: isWellKnownModeValue(schema(), 'plan'),
+			removed: isWellKnownModeValue(schema({ enum: ['interactive'] }), 'plan'),
+			unknownSchema: isWellKnownModeValue(schema({ enum: ['plan'] }), 'plan'),
+		}, {
+			interactive: true,
+			plan: true,
+			removed: false,
+			unknownSchema: false,
+		});
 	});
 });
 

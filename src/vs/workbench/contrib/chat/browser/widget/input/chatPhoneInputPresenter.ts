@@ -15,8 +15,8 @@ import { localize } from '../../../../../../nls.js';
 import { InstantiationType, registerSingleton } from '../../../../../../platform/instantiation/common/extensions.js';
 import { createDecorator } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IModePickerDelegate } from './modePickerActionItem.js';
-import { IModelPickerDelegate } from './modelPickerActionItem.js';
-import { getModelProviderIcon } from './modelProviderIcons.js';
+import { IModelPickerDelegate } from './modelPicker/modelPickerActionItem.js';
+import { getModelProviderIcon } from './modelPicker/modelProviderIcons.js';
 
 /**
  * Implementation of the phone-only chat-input picker presenter, registered

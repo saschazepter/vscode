@@ -115,7 +115,7 @@ Model picker widgets that back the new-chat `/models` slash command also inject 
 
 ### Model Picker
 
-The model picker is no longer contributed per provider. The sessions core contributes a single `ModelPicker` (`contrib/chat/browser/modelPicker.ts`) into `Menus.NewSessionConfig` that wraps the shared workbench `ModelPickerActionItem`. It reads the available models from the active session's provider via `ISessionsProvider.getModels(sessionId)`, the picker presentation options via `ISessionsProvider.getModelPickerOptions(sessionId)`, remembers the last used model per provider per session type, and applies the selection through `ISessionsProvider.setModel(sessionId, modelId)`.
+The model picker is no longer contributed per provider. Each `NewChatInputWidget` owns a scoped `SessionModelSelectionModel`, while the sessions-core `ModelPicker` (`contrib/chat/browser/modelPicker.ts`) is a presentation and telemetry adapter over that model. The coordinator reads `ISessionsProvider.getModels(sessionId)` and `getModelPickerOptions(sessionId)`, remembers the last used model under the canonical per-provider/per-session-type key, and applies transitions through `ISessionsProvider.setModel(sessionId, modelId)`. Omitted `showAutoModel` defaults to `true`.
 
 This provider returns models from `getModels` based on the active session:
 - **CLI / Claude** sessions return registered language models whose `targetChatSessionType` matches the session type.
