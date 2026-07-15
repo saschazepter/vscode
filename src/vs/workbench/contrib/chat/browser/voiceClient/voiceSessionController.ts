@@ -251,8 +251,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private _bargeInMonitorActive = false;
 
 	// --- Audio FIFO queue ---
-	private readonly _audioQueue: { sessionId: string | undefined; finalized: boolean; chunks: { audio: string; isFirstChunk: boolean; isFinal: boolean; transcript: string | undefined }[] }[] = [];
+	private readonly _audioQueue: { sessionId: string | undefined; responseId?: string; finalized: boolean; chunks: { audio: string; isFirstChunk: boolean; isFinal: boolean; transcript: string | undefined }[] }[] = [];
 	private _currentPlaybackSessionId: string | undefined | null = null; // null = nothing playing
+	// The narration id of the response currently occupying the playback slot, if
+	// it was a solicited narration. Set when a chunk actually claims the slot and
+	// consumed in onPlaybackStopped to mark the reply heard ONLY once its audio
+	// has truly finished playing (never merely queued or received - see
+	// {@link _markNarrationHeard}).
+	private _currentPlaybackResponseId: string | undefined;
 	// True once the currently-playing response has received its final audio
 	// chunk. A same-session frame arriving after this marks a NEW response and
 	// must be serialized (queued) rather than fast-pathed, or its audio would be
@@ -840,8 +846,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 		// TTS playback stopped → cache audio, process next in queue or restore status
 		this._voiceEventDisposables.add(this.ttsPlaybackService.onPlaybackStopped(() => {
+			// Capture the interruption flag FIRST: onPlaybackStopped also fires when
+			// playback is stopped intentionally (barge-in, PTT, _interruptAssistantPlayback,
+			// disconnect), and we must not treat an interrupted reply as heard.
+			const wasInterrupted = this._telemetryTtsInterrupted;
 			// Telemetry: TTS listen-through rate
-			const listenedToEnd = !this._telemetryTtsInterrupted;
+			const listenedToEnd = !wasInterrupted;
 			this.telemetryService.publicLog2<VoiceTtsListenThroughEvent, VoiceTtsListenThroughClassification>('voiceTtsListenThrough', {
 				listenedToEnd,
 				listenedPct: listenedToEnd ? 100 : 50, // approximation; exact % requires tracking audio position
@@ -858,6 +868,25 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this.voicePlaybackService.notifyPlaybackEnd(undefined);
 			this._currentPlaybackSessionId = null;
 			this._currentPlaybackFinalized = false;
+			const finishedResponseId = this._currentPlaybackResponseId;
+			this._currentPlaybackResponseId = undefined;
+			if (finishedResponseId && !wasInterrupted) {
+				// The response actually played to the end: mark it heard (set the
+				// exactly-once dedup and clear its pending indicator). This is the
+				// only point that means the audio truly played through, not merely
+				// that it was queued or received.
+				this._markNarrationHeard(finishedResponseId);
+			} else if (finishedResponseId && wasInterrupted) {
+				// Interrupted before finishing: DON'T mark heard - leave the pending
+				// summary + indicator intact so the reply stays retryable. Drop the
+				// in-flight solicited-narration guard now (rather than waiting for
+				// its timeout) so clicking the session again re-requests immediately.
+				const pending = this._pendingSolicitedNarrations.get(finishedResponseId);
+				if (pending) {
+					clearTimeout(pending.timer);
+					this._pendingSolicitedNarrations.delete(finishedResponseId);
+				}
+			}
 
 			// Check if there's more in the queue
 			if (this._audioQueue.length > 0) {
@@ -1308,6 +1337,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this.ttsPlaybackService.stopPlayback();
 				this._audioQueue.length = 0;
 				this._currentPlaybackSessionId = null;
+				this._currentPlaybackResponseId = undefined;
 				this._isProcessingQueue = false;
 				this._suppressIncomingAudio = true;
 				this._stopBargeInMonitor();
@@ -1404,7 +1434,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					&& !this._deferredBufferHasResponse(codingSessionId, e.responseId)) {
 					this._flushDeferredResponse(codingSessionId);
 				}
-				this._enqueueAudio(codingSessionId, e.audio, e.isFirstChunk, e.isFinal, e.transcript);
+				this._enqueueAudio(codingSessionId, e.audio, e.isFirstChunk, e.isFinal, e.transcript, e.responseId);
 				if (e.isFinal) {
 					this._liveReplyKeys.delete(codingSessionId ?? '');
 					// Record this heard reply so an immediate backend re-narration
@@ -1431,17 +1461,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			if (e.isFinal && e.transcript) {
 				this._persistTurn('assistant', e.transcript);
 			}
-			// A solicited narration's audio has finished arriving: NOW mark its
-			// reply actually heard (set the exactly-once dedup and clear the
-			// session's pending indicator). Deliberately not done when the request
-			// was merely accepted - that could clear the indicator for a reply the
-			// user never hears (dropped/deferred/interrupted audio) and destroy the
-			// state needed to retry. Runs even when the chunk was deferred/dropped
-			// above: the reply IS accounted for (buffered for flush on focus, or a
-			// duplicate we already read), so its indicator should not linger.
-			if (e.isFinal && e.responseId) {
-				this._markNarrationHeard(e.responseId);
-			}
+			// NOTE: a reply is marked "heard" (dedup set, pending indicator cleared)
+			// only when its audio finishes PLAYING - see onPlaybackStopped and the
+			// speech-disabled branch of _playChunk, keyed by responseId. Final-chunk
+			// RECEIPT here is not proof of playback (the audio may be queued behind
+			// another session, or later dropped/interrupted), so we deliberately do
+			// not mark it heard at this point.
 			// Retire the per-response route once its stream ends. Done last so the
 			// route stays inspectable for the whole handler (defer/dedupe/enqueue).
 			if (e.isFinal && e.responseId) {
@@ -1606,6 +1631,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._bargeInMonitorActive = false;
 		this._audioQueue.length = 0;
 		this._currentPlaybackSessionId = null;
+		this._currentPlaybackResponseId = undefined;
 		this._isProcessingQueue = false;
 		this._suppressIncomingAudio = false;
 		this._clearDeferredResponses();
@@ -1704,6 +1730,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// after this terminal disconnect.
 		this._audioQueue.length = 0;
 		this._currentPlaybackSessionId = null;
+		this._currentPlaybackResponseId = undefined;
 		this._isProcessingQueue = false;
 		this.ttsPlaybackService.closeContext();
 		this.micCaptureService.stopCapture();
@@ -1783,6 +1810,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		//      (carries a transcript) so the next response plays cleanly.
 		this._audioQueue.length = 0;
 		this._currentPlaybackSessionId = null;
+		this._currentPlaybackResponseId = undefined;
 		this._isProcessingQueue = false;
 		this._suppressIncomingAudio = true;
 
@@ -2591,6 +2619,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// kept so routing is correct once connected; the reply is narrated on the
 		// next focus/state event (or an explicit activateSession) after connect.
 		if (!this._isConnected.get()) {
+			this.logService.trace(`[voice] _activateShownSession(${key.slice(-32)}) skipped: controller not connected (external=${this._externalActiveSessionMode})`);
 			return;
 		}
 		const flushResult = this._flushDeferredResponse(key);
@@ -2656,12 +2685,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			}
 		}
 		// Clear this session's pending reply indicator/summary only once its reply
-		// was actually handled (played from the buffer, or a narration request was
-		// really sent). If nothing was narratable yet (model still loading) or the
-		// request couldn't be sent (socket closed - kept in _pendingNarrationRetries),
-		// the durable summary is retained so a later focus/state event can retry;
-		// otherwise the reply would be lost and never read. Mirrors how the
-		// confirmation indicator is cleared on focus (see _clearConfirmationIndicator).
+		// was actually handled: its buffered audio was flushed/played, or it was
+		// already narrated (a re-focus of a reply we read before). A freshly
+		// REQUESTED narration does NOT clear here - a sent request is not a heard
+		// reply; its indicator is cleared from _markNarrationHeard once the audio
+		// actually finishes playing (or is retained if the audio never arrives, so
+		// a later focus/state event can retry). Mirrors how the confirmation
+		// indicator is cleared on focus (see _clearConfirmationIndicator).
 		if (handledResponse) {
 			this._clearPendingResponse(pendingKey ?? key);
 		}
@@ -2863,7 +2893,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 		this._externalActiveSessionMode = true;
 		const definedKey = key!;
-		if (definedKey === this._activeSessionShown) {
+		if (this._isSameSession(definedKey, this._activeSessionShown)) {
 			// Same session re-pinned. Normally already activated, but its pending
 			// item may still be unheard: a response can arrive-and-defer for it
 			// AFTER it became active (backend tagged it with a not-yet-aliased bare
@@ -2873,7 +2903,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// resolves and is heard, rather than being silently stuck.
 			if (this._matchDeferredKey(definedKey)
 				|| !!this._matchPendingSummaryKey(definedKey)
-				|| this._confirmationPendingSessions.has(definedKey)) {
+				|| this._hasAliasedKey(this._confirmationPendingSessions, definedKey)) {
 				this.logService.trace(`[voice] re-pinned active session=${definedKey} has pending voice work; re-activating`);
 				this._activateShownSession(resource);
 			}
@@ -3062,7 +3092,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (!response) {
 			response = { responseId, finalized: false, chunks: [] };
 			responses.push(response);
-			this._markPendingResponse(sessionId, true);
+			this._setPendingIndicatorForAliases(sessionId, true);
 			this.logService.trace(`[voice] deferring response for unfocused session=${sessionId} (buffered=${responses.length}); showing pending indicator`);
 		}
 		response.chunks.push({ audio, isFirstChunk, isFinal, transcript });
@@ -3161,9 +3191,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// Play every buffered response for this session, in the order they arrived.
 		for (const r of responses) {
 			for (const chunk of r.chunks) {
-				this._enqueueAudio(key, chunk.audio, chunk.isFirstChunk, chunk.isFinal, chunk.transcript);
+				this._enqueueAudio(key, chunk.audio, chunk.isFirstChunk, chunk.isFinal, chunk.transcript, r.responseId);
 			}
 		}
+		// NOTE: do NOT mark these narrations heard here - enqueuing is not playing.
+		// The audio may still be dropped by a later activation / PTT / queue reset
+		// / interruption before it plays. It is marked heard from onPlaybackStopped
+		// (or the speech-disabled branch of _playChunk), keyed by responseId, only
+		// once the audio has actually finished - preserving the pending state so an
+		// unplayed reply can be retried instead of silently lost.
 		return { flushed: true, finalTranscripts };
 	}
 
@@ -3300,19 +3336,27 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		const activeId = this._externalActiveSessionMode
 			? this._activeSessionShown
 			: this._getFocusedSessionId();
-		// Show the indicator for every non-active waiting session.
+		// Show the indicator for every non-active waiting session. Both the
+		// "is this the active session" and "already has an indicator" checks must
+		// be alias-aware: Agents-window sessions carry two equivalent ids (bare
+		// backend id vs UI agent-host resource), so an exact comparison would
+		// treat the just-cleared session as still-waiting-and-not-active and
+		// immediately re-add the indicator we cleared on focus.
 		for (const sessionId of waitingSessionIds) {
-			if (sessionId === activeId) {
+			if (this._isSameSession(sessionId, activeId)) {
+				// Now the active session - make sure any aliased entry is gone.
+				this._clearConfirmationIndicator(sessionId);
 				continue;
 			}
-			if (!this._confirmationPendingSessions.has(sessionId)) {
+			if (!this._hasAliasedKey(this._confirmationPendingSessions, sessionId)) {
 				this._confirmationPendingSessions.add(sessionId);
-				this._markPendingResponse(sessionId, true);
+				this._setPendingIndicatorForAliases(sessionId, true);
 			}
 		}
 		// Clear it for sessions that are now active or no longer waiting.
 		for (const sessionId of [...this._confirmationPendingSessions]) {
-			if (waitingSessionIds.has(sessionId) && sessionId !== activeId) {
+			const stillWaiting = [...waitingSessionIds].some(id => this._isSameSession(id, sessionId));
+			if (stillWaiting && !this._isSameSession(sessionId, activeId)) {
 				continue;
 			}
 			this._clearConfirmationIndicator(sessionId);
@@ -3320,44 +3364,98 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	private _clearConfirmationIndicator(sessionId: string): void {
-		if (!this._confirmationPendingSessions.delete(sessionId)) {
-			return;
+		let deleted = false;
+		for (const key of [...this._confirmationPendingSessions]) {
+			if (this._isSameSession(key, sessionId)) {
+				this._confirmationPendingSessions.delete(key);
+				deleted = true;
+			}
 		}
-		this._maybeHideIndicator(sessionId);
+		if (deleted) {
+			this._maybeHideIndicator(sessionId);
+		}
 	}
 
 	/** Drop a session's pending-response (completed-reply) indicator/summary. */
 	private _clearPendingResponse(sessionId: string): void {
-		if (!this._pendingResponseSummaries.delete(sessionId)) {
-			return;
+		let deleted = false;
+		for (const key of [...this._pendingResponseSummaries.keys()]) {
+			if (this._isSameSession(key, sessionId)) {
+				this._pendingResponseSummaries.delete(key);
+				deleted = true;
+			}
 		}
-		this._maybeHideIndicator(sessionId);
+		if (deleted) {
+			this._maybeHideIndicator(sessionId);
+		}
+	}
+
+	/** True when a set/map contains an id equal to `sessionId` under EITHER id
+	 *  space (bare backend id or UI agent-host resource). The indicator's three
+	 *  owners are keyed inconsistently across the two spaces, so ownership checks
+	 *  must be alias-aware or an indicator set under one key is never cleared by a
+	 *  lookup under the other. */
+	private _hasAliasedKey(collection: ReadonlySet<string> | ReadonlyMap<string, unknown>, sessionId: string): boolean {
+		if (collection.has(sessionId)) {
+			return true;
+		}
+		for (const candidate of collection.keys()) {
+			if (this._isSameSession(candidate, sessionId)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Set the sessions-list indicator for EVERY id equivalent to `sessionId`
+	 *  (the id itself, its canonical UI resource, and any recorded backend<->UI
+	 *  alias pair), so an indicator turned on under one id space is reliably
+	 *  turned off - the visible state was potentially set under the other id. */
+	private _setPendingIndicatorForAliases(sessionId: string, pending: boolean): void {
+		const ids = new Set<string>([sessionId]);
+		const canonical = this._canonicalSessionId(sessionId);
+		if (canonical) {
+			ids.add(canonical);
+		}
+		for (const [backendId, uiId] of this._uiResourceByBackendId) {
+			if (this._isSameSession(backendId, sessionId) || this._isSameSession(uiId, sessionId)) {
+				ids.add(backendId);
+				ids.add(uiId);
+			}
+		}
+		for (const id of ids) {
+			this._markPendingResponse(id, pending);
+		}
 	}
 
 	/** Hide the sessions-list indicator only when no owner still needs it. The
 	 *  same visible indicator is shared by three independent sources - an
 	 *  unfocused confirmation, buffered deferred audio, and a completed
-	 *  background reply - so it must stay visible until all are resolved. */
+	 *  background reply - so it must stay visible until all are resolved. All
+	 *  three checks are alias-aware (see {@link _hasAliasedKey}), and the clear
+	 *  is applied across every equivalent id so it can't be stranded under a
+	 *  different id space than the one that showed it. */
 	private _maybeHideIndicator(sessionId: string): void {
-		if (!this._confirmationPendingSessions.has(sessionId)
-			&& !this._deferredResponses.has(sessionId)
-			&& !this._pendingResponseSummaries.has(sessionId)) {
-			this._markPendingResponse(sessionId, false);
+		if (this._hasAliasedKey(this._confirmationPendingSessions, sessionId)
+			|| this._hasAliasedKey(this._deferredResponses, sessionId)
+			|| this._hasAliasedKey(this._pendingResponseSummaries, sessionId)) {
+			return;
 		}
+		this._setPendingIndicatorForAliases(sessionId, false);
 	}
 
 	private _clearDeferredResponses(): void {
 		for (const sessionId of this._deferredResponses.keys()) {
-			this._markPendingResponse(sessionId, false);
+			this._setPendingIndicatorForAliases(sessionId, false);
 		}
 		this._deferredResponses.clear();
 		this._responseRoutes.clear();
 		for (const sessionId of this._confirmationPendingSessions) {
-			this._markPendingResponse(sessionId, false);
+			this._setPendingIndicatorForAliases(sessionId, false);
 		}
 		this._confirmationPendingSessions.clear();
 		for (const sessionId of this._pendingResponseSummaries.keys()) {
-			this._markPendingResponse(sessionId, false);
+			this._setPendingIndicatorForAliases(sessionId, false);
 		}
 		this._pendingResponseSummaries.clear();
 	}
@@ -3371,10 +3469,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._isProcessingQueue = false;
 		this._suppressIncomingAudio = true;
 		this.ttsPlaybackService.stopPlayback();
+		// Clear any narration id left over if stopPlayback didn't fire onPlaybackStopped
+		// (e.g. nothing was playing), so a later stray stop can't consume a stale id.
+		this._currentPlaybackResponseId = undefined;
 		this.voicePlaybackService.notifyPlaybackEnd(undefined);
 	}
 
-	private _enqueueAudio(sessionId: string | undefined, audio: string, isFirstChunk: boolean, isFinal: boolean, transcript: string | undefined): void {
+	private _enqueueAudio(sessionId: string | undefined, audio: string, isFirstChunk: boolean, isFinal: boolean, transcript: string | undefined, responseId?: string): void {
 		// An incoming response frame means the assistant is actively replying, so
 		// cancel any pending auto-listen. Otherwise a debounced listen scheduled
 		// when the previous session's playback stopped can fire mid-response and
@@ -3418,7 +3519,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// too - forcing a fresh turn once the current one finishes.
 		const continuationOfCurrent = sameSession && !isFirstChunk && !this._currentPlaybackFinalized;
 		if ((nothingPlaying && this._audioQueue.length === 0) || continuationOfCurrent) {
-			this._playChunk(sessionId, audio, isFirstChunk, isFinal, transcript);
+			this._playChunk(sessionId, audio, isFirstChunk, isFinal, transcript, responseId);
 			return;
 		}
 
@@ -3434,7 +3535,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				!e.finalized && (e.sessionId === sessionId || (e.sessionId === undefined && sessionId === undefined))
 			);
 		if (!entry) {
-			entry = { sessionId, finalized: false, chunks: [] };
+			entry = { sessionId, responseId, finalized: false, chunks: [] };
 			this._audioQueue.push(entry);
 		}
 		entry.chunks.push({ audio, isFirstChunk, isFinal, transcript });
@@ -3448,7 +3549,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 	}
 
-	private _playChunk(sessionId: string | undefined, audio: string, isFirstChunk: boolean, isFinal: boolean, transcript: string | undefined): void {
+	private _playChunk(sessionId: string | undefined, audio: string, isFirstChunk: boolean, isFinal: boolean, transcript: string | undefined, responseId?: string): void {
 		// Streaming pipeline sends a monotonically-growing transcript on every
 		// chunk. On the FIRST chunk of a response we push a fresh assistant
 		// turn into the rolling buffer; on subsequent chunks we REPLACE that
@@ -3473,6 +3574,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// (onPlaybackStopped never fires), deadlocking every other
 			// session's queued audio.
 			this._currentPlaybackSessionId = sessionId;
+			// Track the response now occupying the slot so onPlaybackStopped can
+			// mark it heard once its audio truly finishes (not merely queued).
+			this._currentPlaybackResponseId = responseId;
 			// A same-session frame arriving after the final chunk is a NEW
 			// response and must be serialized (see `_enqueueAudio`).
 			this._currentPlaybackFinalized = isFinal;
@@ -3488,6 +3592,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this._replyPlayedSinceSend = true;
 			if (isFinal) {
 				this._currentPlaybackSessionId = null;
+				this._currentPlaybackResponseId = undefined;
+				// Speech is disabled so no audio plays and onPlaybackStopped won't
+				// fire: the reply is nonetheless consumed, so mark the solicited
+				// narration heard here to clear its pending indicator.
+				if (responseId) {
+					this._markNarrationHeard(responseId);
+				}
 				// Avoid re-entering _processQueue if we're already inside its
 				// drain loop; that loop will continue on its own.
 				if (!this._isProcessingQueue) {
@@ -3519,7 +3630,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		while (this._currentPlaybackSessionId === null && this._audioQueue.length > 0) {
 			const next = this._audioQueue.shift()!;
 			for (const chunk of next.chunks) {
-				this._playChunk(next.sessionId, chunk.audio, chunk.isFirstChunk, chunk.isFinal, chunk.transcript);
+				this._playChunk(next.sessionId, chunk.audio, chunk.isFirstChunk, chunk.isFinal, chunk.transcript, next.responseId);
 			}
 		}
 		this._isProcessingQueue = false;
@@ -3615,7 +3726,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				const existingSummary = existingKey ? this._pendingResponseSummaries.get(existingKey) : undefined;
 				if (!alreadyRead && existingSummary !== lastResponseSummary) {
 					this._pendingResponseSummaries.set(existingKey ?? sessionId, lastResponseSummary);
-					this._markPendingResponse(sessionId, true);
+					this._setPendingIndicatorForAliases(sessionId, true);
 					this.logService.trace(`[voice] response completed for unfocused session=${sessionId.slice(-32)}; showing pending indicator`);
 				}
 			}
