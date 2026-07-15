@@ -254,7 +254,6 @@ export interface IProductConfiguration {
 	readonly chatSessionRecommendations?: IChatSessionRecommendation[];
 	readonly emergencyAlertUrl?: string;
 	readonly voiceWsUrl?: string;
-	readonly chatSpeechToTextUrl?: string;
 
 	readonly remoteDefaultExtensionsIfInstalledLocally?: string[];
 
@@ -432,6 +431,7 @@ export interface IDefaultChatAgent {
 	readonly tokenEntitlementUrl: string;
 	readonly mcpRegistryDataUrl: string;
 	readonly managedSettingsUrl: string;
+	readonly speechToTextUrl: string;
 
 	readonly chatQuotaExceededContext: string;
 	readonly completionsQuotaExceededContext: string;

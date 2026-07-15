@@ -13,6 +13,7 @@ import { ILogService } from '../../../../../platform/log/common/log.js';
 import { localize } from '../../../../../nls.js';
 import { IAuthenticationService } from '../../../../services/authentication/common/authentication.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
+import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 
 export const IChatSpeechToTextService = createDecorator<IChatSpeechToTextService>('chatSpeechToTextService');
@@ -39,8 +40,9 @@ export interface IChatSpeechToTextService {
 	start(window: Window & typeof globalThis): Promise<void>;
 
 	/**
-	 * Stop capturing and transcribe the recorded audio with the configured
-	 * Azure OpenAI transcription deployment. Returns the transcribed text, or
+	 * Stop capturing and transcribe the recorded audio via the configured
+	 * transcription backend (`chat.speechToText.serverUrl` or the product's
+	 * `defaultChatAgent.speechToTextUrl`). Returns the transcribed text, or
 	 * `undefined` when nothing was recorded or transcription failed.
 	 */
 	stopAndTranscribe(): Promise<string | undefined>;
@@ -75,6 +77,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IAuthenticationService private readonly _authenticationService: IAuthenticationService,
 		@IProductService private readonly _productService: IProductService,
+		@IDefaultAccountService private readonly _defaultAccountService: IDefaultAccountService,
 	) {
 		super();
 		this._recordingContextKey = ChatContextKeys.speechToTextRecording.bindTo(contextKeyService);
@@ -179,15 +182,16 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 
 	private _getServerUrl(): string {
 		const configured = (this._configurationService.getValue<string>('chat.speechToText.serverUrl') ?? '').trim();
-		return configured || this._productService.chatSpeechToTextUrl || '';
+		return configured || this._productService.defaultChatAgent?.speechToTextUrl || '';
 	}
 
 	private async _getAuthToken(): Promise<string | undefined> {
 		try {
-			const sessions = await this._authenticationService.getSessions('github');
+			const providerId = this._defaultAccountService.getDefaultAccountAuthenticationProvider().id;
+			const sessions = await this._authenticationService.getSessions(providerId);
 			return sessions[0]?.accessToken;
 		} catch (err) {
-			this._logService.warn('[chat-stt] failed to resolve github session', err);
+			this._logService.warn('[chat-stt] failed to resolve authentication session', err);
 			return undefined;
 		}
 	}
