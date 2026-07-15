@@ -77,6 +77,7 @@ import { AGENT_SESSIONS_SCOPED_INPUT_HISTORY_SETTING } from './sessionsChatHisto
 import { IChatStatusItemService } from '../../../../workbench/contrib/chat/browser/chatStatus/chatStatusItemService.js';
 import { handleTerminalCommandPaste, isTerminalCommandInput } from '../../../../workbench/contrib/chat/browser/chatTerminalCommandPaste.js';
 import { getChatSessionType } from '../../../../workbench/contrib/chat/common/model/chatUri.js';
+import { ChatSpeechToTextState, IChatSpeechToTextService } from '../../../../workbench/contrib/chat/browser/speechToText/chatSpeechToTextService.js';
 
 
 const OPEN_OTEL_SETTINGS_COMMAND = 'github.copilot.chat.otel.openSettings';
@@ -682,6 +683,16 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 
 		dom.append(toolbar, dom.$('.sessions-chat-toolbar-spacer'));
 
+		// Dictation (speech-to-text) mic button. Shares the STT service, mic
+		// device, and gating (`chat.speechToText.serverUrl`) with the main chat
+		// input; inserts the transcript into this composer's editor. Placed
+		// before the voice controls so dictation leads the mic-related group.
+		try {
+			this._createSpeechToTextButton(toolbar);
+		} catch (error) {
+			this.logService.error('Failed to create new-session dictation control:', error);
+		}
+
 		// Voice controls (mic/stop/settings/disconnect). The hand-built toolbar
 		// can't use the shared `MenuId.ChatExecute`, so a dedicated menu is used.
 		// Keep the session picker usable when optional voice initialization fails.
@@ -713,6 +724,78 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		sendButton.icon = Codicon.newLine;
 		// Hold Alt while clicking Send to start the session in the background.
 		this._register(sendButton.onDidClick(e => this._send(!!this.options.supportsBackground && !!(e as MouseEvent | KeyboardEvent | undefined)?.altKey)));
+	}
+
+	private _createSpeechToTextButton(container: HTMLElement): void {
+		const sttService = this.instantiationService.invokeFunction(accessor => accessor.get(IChatSpeechToTextService));
+
+		const button = dom.append(container, dom.$('.sessions-chat-stt-button'));
+		button.tabIndex = 0;
+		button.role = 'button';
+		const micLabel = localize('sessionsStt.dictate', "Dictate (Speech to Text)");
+		const stopLabel = localize('sessionsStt.stop', "Stop Dictation");
+		this._register(this.hoverService.setupDelayedHover(button, {
+			content: micLabel,
+			position: { hoverPosition: HoverPosition.BELOW },
+			appearance: { showPointer: true }
+		}));
+
+		const renderState = (state: ChatSpeechToTextState) => {
+			const recording = state !== ChatSpeechToTextState.Idle;
+			dom.clearNode(button);
+			dom.append(button, renderIcon(recording ? Codicon.stopCircle : Codicon.mic));
+			button.classList.toggle('recording', recording);
+			button.ariaLabel = recording ? stopLabel : micLabel;
+		};
+		renderState(sttService.state);
+		this._register(sttService.onDidChangeState(renderState));
+
+		const updateVisibility = () => {
+			const configured = !!(this.configurationService.getValue<string>('chat.speechToText.serverUrl') ?? '').trim();
+			button.classList.toggle('hidden', !configured);
+		};
+		updateVisibility();
+		this._register(this.configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('chat.speechToText.serverUrl')) {
+				updateVisibility();
+			}
+		}));
+
+		this._register(dom.addDisposableListener(button, dom.EventType.CLICK, async () => {
+			if (sttService.state === ChatSpeechToTextState.Recording) {
+				const text = await sttService.stopAndTranscribe();
+				if (text) {
+					this._insertDictatedText(text);
+				}
+				return;
+			}
+			if (sttService.state !== ChatSpeechToTextState.Idle) {
+				return;
+			}
+			try {
+				await sttService.start(dom.getWindow(button));
+			} catch {
+				// microphone acquisition failure is already surfaced by the service
+			}
+		}));
+	}
+
+	private _insertDictatedText(text: string): void {
+		const editor = this._editor;
+		const model = editor?.getModel();
+		if (!editor || !model) {
+			return;
+		}
+		const selection = editor.getSelection() ?? model.getFullModelRange().collapseToEnd();
+		const needsLeadingSpace = selection.startColumn > 1 && !/\s$/.test(model.getValueInRange({
+			startLineNumber: selection.startLineNumber,
+			startColumn: Math.max(1, selection.startColumn - 1),
+			endLineNumber: selection.startLineNumber,
+			endColumn: selection.startColumn,
+		}));
+		const insertion = needsLeadingSpace ? ` ${text}` : text;
+		editor.executeEdits('sessionsSpeechToText', [{ range: selection, text: insertion, forceMoveMarkers: true }]);
+		editor.focus();
 	}
 
 	// --- Input History (IHistoryNavigationWidget) ---

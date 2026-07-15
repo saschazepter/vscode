@@ -14,6 +14,8 @@ import { localize } from '../../../../../nls.js';
 import { IAuthenticationService } from '../../../../services/authentication/common/authentication.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
+import { IStorageService, StorageScope } from '../../../../../platform/storage/common/storage.js';
+import { AgentsVoiceStorageKeys } from '../../../agentsVoice/common/agentsVoice.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 
 export const IChatSpeechToTextService = createDecorator<IChatSpeechToTextService>('chatSpeechToTextService');
@@ -78,6 +80,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		@IAuthenticationService private readonly _authenticationService: IAuthenticationService,
 		@IProductService private readonly _productService: IProductService,
 		@IDefaultAccountService private readonly _defaultAccountService: IDefaultAccountService,
+		@IStorageService private readonly _storageService: IStorageService,
 	) {
 		super();
 		this._recordingContextKey = ChatContextKeys.speechToTextRecording.bindTo(contextKeyService);
@@ -99,7 +102,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 
 		let stream: MediaStream;
 		try {
-			stream = await window.navigator.mediaDevices.getUserMedia({ audio: true });
+			stream = await this._acquireStream(window);
 		} catch (err) {
 			this._logService.error('[chat-stt] microphone acquisition failed', err);
 			this._notificationService.error(localize('chatStt.micError', "Could not access the microphone for speech-to-text: {0}", toErrorMessage(err)));
@@ -174,6 +177,34 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		this._setState(ChatSpeechToTextState.Idle);
 	}
 
+	private async _acquireStream(window: Window & typeof globalThis): Promise<MediaStream> {
+		// Honor the microphone chosen for Voice Mode (shared setting) so both
+		// features record from the same device. Falls back to the system default
+		// if the stored device is stale/unplugged.
+		const deviceId = this._storageService.get(AgentsVoiceStorageKeys.MicrophoneDevice, StorageScope.APPLICATION);
+		const audioConstraints: MediaTrackConstraints = {
+			channelCount: 1,
+			echoCancellation: true,
+			noiseSuppression: true,
+		};
+		if (deviceId) {
+			audioConstraints.deviceId = { exact: deviceId };
+		}
+
+		try {
+			return await window.navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+		} catch (err) {
+			const isDeviceError = deviceId && err instanceof DOMException &&
+				(err.name === 'OverconstrainedError' || err.name === 'NotFoundError');
+			if (!isDeviceError) {
+				throw err;
+			}
+			this._logService.warn(`[chat-stt] preferred microphone ${deviceId.slice(0, 8)}… unavailable, falling back to default`);
+			delete audioConstraints.deviceId;
+			return window.navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+		}
+	}
+
 	private _teardownStream(): void {
 		this._mediaStream?.getTracks().forEach(track => track.stop());
 		this._mediaStream = undefined;
@@ -218,8 +249,16 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		}
 
 		const json = await response.json() as { text?: string };
-		return typeof json.text === 'string' ? json.text.trim() : undefined;
+		return typeof json.text === 'string' ? cleanTranscript(json.text) : undefined;
 	}
+}
+
+/** Strips filler words (um, uh, er, ...) and collapses whitespace from a transcript. */
+function cleanTranscript(text: string): string {
+	return text
+		.replace(/\b(um+|uh+|erm+|er+|ah+)\b/gi, '')
+		.replace(/\s{2,}/g, ' ')
+		.trim();
 }
 
 function pickSupportedMimeType(window: Window & typeof globalThis): string {

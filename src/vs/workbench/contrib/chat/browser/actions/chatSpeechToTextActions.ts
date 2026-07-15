@@ -7,12 +7,15 @@ import { getActiveWindow, getWindow } from '../../../../../base/browser/dom.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { KeyCode, KeyMod } from '../../../../../base/common/keyCodes.js';
-import { localize2 } from '../../../../../nls.js';
+import { localize, localize2 } from '../../../../../nls.js';
 import { Action2, MenuId, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
+import { IQuickInputService } from '../../../../../platform/quickinput/common/quickInput.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { AgentsVoiceStorageKeys } from '../../../agentsVoice/common/agentsVoice.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { CHAT_CATEGORY } from './chatActions.js';
 import { IChatExecuteActionContext } from './chatExecuteActions.js';
@@ -41,7 +44,7 @@ class ToggleChatSpeechToTextAction extends Action2 {
 			},
 			menu: [{
 				id: MenuId.ChatExecute,
-				order: 2,
+				order: -11,
 				when: ChatSpeechToTextConfigured,
 				group: 'navigation',
 			}],
@@ -87,7 +90,10 @@ class HoldToSpeechToTextAction extends Action2 {
 			keybinding: {
 				weight: KeybindingWeight.WorkbenchContrib,
 				when: ContextKeyExpr.and(ChatSpeechToTextConfigured, ChatContextKeys.inChatInput),
-				primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KeyV,
+				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.Space,
+				linux: {
+					primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyMod.Shift | KeyCode.Space,
+				},
 			},
 		});
 	}
@@ -132,6 +138,77 @@ class HoldToSpeechToTextAction extends Action2 {
 	}
 }
 
+class SelectSpeechToTextMicrophoneAction extends Action2 {
+	static readonly ID = 'workbench.action.chat.selectSpeechToTextMicrophone';
+
+	constructor() {
+		super({
+			id: SelectSpeechToTextMicrophoneAction.ID,
+			title: localize2('chat.speechToText.selectMicrophone', "Dictate: Select Microphone"),
+			category: CHAT_CATEGORY,
+			f1: true,
+			precondition: ChatSpeechToTextConfigured,
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const quickInputService = accessor.get(IQuickInputService);
+		const storageService = accessor.get(IStorageService);
+
+		const devices = await navigator.mediaDevices.enumerateDevices();
+
+		// Filter out the virtual "default"/"communications" entries (which duplicate a real
+		// device) and de-duplicate by deviceId so a single microphone shows up only once.
+		const seenDeviceIds = new Set<string>();
+		const audioInputs = devices.filter(d => {
+			if (d.kind !== 'audioinput' || d.deviceId === 'default' || d.deviceId === 'communications') {
+				return false;
+			}
+			if (seenDeviceIds.has(d.deviceId)) {
+				return false;
+			}
+			seenDeviceIds.add(d.deviceId);
+			return true;
+		});
+
+		if (audioInputs.length === 0) {
+			quickInputService.pick([{ label: localize('chatStt.noMicrophones', "No microphones found") }]);
+			return;
+		}
+
+		// Shares the Voice Mode microphone selection so both features use the same device.
+		const currentDeviceId = storageService.get(AgentsVoiceStorageKeys.MicrophoneDevice, StorageScope.APPLICATION, '');
+
+		type DevicePickItem = { label: string; description?: string; deviceId: string };
+		const items: DevicePickItem[] = [{
+			label: localize('chatStt.systemDefault', "System Default"),
+			description: currentDeviceId === '' ? localize('chatStt.current', "(current)") : undefined,
+			deviceId: '',
+		}];
+		for (const d of audioInputs) {
+			const label = d.label || localize('chatStt.unknownDevice', "Unknown Device ({0})", d.deviceId.slice(0, 8));
+			items.push({
+				label,
+				description: d.deviceId === currentDeviceId ? localize('chatStt.current', "(current)") : undefined,
+				deviceId: d.deviceId,
+			});
+		}
+
+		const picked = await quickInputService.pick(items, {
+			placeHolder: localize('chatStt.selectMic', "Select a microphone for dictation"),
+		});
+
+		if (picked) {
+			const selection = picked as DevicePickItem;
+			if (selection.deviceId) {
+				storageService.store(AgentsVoiceStorageKeys.MicrophoneDevice, selection.deviceId, StorageScope.APPLICATION, StorageTarget.MACHINE);
+			} else {
+				storageService.remove(AgentsVoiceStorageKeys.MicrophoneDevice, StorageScope.APPLICATION);
+			}
+		}
+	}
+}
+
 function insertText(widget: IChatWidget, text: string): void {
 	const editor = widget.inputEditor;
 	const model = editor.getModel();
@@ -154,5 +231,6 @@ export function registerChatSpeechToTextActions(): DisposableStore {
 	const store = new DisposableStore();
 	store.add(registerAction2(ToggleChatSpeechToTextAction));
 	store.add(registerAction2(HoldToSpeechToTextAction));
+	store.add(registerAction2(SelectSpeechToTextMicrophoneAction));
 	return store;
 }
