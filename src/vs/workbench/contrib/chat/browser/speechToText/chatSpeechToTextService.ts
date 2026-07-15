@@ -68,9 +68,6 @@ export interface IChatSpeechToTextService {
 	 */
 	readonly onDidUpdateTranscript: Event<string>;
 
-	/** Fired while recording; exposes the audio-reactive glow analyser. */
-	readonly analyserNode: AnalyserNode | undefined;
-
 	/**
 	 * Whether a transcription backend is configured, via the
 	 * `chat.speechToText.serverUrl` setting or the product's default endpoint.
@@ -117,13 +114,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private _audioContext: AudioContext | undefined;
 	private _sourceNode: MediaStreamAudioSourceNode | undefined;
 	private _processorNode: ScriptProcessorNode | undefined;
-	private _analyserNode: AnalyserNode | undefined;
 	private _socket: WebSocket | undefined;
-
-	/** AnalyserNode for the audio-reactive dictation glow, available while recording. */
-	get analyserNode(): AnalyserNode | undefined {
-		return this._analyserNode;
-	}
 
 	get isConfigured(): boolean {
 		return this._configurationService.getValue<boolean>(ENABLED_SETTING) !== false && !!this._getServerUrl();
@@ -367,11 +358,6 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		const source = ctx.createMediaStreamSource(stream);
 		this._sourceNode = source;
 
-		const analyser = ctx.createAnalyser();
-		analyser.fftSize = 256;
-		source.connect(analyser);
-		this._analyserNode = analyser;
-
 		const processor = ctx.createScriptProcessor(4096, 1, 1);
 		this._processorNode = processor;
 
@@ -396,8 +382,6 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		}
 		try { this._sourceNode?.disconnect(); } catch { /* ignore */ }
 		this._sourceNode = undefined;
-		try { this._analyserNode?.disconnect(); } catch { /* ignore */ }
-		this._analyserNode = undefined;
 		this._audioContext?.close().catch(() => { /* ignore */ });
 		this._audioContext = undefined;
 		this._mediaStream?.getTracks().forEach(track => track.stop());

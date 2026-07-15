@@ -73,8 +73,6 @@ import { IHostService } from '../../../../../services/host/browser/host.js';
 import { IMicCaptureService } from '../../voiceClient/micCaptureService.js';
 import { ITtsPlaybackService } from '../../voiceClient/ttsPlaybackService.js';
 import { IVoiceSessionController } from '../../voiceClient/voiceSessionController.js';
-import { IChatSpeechToTextService } from '../../speechToText/chatSpeechToTextService.js';
-import { setupDictationGlow } from '../../speechToText/dictationGlow.js';
 import { computeVoiceGlowStyle, readVoiceGlowIntensity } from '../../voiceClient/voiceGlow.js';
 import { IAgentTitleBarStatusService } from '../../agentSessions/experiments/agentTitleBarStatusService.js';
 import { IVoicePlaybackService } from '../../../common/voicePlaybackService.js';
@@ -151,7 +149,6 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		@IVoicePlaybackService _voicePlaybackService: IVoicePlaybackService,
 		@IWorkbenchEnvironmentService _workbenchEnvironmentService: IWorkbenchEnvironmentService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
-		@IChatSpeechToTextService private readonly chatSpeechToTextService: IChatSpeechToTextService,
 	) {
 		super(options, keybindingService2, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, hoverService);
 
@@ -347,7 +344,6 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		const inputContainerEl = this._widget.inputPart.inputContainerElement;
 		if (inputContainerEl) {
 			this._setupVoiceTranscriptOverlay(inputContainerEl);
-			this._register(setupDictationGlow(this.chatSpeechToTextService, inputContainerEl));
 		}
 
 		this._register(this.configurationService.onDidChangeConfiguration(e => {

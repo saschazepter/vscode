@@ -79,7 +79,6 @@ import { handleTerminalCommandPaste, isTerminalCommandInput } from '../../../../
 import { getChatSessionType } from '../../../../workbench/contrib/chat/common/model/chatUri.js';
 import { ChatSpeechToTextState, IChatSpeechToTextService } from '../../../../workbench/contrib/chat/browser/speechToText/chatSpeechToTextService.js';
 import { isDictating, startDictation, stopDictation } from '../../../../workbench/contrib/chat/browser/speechToText/dictationSession.js';
-import { setupDictationGlow } from '../../../../workbench/contrib/chat/browser/speechToText/dictationGlow.js';
 
 
 const OPEN_OTEL_SETTINGS_COMMAND = 'github.copilot.chat.otel.openSettings';
@@ -691,10 +690,6 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		// before the voice controls so dictation leads the mic-related group.
 		try {
 			this._createSpeechToTextButton(toolbar);
-			// Audio-reactive listening glow on the composer while dictating,
-			// matching Voice Mode. Scoped to this composer's editor.
-			const sttService = this.instantiationService.invokeFunction(accessor => accessor.get(IChatSpeechToTextService));
-			this._register(setupDictationGlow(sttService, container));
 		} catch (error) {
 			this.logService.error('Failed to create new-session dictation control:', error);
 		}
