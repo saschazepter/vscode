@@ -78,6 +78,7 @@ import { IChatStatusItemService } from '../../../../workbench/contrib/chat/brows
 import { handleTerminalCommandPaste, isTerminalCommandInput } from '../../../../workbench/contrib/chat/browser/chatTerminalCommandPaste.js';
 import { getChatSessionType } from '../../../../workbench/contrib/chat/common/model/chatUri.js';
 import { ChatSpeechToTextState, IChatSpeechToTextService } from '../../../../workbench/contrib/chat/browser/speechToText/chatSpeechToTextService.js';
+import { isDictating, startDictation, stopDictation } from '../../../../workbench/contrib/chat/browser/speechToText/dictationSession.js';
 
 
 const OPEN_OTEL_SETTINGS_COMMAND = 'github.copilot.chat.otel.openSettings';
@@ -762,40 +763,15 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		}));
 
 		this._register(dom.addDisposableListener(button, dom.EventType.CLICK, async () => {
-			if (sttService.state === ChatSpeechToTextState.Recording) {
-				const text = await sttService.stopAndTranscribe();
-				if (text) {
-					this._insertDictatedText(text);
-				}
+			if (isDictating()) {
+				await stopDictation();
 				return;
 			}
-			if (sttService.state !== ChatSpeechToTextState.Idle) {
+			if (sttService.state !== ChatSpeechToTextState.Idle || !this._editor) {
 				return;
 			}
-			try {
-				await sttService.start(dom.getWindow(button));
-			} catch {
-				// microphone acquisition failure is already surfaced by the service
-			}
+			await startDictation(sttService, this._editor, dom.getWindow(button));
 		}));
-	}
-
-	private _insertDictatedText(text: string): void {
-		const editor = this._editor;
-		const model = editor?.getModel();
-		if (!editor || !model) {
-			return;
-		}
-		const selection = editor.getSelection() ?? model.getFullModelRange().collapseToEnd();
-		const needsLeadingSpace = selection.startColumn > 1 && !/\s$/.test(model.getValueInRange({
-			startLineNumber: selection.startLineNumber,
-			startColumn: Math.max(1, selection.startColumn - 1),
-			endLineNumber: selection.startLineNumber,
-			endColumn: selection.startColumn,
-		}));
-		const insertion = needsLeadingSpace ? ` ${text}` : text;
-		editor.executeEdits('sessionsSpeechToText', [{ range: selection, text: insertion, forceMoveMarkers: true }]);
-		editor.focus();
 	}
 
 	// --- Input History (IHistoryNavigationWidget) ---

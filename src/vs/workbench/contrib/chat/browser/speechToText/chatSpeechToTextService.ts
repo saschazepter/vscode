@@ -20,12 +20,15 @@ import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 
 export const IChatSpeechToTextService = createDecorator<IChatSpeechToTextService>('chatSpeechToTextService');
 
+/** Sample rate (Hz) of the PCM16 audio streamed to the transcription backend. */
+const SAMPLE_RATE = 16000;
+
 export const enum ChatSpeechToTextState {
 	/** Not recording. */
 	Idle = 'idle',
-	/** Capturing microphone audio. */
+	/** Capturing microphone audio and streaming it for transcription. */
 	Recording = 'recording',
-	/** Recording stopped, awaiting the transcription response. */
+	/** Recording stopped, awaiting the final transcript. */
 	Transcribing = 'transcribing',
 }
 
@@ -36,20 +39,26 @@ export interface IChatSpeechToTextService {
 	readonly state: ChatSpeechToTextState;
 
 	/**
-	 * Begin capturing microphone audio in the given window. Rejects if the
-	 * microphone cannot be acquired.
+	 * Fires with the cumulative transcript while recording, so callers can
+	 * render dictation live as the user speaks. The value grows monotonically
+	 * (finalized utterances plus any in-progress delta).
+	 */
+	readonly onDidUpdateTranscript: Event<string>;
+
+	/**
+	 * Begin capturing microphone audio in the given window and streaming it to
+	 * the transcription backend. Rejects if the microphone or backend cannot be
+	 * reached.
 	 */
 	start(window: Window & typeof globalThis): Promise<void>;
 
 	/**
-	 * Stop capturing and transcribe the recorded audio via the configured
-	 * transcription backend (`chat.speechToText.serverUrl` or the product's
-	 * `defaultChatAgent.speechToTextUrl`). Returns the transcribed text, or
-	 * `undefined` when nothing was recorded or transcription failed.
+	 * Stop capturing, flush the final utterance, and resolve with the complete
+	 * cumulative transcript (or `undefined` when nothing was transcribed).
 	 */
 	stopAndTranscribe(): Promise<string | undefined>;
 
-	/** Abort an in-progress recording without transcribing. */
+	/** Abort an in-progress recording without keeping the transcript. */
 	cancel(): void;
 }
 
@@ -60,6 +69,9 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private readonly _onDidChangeState = this._register(new Emitter<ChatSpeechToTextState>());
 	readonly onDidChangeState = this._onDidChangeState.event;
 
+	private readonly _onDidUpdateTranscript = this._register(new Emitter<string>());
+	readonly onDidUpdateTranscript = this._onDidUpdateTranscript.event;
+
 	private _state = ChatSpeechToTextState.Idle;
 	get state(): ChatSpeechToTextState {
 		return this._state;
@@ -67,10 +79,19 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 
 	private readonly _recordingContextKey: IContextKey<boolean>;
 
-	private _mediaRecorder: MediaRecorder | undefined;
 	private _mediaStream: MediaStream | undefined;
-	private _chunks: Blob[] = [];
-	private _mimeType = 'audio/webm';
+	private _audioContext: AudioContext | undefined;
+	private _sourceNode: MediaStreamAudioSourceNode | undefined;
+	private _processorNode: ScriptProcessorNode | undefined;
+	private _socket: WebSocket | undefined;
+
+	/** Finalized (committed) utterances, space-joined. */
+	private _finalizedText = '';
+	/** In-progress text for the current utterance (from delta events). */
+	private _deltaText = '';
+	/** Resolves when the backend closes after a `stop`, delivering the final text. */
+	private _closePromise: Promise<void> | undefined;
+	private _resolveClose: (() => void) | undefined;
 
 	constructor(
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
@@ -95,8 +116,21 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		this._onDidChangeState.fire(state);
 	}
 
+	private get _transcript(): string {
+		return [this._finalizedText, this._deltaText].filter(Boolean).join(' ').replace(/\s{2,}/g, ' ').trim();
+	}
+
 	async start(window: Window & typeof globalThis): Promise<void> {
 		if (this._state !== ChatSpeechToTextState.Idle) {
+			return;
+		}
+
+		const serverUrl = this._getServerUrl();
+		if (!serverUrl) {
+			this._notificationService.notify({
+				severity: Severity.Warning,
+				message: localize('chatStt.notConfigured', "Speech-to-text is not configured. Set chat.speechToText.serverUrl to your transcription backend."),
+			});
 			return;
 		}
 
@@ -109,72 +143,167 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			throw err;
 		}
 
-		this._mimeType = pickSupportedMimeType(window);
-		this._chunks = [];
+		this._finalizedText = '';
+		this._deltaText = '';
 		this._mediaStream = stream;
 
-		const recorder = new (window as unknown as { MediaRecorder: typeof MediaRecorder }).MediaRecorder(stream, { mimeType: this._mimeType });
-		recorder.ondataavailable = e => {
-			if (e.data.size > 0) {
-				this._chunks.push(e.data);
-			}
-		};
-		this._mediaRecorder = recorder;
-		recorder.start();
+		try {
+			await this._openSocket(serverUrl, window);
+		} catch (err) {
+			this._teardown();
+			this._logService.error('[chat-stt] failed to connect to transcription backend', err);
+			this._notificationService.error(localize('chatStt.connectError', "Could not connect to the speech-to-text backend: {0}", toErrorMessage(err)));
+			throw err;
+		}
+
+		this._startCapture(window, stream);
 		this._setState(ChatSpeechToTextState.Recording);
 	}
 
 	async stopAndTranscribe(): Promise<string | undefined> {
-		if (this._state !== ChatSpeechToTextState.Recording || !this._mediaRecorder) {
-			return undefined;
-		}
-
-		const recorder = this._mediaRecorder;
-		const blob = await new Promise<Blob>(resolve => {
-			recorder.onstop = () => resolve(new Blob(this._chunks, { type: this._mimeType }));
-			recorder.stop();
-		});
-		this._teardownStream();
-
-		if (blob.size === 0) {
-			this._setState(ChatSpeechToTextState.Idle);
-			return undefined;
-		}
-
-		const serverUrl = this._getServerUrl();
-		if (!serverUrl) {
-			this._notificationService.notify({
-				severity: Severity.Warning,
-				message: localize('chatStt.notConfigured', "Speech-to-text is not configured. Set chat.speechToText.serverUrl to your transcription backend."),
-			});
-			this._setState(ChatSpeechToTextState.Idle);
+		if (this._state !== ChatSpeechToTextState.Recording) {
 			return undefined;
 		}
 
 		this._setState(ChatSpeechToTextState.Transcribing);
+		this._stopCapture();
+
+		// Ask the backend to flush the final utterance, then wait for it to
+		// close (bounded) so the last `segment` lands before we return.
 		try {
-			return await this._transcribe(blob, serverUrl);
-		} catch (err) {
-			this._logService.error('[chat-stt] transcription failed', err);
-			this._notificationService.error(localize('chatStt.transcribeError', "Speech-to-text transcription failed: {0}", toErrorMessage(err)));
-			return undefined;
-		} finally {
-			this._setState(ChatSpeechToTextState.Idle);
+			this._socket?.send(JSON.stringify({ type: 'stop' }));
+		} catch {
+			// socket already gone
 		}
+
+		if (this._closePromise) {
+			await Promise.race([this._closePromise, timeout(8000)]);
+		}
+
+		const text = this._transcript;
+		this._teardown();
+		this._setState(ChatSpeechToTextState.Idle);
+		return text || undefined;
 	}
 
 	cancel(): void {
-		if (this._mediaRecorder && this._state === ChatSpeechToTextState.Recording) {
-			this._mediaRecorder.onstop = null;
-			try {
-				this._mediaRecorder.stop();
-			} catch {
-				// ignore
-			}
-		}
-		this._teardownStream();
-		this._chunks = [];
+		this._teardown();
+		this._finalizedText = '';
+		this._deltaText = '';
 		this._setState(ChatSpeechToTextState.Idle);
+	}
+
+	private _openSocket(serverUrl: string, window: Window & typeof globalThis): Promise<void> {
+		const wsUrl = toStreamUrl(serverUrl);
+		return new Promise<void>((resolve, reject) => {
+			let socket: WebSocket;
+			try {
+				socket = new window.WebSocket(wsUrl);
+			} catch (err) {
+				reject(err);
+				return;
+			}
+			this._socket = socket;
+
+			this._closePromise = new Promise<void>(res => { this._resolveClose = res; });
+
+			let ready = false;
+			socket.onopen = async () => {
+				const token = await this._getAuthToken();
+				socket.send(JSON.stringify({ type: 'auth', token: token ?? '' }));
+			};
+			socket.onmessage = ev => {
+				let msg: { type?: string; text?: string; message?: string };
+				try {
+					msg = JSON.parse(typeof ev.data === 'string' ? ev.data : '');
+				} catch {
+					return;
+				}
+				switch (msg.type) {
+					case 'ready':
+						ready = true;
+						resolve();
+						break;
+					case 'delta':
+						this._deltaText += msg.text ?? '';
+						this._onDidUpdateTranscript.fire(this._transcript);
+						break;
+					case 'segment':
+						this._finalizedText = [this._finalizedText, (msg.text ?? '').trim()].filter(Boolean).join(' ');
+						this._deltaText = '';
+						this._onDidUpdateTranscript.fire(this._transcript);
+						break;
+					case 'error':
+						this._logService.error('[chat-stt] backend error', msg.message);
+						this._notificationService.error(localize('chatStt.transcribeError', "Speech-to-text transcription failed: {0}", msg.message ?? ''));
+						if (!ready) {
+							reject(new Error(msg.message ?? 'backend error'));
+						}
+						break;
+				}
+			};
+			socket.onerror = () => {
+				if (!ready) {
+					reject(new Error('WebSocket error'));
+				}
+			};
+			socket.onclose = () => {
+				this._resolveClose?.();
+				if (!ready) {
+					reject(new Error('WebSocket closed before ready'));
+				}
+			};
+		});
+	}
+
+	private _startCapture(window: Window & typeof globalThis, stream: MediaStream): void {
+		const ctx = new window.AudioContext({ sampleRate: SAMPLE_RATE });
+		this._audioContext = ctx;
+		const source = ctx.createMediaStreamSource(stream);
+		this._sourceNode = source;
+		const processor = ctx.createScriptProcessor(4096, 1, 1);
+		this._processorNode = processor;
+
+		processor.onaudioprocess = e => {
+			const socket = this._socket;
+			if (!socket || socket.readyState !== socket.OPEN) {
+				return;
+			}
+			const samples = e.inputBuffer.getChannelData(0);
+			socket.send(JSON.stringify({ type: 'audio', data: encodeRawPcm16Base64(samples, window) }));
+		};
+
+		source.connect(processor);
+		processor.connect(ctx.destination);
+	}
+
+	private _stopCapture(): void {
+		if (this._processorNode) {
+			this._processorNode.onaudioprocess = null;
+			try { this._processorNode.disconnect(); } catch { /* ignore */ }
+			this._processorNode = undefined;
+		}
+		try { this._sourceNode?.disconnect(); } catch { /* ignore */ }
+		this._sourceNode = undefined;
+		this._audioContext?.close().catch(() => { /* ignore */ });
+		this._audioContext = undefined;
+		this._mediaStream?.getTracks().forEach(track => track.stop());
+		this._mediaStream = undefined;
+	}
+
+	private _teardown(): void {
+		this._stopCapture();
+		if (this._socket) {
+			this._socket.onopen = null;
+			this._socket.onmessage = null;
+			this._socket.onerror = null;
+			this._socket.onclose = null;
+			try { this._socket.close(); } catch { /* ignore */ }
+			this._socket = undefined;
+		}
+		this._resolveClose?.();
+		this._resolveClose = undefined;
+		this._closePromise = undefined;
 	}
 
 	private async _acquireStream(window: Window & typeof globalThis): Promise<MediaStream> {
@@ -205,12 +334,6 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		}
 	}
 
-	private _teardownStream(): void {
-		this._mediaStream?.getTracks().forEach(track => track.stop());
-		this._mediaStream = undefined;
-		this._mediaRecorder = undefined;
-	}
-
 	private _getServerUrl(): string {
 		const configured = (this._configurationService.getValue<string>('chat.speechToText.serverUrl') ?? '').trim();
 		return configured || this._productService.defaultChatAgent?.speechToTextUrl || '';
@@ -226,70 +349,35 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			return undefined;
 		}
 	}
-
-	private async _transcribe(blob: Blob, serverUrl: string): Promise<string | undefined> {
-		const form = new FormData();
-		form.append('file', blob, `audio.${extensionForMime(this._mimeType)}`);
-
-		const headers: Record<string, string> = {};
-		const authToken = await this._getAuthToken();
-		if (authToken) {
-			headers['Authorization'] = `Bearer ${authToken}`;
-		}
-
-		const response = await fetch(serverUrl, {
-			method: 'POST',
-			headers,
-			body: form,
-		});
-
-		if (!response.ok) {
-			const detail = await safeReadText(response);
-			throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
-		}
-
-		const json = await response.json() as { text?: string };
-		return typeof json.text === 'string' ? cleanTranscript(json.text) : undefined;
-	}
 }
 
-/** Strips filler words (um, uh, er, ...) and collapses whitespace from a transcript. */
-function cleanTranscript(text: string): string {
-	return text
-		.replace(/\b(um+|uh+|erm+|er+|ah+)\b/gi, '')
-		.replace(/\s{2,}/g, ' ')
-		.trim();
+/** Convert an `http(s)` transcription URL into its `ws(s)` streaming variant. */
+function toStreamUrl(serverUrl: string): string {
+	const url = serverUrl.replace(/^http/, 'ws').replace(/\/+$/, '');
+	if (url.endsWith('/transcribe')) {
+		return `${url}/stream`;
+	}
+	return `${url}/stream`;
 }
 
-function pickSupportedMimeType(window: Window & typeof globalThis): string {
-	const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
-	const recorder = (window as unknown as { MediaRecorder?: { isTypeSupported?(type: string): boolean } }).MediaRecorder;
-	if (recorder?.isTypeSupported) {
-		for (const candidate of candidates) {
-			if (recorder.isTypeSupported(candidate)) {
-				return candidate;
-			}
-		}
+/** Encode PCM Float32 samples into base64-encoded raw PCM16 (no WAV header). */
+function encodeRawPcm16Base64(samples: Float32Array, win: Window & typeof globalThis): string {
+	const buf = new ArrayBuffer(samples.length * 2);
+	const view = new DataView(buf);
+	for (let i = 0; i < samples.length; i++) {
+		const s = Math.max(-1, Math.min(1, samples[i]));
+		view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
 	}
-	return 'audio/webm';
+	const bytes = new Uint8Array(buf);
+	let binaryStr = '';
+	for (let i = 0; i < bytes.length; i++) {
+		binaryStr += String.fromCharCode(bytes[i]);
+	}
+	return win.btoa(binaryStr);
 }
 
-function extensionForMime(mimeType: string): string {
-	if (mimeType.includes('mp4')) {
-		return 'mp4';
-	}
-	if (mimeType.includes('ogg')) {
-		return 'ogg';
-	}
-	return 'webm';
-}
-
-async function safeReadText(response: Response): Promise<string> {
-	try {
-		return (await response.text()).slice(0, 500);
-	} catch {
-		return '';
-	}
+function timeout(ms: number): Promise<void> {
+	return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function toErrorMessage(err: unknown): string {

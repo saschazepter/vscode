@@ -35,11 +35,16 @@ Then set in VS Code settings:
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
+import ssl
 from typing import Optional
 
+import certifi
 import httpx
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+import websockets
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -49,6 +54,9 @@ AZURE_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT", "").rstrip("/")
 AZURE_API_KEY = os.environ.get("AZURE_OPENAI_API_KEY", "")
 AZURE_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini-transcribe")
 AZURE_API_VERSION = os.environ.get("AZURE_OPENAI_API_VERSION", "2025-03-01-preview")
+# The realtime transcription API uses a different (newer) preview version than
+# the batch /audio/transcriptions endpoint.
+AZURE_REALTIME_API_VERSION = os.environ.get("AZURE_OPENAI_REALTIME_API_VERSION", "2025-04-01-preview")
 
 # When true, every request must carry a GitHub token that resolves to a real
 # user via the GitHub API. Disable only for local testing.
@@ -150,3 +158,127 @@ async def transcribe(
 
     text = await _transcribe_with_azure(file.filename or "audio.webm", content, file.content_type or "")
     return JSONResponse({"text": text.strip()})
+
+# --- Streaming (realtime) transcription -------------------------------------
+
+def _azure_realtime_url() -> str:
+    """WebSocket URL for the Azure OpenAI realtime transcription API."""
+    ws_base = AZURE_ENDPOINT.replace("https://", "wss://").replace("http://", "ws://")
+    return (
+        f"{ws_base}/openai/realtime"
+        f"?api-version={AZURE_REALTIME_API_VERSION}&intent=transcription"
+    )
+
+
+_SESSION_UPDATE = {
+    "type": "transcription_session.update",
+    "session": {
+        "input_audio_format": "pcm16",
+        "input_audio_transcription": {"model": AZURE_DEPLOYMENT},
+        # Server-side voice-activity detection segments the stream into
+        # utterances; each pause flushes a `.completed` transcript so the
+        # client can render text progressively while the user keeps talking.
+        "turn_detection": {"type": "server_vad", "silence_duration_ms": 400},
+    },
+}
+
+
+@app.websocket("/transcribe/stream")
+async def transcribe_stream(client_ws: WebSocket) -> None:
+    """Bridge the client to Azure realtime transcription.
+
+    Wire contract (client <-> this endpoint), all JSON text frames:
+
+        client -> { "type": "auth",  "token": "<github token>" }   (first frame)
+        client -> { "type": "audio", "data":  "<base64 pcm16 16k mono>" }
+        client -> { "type": "stop" }
+
+        server -> { "type": "ready" }
+        server -> { "type": "delta",   "text": "<incremental text>" }
+        server -> { "type": "segment", "text": "<finalized utterance>" }
+        server -> { "type": "error",   "message": "<detail>" }
+    """
+    await client_ws.accept()
+
+    if not AZURE_ENDPOINT or not AZURE_API_KEY:
+        await client_ws.send_json({"type": "error", "message": "Server is not configured with Azure credentials"})
+        await client_ws.close()
+        return
+
+    # First frame must authenticate the caller.
+    try:
+        first = await client_ws.receive_json()
+    except (WebSocketDisconnect, json.JSONDecodeError):
+        await client_ws.close()
+        return
+    if first.get("type") != "auth":
+        await client_ws.send_json({"type": "error", "message": "Expected auth frame"})
+        await client_ws.close()
+        return
+    token = first.get("token") or ""
+    try:
+        await _resolve_github_user(f"Bearer {token}" if token else None)
+    except HTTPException as e:
+        await client_ws.send_json({"type": "error", "message": e.detail})
+        await client_ws.close()
+        return
+
+    sslctx = ssl.create_default_context(cafile=certifi.where())
+    try:
+        async with websockets.connect(
+            _azure_realtime_url(),
+            additional_headers={"api-key": AZURE_API_KEY},
+            max_size=None,
+            ssl=sslctx,
+        ) as azure_ws:
+            await azure_ws.send(json.dumps(_SESSION_UPDATE))
+            await client_ws.send_json({"type": "ready"})
+
+            async def pump_client_to_azure() -> None:
+                while True:
+                    msg = await client_ws.receive_json()
+                    mtype = msg.get("type")
+                    if mtype == "audio":
+                        await azure_ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": msg.get("data", "")}))
+                    elif mtype == "stop":
+                        # Flush whatever is buffered so the final utterance is transcribed.
+                        await azure_ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+                        return
+
+            async def pump_azure_to_client() -> None:
+                async for raw in azure_ws:
+                    evt = json.loads(raw)
+                    etype = evt.get("type")
+                    if etype == "conversation.item.input_audio_transcription.delta":
+                        await client_ws.send_json({"type": "delta", "text": evt.get("delta", "")})
+                    elif etype == "conversation.item.input_audio_transcription.completed":
+                        await client_ws.send_json({"type": "segment", "text": evt.get("transcript", "")})
+                    elif etype == "error":
+                        await client_ws.send_json({"type": "error", "message": str(evt.get("error", "realtime error"))})
+
+            client_task = asyncio.create_task(pump_client_to_azure())
+            azure_task = asyncio.create_task(pump_azure_to_client())
+            try:
+                # When the client sends `stop`, wait briefly for the final
+                # segment to arrive before tearing down.
+                await client_task
+                try:
+                    await asyncio.wait_for(azure_task, timeout=8)
+                except asyncio.TimeoutError:
+                    pass
+            finally:
+                for task in (client_task, azure_task):
+                    if not task.done():
+                        task.cancel()
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:  # noqa: BLE001 - surface any bridge failure to the client
+        try:
+            await client_ws.send_json({"type": "error", "message": f"Realtime bridge failed: {str(e)[:300]}"})
+        except Exception:
+            pass
+    finally:
+        try:
+            await client_ws.close()
+        except Exception:
+            pass

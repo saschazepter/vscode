@@ -19,8 +19,9 @@ import { AgentsVoiceStorageKeys } from '../../../agentsVoice/common/agentsVoice.
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { CHAT_CATEGORY } from './chatActions.js';
 import { IChatExecuteActionContext } from './chatExecuteActions.js';
-import { IChatWidget, IChatWidgetService } from '../chat.js';
+import { IChatWidgetService } from '../chat.js';
 import { ChatSpeechToTextState, IChatSpeechToTextService } from '../speechToText/chatSpeechToTextService.js';
+import { cancelDictation, isDictating, startDictation, stopDictation } from '../speechToText/dictationSession.js';
 
 export const ChatSpeechToTextConfigured = ContextKeyExpr.has('config.chat.speechToText.serverUrl');
 
@@ -61,11 +62,8 @@ class ToggleChatSpeechToTextAction extends Action2 {
 			return;
 		}
 
-		if (speechService.state === ChatSpeechToTextState.Recording) {
-			const text = await speechService.stopAndTranscribe();
-			if (text) {
-				insertText(widget, text);
-			}
+		if (isDictating()) {
+			await stopDictation();
 			return;
 		}
 
@@ -74,7 +72,7 @@ class ToggleChatSpeechToTextAction extends Action2 {
 		}
 
 		const window = getWindow(widget.domNode) ?? getActiveWindow();
-		await speechService.start(window);
+		await startDictation(speechService, widget.inputEditor, window);
 	}
 }
 
@@ -117,24 +115,17 @@ class HoldToSpeechToTextAction extends Action2 {
 
 		const window = getWindow(widget.domNode) ?? getActiveWindow();
 		const heldFrom = Date.now();
-		try {
-			await speechService.start(window);
-		} catch {
-			return; // microphone acquisition failed; already surfaced to the user
-		}
+		await startDictation(speechService, widget.inputEditor, window);
 
 		await holdMode;
 
 		// Treat a quick tap as accidental: discard instead of transcribing.
 		if (Date.now() - heldFrom < HOLD_TO_TALK_THRESHOLD_MS) {
-			speechService.cancel();
+			cancelDictation();
 			return;
 		}
 
-		const text = await speechService.stopAndTranscribe();
-		if (text) {
-			insertText(widget, text);
-		}
+		await stopDictation();
 	}
 }
 
@@ -207,24 +198,6 @@ class SelectSpeechToTextMicrophoneAction extends Action2 {
 			}
 		}
 	}
-}
-
-function insertText(widget: IChatWidget, text: string): void {
-	const editor = widget.inputEditor;
-	const model = editor.getModel();
-	if (!model) {
-		return;
-	}
-	const selection = editor.getSelection() ?? model.getFullModelRange().collapseToEnd();
-	const needsLeadingSpace = selection.startColumn > 1 && !/\s$/.test(model.getValueInRange({
-		startLineNumber: selection.startLineNumber,
-		startColumn: Math.max(1, selection.startColumn - 1),
-		endLineNumber: selection.startLineNumber,
-		endColumn: selection.startColumn,
-	}));
-	const insertion = needsLeadingSpace ? ` ${text}` : text;
-	editor.executeEdits('chatSpeechToText', [{ range: selection, text: insertion, forceMoveMarkers: true }]);
-	widget.focusInput();
 }
 
 export function registerChatSpeechToTextActions(): DisposableStore {
