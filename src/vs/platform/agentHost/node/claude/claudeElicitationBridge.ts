@@ -47,18 +47,28 @@ export async function handleElicitation(
 
 	const requestId = generateUuid();
 
-	// Observe the SDK's per-request abort signal so a host parked on
-	// `requestUserInput` unwinds promptly when the SDK cancels the elicitation
-	// (subprocess teardown, upstream abort). Mirrors `claudeCanUseTool.ts`.
 	if (options.signal.aborted) {
 		return cancelledElicitationResult();
 	}
+
+	// A request with neither a URL nor any questions can't be meaningfully
+	// presented: a `url`-mode request missing its URL, or a `form` whose schema
+	// yielded no representable fields. The workbench would inject a required
+	// generic text question whose answer this translator then discards — falsely
+	// reporting the elicitation as accepted. Cancel instead of surfacing it.
+	const chatRequest = buildElicitationRequest(requestId, request);
+	if (!chatRequest.url && !chatRequest.questions?.length) {
+		return cancelledElicitationResult();
+	}
+
+	// Observe the SDK's per-request abort signal so a host parked on
+	// `requestUserInput` unwinds promptly when the SDK cancels the elicitation
+	// (subprocess teardown, upstream abort). Mirrors `claudeCanUseTool.ts`.
 	const abortHandler = () => {
 		session.respondToUserInputRequest(requestId, ChatInputResponseKind.Cancel);
 	};
 	options.signal.addEventListener('abort', abortHandler);
 	try {
-		const chatRequest = buildElicitationRequest(requestId, request);
 		const { response, answers } = await session.requestUserInput(chatRequest);
 		return elicitationResultFromAnswers(request, response, answers);
 	} finally {

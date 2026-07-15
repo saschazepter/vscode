@@ -5432,7 +5432,7 @@ suite('ClaudeAgent (Phase 10.6 — MCP elicitation translation)', () => {
 
 		const controller = new AbortController();
 		const promise = onElicitation(
-			{ serverName: 'm', message: 'q', mode: 'form', requestedSchema: { type: 'object', properties: {} } },
+			{ serverName: 'm', message: 'q', mode: 'form', requestedSchema: { type: 'object', properties: { side: { type: 'string' } } } },
 			{ signal: controller.signal },
 		);
 		await tick();
@@ -5475,6 +5475,28 @@ suite('ClaudeAgent (Phase 10.6 — MCP elicitation translation)', () => {
 		const result = await onElicitation(
 			{ serverName: 'm', message: 'q', mode: 'form', requestedSchema: { type: 'object', properties: { side: { type: 'string' } } } },
 			{ signal: controller.signal },
+		);
+
+		assert.deepStrictEqual({ result, parked: inputRequests.length }, { result: { action: 'cancel' }, parked: 0 });
+	});
+
+	test('a url-mode request with no url cancels without surfacing a prompt', async () => {
+		const { onElicitation, inputRequests } = await materialize();
+
+		const result = await onElicitation(
+			{ serverName: 'm', message: 'Authorize', mode: 'url' },
+			{ signal: new AbortController().signal },
+		);
+
+		assert.deepStrictEqual({ result, parked: inputRequests.length }, { result: { action: 'cancel' }, parked: 0 });
+	});
+
+	test('a form with no representable fields cancels without surfacing a prompt', async () => {
+		const { onElicitation, inputRequests } = await materialize();
+
+		const result = await onElicitation(
+			{ serverName: 'm', message: 'q', mode: 'form', requestedSchema: { type: 'object', properties: {} } },
+			{ signal: new AbortController().signal },
 		);
 
 		assert.deepStrictEqual({ result, parked: inputRequests.length }, { result: { action: 'cancel' }, parked: 0 });

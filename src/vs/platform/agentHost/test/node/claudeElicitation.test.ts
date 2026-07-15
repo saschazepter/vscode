@@ -48,9 +48,9 @@ suite('claudeElicitation', () => {
 				{ kind: ChatInputQuestionKind.Text, id: 'name', title: 'Name', message: 'Your name', required: true, format: undefined, min: 1, max: undefined, defaultValue: undefined },
 				{ kind: ChatInputQuestionKind.Integer, id: 'count', title: 'Count', message: 'Count', required: true, min: 0, max: 9, defaultValue: undefined },
 				{ kind: ChatInputQuestionKind.Boolean, id: 'enabled', title: 'Enabled', message: 'Enabled', required: false, defaultValue: true },
-				{ kind: ChatInputQuestionKind.SingleSelect, id: 'color', title: 'Color', message: 'Color', required: false, options: [{ id: 'red', label: 'Red' }, { id: 'green', label: 'Green' }] },
-				{ kind: ChatInputQuestionKind.SingleSelect, id: 'size', title: 'Size', message: 'Size', required: false, options: [{ id: 's', label: 'Small' }, { id: 'l', label: 'Large' }] },
-				{ kind: ChatInputQuestionKind.MultiSelect, id: 'tags', title: 'Tags', message: 'Tags', required: false, options: [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }], min: undefined, max: undefined },
+				{ kind: ChatInputQuestionKind.SingleSelect, id: 'color', title: 'Color', message: 'Color', required: false, allowFreeformInput: false, options: [{ id: 'red', label: 'Red' }, { id: 'green', label: 'Green' }] },
+				{ kind: ChatInputQuestionKind.SingleSelect, id: 'size', title: 'Size', message: 'Size', required: false, allowFreeformInput: false, options: [{ id: 's', label: 'Small' }, { id: 'l', label: 'Large' }] },
+				{ kind: ChatInputQuestionKind.MultiSelect, id: 'tags', title: 'Tags', message: 'Tags', required: false, allowFreeformInput: false, options: [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }], min: undefined, max: undefined },
 			],
 		});
 	});
@@ -123,8 +123,8 @@ suite('claudeElicitation', () => {
 			message: 'Variants',
 			questions: [
 				{ kind: ChatInputQuestionKind.Number, id: 'ratio', title: 'Ratio', message: 'Ratio', required: false, min: 0, max: 1, defaultValue: 0.5 },
-				{ kind: ChatInputQuestionKind.MultiSelect, id: 'langs', title: 'Langs', message: 'Langs', required: false, options: [{ id: 'ts', label: 'TypeScript' }, { id: 'go', label: 'Go' }], min: 1, max: 2 },
-				{ kind: ChatInputQuestionKind.SingleSelect, id: 'plain', title: 'Plain', message: 'Plain', required: false, options: [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }] },
+				{ kind: ChatInputQuestionKind.MultiSelect, id: 'langs', title: 'Langs', message: 'Langs', required: false, allowFreeformInput: false, options: [{ id: 'ts', label: 'TypeScript' }, { id: 'go', label: 'Go' }], min: 1, max: 2 },
+				{ kind: ChatInputQuestionKind.SingleSelect, id: 'plain', title: 'Plain', message: 'Plain', required: false, allowFreeformInput: false, options: [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }] },
 				{ kind: ChatInputQuestionKind.Text, id: 'email', title: 'Email', message: 'Your email', required: false, format: 'email', min: undefined, max: 50, defaultValue: 'x@y.z' },
 				{ kind: ChatInputQuestionKind.Text, id: 'mystery', title: 'Mystery', message: 'Mystery', required: false, format: undefined, min: undefined, max: undefined, defaultValue: undefined },
 				{ kind: ChatInputQuestionKind.Text, id: 'freeText', title: 'Free', message: 'Free', required: false, format: undefined, min: undefined, max: undefined, defaultValue: undefined },
@@ -189,6 +189,50 @@ suite('claudeElicitation', () => {
 			brokenAccept: { action: 'accept' },
 			emptyAnswers: { action: 'accept', content: {} },
 		});
+	});
+
+	test('elicitationResultFromAnswers coerces text answers to the field schema type', () => {
+		// The workbench renders number/integer/boolean questions as text inputs
+		// and returns them as text answers, so `"3"` / `"0.5"` / `"false"` must be
+		// coerced back to the schema type; an uncoercible value is dropped.
+		const request: ElicitationRequest = {
+			serverName: 'srv', message: 'Coerce', mode: 'form',
+			requestedSchema: {
+				type: 'object',
+				properties: {
+					count: { type: 'integer' },
+					ratio: { type: 'number' },
+					flag: { type: 'boolean' },
+					pick: { type: 'string', enum: ['a', 'b'] },
+					bad: { type: 'integer' },
+				},
+			},
+		};
+		const answers: Record<string, ChatInputAnswer> = {
+			count: { state: ChatInputAnswerState.Submitted, value: { kind: ChatInputAnswerValueKind.Text, value: '3' } },
+			ratio: { state: ChatInputAnswerState.Submitted, value: { kind: ChatInputAnswerValueKind.Text, value: '0.5' } },
+			flag: { state: ChatInputAnswerState.Submitted, value: { kind: ChatInputAnswerValueKind.Text, value: 'false' } },
+			pick: { state: ChatInputAnswerState.Submitted, value: { kind: ChatInputAnswerValueKind.Selected, value: 'a' } },
+			bad: { state: ChatInputAnswerState.Submitted, value: { kind: ChatInputAnswerValueKind.Text, value: 'not-a-number' } },
+		};
+		assert.deepStrictEqual(
+			elicitationResultFromAnswers(request, ChatInputResponseKind.Accept, answers),
+			{ action: 'accept', content: { count: 3, ratio: 0.5, flag: false, pick: 'a' } },
+		);
+	});
+
+	test('elicitationResultFromAnswers is safe against prototype-polluting field names', () => {
+		// JSON.parse produces own `__proto__` / `constructor` keys (unlike an object
+		// literal). Reading answers by those names must use own-property lookup so an
+		// inherited member is never read (which would crash), and content must be
+		// built without prototype setters.
+		const properties = JSON.parse('{"__proto__":{"type":"string"},"constructor":{"type":"string"},"ok":{"type":"string"}}');
+		const request: ElicitationRequest = { serverName: 'srv', message: 'x', mode: 'form', requestedSchema: { type: 'object', properties } };
+		const answers: Record<string, ChatInputAnswer> = { ok: { state: ChatInputAnswerState.Submitted, value: { kind: ChatInputAnswerValueKind.Text, value: 'yes' } } };
+		assert.deepStrictEqual(
+			elicitationResultFromAnswers(request, ChatInputResponseKind.Accept, answers),
+			{ action: 'accept', content: { ok: 'yes' } },
+		);
 	});
 
 	test('cancelledElicitationResult is a plain cancel', () => {

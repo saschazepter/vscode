@@ -1343,9 +1343,12 @@ Work:
   Cancel)` (mirror the abort wiring in
   [claudeCanUseTool.ts:88](./claudeCanUseTool.ts)); keep the auto-cancel only
   when unattended (headless / autopilot).
-- URL-mode elicitations complete out-of-band via `SDKElicitationCompleteMessage`
-  ([CONTEXT.md:1096](./CONTEXT.md)) — route it through the message router so the
-  renderer's "open URL" affordance resolves.
+- URL-mode elicitations: the `onElicitation` promise is awaited by the SDK, so
+  the host parks a question-less request carrying the URL and resolves it from
+  the user's Accept/Decline via the existing `ChatInputCompleted` path. The
+  out-of-band `SDKElicitationCompleteMessage` ([CONTEXT.md:1096](./CONTEXT.md))
+  is **not** required for this and is out of scope — see
+  [phase10.6-plan.md](./phase10.6-plan.md) "Out of scope".
 
 Tests: a synthetic `form` `ElicitationRequest` round-trips through
 `requestUserInput` and returns `{ action: 'accept', content }`; a declined /

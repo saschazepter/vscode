@@ -25,12 +25,14 @@ import { ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, 
  * `Record<string, unknown>`. Each field is runtime-validated with the base-layer
  * {@link vObj} validator ({@link vElicitationField}), which drops malformed
  * fields instead of mis-projecting or throwing. The field type is *derived* from
- * that validator (not hand-rolled) and pinned to the MCP SDK's authoritative
- * {@link PrimitiveSchemaDefinition} by {@link _assertElicitationFieldCoversSchema}
- * so it cannot silently drift from the spec. The base-layer validator is used
- * rather than the SDK's own zod schema because this module is loaded by the
- * unit-test renderer, where a runtime `@modelcontextprotocol/sdk` import does not
- * resolve (all SDK runtime access goes through `IClaudeAgentSdkService`).
+ * that validator (not hand-rolled) and cross-checked against the MCP SDK's
+ * authoritative {@link PrimitiveSchemaDefinition} by
+ * {@link _assertElicitationFieldCoversSchema} (which catches an incompatible
+ * reshape of a covered field, though not a purely additive new variant). The
+ * base-layer validator is used rather than the SDK's own zod schema because this
+ * module is loaded by the unit-test renderer, where a runtime
+ * `@modelcontextprotocol/sdk` import does not resolve (all SDK runtime access
+ * goes through `IClaudeAgentSdkService`).
  */
 
 /** Value the SDK accepts back for a single elicited field. */
@@ -74,10 +76,12 @@ type IElicitationField = ValidatorType<typeof vElicitationField>;
 /**
  * Compile-time guard: every member of the MCP SDK's authoritative
  * {@link PrimitiveSchemaDefinition} union must be assignable to
- * {@link IElicitationField}. If the SDK adds or reshapes a field, this function
- * fails to compile — forcing {@link vElicitationField} (and the projection
- * below) to keep up rather than silently under-reading a new schema shape. It is
- * type-only: never called, and erased at runtime.
+ * {@link IElicitationField}. This catches an *incompatible reshape* of a field
+ * we already project (e.g. the SDK retyping `enum` from `string[]` to
+ * `number[]`) by failing to compile. It does NOT catch purely additive changes
+ * — a brand-new union member or keyword stays structurally assignable to this
+ * all-optional view and would be silently ignored by the projection until a
+ * human notices the new shape. It is type-only: never called, erased at runtime.
  */
 function _assertElicitationFieldCoversSchema(field: PrimitiveSchemaDefinition): IElicitationField {
 	return field;
@@ -166,14 +170,19 @@ export function elicitationResultFromAnswers(
 	if (!schema) {
 		return { action: 'accept' };
 	}
-	const content: Record<string, ElicitationFieldValue> = {};
-	for (const [name] of schema.fields) {
-		const value = elicitationAnswerToValue(answers?.[name]);
+	// Field names come from an untrusted schema and may be `__proto__` or another
+	// inherited key, so read answers with `Object.hasOwn` and materialize the
+	// content via `Object.fromEntries` (define semantics) so such a name lands as
+	// an own data property instead of mutating the prototype or being dropped.
+	const entries: [string, ElicitationFieldValue][] = [];
+	for (const [name, field] of schema.fields) {
+		const answer = answers && Object.hasOwn(answers, name) ? answers[name] : undefined;
+		const value = elicitationAnswerToValue(field, answer);
 		if (value !== undefined) {
-			content[name] = value;
+			entries.push([name, value]);
 		}
 	}
-	return { action: 'accept', content };
+	return { action: 'accept', content: Object.fromEntries(entries) };
 }
 
 /** Cancel result used when there is no session to route the elicitation to. */
@@ -205,6 +214,9 @@ function elicitationFieldToQuestion(id: string, field: IElicitationField, requir
 			return {
 				...base,
 				kind: ChatInputQuestionKind.MultiSelect,
+				// MCP enum arrays are strict — only the declared options are valid —
+				// but the workbench defaults an omitted `allowFreeformInput` to true.
+				allowFreeformInput: false,
 				options: field.items?.anyOf
 					? field.items.anyOf.map((o): ChatInputOption => ({ id: o.const, label: o.title || o.const }))
 					: (field.items?.enum ?? []).map((v): ChatInputOption => ({ id: v, label: v })),
@@ -214,11 +226,13 @@ function elicitationFieldToQuestion(id: string, field: IElicitationField, requir
 		case 'string':
 		default:
 			// Titled single-select (`oneOf`), enum/legacy single-select (`enum`,
-			// optionally `enumNames`), or a plain text field.
+			// optionally `enumNames`), or a plain text field. MCP enums are strict,
+			// so free-form input is disabled for the select variants.
 			if (field.oneOf) {
 				return {
 					...base,
 					kind: ChatInputQuestionKind.SingleSelect,
+					allowFreeformInput: false,
 					options: field.oneOf.map((o): ChatInputOption => ({ id: o.const, label: o.title || o.const })),
 				};
 			}
@@ -227,6 +241,7 @@ function elicitationFieldToQuestion(id: string, field: IElicitationField, requir
 				return {
 					...base,
 					kind: ChatInputQuestionKind.SingleSelect,
+					allowFreeformInput: false,
 					options: field.enum.map((v, i): ChatInputOption => ({ id: v, label: names?.[i] || v })),
 				};
 			}
@@ -243,24 +258,59 @@ function elicitationFieldToQuestion(id: string, field: IElicitationField, requir
 
 /**
  * Project a single {@link ChatInputAnswer} back into the raw value the SDK
- * expects for a field. Skipped/missing answers return `undefined` so the
- * caller omits them from the content object.
+ * expects for the given field, coercing to the field's declared type. This is
+ * schema-aware because the workbench renders number/integer/boolean questions as
+ * text inputs (no dedicated widget) and returns them as {@link ChatInputAnswer}
+ * text values, so `"3"` / `"false"` must be coerced back to `3` / `false` to
+ * satisfy the requested schema. Skipped/missing/uncoercible answers return
+ * `undefined` so the caller omits them from the content object.
  */
-function elicitationAnswerToValue(answer: ChatInputAnswer | undefined): ElicitationFieldValue | undefined {
+function elicitationAnswerToValue(field: IElicitationField, answer: ChatInputAnswer | undefined): ElicitationFieldValue | undefined {
 	if (!answer || answer.state === ChatInputAnswerState.Skipped) {
 		return undefined;
 	}
 	const { value } = answer;
-	switch (value.kind) {
-		case ChatInputAnswerValueKind.Text:
-			return value.value;
-		case ChatInputAnswerValueKind.Number:
-			return value.value;
-		case ChatInputAnswerValueKind.Boolean:
-			return value.value;
-		case ChatInputAnswerValueKind.Selected:
-			return value.value;
-		case ChatInputAnswerValueKind.SelectedMany:
-			return value.value;
+	switch (field.type) {
+		case 'boolean':
+			if (value.kind === ChatInputAnswerValueKind.Boolean) {
+				return value.value;
+			}
+			if (value.kind === ChatInputAnswerValueKind.Text) {
+				if (value.value === 'true') { return true; }
+				if (value.value === 'false') { return false; }
+			}
+			return undefined;
+		case 'number':
+		case 'integer': {
+			const n = value.kind === ChatInputAnswerValueKind.Number
+				? value.value
+				: value.kind === ChatInputAnswerValueKind.Text && value.value.trim() !== ''
+					? Number(value.value)
+					: undefined;
+			if (n === undefined || !Number.isFinite(n)) {
+				return undefined;
+			}
+			return field.type === 'integer' ? Math.trunc(n) : n;
+		}
+		case 'array':
+			if (value.kind === ChatInputAnswerValueKind.SelectedMany) {
+				return [...value.value, ...(value.freeformValues ?? [])];
+			}
+			if (value.kind === ChatInputAnswerValueKind.Selected) {
+				return value.value ? [value.value, ...(value.freeformValues ?? [])] : [...(value.freeformValues ?? [])];
+			}
+			if (value.kind === ChatInputAnswerValueKind.Text) {
+				return value.value ? [value.value] : [];
+			}
+			return undefined;
+		case 'string':
+		default:
+			if (value.kind === ChatInputAnswerValueKind.Text) {
+				return value.value;
+			}
+			if (value.kind === ChatInputAnswerValueKind.Selected) {
+				return value.value;
+			}
+			return undefined;
 	}
 }
