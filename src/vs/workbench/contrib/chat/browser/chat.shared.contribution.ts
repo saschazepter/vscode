@@ -795,11 +795,6 @@ configurationRegistry.registerConfiguration({
 			default: true,
 			description: nls.localize('chat.contextUsage.enabled', "Show the context window usage indicator in the chat input."),
 		},
-		[ChatConfiguration.Verbose]: {
-			type: 'boolean',
-			default: false,
-			description: nls.localize('chat.verbose', "Show request and completion timestamps. Hover over a completion timestamp to show the elapsed response time."),
-		},
 		[ChatConfiguration.ChatPersistentProgressEnabled]: {
 			type: 'boolean',
 			default: product.quality !== 'stable',
@@ -832,27 +827,9 @@ configurationRegistry.registerConfiguration({
 			default: false
 		},
 		[ChatConfiguration.TurnStatusPills]: {
-			type: 'object',
-			markdownDescription: nls.localize('chat.turnStatusPills', "Controls which agent turn status pills are shown above the chat input while a turn is in progress and inside the completed response. Only applies to agent sessions."),
-			properties: {
-				changes: {
-					type: 'boolean',
-					default: false,
-					description: nls.localize('chat.turnStatusPills.changes', "Show a pill summarizing the files changed and the lines added and removed in the turn."),
-				},
-				preview: {
-					type: 'boolean',
-					default: false,
-					description: nls.localize('chat.turnStatusPills.preview', "Show a pill to preview a Markdown or HTML file created or edited in the turn."),
-				},
-				browser: {
-					type: 'boolean',
-					default: false,
-					description: nls.localize('chat.turnStatusPills.browser', "Show a \"Live Browser\" pill to open the integrated browser at the last URL a browser tool opened in the turn."),
-				},
-			},
-			default: { changes: false, preview: false, browser: false },
-			additionalProperties: false,
+			type: 'boolean',
+			markdownDescription: nls.localize('chat.turnStatusPills', "Controls whether agent status pills are shown above the chat input while a turn is in progress and inside the completed response. Only applies to agent sessions."),
+			default: false,
 		},
 		[mcpAccessConfig]: {
 			type: 'string',
@@ -1390,7 +1367,7 @@ configurationRegistry.registerConfiguration({
 				nls.localize('chat.byokUtilityModelDefault.mainAgent.description', "Use the selected BYOK main agent model."),
 				nls.localize('chat.byokUtilityModelDefault.copilot.description', "Use the default GitHub Copilot utility models."),
 			],
-			default: BYOKUtilityModelDefault.Copilot,
+			default: BYOKUtilityModelDefault.None,
 		},
 		[ChatConfiguration.UtilityModel]: {
 			type: 'string',
