@@ -194,14 +194,8 @@ export const ClaudePreferAgentHostAgentsSettingId = 'chat.agents.claude.preferAg
 export const ClaudePreferAgentHostEditorSettingId = 'chat.editor.claude.preferAgentHost';
 
 /**
- * Selects which Codex integration fulfills Codex sessions opened from the
- * **Agents Window**.
- */
-export const CodexPreferAgentHostAgentsSettingId = 'chat.agents.codex.preferAgentHost';
-
-/**
- * Sibling of {@link CodexPreferAgentHostAgentsSettingId} for the regular
- * workbench.
+ * Selects whether the regular workbench surfaces Codex from the agent host
+ * instead of the OpenAI extension.
  */
 export const CodexPreferAgentHostEditorSettingId = 'chat.editor.codex.preferAgentHost';
 
@@ -211,15 +205,9 @@ export function claudePreferAgentHostSettingId(isSessionsWindow: boolean): strin
 		: ClaudePreferAgentHostEditorSettingId;
 }
 
-export function codexPreferAgentHostSettingId(isSessionsWindow: boolean): string {
-	return isSessionsWindow
-		? CodexPreferAgentHostAgentsSettingId
-		: CodexPreferAgentHostEditorSettingId;
-}
-
 export function affectsAgentHostProviderPreference(event: IConfigurationChangeEvent, isSessionsWindow: boolean): boolean {
 	return event.affectsConfiguration(claudePreferAgentHostSettingId(isSessionsWindow))
-		|| event.affectsConfiguration(codexPreferAgentHostSettingId(isSessionsWindow));
+		|| event.affectsConfiguration(isSessionsWindow ? AgentHostCodexAgentEnabledSettingId : CodexPreferAgentHostEditorSettingId);
 }
 
 export function shouldSurfaceLocalAgentHostProvider(provider: AgentProvider, configurationService: IConfigurationService, isSessionsWindow: boolean): boolean {
@@ -227,7 +215,7 @@ export function shouldSurfaceLocalAgentHostProvider(provider: AgentProvider, con
 		case CLAUDE_AGENT_PROVIDER_ID:
 			return configurationService.getValue<boolean>(claudePreferAgentHostSettingId(isSessionsWindow)) === true;
 		case CODEX_AGENT_PROVIDER_ID:
-			return configurationService.getValue<boolean>(codexPreferAgentHostSettingId(isSessionsWindow)) === true;
+			return configurationService.getValue<boolean>(isSessionsWindow ? AgentHostCodexAgentEnabledSettingId : CodexPreferAgentHostEditorSettingId) === true;
 		default:
 			return true;
 	}

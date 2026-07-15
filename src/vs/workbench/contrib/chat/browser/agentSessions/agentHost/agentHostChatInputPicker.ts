@@ -47,7 +47,8 @@ import { toAgentHostBackendSessionUri } from './agentHostSessionUri.js';
 const FILTER_THRESHOLD = 10;
 
 const LEARN_MORE_VALUE = '__agentHostChatInputPicker.learnMore__';
-const PERMISSION_MODE_LEARN_MORE_URL = 'https://aka.ms/vscode/docs/permissions';
+const PERMISSIONS_LEARN_MORE_URL = 'https://aka.ms/vscode/docs/permissions';
+const CODEX_APPROVALS_LEARN_MORE_URL = 'https://developers.openai.com/codex/concepts/sandboxing#how-you-control-it';
 
 interface IConfigPickerItem {
 	readonly value: string;
@@ -156,6 +157,16 @@ export function getConfigPickerItemHover(property: string, item: IConfigPickerIt
 	}
 	if (property === SessionConfigKey.AutoApprove) {
 		return getAutoApproveHover(item.value, item.description);
+	}
+	return undefined;
+}
+
+function getPermissionsLearnMoreUrl(property: string): string | undefined {
+	if (property === CodexSessionConfigKey.PermissionsPreset) {
+		return CODEX_APPROVALS_LEARN_MORE_URL;
+	}
+	if (property === ClaudeSessionConfigKey.PermissionMode || property === SessionConfigKey.AutoApprove) {
+		return PERMISSIONS_LEARN_MORE_URL;
 	}
 	return undefined;
 }
@@ -547,7 +558,8 @@ export class AgentHostChatInputPicker extends Disposable {
 		const currentValue = ctx.value;
 		const policyRestricted = isAutoApprovePolicyRestricted(this._configurationService);
 		const actionItems = toActionItems(this._property, items, currentValue, policyRestricted);
-		if (this._property === ClaudeSessionConfigKey.PermissionMode || this._property === SessionConfigKey.AutoApprove) {
+		const permissionsLearnMoreUrl = getPermissionsLearnMoreUrl(this._property);
+		if (permissionsLearnMoreUrl) {
 			const learnMoreLabel = localize('agentHostChatInputPicker.learnMorePermissions', "Learn more about permissions");
 			actionItems.push({
 				kind: ActionListItemKind.Separator,
@@ -565,7 +577,9 @@ export class AgentHostChatInputPicker extends Disposable {
 			onSelect: item => {
 				this._actionWidgetService.hide();
 				if (item.value === LEARN_MORE_VALUE) {
-					void this._openerService.open(URI.parse(PERMISSION_MODE_LEARN_MORE_URL));
+					if (permissionsLearnMoreUrl) {
+						void this._openerService.open(URI.parse(permissionsLearnMoreUrl));
+					}
 					return;
 				}
 				void this._confirmAndSetValue(ctx.backendSession, item.value);

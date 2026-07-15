@@ -13,7 +13,7 @@ import { isEqual } from '../../../../../../base/common/resources.js';
 import { mock } from '../../../../../../base/test/common/mock.js';
 import { runWithFakedTimers } from '../../../../../../base/test/common/timeTravelScheduler.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { AgentSession, ClaudePreferAgentHostAgentsSettingId, ClaudePreferAgentHostEditorSettingId, CodexPreferAgentHostAgentsSettingId, IAgentHostService, type IAgentCreateChatOptions, type IAgentCreateSessionConfig, type IAgentSessionMetadata } from '../../../../../../platform/agentHost/common/agentService.js';
+import { AgentHostCodexAgentEnabledSettingId, AgentSession, ClaudePreferAgentHostAgentsSettingId, ClaudePreferAgentHostEditorSettingId, IAgentHostService, type IAgentCreateChatOptions, type IAgentCreateSessionConfig, type IAgentSessionMetadata } from '../../../../../../platform/agentHost/common/agentService.js';
 import type { IAgentSubscription } from '../../../../../../platform/agentHost/common/state/agentSubscription.js';
 import type { ResolveSessionConfigResult } from '../../../../../../platform/agentHost/common/state/protocol/commands.js';
 import { ChatInteractivity as ProtocolChatInteractivity, ChatOriginKind as ProtocolChatOriginKind, CustomizationLoadStatus, CustomizationType, McpServerStatus, MessageKind, SessionLifecycle, type AgentInfo, type ChangesSummary, type Customization, type RootState, type SessionConfigState, type SessionState, type SessionSummary } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
@@ -625,21 +625,21 @@ suite('LocalAgentHostSessionsProvider', () => {
 		assert.deepStrictEqual(provider.sessionTypes.map(t => t.id), ['copilotcli', 'claude']);
 	});
 
-	test('switches the Agents window between extension-host and agent-host Codex', () => {
+	test('gates agent-host Codex in the Agents window on the provider enablement setting', () => {
 		agentHost.setAgents([
 			{ provider: 'copilotcli', displayName: 'Copilot', description: '', models: [] } as AgentInfo,
 			{ provider: 'codex', displayName: 'Codex', description: '', models: [] } as AgentInfo,
 		]);
 		const configService = new TestConfigurationService();
-		configService.setUserConfiguration(CodexPreferAgentHostAgentsSettingId, false);
+		configService.setUserConfiguration(AgentHostCodexAgentEnabledSettingId, false);
 		const provider = createProvider(disposables, agentHost, undefined, { configurationService: configService, isSessionsWindow: true });
 
 		assert.deepStrictEqual(provider.sessionTypes.map(t => t.id), ['copilotcli']);
 
 		let sessionTypesChanged = false;
 		disposables.add(provider.onDidChangeSessionTypes(() => { sessionTypesChanged = true; }));
-		configService.setUserConfiguration(CodexPreferAgentHostAgentsSettingId, true);
-		fireConfigChange(configService, CodexPreferAgentHostAgentsSettingId);
+		configService.setUserConfiguration(AgentHostCodexAgentEnabledSettingId, true);
+		fireConfigChange(configService, AgentHostCodexAgentEnabledSettingId);
 
 		assert.deepStrictEqual({
 			sessionTypesChanged,

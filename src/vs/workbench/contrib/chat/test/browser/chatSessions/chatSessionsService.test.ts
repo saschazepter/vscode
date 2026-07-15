@@ -15,7 +15,7 @@ import { applyCodexAgentHostPreference, ChatSessionsService } from '../../../bro
 import { ChatSessionOptionsMap, IChatSessionItem, IChatSessionItemController, IChatSessionItemsDelta, IChatSessionsExtensionPoint, ReadonlyChatSessionOptionsMap, SessionType } from '../../../common/chatSessionsService.js';
 import { workbenchInstantiationService } from '../../../../../test/browser/workbenchTestServices.js';
 import { AGENT_HOST_ENABLED_CONTEXT_KEY } from '../../../../../../platform/agentHost/common/agentHostEnablementService.js';
-import { AgentHostCodexAgentEnabledSettingId, CodexPreferAgentHostAgentsSettingId, CodexPreferAgentHostEditorSettingId } from '../../../../../../platform/agentHost/common/agentService.js';
+import { AgentHostCodexAgentEnabledSettingId, CodexPreferAgentHostEditorSettingId } from '../../../../../../platform/agentHost/common/agentService.js';
 import { IsSessionsWindowContext } from '../../../../../common/contextkeys.js';
 
 suite('Codex Agent Host preference', () => {
@@ -30,8 +30,7 @@ suite('Codex Agent Host preference', () => {
 	}): boolean {
 		const configurationService = new TestConfigurationService({
 			[AgentHostCodexAgentEnabledSettingId]: options.codexAgentEnabled,
-			[CodexPreferAgentHostAgentsSettingId]: options.isSessionsWindow && options.preferAgentHost,
-			[CodexPreferAgentHostEditorSettingId]: !options.isSessionsWindow && options.preferAgentHost,
+			[CodexPreferAgentHostEditorSettingId]: options.preferAgentHost,
 		});
 		const contextKeyService = store.add(new ContextKeyService(configurationService));
 		AGENT_HOST_ENABLED_CONTEXT_KEY.bindTo(contextKeyService).set(options.agentHostEnabled);
@@ -47,17 +46,21 @@ suite('Codex Agent Host preference', () => {
 		return !!when && contextKeyService.contextMatchesRules(when);
 	}
 
-	test('only hides extension-host Codex when its Agent Host replacement is enabled and preferred', () => {
+	test('never surfaces extension-host Codex in the Agents window and replaces it when preferred in the editor', () => {
 		assert.deepStrictEqual({
 			agentsWindowPreferred: isCodexExtensionHostAvailable({ agentHostEnabled: true, codexAgentEnabled: true, isSessionsWindow: true, preferAgentHost: true }),
 			agentsWindowNotPreferred: isCodexExtensionHostAvailable({ agentHostEnabled: true, codexAgentEnabled: true, isSessionsWindow: true, preferAgentHost: false }),
+			agentsWindowAgentHostDisabled: isCodexExtensionHostAvailable({ agentHostEnabled: false, codexAgentEnabled: false, isSessionsWindow: true, preferAgentHost: false }),
 			editorWindowPreferred: isCodexExtensionHostAvailable({ agentHostEnabled: true, codexAgentEnabled: true, isSessionsWindow: false, preferAgentHost: true }),
+			editorWindowNotPreferred: isCodexExtensionHostAvailable({ agentHostEnabled: true, codexAgentEnabled: true, isSessionsWindow: false, preferAgentHost: false }),
 			agentHostDisabled: isCodexExtensionHostAvailable({ agentHostEnabled: false, codexAgentEnabled: true, isSessionsWindow: false, preferAgentHost: true }),
 			codexAgentDisabled: isCodexExtensionHostAvailable({ agentHostEnabled: true, codexAgentEnabled: false, isSessionsWindow: false, preferAgentHost: true }),
 		}, {
 			agentsWindowPreferred: false,
-			agentsWindowNotPreferred: true,
+			agentsWindowNotPreferred: false,
+			agentsWindowAgentHostDisabled: false,
 			editorWindowPreferred: false,
+			editorWindowNotPreferred: true,
 			agentHostDisabled: true,
 			codexAgentDisabled: true,
 		});

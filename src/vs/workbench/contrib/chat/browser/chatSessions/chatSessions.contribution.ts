@@ -57,7 +57,7 @@ import { IChatModel } from '../../common/model/chatModel.js';
 import { ICustomizationHarnessService } from '../../common/customizationHarnessService.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { AGENT_HOST_ENABLED_CONTEXT_KEY } from '../../../../../platform/agentHost/common/agentHostEnablementService.js';
-import { AgentHostCodexAgentEnabledSettingId, CodexPreferAgentHostAgentsSettingId, CodexPreferAgentHostEditorSettingId } from '../../../../../platform/agentHost/common/agentService.js';
+import { AgentHostCodexAgentEnabledSettingId, CodexPreferAgentHostEditorSettingId } from '../../../../../platform/agentHost/common/agentService.js';
 import { IsSessionsWindowContext } from '../../../../common/contextkeys.js';
 
 const extensionPoint = ExtensionsRegistry.registerExtensionPoint<IChatSessionsExtensionPoint[]>({
@@ -256,11 +256,13 @@ const extensionPoint = ExtensionsRegistry.registerExtensionPoint<IChatSessionsEx
 	}
 });
 
-const codexExtensionHostAvailableWhen = ContextKeyExpr.or(
-	AGENT_HOST_ENABLED_CONTEXT_KEY.negate(),
-	ContextKeyExpr.not(`config.${AgentHostCodexAgentEnabledSettingId}`),
-	ContextKeyExpr.and(IsSessionsWindowContext, ContextKeyExpr.not(`config.${CodexPreferAgentHostAgentsSettingId}`)),
-	ContextKeyExpr.and(IsSessionsWindowContext.negate(), ContextKeyExpr.not(`config.${CodexPreferAgentHostEditorSettingId}`)),
+const codexExtensionHostAvailableWhen = ContextKeyExpr.and(
+	IsSessionsWindowContext.negate(),
+	ContextKeyExpr.or(
+		AGENT_HOST_ENABLED_CONTEXT_KEY.negate(),
+		ContextKeyExpr.not(`config.${AgentHostCodexAgentEnabledSettingId}`),
+		ContextKeyExpr.not(`config.${CodexPreferAgentHostEditorSettingId}`),
+	),
 )!;
 
 export function applyCodexAgentHostPreference(contribution: IChatSessionsExtensionPoint): IChatSessionsExtensionPoint {
