@@ -1734,6 +1734,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 	private _excludeArchived: boolean;
 	private _excludeRead: boolean;
 	private workspaceGroupCapped: boolean;
+	private _automationSessionResources = new Set<string>();
 
 	/**
 	 * Maximum number of sessions shown per workspace section or user group.
@@ -2185,6 +2186,14 @@ export class SessionsList extends Disposable implements ISessionsList {
 	update(expandAll?: boolean): void {
 		const activeSession = this._sessionsService.activeSession.get();
 
+		// Compute the set of session resource URIs belonging to automation runs.
+		// These sessions are shown exclusively in the Automations section and
+		// filtered out of normal workspace/date groups.
+		const runs = this.automationService.runs.get();
+		this._automationSessionResources = new Set(
+			runs.map(r => r.sessionResource).filter((r): r is string => !!r)
+		);
+
 		// Filter by session type and status
 		let filtered = this.sessions;
 		const hostFilter = this._agentHostFilterService.selectedProviderId;
@@ -2204,11 +2213,17 @@ export class SessionsList extends Disposable implements ISessionsList {
 			filtered = filtered.filter(s => !this.isSessionRead(s));
 		}
 
+		// Exclude automation sessions from normal workspace/date sections
+		if (this._automationSessionResources.size > 0) {
+			filtered = filtered.filter(s => !this._automationSessionResources.has(s.resource.toString()));
+		}
+
 		// Always include the active session even if it was filtered out,
-		// so it remains visible while selected
+		// so it remains visible while selected — unless it belongs to the
+		// Automations section (those are shown there exclusively).
 		if (activeSession && !filtered.some(s => s.sessionId === activeSession.sessionId)) {
 			const match = this.sessions.find(s => s.sessionId === activeSession.sessionId);
-			if (match) {
+			if (match && !this._automationSessionResources.has(match.resource.toString())) {
 				filtered = [...filtered, match];
 			}
 		}
@@ -2354,25 +2369,45 @@ export class SessionsList extends Disposable implements ISessionsList {
 		};
 
 		const renderSection = (section: ISessionSection): IObjectTreeElement<SessionListItem> => {
-			// The "Automations" section is expandable and shows recent runs.
+			// The "Automations" section shows real session entries for runs that
+			// have an associated session, falling back to simplified run items for
+			// pending/failed runs without a session.
 			if (section.id === AUTOMATIONS_SECTION_ID) {
-				const runs = this.automationService.runs.get();
 				const automations = this.automationService.automations.get();
 				const automationNames = new Map(automations.map(a => [a.id, a.name]));
-				const recentRuns = runs.slice(0, 5).map(run => ({
-					automationRun: true as const,
-					id: run.id,
-					name: automationNames.get(run.automationId) ?? 'Unknown',
-					status: run.status,
-					startedAt: run.startedAt,
-					errorMessage: run.errorMessage,
-					sessionResource: run.sessionResource,
-				}));
+				const recentRuns = runs.slice(0, 5);
+
+				// Build a lookup from resource URI to session for fast matching
+				const sessionByResource = new Map(
+					this.sessions.map(s => [s.resource.toString(), s])
+				);
+
+				const automationChildren: IObjectTreeElement<SessionListItem>[] = recentRuns.map(run => {
+					const session = run.sessionResource
+						? sessionByResource.get(run.sessionResource)
+						: undefined;
+					if (session) {
+						return { element: session as SessionListItem };
+					}
+					// Fallback for runs without a resolved session (pending/failed)
+					return {
+						element: {
+							automationRun: true as const,
+							id: run.id,
+							name: automationNames.get(run.automationId) ?? 'Unknown',
+							status: run.status,
+							startedAt: run.startedAt,
+							errorMessage: run.errorMessage,
+							sessionResource: run.sessionResource,
+						} as SessionListItem,
+					};
+				});
+
 				return {
 					element: section as SessionListItem,
 					collapsible: true,
 					collapsed: this.getSavedCollapseState(section.id) ?? ObjectTreeElementCollapseState.PreserveOrExpanded,
-					children: recentRuns.map(run => ({ element: run as SessionListItem })),
+					children: automationChildren,
 				};
 			}
 
