@@ -161,15 +161,6 @@ export class AutomationsCardsWidget extends Disposable {
 		const folderEl = DOM.append(metaEl, $('span.automations-card-meta-item'));
 		folderEl.textContent = basename(automation.folderUri);
 
-		const runs = this.automationService.runsFor(automation.id);
-		const latestRun = runs.get()[0];
-		if (latestRun) {
-			const lastRunEl = DOM.append(metaEl, $('span.automations-card-meta-item.automations-card-last-run'));
-			lastRunEl.textContent = this.formatLastRun(latestRun);
-			lastRunEl.classList.toggle('automations-card-run-failed', latestRun.status === 'failed');
-			lastRunEl.classList.toggle('automations-card-run-success', latestRun.status === 'completed');
-		}
-
 		// Prompt preview (truncated)
 		const promptEl = DOM.append(main, $('.automations-card-prompt'));
 		const maxLength = 120;
@@ -236,20 +227,6 @@ export class AutomationsCardsWidget extends Disposable {
 			case 'weekly': return localize('scheduleWeekly', "Runs weekly");
 			case 'manual': return localize('scheduleManual', "Manual");
 			default: return localize('scheduleManual', "Manual");
-		}
-	}
-
-	private formatLastRun(run: IAutomationRun): string {
-		switch (run.status) {
-			case 'completed':
-				return localize('lastRunSuccess', "Last run succeeded");
-			case 'failed':
-				return localize('lastRunFailed', "Last run failed");
-			case 'running':
-			case 'pending':
-				return localize('lastRunInProgress', "Running…");
-			default:
-				return '';
 		}
 	}
 
