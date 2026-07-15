@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { autorun, IObservable } from '../../../../base/common/observable.js';
+import { autorun, derived, IObservable } from '../../../../base/common/observable.js';
 import { localize2 } from '../../../../nls.js';
 import { BaseActionViewItem } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
@@ -49,11 +49,12 @@ export class ModelPicker extends Disposable {
 		@ISessionModelSelectionModel private readonly _selectionModel: ISessionModelSelectionModel,
 	) {
 		super();
+		const currentModel = derived(this, reader => this._selectionModel.state.read(reader).currentModel);
 
 		this._delegate = {
-			currentModel: this._selectionModel.currentModel,
+			currentModel,
 			setModel: model => {
-				const previousModel = this._selectionModel.currentModel.get();
+				const previousModel = this._selectionModel.state.get().currentModel;
 				if (this._selectionModel.selectModel(model.identifier)) {
 					reportNewChatPickerClosed(this._telemetryService, {
 						id: 'NewChatModelPicker',
@@ -65,12 +66,12 @@ export class ModelPicker extends Disposable {
 					});
 				}
 			},
-			getModels: () => [...this._selectionModel.models.get()],
-			useGroupedModelPicker: () => this._selectionModel.options.get().useGroupedModelPicker,
-			showManageModelsAction: () => this._selectionModel.options.get().showManageModelsAction,
-			showUnavailableFeatured: () => this._selectionModel.options.get().showUnavailableFeatured,
-			showFeatured: () => this._selectionModel.options.get().showFeatured,
-			showAutoModel: () => this._selectionModel.options.get().showAutoModel,
+			getModels: () => [...this._selectionModel.state.get().models],
+			useGroupedModelPicker: () => this._selectionModel.state.get().options.useGroupedModelPicker,
+			showManageModelsAction: () => this._selectionModel.state.get().options.showManageModelsAction,
+			showUnavailableFeatured: () => this._selectionModel.state.get().options.showUnavailableFeatured,
+			showFeatured: () => this._selectionModel.state.get().options.showFeatured,
+			showAutoModel: () => this._selectionModel.state.get().options.showAutoModel,
 			isCacheWarm: () => {
 				const session = this._sessionContext.session.get();
 				// The session's prompt cache is warm once its first request has
@@ -91,8 +92,7 @@ export class ModelPicker extends Disposable {
 		}));
 
 		this._register(autorun(reader => {
-			this._selectionModel.models.read(reader);
-			this._selectionModel.options.read(reader);
+			this._selectionModel.state.read(reader);
 			this._updatePickerState();
 		}));
 
@@ -135,13 +135,14 @@ export class ModelPicker extends Disposable {
 	 * historical behavior for providers that offer no models.
 	 */
 	private _shouldShowPicker(): boolean {
-		if (this._selectionModel.models.get().length > 0) {
+		const state = this._selectionModel.state.get();
+		if (state.models.length > 0) {
 			return true;
 		}
 		if (this._modelPicker.isRestrictedMode() || this._modelPicker.isSetupRequired()) {
 			return true;
 		}
-		return !this._selectionModel.options.get().showAutoModel;
+		return !state.options.showAutoModel;
 	}
 
 	private _updatePickerState(): void {

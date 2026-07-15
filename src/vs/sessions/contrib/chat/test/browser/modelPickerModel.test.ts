@@ -141,10 +141,10 @@ suite('SessionModelSelectionModel', () => {
 		));
 
 		assert.deepStrictEqual({
-			current: selection.currentModel.get()?.identifier,
-			models: selection.models.get().map(model => model.identifier),
-			showAutoModel: selection.options.get().showAutoModel,
-			hasSelectableModel: selection.hasSelectableModel.get(),
+			current: selection.state.get().currentModel?.identifier,
+			models: selection.state.get().models.map(model => model.identifier),
+			showAutoModel: selection.state.get().options.showAutoModel,
+			hasSelectableModel: selection.state.get().hasSelectableModel,
 			writes: provider.writes,
 		}, {
 			current: second.identifier,
@@ -166,7 +166,7 @@ suite('SessionModelSelectionModel', () => {
 			createLanguageModelsService(),
 		));
 
-		assert.deepStrictEqual({ current: selection.currentModel.get()?.identifier, writes: provider.writes }, {
+		assert.deepStrictEqual({ current: selection.state.get().currentModel?.identifier, writes: provider.writes }, {
 			current: second.identifier,
 			writes: [],
 		});
@@ -193,7 +193,7 @@ suite('SessionModelSelectionModel', () => {
 		secondProvider.modelChanges.fire();
 
 		assert.deepStrictEqual({
-			current: selection.currentModel.get()?.identifier,
+			current: selection.state.get().currentModel?.identifier,
 			callsAfterSwitch,
 			callsAfterStaleEvent,
 			callsAfterCurrentEvent: secondProvider.getModelsCalls,
@@ -224,7 +224,7 @@ suite('SessionModelSelectionModel', () => {
 		assert.deepStrictEqual({
 			selected,
 			rejected,
-			current: selection.currentModel.get()?.identifier,
+			current: selection.state.get().currentModel?.identifier,
 			stored: storage.get(modelPickerStorageKey('provider', 'type'), StorageScope.PROFILE),
 			writes: provider.writes,
 		}, {
@@ -249,7 +249,7 @@ suite('SessionModelSelectionModel', () => {
 
 		testSession.modelId.set(second.identifier, undefined);
 
-		assert.deepStrictEqual({ current: selection.currentModel.get()?.identifier, writes: provider.writes }, {
+		assert.deepStrictEqual({ current: selection.state.get().currentModel?.identifier, writes: provider.writes }, {
 			current: second.identifier,
 			writes: [first.identifier],
 		});
@@ -266,9 +266,9 @@ suite('SessionModelSelectionModel', () => {
 		));
 
 		assert.deepStrictEqual({
-			current: selection.currentModel.get(),
-			models: selection.models.get(),
-			hasSelectableModel: selection.hasSelectableModel.get(),
+			current: selection.state.get().currentModel,
+			models: selection.state.get().models,
+			hasSelectableModel: selection.state.get().hasSelectableModel,
 		}, {
 			current: undefined,
 			models: [],
@@ -290,7 +290,7 @@ suite('SessionModelSelectionModel', () => {
 			createLanguageModelsService(['agent-host-copilotcli']),
 		));
 
-		assert.deepStrictEqual({ current: selection.currentModel.get()?.identifier, writes: provider.writes }, {
+		assert.deepStrictEqual({ current: selection.state.get().currentModel?.identifier, writes: provider.writes }, {
 			current: second.identifier,
 			writes: [second.identifier],
 		});
@@ -309,7 +309,7 @@ suite('SessionModelSelectionModel', () => {
 
 		testSession.activeChat.set({ resource: URI.parse('chat:/provider/two') } as IChat, undefined);
 
-		assert.deepStrictEqual({ current: selection.currentModel.get()?.identifier, writes: provider.writes }, {
+		assert.deepStrictEqual({ current: selection.state.get().currentModel?.identifier, writes: provider.writes }, {
 			current: first.identifier,
 			writes: [first.identifier, first.identifier],
 		});

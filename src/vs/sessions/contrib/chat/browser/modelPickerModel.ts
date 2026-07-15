@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
-import { autorun, IObservable, observableValue, transaction } from '../../../../base/common/observable.js';
+import { autorun, IObservable, observableValue } from '../../../../base/common/observable.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { IStorageService, StorageScope } from '../../../../platform/storage/common/storage.js';
@@ -18,12 +18,16 @@ import { hasSelectableModel, INormalizedSessionModelPickerOptions, modelPickerSt
 
 export const ISessionModelSelectionModel = createDecorator<ISessionModelSelectionModel>('sessionModelSelectionModel');
 
+export interface ISessionModelSelectionState {
+	readonly currentModel: ILanguageModelChatMetadataAndIdentifier | undefined;
+	readonly models: readonly ILanguageModelChatMetadataAndIdentifier[];
+	readonly options: INormalizedSessionModelPickerOptions;
+	readonly hasSelectableModel: boolean;
+}
+
 export interface ISessionModelSelectionModel {
 	readonly _serviceBrand: undefined;
-	readonly currentModel: IObservable<ILanguageModelChatMetadataAndIdentifier | undefined>;
-	readonly models: IObservable<readonly ILanguageModelChatMetadataAndIdentifier[]>;
-	readonly options: IObservable<INormalizedSessionModelPickerOptions>;
-	readonly hasSelectableModel: IObservable<boolean>;
+	readonly state: IObservable<ISessionModelSelectionState>;
 	selectModel(modelIdentifier: string): boolean;
 }
 
@@ -31,17 +35,13 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 
 	declare readonly _serviceBrand: undefined;
 
-	private readonly _currentModel = observableValue<ILanguageModelChatMetadataAndIdentifier | undefined>(this, undefined);
-	readonly currentModel: IObservable<ILanguageModelChatMetadataAndIdentifier | undefined> = this._currentModel;
-
-	private readonly _models = observableValue<readonly ILanguageModelChatMetadataAndIdentifier[]>(this, []);
-	readonly models: IObservable<readonly ILanguageModelChatMetadataAndIdentifier[]> = this._models;
-
-	private readonly _options = observableValue<INormalizedSessionModelPickerOptions>(this, normalizeModelPickerOptions(undefined));
-	readonly options: IObservable<INormalizedSessionModelPickerOptions> = this._options;
-
-	private readonly _hasSelectableModel = observableValue(this, false);
-	readonly hasSelectableModel: IObservable<boolean> = this._hasSelectableModel;
+	private readonly _state = observableValue<ISessionModelSelectionState>(this, {
+		currentModel: undefined,
+		models: [],
+		options: normalizeModelPickerOptions(undefined),
+		hasSelectableModel: false,
+	});
+	readonly state: IObservable<ISessionModelSelectionState> = this._state;
 
 	private readonly _providerListener = this._register(new MutableDisposable());
 	private _provider: ISessionsProvider | undefined;
@@ -86,12 +86,12 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 		}
 
 		const options = normalizeModelPickerOptions(provider.getModelPickerOptions(session.sessionId));
-		transaction(tx => {
-			this._models.set(models, tx);
-			this._options.set(options, tx);
-			this._hasSelectableModel.set(hasSelectableModel(models, options), tx);
-			this._currentModel.set(model, tx);
-		});
+		this._state.set({
+			models,
+			options,
+			hasSelectableModel: hasSelectableModel(models, options),
+			currentModel: model,
+		}, undefined);
 		this._previousSessionKey = this._sessionKey(session);
 		this._lastPushedChatKey = session.activeChat.get().resource.toString();
 		this._applyModel(session, provider, model);
@@ -109,27 +109,33 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 			? this._storageService.get(modelPickerStorageKey(session.providerId, session.sessionType), StorageScope.PROFILE)
 			: undefined;
 		const result = transitionModelSelection({
-			sessionKey,
-			previousSessionKey: this._previousSessionKey,
-			chatKey: session?.activeChat.get().resource.toString(),
-			lastPushedChatKey: this._lastPushedChatKey,
-			isUntitled: session?.status.get() === SessionStatus.Untitled,
-			sessionModelId,
-			currentModel: this._currentModel.get(),
-			configuredModel: this._configurationService.getValue<string>(ChatConfiguration.DefaultModel),
-			rememberedModelId,
-			models,
-			isSessionModelVendorResolved: !!sessionModelId && this._hasResolvedVendor(sessionModelId),
+			session: session ? {
+				kind: session.status.get() === SessionStatus.Untitled ? 'untitled' : 'existing',
+				key: sessionKey!,
+				chatKey: session.activeChat.get().resource.toString(),
+				modelId: sessionModelId,
+				modelVendorResolved: !!sessionModelId && this._hasResolvedVendor(sessionModelId),
+			} : { kind: 'none' },
+			catalog: {
+				models,
+				configuredModel: this._configurationService.getValue<string>(ChatConfiguration.DefaultModel),
+				rememberedModelId,
+			},
+			previous: {
+				sessionKey: this._previousSessionKey,
+				lastPushedChatKey: this._lastPushedChatKey,
+				currentModel: this._state.get().currentModel,
+			},
 		});
 
 		this._previousSessionKey = result.sessionKey;
 		this._lastPushedChatKey = result.lastPushedChatKey;
-		transaction(tx => {
-			this._models.set(models, tx);
-			this._options.set(options, tx);
-			this._hasSelectableModel.set(!!session && !!provider && hasSelectableModel(models, options), tx);
-			this._currentModel.set(result.currentModel, tx);
-		});
+		this._state.set({
+			models,
+			options,
+			hasSelectableModel: !!session && !!provider && hasSelectableModel(models, options),
+			currentModel: result.currentModel,
+		}, undefined);
 
 		if (result.effect.kind === 'apply' && session && provider) {
 			this._applyModel(session, provider, result.effect.model);

@@ -92,9 +92,7 @@ class MobileChatInputConfigPicker extends Disposable {
 		// the desktop picker is gated off, so this surface only renders it.
 		this._register(autorun(reader => {
 			this._session.read(reader);
-			this._selectionModel.currentModel.read(reader);
-			this._selectionModel.models.read(reader);
-			this._selectionModel.options.read(reader);
+			this._selectionModel.state.read(reader);
 			this._updateTrigger();
 		}));
 		this._register(this._sessionsProvidersService.onDidChangeProviders(e => {
@@ -182,9 +180,10 @@ class MobileChatInputConfigPicker extends Disposable {
 			: modeItems[0]?.value;
 
 		// Model
-		const modelItems = this._selectionModel.models.get();
-		const currentModelId = this._selectionModel.currentModel.get()?.identifier;
-		const showAutoModel = this._selectionModel.options.get().showAutoModel;
+		const selectionState = this._selectionModel.state.get();
+		const modelItems = selectionState.models;
+		const currentModelId = selectionState.currentModel?.identifier;
+		const showAutoModel = selectionState.options.showAutoModel;
 
 		return { provider, session, modeItems, currentMode, modelItems, currentModelId, showAutoModel };
 	}

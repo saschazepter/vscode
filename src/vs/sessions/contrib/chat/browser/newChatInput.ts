@@ -324,7 +324,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		super();
 		this._sessionModelSelectionModel = this._register(this.instantiationService.createInstance(SessionModelSelectionModel, this.options.session));
 		this._canSendRequest = derived(this, reader =>
-			this.options.canSendRequest.read(reader) && this._sessionModelSelectionModel.hasSelectableModel.read(reader)
+			this.options.canSendRequest.read(reader) && this._sessionModelSelectionModel.state.read(reader).hasSelectableModel
 		);
 		this._scopedInstantiationService = this._register(this.instantiationService.createChild(new ServiceCollection(
 			[INewChatModelPickerService, this._newChatModelPickerService],

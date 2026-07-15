@@ -17,11 +17,9 @@ import { KeyCode } from '../../../../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../../../../base/common/lifecycle.js';
 import { disposableTimeout } from '../../../../../../../base/common/async.js';
 import { autorun, IObservable } from '../../../../../../../base/common/observable.js';
-import { formatTokenCount } from '../../../../../../../base/common/numbers.js';
-import { ThemeIcon } from '../../../../../../../base/common/themables.js';
 import { URI } from '../../../../../../../base/common/uri.js';
 import { localize } from '../../../../../../../nls.js';
-import { ActionListItemKind, IActionListHeaderLink, IActionListItem } from '../../../../../../../platform/actionWidget/browser/actionList.js';
+import { IActionListHeaderLink } from '../../../../../../../platform/actionWidget/browser/actionList.js';
 import { IActionWidgetService } from '../../../../../../../platform/actionWidget/browser/actionWidget.js';
 import { IActionWidgetDropdownAction } from '../../../../../../../platform/actionWidget/browser/actionWidgetDropdown.js';
 import { ICommandService } from '../../../../../../../platform/commands/common/commands.js';
@@ -32,15 +30,17 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../../../
 import { TelemetryTrustedValue } from '../../../../../../../platform/telemetry/common/telemetryUtils.js';
 import { IModelControlEntry, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../../common/languageModels.js';
 import { ChatEntitlement, chatRequiresSetup, IChatEntitlementService } from '../../../../../../services/chat/common/chatEntitlementService.js';
-import { IModelConfigurationAccess, IModelPickerDelegate } from './modelPickerActionItem.js';
+import { IModelPickerDelegate } from './modelPickerActionItem.js';
 import { getModelPickerUnavailableReason, ModelPickerUnavailableReason, shouldShowCacheBreakHint as computeShouldShowCacheBreakHint } from '../chatModelSelectionLogic.js';
 import { CHAT_SETUP_ACTION_ID } from '../../../actions/chatActions.js';
 import { IUriIdentityService } from '../../../../../../../platform/uriIdentity/common/uriIdentity.js';
 import { GitHubPaths, IDefaultAccountService } from '../../../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IUpdateService } from '../../../../../../../platform/update/common/update.js';
+import { IInstantiationService } from '../../../../../../../platform/instantiation/common/instantiation.js';
 import { IWorkspaceTrustManagementService, IWorkspaceTrustRequestService } from '../../../../../../../platform/workspace/common/workspaceTrust.js';
 import { withChatInputPickerMotion } from '../chatInputPickerActionItem.js';
-import { buildModelPickerItems, createManageModelsAction, getControlModelsForEntitlement, getModelPickerAccessibilityProvider, ModelPickerSection, resolveConfigProperty, shouldShowManageModelsAction } from './modelPickerItems.js';
+import { buildModelPickerItems, createManageModelsAction, getControlModelsForEntitlement, getModelPickerAccessibilityProvider, ModelPickerSection, shouldShowManageModelsAction } from './modelPickerItems.js';
+import { ModelPickerConfiguration } from './modelPickerConfiguration.js';
 import { getModelPickerIcon } from './modelProviderIcons.js';
 import { isAutoModel } from './modelPickerUtils.js';
 
@@ -69,34 +69,6 @@ type ChatModelPickerInteractionClassification = {
 
 type ChatModelPickerInteractionEvent = {
 	interaction: ChatModelPickerInteraction;
-};
-
-type ChatThinkingEffortChangeClassification = {
-	owner: 'lramos15';
-	comment: 'Reporting when the thinking effort is changed';
-	model: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The model the thinking effort was changed for' };
-	fromValue: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The previous thinking effort value' };
-	toValue: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The new thinking effort value' };
-};
-
-type ChatThinkingEffortChangeEvent = {
-	model: string | TelemetryTrustedValue<string>;
-	fromValue: string;
-	toValue: string;
-};
-
-type ChatContextSizeChangeClassification = {
-	owner: 'lramos15';
-	comment: 'Reporting when the context window size is changed';
-	model: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The model the context size was changed for' };
-	fromValue: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The previous context size value' };
-	toValue: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The new context size value' };
-};
-
-type ChatContextSizeChangeEvent = {
-	model: string | TelemetryTrustedValue<string>;
-	fromValue: string;
-	toValue: string;
 };
 
 type ModelPickerBadge = 'info' | 'warning';
@@ -139,6 +111,7 @@ export class ModelPickerWidget extends Disposable {
 	private _badgeIcon: HTMLElement | undefined;
 	private _nameButton: HTMLElement | undefined;
 	private _configButton: HTMLElement | undefined;
+	private readonly _configuration: ModelPickerConfiguration;
 
 	get selectedModel(): ILanguageModelChatMetadataAndIdentifier | undefined {
 		return this._selectedModel;
@@ -167,8 +140,17 @@ export class ModelPickerWidget extends Disposable {
 		@IWorkspaceTrustManagementService private readonly _workspaceTrustManagementService: IWorkspaceTrustManagementService,
 		@IWorkspaceTrustRequestService private readonly _workspaceTrustRequestService: IWorkspaceTrustRequestService,
 		@IStorageService private readonly _storageService: IStorageService,
+		@IInstantiationService instantiationService: IInstantiationService,
 	) {
 		super();
+		this._configuration = instantiationService.createInstance(ModelPickerConfiguration, {
+			getSelectedModel: () => this._selectedModel,
+			getConfigurationAccess: () => this._delegate.modelConfiguration ?? this._languageModelsService,
+			isDisabled: () => !!this._domNode?.classList.contains('disabled'),
+			shouldShowCacheBreakHint: () => this.shouldShowCacheBreakHint(/* excludeAutoModel */ false),
+			getCacheBreakLearnMoreLink: () => this.getCacheBreakLearnMoreLink(),
+			dismissCacheBreakHint: () => this.dismissCacheBreakHint(),
+		});
 		this._register(this._languageModelsService.onDidChangeLanguageModels(() => {
 			if (this._activatingAfterTrust && this._delegate.getModels().length > 0) {
 				this._clearActivating();
@@ -355,7 +337,7 @@ export class ModelPickerWidget extends Disposable {
 		this._renderLabel();
 
 		this._registerButtonAction(this._nameButton, () => this.show());
-		this._registerButtonAction(this._configButton, () => this._showConfigPicker());
+		this._registerButtonAction(this._configButton, () => this._configuration.show(this._configButton));
 
 		// Managed hover for the combined configuration button
 		this._register(getBaseLayerHoverDelegate().setupManagedHover(
@@ -453,7 +435,7 @@ export class ModelPickerWidget extends Disposable {
 		const onConfigure = (model: ILanguageModelChatMetadataAndIdentifier, group: string) => {
 			onSelect(model);
 			this._actionWidgetService.hide();
-			this._showConfigPicker(group);
+			this._configuration.show(this._configButton, group);
 		};
 
 		const models = this._delegate.getModels();
@@ -630,35 +612,8 @@ export class ModelPickerWidget extends Disposable {
 		}
 		dom.reset(this._nameButton, ...nameChildren);
 
-		// --- Combined config section (Thinking Effort + Context Size) ---
-		const effortConfig = this._getConfigProperty('navigation');
-		const tokensConfig = this._getConfigProperty('tokens');
 		if (this._configButton) {
-			if (!compact && this._selectedModel && !noModelsAvailable && (effortConfig || tokensConfig)) {
-				const labelParts: string[] = [];
-				const ariaParts: string[] = [];
-				if (effortConfig) {
-					const enumIndex = effortConfig.schema.enum?.indexOf(effortConfig.value) ?? -1;
-					const effortLabel = enumIndex >= 0 && effortConfig.schema.enumItemLabels?.[enumIndex]
-						? effortConfig.schema.enumItemLabels[enumIndex]
-						: String(effortConfig.value);
-					labelParts.push(effortLabel);
-					ariaParts.push(localize('chat.modelPicker.effortAriaLabel', "Thinking Effort: {0}", effortLabel));
-				}
-				if (tokensConfig) {
-					const idx = tokensConfig.schema.enum?.indexOf(tokensConfig.value) ?? -1;
-					const tokensLabel = idx >= 0 && tokensConfig.schema.enumItemLabels?.[idx]
-						? tokensConfig.schema.enumItemLabels[idx]
-						: formatTokenCount(Number(tokensConfig.value));
-					labelParts.push(tokensLabel);
-					ariaParts.push(localize('chat.modelPicker.tokensAriaLabel', "Context Size: {0}", tokensLabel));
-				}
-				dom.reset(this._configButton, dom.$('span.chat-input-picker-label', undefined, labelParts.join(' ')));
-				this._configButton.style.display = '';
-				this._configButton.ariaLabel = ariaParts.join(', ');
-			} else {
-				this._configButton.style.display = 'none';
-			}
+			this._configuration.renderButton(this._configButton, compact, noModelsAvailable);
 		}
 
 		// Aria — name the control "Models" to match the visible label; the comma
@@ -672,210 +627,4 @@ export class ModelPickerWidget extends Disposable {
 		this._nameButton.ariaLabel = ariaLabel;
 	}
 
-	/**
-	 * Per-editor model configuration access when the delegate provides it,
-	 * otherwise the global service. Routing through this keeps configuration
-	 * (e.g. context size) scoped to this editor so changes do not sync to other
-	 * already-open editors. See issue #320393.
-	 */
-	private get _modelConfiguration(): IModelConfigurationAccess {
-		return this._delegate.modelConfiguration ?? this._languageModelsService;
-	}
-
-	private _getConfigProperty(group: string) {
-		if (!this._selectedModel) {
-			return undefined;
-		}
-		return resolveConfigProperty(this._selectedModel, group, this._modelConfiguration);
-	}
-
-	/**
-	 * Builds the combined configuration items containing the model's Thinking
-	 * Effort and Context Size options (when available).
-	 */
-	private _buildConfigItems(): IActionListItem<IActionWidgetDropdownAction>[] {
-		if (!this._selectedModel) {
-			return [];
-		}
-
-		const modelIdentifier = this._selectedModel.identifier;
-		const items: IActionListItem<IActionWidgetDropdownAction>[] = [];
-		const defaultLabel = localize('models.configDefault', "Default");
-
-		// Builds a header + radio options for one configurable group (effort or context size).
-		const appendConfigSection = (
-			group: string,
-			headerLabel: string,
-			formatValueLabel: (value: unknown, enumLabel: string | undefined) => string,
-			logChange: (value: unknown, previousValue: string) => void,
-		): void => {
-			const config = this._getConfigProperty(group);
-			if (!config) {
-				return;
-			}
-			const previousValue = String(config.value ?? '');
-			const enumValues = config.schema.enum ?? [];
-			const enumItemLabels = config.schema.enumItemLabels;
-			if (items.length) {
-				items.push({ kind: ActionListItemKind.Separator });
-			}
-			items.push({ kind: ActionListItemKind.Header, label: headerLabel });
-			for (let index = 0; index < enumValues.length; index++) {
-				const value = enumValues[index];
-				const isDefault = value === config.schema.default;
-				const displayLabel = formatValueLabel(value, enumItemLabels?.[index]);
-				const enumDescription = config.schema.enumDescriptions?.[index];
-				// Only the default value shows a right-aligned "Default" label. The
-				// per-option descriptions are surfaced on hover (tooltip) instead of
-				// being shown inline in the picker.
-				const description = isDefault ? defaultLabel : undefined;
-				// The visual description is hover-only, so build a separate accessible
-				// description so screen reader users still hear the default marker and
-				// the per-option explanation.
-				const ariaDescriptionParts: string[] = [];
-				if (isDefault) {
-					ariaDescriptionParts.push(defaultLabel);
-				}
-				if (enumDescription) {
-					ariaDescriptionParts.push(enumDescription);
-				}
-				const ariaDescription = ariaDescriptionParts.length ? ariaDescriptionParts.join(', ') : undefined;
-				const checked = config.value === value;
-				items.push({
-					item: {
-						id: `${group}.${value}`,
-						enabled: true,
-						checked,
-						class: undefined,
-						tooltip: enumDescription ?? '',
-						label: displayLabel,
-						run: () => {
-							logChange(value, previousValue);
-							// Write through the same (possibly per-editor) access used for
-							// reading so the change is reflected back in the UI. See #320393.
-							// Return the promise so callers can await the write before
-							// refreshing the checked state.
-							return this._modelConfiguration.setModelConfiguration(modelIdentifier, { [config.key]: value });
-						}
-					},
-					kind: ActionListItemKind.Action,
-					label: displayLabel,
-					description,
-					ariaDescription,
-					hover: enumDescription ? { content: enumDescription } : undefined,
-					group: { title: '', icon: ThemeIcon.fromId(checked ? Codicon.check.id : Codicon.blank.id) },
-					hideIcon: false,
-				});
-			}
-		};
-
-		// --- Thinking Effort ---
-		appendConfigSection(
-			'navigation',
-			localize('chat.effort.header', "Thinking Effort"),
-			(value, enumLabel) => enumLabel ?? String(value),
-			(value, previousValue) => {
-				this._telemetryService.publicLog2<ChatThinkingEffortChangeEvent, ChatThinkingEffortChangeClassification>('chat.thinkingEffortChange', {
-					model: this._selectedModel?.metadata.vendor === 'copilot' ? new TelemetryTrustedValue(modelIdentifier) : 'unknown',
-					fromValue: previousValue,
-					toValue: String(value),
-				});
-			},
-		);
-
-		// --- Context Size ---
-		appendConfigSection(
-			'tokens',
-			localize('chat.tokens.header', "Context Size"),
-			(value, enumLabel) => enumLabel ?? formatTokenCount(Number(value)),
-			(value, previousValue) => {
-				this._telemetryService.publicLog2<ChatContextSizeChangeEvent, ChatContextSizeChangeClassification>('chat.contextSizeChange', {
-					model: this._selectedModel?.metadata.vendor === 'copilot' ? new TelemetryTrustedValue(modelIdentifier) : 'unknown',
-					fromValue: previousValue,
-					toValue: String(value),
-				});
-			},
-		);
-
-		// Nothing configurable for this model returns an empty list; callers
-		// decide whether to show the popup.
-		return items;
-	}
-
-	/**
-	 * Opens the combined configuration dropdown containing the model's Thinking
-	 * Effort and Context Size options (when available), in a single popup anchored
-	 * to the config button. When `focusGroup` is provided, focus is moved to the
-	 * first option of that section (e.g. 'navigation' for Thinking Effort or
-	 * 'tokens' for Context Size).
-	 */
-	private _showConfigPicker(focusGroup?: string): void {
-		if (this._domNode?.classList.contains('disabled') || !this._configButton || !this._selectedModel) {
-			return;
-		}
-
-		const items = this._buildConfigItems();
-
-		// Nothing configurable for this model: don't show an empty popup.
-		if (!items.length) {
-			return;
-		}
-
-		const previouslyFocusedElement = dom.getActiveElement();
-		const delegate = {
-			onSelect: async (action: IActionWidgetDropdownAction) => {
-				// The config picker stays open until dismissed so users can adjust
-				// multiple options. Focus the clicked item immediately so the focus
-				// highlight doesn't flicker while waiting for the async config write,
-				// then refresh in place keeping focus on the just-selected item.
-				this._actionWidgetService.focusItemById(action.id);
-				// Wait for the (async) config write to resolve so the rebuilt items
-				// read back the new value before refreshing.
-				await action.run();
-				this._actionWidgetService.updateItems(this._buildConfigItems(), action.id);
-			},
-			onHide: () => {
-				this._configButton?.setAttribute('aria-expanded', 'false');
-				if (dom.isHTMLElement(previouslyFocusedElement)) {
-					previouslyFocusedElement.focus();
-				}
-			}
-		};
-
-		this._configButton.setAttribute('aria-expanded', 'true');
-
-		const showCacheBreakHint = this.shouldShowCacheBreakHint(/* excludeAutoModel */ false);
-
-		this._actionWidgetService.show(
-			'ChatModelConfigPicker',
-			false,
-			items,
-			delegate,
-			this._configButton,
-			undefined,
-			[],
-			{
-				isChecked(element: IActionListItem<IActionWidgetDropdownAction>) {
-					return element.kind === ActionListItemKind.Action ? !!element?.item?.checked : undefined;
-				},
-				getRole: (element: IActionListItem<IActionWidgetDropdownAction>) => element.kind === ActionListItemKind.Action ? 'menuitemradio' as const : 'separator' as const,
-				getWidgetRole: () => 'menu' as const,
-			},
-			withChatInputPickerMotion({
-				headerText: showCacheBreakHint ? localize('chat.config.cacheBreakHint', "Changing these options mid-session resets the prompt cache and may increase cost.") : undefined,
-				headerIcon: showCacheBreakHint ? Codicon.info : undefined,
-				headerLink: showCacheBreakHint ? this.getCacheBreakLearnMoreLink() : undefined,
-				headerDismiss: showCacheBreakHint ? () => this.dismissCacheBreakHint() : undefined,
-			})
-		);
-
-		// Focus the requested section's first option (e.g. when opened from a
-		// model hover's Thinking Effort / Context Size button).
-		if (focusGroup) {
-			const groupItem = items.find(item => item.kind === ActionListItemKind.Action && item.item?.id?.startsWith(`${focusGroup}.`));
-			if (groupItem?.kind === ActionListItemKind.Action && groupItem.item) {
-				this._actionWidgetService.focusItemById(groupItem.item.id);
-			}
-		}
-	}
 }

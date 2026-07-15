@@ -8,7 +8,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/tes
 import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
 import { InMemoryStorageService, StorageScope } from '../../../../../platform/storage/common/storage.js';
 import { ILanguageModelChatMetadataAndIdentifier } from '../../../../../workbench/contrib/chat/common/languageModels.js';
-import { ModelSelectionReason, modelPickerStorageKey, normalizeModelPickerOptions, selectAvailableSessionModel, transitionModelSelection } from '../../browser/modelPickerSelection.js';
+import { IModelSelectionCatalogContext, IModelSelectionMemory, IModelSelectionSessionContext, ModelSelectionReason, modelPickerStorageKey, normalizeModelPickerOptions, selectAvailableSessionModel, transitionModelSelection } from '../../browser/modelPickerSelection.js';
 
 function model(identifier: string, metadataId = identifier, family = identifier): ILanguageModelChatMetadataAndIdentifier {
 	return {
@@ -30,20 +30,34 @@ function model(identifier: string, metadataId = identifier, family = identifier)
 const first = model('target:first', 'first', 'first');
 const second = model('target:second', 'second', 'second');
 
-function transition(overrides: Partial<Parameters<typeof transitionModelSelection>[0]> = {}) {
+interface ITransitionOverrides {
+	readonly session?: Partial<Extract<IModelSelectionSessionContext, { kind: 'untitled' | 'existing' }>>;
+	readonly catalog?: Partial<IModelSelectionCatalogContext>;
+	readonly previous?: Partial<IModelSelectionMemory>;
+}
+
+function transition(overrides: ITransitionOverrides = {}) {
 	return transitionModelSelection({
-		sessionKey: 'provider/type',
-		previousSessionKey: 'provider/type',
-		chatKey: 'chat:one',
-		lastPushedChatKey: 'chat:one',
-		isUntitled: true,
-		sessionModelId: undefined,
-		currentModel: undefined,
-		configuredModel: undefined,
-		rememberedModelId: undefined,
-		models: [first, second],
-		isSessionModelVendorResolved: false,
-		...overrides,
+		session: {
+			kind: 'untitled',
+			key: 'provider/type',
+			chatKey: 'chat:one',
+			modelId: undefined,
+			modelVendorResolved: false,
+			...overrides.session,
+		},
+		catalog: {
+			models: [first, second],
+			configuredModel: undefined,
+			rememberedModelId: undefined,
+			...overrides.catalog,
+		},
+		previous: {
+			sessionKey: 'provider/type',
+			lastPushedChatKey: 'chat:one',
+			currentModel: undefined,
+			...overrides.previous,
+		},
 	});
 }
 
@@ -78,9 +92,8 @@ suite('ModelPickerSelection', () => {
 
 	test('restores a valid existing-session model without writing it', () => {
 		assert.deepStrictEqual(summarize(transition({
-			isUntitled: false,
-			sessionModelId: second.identifier,
-			currentModel: first,
+			session: { kind: 'existing', modelId: second.identifier },
+			previous: { currentModel: first },
 		})), {
 			current: second.identifier,
 			effect: 'none',
@@ -92,10 +105,8 @@ suite('ModelPickerSelection', () => {
 
 	test('waits for the vendor before repairing a missing existing-session model', () => {
 		assert.deepStrictEqual(summarize(transition({
-			isUntitled: false,
-			sessionModelId: 'target:missing',
-			currentModel: first,
-			isSessionModelVendorResolved: false,
+			session: { kind: 'existing', modelId: 'target:missing', modelVendorResolved: false },
+			previous: { currentModel: first },
 		})), {
 			current: undefined,
 			effect: 'clear',
@@ -107,10 +118,8 @@ suite('ModelPickerSelection', () => {
 
 	test('repairs a confirmed removed model with the remembered fallback', () => {
 		assert.deepStrictEqual(summarize(transition({
-			isUntitled: false,
-			sessionModelId: 'target:missing',
-			rememberedModelId: second.identifier,
-			isSessionModelVendorResolved: true,
+			session: { kind: 'existing', modelId: 'target:missing', modelVendorResolved: true },
+			catalog: { rememberedModelId: second.identifier },
 		})), {
 			current: second.identifier,
 			effect: 'apply',
@@ -122,9 +131,8 @@ suite('ModelPickerSelection', () => {
 
 	test('configured default wins at the start of each new chat', () => {
 		assert.deepStrictEqual(summarize(transition({
-			configuredModel: second.metadata.id,
-			currentModel: first,
-			lastPushedChatKey: 'chat:previous',
+			catalog: { configuredModel: second.metadata.id },
+			previous: { currentModel: first, lastPushedChatKey: 'chat:previous' },
 		})), {
 			current: second.identifier,
 			effect: 'apply',
@@ -136,8 +144,8 @@ suite('ModelPickerSelection', () => {
 
 	test('adopts an externally selected draft model without writing it again', () => {
 		assert.deepStrictEqual(summarize(transition({
-			sessionModelId: second.identifier,
-			currentModel: first,
+			session: { modelId: second.identifier },
+			previous: { currentModel: first },
 		})), {
 			current: second.identifier,
 			effect: 'none',
@@ -149,7 +157,7 @@ suite('ModelPickerSelection', () => {
 
 	test('uses remembered then first available fallback for an unseeded draft', () => {
 		assert.deepStrictEqual([
-			summarize(transition({ rememberedModelId: second.identifier })),
+			summarize(transition({ catalog: { rememberedModelId: second.identifier } })),
 			summarize(transition()),
 		], [{
 			current: second.identifier,
@@ -168,8 +176,7 @@ suite('ModelPickerSelection', () => {
 
 	test('resets carried selection when provider or session type changes', () => {
 		assert.deepStrictEqual(summarize(transition({
-			previousSessionKey: 'other/type',
-			currentModel: second,
+			previous: { sessionKey: 'other/type', currentModel: second },
 		})), {
 			current: first.identifier,
 			effect: 'apply',
@@ -181,8 +188,8 @@ suite('ModelPickerSelection', () => {
 
 	test('clears stale selection when the catalog becomes empty', () => {
 		assert.deepStrictEqual(summarize(transition({
-			models: [],
-			currentModel: first,
+			catalog: { models: [] },
+			previous: { currentModel: first },
 		})), {
 			current: undefined,
 			effect: 'clear',
@@ -193,7 +200,7 @@ suite('ModelPickerSelection', () => {
 	});
 
 	test('does not write twice in the same chat', () => {
-		assert.deepStrictEqual(summarize(transition({ currentModel: second })), {
+		assert.deepStrictEqual(summarize(transition({ previous: { currentModel: second } })), {
 			current: second.identifier,
 			effect: 'none',
 			applied: undefined,
@@ -204,8 +211,7 @@ suite('ModelPickerSelection', () => {
 
 	test('re-pushes a carried selection when an untitled chat is reused', () => {
 		assert.deepStrictEqual(summarize(transition({
-			currentModel: second,
-			lastPushedChatKey: 'chat:previous',
+			previous: { currentModel: second, lastPushedChatKey: 'chat:previous' },
 		})), {
 			current: second.identifier,
 			effect: 'apply',

@@ -17,7 +17,6 @@ import { MANAGE_CHAT_COMMAND_ID } from '../../../../common/constants.js';
 import { IModelControlEntry, ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService, IModelsControlManifest } from '../../../../common/languageModels.js';
 import { ChatEntitlement, IChatEntitlementService, isProUser } from '../../../../../../services/chat/common/chatEntitlementService.js';
 import * as semver from '../../../../../../../base/common/semver/semver.js';
-import { IModelConfigurationAccess } from './modelPickerActionItem.js';
 import { getModelHoverContent } from './modelPickerHover.js';
 import { getPriceCategoryLabel, isAutoModel, isMultiplierPricing } from './modelPickerUtils.js';
 import { StateType } from '../../../../../../../platform/update/common/update.js';
@@ -208,33 +207,6 @@ function createPinAction(
 		class: ThemeIcon.asClassName(isPinned ? Codicon.pinned : Codicon.pin),
 		run: () => onTogglePin(modelIdentifier, !isPinned),
 	});
-}
-
-/**
- * Resolves a configuration property from a model's configurationSchema by group.
- * Returns the key, current value (with default fallback), and schema metadata.
- */
-export function resolveConfigProperty(
-	model: ILanguageModelChatMetadataAndIdentifier,
-	group: string,
-	configAccess: IModelConfigurationAccess,
-): { key: string; value: unknown; schema: { enum?: unknown[]; enumItemLabels?: string[]; enumDescriptions?: string[]; default?: unknown } } | undefined {
-	const schema = model.metadata.configurationSchema;
-	if (!schema?.properties) {
-		return undefined;
-	}
-	const currentConfig = configAccess.getModelConfiguration(model.identifier) ?? {};
-	for (const [key, propSchema] of Object.entries(schema.properties)) {
-		if (propSchema.group !== group) {
-			continue;
-		}
-		if (!propSchema.enum || propSchema.enum.length < 1) {
-			continue;
-		}
-		const value = currentConfig[key] ?? propSchema.default;
-		return { key, value, schema: propSchema };
-	}
-	return undefined;
 }
 
 
