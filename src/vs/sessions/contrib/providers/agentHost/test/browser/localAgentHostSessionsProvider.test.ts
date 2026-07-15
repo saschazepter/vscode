@@ -3222,8 +3222,11 @@ suite('LocalAgentHostSessionsProvider', () => {
 			{ provider: 'codex', displayName: 'Codex', description: '', models: [] } as AgentInfo,
 			{ provider: 'claude', displayName: 'Claude', description: '', models: [] } as AgentInfo,
 		]);
+		const configurationService = new TestConfigurationService();
+		configurationService.setUserConfiguration(AgentHostCodexAgentEnabledSettingId, true);
 		const provider = createProvider(disposables, agentHost, codexAndClaude, {
 			openSession: true,
+			configurationService,
 			sendRequest: async (): Promise<ChatSendResult> => {
 				// While the codex send is in flight, a foreign-type (claude)
 				// session shows up in the host's list (e.g. restored from an
