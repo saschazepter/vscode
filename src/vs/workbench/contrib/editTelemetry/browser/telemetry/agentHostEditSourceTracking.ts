@@ -249,7 +249,7 @@ function sendEditSourcesDetailsTelemetryData(
 		modifiedCount,
 		deltaModifiedCount,
 		totalModifiedCount,
-	}, harness === 'copilot-sdk');
+	}, harness === 'copilotcli');
 }
 
 /**
@@ -342,7 +342,7 @@ export class AgentHostEditSourceTracking extends Disposable {
 			return;
 		}
 
-		const harness = provider === 'copilot' ? 'copilot-sdk' : provider;
+		const harness = provider;
 		const agentSessionId = AgentSession.id(session);
 		const languageId = this._languageService.guessLanguageIdByFilepathOrFirstLine(resource, firstLine(afterText || beforeText)) ?? 'plaintext';
 		const source = EditSources.chatApplyEdits({
