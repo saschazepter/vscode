@@ -45,7 +45,11 @@ export class LanguageContextServiceImpl implements ILanguageContextService, vsco
 		this._onCachePopulated = new vscode.EventEmitter<OnCachePopulatedEvent>();
 		this._onContextComputed = new vscode.EventEmitter<OnContextComputedEvent>();
 		this._onContextComputedOnTimeout = new vscode.EventEmitter<OnContextComputedOnTimeoutEvent>();
-		this.tsLanguageContextService =this.updateTSLanguageContextService();
+		const useTS7 = TypeScript.useVersion7();
+		this.tsLanguageContextService = useTS7
+			? new TS7LanguageContextService(this.telemetryService, this.configurationService, this.experimentationService, this.logService)
+			: new TS6LanguageContextService(this.telemetryService, this.configurationService, this.experimentationService, this.logService);
+		this.bindEvents();
 		this.disposables.add(this.configurationService.onDidChangeConfiguration((e) => {
 			if (e.affectsConfiguration(TypeScript.versionKey)) {
 				this.updateTSLanguageContextService();
@@ -89,22 +93,25 @@ export class LanguageContextServiceImpl implements ILanguageContextService, vsco
 		return this.tsLanguageContextService.getContextOnTimeout(document, position, context);
 	}
 
-	private updateTSLanguageContextService(): TSLanguageContextService {
-		const useVersion7 = TypeScript.useVersion7();
-		const oldService = this.tsLanguageContextService;
-		if (useVersion7 && this.tsLanguageContextService instanceof TS6LanguageContextService) {
-			this.tsLanguageContextService.dispose();
+	private updateTSLanguageContextService(): void {
+		const useTS7 = TypeScript.useVersion7();
+		const oldService: TSLanguageContextService = this.tsLanguageContextService;
+		if (useTS7 && oldService instanceof TS6LanguageContextService) {
+			oldService.dispose();
 			this.tsLanguageContextService = new TS7LanguageContextService(this.telemetryService, this.configurationService, this.experimentationService, this.logService);
-		} else if (!useVersion7 && this.tsLanguageContextService instanceof TS7LanguageContextService) {
-			this.tsLanguageContextService.dispose();
+		} else if (!useTS7 && oldService instanceof TS7LanguageContextService) {
+			oldService.dispose();
 			this.tsLanguageContextService = new TS6LanguageContextService(this.telemetryService, this.configurationService, this.experimentationService, this.logService);
 		}
 		if (oldService !== this.tsLanguageContextService) {
-			this.tsLanguageContextService.onCachePopulated(this._onCachePopulated.fire.bind(this._onCachePopulated));
-			this.tsLanguageContextService.onContextComputed(this._onContextComputed.fire.bind(this._onContextComputed));
-			this.tsLanguageContextService.onContextComputedOnTimeout(this._onContextComputedOnTimeout.fire.bind(this._onContextComputedOnTimeout));
+			this.bindEvents();
 		}
-		return this.tsLanguageContextService;
+	}
+
+	private bindEvents(): void {
+		this.tsLanguageContextService.onCachePopulated(this._onCachePopulated.fire.bind(this._onCachePopulated));
+		this.tsLanguageContextService.onContextComputed(this._onContextComputed.fire.bind(this._onContextComputed));
+		this.tsLanguageContextService.onContextComputedOnTimeout(this._onContextComputedOnTimeout.fire.bind(this._onContextComputedOnTimeout));
 	}
 }
 
