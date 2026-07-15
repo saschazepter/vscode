@@ -252,6 +252,43 @@ suite('AgentService (node dispatcher)', () => {
 		});
 	});
 
+	test('resolveSessionConfig preserves a selected dynamic worktree branch', async () => {
+		const workingDirectory = URI.file('/workspace/repo');
+		const gitService = createNoopGitService();
+		gitService.getRepositoryRoot = async () => workingDirectory;
+		gitService.revParse = async () => 'head';
+		gitService.getCurrentBranch = async () => 'feature';
+		gitService.getDefaultBranch = async () => 'origin/main';
+		const localService = disposables.add(new AgentService(new NullLogService(), fileService, nullSessionDataService, { _serviceBrand: undefined } as IProductService, gitService));
+		localService.setWorktreeIsolation(disposables.add(new WorktreeIsolation(
+			{ generateBranchName: async () => 'agents/test' },
+			gitService,
+			new TestCopilotApiService(),
+			nullSessionDataService,
+			new NullLogService(),
+		)));
+		const agent = new MockAgent('copilot');
+		disposables.add(toDisposable(() => agent.dispose()));
+		localService.registerProvider(agent);
+
+		const resolved = await localService.resolveSessionConfig({
+			provider: 'copilot',
+			workingDirectory,
+			config: {
+				[SessionConfigKey.Isolation]: 'worktree',
+				[SessionConfigKey.Branch]: 'feature',
+			},
+		});
+
+		assert.deepStrictEqual({
+			branchDefault: resolved.schema.properties[SessionConfigKey.Branch]?.default,
+			branchValue: resolved.values[SessionConfigKey.Branch],
+		}, {
+			branchDefault: 'main',
+			branchValue: 'feature',
+		});
+	});
+
 	test('marks worktree isolation pending before a provisional provider can prewarm', async () => {
 		const session = AgentSession.uri('codex', 'pending-before-create');
 		const workingDirectory = URI.file('/workspace/repo');

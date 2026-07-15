@@ -171,6 +171,34 @@ suite('WorktreeIsolation', () => {
 		});
 	});
 
+	test('uses the local default branch name in config and its remote ref as the worktree start point', async () => {
+		const gitService = createGitService();
+		gitService.getDefaultBranch = async () => 'origin/main';
+		const isolation = createIsolation(disposables, { gitService });
+
+		const config = await isolation.resolveIsolationConfig({ workingDirectory: repoRoot, config: undefined });
+		await isolation.resolveWorkingDirectory({
+			sessionUri,
+			sessionId,
+			workingDirectory: repoRoot,
+			config: {
+				[SessionConfigKey.Isolation]: 'worktree',
+				[SessionConfigKey.Branch]: 'main',
+			},
+			prompt: 'do a thing',
+		});
+
+		assert.deepStrictEqual({
+			branchDefault: config.branchDefault,
+			branchEnum: config.branchProperty?.protocol.enum,
+			startPoint: addWorktreeCalls[0]?.startPoint,
+		}, {
+			branchDefault: 'main',
+			branchEnum: ['main'],
+			startPoint: 'origin/main',
+		});
+	});
+
 	test('resolveWorkingDirectory creates a worktree, persists metadata, queues the announcement, and is idempotent', async () => {
 		const isolation = createIsolation(disposables);
 		const config = { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' };

@@ -48,6 +48,11 @@ export class SessionWorkingDirectoryMissingError extends Error {
 /** Default upper bound on branch names returned for the branch picker. */
 const BRANCH_COMPLETION_LIMIT = 25;
 
+function branchNameFromStartPoint(startPoint: string): string {
+	const remotePrefix = 'origin/';
+	return startPoint.startsWith(remotePrefix) ? startPoint.substring(remotePrefix.length) : startPoint;
+}
+
 interface ICreatedWorktree {
 	readonly repositoryRoot: URI;
 	readonly worktree: URI;
@@ -417,8 +422,8 @@ export class WorktreeIsolation extends Disposable {
 		const worktreeBranchPrefix = typeof config[SessionConfigKey.WorktreeBranchPrefix] === 'string'
 			? config[SessionConfigKey.WorktreeBranchPrefix] as string
 			: undefined;
-		const baseBranch = typeof config[SessionConfigKey.Branch] === 'string' ? config[SessionConfigKey.Branch] as string : undefined;
-		const { branchName, worktree } = await this._worktreeCreationSequencer.queue(repositoryRoot.toString(), async () => {
+		const selectedBranch = config[SessionConfigKey.Branch] as string;
+		const { branchName, worktree, baseBranch } = await this._worktreeCreationSequencer.queue(repositoryRoot.toString(), async () => {
 			const branchName = await this._branchNameGenerator.generateBranchName({
 				sessionId,
 				message: prompt,
@@ -433,9 +438,10 @@ export class WorktreeIsolation extends Disposable {
 				},
 			});
 			const worktree = URI.joinPath(worktreesRoot, getWorktreeName(branchName, worktreeBranchPrefix));
+			const baseBranch = await this._resolveBranchStartPoint(repositoryRoot, selectedBranch);
 			await fs.mkdir(worktreesRoot.fsPath, { recursive: true });
-			await this._gitService.addWorktree(repositoryRoot, worktree, branchName, baseBranch as string);
-			return { branchName, worktree };
+			await this._gitService.addWorktree(repositoryRoot, worktree, branchName, baseBranch);
+			return { branchName, worktree, baseBranch };
 		});
 		const worktreeIncludeFiles = Array.isArray(config[SessionConfigKey.WorktreeIncludeFiles])
 			&& config[SessionConfigKey.WorktreeIncludeFiles].every(pattern => typeof pattern === 'string')
@@ -715,8 +721,15 @@ export class WorktreeIsolation extends Disposable {
 		}
 
 		const currentBranch = await this._gitService.getCurrentBranch(repositoryRoot) ?? 'HEAD';
-		const defaultBranch = await this._gitService.getDefaultBranch(repositoryRoot) ?? currentBranch;
+		const defaultBranch = branchNameFromStartPoint(await this._gitService.getDefaultBranch(repositoryRoot) ?? currentBranch);
 		return { currentBranch, defaultBranch };
+	}
+
+	private async _resolveBranchStartPoint(repositoryRoot: URI, selectedBranch: string): Promise<string> {
+		const defaultStartPoint = await this._gitService.getDefaultBranch(repositoryRoot);
+		return defaultStartPoint && branchNameFromStartPoint(defaultStartPoint) === selectedBranch
+			? defaultStartPoint
+			: selectedBranch;
 	}
 
 	private async _writeWorktreeMetadata(sessionUri: URI, metadata: { branchName: string; baseBranch: string | undefined; worktreePath: URI; repositoryRoot: URI }): Promise<void> {

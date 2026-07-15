@@ -1588,7 +1588,8 @@ export class AgentService extends Disposable implements IAgentService {
 			values[SessionConfigKey.Isolation] = iso.isolationValue;
 		}
 		if (iso.branchProperty && !hasBranch && iso.branchDefault !== undefined && values[SessionConfigKey.Branch] === undefined) {
-			values[SessionConfigKey.Branch] = iso.branchDefault;
+			const requestedBranch = params.config?.[SessionConfigKey.Branch];
+			values[SessionConfigKey.Branch] = iso.branchProperty.validate(requestedBranch) ? requestedBranch : iso.branchDefault;
 		}
 		// Echo the client-seeded `worktreeBranchPrefix` back so it rides the
 		// resolved config and survives isolation toggles (worktree → folder →
