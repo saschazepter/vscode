@@ -78,16 +78,11 @@ set VSCODECRASHDIR=%SCRIPT_DIR%\..\.build\crashes
 set VSCODELOGSDIR=%SCRIPT_DIR%\..\.build\logs\integration-tests
 
 :: Seed user settings to disable OS notifications (dock bounce, toast, etc.)
-:: Also disable the agent host: these API tests launch with --disable-extensions
-:: and no Copilot infrastructure, so an agent-host default chat session cannot be
-:: resolved (its activation blocks). Keeping the local participant harness as the
-:: default is what the extension API tests exercise (see vscode-api-tests chat.test).
 if not exist "%VSCODEUSERDATADIR%\User" mkdir "%VSCODEUSERDATADIR%\User"
 (
 echo {
 echo 	"chat.notifyWindowOnConfirmation": "off",
-echo 	"chat.notifyWindowOnResponseReceived": "off",
-echo 	"chat.agentHost.enabled": false
+echo 	"chat.notifyWindowOnResponseReceived": "off"
 echo }
 ) > "%VSCODEUSERDATADIR%\User\settings.json"
 

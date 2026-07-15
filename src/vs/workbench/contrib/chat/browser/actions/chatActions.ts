@@ -1773,6 +1773,13 @@ export async function clearChatSessionPreservingType(widget: IChatWidget, viewsS
 		const newResource = URI.from({ scheme: newSessionType, path: `/untitled-${generateUuid()}` });
 		const view = await viewsService.openView(ChatViewId) as ChatViewPane;
 		await view.loadSession(newResource);
+	} else if (isIChatViewViewContext(widget.viewContext) && sessionType === localChatSessionType) {
+		// Explicit "New Local Chat" in the sidebar: start a local session. A plain
+		// `widget.clear()` re-acquires the computed default, which is a non-local
+		// harness when the agent host is enabled, so the explicit local request
+		// would otherwise be lost.
+		const view = await viewsService.openView(ChatViewId) as ChatViewPane;
+		await view.startNewLocalSession();
 	} else {
 		// For the editor, widget.clear() already preserves the session type via clearChatEditor
 		await widget.clear();

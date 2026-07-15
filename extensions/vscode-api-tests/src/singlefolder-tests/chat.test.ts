@@ -205,7 +205,11 @@ suite('chat', () => {
 		};
 		disposables.push(participant);
 
-		await commands.executeCommand('workbench.action.chat.newChat');
+		// The panel defaults to Agent Host Copilot when the agent host is enabled.
+		// Title generation only runs on the local chat pipeline, so open the view
+		// and switch it to a Local session before sending the participant request.
+		await commands.executeCommand('workbench.action.chat.open');
+		await commands.executeCommand('workbench.action.chat.newLocalChat');
 		commands.executeCommand('workbench.action.chat.open', { query: '@participant /hello friend' });
 
 		// Wait for title provider to be called once
