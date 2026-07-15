@@ -764,8 +764,10 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 				await lease?.dispose();
 			} finally {
 				if (suiteDataDir) {
-					await removeTempDirs([suiteDataDir]);
+					tempDirs.push(suiteDataDir);
+					suiteDataDir = undefined;
 				}
+				await removeTempDirs(tempDirs);
 			}
 		});
 
@@ -783,14 +785,10 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			// has to abort an in-flight SDK query before disposeSession
 			// resolves, which can take longer than the default 5s.
 			this.timeout(90_000);
-			try {
-				if (!lease) {
-					throw new Error('Agent Host E2E server lease was not initialized.');
-				}
-				await lease.release(createdSessions);
-			} finally {
-				await removeTempDirs(tempDirs);
+			if (!lease) {
+				throw new Error('Agent Host E2E server lease was not initialized.');
 			}
+			await lease.release(createdSessions);
 		});
 
 		test('sends a simple message and receives a response', async function () {
