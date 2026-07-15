@@ -46,8 +46,10 @@
  * root and floated over their card via `OverlayLayoutElement` (see `overlayWebview.ts`).
  * The overlay content directly wraps the iframe and already clips its overflow, so a
  * `border-radius` here rounds the otherwise square iframe corners that would poke over the
- * card's rounded corners. (Rounding the overlay *root* does not work: its `clip-path` does
- * not clip the `position: fixed` content child.)
+ * card's rounded corners.
+ *
+ * Note: rounding the overlay *root* instead does not work - its `clip-path` does not clip the
+ * `position: fixed` content child, so the square iframe corners remain.
  */
 .monaco-workbench.floating-panels .webview-overlay-content {
 	border-radius: var(--vscode-cornerRadius-large, 8px);
