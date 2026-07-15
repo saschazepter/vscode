@@ -1324,8 +1324,6 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		// resumed again.
 	}
 
-	readonly orchestratorOwnsSession = true;
-
 	async listConversations(): Promise<readonly IAgentConversationMetadata[]> {
 		const sessions = await this.listSessions();
 		return sessions.map(s => {

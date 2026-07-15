@@ -3165,7 +3165,7 @@ suite('AgentService (node dispatcher)', () => {
 			};
 		}
 
-		test('createSession/createChat/disposeChat/disposeSession prefer the chat surface over legacy methods', async () => {
+		test('createSession/createChat/disposeChat/disposeSession all route through the chat surface', async () => {
 			const agent = disposables.add(new ChatSurfaceAgent('copilot'));
 			service.registerProvider(agent);
 
@@ -3175,20 +3175,29 @@ suite('AgentService (node dispatcher)', () => {
 			await service.disposeChat(session, chatUri);
 			await service.disposeSession(session);
 
+			const defaultChatUri = buildDefaultChatUri(session);
 			assert.deepStrictEqual({
+				// The orchestrator owns the session concept and never calls the
+				// legacy session-addressed createSession/disposeSession for a
+				// normal create/dispose - it drives the chat surface (the default
+				// chat) instead.
 				sessionCreate: agent.sessionCreateCalls.map(s => s.toString()),
 				sessionDispose: agent.sessionDisposeCalls.map(s => s.toString()),
 				legacyCreateChat: agent.legacyCreateChatCalls.length,
 				chatOps: agent.chatCalls.map(c => c.op),
-				createChatArgs: agent.chatCalls.find(c => c.op === 'createChat')?.args,
-				disposeChatArg: agent.chatCalls.find(c => c.op === 'disposeChat')?.args[0],
+				// First createChat provisions the session's default chat; second is the peer chat.
+				provisionChatArgs: agent.chatCalls.filter(c => c.op === 'createChat')[0]?.args,
+				peerChatArgs: agent.chatCalls.filter(c => c.op === 'createChat')[1]?.args,
+				// First disposeChat drops the peer; second disposes the session via its default chat.
+				disposeChatArgs: agent.chatCalls.filter(c => c.op === 'disposeChat').map(c => c.args[0]),
 			}, {
-				sessionCreate: [session.toString()],
-				sessionDispose: [session.toString()],
+				sessionCreate: [],
+				sessionDispose: [],
 				legacyCreateChat: 0,
-				chatOps: ['createChat', 'disposeChat'],
-				createChatArgs: [session.toString(), chatUri.toString(), 'Peer'],
-				disposeChatArg: chatUri.toString(),
+				chatOps: ['createChat', 'createChat', 'disposeChat', 'disposeChat'],
+				provisionChatArgs: [session.toString(), defaultChatUri, ''],
+				peerChatArgs: [session.toString(), chatUri.toString(), 'Peer'],
+				disposeChatArgs: [chatUri.toString(), defaultChatUri],
 			});
 		});
 

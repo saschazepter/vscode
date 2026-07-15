@@ -14,9 +14,9 @@
 > Copilot all use the unified orchestrator path.
 >
 > The *operational* chat surface (send/abort/model/agent/history) is fully
-> chat-addressed and uniform across harnesses. Session ownership has moved into
-> the orchestrator via the chat-surface seam (opt-in per harness through
-> `IAgent.orchestratorOwnsSession`) — see [§7 Session Ownership (T2/T4)](#7-session-ownership-t2t4--the-orchestrator-owns-the-session).
+> chat-addressed and uniform across harnesses. Session ownership lives in the
+> orchestrator: it drives every harness through the chat-surface seam — see
+> [§7 Session Ownership (T2/T4)](#7-session-ownership-t2t4--the-orchestrator-owns-the-session).
 
 ---
 
@@ -331,7 +331,7 @@ Single-chat harness. `_sessions: Map<string, ICodexSession>` keyed by session id
 
 ## 7. Session Ownership (T2/T4) — the orchestrator owns the Session
 
-**Status: implemented (opt-in per harness via `IAgent.orchestratorOwnsSession`).**
+**Status: implemented — the orchestrator drives every harness through the chat surface unconditionally.**
 
 Earlier the agent harness co-owned the *Session* type: it implemented
 `createSession`/`disposeSession`/`listSessions`/`getSessionMetadata` and kept an
@@ -366,17 +366,18 @@ surface rather than a Session-typed method.**
   their session (restored via the peer-chat catalog) and never surface as
   top-level sessions.
 
-### Opt-in and storage-preservation
+### Storage-preservation
 
-The relocation is gated per harness by `IAgent.orchestratorOwnsSession`. When it
-is `false`/absent the orchestrator uses the legacy Session-typed methods
-unchanged; when `true` it uses the chat-surface seam above. This let the change
-land per-agent while every implementer stayed green (Codex first, then Claude and
-Copilot). It is **storage-preserving**: session URIs (and the derived
-`sdkSessionId == session raw id`, invariant I3) are unchanged, agents read/write
-the same SDK stores, and `providerData` / `PEER_CHATS_METADATA_KEY` formats are
-untouched. There is no data migration.
+The seam is the single path for every harness — there is no per-agent opt-in
+flag; the orchestrator always provisions/disposes/enumerates through the chat
+surface, and every harness (Claude, Copilot, Codex) implements it. It is
+**storage-preserving**: session URIs (and the derived `sdkSessionId == session raw
+id`, invariant I3) are unchanged, agents read/write the same SDK stores, and
+`providerData` / `PEER_CHATS_METADATA_KEY` formats are untouched. There is no data
+migration.
 
-Once all harnesses have opted in, the legacy `createSession`/`disposeSession`/
-`listSessions` methods and the `orchestratorOwnsSession` flag can be removed from
-`IAgent` (cleanup step); until then they remain as the fallback path.
+Each harness keeps its `createSession`/`disposeSession`/`listSessions` as the
+private provisioning implementation the chat-surface bridge delegates to; the
+orchestrator no longer calls them for a normal create/dispose/enumerate. They
+remain on `IAgent` for the fork/import create path and the single-session metadata
+lookup, whose relocation is a later follow-up.

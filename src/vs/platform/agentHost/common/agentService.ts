@@ -1643,27 +1643,14 @@ export interface IAgent {
 	listSessions(): Promise<IAgentSessionMetadata[]>;
 
 	/**
-	 * T2/T4 opt-in: when `true`, this agent no longer owns a "Session" type —
-	 * the orchestrator owns session identity, lifecycle and grouping, and drives
-	 * this agent purely through the chat surface. Concretely the agent
-	 * provisions a session's shared infra inside creating its default chat (via
-	 * {@link IAgentCreateChatOptions.provisionSession}) and enumerates its
-	 * persisted conversations via {@link listConversations} instead of
-	 * {@link listSessions}. Absent/`false` means the agent still uses the legacy
-	 * session-addressed methods (`createSession`/`disposeSession`/`listSessions`).
-	 * This flag lets the relocation land per-agent while every implementer stays
-	 * green; it is removed once all harnesses have migrated.
+	 * Enumerate the agent's persisted CONVERSATIONS (one per default/peer chat
+	 * backing), which the orchestrator groups into sessions using the
+	 * default-chat URI convention. The orchestrator owns the Session concept
+	 * (identity, lifecycle, grouping); the agent only enumerates conversations.
+	 * Storage-preserving — the agent reads the same SDK store its legacy
+	 * `listSessions` does, re-expressed as chats.
 	 */
-	readonly orchestratorOwnsSession?: boolean;
-
-	/**
-	 * T4 enumeration: the agent's persisted CONVERSATIONS (one per default/peer
-	 * chat backing), which the orchestrator groups into sessions using the
-	 * default-chat URI convention. Storage-preserving — the agent reads the same
-	 * SDK store its legacy {@link listSessions} does, re-expressed as chats.
-	 * Implemented only when {@link orchestratorOwnsSession} is `true`.
-	 */
-	listConversations?(): Promise<readonly IAgentConversationMetadata[]>;
+	listConversations(): Promise<readonly IAgentConversationMetadata[]>;
 
 	/** Retrieve metadata for a single persisted session, without enumerating the provider catalog. */
 	getSessionMetadata?(session: URI): Promise<IAgentSessionMetadata | undefined>;

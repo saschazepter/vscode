@@ -2283,9 +2283,6 @@ export class CodexAgent extends Disposable implements IAgent {
 		};
 	}
 
-	/** T2/T4: Codex has ceded session ownership to the orchestrator. */
-	readonly orchestratorOwnsSession = true;
-
 	/**
 	 * T2/T4: enumerate persisted Codex conversations. Codex is single-chat, so
 	 * each session has exactly one (default) conversation; this re-expresses

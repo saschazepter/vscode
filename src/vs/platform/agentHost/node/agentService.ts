@@ -721,19 +721,13 @@ export class AgentService extends Disposable implements IAgentService {
 	}
 
 	/**
-	 * T2/T4: enumerate a provider's sessions. For an orchestrator-owned agent
-	 * this groups the agent's persisted CONVERSATIONS ({@link IAgent.listConversations})
-	 * into sessions using the default-chat URI convention — each session's
-	 * default chat is a conversation whose URI is `buildDefaultChatUri(session)`,
-	 * so the owning session URI is derivable and peer-chat conversations never
-	 * surface as top-level sessions. Storage-preserving: yields the same session
-	 * set the legacy `listSessions` did. Agents that have not opted in use the
-	 * legacy enumeration unchanged.
+	 * Enumerate a provider's sessions by grouping the agent's persisted
+	 * CONVERSATIONS ({@link IAgent.listConversations}) into sessions using the
+	 * default-chat URI convention — each session's default chat is a conversation
+	 * whose URI is `buildDefaultChatUri(session)`, so the owning session URI is
+	 * derivable and peer-chat conversations never surface as top-level sessions.
 	 */
 	private async _enumerateProviderSessions(provider: IAgent): Promise<IAgentSessionMetadata[]> {
-		if (!provider.orchestratorOwnsSession || !provider.listConversations) {
-			return provider.listSessions();
-		}
 		const conversations = await provider.listConversations();
 		const sessions: IAgentSessionMetadata[] = [];
 		for (const c of conversations) {
@@ -1273,13 +1267,11 @@ export class AgentService extends Disposable implements IAgentService {
 
 		let created: IAgentCreateSessionResult | undefined;
 		try {
-			// T2/T4: when the agent has ceded session ownership to the
-			// orchestrator, provision the session by creating its default chat
-			// through the chat surface (the agent-specific provisioning runs
-			// inside that call). Fork/import still use the legacy session path
-			// until they are migrated. Agents that have not opted in keep the
-			// legacy `createSession` path unchanged.
-			if (provider.orchestratorOwnsSession && !config?.fork && !config?.importConversation) {
+			// The orchestrator owns session identity and lifecycle: provision a
+			// session by creating its default chat through the chat surface (the
+			// agent-specific provisioning runs inside that call). Fork/import
+			// still use the session-addressed create path until they migrate.
+			if (!config?.fork && !config?.importConversation) {
 				created = await this._provisionSessionViaDefaultChat(provider, config);
 			} else {
 				created = await provider.createSession(config ? this._toProviderConfig(config) : undefined);
@@ -1329,16 +1321,11 @@ export class AgentService extends Disposable implements IAgentService {
 	}
 
 	private async _disposeSession(provider: IAgent, session: URI): Promise<void> {
-		// T2/T4: for an orchestrator-owned session, disposal flows through the
+		// The orchestrator owns session lifecycle: disposal flows through the
 		// default chat (which owns the session's SDK backing); the agent tears
 		// down the shared infra when its default chat is disposed. Peer chats
-		// are already dropped via the catalog. Agents that have not opted in
-		// keep the legacy session-addressed disposal.
-		if (provider.orchestratorOwnsSession) {
-			await provider.chats.disposeChat(URI.parse(buildDefaultChatUri(session)));
-			return;
-		}
-		await provider.disposeSession(session);
+		// are already dropped via the catalog.
+		await provider.chats.disposeChat(URI.parse(buildDefaultChatUri(session)));
 	}
 
 	/**
