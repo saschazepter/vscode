@@ -5,9 +5,9 @@
 
 import { dirname } from '../../../../base/common/path.js';
 import type { IMcpServerDefinition, IParsedPlugin } from '../../../agentPlugins/common/pluginParsers.js';
-import { McpServerType, type IMcpServerConfiguration } from '../../../mcp/common/mcpPlatformTypes.js';
 import type { ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { type ChildCustomization, type PluginCustomization } from '../../common/state/sessionState.js';
+import { toCodexMcpServerJson, type ICodexMcpServerConfigJson } from './codexMcpServers.js';
 
 /**
  * Codex ingests **client-pushed** plugin customizations (the "Open Plugins"
@@ -32,16 +32,6 @@ import { type ChildCustomization, type PluginCustomization } from '../../common/
 export interface ICodexClientPlugin {
 	readonly synced: ISyncedCustomization;
 	readonly parsed: IParsedPlugin | undefined;
-}
-
-/** The codex JSON shape for one MCP server inside `thread/start.config.mcp_servers`. */
-export interface ICodexMcpServerConfigJson {
-	command?: string;
-	args?: readonly string[];
-	env?: Record<string, string>;
-	cwd?: string;
-	url?: string;
-	http_headers?: Record<string, string>;
 }
 
 /**
@@ -148,42 +138,6 @@ function parsedPluginChildren(parsed: IParsedPlugin): ChildCustomization[] {
 	for (const h of parsed.hooks) { add(h.customization); }
 	for (const m of parsed.mcpServers) { add(m.customization); }
 	return [...byId.values()];
-}
-
-/** Ensures all env values are strings (codex's `env` is `Map<string, string>`). */
-function toStringEnv(env: Record<string, string | number | null>): Record<string, string> {
-	const out: Record<string, string> = {};
-	for (const [key, value] of Object.entries(env)) {
-		if (value !== null) {
-			out[key] = String(value);
-		}
-	}
-	return out;
-}
-
-/** Converts one workbench MCP server configuration into codex's per-thread JSON shape. */
-function toCodexMcpServerJson(config: IMcpServerConfiguration): ICodexMcpServerConfigJson {
-	if (config.type === McpServerType.LOCAL) {
-		const out: ICodexMcpServerConfigJson = { command: config.command };
-		if (config.args && config.args.length > 0) {
-			out.args = [...config.args];
-		}
-		if (config.env) {
-			const env = toStringEnv(config.env);
-			if (Object.keys(env).length > 0) {
-				out.env = env;
-			}
-		}
-		if (config.cwd) {
-			out.cwd = config.cwd;
-		}
-		return out;
-	}
-	const out: ICodexMcpServerConfigJson = { url: config.url };
-	if (config.headers && Object.keys(config.headers).length > 0) {
-		out.http_headers = { ...config.headers };
-	}
-	return out;
 }
 
 /**

@@ -31,7 +31,7 @@ import { buildDefaultChatUri, parseChatUri, type ClientPluginCustomization, type
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
 import { ActiveClientToolSet } from '../activeClientState.js';
 import { McpCustomizationController } from '../shared/mcpCustomizationController.js';
-import { buildCodexMcpReadResult, buildCodexMcpServerOverrides, codexMcpListToInventory, codexMcpToolsChanged, inventoryToSdkServers, translateCodexMcpStartupState, type ICodexMcpServerEntry } from './codexMcpServers.js';
+import { buildCodexMcpReadResult, codexMcpListToInventory, codexMcpServersFromConfig, codexMcpToolsChanged, inventoryToSdkServers, translateCodexMcpStartupState, type ICodexMcpServerConfigJson, type ICodexMcpServerEntry } from './codexMcpServers.js';
 import { codexHooksToContainers, codexSkillsToContainers } from './codexCustomizations.js';
 import { CodexClientCustomizationStore, codexMcpServersFromPlugins, codexSkillRootsFromPlugins, type ICodexClientPlugin } from './codexClientCustomizations.js';
 import { buildElicitationRequest, cancelledElicitationResponse, declinedElicitationResponse, elicitationResponseFromAnswers } from './codexElicitationMapper.js';
@@ -457,6 +457,13 @@ interface ICodexSession {
 	 * them up. `undefined` until materialized.
 	 */
 	materializedToolsSig: string | undefined;
+	/**
+	 * Signature of the `mcp_servers` (root config + client plugins) the codex
+	 * thread was started with. Codex only accepts `config.mcp_servers` at
+	 * `thread/start`, so if the set changes before the first turn the thread is
+	 * restarted to pick them up. `undefined` until materialized.
+	 */
+	materializedMcpSig: string | undefined;
 	/** True once a turn has been started on the (materialized) thread. */
 	firstTurnSent: boolean;
 	model: ModelSelection | undefined;
@@ -604,6 +611,16 @@ function toolsSignature(tools: readonly ToolDefinition[] | undefined): string {
 		.map(t => `${t.name}\u0000${t.description ?? ''}\u0000${JSON.stringify(t.inputSchema ?? null)}`)
 		.sort()
 		.join('\u0001');
+}
+
+/**
+ * Stable signature of the `mcp_servers` object a thread was started with, used
+ * to detect when the merged (root config + client plugin) MCP set changed so
+ * the thread can be restarted before its first turn to pick up the new servers.
+ */
+function mcpServersSignature(servers: Record<string, ICodexMcpServerConfigJson>): string {
+	const names = Object.keys(servers).sort();
+	return names.map(name => `${name}\u0000${JSON.stringify(servers[name])}`).join('\u0001');
 }
 
 /**
@@ -1089,7 +1106,7 @@ export class CodexAgent extends Disposable implements IAgent {
 
 		// Extra args forwarded as JSON from the workbench setting.
 		const extraArgs = parseBinaryArgs(process.env[AgentHostCodexAgentBinaryArgsEnvVar]);
-		const args = ['app-server', ...providerOverrides.flatMap(kv => ['-c', kv]), ...this._buildMcpServerOverrides().flatMap(kv => ['-c', kv]), ...extraArgs];
+		const args = ['app-server', ...providerOverrides.flatMap(kv => ['-c', kv]), ...extraArgs];
 
 		this._logService.info(`[Codex] spawning ${binaryPath} ${args.join(' ')}`);
 		const child = spawn(binaryPath, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -1224,27 +1241,18 @@ export class CodexAgent extends Disposable implements IAgent {
 	}
 
 	/**
-	 * Builds the `mcp_servers.<name>=<toml>` config overrides that make the
-	 * codex app-server launch the workbench's configured MCP servers (the
-	 * root `mcpServers` config). These merge with any servers in the user's
-	 * global `~/.codex/config.toml`. Mirrors how the Copilot agent forwards
-	 * the same root config to its SDK. Empty when no servers are configured,
-	 * so the user's global MCP config is left untouched.
-	 *
-	 * The codex app-server is process-global (shared across threads), and the
-	 * root `mcpServers` config is likewise a global workbench setting, so the
-	 * servers are resolved once at spawn time rather than per session.
+	 * Builds the `mcp_servers` object for a session's `thread/start.config`:
+	 * the workbench's root `mcpServers` config merged with the session's
+	 * enabled client-plugin MCP servers. Passing them per-thread (rather than
+	 * as process-global `-c` spawn overrides) means each new session picks up
+	 * the current root config without restarting the shared app-server, and it
+	 * merges with (leaves intact) the user's global `~/.codex/config.toml`.
+	 * Client-plugin servers win a name collision with the root config.
 	 */
-	private _buildMcpServerOverrides(): readonly string[] {
-		const servers = this._configurationService.getRootValue(platformRootSchema, AgentHostMcpServersConfigKey);
-		const { overrides, skipped } = buildCodexMcpServerOverrides(servers);
-		if (skipped.length > 0) {
-			this._logService.warn(`[Codex] skipping ${skipped.length} MCP server(s) that are malformed or have a name codex cannot address via a config override: ${skipped.join(', ')}`);
-		}
-		if (overrides.length > 0) {
-			this._logService.info(`[Codex] configuring ${overrides.length} MCP server(s) from workbench config`);
-		}
-		return overrides;
+	private _buildSessionMcpServers(session: ICodexSession): Record<string, ICodexMcpServerConfigJson> {
+		const root = codexMcpServersFromConfig(this._configurationService.getRootValue(platformRootSchema, AgentHostMcpServersConfigKey));
+		const clientPlugins = codexMcpServersFromPlugins(session.clientCustomizations.enabledPlugins());
+		return { ...root, ...clientPlugins };
 	}
 
 	/**
@@ -1763,6 +1771,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			pendingClientToolCalls: new PendingRequestRegistry<ToolCallResult>(),
 			pendingUserInputs: new PendingRequestRegistry<ICodexUserInputResult>(),
 			materializedToolsSig: undefined,
+			materializedMcpSig: undefined,
 			firstTurnSent: true,
 			model: parent.model,
 			currentTurnId: undefined,
@@ -2264,6 +2273,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			pendingClientToolCalls: new PendingRequestRegistry<ToolCallResult>(),
 			pendingUserInputs: new PendingRequestRegistry<ICodexUserInputResult>(),
 			materializedToolsSig: undefined,
+			materializedMcpSig: undefined,
 			firstTurnSent: false,
 			model: effectiveModel,
 			currentTurnId: undefined,
@@ -2316,6 +2326,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			pendingClientToolCalls: new PendingRequestRegistry<ToolCallResult>(),
 			pendingUserInputs: new PendingRequestRegistry<ICodexUserInputResult>(),
 			materializedToolsSig: undefined,
+			materializedMcpSig: undefined,
 			firstTurnSent: true,
 			model,
 			currentTurnId: undefined,
@@ -2517,15 +2528,16 @@ export class CodexAgent extends Disposable implements IAgent {
 		const config = this._readSessionConfig(session);
 		const model = await this._resolveModel(session);
 		const { approvalPolicy, sandboxMode, approvalsReviewer } = this._resolveSessionPermissions(session);
-		// Attach this session's enabled client-plugin MCP servers per-thread
-		// (verified: codex starts them for this thread only), merged onto the
-		// per-thread config alongside `web_search`.
-		const clientMcpServers = codexMcpServersFromPlugins(session.clientCustomizations.enabledPlugins());
+		// Attach the session's MCP servers per-thread (verified: codex starts
+		// them for this thread only): the workbench's root `mcpServers` config
+		// merged with this session's enabled client-plugin servers. Passing them
+		// per-thread means a new session always reflects the current root config.
+		const mcpServers = this._buildSessionMcpServers(session);
 		const threadConfig: Record<string, JsonValue> = {
 			web_search: narrowWebSearchMode(config[CodexSessionConfigKey.WebSearchMode]) ?? codexSessionConfigDefaults[CodexSessionConfigKey.WebSearchMode],
 		};
-		if (Object.keys(clientMcpServers).length > 0) {
-			threadConfig.mcp_servers = clientMcpServers as JsonValue;
+		if (Object.keys(mcpServers).length > 0) {
+			threadConfig.mcp_servers = mcpServers as JsonValue;
 		}
 		const startResult = await conn.client.request<'thread/start', { thread: { id: string } }>('thread/start', {
 			cwd: session.workingDirectory.fsPath,
@@ -2546,6 +2558,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			return;
 		}
 		session.threadId = threadId;
+		session.materializedMcpSig = mcpServersSignature(mcpServers);
 		session.materializedToolsSig = toolsSignature(session.clientToolSet.merged());
 		this._logService.info(`[Codex DEBUG] materialized session=${session.sessionUri.toString()} threadId=${session.threadId}`);
 		this._sessionIdByThreadId.set(session.threadId, session.sessionId);
@@ -2722,11 +2735,14 @@ export class CodexAgent extends Disposable implements IAgent {
 			this._fire(sessionUri, { type: ActionType.ChatTurnComplete, turnId: effectiveTurnId, duration });
 			return;
 		}
-		// Codex registers client tools only at `thread/start`. If the thread
-		// was prewarmed (or otherwise started) before the current client tools
-		// were known, restart it now — before any turn commits history, so
-		// nothing is lost — so the tools land in `dynamicTools`.
-		if (!session.firstTurnSent && !session.needsResume && toolsSignature(session.clientToolSet.merged()) !== session.materializedToolsSig) {
+		// Codex registers client tools and MCP servers only at `thread/start`.
+		// If the thread was prewarmed (or otherwise started) before the current
+		// client tools / MCP servers were known, restart it now — before any
+		// turn commits history, so nothing is lost — so the tools land in
+		// `dynamicTools` and the servers in `config.mcp_servers`.
+		const toolsChanged = toolsSignature(session.clientToolSet.merged()) !== session.materializedToolsSig;
+		const mcpChanged = mcpServersSignature(this._buildSessionMcpServers(session)) !== session.materializedMcpSig;
+		if (!session.firstTurnSent && !session.needsResume && (toolsChanged || mcpChanged)) {
 			try {
 				await this._restartThreadWithCurrentTools(session);
 				this._persistMaterializedSession(session);

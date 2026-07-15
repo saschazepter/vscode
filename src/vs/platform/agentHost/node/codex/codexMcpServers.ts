@@ -142,76 +142,33 @@ export function codexMcpToolsChanged(previous: ICodexMcpServerEntry | undefined,
 	return a.some((name, i) => name !== b[i]);
 }
 
-// #region MCP server config → codex `-c` overrides
+// #region MCP server config → codex per-thread `config.mcp_servers`
 //
-// Codex's `app-server` accepts `-c key=value` config overrides whose value is
-// parsed as TOML (see `codex-rs/utils/cli/src/config_override.rs`). We use
-// these to inject the workbench's configured MCP servers (the root
-// `mcpServers` config, keyed by server name) into codex so it launches them —
-// the same set Copilot passes to its SDK via `toSdkMcpServersFromConfigMap`.
+// Codex's `thread/start.config` dict is applied as per-thread config overrides
+// that *merge* with (rather than replace) the user's global
+// `~/.codex/config.toml` (verified against the real app-server). We inject the
+// workbench's configured MCP servers (the root `mcpServers` config, keyed by
+// server name) via `config.mcp_servers` so codex launches them for that
+// thread — the same set Copilot passes to its SDK via
+// `toSdkMcpServersFromConfigMap`. Feeding them per-thread (rather than as
+// process-global `-c` spawn overrides) means each new session picks up the
+// current config without restarting the shared app-server.
 //
-// Each server becomes one `mcp_servers.<name>=<inline-table>` override, which
-// *merges* with (rather than replaces) any servers in the user's global
-// `~/.codex/config.toml`. Codex's override parser splits the key path on `.`
-// and separates key/value on the first `=`, so a server name containing either
-// character cannot be targeted and is skipped by
-// {@link isCodexOverrideSafeServerName}.
-//
-// The codex MCP TOML schema (`codex-rs/config/src/mcp_types.rs`,
-// `RawMcpServerConfig`, `deny_unknown_fields`) infers the transport from the
-// presence of `command` (stdio) vs `url` (streamable http) and does not accept
-// a `type` field, so we drop the workbench `type` discriminator and map
-// `headers` → `http_headers`.
-
-/** A TOML-encodable value: a string, a string array, or a flat string map. */
-type CodexTomlValue = string | readonly string[] | Readonly<Record<string, string>>;
+// The codex MCP config schema (`codex-rs/config/src/mcp_types.rs`,
+// `RawMcpServerConfig`) infers the transport from the presence of `command`
+// (stdio) vs `url` (streamable http) and has no `type` field, so we drop the
+// workbench `type` discriminator and map `headers` → `http_headers`.
 
 /**
- * Encodes a string as a TOML basic (double-quoted) string, escaping the
- * control characters TOML requires plus `"` and `\`.
+ * The codex JSON shape for one MCP server inside `thread/start.config.mcp_servers`.
  */
-function encodeCodexTomlString(value: string): string {
-	let out = '"';
-	for (const ch of value) {
-		const code = ch.codePointAt(0)!;
-		switch (ch) {
-			case '\\': out += '\\\\'; break;
-			case '"': out += '\\"'; break;
-			case '\b': out += '\\b'; break;
-			case '\t': out += '\\t'; break;
-			case '\n': out += '\\n'; break;
-			case '\f': out += '\\f'; break;
-			case '\r': out += '\\r'; break;
-			default:
-				out += code < 0x20 ? `\\u${code.toString(16).padStart(4, '0')}` : ch;
-		}
-	}
-	return `${out}"`;
-}
-
-/**
- * Encodes a TOML inline-table key: bare when it is a safe identifier,
- * otherwise a quoted basic string.
- */
-function encodeCodexTomlKey(key: string): string {
-	return /^[A-Za-z0-9_-]+$/.test(key) ? key : encodeCodexTomlString(key);
-}
-
-/** Encodes a single {@link CodexTomlValue}. */
-function encodeCodexTomlValue(value: CodexTomlValue): string {
-	if (typeof value === 'string') {
-		return encodeCodexTomlString(value);
-	}
-	if (Array.isArray(value)) {
-		return `[${value.map(v => encodeCodexTomlString(v)).join(', ')}]`;
-	}
-	const entries = Object.entries(value as Record<string, string>);
-	return `{ ${entries.map(([k, v]) => `${encodeCodexTomlKey(k)} = ${encodeCodexTomlString(v)}`).join(', ')} }`;
-}
-
-/** Encodes an ordered list of fields as a TOML inline table. */
-function encodeCodexInlineTable(fields: ReadonlyArray<readonly [string, CodexTomlValue]>): string {
-	return `{ ${fields.map(([k, v]) => `${encodeCodexTomlKey(k)} = ${encodeCodexTomlValue(v)}`).join(', ')} }`;
+export interface ICodexMcpServerConfigJson {
+	command?: string;
+	args?: readonly string[];
+	env?: Record<string, string>;
+	cwd?: string;
+	url?: string;
+	http_headers?: Record<string, string>;
 }
 
 /**
@@ -219,9 +176,9 @@ function encodeCodexInlineTable(fields: ReadonlyArray<readonly [string, CodexTom
  * {@link IMcpServerConfiguration}: a `stdio` server with a string `command`,
  * or an `http` server with a string `url`. Mirrors Copilot's
  * `isSupportedMcpServerConfiguration` so a malformed entry can't surface as a
- * `command`/`url: undefined` override.
+ * `command`/`url: undefined` server.
  */
-function isSupportedMcpServerConfiguration(value: unknown): value is IMcpServerConfiguration {
+export function isSupportedMcpServerConfiguration(value: unknown): value is IMcpServerConfiguration {
 	if (!value || typeof value !== 'object') {
 		return false;
 	}
@@ -235,16 +192,6 @@ function isSupportedMcpServerConfiguration(value: unknown): value is IMcpServerC
 	return false;
 }
 
-/**
- * Whether a server name can be targeted by a `mcp_servers.<name>=…` override.
- * Codex splits the override key path on `.` and separates key/value on the
- * first `=`, and trims the key, so names containing `.`/`=` or with
- * surrounding whitespace cannot be addressed and are skipped.
- */
-function isCodexOverrideSafeServerName(name: string): boolean {
-	return name.length > 0 && name === name.trim() && !/[.=]/.test(name);
-}
-
 /** Ensures all env values are strings (codex's `env` is a `Map<string, string>`). */
 function toCodexStringEnv(env: Record<string, string | number | null>): Record<string, string> {
 	const result: Record<string, string> = {};
@@ -256,62 +203,47 @@ function toCodexStringEnv(env: Record<string, string | number | null>): Record<s
 	return result;
 }
 
-/** Builds the codex inline-table fields for a single supported server. */
-function codexMcpServerFields(config: IMcpServerConfiguration): ReadonlyArray<readonly [string, CodexTomlValue]> {
-	const fields: (readonly [string, CodexTomlValue])[] = [];
+/** Converts one supported MCP server configuration into codex's JSON shape. */
+export function toCodexMcpServerJson(config: IMcpServerConfiguration): ICodexMcpServerConfigJson {
 	if (config.type === McpServerType.LOCAL) {
-		fields.push(['command', config.command]);
+		const out: ICodexMcpServerConfigJson = { command: config.command };
 		if (config.args && config.args.length > 0) {
-			fields.push(['args', [...config.args]]);
+			out.args = [...config.args];
 		}
 		if (config.env) {
 			const env = toCodexStringEnv(config.env);
 			if (Object.keys(env).length > 0) {
-				fields.push(['env', env]);
+				out.env = env;
 			}
 		}
 		if (config.cwd) {
-			fields.push(['cwd', config.cwd]);
+			out.cwd = config.cwd;
 		}
-		return fields;
+		return out;
 	}
-	fields.push(['url', config.url]);
+	const out: ICodexMcpServerConfigJson = { url: config.url };
 	if (config.headers && Object.keys(config.headers).length > 0) {
-		fields.push(['http_headers', { ...config.headers }]);
+		out.http_headers = { ...config.headers };
 	}
-	return fields;
-}
-
-/**
- * The result of {@link buildCodexMcpServerOverrides}: the ready-to-pass
- * `mcp_servers.<name>=<toml>` override strings, plus the names that were
- * dropped because they are malformed or cannot be addressed by a codex
- * override key (so the caller can log a diagnostic).
- */
-export interface ICodexMcpServerOverrides {
-	readonly overrides: readonly string[];
-	readonly skipped: readonly string[];
+	return out;
 }
 
 /**
  * Converts the workbench root `mcpServers` config (server name →
- * {@link IMcpServerConfiguration}) into codex `-c` config overrides that make
- * the app-server launch those servers. Unsupported/malformed entries and
- * names that cannot be addressed by an override key are skipped. Returns
- * `key=value` strings ready to be expanded as `-c <override>` spawn args.
+ * {@link IMcpServerConfiguration}) into the `mcp_servers` object codex accepts
+ * in `thread/start.config`. Unsupported/malformed entries are skipped so a bad
+ * entry can't surface as a `command`/`url: undefined` server. Returns an empty
+ * object when nothing is configured.
  */
-export function buildCodexMcpServerOverrides(servers: Record<string, unknown> | undefined): ICodexMcpServerOverrides {
-	const overrides: string[] = [];
-	const skipped: string[] = [];
+export function codexMcpServersFromConfig(servers: Record<string, unknown> | undefined): Record<string, ICodexMcpServerConfigJson> {
+	const out: Record<string, ICodexMcpServerConfigJson> = {};
 	for (const [name, config] of Object.entries(servers ?? {})) {
-		if (!isSupportedMcpServerConfiguration(config) || !isCodexOverrideSafeServerName(name)) {
-			skipped.push(name);
-			continue;
+		if (isSupportedMcpServerConfiguration(config)) {
+			out[name] = toCodexMcpServerJson(config);
 		}
-		const table = encodeCodexInlineTable(codexMcpServerFields(config));
-		overrides.push(`mcp_servers.${name}=${table}`);
 	}
-	return { overrides, skipped };
+	return out;
 }
 
 // #endregion
+
