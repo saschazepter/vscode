@@ -232,7 +232,9 @@ export class WorkspacesHistoryMainService extends Disposable implements IWorkspa
 
 		// Recents can retain Agents workspaces from other profile and worktree user-data directories.
 		const agentSessionsWorkspace = this.environmentMainService.agentSessionsWorkspace;
-		return basename(workspace.configPath) === basename(agentSessionsWorkspace)
+		return workspace.configPath.scheme === agentSessionsWorkspace.scheme
+			&& workspace.configPath.authority === agentSessionsWorkspace.authority
+			&& basename(workspace.configPath) === basename(agentSessionsWorkspace)
 			&& basename(dirname(workspace.configPath)) === basename(dirname(agentSessionsWorkspace));
 	}
 

@@ -255,7 +255,12 @@ abstract class BaseOpenRecentAction extends Action2 {
 			fullLabel = recent.label || labelService.getUriLabel(resource, { appendWorkspaceSuffix: true });
 		}
 
-		const { name, parentPath } = isRecentWorkspace(recent) && isEqual(recent.workspace.configPath, environmentService.agentSessionsWorkspace)
+		const isAgentSessionsWorkspace = isRecentWorkspace(recent) && isEqual(recent.workspace.configPath, environmentService.agentSessionsWorkspace);
+		if (isAgentSessionsWorkspace) {
+			fullLabel = localize('agentsWindowRecentWorkspace', "Agents Window");
+		}
+
+		const { name, parentPath } = isAgentSessionsWorkspace
 			? { name: fullLabel, parentPath: undefined }
 			: splitRecentLabel(fullLabel);
 
