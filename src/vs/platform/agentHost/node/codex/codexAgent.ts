@@ -27,11 +27,12 @@ import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProt
 import { ActionType, isChatAction, type SessionAction, type ChatAction } from '../../common/state/sessionActions.js';
 import type { ConfigSchema, ModelSelection, ProtectedResourceMetadata, ToolDefinition, AgentSelection } from '../../common/state/protocol/state.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
-import { buildDefaultChatUri, parseChatUri, type ClientPluginCustomization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, ChatInputResponseKind, type PolicyState, type ToolCallResult, ToolResultContentType, type Turn, ResponsePartKind } from '../../common/state/sessionState.js';
+import { buildDefaultChatUri, parseChatUri, type ClientPluginCustomization, type DirectoryCustomization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, ChatInputResponseKind, type PolicyState, type ToolCallResult, ToolResultContentType, type Turn, ResponsePartKind } from '../../common/state/sessionState.js';
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
 import { ActiveClientToolSet } from '../activeClientState.js';
 import { McpCustomizationController } from '../shared/mcpCustomizationController.js';
 import { buildCodexMcpReadResult, buildCodexMcpServerOverrides, codexMcpListToInventory, codexMcpToolsChanged, inventoryToSdkServers, translateCodexMcpStartupState, type ICodexMcpServerEntry } from './codexMcpServers.js';
+import { codexHooksToContainers, codexSkillsToContainers } from './codexCustomizations.js';
 import { buildElicitationRequest, cancelledElicitationResponse, declinedElicitationResponse, elicitationResponseFromAnswers } from './codexElicitationMapper.js';
 import { McpServerStatus, type AhpMcpUiHostCapabilities, type Customization } from '../../common/state/protocol/channels-session/state.js';
 import { IAgentConfigurationService } from '../agentConfigurationService.js';
@@ -90,6 +91,8 @@ import type { McpResourceReadResponse } from './protocol/generated/v2/McpResourc
 import type { McpServerStartupState } from './protocol/generated/v2/McpServerStartupState.js';
 import type { McpServerElicitationRequestParams } from './protocol/generated/v2/McpServerElicitationRequestParams.js';
 import type { McpServerElicitationRequestResponse } from './protocol/generated/v2/McpServerElicitationRequestResponse.js';
+import type { SkillsListResponse } from './protocol/generated/v2/SkillsListResponse.js';
+import type { HooksListResponse } from './protocol/generated/v2/HooksListResponse.js';
 import type { ItemGuardianApprovalReviewCompletedNotification } from './protocol/generated/v2/ItemGuardianApprovalReviewCompletedNotification.js';
 import type { GuardianWarningNotification } from './protocol/generated/v2/GuardianWarningNotification.js';
 import type { ThreadApproveGuardianDeniedActionResponse } from './protocol/generated/v2/ThreadApproveGuardianDeniedActionResponse.js';
@@ -2524,6 +2527,10 @@ export class CodexAgent extends Disposable implements IAgent {
 			session.serverToolsAdvertised = true;
 			this._serverToolHost.advertise(session.sessionUri.toString());
 		}
+		// Surface the skills/hooks codex loaded for this working directory (from
+		// `.agents`/`.codex`) in the Customizations view now that the connection
+		// is ready and the cwd is known. Best-effort and fire-and-forget.
+		void this._refreshSkillHookCustomizations(session);
 	}
 
 	/**
@@ -3232,7 +3239,54 @@ export class CodexAgent extends Disposable implements IAgent {
 		const controller = this._getOrCreateMcpController(session);
 		controller.applyAll(inventoryToSdkServers(this._mcpInventory));
 		this._refreshMcpCustomizationIds(session, controller);
-		return controller.topLevelCustomizations();
+		// Append the skills/hooks codex loaded for this session's working
+		// directory (best-effort; empty until the app-server connection is
+		// ready, after which `_refreshSkillHookCustomizations` pushes updates).
+		const skillHookContainers = await this._fetchSkillHookContainers(session);
+		return [...controller.topLevelCustomizations(), ...skillHookContainers];
+	}
+
+	/**
+	 * Fetches the skills and hooks codex has loaded for `session`'s working
+	 * directory (`skills/list` + `hooks/list`, both cwd-scoped) and projects
+	 * them into {@link DirectoryCustomization} containers. Best-effort: returns
+	 * an empty array when no connection is ready, no working directory is known,
+	 * or the app-server rejects the request.
+	 */
+	private async _fetchSkillHookContainers(session: ICodexSession): Promise<DirectoryCustomization[]> {
+		if (this._connection.kind !== 'ready' || !session.workingDirectory) {
+			return [];
+		}
+		const cwd = session.workingDirectory.fsPath;
+		const client = this._connection.client;
+		const [skills, hooks] = await Promise.all([
+			client.request<'skills/list', SkillsListResponse>('skills/list', { cwds: [cwd] })
+				.catch(err => { this._logService.warn(`[Codex] skills/list failed: ${err instanceof Error ? err.message : String(err)}`); return undefined; }),
+			client.request<'hooks/list', HooksListResponse>('hooks/list', { cwds: [cwd] })
+				.catch(err => { this._logService.warn(`[Codex] hooks/list failed: ${err instanceof Error ? err.message : String(err)}`); return undefined; }),
+		]);
+		return [...codexSkillsToContainers(skills), ...codexHooksToContainers(hooks)];
+	}
+
+	/**
+	 * Re-fetches this session's skill/hook customizations and upserts each
+	 * container into session state via {@link ActionType.SessionCustomizationUpdated}.
+	 * Called after materialization (when the connection is ready and the cwd is
+	 * known) so the workbench Customizations surface reflects what codex loaded
+	 * from the working directory's `.agents`/`.codex` folders. Upserts (keyed by
+	 * customization id) leave the MCP customizations untouched.
+	 */
+	private async _refreshSkillHookCustomizations(session: ICodexSession): Promise<void> {
+		if (session.disposed) {
+			return;
+		}
+		const containers = await this._fetchSkillHookContainers(session);
+		if (session.disposed) {
+			return;
+		}
+		for (const container of containers) {
+			this._fire(session.sessionUri, { type: ActionType.SessionCustomizationUpdated, customization: container });
+		}
 	}
 
 	/**
