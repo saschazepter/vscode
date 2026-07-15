@@ -58,7 +58,7 @@ import { stripProxyErrorMarker, tryBuildChatErrorMeta, tryBuildChatErrorMetaFrom
 import { McpCustomizationController, type ISdkMcpServer } from '../shared/mcpCustomizationController.js';
 import { appendSdkToolResultContent, mapSessionEvents } from './mapSessionEvents.js';
 import { buildPendingEditContentUri } from './pendingEditContentStore.js';
-import { McpAuthRequiredReason, McpServerStatus, type McpServerState } from '../../common/state/protocol/channels-session/state.js';
+import { McpAuthRequiredReason, McpServerStatus, type McpAuthRequirement, type McpServerState } from '../../common/state/protocol/channels-session/state.js';
 import type { ProtectedResourceMetadata } from '../../common/state/protocol/common/state.js';
 import { CopilotSlashCommandProvider } from './copilotSlashCommandProvider.js';
 
@@ -80,7 +80,14 @@ interface IPendingMcpAuthRequest {
 	readonly serverName: string;
 	readonly resource: ProtectedResourceMetadata;
 	readonly requiredScopes: readonly string[];
+	readonly toolCalls: IMcpAuthToolCall[];
 	readonly deferred: DeferredPromise<McpAuthResult | null | undefined>;
+}
+
+interface IMcpAuthToolCall {
+	readonly turnId: string;
+	readonly toolCallId: string;
+	readonly parentToolCallId: string | undefined;
 }
 
 const COPILOT_HOME_DIRECTORY = '.copilot';
@@ -500,6 +507,18 @@ export class CopilotAgentSession extends Disposable {
 	private readonly _pendingAutoApprovals = new Map<string, DeferredPromise<PermissionAutoApproval | undefined>>();
 	/** Pending permission requests awaiting a renderer-side decision. */
 	private readonly _pendingPermissions = new Map<string, DeferredPromise<boolean>>();
+	/**
+	 * Signatures ({@link safeStringify}) of user-approved `read`/`write`
+	 * permission requests, keyed by tool call id. The Copilot CLI runtime emits
+	 * two identical `permission.requested` events for a single file read or
+	 * write (an internal `path` prompt followed by a `read`/`write` prompt), so
+	 * without this the user would be asked to approve the same operation twice
+	 * (issue #324477). An entry is single-use: it auto-approves exactly one
+	 * subsequent request that is byte-identical to the approved one, then is
+	 * removed, so approval never carries across a different tool call, a changed
+	 * path/diff/contents, or a different kind.
+	 */
+	private readonly _approvedDuplicablePermissionSignatures = new Map<string, string>();
 	/** Pending user input requests awaiting a renderer-side answer. */
 	private readonly _pendingUserInputs = new Map<string, { deferred: DeferredPromise<{ response: ChatInputResponseKind; answers?: Record<string, ChatInputAnswer> }>; questionId: string }>();
 	/**
@@ -1051,6 +1070,11 @@ export class CopilotAgentSession extends Disposable {
 	 * resolves immediately once it does.
 	 */
 	handleClientToolCallComplete(toolCallId: string, result: ToolCallResult) {
+		this._approvedDuplicablePermissionSignatures.delete(toolCallId);
+		if (!result.success && this._cancelMcpAuthenticationForToolCall(toolCallId)) {
+			this._activeToolCalls.delete(toolCallId);
+			return;
+		}
 		const textContent = result.content
 			?.filter(c => c.type === ToolResultContentType.Text)
 			.map(c => c.text)
@@ -1079,6 +1103,22 @@ export class CopilotAgentSession extends Disposable {
 		// Still pending permission, so this call may have errored while getting permission.
 		// Go ahead and allow the call which will immediately see the buffered value.
 		this.respondToPermissionRequest(toolCallId, true);
+	}
+
+	private _cancelMcpAuthenticationForToolCall(toolCallId: string): boolean {
+		for (const [requestId, pending] of this._pendingMcpAuthRequests) {
+			const toolCallIndex = pending.toolCalls.findIndex(toolCall => toolCall.toolCallId === toolCallId);
+			if (toolCallIndex === -1) {
+				continue;
+			}
+			pending.toolCalls.splice(toolCallIndex, 1);
+			if (pending.toolCalls.length === 0) {
+				this._pendingMcpAuthRequests.delete(requestId);
+				pending.deferred.complete({ kind: 'cancelled' });
+			}
+			return true;
+		}
+		return false;
 	}
 
 	/**
@@ -1130,6 +1170,13 @@ export class CopilotAgentSession extends Disposable {
 				continue;
 			}
 			this._pendingMcpAuthRequests.delete(requestId);
+			for (const toolCall of pending.toolCalls) {
+				this._emitAction({
+					type: ActionType.ChatToolCallAuthResolved,
+					turnId: toolCall.turnId,
+					toolCallId: toolCall.toolCallId,
+				}, toolCall.parentToolCallId);
+			}
 			pending.deferred.complete({ kind: 'token', accessToken: params.token });
 			resolved = true;
 		}
@@ -1144,25 +1191,51 @@ export class CopilotAgentSession extends Disposable {
 		}
 		const resource = this._protectedResourceFromMcpAuthRequest(request);
 		const requiredScopes = this._scopesFromChallenge(request.wwwAuthenticateParams?.scope);
+		const auth: McpAuthRequirement = {
+			reason: this._mcpAuthRequiredReason(request.reason),
+			resource,
+			requiredScopes: requiredScopes.length ? [...requiredScopes] : undefined,
+			description: request.wwwAuthenticateParams?.error,
+		};
+		const toolCalls = this._activeMcpToolCalls(request.serverName);
 		const deferred = new DeferredPromise<McpAuthResult | null | undefined>();
 		this._pendingMcpAuthRequests.set(request.requestId, {
 			serverName: request.serverName,
 			resource,
 			requiredScopes,
+			toolCalls,
 			deferred,
 		});
 		this._mcpCustomizations.applyOne({
 			name: request.serverName,
 			state: {
 				kind: McpServerStatus.AuthRequired,
-				reason: this._mcpAuthRequiredReason(request.reason),
-				resource,
-				requiredScopes: requiredScopes.length ? [...requiredScopes] : undefined,
-				description: request.wwwAuthenticateParams?.error,
+				...auth,
 			},
 		});
+		for (const toolCall of toolCalls) {
+			this._emitAction({
+				type: ActionType.ChatToolCallAuthRequired,
+				turnId: toolCall.turnId,
+				toolCallId: toolCall.toolCallId,
+				auth,
+			}, toolCall.parentToolCallId);
+		}
 		this._logService.info(`[Copilot:${this.sessionId}] MCP server '${request.serverName}' requires authentication for ${resource.resource}`);
 		return deferred.p.finally(() => this._pendingMcpAuthRequests.delete(request.requestId));
+	}
+
+	private _activeMcpToolCalls(serverName: string): IMcpAuthToolCall[] {
+		if (!this._turnId) {
+			return [];
+		}
+		const result: IMcpAuthToolCall[] = [];
+		for (const [toolCallId, toolCall] of this._activeToolCalls) {
+			if (toolCall.mcpServerName === serverName) {
+				result.push({ turnId: this._turnId, toolCallId, parentToolCallId: toolCall.parentToolCallId });
+			}
+		}
+		return result;
 	}
 
 	private _initialGitHubMcpToken(request: McpAuthRequest): string | undefined {
@@ -1794,6 +1867,15 @@ export class CopilotAgentSession extends Disposable {
 				return { kind: 'approve-once' };
 			}
 
+			const approvedSignature = this._approvedDuplicablePermissionSignatures.get(toolCallId);
+			if (approvedSignature !== undefined) {
+				this._approvedDuplicablePermissionSignatures.delete(toolCallId);
+				if ((request.kind === 'write' || request.kind === 'read') && safeStringify(request) === approvedSignature) {
+					this._logService.info(`[Copilot:${this.sessionId}] Auto-approving duplicate ${request.kind} permission request for tool call ${toolCallId}`);
+					return { kind: 'approve-once' };
+				}
+			}
+
 			const sessionResourcePath = this._getInternalSessionResourcePath(request);
 			if (sessionResourcePath) {
 				this._logService.info(`[Copilot:${this.sessionId}] Auto-approving internal session resource ${sessionResourcePath}`);
@@ -1918,6 +2000,9 @@ export class CopilotAgentSession extends Disposable {
 
 			const approved = await deferred.p;
 			this._logService.info(`[Copilot:${this.sessionId}] Permission response: toolCallId=${toolCallId}, approved=${approved}`);
+			if (approved && (request.kind === 'write' || request.kind === 'read')) {
+				this._approvedDuplicablePermissionSignatures.set(toolCallId, safeStringify(request));
+			}
 			return { kind: approved ? 'approve-once' : 'reject' };
 		} catch (error) {
 			this._logService.error(error, `[Copilot:${this.sessionId}] Failed to handle permission request: kind=${request.kind}, toolCallId=${request.toolCallId ?? 'missing'}`);
@@ -2865,6 +2950,7 @@ export class CopilotAgentSession extends Disposable {
 		}));
 
 		this._register(wrapper.onToolComplete(async e => {
+			this._approvedDuplicablePermissionSignatures.delete(e.data.toolCallId);
 			const tracked = this._activeToolCalls.get(e.data.toolCallId);
 			if (!tracked) {
 				return;
@@ -3878,6 +3964,7 @@ export class CopilotAgentSession extends Disposable {
 			deferred.complete(false);
 		}
 		this._pendingPermissions.clear();
+		this._approvedDuplicablePermissionSignatures.clear();
 	}
 
 	/**
