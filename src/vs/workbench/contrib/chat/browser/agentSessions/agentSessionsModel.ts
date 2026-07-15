@@ -664,7 +664,16 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 					? { files: changes.files, insertions: changes.insertions, deletions: changes.deletions }
 					: changes;
 
-				if (session.isRead) {
+				const controllerOwnsReadState = this.chatSessionsService.canSetChatSessionItemReadState(session.resource);
+				const shouldKeepOpenSessionRead = controllerOwnsReadState
+					&& !session.isRead
+					&& !this.explicitlyMarkedUnreadSessions.has(session.resource)
+					&& !!this.chatWidgetService.getWidgetBySessionResource(session.resource);
+				if (shouldKeepOpenSessionRead) {
+					this.chatSessionsService.setChatSessionItemReadState(session.resource, true);
+				}
+				const providerRead = shouldKeepOpenSessionRead || session.isRead;
+				if (providerRead) {
 					this.explicitlyMarkedUnreadSessions.delete(session.resource);
 				}
 				sessions.set(session.resource, this.toAgentSession({
@@ -678,7 +687,7 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 					tooltip: session.tooltip,
 					status: session.status ?? AgentSessionStatus.Completed,
 					archived: session.archived,
-					providerRead: session.isRead,
+					providerRead,
 					timing: session.timing,
 					changes: normalizedChanges,
 					metadata: session.metadata,

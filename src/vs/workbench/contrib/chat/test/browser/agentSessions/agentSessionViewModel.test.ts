@@ -7,15 +7,18 @@ import assert from 'assert';
 import { Event } from '../../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { DisposableStore } from '../../../../../../base/common/lifecycle.js';
+import { ResourceSet } from '../../../../../../base/common/map.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { URI } from '../../../../../../base/common/uri.js';
+import { mock } from '../../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
+import { IChatWidget, IChatWidgetService } from '../../../browser/chat.js';
 import { AgentSessionsModel, IAgentSession, isAgentSession, isAgentSessionsModel, isLocalAgentSessionItem } from '../../../browser/agentSessions/agentSessionsModel.js';
 import { AgentSessionsFilter } from '../../../browser/agentSessions/agentSessionsFilter.js';
 import { ChatSessionStatus, IChatSessionItemController, IChatSessionItem, IChatSessionsService, localChatSessionType } from '../../../common/chatSessionsService.js';
 import { LocalChatSessionUri } from '../../../common/model/chatUri.js';
 import { MockChatSessionsService } from '../../common/mockChatSessionsService.js';
-import { TestLifecycleService, workbenchInstantiationService } from '../../../../../test/browser/workbenchTestServices.js';
+import { TestChatWidgetService, TestLifecycleService, workbenchInstantiationService } from '../../../../../test/browser/workbenchTestServices.js';
 import { runWithFakedTimers } from '../../../../../../base/test/common/timeTravelScheduler.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { MenuId } from '../../../../../../platform/actions/common/actions.js';
@@ -1753,6 +1756,23 @@ suite('AgentSessions', () => {
 		let instantiationService: TestInstantiationService;
 		let viewModel: AgentSessionsModel;
 
+		class OpenChatWidgetService extends TestChatWidgetService {
+			private readonly openSessionResources = new ResourceSet();
+			private readonly widget = new class extends mock<IChatWidget>() { };
+
+			setOpen(resource: URI, open: boolean): void {
+				if (open) {
+					this.openSessionResources.add(resource);
+				} else {
+					this.openSessionResources.delete(resource);
+				}
+			}
+
+			override getWidgetBySessionResource(resource: URI): IChatWidget | undefined {
+				return this.openSessionResources.has(resource) ? this.widget : undefined;
+			}
+		}
+
 		class MutableReadChatSessionItemController implements IChatSessionItemController {
 			readonly onDidChangeChatSessionItems = Event.None;
 			readonly readUpdates: boolean[] = [];
@@ -1788,6 +1808,65 @@ suite('AgentSessions', () => {
 		});
 
 		ensureNoDisposablesAreLeakedInTestSuite();
+
+		test('should keep an open session read when a later provider unread update arrives', async () => {
+			return runWithFakedTimers({}, async () => {
+				const item = makeSimpleSessionItem('session-1', { isRead: true });
+				const chatWidgetService = new OpenChatWidgetService();
+				chatWidgetService.setOpen(item.resource, true);
+				instantiationService.stub(IChatWidgetService, chatWidgetService);
+
+				const controller = new MutableReadChatSessionItemController(item);
+				mockChatSessionsService.registerChatSessionItemController(chatSessionTestType, controller);
+				viewModel = disposables.add(instantiationService.createInstance(AgentSessionsModel));
+				await viewModel.resolve(undefined);
+
+				const unreadItem = controller.setProviderRead(false);
+				const sessionsChanged = Event.toPromise(viewModel.onDidChangeSessions);
+				mockChatSessionsService.fireDidChangeSessionItems({ addedOrUpdated: [unreadItem] });
+				await sessionsChanged;
+
+				assert.deepStrictEqual({
+					readUpdates: controller.readUpdates,
+					isRead: viewModel.sessions[0].isRead(),
+					isMarkedUnread: viewModel.sessions[0].isMarkedUnread(),
+				}, {
+					readUpdates: [true],
+					isRead: true,
+					isMarkedUnread: false,
+				});
+			});
+		});
+
+		test('should preserve explicit unread when an open session publishes an unread update', async () => {
+			return runWithFakedTimers({}, async () => {
+				const item = makeSimpleSessionItem('session-1', { isRead: true });
+				const chatWidgetService = new OpenChatWidgetService();
+				chatWidgetService.setOpen(item.resource, true);
+				instantiationService.stub(IChatWidgetService, chatWidgetService);
+
+				const controller = new MutableReadChatSessionItemController(item);
+				mockChatSessionsService.registerChatSessionItemController(chatSessionTestType, controller);
+				viewModel = disposables.add(instantiationService.createInstance(AgentSessionsModel));
+				await viewModel.resolve(undefined);
+				viewModel.sessions[0].setRead(false);
+
+				const unreadItem = controller.setProviderRead(false);
+				const sessionsChanged = Event.toPromise(viewModel.onDidChangeSessions);
+				mockChatSessionsService.fireDidChangeSessionItems({ addedOrUpdated: [unreadItem] });
+				await sessionsChanged;
+
+				assert.deepStrictEqual({
+					readUpdates: controller.readUpdates,
+					isRead: viewModel.sessions[0].isRead(),
+					isMarkedUnread: viewModel.sessions[0].isMarkedUnread(),
+				}, {
+					readUpdates: [false],
+					isRead: false,
+					isMarkedUnread: true,
+				});
+			});
+		});
 
 		test('should ignore stale local state for controller-owned read state', async () => {
 			return runWithFakedTimers({}, async () => {
