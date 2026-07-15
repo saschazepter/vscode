@@ -99,10 +99,6 @@
 	background-color: var(--vscode-agentsChatInput-background) !important;
 }
 
-.agent-sessions-workbench .interactive-session .chat-edit-input-container .interactive-input-part .chat-editor-container .interactive-input-editor .monaco-editor .monaco-editor-background {
-	background-color: transparent !important;
-}
-
 .agent-sessions-workbench .part.sessionspart .interactive-session .interactive-input-part,
 .agent-sessions-workbench .chat-editor-relative .interactive-session .interactive-input-part {
 	width: 100%;

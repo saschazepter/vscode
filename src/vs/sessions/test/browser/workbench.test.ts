@@ -128,6 +128,7 @@ suite('Sessions - Workbench', () => {
 		const classToggles: { name: string; force: boolean }[] = [];
 		const counts = { save: 0, layout: 0 };
 		const sidePaneReveals: boolean[] = [];
+		let editorNodeVisible = (options.partVisibility?.editor ?? false) || (options.partVisibility?.auxiliaryBar ?? true);
 		const viewSizes = new Map<object, IViewSize>([
 			[editorPartView, { width: options.editorWidth ?? 0, height: 800 }],
 			[sessionsPartView, { width: options.sessionsWidth ?? 1000, height: 800 }],
@@ -146,11 +147,19 @@ suite('Sessions - Workbench', () => {
 			partVisibility,
 			workbenchGrid: {
 				width: options.windowWidth ?? 1000,
+				layout: () => { },
 				getViewSize: (view: object) => viewSizes.get(view) ?? { width: 0, height: 0 },
-				isViewVisible: (view: object) => view === editorPartView ? partVisibility.editor || partVisibility.auxiliaryBar : true,
-				setViewVisible: (_view: object, visible: boolean) => { visibilityChanges.push(visible); },
+				isViewVisible: (view: object) => view === editorPartView ? editorNodeVisible : true,
+				setViewVisible: (view: object, visible: boolean) => {
+					if (view === editorPartView) {
+						editorNodeVisible = visible;
+					}
+					visibilityChanges.push(visible);
+				},
 				resizeView: (view: object, size: IViewSize) => { resizes.push(size); viewSizes.set(view, size); },
 			},
+			_mainContainerDimension: { width: options.windowWidth ?? 1000, height: 800 },
+			layoutPolicy: { viewportClass: { get: () => 'desktop' } },
 			_hasAppliedInitialEditorSplit: options.hasAppliedInitialEditorSplit ?? false,
 			_savedPartSizes: {},
 			_editorRevealedExplicitly: false,
@@ -227,6 +236,17 @@ suite('Sessions - Workbench', () => {
 		host.workbenchGrid.isViewVisible = () => false;
 
 		assert.strictEqual(isSinglePaneEditorPaneVisible.call(host), false);
+	});
+
+	test('updates the single-pane editor pane class after the grid node visibility changes', () => {
+		const host = createHost({ single: true, partVisibility: { editor: true, auxiliaryBar: false } });
+
+		setEditorHidden.call(host, true);
+
+		assert.deepStrictEqual(
+			host.classToggles.filter(toggle => toggle.name === 'noeditorpane'),
+			[{ name: 'noeditorpane', force: true }]
+		);
 	});
 
 	test('applies an even editor split the first time the editor is revealed', () => {

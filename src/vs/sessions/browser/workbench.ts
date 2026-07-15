@@ -2046,9 +2046,9 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 		this.partVisibility.auxiliaryBar = !hidden;
 		this.mainContainer.classList.toggle(LayoutClasses.AUXILIARYBAR_HIDDEN, hidden);
-		this._updateEditorPaneVisibilityClass();
 
 		this._applyAuxiliaryBarVisibility(hidden, source);
+		this._updateEditorPaneVisibilityClass();
 
 		// If auxiliary bar becomes hidden, also hide the current active pane composite
 		if (hidden && this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar)) {
@@ -2109,11 +2109,11 @@ export class Workbench extends Disposable implements IAgentWorkbenchLayoutServic
 
 			this.partVisibility.editor = !hidden;
 			this.mainContainer.classList.toggle(LayoutClasses.MAIN_EDITOR_AREA_HIDDEN, hidden);
-			this._updateEditorPaneVisibilityClass();
 
 			if (this.editorPartView) {
 				this._applyEditorVisibility(hidden);
 			}
+			this._updateEditorPaneVisibilityClass();
 
 			this._savePartVisibility();
 		});
