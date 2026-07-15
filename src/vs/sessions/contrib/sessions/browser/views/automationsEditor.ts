@@ -24,6 +24,8 @@ import { basename } from '../../../../../base/common/resources.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { status } from '../../../../../base/browser/ui/aria/aria.js';
+import { ISessionsService } from '../../../../services/sessions/browser/sessionsService.js';
+import { URI } from '../../../../../base/common/uri.js';
 
 import { AbstractChatView, ChatViewKind } from '../../../../browser/parts/chatView.js';
 
@@ -51,6 +53,7 @@ export class AutomationsCardsWidget extends Disposable {
 		@IAutomationDialogService private readonly automationDialogService: IAutomationDialogService,
 		@IHoverService private readonly hoverService: IHoverService,
 		@ILogService private readonly logService: ILogService,
+		@ISessionsService private readonly sessionsService: ISessionsService,
 	) {
 		super();
 
@@ -291,6 +294,14 @@ export class AutomationsCardsWidget extends Disposable {
 			DOM.append(statusRow, $('.meta-sep')).textContent = '\u00B7';
 			const errorEl = DOM.append(statusRow, $('span.automations-run-card-error'));
 			errorEl.textContent = run.errorMessage;
+		}
+
+		if (run.sessionResource) {
+			card.setAttribute('tabindex', '0');
+			card.setAttribute('role', 'button');
+			this.historyDisposables.add(DOM.addDisposableListener(card, 'click', () => {
+				this.sessionsService.openSession(URI.parse(run.sessionResource!), { preserveFocus: false });
+			}));
 		}
 	}
 
