@@ -15,6 +15,9 @@ import { Disposable, DisposableStore, IDisposable, MutableDisposable, toDisposab
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { localize } from '../../../../../../nls.js';
+import { IActionListOptions, ActionListItemKind, IActionListDelegate, IActionListItem } from '../../../../../../platform/actionWidget/browser/actionList.js';
+import { IActionWidgetService } from '../../../../../../platform/actionWidget/browser/actionWidget.js';
+import { getCodexApprovalsPickerListOptions } from '../../../../../../platform/agentHost/browser/codexApprovalsPicker.js';
 import { IAgentHostService } from '../../../../../../platform/agentHost/common/agentService.js';
 import { KNOWN_AUTO_APPROVE_VALUES, SessionConfigKey } from '../../../../../../platform/agentHost/common/sessionConfigKeys.js';
 import { ClaudeSessionConfigKey } from '../../../../../../platform/agentHost/common/claudeSessionConfigKeys.js';
@@ -24,8 +27,6 @@ import type { ResolveSessionConfigResult, SessionConfigPropertySchema, SessionCo
 import type { SessionState } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { StateComponents } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { type IAgentSubscription } from '../../../../../../platform/agentHost/common/state/agentSubscription.js';
-import { ActionListItemKind, IActionListDelegate, IActionListItem } from '../../../../../../platform/actionWidget/browser/actionList.js';
-import { IActionWidgetService } from '../../../../../../platform/actionWidget/browser/actionWidget.js';
 import { IHoverService } from '../../../../../../platform/hover/browser/hover.js';
 import { IOpenerService } from '../../../../../../platform/opener/common/opener.js';
 import { IDialogService } from '../../../../../../platform/dialogs/common/dialogs.js';
@@ -169,6 +170,12 @@ function getPermissionsLearnMoreUrl(property: string): string | undefined {
 		return PERMISSIONS_LEARN_MORE_URL;
 	}
 	return undefined;
+}
+
+export function getConfigPickerListOptions(property: string): IActionListOptions | undefined {
+	return property === CodexSessionConfigKey.PermissionsPreset
+		? getCodexApprovalsPickerListOptions()
+		: undefined;
 }
 
 function renderPickerTrigger(slot: HTMLElement, disabled: boolean, disposables: DisposableStore, onOpen: () => void): HTMLElement {
@@ -608,9 +615,12 @@ export class AgentHostChatInputPicker extends Disposable {
 				getAriaLabel: item => item.label ?? '',
 				getWidgetAriaLabel: () => localize('agentHostChatInputPicker.ariaLabel', "{0} Picker", ctx.schema.title),
 			},
-			actionItems.length > FILTER_THRESHOLD || ctx.schema.enumDynamic
-				? withChatInputPickerMotion({ showFilter: true, filterPlaceholder: localize('agentHostChatInputPicker.filter', "Filter...") })
-				: withChatInputPickerMotion(undefined),
+			withChatInputPickerMotion({
+				...getConfigPickerListOptions(this._property),
+				...(actionItems.length > FILTER_THRESHOLD || ctx.schema.enumDynamic
+					? { showFilter: true, filterPlaceholder: localize('agentHostChatInputPicker.filter', "Filter...") }
+					: {}),
+			}),
 		);
 	}
 

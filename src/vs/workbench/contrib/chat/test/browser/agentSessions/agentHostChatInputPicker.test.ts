@@ -9,7 +9,7 @@ import { ClaudeSessionConfigKey } from '../../../../../../platform/agentHost/com
 import { SessionConfigKey } from '../../../../../../platform/agentHost/common/sessionConfigKeys.js';
 import { CodexSessionConfigKey } from '../../../../../../platform/agentHost/common/codexSessionConfigKeys.js';
 import type { SessionConfigPropertySchema } from '../../../../../../platform/agentHost/common/state/protocol/commands.js';
-import { getConfigPickerItemHover, getConfigPickerTriggerHover, resolveConfigChipValue } from '../../../browser/agentSessions/agentHost/agentHostChatInputPicker.js';
+import { getConfigPickerItemHover, getConfigPickerListOptions, getConfigPickerTriggerHover, resolveConfigChipValue } from '../../../browser/agentSessions/agentHost/agentHostChatInputPicker.js';
 import { getAgentHostPickerProperty, OpenAgentHostAutoApprovePickerAction, OpenAgentHostCodexApprovalsPickerAction, OpenAgentHostModePickerAction, OpenAgentHostPermissionModePickerAction } from '../../../browser/agentSessions/agentHost/agentHostChatInputPicker.contribution.js';
 
 suite('AgentHostChatInputPicker - action mapping', () => {
@@ -28,6 +28,20 @@ suite('AgentHostChatInputPicker - action mapping', () => {
 			ClaudeSessionConfigKey.PermissionMode,
 			CodexSessionConfigKey.PermissionsPreset,
 		]);
+	});
+});
+
+suite('AgentHostChatInputPicker - list options', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('uses the compact wrapped layout for Codex approvals', () => {
+		assert.deepStrictEqual(getConfigPickerListOptions(CodexSessionConfigKey.PermissionsPreset), {
+			className: 'codex-approvals-picker',
+			minWidth: 340,
+			maxWidth: 340,
+			detailItemHeight: 76,
+		});
 	});
 });
 
