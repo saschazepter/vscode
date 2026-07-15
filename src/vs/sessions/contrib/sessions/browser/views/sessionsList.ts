@@ -1932,7 +1932,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 							return NotSelectableGroupId;
 						}
 						if (isAutomationRunItem(element)) {
-							return NotSelectableGroupId;
+							return 3;
 						}
 						// Use a distinct group for archived (done) sessions so that
 						// multi-selection cannot span the workspace and done sections.
@@ -2003,6 +2003,10 @@ export class SessionsList extends Disposable implements ISessionsList {
 				if (element.sessionResource) {
 					this.options.onSessionOpen(URI.parse(element.sessionResource), false, false);
 				}
+				return;
+			}
+			if (isSessionSection(element) && element.id === AUTOMATIONS_SECTION_ID) {
+				this.commandService.executeCommand('sessionsView.manageAutomations');
 				return;
 			}
 			if (!isSessionSection(element) && !isSessionGroupItem(element)) {
@@ -2369,45 +2373,13 @@ export class SessionsList extends Disposable implements ISessionsList {
 		};
 
 		const renderSection = (section: ISessionSection): IObjectTreeElement<SessionListItem> => {
-			// The "Automations" section shows real session entries for runs that
-			// have an associated session, falling back to simplified run items for
-			// pending/failed runs without a session.
+			// The "Automations" section is a non-expandable shortcut that opens
+			// the automations management editor on click.
 			if (section.id === AUTOMATIONS_SECTION_ID) {
-				const automations = this.automationService.automations.get();
-				const automationNames = new Map(automations.map(a => [a.id, a.name]));
-				const recentRuns = runs.slice(0, 5);
-
-				// Build a lookup from resource URI to session for fast matching
-				const sessionByResource = new Map(
-					this.sessions.map(s => [s.resource.toString(), s])
-				);
-
-				const automationChildren: IObjectTreeElement<SessionListItem>[] = recentRuns.map(run => {
-					const session = run.sessionResource
-						? sessionByResource.get(run.sessionResource)
-						: undefined;
-					if (session) {
-						return { element: session as SessionListItem };
-					}
-					// Fallback for runs without a resolved session (pending/failed)
-					return {
-						element: {
-							automationRun: true as const,
-							id: run.id,
-							name: automationNames.get(run.automationId) ?? 'Unknown',
-							status: run.status,
-							startedAt: run.startedAt,
-							errorMessage: run.errorMessage,
-							sessionResource: run.sessionResource,
-						} as SessionListItem,
-					};
-				});
-
 				return {
 					element: section as SessionListItem,
-					collapsible: true,
-					collapsed: this.getSavedCollapseState(section.id) ?? ObjectTreeElementCollapseState.PreserveOrExpanded,
-					children: automationChildren,
+					children: [],
+					collapsible: false,
 				};
 			}
 

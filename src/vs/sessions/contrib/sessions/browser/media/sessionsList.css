@@ -45,7 +45,9 @@
 		}
 	}
 
-	.monaco-list-row.selected .session-title {
+	.monaco-list-row.selected .session-title,
+	.monaco-list-row.selected .automation-run-label,
+	.monaco-list-row.selected .automation-run-time {
 		color: unset;
 	}
 
@@ -558,7 +560,9 @@
 
 	&.session-section-focus-from-pointer {
 		.monaco-list-row.focused:has(.session-section),
-		.monaco-list-row.selected:has(.session-section) {
+		.monaco-list-row.selected:has(.session-section),
+		.monaco-list-row.focused:has(.automation-run-item),
+		.monaco-list-row.selected:has(.automation-run-item) {
 			outline: none !important;
 		}
 	}
