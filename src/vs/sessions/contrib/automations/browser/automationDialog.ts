@@ -4,25 +4,22 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as DOM from '../../../../base/browser/dom.js';
+import { Gesture, EventType as TouchEventType } from '../../../../base/browser/touch.js';
 import { BaseActionViewItem, IBaseActionViewItemOptions } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
-import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
 import { IButton } from '../../../../base/browser/ui/button/button.js';
 import { InputBox } from '../../../../base/browser/ui/inputbox/inputBox.js';
 import { ISelectOptionItem, SelectBox } from '../../../../base/browser/ui/selectBox/selectBox.js';
 import { Checkbox } from '../../../../base/browser/ui/toggle/toggle.js';
 import { IAction } from '../../../../base/common/actions.js';
-import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { DisposableStore, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
-import { autorun, constObservable, observableValue } from '../../../../base/common/observable.js';
+import { autorun, constObservable, IObservable, ISettableObservable, observableValue } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
 import { EditorContextKeys } from '../../../../editor/common/editorContextKeys.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
-import { ActionListItemKind, IActionListDelegate, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
@@ -35,9 +32,10 @@ import { IProductService } from '../../../../platform/product/common/productServ
 import { defaultCheckboxStyles, defaultInputBoxStyles, defaultSelectBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { hasNativeContextMenu } from '../../../../platform/window/common/window.js';
 import { WorkspacePicker } from '../../chat/browser/sessionWorkspacePicker.js';
+import { BranchPicker } from '../../chat/browser/branchPicker.js';
+import { GitBranchPickerModel } from '../../chat/browser/gitBranchPickerModel.js';
 import { MobileSessionTypePicker } from '../../chat/browser/mobile/mobileSessionTypePicker.js';
 import { ISession, ISessionWorkspaceBrowseAction, SESSION_WORKSPACE_GROUP_LOCAL } from '../../../services/sessions/common/session.js';
-import { IGitService } from '../../../../workbench/contrib/git/common/gitService.js';
 import { AutomationInterval } from '../../../../workbench/contrib/chat/common/automations/automation.js';
 import { IShowAutomationDialogOptions } from '../../../../workbench/contrib/chat/common/automations/automationDialogService.js';
 import { DAYS_OF_WEEK } from '../../../../workbench/contrib/chat/common/automations/schedule.js';
@@ -99,167 +97,82 @@ const AUTOMATIONS_ISOLATION_GROUP_ACTION_ID = 'workbench.action.chat.renderAutom
 
 class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 	private readonly renderDisposables = this._register(new DisposableStore());
-	private readonly branchRepoDisposable = this._register(new MutableDisposable<IDisposable>());
-	private branchRequestId = 0;
-	private folderChip: HTMLSpanElement | undefined;
-	private branchSlot: HTMLSpanElement | undefined;
 
 	constructor(
 		action: IAction,
 		private readonly state: IFormState,
-		private readonly workspacePicker: AutomationsWorkspacePicker,
-		private readonly actionWidgetService: IActionWidgetService,
-		private readonly gitService: IGitService,
+		private readonly folderObs: IObservable<URI | undefined>,
+		private readonly isolationModeObs: ISettableObservable<string | undefined>,
+		private readonly instantiationService: IInstantiationService,
 		options?: IBaseActionViewItemOptions,
 	) {
 		super(undefined, action, options);
 	}
 
 	override render(container: HTMLElement): void {
-		super.render(container);
+		// Match PickerActionViewItem: skip super.render() entirely to avoid
+		// mousedown/.active handlers and focus outline on the action-item wrapper.
 		this.renderDisposables.clear();
-		this.branchRepoDisposable.clear();
 		DOM.clearNode(container);
 		container.style.marginLeft = 'auto';
+		container.style.outline = 'none';
 
 		const isolationGroup = DOM.append(container, $('span.automation-form-isolation-group'));
-		this.folderChip = DOM.append(isolationGroup, $('span.automation-form-isolation-chip')) as HTMLSpanElement;
-		this.folderChip.setAttribute('role', 'button');
-		this.folderChip.tabIndex = 0;
-		this.branchSlot = DOM.append(isolationGroup, $('span.automation-form-branch-slot')) as HTMLSpanElement;
-		this.branchSlot.setAttribute('aria-live', 'polite');
 
-		this.renderIsolationChip();
-		this.renderBranchLabel(localize('automation.form.branch.unknown', "—"), true);
-		this.renderDisposables.add(this.workspacePicker.onDidSelectWorkspace(uri => {
-			this.updateBranchForFolder(uri);
-		}));
-		this.renderDisposables.add(DOM.addDisposableListener(this.folderChip, DOM.EventType.CLICK, (e) => {
-			DOM.EventHelper.stop(e, true);
-			this.showIsolationPicker();
-		}));
-		this.renderDisposables.add(DOM.addDisposableListener(this.folderChip, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				DOM.EventHelper.stop(e, true);
-				this.showIsolationPicker();
-			}
-		}));
-		this.updateBranchForFolder(this.state.folderUri);
-	}
+		// Checkbox slot — mirrors the IsolationPicker in the new-session flow
+		const slot = DOM.append(isolationGroup, $('.sessions-chat-picker-slot.sessions-chat-isolation-checkbox'));
+		const label = localize('automation.form.isolation.newWorktree', "New Worktree");
+		const row = DOM.append(slot, $('.action-label'));
 
-	private renderIsolationChip(): void {
-		if (!this.folderChip) {
-			return;
-		}
-		DOM.clearNode(this.folderChip);
-		const isWorktree = this.state.isolationMode === 'worktree';
-		const modeIcon = isWorktree ? Codicon.worktree : Codicon.folder;
-		const modeLabel = isWorktree
-			? localize('automation.form.isolation.worktree', "Worktree")
-			: localize('automation.form.isolation.folder', "Folder");
-		this.folderChip.setAttribute('aria-label', localize('automation.form.isolation.pickerAriaLabel', "Pick Isolation Mode, {0}", modeLabel));
-		this.folderChip.title = modeLabel;
-		DOM.append(this.folderChip, renderIcon(modeIcon));
-		DOM.append(this.folderChip, $('span.automation-form-isolation-label', undefined, modeLabel));
-	}
+		const worktreeCheckbox = this.renderDisposables.add(new Checkbox(label, this.state.isolationMode === 'worktree', { ...defaultCheckboxStyles, size: 14 }));
+		DOM.append(row, worktreeCheckbox.domNode);
+		const labelSpan = DOM.append(row, $('span.sessions-chat-dropdown-label'));
+		labelSpan.textContent = label;
 
-	private renderBranchLabel(text: string, isMissing: boolean): void {
-		if (!this.branchSlot) {
-			return;
-		}
-		DOM.clearNode(this.branchSlot);
-		this.branchSlot.classList.toggle('automation-form-branch-missing', isMissing);
-		DOM.append(this.branchSlot, renderIcon(Codicon.gitBranch));
-		DOM.append(this.branchSlot, $('span.automation-form-branch-name', undefined, text));
-	}
+		const branchPickerModel = this.renderDisposables.add(this.instantiationService.createInstance(
+			GitBranchPickerModel,
+			this.state.branch,
+			this.folderObs,
+			this.isolationModeObs,
+			(branch: string | undefined) => { this.state.branch = branch; },
+		));
 
-	private showIsolationPicker(): void {
-		if (!this.folderChip || this.actionWidgetService.isVisible) {
-			return;
-		}
-		const currentMode = this.state.isolationMode ?? 'workspace';
-		const items: IActionListItem<{ readonly mode: string; readonly checked?: boolean }>[] = [
-			{
-				kind: ActionListItemKind.Action,
-				label: localize('automation.form.isolation.worktree', "Worktree"),
-				group: { title: '', icon: Codicon.worktree },
-				item: { mode: 'worktree', checked: currentMode === 'worktree' || undefined },
-			},
-			{
-				kind: ActionListItemKind.Action,
-				label: localize('automation.form.isolation.folder', "Folder"),
-				group: { title: '', icon: Codicon.folder },
-				item: { mode: 'workspace', checked: currentMode === 'workspace' || undefined },
-			},
-		];
-		const delegate: IActionListDelegate<{ readonly mode: string; readonly checked?: boolean }> = {
-			onSelect: ({ mode }) => {
-				this.actionWidgetService.hide();
-				this.state.isolationMode = mode;
-				this.renderIsolationChip();
-			},
-			onHide: () => {
-				this.folderChip?.focus();
-			},
-		};
-		this.actionWidgetService.show(
-			'automationIsolationPicker',
-			false,
-			items,
-			delegate,
-			this.folderChip,
-			undefined,
-			[],
-			{
-				getAriaLabel: item => item.label ?? '',
-				getWidgetAriaLabel: () => localize('automation.form.isolation.widgetAriaLabel', "Isolation Mode"),
-			},
-		);
-	}
-
-	private async updateBranchForFolder(folder: URI | undefined): Promise<void> {
-		const myRequestId = ++this.branchRequestId;
-		this.branchRepoDisposable.clear();
-		if (!folder) {
-			this.state.branch = undefined;
-			this.renderBranchLabel(localize('automation.form.branch.noFolder', "—"), true);
-			return;
-		}
-		let repo;
-		try {
-			repo = await this.gitService.openRepository(folder);
-		} catch {
-			if (myRequestId !== this.branchRequestId) {
-				return;
-			}
-			this.state.branch = undefined;
-			this.renderBranchLabel(localize('automation.form.branch.noRepo', "no git repo"), true);
-			return;
-		}
-		if (myRequestId !== this.branchRequestId) {
-			return;
-		}
-		if (!repo) {
-			this.state.branch = undefined;
-			this.renderBranchLabel(localize('automation.form.branch.noRepo', "no git repo"), true);
-			return;
-		}
-		const watcher = new DisposableStore();
-		watcher.add(autorun(reader => {
-			const head = repo.state.read(reader).HEAD;
-			const name = head?.name;
-			if (name) {
-				this.state.branch = name;
-				this.renderBranchLabel(name, false);
-			} else if (head?.commit) {
-				this.state.branch = undefined;
-				this.renderBranchLabel(localize('automation.form.branch.detached', "({0})", head.commit.slice(0, 7)), false);
+		// Disable the checkbox until the git repo is loaded (branches available).
+		this.renderDisposables.add(autorun(reader => {
+			const hasBranches = branchPickerModel.branches.read(reader).length > 0;
+			if (hasBranches) {
+				worktreeCheckbox.enable();
 			} else {
-				this.state.branch = undefined;
-				this.renderBranchLabel(localize('automation.form.branch.noBranch', "—"), true);
+				worktreeCheckbox.disable();
 			}
+			slot.classList.toggle('disabled', !hasBranches);
 		}));
-		this.branchRepoDisposable.value = watcher;
+
+		const setIsolationMode = (checked: boolean) => {
+			const mode = checked ? 'worktree' : 'workspace';
+			this.state.isolationMode = mode;
+			this.isolationModeObs.set(mode, undefined);
+		};
+
+		this.renderDisposables.add(worktreeCheckbox.onChange(() => {
+			setIsolationMode(worktreeCheckbox.checked);
+		}));
+		this.renderDisposables.add(Gesture.addTarget(row));
+		for (const eventType of [DOM.EventType.CLICK, TouchEventType.Tap]) {
+			this.renderDisposables.add(DOM.addDisposableListener(row, eventType, e => {
+				if (!worktreeCheckbox.enabled) {
+					return;
+				}
+				DOM.EventHelper.stop(e, true);
+				worktreeCheckbox.checked = !worktreeCheckbox.checked;
+				setIsolationMode(worktreeCheckbox.checked);
+			}));
+		}
+
+		const branchPickerModelObs = constObservable(branchPickerModel);
+		const branchPicker = this.renderDisposables.add(this.instantiationService.createInstance(BranchPicker, branchPickerModelObs));
+		const branchSlot = DOM.append(isolationGroup, $('span.automation-form-branch-slot'));
+		branchPicker.render(branchSlot);
 	}
 }
 
@@ -443,6 +356,7 @@ export function renderForm(
 
 	// The picker is authoritative for the session type
 	const folderObs = observableValue<URI | undefined>('automationFolder', state.folderUri);
+	const isolationModeObs = observableValue<string | undefined>('automationIsolationMode', state.isolationMode);
 	const sessionTypePicker = disposables.add(instantiationService.createInstance(MobileSessionTypePicker, constObservable<ISession | undefined>(undefined), { persistSelection: false, telemetrySource: 'AutomationSessionTypePicker' }));
 	sessionTypePicker.setFolderSource(folderObs, {
 		initialPick: state.providerId && state.sessionTypeId
@@ -536,9 +450,7 @@ export function renderForm(
 				}, itemOptions);
 			}
 			if (action.id === AUTOMATIONS_ISOLATION_GROUP_ACTION_ID) {
-				const actionWidgetService = instantiationService.invokeFunction(accessor => accessor.get(IActionWidgetService));
-				const gitService = instantiationService.invokeFunction(accessor => accessor.get(IGitService));
-				return new AutomationIsolationGroupActionViewItem(action, state, workspacePicker, actionWidgetService, gitService, itemOptions);
+				return new AutomationIsolationGroupActionViewItem(action, state, folderObs, isolationModeObs, instantiationService, itemOptions);
 			}
 			return undefined;
 		},

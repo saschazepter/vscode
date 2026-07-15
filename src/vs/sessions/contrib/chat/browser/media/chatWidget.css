@@ -349,6 +349,10 @@
 	color: var(--vscode-foreground);
 }
 
+.sessions-chat-picker-slot.disabled {
+	pointer-events: none;
+}
+
 .sessions-chat-picker-slot.disabled .action-label {
 	opacity: 0.5;
 	cursor: default;
