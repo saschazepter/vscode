@@ -47,6 +47,10 @@ export interface IPromptScrollLayout {
 	readonly marks: readonly { readonly requestId: string; readonly top: number }[];
 	/** Total content height in the estimated space, matching `marks`. */
 	readonly total: number;
+	/** Current scroll offset (px, the transcript's real scroll space) — drives the rail's own scrollbar thumb. */
+	readonly scrollTop: number;
+	/** Full scrollable content height (px, the transcript's real scroll space). */
+	readonly scrollHeight: number;
 }
 
 /** A single tick shown on the prompt timeline rail. */
@@ -203,9 +207,10 @@ export class PromptTimelineModel extends Disposable {
 
 	/**
 	 * The prompts' positions for the overview-ruler rail, in an *estimated*
-	 * content space that stays stable while the transcript virtualizes. There is no
-	 * viewport thumb: the native scrollbar is the drag affordance and the active
-	 * mark is the "you-are-here", so the rail never draws a second slider.
+	 * content space that stays stable while the transcript virtualizes. The rail
+	 * draws its own scrollbar thumb from `scrollTop`/`scrollHeight` (the transcript's
+	 * native scrollbar is hidden while the rail is active) so the whole lane is one
+	 * surface: a plain scrollbar that blooms into the prompt fan on engagement.
 	 *
 	 * The chat list's own height model (`getElementTop`/`scrollHeight`) guesses
 	 * every un-rendered row at one flat default height (200px). Real turns are
@@ -231,7 +236,7 @@ export class PromptTimelineModel extends Disposable {
 				marks.push({ requestId: item.id, top: tops[i] });
 			}
 		}
-		return { marks, total };
+		return { marks, total, scrollTop: this.widget.scrollTop, scrollHeight: this.widget.scrollHeight };
 	}
 
 	/**
