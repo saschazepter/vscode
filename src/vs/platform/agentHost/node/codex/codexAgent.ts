@@ -7,6 +7,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import { CancellationError } from '../../../../base/common/errors.js';
+import { raceTimeout } from '../../../../base/common/async.js';
+import { fetchResourceMetadata } from '../../../../base/common/oauth.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { type IObservable, observableValue } from '../../../../base/common/observable.js';
@@ -3769,9 +3771,29 @@ export class CodexAgent extends Disposable implements IAgent {
 			void this._refreshMcpInventory(client);
 			return;
 		}
+		// An auth-gated http server whose sign-in we can drive: discover its
+		// OAuth metadata asynchronously (codex's failure notification omits it)
+		// and then surface `AuthRequired`. The server stays in its current
+		// (starting) state until discovery resolves.
+		if (status === 'failed' && codexStartupErrorNeedsAuth(error)) {
+			const url = this._mcpServerUrlForName(name);
+			const normalized = url !== undefined ? normalizeCodexMcpResourceUrl(url) : undefined;
+			// Only offer sign-in when we know the http URL and don't already
+			// hold a token for it (a token in hand means we should be
+			// reconnecting, not re-prompting).
+			if (url !== undefined && normalized !== undefined && !this._mcpAuthTokens.has(normalized)) {
+				void this._surfaceMcpAuthRequired(client, name, url, error);
+				return;
+			}
+		}
+		this._setMcpServerState(name, translateCodexMcpStartupState(status, error));
+	}
+
+	/** Upserts a server's lifecycle state in the inventory (preserving cached tools) and republishes. */
+	private _setMcpServerState(name: string, state: McpServerState): void {
 		const prev = this._mcpInventory.get(name);
 		this._mcpInventory.set(name, {
-			state: this._mcpStartupState(name, status, error),
+			state,
 			tools: prev?.tools ?? [],
 			resources: prev?.resources ?? [],
 			resourceTemplates: prev?.resourceTemplates ?? [],
@@ -3780,33 +3802,44 @@ export class CodexAgent extends Disposable implements IAgent {
 	}
 
 	/**
-	 * Maps a non-`ready` codex startup transition to an AHP {@link McpServerState}.
-	 * A `failed` transition whose error indicates the http server needs sign-in
-	 * (and whose URL we know) becomes {@link McpServerStatus.AuthRequired} with
-	 * the server URL as the OAuth `resource`, so the workbench offers the same
-	 * "Authenticate" affordance it uses for the Copilot agent. Once the token
-	 * arrives via {@link handleAuthenticationToken} it is injected into the
-	 * per-thread `http_headers` and the server reconnects. Everything else
-	 * falls back to the plain lifecycle mapping.
+	 * Surfaces an auth-gated http MCP server as {@link McpServerStatus.AuthRequired}
+	 * so the workbench runs the *same* OAuth sign-in it uses for the Copilot
+	 * agent. codex's `failed` notification carries no RFC 9728 metadata, and the
+	 * workbench's `resolveMcpServerAuthentication` needs the resource's
+	 * `authorization_servers` to know where to sign in — so we discover the
+	 * Protected Resource Metadata (`<url>/.well-known/oauth-protected-resource`)
+	 * here, mirroring the discovery the Copilot SDK does internally. On
+	 * discovery failure we still surface `AuthRequired` with bare metadata (the
+	 * server genuinely needs auth); the one-click sign-in just can't complete
+	 * without the authorization server, which is logged.
 	 */
-	private _mcpStartupState(name: string, status: McpServerStartupState, error: string | null): McpServerState {
-		if (status === 'failed' && codexStartupErrorNeedsAuth(error)) {
-			const url = this._mcpServerUrlForName(name);
-			const normalized = url !== undefined ? normalizeCodexMcpResourceUrl(url) : undefined;
-			// Only offer sign-in when we know the http URL and don't already
-			// hold a token for it (a token in hand means we should be
-			// reconnecting, not re-prompting).
-			if (url !== undefined && normalized !== undefined && !this._mcpAuthTokens.has(normalized)) {
-				this._logService.info(`[Codex] MCP server '${name}' requires authentication for ${url}`);
-				return {
-					kind: McpServerStatus.AuthRequired,
-					reason: McpAuthRequiredReason.Required,
-					resource: { resource: url, resource_name: name },
-					description: error ?? undefined,
-				};
+	private async _surfaceMcpAuthRequired(client: ICodexAppServerClient, name: string, url: string, error: string | null): Promise<void> {
+		let resource: ProtectedResourceMetadata = { resource: url, resource_name: name };
+		let requiredScopes: string[] | undefined;
+		try {
+			const discovered = await raceTimeout(fetchResourceMetadata(url, undefined), 15_000);
+			if (discovered) {
+				resource = discovered.metadata;
+				requiredScopes = discovered.metadata.scopes_supported;
+				this._logService.info(`[Codex] discovered OAuth metadata for MCP server '${name}': authorization_servers=[${(discovered.metadata.authorization_servers ?? []).join(', ')}]`);
+			} else {
+				this._logService.warn(`[Codex] timed out discovering OAuth metadata for MCP server '${name}' at ${url}; the Authenticate action may not be able to complete`);
 			}
+		} catch (err) {
+			this._logService.warn(`[Codex] failed to discover OAuth metadata for MCP server '${name}' at ${url}; the Authenticate action may not be able to complete: ${err instanceof Error ? err.message : String(err)}`);
 		}
-		return translateCodexMcpStartupState(status, error);
+		// Drop the result if the connection was replaced while discovering.
+		if (this._connection.kind === 'ready' && this._connection.client !== client) {
+			return;
+		}
+		this._logService.info(`[Codex] MCP server '${name}' requires authentication for ${url}`);
+		this._setMcpServerState(name, {
+			kind: McpServerStatus.AuthRequired,
+			reason: McpAuthRequiredReason.Required,
+			resource,
+			requiredScopes: requiredScopes && requiredScopes.length > 0 ? requiredScopes : undefined,
+			description: error ?? undefined,
+		});
 	}
 
 	/**
