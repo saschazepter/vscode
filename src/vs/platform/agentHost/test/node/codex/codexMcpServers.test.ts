@@ -135,6 +135,16 @@ suite('codexMcpServers', () => {
 			});
 		});
 
+		test('sanitizes non-string args/env/headers/cwd from untrusted config', () => {
+			assert.deepStrictEqual(codexMcpServersFromConfig({
+				local: { type: 'stdio', command: 'npx', args: [1, 'a', null, true], env: { N: 3 }, cwd: 5 },
+				remote: { type: 'http', url: 'https://x', headers: { Authorization: 1, 'X-Ok': 's' } },
+			} as Record<string, unknown>), {
+				local: { command: 'npx', args: ['1', 'a', 'true'], env: { N: '3' } },
+				remote: { url: 'https://x', http_headers: { Authorization: '1', 'X-Ok': 's' } },
+			});
+		});
+
 		test('returns empty for undefined / empty config', () => {
 			assert.deepStrictEqual([
 				codexMcpServersFromConfig(undefined),
@@ -188,6 +198,15 @@ suite('codexMcpServers', () => {
 		test('injectCodexMcpAuthTokens returns the input unchanged when there are no tokens', () => {
 			const servers = { s: { url: 'https://mcp.eng.ms' } };
 			assert.strictEqual(injectCodexMcpAuthTokens(servers, new Map()), servers);
+		});
+
+		test('injectCodexMcpAuthTokens strips a pre-existing case-insensitive authorization header', () => {
+			const tokens = new Map([['https://mcp.eng.ms/', 'tok-123']]);
+			assert.deepStrictEqual(injectCodexMcpAuthTokens({
+				s: { url: 'https://mcp.eng.ms', http_headers: { authorization: 'Bearer stale', 'X-Test': 'v1' } },
+			}, tokens), {
+				s: { url: 'https://mcp.eng.ms', http_headers: { 'X-Test': 'v1', Authorization: 'Bearer tok-123' } },
+			});
 		});
 	});
 });

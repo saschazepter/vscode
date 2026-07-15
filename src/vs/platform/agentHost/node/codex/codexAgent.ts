@@ -716,14 +716,25 @@ export class CodexAgent extends Disposable implements IAgent {
 	private readonly _mcpInventory = new Map<string, ICodexMcpServerEntry>();
 	/**
 	 * OAuth bearer tokens acquired for auth-gated http MCP servers, keyed by
-	 * the server's {@link normalizeCodexMcpResourceUrl | normalized URL} (the
-	 * OAuth `resource`). Populated by {@link handleAuthenticationToken} after
-	 * the workbench completes the sign-in, then injected into the per-thread
-	 * `http_headers` by {@link _buildSessionMcpServers}. Process-global: a
-	 * token for a given server URL applies to every session/thread that uses
-	 * it (codex runs one shared app-server).
+	 * the server's {@link normalizeCodexMcpResourceUrl | normalized URL}.
+	 * Populated by {@link handleAuthenticationToken} after the workbench
+	 * completes the sign-in, then injected into the per-thread `http_headers`
+	 * by {@link _buildSessionMcpServers}. Process-global: a token for a given
+	 * server URL applies to every session/thread that uses it (codex runs one
+	 * shared app-server).
 	 */
 	private readonly _mcpAuthTokens = new Map<string, string>();
+	/**
+	 * Association from a normalized OAuth `resource` (what the workbench
+	 * authenticates) to the normalized MCP server URL(s) it unlocks. RFC 9728
+	 * discovery can return a `resource` that differs from the configured server
+	 * URL (e.g. root `https://host/` for a `https://host/mcp` endpoint), so the
+	 * token the workbench pushes back is keyed by the resource, not the server
+	 * URL. Recorded in {@link _surfaceMcpAuthRequired} at discovery time and
+	 * read by {@link handleAuthenticationToken} to route the token to the right
+	 * server(s).
+	 */
+	private readonly _mcpAuthServerUrlsByResource = new Map<string, Set<string>>();
 	private _githubToken: string | undefined;
 	private _connection: ConnectionState = { kind: 'idle' };
 	private _modelsRefreshPromise: Promise<void> | undefined;
@@ -789,50 +800,73 @@ export class CodexAgent extends Disposable implements IAgent {
 	/**
 	 * Receives a bearer token the workbench acquired for a protected resource
 	 * (the `authenticate` command is fanned out to every agent). If the
-	 * resource matches a configured auth-gated http MCP server, store the token
-	 * (so {@link _buildSessionMcpServers} injects it) and reconnect the affected
-	 * threads so codex picks it up. This is the codex end of the *same* OAuth
-	 * mechanism the Copilot agent uses: the workbench does the sign-in, the
-	 * agent injects the resulting bearer. Returns whether the token was
-	 * consumed by an MCP server (the GitHub agent token flows through
-	 * {@link authenticate} instead).
+	 * resource maps to one or more configured auth-gated http MCP servers
+	 * (via the association recorded at discovery time, or a direct URL match),
+	 * store the token per server URL (so {@link _buildSessionMcpServers} injects
+	 * it) and reconnect the affected threads so codex picks it up. This is the
+	 * codex end of the *same* OAuth mechanism the Copilot agent uses: the
+	 * workbench does the sign-in, the agent injects the resulting bearer.
+	 * Returns whether the token was consumed by an MCP server (the GitHub agent
+	 * token flows through {@link authenticate} instead).
 	 */
 	async handleAuthenticationToken(params: AuthenticateParams): Promise<boolean> {
-		const normalized = normalizeCodexMcpResourceUrl(params.resource);
-		if (normalized === undefined) {
+		const normalizedResource = normalizeCodexMcpResourceUrl(params.resource);
+		if (normalizedResource === undefined) {
 			return false;
 		}
-		// Only claim the token when it targets a currently-configured http MCP server.
-		const matchesConfigured = [...this._sessions.values()].some(session =>
-			[...this._httpMcpServerUrls(session).values()].includes(normalized),
-		) || Object.values(codexMcpServersFromConfig(this._configurationService.getRootValue(platformRootSchema, AgentHostMcpServersConfigKey)))
-			.some(server => server.url !== undefined && normalizeCodexMcpResourceUrl(server.url) === normalized);
-		if (!matchesConfigured) {
+		// The workbench authenticates the OAuth `resource`, which RFC 9728
+		// discovery may report as different from the configured server URL.
+		// Resolve the server URL(s) this resource unlocks: the association
+		// recorded at discovery time, plus a direct match when the resource IS
+		// a configured server URL (discovery returned the URL unchanged, or was
+		// skipped).
+		const serverUrls = new Set(this._mcpAuthServerUrlsByResource.get(normalizedResource) ?? []);
+		if (this._isConfiguredHttpServerUrl(normalizedResource)) {
+			serverUrls.add(normalizedResource);
+		}
+		if (serverUrls.size === 0) {
 			return false;
 		}
-		if (this._mcpAuthTokens.get(normalized) === params.token) {
+		let changed = false;
+		for (const serverUrl of serverUrls) {
+			if (this._mcpAuthTokens.get(serverUrl) !== params.token) {
+				this._mcpAuthTokens.set(serverUrl, params.token);
+				changed = true;
+			}
+		}
+		if (!changed) {
 			return true;
 		}
-		this._mcpAuthTokens.set(normalized, params.token);
 		this._logService.info(`[Codex] stored MCP auth token for ${params.resource}; reconnecting affected sessions`);
-		await this._reconnectSessionsForMcpAuth(normalized);
+		await this._reconnectSessionsForMcpAuth(serverUrls);
 		return true;
 	}
 
+	/** Whether `normalizedUrl` is a currently-configured http MCP server (root config or any session's client plugins). */
+	private _isConfiguredHttpServerUrl(normalizedUrl: string): boolean {
+		if (Object.values(codexMcpServersFromConfig(this._configurationService.getRootValue(platformRootSchema, AgentHostMcpServersConfigKey)))
+			.some(server => server.url !== undefined && normalizeCodexMcpResourceUrl(server.url) === normalizedUrl)) {
+			return true;
+		}
+		return [...this._sessions.values()].some(session =>
+			[...this._httpMcpServerUrls(session).values()].includes(normalizedUrl),
+		);
+	}
+
 	/**
-	 * Reconnects every materialized session whose merged MCP servers include the
-	 * newly-authenticated resource so codex re-reads `config.mcp_servers` with
-	 * the injected `Authorization` header. A thread that has not yet committed a
+	 * Reconnects every materialized session whose merged MCP servers include one
+	 * of `normalizedUrls` so codex re-reads `config.mcp_servers` with the
+	 * injected `Authorization` header. A thread that has not yet committed a
 	 * turn is restarted (`thread/start`, lossless); one with history is resumed
 	 * (`thread/resume` carries the same `config` field, loading history from the
 	 * rollout) on its next turn via {@link ICodexSession.needsResume}.
 	 */
-	private async _reconnectSessionsForMcpAuth(normalizedUrl: string): Promise<void> {
+	private async _reconnectSessionsForMcpAuth(normalizedUrls: ReadonlySet<string>): Promise<void> {
 		for (const session of this._sessions.values()) {
 			if (session.disposed || session.threadId === undefined) {
 				continue;
 			}
-			if (![...this._httpMcpServerUrls(session).values()].includes(normalizedUrl)) {
+			if (![...this._httpMcpServerUrls(session).values()].some(url => normalizedUrls.has(url))) {
 				continue;
 			}
 			if (!session.firstTurnSent) {
@@ -3778,10 +3812,14 @@ export class CodexAgent extends Disposable implements IAgent {
 		if (status === 'failed' && codexStartupErrorNeedsAuth(error)) {
 			const url = this._mcpServerUrlForName(name);
 			const normalized = url !== undefined ? normalizeCodexMcpResourceUrl(url) : undefined;
-			// Only offer sign-in when we know the http URL and don't already
-			// hold a token for it (a token in hand means we should be
-			// reconnecting, not re-prompting).
-			if (url !== undefined && normalized !== undefined && !this._mcpAuthTokens.has(normalized)) {
+			if (url !== undefined && normalized !== undefined) {
+				// A token we already injected was rejected (expired/revoked/
+				// insufficient scopes). Drop it so the user is re-prompted
+				// instead of getting stuck on a terminal error with no way to
+				// re-authenticate.
+				if (this._mcpAuthTokens.delete(normalized)) {
+					this._logService.info(`[Codex] MCP server '${name}' rejected the stored token; clearing it to allow re-authentication`);
+				}
 				void this._surfaceMcpAuthRequired(client, name, url, error);
 				return;
 			}
@@ -3831,6 +3869,16 @@ export class CodexAgent extends Disposable implements IAgent {
 		// Drop the result if the connection was replaced while discovering.
 		if (this._connection.kind === 'ready' && this._connection.client !== client) {
 			return;
+		}
+		// Record which server URL this OAuth resource unlocks: discovery can
+		// return a `resource` that differs from the configured server URL, and
+		// the token the workbench later pushes back is keyed by that resource.
+		const normalizedServer = normalizeCodexMcpResourceUrl(url);
+		const normalizedResource = normalizeCodexMcpResourceUrl(resource.resource) ?? normalizedServer;
+		if (normalizedServer !== undefined && normalizedResource !== undefined) {
+			const servers = this._mcpAuthServerUrlsByResource.get(normalizedResource) ?? new Set<string>();
+			servers.add(normalizedServer);
+			this._mcpAuthServerUrlsByResource.set(normalizedResource, servers);
 		}
 		this._logService.info(`[Codex] MCP server '${name}' requires authentication for ${url}`);
 		this._setMcpServerState(name, {

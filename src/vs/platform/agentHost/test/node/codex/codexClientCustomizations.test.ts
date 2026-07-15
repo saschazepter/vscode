@@ -97,7 +97,11 @@ suite('codexClientCustomizations', () => {
 		const plugins = [plugin('p', '/plugins/p', parsed({
 			skills: [skillDef('/plugins/p', 'b'), skillDef('/plugins/p', 'a')],
 		})), plugin('q', '/plugins/q', parsed({ skills: [skillDef('/plugins/q', 'c')] }))];
-		assert.deepStrictEqual(codexSkillRootsFromPlugins(plugins), ['/plugins/p/skills', '/plugins/q/skills']);
+		// The roots are native fsPaths (backslashes on Windows), so express the
+		// expectation with the same platform-aware transform rather than a
+		// hardcoded posix path.
+		const skillsRoot = (pluginDir: string) => URI.file(`${pluginDir}/skills`).fsPath;
+		assert.deepStrictEqual(codexSkillRootsFromPlugins(plugins), [skillsRoot('/plugins/p'), skillsRoot('/plugins/q')]);
 	});
 
 	test('removeClient drops a client and setEnabled reports whether it changed', () => {

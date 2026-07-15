@@ -192,38 +192,62 @@ export function isSupportedMcpServerConfiguration(value: unknown): value is IMcp
 	return false;
 }
 
-/** Ensures all env values are strings (codex's `env` is a `Map<string, string>`). */
-function toCodexStringEnv(env: Record<string, string | number | null>): Record<string, string> {
+/**
+ * Coerces a record's values to strings (codex's `env`/`http_headers` are
+ * `Map<string, string>`), dropping `null`/`undefined`. The root `mcpServers`
+ * config is user-authored and only loosely schema-validated, so a stray
+ * non-string (e.g. a numeric header value) is coerced here rather than passed
+ * through — an un-coerced value can make codex reject the whole per-thread
+ * config, disabling every server for the session.
+ */
+function toCodexStringRecord(record: Record<string, unknown> | undefined): Record<string, string> {
 	const result: Record<string, string> = {};
-	for (const [key, value] of Object.entries(env)) {
-		if (value !== null) {
+	if (!record) {
+		return result;
+	}
+	for (const [key, value] of Object.entries(record)) {
+		if (value !== null && value !== undefined) {
 			result[key] = String(value);
 		}
 	}
 	return result;
 }
 
-/** Converts one supported MCP server configuration into codex's JSON shape. */
+/** Coerces command args to a string array (codex's `args` is `Vec<String>`), dropping `null`/`undefined`. */
+function toCodexStringArray(values: readonly unknown[] | undefined): string[] {
+	if (!Array.isArray(values)) {
+		return [];
+	}
+	return values.filter(v => v !== null && v !== undefined).map(v => String(v));
+}
+
+/**
+ * Converts one supported MCP server configuration into codex's JSON shape.
+ * Optional fields (`args`, `env`, `cwd`, `headers`) come from user-authored
+ * config that the root schema does not deeply validate, so each is sanitized
+ * (coerced to the string shapes codex requires, dropping holes) rather than
+ * trusted, so a single malformed entry can't make codex reject the config.
+ */
 export function toCodexMcpServerJson(config: IMcpServerConfiguration): ICodexMcpServerConfigJson {
 	if (config.type === McpServerType.LOCAL) {
 		const out: ICodexMcpServerConfigJson = { command: config.command };
-		if (config.args && config.args.length > 0) {
-			out.args = [...config.args];
+		const args = toCodexStringArray(config.args);
+		if (args.length > 0) {
+			out.args = args;
 		}
-		if (config.env) {
-			const env = toCodexStringEnv(config.env);
-			if (Object.keys(env).length > 0) {
-				out.env = env;
-			}
+		const env = toCodexStringRecord(config.env);
+		if (Object.keys(env).length > 0) {
+			out.env = env;
 		}
-		if (config.cwd) {
+		if (typeof config.cwd === 'string') {
 			out.cwd = config.cwd;
 		}
 		return out;
 	}
 	const out: ICodexMcpServerConfigJson = { url: config.url };
-	if (config.headers && Object.keys(config.headers).length > 0) {
-		out.http_headers = { ...config.headers };
+	const headers = toCodexStringRecord(config.headers);
+	if (Object.keys(headers).length > 0) {
+		out.http_headers = headers;
 	}
 	return out;
 }
@@ -294,8 +318,10 @@ export function codexStartupErrorNeedsAuth(error: string | null | undefined): bo
  * Returns a copy of `servers` with `Authorization: Bearer <token>` injected
  * into the `http_headers` of every http server whose (normalized) URL has a
  * token in `tokensByNormalizedUrl`. stdio servers and servers without a token
- * are passed through unchanged. Any existing `Authorization` header is
- * overwritten with the freshly acquired token.
+ * are passed through unchanged. Any existing authorization header is removed
+ * first -- case-insensitively, since HTTP header names are case-insensitive and
+ * a configured lowercase `authorization` would otherwise coexist with the
+ * injected value and leave a stale credential in the payload.
  */
 export function injectCodexMcpAuthTokens(
 	servers: Record<string, ICodexMcpServerConfigJson>,
@@ -309,8 +335,21 @@ export function injectCodexMcpAuthTokens(
 		const normalized = server.url !== undefined ? normalizeCodexMcpResourceUrl(server.url) : undefined;
 		const token = normalized !== undefined ? tokensByNormalizedUrl.get(normalized) : undefined;
 		out[name] = token !== undefined
-			? { ...server, http_headers: { ...server.http_headers, Authorization: `Bearer ${token}` } }
+			? { ...server, http_headers: { ...withoutAuthorizationHeaders(server.http_headers), Authorization: `Bearer ${token}` } }
 			: server;
+	}
+	return out;
+}
+
+/** Drops any header whose name is `authorization` (case-insensitive). */
+function withoutAuthorizationHeaders(headers: Record<string, string> | undefined): Record<string, string> {
+	const out: Record<string, string> = {};
+	if (headers) {
+		for (const [key, value] of Object.entries(headers)) {
+			if (key.toLowerCase() !== 'authorization') {
+				out[key] = value;
+			}
+		}
 	}
 	return out;
 }
