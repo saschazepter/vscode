@@ -8,11 +8,11 @@ import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
 import { IWorkspace, toWorkspaceFolder } from '../../../../../platform/workspace/common/workspace.js';
-import { ChatConfiguration, getComputedDefaultSessionType, getDefaultNewChatSessionType, isEditorLocalAgentEnabled, isRememberedSessionTypeUsable, isVisibleEditorChatSessionType, recordUserSelectedSessionType } from '../../common/constants.js';
+import { ChatConfiguration, getComputedDefaultSessionType, getDefaultNewChatSessionType, isEditorLocalAgentEnabled, isRememberedSessionTypeUsable, isVisibleEditorChatSessionType, recordUserSelectedSessionType, resolveDefaultNewChatSessionType } from '../../common/constants.js';
 import { localChatSessionType, SessionType, IChatSessionsExtensionPoint } from '../../common/chatSessionsService.js';
 import { MockChatSessionsService } from './mockChatSessionsService.js';
 import { TestStorageService } from '../../../../test/common/workbenchTestServices.js';
-import { getRememberedSessionType } from '../../common/chatSessionTypePreference.js';
+import { getRememberedSessionType, hasPreferredCopilotHarness } from '../../common/chatSessionTypePreference.js';
 
 suite('ChatConfiguration defaults', () => {
 
@@ -53,10 +53,9 @@ suite('ChatConfiguration defaults', () => {
 		});
 	});
 
-	test('editor default returns agent host Copilot when local is disabled and copilotAh is configured', () => {
+	test('preferCopilotHarness does not change the computed default or local visibility', () => {
 		const configurationService = new TestConfigurationService({
-			[ChatConfiguration.EditorLocalAgentEnabled]: false,
-			[ChatConfiguration.EditorDefaultProvider]: 'copilotAh',
+			[ChatConfiguration.EditorPreferCopilotHarness]: true,
 		});
 		const chatSessionsService = createChatSessionsService(SessionType.AgentHostCopilot);
 		const storageService = disposables.add(new TestStorageService());
@@ -66,35 +65,15 @@ suite('ChatConfiguration defaults', () => {
 			rememberedAware: getDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace),
 			localVisible: isVisibleEditorChatSessionType(localChatSessionType, configurationService, chatSessionsService, localWorkspace),
 		}, {
-			computed: SessionType.AgentHostCopilot,
-			rememberedAware: SessionType.AgentHostCopilot,
-			localVisible: false,
-		});
-	});
-
-	test('editor default keeps configured agent host Copilot before contribution registers', () => {
-		const configurationService = new TestConfigurationService({
-			[ChatConfiguration.EditorLocalAgentEnabled]: false,
-			[ChatConfiguration.EditorDefaultProvider]: 'copilotAh',
-		});
-		const chatSessionsService = createChatSessionsService(SessionType.CopilotCLI);
-		const storageService = disposables.add(new TestStorageService());
-
-		assert.deepStrictEqual({
-			computed: getComputedDefaultSessionType(configurationService, chatSessionsService, localWorkspace),
-			rememberedAware: getDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace),
-			localVisible: isVisibleEditorChatSessionType(localChatSessionType, configurationService, chatSessionsService, localWorkspace),
-		}, {
-			computed: SessionType.AgentHostCopilot,
-			rememberedAware: SessionType.AgentHostCopilot,
-			localVisible: false,
+			computed: localChatSessionType,
+			rememberedAware: localChatSessionType,
+			localVisible: true,
 		});
 	});
 
 	test('editor default skips hidden extension host Copilot CLI', () => {
 		const configurationService = new TestConfigurationService({
 			[ChatConfiguration.EditorLocalAgentEnabled]: false,
-			[ChatConfiguration.EditorDefaultProvider]: 'copilotEh',
 			[ChatConfiguration.CopilotCliHideExtensionHostEditor]: true,
 		});
 		const chatSessionsService = createChatSessionsService(SessionType.CopilotCLI, SessionType.AgentHostCopilot);
@@ -129,8 +108,10 @@ suite('ChatConfiguration defaults', () => {
 		});
 	});
 
-	test('remembered explicit selection wins for new sessions', () => {
-		const configurationService = new TestConfigurationService();
+	test('remembered non-local selection wins over the one-time swap', () => {
+		const configurationService = new TestConfigurationService({
+			[ChatConfiguration.EditorPreferCopilotHarness]: true,
+		});
 		const chatSessionsService = createChatSessionsService(SessionType.AgentHostCopilot, SessionType.AgentHostClaude);
 		const storageService = disposables.add(new TestStorageService());
 
@@ -139,7 +120,7 @@ suite('ChatConfiguration defaults', () => {
 		assert.deepStrictEqual({
 			computed: getComputedDefaultSessionType(configurationService, chatSessionsService, localWorkspace),
 			remembered: getRememberedSessionType(storageService),
-			rememberedAware: getDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace),
+			rememberedAware: resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, true, { currentSessionType: localChatSessionType }),
 		}, {
 			computed: localChatSessionType,
 			remembered: SessionType.AgentHostClaude,
@@ -183,25 +164,52 @@ suite('ChatConfiguration defaults', () => {
 		});
 	});
 
-	test('selecting computed default clears remembered selection', () => {
+	test('preferCopilotHarness swaps local to Copilot once, only when the agent host is enabled', () => {
 		const configurationService = new TestConfigurationService({
-			[ChatConfiguration.EditorLocalAgentEnabled]: false,
-			[ChatConfiguration.EditorDefaultProvider]: 'copilotAh',
+			[ChatConfiguration.EditorPreferCopilotHarness]: true,
 		});
 		const chatSessionsService = createChatSessionsService(SessionType.AgentHostCopilot, SessionType.AgentHostClaude);
 		const storageService = disposables.add(new TestStorageService());
 
+		// Not swapped while the agent host is disabled, and the marker stays unset.
+		const whileAgentHostDisabled = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, false, { currentSessionType: localChatSessionType });
+		const markerAfterDisabled = hasPreferredCopilotHarness(storageService);
+
+		// First swap once the agent host is enabled, then never again (marker set).
+		const firstNewSession = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, true, { currentSessionType: localChatSessionType });
+		const afterReturningToLocal = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, true, { currentSessionType: localChatSessionType });
+
+		assert.deepStrictEqual({
+			whileAgentHostDisabled,
+			markerAfterDisabled,
+			firstNewSession,
+			afterReturningToLocal,
+			markerApplied: hasPreferredCopilotHarness(storageService),
+		}, {
+			whileAgentHostDisabled: localChatSessionType,
+			markerAfterDisabled: false,
+			firstNewSession: SessionType.AgentHostCopilot,
+			afterReturningToLocal: localChatSessionType,
+			markerApplied: true,
+		});
+	});
+
+	test('selecting computed default clears remembered selection', () => {
+		const configurationService = new TestConfigurationService();
+		const chatSessionsService = createChatSessionsService(SessionType.AgentHostCopilot, SessionType.AgentHostClaude);
+		const storageService = disposables.add(new TestStorageService());
+
 		recordUserSelectedSessionType(storageService, configurationService, chatSessionsService, localWorkspace, SessionType.AgentHostClaude);
-		recordUserSelectedSessionType(storageService, configurationService, chatSessionsService, localWorkspace, SessionType.AgentHostCopilot);
+		recordUserSelectedSessionType(storageService, configurationService, chatSessionsService, localWorkspace, localChatSessionType);
 
 		assert.deepStrictEqual({
 			computed: getComputedDefaultSessionType(configurationService, chatSessionsService, localWorkspace),
 			remembered: getRememberedSessionType(storageService),
 			rememberedAware: getDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace),
 		}, {
-			computed: SessionType.AgentHostCopilot,
+			computed: localChatSessionType,
 			remembered: undefined,
-			rememberedAware: SessionType.AgentHostCopilot,
+			rememberedAware: localChatSessionType,
 		});
 	});
 
