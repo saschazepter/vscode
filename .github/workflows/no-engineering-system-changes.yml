@@ -64,16 +64,29 @@ jobs:
           CHANGED_LINES=$(echo "$PKG_DIFF" | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | wc -l)
           DISTRO_LINES=$(echo "$PKG_DIFF" | grep -cE '^[+-][[:space:]]*"distro"[[:space:]]*:' || true)
           VERSION_LINES=$(echo "$PKG_DIFF" | grep -cE '^[+-][[:space:]]*"version"[[:space:]]*:' || true)
-          COPILOT_LINES=$(echo "$PKG_DIFF" | grep -cE '^[+-][[:space:]]*"@github/copilot"[[:space:]]*:' || true)
-          COPILOT_SDK_LINES=$(echo "$PKG_DIFF" | grep -cE '^[+-][[:space:]]*"@github/copilot-sdk"[[:space:]]*:' || true)
 
           if [[ "$COPILOT_DEPENDENCIES" == "true" ]]; then
-            REMOTE_PKG_DIFF=$(echo "$DIFF" | awk '/^diff --git a\/remote\/package\.json b\/remote\/package\.json/{p=1} p && /^diff --git / && !/^diff --git a\/remote\/package\.json/{exit} p{print}')
-            REMOTE_CHANGED_LINES=$(echo "$REMOTE_PKG_DIFF" | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | wc -l)
-            REMOTE_COPILOT_LINES=$(echo "$REMOTE_PKG_DIFF" | grep -cE '^[+-][[:space:]]*"@github/copilot"[[:space:]]*:' || true)
-            REMOTE_COPILOT_SDK_LINES=$(echo "$REMOTE_PKG_DIFF" | grep -cE '^[+-][[:space:]]*"@github/copilot-sdk"[[:space:]]*:' || true)
+            validate_copilot_dependencies() {
+              local path="$1"
+              local base_package head_package
+              base_package=$(gh api -H "Accept: application/vnd.github.raw+json" "repos/${{ github.repository }}/contents/$path?ref=${{ github.event.pull_request.base.sha }}") || return 1
+              head_package=$(gh api -H "Accept: application/vnd.github.raw+json" "repos/${{ github.repository }}/contents/$path?ref=${{ github.event.pull_request.head.sha }}") || return 1
 
-            if [[ "$CHANGED_LINES" -gt 0 && "$CHANGED_LINES" -eq $((COPILOT_LINES + COPILOT_SDK_LINES)) && ("$COPILOT_LINES" -eq 0 || "$COPILOT_LINES" -eq 2) && ("$COPILOT_SDK_LINES" -eq 0 || "$COPILOT_SDK_LINES" -eq 2) && "$REMOTE_CHANGED_LINES" -gt 0 && "$REMOTE_CHANGED_LINES" -eq $((REMOTE_COPILOT_LINES + REMOTE_COPILOT_SDK_LINES)) && ("$REMOTE_COPILOT_LINES" -eq 0 || "$REMOTE_COPILOT_LINES" -eq 2) && ("$REMOTE_COPILOT_SDK_LINES" -eq 0 || "$REMOTE_COPILOT_SDK_LINES" -eq 2) ]]; then
+              jq -n -e --argjson base "$base_package" --argjson head "$head_package" '
+                def without_copilot_dependencies:
+                  del(.dependencies["@github/copilot"], .dependencies["@github/copilot-sdk"]);
+                def valid_dependency_change($name):
+                  $base.dependencies[$name] == $head.dependencies[$name]
+                  or (($base.dependencies[$name] | type) == "string" and ($head.dependencies[$name] | type) == "string");
+                ($base | without_copilot_dependencies) == ($head | without_copilot_dependencies)
+                and valid_dependency_change("@github/copilot")
+                and valid_dependency_change("@github/copilot-sdk")
+                and ($base.dependencies["@github/copilot"] != $head.dependencies["@github/copilot"]
+                  or $base.dependencies["@github/copilot-sdk"] != $head.dependencies["@github/copilot-sdk"])
+              ' > /dev/null
+            }
+
+            if validate_copilot_dependencies package.json && validate_copilot_dependencies remote/package.json; then
               echo "Copilot dependency update in root and remote packages by bot — allowing"
               echo "allowed=true" >> $GITHUB_OUTPUT
             else
