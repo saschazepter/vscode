@@ -7,7 +7,7 @@ import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { CodeEditorWidget } from '../../../../editor/browser/widget/codeEditor/codeEditorWidget.js';
 import { CompletionContext, CompletionItem, CompletionItemKind } from '../../../../editor/common/languages.js';
-import { IModelDeltaDecoration, ITextModel } from '../../../../editor/common/model.js';
+import { IModelDeltaDecoration, InjectedTextCursorStops, ITextModel } from '../../../../editor/common/model.js';
 import { IEditorDecorationsCollection } from '../../../../editor/common/editorCommon.js';
 import { Position } from '../../../../editor/common/core/position.js';
 import { Range } from '../../../../editor/common/core/range.js';
@@ -162,8 +162,10 @@ export class SlashCommandHandler extends Disposable {
 		const model = this._editor.getModel();
 		const value = model?.getValue() ?? '';
 		const match = value.match(/^\/([\w\p{L}\d_\-\.:]+)\s?/u);
+		const activeSession = this.sessionsService.activeSession.get();
 
-		if (!match) {
+		// Agent-host sessions should not get decorations as this class is only for use with Local Agent Harness and Copilot Chat Extension.
+		if (!match || (activeSession && isAgentHostTarget(getChatSessionType(activeSession.resource)))) {
 			this._commandDecorations.clear();
 			this._placeholderDecorations.clear();
 			return;
@@ -197,7 +199,7 @@ export class SlashCommandHandler extends Disposable {
 					// The range is collapsed (nothing follows the command), so injected
 					// text only renders with `showIfCollapsed`.
 					showIfCollapsed: true,
-					after: { content: detail, inlineClassName: SlashCommandHandler._placeholderClassName },
+					after: { content: detail, inlineClassName: SlashCommandHandler._placeholderClassName, cursorStops: InjectedTextCursorStops.None },
 				},
 			} satisfies IModelDeltaDecoration]);
 		} else {
