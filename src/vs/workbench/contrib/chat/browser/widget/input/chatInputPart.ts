@@ -1115,11 +1115,11 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	 * existing automation) pass `false` so they don't pollute the regular
 	 * chat input's persisted selection.
 	 */
-	public switchModelByIdentifier(identifier: string, storeSelection: boolean = true): boolean {
+	public switchModelByIdentifier(identifier: string, storeSelection: boolean = true, isUserAction: boolean = false): boolean {
 		const models = this.getModels();
 		const model = models.find(m => m.identifier === identifier);
 		if (model) {
-			this.setCurrentLanguageModel(model, false, storeSelection);
+			this.setCurrentLanguageModel(model, isUserAction, storeSelection);
 			return true;
 		}
 		return false;
@@ -1951,7 +1951,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		return this.options.sessionTypePickerDelegate?.getActiveSessionProvider?.();
 	}
 
-	private getNotificationSessionType(): string | undefined {
+	private getNotificationModelTargetChatSessionType(): string | undefined {
 		return this._pendingDelegationTarget ?? this._currentSessionType ?? this.getCurrentSessionType();
 	}
 
@@ -2917,7 +2917,11 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			// this fallback, `_currentSessionType` stays undefined until
 			// the user creates a session and `sessionTypes`-gated
 			// notifications never render.
-			this._notificationWidget.value = this.instantiationService.createInstance(ChatInputNotificationWidget, () => this.getNotificationSessionType());
+			this._notificationWidget.value = this.instantiationService.createInstance(ChatInputNotificationWidget, {
+				getModelTargetChatSessionType: () => this.getNotificationModelTargetChatSessionType(),
+				openModelPicker: () => this.openModelPicker(),
+				switchToModel: modelIdentifier => this.switchModelByIdentifier(modelIdentifier, /* storeSelection */ true, /* isUserAction */ true),
+			});
 			this.chatInputNotificationContainer.appendChild(this._notificationWidget.value.domNode);
 		}
 	}
