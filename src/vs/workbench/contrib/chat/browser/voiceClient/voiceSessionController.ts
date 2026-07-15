@@ -1451,8 +1451,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					if (heardSessionId && e.transcript) {
 						const heard = this._normalizeTranscript(e.transcript);
 						if (heard) {
-							this._lastHeardTranscriptById.set(heardSessionId, heard);
-							this._recentlyReadResponse.set(heardSessionId, { transcript: heard, at: Date.now() });
+							const heardKey = this._sessionKey(heardSessionId);
+							this._lastHeardTranscriptById.set(heardKey, heard);
+							this._recentlyReadResponse.set(heardKey, { transcript: heard, at: Date.now() });
 						}
 					}
 				}
@@ -2525,9 +2526,73 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 */
 	private _recordSessionAlias(uiResource: URI): void {
 		const backend = toAgentHostBackendSessionUri(uiResource);
-		if (backend) {
-			this._uiResourceByBackendId.set(backend.toString(), uiResource.toString());
+		if (!backend) {
+			return;
 		}
+		const from = backend.toString();
+		const to = uiResource.toString();
+		if (this._uiResourceByBackendId.get(from) === to) {
+			return;
+		}
+		this._uiResourceByBackendId.set(from, to);
+		// A newly-learned alias means any state stored under the bare backend id
+		// must move to the canonical UI key, so the two id spaces never diverge and
+		// no alias-aware iteration is needed anywhere else.
+		this._rekeySession(from, to);
+	}
+
+	/** Move every session-scoped entry (and the visible indicator) from a bare
+	 *  backend id to its canonical UI key once the alias becomes known. */
+	private _rekeySession(from: string, to: string): void {
+		if (from === to) {
+			return;
+		}
+		const rekeyMap = <V>(m: Map<string, V>): void => {
+			if (m.has(from)) {
+				if (!m.has(to)) {
+					m.set(to, m.get(from)!);
+				}
+				m.delete(from);
+			}
+		};
+		const rekeySet = (s: Set<string>): void => {
+			if (s.has(from)) {
+				s.delete(from);
+				s.add(to);
+			}
+		};
+		rekeyMap(this._deferredResponses);
+		rekeyMap(this._pendingResponseSummaries);
+		rekeyMap(this._lastNarratedText);
+		rekeyMap(this._lastHeardTranscriptById);
+		rekeyMap(this._recentlyReadResponse);
+		rekeyMap(this._lastResponseSummaryById);
+		rekeyMap(this._pendingNarrationRetries);
+		rekeySet(this._confirmationPendingSessions);
+		rekeySet(this._liveReplyKeys);
+		rekeySet(this._sessionsAwaitingResponseSummary);
+		rekeySet(this._pendingIdleNarration);
+		this._markPendingResponse(from, false);
+		if (this._pendingOwned(to)) {
+			this._markPendingResponse(to, true);
+		}
+	}
+
+	/**
+	 * The single canonical key for a session: the UI agent-host resource when the
+	 * backend tagged it with the bare backend id, else the id unchanged. Every
+	 * session-scoped collection is keyed by this, so the two id spaces never
+	 * diverge and ownership checks are plain O(1) map/set lookups.
+	 */
+	private _sessionKey(id: string): string {
+		return this._uiResourceByBackendId.get(id) ?? id;
+	}
+
+	/** Whether any of the three indicator owners still holds this canonical key. */
+	private _pendingOwned(key: string): boolean {
+		return this._confirmationPendingSessions.has(key)
+			|| this._deferredResponses.has(key)
+			|| this._pendingResponseSummaries.has(key);
 	}
 
 	/**
@@ -2644,11 +2709,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// stored summary is the authoritative, complete text - it must still be
 		// narrated unless its own transcript was among those just played.
 		let narratable = this._currentNarratable(resource);
-		const pendingKey = this._matchPendingSummaryKey(key);
-		const pendingSummary = pendingKey ? this._pendingResponseSummaries.get(pendingKey) : undefined;
+		const sessionKey = this._sessionKey(key);
+		const pendingSummary = this._pendingResponseSummaries.get(sessionKey);
 		const pendingSummaryFlushed = !!pendingSummary
 			&& flushResult.finalTranscripts.includes(this._normalizeTranscript(pendingSummary));
-		this.logService.trace(`[voice] activate shown=${key.slice(-32)} pendingKey=${pendingKey ? pendingKey.slice(-32) : '<none>'} narratable=${narratable?.kind ?? '<none>'} flushedFinal=${flushResult.finalTranscripts.length} pendingFlushed=${pendingSummaryFlushed}`);
+		this.logService.trace(`[voice] activate shown=${key.slice(-32)} pendingKey=${this._pendingResponseSummaries.has(sessionKey) ? sessionKey.slice(-32) : '<none>'} narratable=${narratable?.kind ?? '<none>'} flushedFinal=${flushResult.finalTranscripts.length} pendingFlushed=${pendingSummaryFlushed}`);
 		// Fall back to the stored summary (the source of the pending indicator)
 		// when the model isn't resident to surface the completed reply - but only
 		// if that exact summary wasn't just flushed as audio (else it'd read twice).
@@ -2665,7 +2730,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			const wasJustPlayed = narratable.kind === 'response'
 				&& flushResult.finalTranscripts.includes(this._normalizeTranscript(narratable.text));
 			if (wasJustPlayed) {
-				this._lastNarratedText.set(key, narratable.text);
+				this._lastNarratedText.set(sessionKey, narratable.text);
 				handledResponse = true;
 			} else {
 				// Narrate a fresh item for the now-shown session. _narrate exits
@@ -2693,7 +2758,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// a later focus/state event can retry). Mirrors how the confirmation
 		// indicator is cleared on focus (see _clearConfirmationIndicator).
 		if (handledResponse) {
-			this._clearPendingResponse(pendingKey ?? key);
+			this._clearPendingResponse(sessionKey);
 		}
 		this._sendContext();
 		this.voiceClientService.flushSessionContext();
@@ -2704,13 +2769,20 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (!text) {
 			return false;
 		}
-		if (this._getLastNarratedText(sessionId) === text) {
+		// Persistent exactly-once dedup applies only to completed responses: a
+		// response is immutable content, so re-reading the same text on focus is
+		// undesirable. A confirmation is current actionable state - two separate
+		// tools can legitimately raise identical prompts ("Allow this command?"),
+		// and each must be narrated, so confirmations are never suppressed here.
+		if (kind === 'response' && this._getLastNarratedText(sessionId) === text) {
 			return false;
 		}
-		// A request for this exact text is already in flight (its audio hasn't
-		// finalized yet); don't re-request or we'd narrate it twice.
+		// A request for this exact text+kind is already in flight (its audio hasn't
+		// finalized yet); don't re-request or we'd narrate it twice. Match on kind
+		// too so an in-flight response can't suppress a same-text confirmation.
+		const sessionKey = this._sessionKey(sessionId);
 		for (const s of this._pendingSolicitedNarrations.values()) {
-			if (s.text === text && this._isSameSession(s.sessionId, sessionId)) {
+			if (s.kind === kind && s.text === text && this._sessionKey(s.sessionId) === sessionKey) {
 				return false;
 			}
 		}
@@ -2769,12 +2841,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 		clearTimeout(solicited.timer);
 		this._pendingSolicitedNarrations.delete(narrationId);
-		this._lastNarratedText.set(solicited.sessionId, solicited.text);
+		// Only responses populate the persistent text dedup (and own the pending
+		// indicator). A confirmation is transient actionable state that must be
+		// re-narratable, so heard confirmations leave _lastNarratedText untouched.
 		if (solicited.kind === 'response') {
-			const pendingKey = this._matchPendingSummaryKey(solicited.sessionId);
-			if (pendingKey) {
-				this._clearPendingResponse(pendingKey);
-			}
+			const sessionKey = this._sessionKey(solicited.sessionId);
+			this._lastNarratedText.set(sessionKey, solicited.text);
+			this._clearPendingResponse(sessionKey);
 		}
 	}
 
@@ -2901,9 +2974,8 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// a completed background reply / confirmation can be pending. Re-activate
 			// so any stranded buffer, pending summary, or pending confirmation
 			// resolves and is heard, rather than being silently stuck.
-			if (this._matchDeferredKey(definedKey)
-				|| !!this._matchPendingSummaryKey(definedKey)
-				|| this._hasAliasedKey(this._confirmationPendingSessions, definedKey)) {
+			const sessionKey = this._sessionKey(definedKey);
+			if (this._pendingOwned(sessionKey)) {
 				this.logService.trace(`[voice] re-pinned active session=${definedKey} has pending voice work; re-activating`);
 				this._activateShownSession(resource);
 			}
@@ -2970,44 +3042,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 	}
 
-	/** Alias-aware lookup of a stored pending-response summary key. The summary can
-	 *  be keyed by a different id (backend coding_session_id vs UI resource) than
-	 *  the one a focus/click passes, so match by {@link _isSameSession} - mirrors
-	 *  {@link _matchDeferredKey} for deferred audio. Returns the stored key. */
-	private _matchPendingSummaryKey(sessionId: string): string | undefined {
-		if (this._pendingResponseSummaries.has(sessionId)) {
-			return sessionId;
-		}
-		for (const candidate of this._pendingResponseSummaries.keys()) {
-			if (this._isSameSession(candidate, sessionId)) {
-				return candidate;
-			}
-		}
-		return undefined;
-	}
-
-	/** Alias-aware read of the last text narrated for a session (may be stored
-	 *  under either id space), used for exactly-once dedupe. */
+	/** Alias-aware read of the last text narrated for a session, used for
+	 *  exactly-once dedupe. */
 	private _getLastNarratedText(sessionId: string): string | undefined {
-		const exact = this._lastNarratedText.get(sessionId);
-		if (exact !== undefined) {
-			return exact;
-		}
-		for (const [candidate, text] of this._lastNarratedText) {
-			if (this._isSameSession(candidate, sessionId)) {
-				return text;
-			}
-		}
-		return undefined;
+		return this._lastNarratedText.get(this._sessionKey(sessionId));
 	}
 
-	/** Alias-aware clear of the last-narrated dedupe for a session (any id space). */
+	/** Clear the last-narrated dedupe for a session. */
 	private _clearLastNarratedText(sessionId: string): void {
-		for (const candidate of [...this._lastNarratedText.keys()]) {
-			if (this._isSameSession(candidate, sessionId)) {
-				this._lastNarratedText.delete(candidate);
-			}
-		}
+		this._lastNarratedText.delete(this._sessionKey(sessionId));
 	}
 
 	/** Whether a response for `sessionId` should defer: true unless it is the
@@ -3043,7 +3086,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * {@link _shouldDeferResponseStream} routes by that id instead.
 	 */
 	private _shouldDeferResponse(sessionId: string | undefined, isFirstChunk: boolean): boolean {
-		const key = sessionId ?? '';
+		const key = sessionId ? this._sessionKey(sessionId) : '';
 		if (isFirstChunk) {
 			// Untagged audio can't be attributed to a session — always play it.
 			if (!sessionId) {
@@ -3072,10 +3115,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	private _deferResponse(sessionId: string, audio: string, isFirstChunk: boolean, isFinal: boolean, transcript: string | undefined, responseId?: string): void {
-		let responses = this._deferredResponses.get(sessionId);
+		const key = this._sessionKey(sessionId);
+		let responses = this._deferredResponses.get(key);
 		if (!responses) {
 			responses = [];
-			this._deferredResponses.set(sessionId, responses);
+			this._deferredResponses.set(key, responses);
 		}
 		// A first chunk begins a NEW response (appended after any already buffered
 		// for this session, so all are kept and later played in order). A
@@ -3092,8 +3136,8 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		if (!response) {
 			response = { responseId, finalized: false, chunks: [] };
 			responses.push(response);
-			this._setPendingIndicatorForAliases(sessionId, true);
-			this.logService.trace(`[voice] deferring response for unfocused session=${sessionId} (buffered=${responses.length}); showing pending indicator`);
+			this._markPendingResponse(key, true);
+			this.logService.trace(`[voice] deferring response for unfocused session=${key} (buffered=${responses.length}); showing pending indicator`);
 		}
 		response.chunks.push({ audio, isFirstChunk, isFinal, transcript });
 		if (isFinal) {
@@ -3101,32 +3145,20 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 	}
 
-	/** Find the buffered-response key that corresponds to a now-shown session.
-	 *  The buffer is keyed by the id the backend tagged the response with, which
-	 *  is normally canonicalized to the UI resource on arrival - but if the
-	 *  backend→UI alias wasn't known yet, the buffer can be keyed by the bare
-	 *  backend id. Match, in order: exact string, alias-canonical (bare backend
-	 *  id → this UI resource), then structural URI equality (trivial
-	 *  serialization differences). Returns the matching buffer key, or undefined. */
+	/** Find the buffered-response key for a now-shown session. The buffer is keyed
+	 *  by the canonical session key ({@link _sessionKey}); a structural URI-equality
+	 *  fallback guards a trivial serialization difference between the backend's
+	 *  coding_session_id and the focused sessionResource. */
 	private _matchDeferredKey(sessionId: string): string | undefined {
-		if (this._deferredResponses.has(sessionId)) {
-			return sessionId;
+		const key = this._sessionKey(sessionId);
+		if (this._deferredResponses.has(key)) {
+			return key;
 		}
 		if (this._deferredResponses.size === 0) {
 			return undefined;
 		}
-		// Alias-aware: a buffer keyed by the bare backend id canonicalizes to this
-		// UI resource once the alias is known (recorded on focus / the sessions
-		// sweep), bridging the two id spaces even when they aren't URI-equal.
-		for (const candidate of this._deferredResponses.keys()) {
-			if (this._canonicalSessionId(candidate) === sessionId) {
-				return candidate;
-			}
-		}
-		// Structural URI equality: guards a trivial serialization difference
-		// between the backend's coding_session_id and the focused sessionResource.
 		let focusedUri: URI | undefined;
-		try { focusedUri = URI.parse(sessionId); } catch { focusedUri = undefined; }
+		try { focusedUri = URI.parse(key); } catch { focusedUri = undefined; }
 		if (focusedUri) {
 			for (const candidate of this._deferredResponses.keys()) {
 				try {
@@ -3336,126 +3368,69 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		const activeId = this._externalActiveSessionMode
 			? this._activeSessionShown
 			: this._getFocusedSessionId();
-		// Show the indicator for every non-active waiting session. Both the
-		// "is this the active session" and "already has an indicator" checks must
-		// be alias-aware: Agents-window sessions carry two equivalent ids (bare
-		// backend id vs UI agent-host resource), so an exact comparison would
-		// treat the just-cleared session as still-waiting-and-not-active and
-		// immediately re-add the indicator we cleared on focus.
+		const activeKey = activeId ? this._sessionKey(activeId) : undefined;
+		const waitingKeys = new Set<string>();
 		for (const sessionId of waitingSessionIds) {
-			if (this._isSameSession(sessionId, activeId)) {
-				// Now the active session - make sure any aliased entry is gone.
-				this._clearConfirmationIndicator(sessionId);
+			const key = this._sessionKey(sessionId);
+			waitingKeys.add(key);
+			if (key === activeKey) {
+				// Now the active session - make sure any entry is gone.
+				this._clearConfirmationIndicator(key);
 				continue;
 			}
-			if (!this._hasAliasedKey(this._confirmationPendingSessions, sessionId)) {
-				this._confirmationPendingSessions.add(sessionId);
-				this._setPendingIndicatorForAliases(sessionId, true);
+			if (!this._confirmationPendingSessions.has(key)) {
+				this._confirmationPendingSessions.add(key);
+				this._markPendingResponse(key, true);
 			}
 		}
 		// Clear it for sessions that are now active or no longer waiting.
-		for (const sessionId of [...this._confirmationPendingSessions]) {
-			const stillWaiting = [...waitingSessionIds].some(id => this._isSameSession(id, sessionId));
-			if (stillWaiting && !this._isSameSession(sessionId, activeId)) {
+		for (const key of [...this._confirmationPendingSessions]) {
+			if (waitingKeys.has(key) && key !== activeKey) {
 				continue;
 			}
-			this._clearConfirmationIndicator(sessionId);
+			this._clearConfirmationIndicator(key);
 		}
 	}
 
 	private _clearConfirmationIndicator(sessionId: string): void {
-		let deleted = false;
-		for (const key of [...this._confirmationPendingSessions]) {
-			if (this._isSameSession(key, sessionId)) {
-				this._confirmationPendingSessions.delete(key);
-				deleted = true;
-			}
-		}
-		if (deleted) {
-			this._maybeHideIndicator(sessionId);
+		const key = this._sessionKey(sessionId);
+		if (this._confirmationPendingSessions.delete(key)) {
+			this._maybeHideIndicator(key);
 		}
 	}
 
 	/** Drop a session's pending-response (completed-reply) indicator/summary. */
 	private _clearPendingResponse(sessionId: string): void {
-		let deleted = false;
-		for (const key of [...this._pendingResponseSummaries.keys()]) {
-			if (this._isSameSession(key, sessionId)) {
-				this._pendingResponseSummaries.delete(key);
-				deleted = true;
-			}
-		}
-		if (deleted) {
-			this._maybeHideIndicator(sessionId);
-		}
-	}
-
-	/** True when a set/map contains an id equal to `sessionId` under EITHER id
-	 *  space (bare backend id or UI agent-host resource). The indicator's three
-	 *  owners are keyed inconsistently across the two spaces, so ownership checks
-	 *  must be alias-aware or an indicator set under one key is never cleared by a
-	 *  lookup under the other. */
-	private _hasAliasedKey(collection: ReadonlySet<string> | ReadonlyMap<string, unknown>, sessionId: string): boolean {
-		if (collection.has(sessionId)) {
-			return true;
-		}
-		for (const candidate of collection.keys()) {
-			if (this._isSameSession(candidate, sessionId)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	/** Set the sessions-list indicator for EVERY id equivalent to `sessionId`
-	 *  (the id itself, its canonical UI resource, and any recorded backend<->UI
-	 *  alias pair), so an indicator turned on under one id space is reliably
-	 *  turned off - the visible state was potentially set under the other id. */
-	private _setPendingIndicatorForAliases(sessionId: string, pending: boolean): void {
-		const ids = new Set<string>([sessionId]);
-		const canonical = this._canonicalSessionId(sessionId);
-		if (canonical) {
-			ids.add(canonical);
-		}
-		for (const [backendId, uiId] of this._uiResourceByBackendId) {
-			if (this._isSameSession(backendId, sessionId) || this._isSameSession(uiId, sessionId)) {
-				ids.add(backendId);
-				ids.add(uiId);
-			}
-		}
-		for (const id of ids) {
-			this._markPendingResponse(id, pending);
+		const key = this._sessionKey(sessionId);
+		if (this._pendingResponseSummaries.delete(key)) {
+			this._maybeHideIndicator(key);
 		}
 	}
 
 	/** Hide the sessions-list indicator only when no owner still needs it. The
 	 *  same visible indicator is shared by three independent sources - an
 	 *  unfocused confirmation, buffered deferred audio, and a completed
-	 *  background reply - so it must stay visible until all are resolved. All
-	 *  three checks are alias-aware (see {@link _hasAliasedKey}), and the clear
-	 *  is applied across every equivalent id so it can't be stranded under a
-	 *  different id space than the one that showed it. */
+	 *  background reply - so it must stay visible until all are resolved. */
 	private _maybeHideIndicator(sessionId: string): void {
-		if (this._hasAliasedKey(this._confirmationPendingSessions, sessionId)
-			|| this._hasAliasedKey(this._deferredResponses, sessionId)
-			|| this._hasAliasedKey(this._pendingResponseSummaries, sessionId)) {
+		const key = this._sessionKey(sessionId);
+		if (this._pendingOwned(key)) {
 			return;
 		}
-		this._setPendingIndicatorForAliases(sessionId, false);
+		this._markPendingResponse(key, false);
 	}
 
 	private _clearDeferredResponses(): void {
-		for (const sessionId of this._deferredResponses.keys()) {
-			this._setPendingIndicatorForAliases(sessionId, false);
+		for (const key of this._deferredResponses.keys()) {
+			this._markPendingResponse(key, false);
 		}
 		this._deferredResponses.clear();
 		this._responseRoutes.clear();
-		for (const sessionId of this._confirmationPendingSessions) {
-			this._setPendingIndicatorForAliases(sessionId, false);
+		for (const key of this._confirmationPendingSessions) {
+			this._markPendingResponse(key, false);
 		}
 		this._confirmationPendingSessions.clear();
-		for (const sessionId of this._pendingResponseSummaries.keys()) {
-			this._setPendingIndicatorForAliases(sessionId, false);
+		for (const key of this._pendingResponseSummaries.keys()) {
+			this._markPendingResponse(key, false);
 		}
 		this._pendingResponseSummaries.clear();
 	}
@@ -3701,12 +3676,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 	/** React to a session reaching a narratable state. If it's the shown session, speak it now; a completed reply on a background session instead shows the sessions-list pending indicator and is read when focused. A new turn (`thinking`) clears both the dedup and any stale pending indicator. */
 	private _handleNarratableStateChange(sessionId: string, currentState: string, detail: string | undefined, lastResponseSummary: string | undefined, shownNow: string | undefined): void {
+		const sessionKey = this._sessionKey(sessionId);
 		if (currentState === 'thinking') {
-			this._clearLastNarratedText(sessionId);
+			this._clearLastNarratedText(sessionKey);
 			// A new turn supersedes any completed reply that was waiting to be
 			// read on focus - drop the stale pending-response indicator.
-			const pendingKey = this._matchPendingSummaryKey(sessionId) ?? sessionId;
-			this._clearPendingResponse(pendingKey);
+			this._clearPendingResponse(sessionKey);
 		}
 		if (!this._isSameSession(sessionId, shownNow)) {
 			// Background session. A completed reply must not play now: show the
@@ -3721,13 +3696,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				// new turn (thinking, above), so a genuinely new reply still shows
 				// the indicator; this only suppresses re-indicating an old reply
 				// resurfaced by a reconnect/poll state sync.
-				const alreadyRead = this._getLastNarratedText(sessionId) === lastResponseSummary;
-				const existingKey = this._matchPendingSummaryKey(sessionId);
-				const existingSummary = existingKey ? this._pendingResponseSummaries.get(existingKey) : undefined;
+				const alreadyRead = this._lastNarratedText.get(sessionKey) === lastResponseSummary;
+				const existingSummary = this._pendingResponseSummaries.get(sessionKey);
 				if (!alreadyRead && existingSummary !== lastResponseSummary) {
-					this._pendingResponseSummaries.set(existingKey ?? sessionId, lastResponseSummary);
-					this._setPendingIndicatorForAliases(sessionId, true);
-					this.logService.trace(`[voice] response completed for unfocused session=${sessionId.slice(-32)}; showing pending indicator`);
+					this._pendingResponseSummaries.set(sessionKey, lastResponseSummary);
+					this._markPendingResponse(sessionKey, true);
+					this.logService.trace(`[voice] response completed for unfocused session=${sessionKey.slice(-32)}; showing pending indicator`);
 				}
 			}
 			return;
@@ -3738,11 +3712,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// a freshly requested narration keeps the indicator until its audio
 			// finalizes (_markNarrationHeard clears it then), so a request that is
 			// accepted but never produces audio doesn't lose the reply.
-			const alreadyNarrated = this._getLastNarratedText(sessionId) === lastResponseSummary;
+			const alreadyNarrated = this._lastNarratedText.get(sessionKey) === lastResponseSummary;
 			this._narrate(sessionId, 'response', lastResponseSummary);
 			if (alreadyNarrated) {
-				const pendingKey = this._matchPendingSummaryKey(sessionId) ?? sessionId;
-				this._clearPendingResponse(pendingKey);
+				this._clearPendingResponse(sessionKey);
 			}
 		} else if (currentState === 'waiting_for_confirmation' && detail) {
 			this._narrate(sessionId, 'confirmation', detail);
