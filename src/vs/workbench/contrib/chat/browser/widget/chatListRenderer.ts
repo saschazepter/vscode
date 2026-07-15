@@ -254,6 +254,13 @@ export function shouldShowPillsSummaryForSettings(isComplete: boolean, isAgentHo
 	return isComplete && isAgentHostSession && isChatTurnStatusPillsEnabled(turnStatusPills);
 }
 
+export function shouldPinToolInvocationToThinking(state: IChatToolInvocation.StateKind, hasConfirmationMessages: boolean): boolean {
+	return state !== IChatToolInvocation.StateKind.WaitingForConfirmation
+		&& state !== IChatToolInvocation.StateKind.WaitingForPostApproval
+		&& state !== IChatToolInvocation.StateKind.WaitingForAuthentication
+		&& !hasConfirmationMessages;
+}
+
 const forceVerboseLayoutTracing = false
 	// || Boolean("TRUE") // causes a linter warning so that it cannot be pushed
 	;
@@ -1310,6 +1317,10 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			}
 		}
 
+		if (isWaitingForMcpServers(partsToRender)) {
+			return undefined;
+		}
+
 		const workingParts = getWorkingProgressRelevantParts(partsToRender);
 		const lastPart = findLastMeaningfulPart(workingParts);
 
@@ -2258,12 +2269,8 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			if (IChatToolInvocation.isStreaming(part)) {
 				return true;
 			}
-			// don't pin if waiting for confirmation or post-approval
 			const state = part.state.get();
-			if (state.type === IChatToolInvocation.StateKind.WaitingForConfirmation || state.type === IChatToolInvocation.StateKind.WaitingForPostApproval) {
-				return false;
-			}
-			return !IChatToolInvocation.getConfirmationMessages(part);
+			return shouldPinToolInvocationToThinking(state.type, !!IChatToolInvocation.getConfirmationMessages(part));
 		}
 
 		if (part.kind === 'toolInvocationSerialized') {
@@ -2588,7 +2595,9 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 			} else if (content.kind === 'mcpAuthenticationRequired') {
 				return this.instantiationService.createInstance(ChatMcpAuthenticationContentPart, content);
 			} else if (content.kind === 'mcpServersStartingSlow') {
-				return this.instantiationService.createInstance(ChatMcpServersStartingContentPart, content, undefined);
+				return this.instantiationService.createInstance(ChatMcpServersStartingContentPart, content, {
+					onDidFinishStarting: () => this.showWorkingProgressAfterMcp(context, templateData),
+				});
 			} else if (content.kind === 'disabledClaudeHooks') {
 				return this.renderDisabledClaudeHooks(content, context);
 			} else if (content.kind === 'thinking') {
@@ -2612,6 +2621,23 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				hasSameContent: (other => content.kind === other.kind),
 			};
 		}
+	}
+
+	private showWorkingProgressAfterMcp(context: IChatContentPartRenderContext, templateData: IChatListItemTemplate): void {
+		const originalElement = context.element;
+		const originalRenderedParts = templateData.renderedParts;
+		queueMicrotask(() => {
+			if (!isResponseVM(originalElement) || templateData.currentElement !== originalElement || originalElement.isComplete || originalElement.isCanceled) {
+				return;
+			}
+
+			if (!originalRenderedParts || templateData.renderedParts !== originalRenderedParts || originalRenderedParts.some(part => part instanceof ChatWorkingProgressContentPart)) {
+				return;
+			}
+
+			this.renderChatResponseBasic(originalElement, context.elementIndex, templateData);
+			this.fireItemHeightChange(templateData);
+		});
 	}
 
 	override dispose(): void {
@@ -3776,6 +3802,10 @@ export function getWorkingProgressRelevantParts(parts: readonly IChatRendererCon
 		}
 		return part.kind !== 'markdownContent' || !extractSubAgentInvocationIdFromText(part.content.value);
 	});
+}
+
+export function isWaitingForMcpServers(parts: readonly IChatRendererContent[]): boolean {
+	return parts.some(part => part.kind === 'mcpServersStartingSlow' && part.servers.get().length > 0);
 }
 
 function findLastMeaningfulPart(parts: readonly IChatRendererContent[]): IChatRendererContent | undefined {

@@ -4,11 +4,12 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { observableValue } from '../../../../../../base/common/observable.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { buildPlanReviewProgressContent, getWorkingProgressRelevantParts, shouldCreateGroupedThinkingPart, shouldHideChatUserIdentity, shouldRenderInitialProgressiveContentImmediately, shouldScheduleInitialHeightChange, shouldShowFileChangesSummaryForSettings, shouldShowPillsSummaryForSettings, shouldStartNewCollapsedThinkingGroup } from '../../../browser/widget/chatListRenderer.js';
+import { buildPlanReviewProgressContent, getWorkingProgressRelevantParts, isWaitingForMcpServers, shouldCreateGroupedThinkingPart, shouldHideChatUserIdentity, shouldPinToolInvocationToThinking, shouldRenderInitialProgressiveContentImmediately, shouldScheduleInitialHeightChange, shouldShowFileChangesSummaryForSettings, shouldShowPillsSummaryForSettings, shouldStartNewCollapsedThinkingGroup } from '../../../browser/widget/chatListRenderer.js';
 import { isChatTurnStatusPillsEnabled } from '../../../browser/widget/chatTurnPills.js';
-import { IChatToolInvocationSerialized, ToolConfirmKind } from '../../../common/chatService/chatService.js';
+import { IChatMcpServersStartingSlow, IChatToolInvocation, IChatToolInvocationSerialized, ToolConfirmKind } from '../../../common/chatService/chatService.js';
 import { CollapsedToolsDisplayMode, ThinkingDisplayMode } from '../../../common/constants.js';
 import { IChatRendererContent } from '../../../common/model/chatViewModel.js';
 import { ToolDataSource } from '../../../common/tools/languageModelToolsService.js';
@@ -123,6 +124,24 @@ suite('ChatListRenderer', () => {
 		});
 	});
 
+	suite('shouldPinToolInvocationToThinking', () => {
+		test('keeps tool invocations requiring user input outside Thinking', () => {
+			assert.deepStrictEqual({
+				executionConfirmation: shouldPinToolInvocationToThinking(IChatToolInvocation.StateKind.WaitingForConfirmation, false),
+				resultApproval: shouldPinToolInvocationToThinking(IChatToolInvocation.StateKind.WaitingForPostApproval, false),
+				authentication: shouldPinToolInvocationToThinking(IChatToolInvocation.StateKind.WaitingForAuthentication, false),
+				executingWithConfirmation: shouldPinToolInvocationToThinking(IChatToolInvocation.StateKind.Executing, true),
+				executingWithoutConfirmation: shouldPinToolInvocationToThinking(IChatToolInvocation.StateKind.Executing, false),
+			}, {
+				executionConfirmation: false,
+				resultApproval: false,
+				authentication: false,
+				executingWithConfirmation: false,
+				executingWithoutConfirmation: true,
+			});
+		});
+	});
+
 	suite('shouldHideChatUserIdentity', () => {
 		test('hides local Copilot and Agent Host Copilot response identity', () => {
 			assert.deepStrictEqual([
@@ -196,6 +215,21 @@ suite('ChatListRenderer', () => {
 		];
 
 		assert.deepStrictEqual(getWorkingProgressRelevantParts(parts).map(part => part.kind), ['references']);
+	});
+
+	test('working progress is hidden while MCP servers are starting', () => {
+		const servers = observableValue('servers', [{ id: 'a', name: 'alpha' }]);
+		const part: IChatMcpServersStartingSlow = {
+			kind: 'mcpServersStartingSlow',
+			sessionResource: URI.parse('chat-session://test/session1'),
+			servers,
+		};
+
+		const whileStarting = isWaitingForMcpServers([part]);
+		servers.set([], undefined);
+		const afterStarting = isWaitingForMcpServers([part]);
+
+		assert.deepStrictEqual({ whileStarting, afterStarting }, { whileStarting: true, afterStarting: false });
 	});
 
 });

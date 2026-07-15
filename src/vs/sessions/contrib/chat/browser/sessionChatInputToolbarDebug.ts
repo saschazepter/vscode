@@ -72,6 +72,14 @@ export function weightedRandomDebugIncrement(first = Math.random(), second = Mat
 	return Math.min(Math.floor(first * 16), Math.floor(second * 16));
 }
 
+export function isNonNegativeIntegerInput(raw: string): boolean {
+	if (raw.trim().length === 0) {
+		return false;
+	}
+	const parsed = Number(raw);
+	return Number.isInteger(parsed) && parsed >= 0;
+}
+
 class SessionChatPillsDebugService extends Disposable implements ISessionChatPillsDebugService {
 
 	declare readonly _serviceBrand: undefined;
@@ -268,8 +276,7 @@ class SessionChatPillsDebugService extends Disposable implements ISessionChatPil
 			flexibleMaxHeight: 100,
 			validationOptions: numeric ? {
 				validation: raw => {
-					const parsed = Number(raw);
-					return Number.isInteger(parsed) && parsed >= 0
+					return isNonNegativeIntegerInput(raw)
 						? null
 						: { content: localize('sessions.debug.chatPills.nonNegativeInteger', "Enter a whole number greater than or equal to 0."), type: MessageType.ERROR };
 				},

@@ -19,7 +19,7 @@ import { isIChatSessionFileChange2 } from '../../../../workbench/contrib/chat/co
 import { ChatTurnPillsWidget, diffStatsEqual, EMPTY_DIFF_STATS, IChatTurnPillsModel, IDiffStats, IPreviewFile, observeTurnStatusPillsEnabled, openChatPreviewFile, previewFilesEqual, previewKind } from '../../../../workbench/contrib/chat/browser/widget/chatTurnPills.js';
 import { isAgentHostProviderId } from '../../../common/agentHostSessionsProvider.js';
 import { ISessionsService } from '../../../services/sessions/browser/sessionsService.js';
-import { IChat, SessionStatus } from '../../../services/sessions/common/session.js';
+import { IChat, isActiveSessionStatus } from '../../../services/sessions/common/session.js';
 import { IActiveSession } from '../../../services/sessions/common/sessionsManagement.js';
 import { LastTurnChangesMultiDiffSourceResolver } from './lastTurnChangesMultiDiffSourceResolver.js';
 import { SessionBackgroundActivitiesControl } from './sessionBackgroundActivitiesControl.js';
@@ -77,9 +77,7 @@ function turnDataEqual(a: ITurnData, b: ITurnData): boolean {
 	return diffStatsEqual(a.stats, b.stats) && previewFilesEqual(a.previewFiles, b.previewFiles);
 }
 
-/**
- * A floating toolbar for the viewed chat's turn status and background activity.
- */
+/** A floating toolbar for the viewed chat's active-turn status and background activity. */
 export class SessionChatInputToolbar extends Disposable {
 
 	readonly element: HTMLElement;
@@ -124,11 +122,14 @@ export class SessionChatInputToolbar extends Disposable {
 	private readonly _diffStats = derivedOpts<IDiffStats>({ owner: this, equalsFn: diffStatsEqual }, reader => this._turnData.read(reader).stats);
 	private readonly _previewFiles = derivedOpts<readonly IPreviewFile[]>({ owner: this, equalsFn: previewFilesEqual }, reader => this._turnData.read(reader).previewFiles);
 
-	/** Whether pills may show at all: an agent host session while the viewed chat's turn is streaming. */
+	/** Whether pills may show at all: an agent host session with an active turn. */
 	private readonly _active = derived(reader => {
 		const session = this._session.read(reader);
 		const chat = this._chat.read(reader);
-		return !!session && !!chat && isAgentHostProviderId(session.providerId) && chat.status.read(reader) === SessionStatus.InProgress;
+		if (!session || !chat || !isAgentHostProviderId(session.providerId)) {
+			return false;
+		}
+		return isActiveSessionStatus(chat.status.read(reader));
 	});
 
 	constructor(

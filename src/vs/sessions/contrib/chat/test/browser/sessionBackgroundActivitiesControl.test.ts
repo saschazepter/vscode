@@ -19,7 +19,7 @@ import { ISessionsService } from '../../../../services/sessions/browser/sessions
 import { ChatOriginKind, IChat, ISession, SessionStatus } from '../../../../services/sessions/common/session.js';
 import { IActiveSession } from '../../../../services/sessions/common/sessionsManagement.js';
 import { SessionBackgroundActivitiesControl } from '../../browser/sessionBackgroundActivitiesControl.js';
-import { weightedRandomDebugIncrement } from '../../browser/sessionChatInputToolbarDebug.js';
+import { isNonNegativeIntegerInput, weightedRandomDebugIncrement } from '../../browser/sessionChatInputToolbarDebug.js';
 
 interface IControlSpec {
 	readonly browsers?: readonly {
@@ -177,6 +177,26 @@ suite('SessionBackgroundActivitiesControl', () => {
 		}
 
 		assert.deepStrictEqual(frequencies, [31, 29, 27, 25, 23, 21, 19, 17, 15, 13, 11, 9, 7, 5, 3, 1]);
+	});
+
+	test('rejects empty and invalid numeric debug fields', () => {
+		assert.deepStrictEqual({
+			empty: isNonNegativeIntegerInput(''),
+			whitespace: isNonNegativeIntegerInput('  '),
+			zero: isNonNegativeIntegerInput('0'),
+			integer: isNonNegativeIntegerInput('12'),
+			negative: isNonNegativeIntegerInput('-1'),
+			decimal: isNonNegativeIntegerInput('1.5'),
+			text: isNonNegativeIntegerInput('one'),
+		}, {
+			empty: false,
+			whitespace: false,
+			zero: true,
+			integer: true,
+			negative: false,
+			decimal: false,
+			text: false,
+		});
 	});
 
 	test('renders single and aggregate labels, icons, fallback, and subagent truncation', () => {
