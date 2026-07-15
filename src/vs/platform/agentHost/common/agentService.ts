@@ -596,6 +596,68 @@ export interface IAgentHostInspectInfo {
 	readonly devtoolsUrl: string;
 }
 
+/** A network endpoint the agent host suggests probing, listed on {@link IAgentHostNetworkDiagnosticsInfo.endpoints}. */
+export interface IAgentHostNetworkEndpoint {
+	/** Human-readable name of the endpoint (e.g. "GitHub API"). */
+	readonly name: string;
+	/** The URL to probe. */
+	readonly url: string;
+	/** Substring the response body is expected to contain; when set, the probe reads the body and fails the check if it is absent. */
+	readonly expectedContent?: string;
+	/** HTTP status code the probe treats as success. Defaults to `200` when omitted. */
+	readonly expectedStatus?: number;
+}
+
+/** Host-level network context for diagnostics, produced by {@link IAgentConnection.getNetworkDiagnosticsInfo}. */
+export interface IAgentHostNetworkDiagnosticsInfo {
+	/** Agent host product version. */
+	readonly version: string;
+	/** Operating system platform of the agent host process (`process.platform`). */
+	readonly os: string;
+	/** CPU architecture of the agent host process (`process.arch`). */
+	readonly arch: string;
+	/** Authenticated GitHub account login, when known. */
+	readonly account?: string;
+	/** VS Code `http.*` proxy settings observed by the agent host, keyed by setting id (only those that are set). */
+	readonly proxySettings: Readonly<Record<string, string>>;
+	/** Proxy-related environment variables observed by the agent host process, keyed by name (only those that are set). */
+	readonly proxyEnv: Readonly<Record<string, string>>;
+	/** Endpoints the agent host suggests probing via {@link IAgentConnection.diagnosticsFetch}. */
+	readonly endpoints: readonly IAgentHostNetworkEndpoint[];
+}
+
+/** Result of a DNS lookup for a single address family, part of {@link IAgentHostNetworkFetchResult}. */
+export interface IAgentHostDnsResult {
+	/** The resolved address, when the lookup succeeded. */
+	readonly address?: string;
+	/** Time taken by the lookup, in milliseconds. */
+	readonly durationMs?: number;
+	/** Lookup error message, when it failed. */
+	readonly error?: string;
+}
+
+/** Result of a single connectivity probe, produced by {@link IAgentConnection.diagnosticsFetch}. */
+export interface IAgentHostNetworkFetchResult {
+	/** The URL that was probed. */
+	readonly url: string;
+	/** The resolved proxy URL for this endpoint, or `undefined` for a direct connection. */
+	readonly proxyUrl?: string;
+	/** IPv4 DNS lookup result for the host. */
+	readonly dnsIpv4?: IAgentHostDnsResult;
+	/** IPv6 DNS lookup result for the host. */
+	readonly dnsIpv6?: IAgentHostDnsResult;
+	/** HTTP status code from the probe, when a response arrived. */
+	readonly statusCode?: number;
+	/** HTTP status message from the probe, when a response arrived. */
+	readonly statusMessage?: string;
+	/** Response body text (possibly truncated), when a response arrived. Callers use it to check expected content. */
+	readonly body?: string;
+	/** Time taken by the reachability probe, in milliseconds. */
+	readonly durationMs?: number;
+	/** Probe error message, when the connection failed. */
+	readonly error?: string;
+}
+
 /**
  * IPC service exposed on the {@link AgentHostIpcChannels.ConnectionTracker}
  * channel. Used by the server process for lifetime management and by the
@@ -1054,8 +1116,11 @@ export interface IAgentChats {
 	 */
 	disposeChat(chat: URI): Promise<void>;
 
-	/** Send a user message into `chat`. */
-	sendMessage(chat: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string): Promise<void>;
+	/**
+	 * Send a user message into `chat`; on first send, the host passes the resolved
+	 * working directory (or `undefined` for workspace-less sessions).
+	 */
+	sendMessage(chat: URI, prompt: string, workingDirectory: URI | undefined, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string): Promise<void>;
 
 	/** Abort the in-flight turn for `chat`. */
 	abort(chat: URI): Promise<void>;
@@ -1156,7 +1221,7 @@ export interface IAgentToolPendingConfirmationSignal {
 	/** Protocol-shaped pending-confirmation state, dispatched verbatim into `ChatToolCallReady`. */
 	readonly state: ToolCallPendingConfirmationState;
 	/** Host-only auto-approval kind (not part of the dispatched action). */
-	readonly permissionKind?: 'shell' | 'write' | 'mcp' | 'read' | 'url' | 'custom-tool' | 'hook' | 'memory' | 'extension-management' | 'extension-permission-access';
+	readonly permissionKind?: 'shell' | 'write' | 'mcp' | 'read' | 'url' | 'skill' | 'custom-tool' | 'hook' | 'memory' | 'extension-management' | 'extension-permission-access';
 	/** Host-only auto-approval path target (not part of the dispatched action). */
 	readonly permissionPath?: string;
 	/**
@@ -1369,13 +1434,13 @@ export interface IAgent {
 
 	// ---- Session lifecycle / configuration ---------------------------------
 
-	/** Create a new session. Returns server-owned session metadata. */
+	/** Create a new session. Host-owned worktree fields are omitted from `config.config`. */
 	createSession(config?: IAgentCreateSessionConfig): Promise<IAgentCreateSessionResult>;
 
-	/** Resolve the dynamic configuration schema for creating a session. */
+	/** Resolve provider-owned session configuration; host-owned worktree fields are omitted. */
 	resolveSessionConfig(params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult>;
 
-	/** Return dynamic completions for a session configuration property. */
+	/** Return dynamic completions for a provider-owned session configuration property. */
 	sessionConfigCompletions(params: IAgentSessionConfigCompletionsParams): Promise<SessionConfigCompletionsResult>;
 
 	/**
@@ -1498,6 +1563,15 @@ export interface IAgent {
 	getProtectedResources(): ProtectedResourceMetadata[];
 
 	/**
+	 * Endpoints this provider uses and recommends probing in network
+	 * diagnostics. Optional.
+	 */
+	getNetworkDiagnosticsEndpoints?(): Promise<readonly IAgentHostNetworkEndpoint[]>;
+
+	/** Authenticated account name to display in network diagnostics, when known. */
+	getNetworkDiagnosticsAccount?(): Promise<string | undefined>;
+
+	/**
 	 * Fires when the agent's host-owned customizations change
 	 * (loading state, resolution results, etc.), so infrastructure
 	 * can republish {@link AgentInfo} and session customization state.
@@ -1559,6 +1633,17 @@ export interface IAgent {
 	 * recreating it on unarchive). Optional.
 	 */
 	onArchivedChanged?(session: URI, isArchived: boolean): Promise<void>;
+
+	/**
+	 * Notifies the provider that a **client** (user) changed this session's
+	 * config — e.g. via an approvals/model picker. `values` is the post-reducer
+	 * merged config. Lets the provider propagate a session-mutable change (such
+	 * as Claude's `permissionMode`) to a running SDK mid-turn. Fires only for
+	 * client-originated changes; internal server-side config writes (e.g. a tool
+	 * persisting a mode) do NOT trigger it, so a provider can forward freely
+	 * without re-entering its own SDK callbacks. Optional.
+	 */
+	onSessionConfigChanged?(session: URI, values: Record<string, unknown>): void;
 
 	/**
 	 * Get (or lazily create) the per-session handle for an active client,
@@ -1757,6 +1842,20 @@ export interface IAgentService {
 
 	/** Gracefully shut down all sessions and the underlying client. */
 	shutdown(): Promise<void>;
+
+	/**
+	 * Host-level network context for diagnostics — agent host version, OS/arch,
+	 * account, proxy settings/env, and the endpoints worth probing (which
+	 * callers probe via {@link diagnosticsFetch}, plus any additional URLs).
+	 */
+	getNetworkDiagnosticsInfo(): Promise<IAgentHostNetworkDiagnosticsInfo>;
+
+	/**
+	 * Probe connectivity from the agent host process to a single `url`,
+	 * resolving the proxy and timing DNS + reachability. Used by the "Network
+	 * Diagnostics" developer command.
+	 */
+	diagnosticsFetch(url: string): Promise<IAgentHostNetworkFetchResult>;
 
 	// ---- Protocol methods (sessions process protocol) ----------------------
 
@@ -1980,6 +2079,21 @@ export interface IAgentConnection {
 	 */
 	readonly initializeResult: IObservable<InitializeResult | undefined>;
 	disposeSession(session: URI): Promise<void>;
+
+	/**
+	 * Host-level network context for diagnostics (version, OS/arch, account,
+	 * proxy settings/env, endpoints). Runs on the agent host process (local or
+	 * remote), so the result reflects the environment the Copilot SDK actually
+	 * runs in.
+	 */
+	getNetworkDiagnosticsInfo(): Promise<IAgentHostNetworkDiagnosticsInfo>;
+
+	/**
+	 * Probe connectivity from the agent host to a single `url`. Runs on the
+	 * agent host process (local or remote), so the result reflects the
+	 * environment the Copilot SDK actually runs in.
+	 */
+	diagnosticsFetch(url: string): Promise<IAgentHostNetworkFetchResult>;
 
 	/**
 	 * Create an additional peer chat inside an existing session. `chat` is a
