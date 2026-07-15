@@ -33,9 +33,14 @@ import { ActiveClientToolSet } from '../activeClientState.js';
 import { McpCustomizationController } from '../shared/mcpCustomizationController.js';
 import { buildCodexMcpReadResult, buildCodexMcpServerOverrides, codexMcpListToInventory, codexMcpToolsChanged, inventoryToSdkServers, translateCodexMcpStartupState, type ICodexMcpServerEntry } from './codexMcpServers.js';
 import { codexHooksToContainers, codexSkillsToContainers } from './codexCustomizations.js';
+import { CodexClientCustomizationStore, codexMcpServersFromPlugins, codexSkillRootsFromPlugins, type ICodexClientPlugin } from './codexClientCustomizations.js';
 import { buildElicitationRequest, cancelledElicitationResponse, declinedElicitationResponse, elicitationResponseFromAnswers } from './codexElicitationMapper.js';
 import { McpServerStatus, type AhpMcpUiHostCapabilities, type Customization } from '../../common/state/protocol/channels-session/state.js';
 import { IAgentConfigurationService } from '../agentConfigurationService.js';
+import { IFileService } from '../../../files/common/files.js';
+import { INativeEnvironmentService } from '../../../environment/common/environment.js';
+import { IAgentPluginManager, type ISyncedCustomization } from '../../common/agentPluginManager.js';
+import { parsePlugin } from '../../../agentPlugins/common/pluginParsers.js';
 import { IAgentHostGitHubEndpointService } from '../agentHostGitHubEndpointService.js';
 import { ICopilotApiService } from '../shared/copilotApiService.js';
 import { extractForwardedErrorInfo } from '../shared/forwardedChatError.js';
@@ -492,6 +497,12 @@ interface ICodexSession {
 	 * MCP inventory is applied). Disposed when the session is removed.
 	 */
 	mcpController: McpCustomizationController | undefined;
+	/**
+	 * Store of client-pushed ("Open Plugin") customizations synced to this
+	 * session. Their MCP servers are attached per-thread at `thread/start`
+	 * and their skills feed codex's process-global `skills/extraRoots/set`.
+	 */
+	readonly clientCustomizations: CodexClientCustomizationStore;
 }
 
 /**
@@ -597,17 +608,21 @@ function toolsSignature(tools: readonly ToolDefinition[] | undefined): string {
 
 /**
  * Codex active-client handle. Writes flow into the owning session's
- * {@link ActiveClientToolSet}; the session is resolved lazily so writes that
- * arrive before (or after) the session exists are gracefully dropped, matching
- * the prior `setClientTools` early-return behavior. Codex has no client
- * customization layer, so `customizations` is inert.
+ * {@link ActiveClientToolSet} (tools) and its {@link CodexClientCustomizationStore}
+ * (customizations); the session is resolved lazily so writes that arrive before
+ * (or after) the session exists are gracefully dropped, matching the prior
+ * `setClientTools` early-return behavior. Assigning `customizations` caches the
+ * inputs (so the getter echoes them) and kicks off the agent's async sync.
  */
 class CodexActiveClientHandle implements IActiveClient {
+	private _customizations: readonly ClientPluginCustomization[] = [];
+
 	constructor(
 		private readonly _getSession: () => ICodexSession | undefined,
 		readonly clientId: string,
 		readonly displayName: string | undefined,
 		private readonly _onToolsSet: (tools: readonly ToolDefinition[]) => void,
+		private readonly _syncCustomizations: (customizations: readonly ClientPluginCustomization[]) => void,
 	) { }
 
 	get tools(): readonly ToolDefinition[] {
@@ -619,10 +634,11 @@ class CodexActiveClientHandle implements IActiveClient {
 	}
 
 	get customizations(): readonly ClientPluginCustomization[] {
-		return [];
+		return this._customizations;
 	}
-	set customizations(_customizations: readonly ClientPluginCustomization[]) {
-		// Codex does not support client-contributed customizations.
+	set customizations(customizations: readonly ClientPluginCustomization[]) {
+		this._customizations = customizations;
+		this._syncCustomizations(customizations);
 	}
 }
 
@@ -701,6 +717,9 @@ export class CodexAgent extends Disposable implements IAgent {
 		@IAgentHostGitHubEndpointService private readonly _gitHubEndpointService: IAgentHostGitHubEndpointService,
 		@IAgentSdkDownloader private readonly _agentSdkDownloader: IAgentSdkDownloader,
 		@IProductService private readonly _productService: IProductService,
+		@IAgentPluginManager private readonly _pluginManager: IAgentPluginManager,
+		@IFileService private readonly _fileService: IFileService,
+		@INativeEnvironmentService private readonly _environmentService: INativeEnvironmentService,
 		@IInstantiationService instantiationService: IInstantiationService,
 	) {
 		super();
@@ -1760,6 +1779,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			prewarmClaimed: true,
 			serverToolsAdvertised: true,
 			mcpController: undefined,
+			clientCustomizations: new CodexClientCustomizationStore(),
 		};
 	}
 
@@ -2260,6 +2280,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			prewarmClaimed: false,
 			serverToolsAdvertised: false,
 			mcpController: undefined,
+			clientCustomizations: new CodexClientCustomizationStore(),
 		};
 		this._sessions.set(sessionId, session);
 		this._schedulePrewarm(session);
@@ -2311,6 +2332,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			prewarmClaimed: true,
 			serverToolsAdvertised: false,
 			mcpController: undefined,
+			clientCustomizations: new CodexClientCustomizationStore(),
 		};
 	}
 
@@ -2495,15 +2517,23 @@ export class CodexAgent extends Disposable implements IAgent {
 		const config = this._readSessionConfig(session);
 		const model = await this._resolveModel(session);
 		const { approvalPolicy, sandboxMode, approvalsReviewer } = this._resolveSessionPermissions(session);
+		// Attach this session's enabled client-plugin MCP servers per-thread
+		// (verified: codex starts them for this thread only), merged onto the
+		// per-thread config alongside `web_search`.
+		const clientMcpServers = codexMcpServersFromPlugins(session.clientCustomizations.enabledPlugins());
+		const threadConfig: Record<string, JsonValue> = {
+			web_search: narrowWebSearchMode(config[CodexSessionConfigKey.WebSearchMode]) ?? codexSessionConfigDefaults[CodexSessionConfigKey.WebSearchMode],
+		};
+		if (Object.keys(clientMcpServers).length > 0) {
+			threadConfig.mcp_servers = clientMcpServers as JsonValue;
+		}
 		const startResult = await conn.client.request<'thread/start', { thread: { id: string } }>('thread/start', {
 			cwd: session.workingDirectory.fsPath,
 			model: model.id,
 			approvalPolicy,
 			sandbox: sandboxMode,
 			approvalsReviewer,
-			config: {
-				web_search: narrowWebSearchMode(config[CodexSessionConfigKey.WebSearchMode]) ?? codexSessionConfigDefaults[CodexSessionConfigKey.WebSearchMode],
-			},
+			config: threadConfig,
 			dynamicTools: this._buildDynamicTools(session),
 		});
 		const threadId = startResult.thread.id;
@@ -2531,6 +2561,9 @@ export class CodexAgent extends Disposable implements IAgent {
 		// `.agents`/`.codex`) in the Customizations view now that the connection
 		// is ready and the cwd is known. Best-effort and fire-and-forget.
 		void this._refreshSkillHookCustomizations(session);
+		// Re-apply the client-plugin skill roots against the now-ready
+		// connection (they may have been synced before it came up).
+		void this._refreshSkillExtraRoots();
 	}
 
 	/**
@@ -2918,6 +2951,11 @@ export class CodexAgent extends Disposable implements IAgent {
 		this._claimPrewarm(session);
 		this._sessions.delete(sessionId);
 		session.mcpController?.dispose();
+		// If the session contributed client-plugin skills, drop them from the
+		// process-global skill-root union now that it is gone.
+		if (!session.clientCustomizations.isEmpty()) {
+			void this._refreshSkillExtraRoots();
+		}
 		// Remove the managed temp folder created for a session that had no
 		// client-supplied working directory. Best-effort; the OS temp dir is
 		// reclaimed anyway, but clean up proactively so it doesn't accumulate.
@@ -3201,12 +3239,18 @@ export class CodexAgent extends Disposable implements IAgent {
 			client.clientId,
 			client.displayName,
 			tools => this._logService.info(`[Codex:${sessionId}] active client ${client.clientId} tools=[${tools.map(t => t.name).join(', ') || '(none)'}]`),
+			customizations => { void this._syncClientCustomizations(session, client.clientId, [...customizations]); },
 		);
 	}
 
 	removeActiveClient(session: URI, clientId: string): void {
 		const sessionId = AgentSession.id(session);
-		this._sessions.get(sessionId)?.clientToolSet.delete(clientId);
+		const sess = this._sessions.get(sessionId);
+		sess?.clientToolSet.delete(clientId);
+		if (sess?.clientCustomizations.removeClient(clientId)) {
+			// A departing client's skills may drop out of the process-global union.
+			void this._refreshSkillExtraRoots();
+		}
 	}
 
 	onClientToolCallComplete(session: URI, _chat: URI, toolCallId: string, result: ToolCallResult): void {
@@ -3217,8 +3261,107 @@ export class CodexAgent extends Disposable implements IAgent {
 		sess?.pendingClientToolCalls.respondOrBuffer(toolCallId, result);
 	}
 
-	setCustomizationEnabled(_uri: string, _enabled: boolean): void {
-		// no-op; customizations not yet wired for codex.
+	setCustomizationEnabled(uri: string, enabled: boolean): void {
+		// Client-pushed plugin customizations are keyed by customization id; the
+		// AHP `SessionCustomizationToggled` action carries that id as `uri`.
+		// codex-discovered skills/hooks/MCP are read-only and not toggled here.
+		let changed = false;
+		for (const session of this._sessions.values()) {
+			if (session.disposed || !session.clientCustomizations.has(uri)) {
+				continue;
+			}
+			if (session.clientCustomizations.setEnabled(uri, enabled)) {
+				changed = true;
+				this._publishClientCustomizations(session);
+			}
+		}
+		if (changed) {
+			// Enabling/disabling a plugin changes the enabled skill-root union.
+			void this._refreshSkillExtraRoots();
+		}
+	}
+
+	// ---- Client-pushed plugin customizations -------------------------------
+
+	/**
+	 * Materialize + parse a client's pushed plugin customizations and store
+	 * them on the session. Mirrors the Claude client-plugin path: the shared
+	 * {@link IAgentPluginManager} copies each plugin to local disk (nonce
+	 * cached), we parse the resulting directory into its
+	 * {@link IParsedPlugin | components}, publish the customization surface,
+	 * and refresh the process-global skill roots. MCP servers are attached
+	 * per-thread at the next {@link _materialize}.
+	 */
+	private async _syncClientCustomizations(sessionUri: URI, clientId: string, customizations: readonly ClientPluginCustomization[]): Promise<void> {
+		const session = this._sessions.get(AgentSession.id(sessionUri));
+		if (!session) {
+			return;
+		}
+		const synced = await this._pluginManager.syncCustomizations(
+			clientId,
+			[...customizations],
+			status => this._fire(sessionUri, { type: ActionType.SessionCustomizationUpdated, customization: status }),
+		);
+		if (session.disposed) {
+			return;
+		}
+		const plugins = await Promise.all(synced.map(item => this._parseClientPlugin(session, item)));
+		if (session.disposed) {
+			return;
+		}
+		session.clientCustomizations.setClient(clientId, plugins);
+		this._publishClientCustomizations(session);
+		await this._refreshSkillExtraRoots();
+	}
+
+	/** Parse one synced plugin directory into its components (best-effort). */
+	private async _parseClientPlugin(session: ICodexSession, synced: ISyncedCustomization): Promise<ICodexClientPlugin> {
+		if (!synced.pluginDir) {
+			return { synced, parsed: undefined };
+		}
+		try {
+			const parsed = await parsePlugin(synced.pluginDir, this._fileService, session.workingDirectory, this._environmentService.userHome, synced.pluginDir);
+			return { synced, parsed };
+		} catch (err) {
+			this._logService.warn(`[Codex] failed to parse client plugin ${synced.customization.uri}: ${err instanceof Error ? err.message : String(err)}`);
+			return { synced, parsed: undefined };
+		}
+	}
+
+	/** Publish the session's client-plugin customizations as upsert actions. */
+	private _publishClientCustomizations(session: ICodexSession): void {
+		for (const customization of session.clientCustomizations.toCustomizations()) {
+			this._fire(session.sessionUri, { type: ActionType.SessionCustomizationUpdated, customization });
+		}
+	}
+
+	/**
+	 * Recompute the process-global skill roots from every live session's
+	 * enabled client plugins and push them to codex via `skills/extraRoots/set`.
+	 * codex's extra skill roots are a single shared list (there is no per-thread
+	 * equivalent), so we send the union across all sessions — which matches the
+	 * global nature of client plugin choices. No-op when the connection is not
+	 * ready; the next {@link _materialize} re-applies.
+	 */
+	private async _refreshSkillExtraRoots(): Promise<void> {
+		if (this._connection.kind !== 'ready') {
+			return;
+		}
+		const plugins: ICodexClientPlugin[] = [];
+		for (const session of this._sessions.values()) {
+			if (!session.disposed) {
+				plugins.push(...session.clientCustomizations.enabledPlugins());
+			}
+		}
+		const roots = codexSkillRootsFromPlugins(plugins);
+		try {
+			await this._connection.client.request<'skills/extraRoots/set'>('skills/extraRoots/set', { extraRoots: roots });
+			if (roots.length > 0) {
+				this._logService.info(`[Codex] applied ${roots.length} client-plugin skill root(s)`);
+			}
+		} catch (err) {
+			this._logService.warn(`[Codex] skills/extraRoots/set failed: ${err instanceof Error ? err.message : String(err)}`);
+		}
 	}
 
 	// ---- MCP servers -------------------------------------------------------
@@ -3243,7 +3386,14 @@ export class CodexAgent extends Disposable implements IAgent {
 		// directory (best-effort; empty until the app-server connection is
 		// ready, after which `_refreshSkillHookCustomizations` pushes updates).
 		const skillHookContainers = await this._fetchSkillHookContainers(session);
-		return [...controller.topLevelCustomizations(), ...skillHookContainers];
+		// Client-pushed ("Open Plugin") customizations first (they carry the
+		// user's enablement overlay), then codex's discovered MCP servers and
+		// the `.agents`/`.codex` skills/hooks.
+		return [
+			...session.clientCustomizations.toCustomizations(),
+			...controller.topLevelCustomizations(),
+			...skillHookContainers,
+		];
 	}
 
 	/**
