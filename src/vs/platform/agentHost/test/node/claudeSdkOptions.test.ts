@@ -135,6 +135,7 @@ suite('claudeSdkOptions / buildOptions plugins projection', () => {
 			abortController: new AbortController(),
 			permissionMode: 'default' as const,
 			canUseTool: async () => ({ behavior: 'allow' as const, updatedInput: {} }),
+			onElicitation: async () => ({ action: 'cancel' as const }),
 			isResume: false,
 			mcpServers: undefined,
 			...(plugins !== undefined ? { plugins } : {}),
@@ -146,7 +147,6 @@ suite('claudeSdkOptions / buildOptions plugins projection', () => {
 			input([URI.file('/p/a'), URI.file('/p/b')]),
 			proxyTransport,
 			() => { },
-			() => { },
 		);
 		assert.deepStrictEqual(opts.plugins, [
 			{ type: 'local', path: URI.file('/p/a').fsPath },
@@ -155,17 +155,17 @@ suite('claudeSdkOptions / buildOptions plugins projection', () => {
 	});
 
 	test('empty plugins array omits Options.plugins', async () => {
-		const opts = await buildOptions(input([]), proxyTransport, () => { }, () => { });
+		const opts = await buildOptions(input([]), proxyTransport, () => { });
 		assert.strictEqual(opts.plugins, undefined);
 	});
 
 	test('undefined plugins omits Options.plugins', async () => {
-		const opts = await buildOptions(input(undefined), proxyTransport, () => { }, () => { });
+		const opts = await buildOptions(input(undefined), proxyTransport, () => { });
 		assert.strictEqual(opts.plugins, undefined);
 	});
 
 	test('proxy transport sets ANTHROPIC_BASE_URL + per-session ANTHROPIC_AUTH_TOKEN', async () => {
-		const opts = await buildOptions(input(undefined), proxyTransport, () => { }, () => { });
+		const opts = await buildOptions(input(undefined), proxyTransport, () => { });
 		const env = (opts.settings as { env?: Record<string, string> }).env ?? {};
 		assert.deepStrictEqual({
 			baseUrl: env.ANTHROPIC_BASE_URL,
@@ -179,7 +179,7 @@ suite('claudeSdkOptions / buildOptions plugins projection', () => {
 	});
 
 	test('native transport omits ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN (subprocess env carries the user credentials)', async () => {
-		const opts = await buildOptions(input(undefined), { kind: 'native' }, () => { }, () => { });
+		const opts = await buildOptions(input(undefined), { kind: 'native' }, () => { });
 		const env = (opts.settings as { env?: Record<string, string> }).env ?? {};
 		assert.deepStrictEqual({
 			baseUrl: env.ANTHROPIC_BASE_URL,
@@ -212,6 +212,7 @@ suite('claudeSdkOptions / buildOptions resumeSessionAt projection', () => {
 			abortController: new AbortController(),
 			permissionMode: 'default' as const,
 			canUseTool: async () => ({ behavior: 'allow' as const, updatedInput: {} }),
+			onElicitation: async () => ({ action: 'cancel' as const }),
 			isResume,
 			mcpServers: undefined,
 			...(resumeSessionAt !== undefined ? { resumeSessionAt } : {}),
@@ -219,7 +220,7 @@ suite('claudeSdkOptions / buildOptions resumeSessionAt projection', () => {
 	}
 
 	test('resume + resumeSessionAt projects onto Options.resume and Options.resumeSessionAt', async () => {
-		const opts = await buildOptions(input(true, 'anchor-uuid'), proxyTransport, () => { }, () => { });
+		const opts = await buildOptions(input(true, 'anchor-uuid'), proxyTransport, () => { });
 		assert.deepStrictEqual(
 			{ resume: opts.resume, sessionId: opts.sessionId, resumeSessionAt: opts.resumeSessionAt },
 			{ resume: 's1', sessionId: undefined, resumeSessionAt: 'anchor-uuid' },
@@ -227,7 +228,7 @@ suite('claudeSdkOptions / buildOptions resumeSessionAt projection', () => {
 	});
 
 	test('resume without resumeSessionAt omits Options.resumeSessionAt', async () => {
-		const opts = await buildOptions(input(true, undefined), proxyTransport, () => { }, () => { });
+		const opts = await buildOptions(input(true, undefined), proxyTransport, () => { });
 		assert.deepStrictEqual(
 			{ resume: opts.resume, resumeSessionAt: opts.resumeSessionAt },
 			{ resume: 's1', resumeSessionAt: undefined },
@@ -235,7 +236,7 @@ suite('claudeSdkOptions / buildOptions resumeSessionAt projection', () => {
 	});
 
 	test('non-resume startup never carries resumeSessionAt even when provided', async () => {
-		const opts = await buildOptions(input(false, 'anchor-uuid'), proxyTransport, () => { }, () => { });
+		const opts = await buildOptions(input(false, 'anchor-uuid'), proxyTransport, () => { });
 		assert.deepStrictEqual(
 			{ sessionId: opts.sessionId, resume: opts.resume, resumeSessionAt: opts.resumeSessionAt },
 			{ sessionId: 's1', resume: undefined, resumeSessionAt: undefined },
