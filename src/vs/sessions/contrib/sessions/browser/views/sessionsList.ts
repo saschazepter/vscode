@@ -844,33 +844,46 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 interface ISessionSectionTemplate {
 	readonly container: HTMLElement;
 	readonly icon: HTMLElement;
+	readonly statusIndicator: HTMLElement;
 	readonly label: HTMLElement;
 	readonly count: HTMLElement;
 	readonly toolbar: MenuWorkbenchToolBar;
 	readonly chevron: HTMLElement;
 	readonly contextKeyService: IContextKeyService;
 	readonly disposables: DisposableStore;
+	readonly elementDisposables: DisposableStore;
 }
 
 class SessionSectionRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, ISessionSectionTemplate> {
 	static readonly TEMPLATE_ID = 'session-section';
 	readonly templateId = SessionSectionRenderer.TEMPLATE_ID;
 
+	private static readonly READ_AUTOMATION_RUNS_KEY = 'sessionsListControl.readAutomationRuns';
+
 	private readonly templatesByElement = new WeakMap<ISessionSection, ISessionSectionTemplate>();
 	private readonly templatesById = new Map<string, ISessionSectionTemplate>();
+	private readonly _readAutomationRunIds: Set<string>;
+	private readonly _readStateVersion = observableValue<number>('automationReadState', 0);
 
 	constructor(
 		private readonly hideSectionCount: boolean,
 		private readonly instantiationService: IInstantiationService,
 		private readonly contextKeyService: IContextKeyService,
-	) { }
+		private readonly automationService: IAutomationService,
+		private readonly storageService: IStorageService,
+	) {
+		this._readAutomationRunIds = this.loadReadAutomationRuns();
+	}
 
 	renderTemplate(container: HTMLElement): ISessionSectionTemplate {
 		const disposables = new DisposableStore();
+		const elementDisposables = disposables.add(new DisposableStore());
 
 		container.classList.add('session-section');
 		const icon = DOM.append(container, $('span.session-section-icon'));
 		icon.setAttribute('aria-hidden', 'true');
+		const statusIndicator = DOM.append(container, $('span.session-section-status-indicator'));
+		statusIndicator.setAttribute('aria-hidden', 'true');
 		const label = DOM.append(container, $('span.session-section-label'));
 		const count = DOM.append(container, $('span.session-section-count'));
 		const toolbarContainer = DOM.append(container, $('.session-section-toolbar'));
@@ -883,7 +896,7 @@ class SessionSectionRenderer implements ITreeRenderer<SessionListItem, FuzzyScor
 			menuOptions: { shouldForwardArgs: true },
 		}));
 
-		return { container, icon, label, count, toolbar, chevron, contextKeyService, disposables };
+		return { container, icon, statusIndicator, label, count, toolbar, chevron, contextKeyService, disposables, elementDisposables };
 	}
 
 	renderElement(node: ITreeNode<SessionListItem, FuzzyScore>, _index: number, template: ISessionSectionTemplate): void {
@@ -891,6 +904,7 @@ class SessionSectionRenderer implements ITreeRenderer<SessionListItem, FuzzyScor
 		if (!isSessionSection(element)) {
 			return;
 		}
+		template.elementDisposables.clear();
 		this.templatesByElement.set(element, template);
 		this.templatesById.set(element.id, template);
 		template.container.classList.remove(SESSION_HEADER_DROP_TARGET_CLASS);
@@ -904,6 +918,33 @@ class SessionSectionRenderer implements ITreeRenderer<SessionListItem, FuzzyScor
 					: undefined;
 		template.icon.className = sectionIcon ? `session-section-icon ${ThemeIcon.asClassName(sectionIcon)}` : 'session-section-icon';
 		template.icon.style.display = sectionIcon ? '' : 'none';
+
+		// Status indicator for automations section (spinner when running, blue dot when unread)
+		if (element.id === AUTOMATIONS_SECTION_ID) {
+			template.statusIndicator.style.display = '';
+			const statusIcon = template.elementDisposables.add(this.instantiationService.createInstance(SessionStatusIcon, template.statusIndicator));
+			template.elementDisposables.add(autorun(reader => {
+				const runs = this.automationService.runs.read(reader);
+				this._readStateVersion.read(reader);
+				const hasActiveRun = runs.some(r => r.status === 'pending' || r.status === 'running');
+				const hasUnreadCompletedRun = runs.some(r =>
+					(r.status === 'completed' || r.status === 'failed') && !this._readAutomationRunIds.has(r.id)
+				);
+
+				if (hasActiveRun) {
+					template.statusIndicator.style.display = '';
+					statusIcon.setStatus(SessionStatus.InProgress, true, false);
+				} else if (hasUnreadCompletedRun) {
+					template.statusIndicator.style.display = '';
+					statusIcon.setStatus(SessionStatus.Completed, false, false);
+				} else {
+					template.statusIndicator.style.display = 'none';
+				}
+			}));
+		} else {
+			template.statusIndicator.style.display = 'none';
+			DOM.clearNode(template.statusIndicator);
+		}
 
 		template.label.textContent = element.label;
 		if (this.hideSectionCount || element.id === AUTOMATIONS_SECTION_ID) {
@@ -950,7 +991,52 @@ class SessionSectionRenderer implements ITreeRenderer<SessionListItem, FuzzyScor
 		}
 	}
 
-	disposeElement(node: ITreeNode<SessionListItem, FuzzyScore>, _index: number, _template: ISessionSectionTemplate): void {
+	markAutomationRunRead(runId: string): void {
+		if (!this._readAutomationRunIds.has(runId)) {
+			this._readAutomationRunIds.add(runId);
+			this.saveReadAutomationRuns();
+			this._readStateVersion.set(this._readStateVersion.get() + 1, undefined);
+		}
+	}
+
+	markAllAutomationRunsRead(): void {
+		const runs = this.automationService.runs.get();
+		let changed = false;
+		for (const run of runs) {
+			if ((run.status === 'completed' || run.status === 'failed') && !this._readAutomationRunIds.has(run.id)) {
+				this._readAutomationRunIds.add(run.id);
+				changed = true;
+			}
+		}
+		if (changed) {
+			this.saveReadAutomationRuns();
+			this._readStateVersion.set(this._readStateVersion.get() + 1, undefined);
+		}
+	}
+
+	private loadReadAutomationRuns(): Set<string> {
+		const raw = this.storageService.get(SessionSectionRenderer.READ_AUTOMATION_RUNS_KEY, StorageScope.PROFILE);
+		if (!raw) {
+			return new Set();
+		}
+		try {
+			return new Set(JSON.parse(raw));
+		} catch {
+			return new Set();
+		}
+	}
+
+	private saveReadAutomationRuns(): void {
+		this.storageService.store(
+			SessionSectionRenderer.READ_AUTOMATION_RUNS_KEY,
+			JSON.stringify([...this._readAutomationRunIds]),
+			StorageScope.PROFILE,
+			StorageTarget.USER,
+		);
+	}
+
+	disposeElement(node: ITreeNode<SessionListItem, FuzzyScore>, _index: number, template: ISessionSectionTemplate): void {
+		template.elementDisposables.clear();
 		if (isSessionSection(node.element)) {
 			this.templatesByElement.delete(node.element);
 			this.templatesById.delete(node.element.id);
@@ -1777,7 +1863,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 		const showMoreRenderer = new SessionShowMoreRenderer();
 		const placeholderRenderer = new SessionPlaceholderRenderer();
-		const sectionRenderer = new SessionSectionRenderer(true /* hideSectionCount */, instantiationService, contextKeyService);
+		const sectionRenderer = new SessionSectionRenderer(true /* hideSectionCount */, instantiationService, contextKeyService, this.automationService, this.storageService);
 		this._sectionRenderer = sectionRenderer;
 		const groupRenderer = new SessionGroupRenderer({
 			commitEdit: (group, name) => this.commitGroupEdit(group, name),
@@ -1909,6 +1995,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 			}
 			if (isSessionSection(element) && element.id === AUTOMATIONS_SECTION_ID) {
 				this.commandService.executeCommand('sessionsView.manageAutomations');
+				this._sectionRenderer.markAllAutomationRunsRead();
 				return;
 			}
 			if (!isSessionSection(element) && !isSessionGroupItem(element)) {
