@@ -27,7 +27,7 @@ import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IStorageService } from '../../../../../platform/storage/common/storage.js';
 import { defaultCheckboxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
-import type { SessionConfigPropertySchema, SessionConfigValueItem } from '../../../../../platform/agentHost/common/state/protocol/commands.js';
+import type { ResolveSessionConfigResult, SessionConfigPropertySchema, SessionConfigValueItem } from '../../../../../platform/agentHost/common/state/protocol/commands.js';
 import { ChatConfiguration, isChatPermissionLevel } from '../../../../../workbench/contrib/chat/common/constants.js';
 import { maybeConfirmElevatedPermissionLevel } from '../../../../../workbench/contrib/chat/common/chatPermissionWarnings.js';
 import { ChatContextKeyExprs, ChatContextKeys } from '../../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
@@ -212,12 +212,19 @@ function applyAutoApproveTriggerStyles(trigger: HTMLElement, property: string | 
 	}
 }
 
+// Config properties whose schemas are cached so their chips stay visible
+// (disabled) while a new draft re-resolves, instead of blanking then reappearing.
+const CACHED_CONFIG_KEYS = [SessionConfigKey.Isolation, SessionConfigKey.Branch] as const;
+
 export class AgentHostSessionConfigPicker extends Disposable {
 
 	protected readonly _renderDisposables = this._register(new DisposableStore());
 	private readonly _providerListeners = this._register(new DisposableMap<string>());
 	protected readonly _filterDelayer = this._register(new Delayer<readonly IActionListItem<IConfigPickerItem>[]>(200));
 	private _container: HTMLElement | undefined;
+	// Latest resolved schemas for {@link CACHED_CONFIG_KEYS}, re-injected (disabled)
+	// while a new draft's schema is still empty. Reconciled on non-resolving renders.
+	private readonly _cachedSchemas = new Map<string, SessionConfigPropertySchema>();
 
 	constructor(
 		protected readonly _session: IObservable<IActiveSession | undefined>,
@@ -299,7 +306,7 @@ export class AgentHostSessionConfigPicker extends Disposable {
 		// chips must remain interactive.
 		const isLoading = provider.isSessionConfigResolving(session.sessionId).get();
 
-		const properties = this._orderProperties(Object.entries(resolvedConfig.schema.properties));
+		const properties = this._orderProperties(this._withCachedProperties(resolvedConfig, isNewSession, isLoading));
 
 		for (const [property, schema] of properties) {
 			if (!this._isPickable(schema)) {
@@ -367,6 +374,33 @@ export class AgentHostSessionConfigPicker extends Disposable {
 			}
 			this._renderTrigger(trigger, property, schema, value, isReadOnly);
 		}
+	}
+
+	// Schema entries to render. Caches the well-known chips from authoritative
+	// renders and re-injects them (disabled) while a new draft's schema is empty.
+	private _withCachedProperties(resolvedConfig: ResolveSessionConfigResult, isNewSession: boolean, isLoading: boolean): [string, SessionConfigPropertySchema][] {
+		if (!isLoading) {
+			// Authoritative render: refresh the cache (drop keys the schema omits).
+			for (const key of CACHED_CONFIG_KEYS) {
+				const schema = resolvedConfig.schema.properties[key];
+				if (schema) {
+					this._cachedSchemas.set(key, schema);
+				} else {
+					this._cachedSchemas.delete(key);
+				}
+			}
+		}
+
+		const entries = Object.entries(resolvedConfig.schema.properties);
+		if (isNewSession && isLoading) {
+			for (const key of CACHED_CONFIG_KEYS) {
+				const cachedSchema = this._cachedSchemas.get(key);
+				if (cachedSchema && !resolvedConfig.schema.properties[key]) {
+					entries.push([key, cachedSchema]);
+				}
+			}
+		}
+		return entries;
 	}
 
 	private _isPickable(schema: SessionConfigPropertySchema): boolean {
@@ -696,6 +730,12 @@ class MobileAgentHostSessionConfigPicker extends AgentHostSessionConfigPicker {
 	protected override async _showPicker(provider: IAgentHostSessionsProvider, sessionId: string, property: string, schema: SessionConfigPropertySchema, trigger: HTMLElement): Promise<void> {
 		if (!isPhoneLayout(this._layoutService)) {
 			return super._showPicker(provider, sessionId, property, schema, trigger);
+		}
+
+		// Mirror the base `_showPicker` guard (the repo-sheet path below bypasses
+		// it): bail while resolving so injected disabled chips don't open a sheet.
+		if (provider.isSessionConfigResolving(sessionId).get()) {
+			return;
 		}
 
 		if (property === SessionConfigKey.Isolation || property === SessionConfigKey.Branch) {
