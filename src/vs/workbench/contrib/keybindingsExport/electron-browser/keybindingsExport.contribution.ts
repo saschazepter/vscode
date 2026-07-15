@@ -93,9 +93,11 @@ export class KeybindingsExportContribution extends Disposable implements IWorkbe
 
 			if (!isSessionsWindow) {
 				await this.nativeHostService.openAgentsWindow();
+				await this.nativeHostService.closeWindow();
+				return;
 			}
 
-			await this.nativeHostService.closeWindow();
+			await this.nativeHostService.quit();
 		} catch (error) {
 			this.logService.error(`[${KeybindingsExportContribution.ID}] Failed to generate default keybindings`, error);
 			await this.nativeHostService.closeWindow();
