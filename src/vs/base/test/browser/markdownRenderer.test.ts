@@ -915,6 +915,24 @@ suite('MarkdownRenderer', () => {
 				const completeTokens = marked.marked.lexer(incomplete + '**');
 				assert.deepStrictEqual(newTokens, completeTokens);
 			});
+
+			test('incomplete double star before trailing quote-only lines', () => {
+				const incomplete = '> **text\n>\n>';
+				const tokens = marked.marked.lexer(incomplete);
+				const newTokens = fillInIncompleteTokens(tokens);
+
+				const completeTokens = marked.marked.lexer('> **text**\n>\n>');
+				assert.deepStrictEqual(newTokens, completeTokens);
+			});
+
+			test('preserves reference links when completing inline tokens', () => {
+				const incomplete = '[id]: https://example.com\n\n> [label][id] **text';
+				const tokens = marked.marked.lexer(incomplete);
+				const newTokens = fillInIncompleteTokens(tokens);
+
+				const completeTokens = marked.marked.lexer(incomplete + '**');
+				assert.deepStrictEqual(newTokens, completeTokens);
+			});
 		});
 
 		suite('codespan', () => {

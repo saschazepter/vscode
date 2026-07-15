@@ -891,8 +891,13 @@ function hasStartOfLinkTargetAndNoLinkText(str: string): boolean {
 	return !!str.match(/^[^\[]*\]\([^\)]*$/);
 }
 
-function completeBlockquotePattern(blockquote: marked.Tokens.Blockquote): marked.Tokens.Blockquote | undefined {
-	const lastToken = blockquote.tokens.at(-1);
+function completeBlockquotePattern(blockquote: marked.Tokens.Blockquote, links: marked.Links): marked.Tokens.Blockquote | undefined {
+	let lastInterestingIndex = blockquote.tokens.length - 1;
+	while (lastInterestingIndex >= 0 && blockquote.tokens[lastInterestingIndex].type === 'space') {
+		lastInterestingIndex--;
+	}
+
+	const lastToken = blockquote.tokens[lastInterestingIndex];
 	if (lastToken?.type !== 'paragraph') {
 		return undefined;
 	}
@@ -903,7 +908,12 @@ function completeBlockquotePattern(blockquote: marked.Tokens.Blockquote): marked
 	}
 
 	const completion = completedToken.raw.slice(lastToken.raw.trimEnd().length);
-	const completedBlockquote = completeWithString(blockquote, completion);
+	const trailingQuoteOnlyLines = blockquote.raw.match(/(?:\n[ \t]*>[ \t]*(?=\n|$))+\n?$/)?.[0] ?? '';
+	const insertionIndex = blockquote.raw.length - trailingQuoteOnlyLines.length;
+	const completedRaw = blockquote.raw.slice(0, insertionIndex) + completion + trailingQuoteOnlyLines;
+	const lexer = new marked.Lexer();
+	lexer.tokens.links = links;
+	const completedBlockquote = lexer.lex(completedRaw)[0];
 	if (completedBlockquote.type === 'blockquote') {
 		return completedBlockquote as marked.Tokens.Blockquote;
 	}
@@ -1047,7 +1057,7 @@ function fillInIncompleteTokensOnce(tokens: marked.TokensList): marked.TokensLis
 	}
 
 	if (!newTokens && lastInterestingToken?.type === 'blockquote') {
-		const newBlockquoteToken = completeBlockquotePattern(lastInterestingToken as marked.Tokens.Blockquote);
+		const newBlockquoteToken = completeBlockquotePattern(lastInterestingToken as marked.Tokens.Blockquote, tokens.links);
 		if (newBlockquoteToken) {
 			newTokens = [newBlockquoteToken, ...trailingTokens];
 			i = lastInterestingIdx;
