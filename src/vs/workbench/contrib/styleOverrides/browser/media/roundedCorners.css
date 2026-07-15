@@ -281,8 +281,10 @@
 }
 
 /*
- * Short numeric count badges (e.g. activity-bar and tree item counts) are small
- * and roughly circular, so a full-circle radius reads as a clean round dot.
+ * Short numeric count badges (e.g. Search result and tree item counts) are small
+ * and roughly circular, so a full-circle radius reads as a clean round dot. (The
+ * activity-bar badge is a separate `.badge .badge-content` element, not a
+ * `.monaco-count-badge`, so it is unaffected by these rules.)
  */
 .style-override.monaco-workbench .monaco-count-badge:not(.long) {
 	border-radius: var(--vscode-cornerRadius-circle);
