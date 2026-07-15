@@ -51,7 +51,7 @@ import { CHAT_PROVIDER_ID } from '../../../common/participants/chatParticipantCo
 import { IChatModelReference, IChatService } from '../../../common/chatService/chatService.js';
 import { IChatSessionsService, localChatSessionType } from '../../../common/chatSessionsService.js';
 import { LocalChatSessionUri, getChatSessionType } from '../../../common/model/chatUri.js';
-import { ChatAgentLocation, ChatConfiguration, ChatModeKind, getComputedDefaultSessionType, getDefaultNewChatSessionResource, getDefaultNewChatSessionType, isEditorLocalAgentEnabled } from '../../../common/constants.js';
+import { ChatAgentLocation, ChatConfiguration, ChatModeKind, getComputedDefaultSessionType, getDefaultNewChatSessionResource, getDefaultNewChatSessionType } from '../../../common/constants.js';
 import { AgentSessionsControl } from '../../agentSessions/agentSessionsControl.js';
 import { ACTION_ID_NEW_CHAT } from '../../actions/chatActions.js';
 import { ChatWidget } from '../../widget/chatWidget.js';
@@ -1063,7 +1063,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	}
 
 	/**
-	 * When the experimental `chat.editor.defaultProvider` setting selects a
+	 * When the experimental `chat.editor.preferCopilotHarness` setting selects a
 	 * provider other than local and that contribution is registered, return a
 	 * new session reference for it instead of the built-in local provider.
 	 * Returns `undefined` to fall back to `startNewLocalSession`.
@@ -1105,9 +1105,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	private shouldSkipRestoredLocalSession(sessionResource: URI, model: IChatModel): boolean {
 		const workspace = this.workspaceContextService.getWorkspace();
 		const defaultType = getComputedDefaultSessionType(this.configurationService, this.chatSessionsService, workspace);
-		const prefersAgentHostCopilot = !isEditorLocalAgentEnabled(this.configurationService, workspace)
-			&& this.configurationService.getValue<string>(ChatConfiguration.EditorDefaultProvider) === 'copilotAh';
-		return (defaultType !== localChatSessionType || prefersAgentHostCopilot)
+		return defaultType !== localChatSessionType
 			&& getChatSessionType(sessionResource) === localChatSessionType
 			&& !model.hasRequests;
 	}

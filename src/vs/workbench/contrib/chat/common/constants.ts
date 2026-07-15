@@ -16,7 +16,7 @@ import { IsAuxiliaryWindowContext, IsSessionsWindowContext } from '../../../comm
 import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { LocalChatSessionUri } from './model/chatUri.js';
-import { clearUserSelectedSessionType, getRememberedSessionType, storeUserSelectedSessionType } from './chatSessionTypePreference.js';
+import { clearUserSelectedSessionType, getRememberedSessionType, hasPreferredCopilotHarness, markPreferredCopilotHarness, storeUserSelectedSessionType } from './chatSessionTypePreference.js';
 
 export const enum BYOKUtilityModelDefault {
 	None = 'none',
@@ -104,7 +104,7 @@ export enum ChatConfiguration {
 	ToolRiskAssessmentModel = 'chat.tools.riskAssessment.model',
 	DefaultNewSessionMode = 'chat.newSession.defaultMode',
 	CopilotCliHideExtensionHostAgents = 'chat.agents.copilotCli.hideExtensionHost',
-	EditorDefaultProvider = 'chat.editor.defaultProvider',
+	EditorPreferCopilotHarness = 'chat.editor.preferCopilotHarness',
 	EditorLocalAgentEnabled = 'chat.editor.localAgent.enabled',
 	CopilotCliHideExtensionHostEditor = 'chat.editor.copilotCli.hideExtensionHost',
 	AgentsHandoffTipMode = 'chat.agentsHandoffTip.mode',
@@ -259,10 +259,7 @@ export function isSupportedChatFileScheme(accessor: ServicesAccessor, scheme: st
 /**
  * Returns the effective default session type for a new chat in the VS Code
  * editor window, honoring the experimental
- * {@link ChatConfiguration.EditorDefaultProvider} setting:
- * - `'copilotAh'` selects the Agent Host Copilot CLI when its contribution is registered.
- * - `'copilotEh'` selects the Extension Host Copilot CLI when its contribution is
- *   registered and it is not hidden by {@link ChatConfiguration.CopilotCliHideExtensionHostEditor}.
+ * {@link ChatConfiguration.EditorPreferCopilotHarness} setting.
  *
  * Falls back to {@link localChatSessionType} when local is enabled, or when no
  * visible non-local provider is available.
@@ -272,14 +269,8 @@ export function getComputedDefaultSessionType(
 	chatSessionsService: Pick<IChatSessionsService, 'getChatSessionContribution' | 'getAllChatSessionContributions'>,
 	workspace: IWorkspace
 ): string {
-	const defaultProvider = configurationService.getValue<string>(ChatConfiguration.EditorDefaultProvider);
-	const defaultType = getConfiguredEditorDefaultSessionType(defaultProvider);
-	if (defaultType === SessionType.AgentHostCopilot && !isEditorLocalAgentEnabled(configurationService, workspace)) {
-		return defaultType;
-	}
-
-	if (defaultType && isVisibleEditorChatSessionType(defaultType, configurationService, chatSessionsService, workspace)) {
-		return defaultType;
+	if (configurationService.getValue<boolean>(ChatConfiguration.EditorPreferCopilotHarness)) {
+		return SessionType.AgentHostCopilot;
 	}
 
 	if (isEditorLocalAgentEnabled(configurationService, workspace)) {
@@ -331,8 +322,8 @@ export function getDefaultNewChatSessionType(
 		return options.explicitOverride;
 	}
 
-	const remembered = getRememberedSessionType(storageService);
-	if (remembered && isRememberedSessionTypeUsable(remembered, configurationService, chatSessionsService, workspace)) {
+	const remembered = getUsableRememberedSessionType(storageService, configurationService, chatSessionsService, workspace);
+	if (remembered) {
 		return remembered;
 	}
 
@@ -341,6 +332,42 @@ export function getDefaultNewChatSessionType(
 	}
 
 	return getComputedDefaultSessionType(configurationService, chatSessionsService, workspace);
+}
+
+export function resolveDefaultNewChatSessionType(
+	configurationService: IConfigurationService,
+	chatSessionsService: Pick<IChatSessionsService, 'getChatSessionContribution' | 'getAllChatSessionContributions'>,
+	storageService: IStorageService,
+	workspace: IWorkspace,
+	options?: IDefaultNewChatSessionTypeOptions
+): string {
+	if (options?.explicitOverride) {
+		return options.explicitOverride;
+	}
+
+	const remembered = getUsableRememberedSessionType(storageService, configurationService, chatSessionsService, workspace);
+	if (remembered && remembered !== localChatSessionType) {
+		return remembered;
+	}
+
+	if (options?.currentSessionType === localChatSessionType
+		&& configurationService.getValue<boolean>(ChatConfiguration.EditorPreferCopilotHarness)
+		&& !hasPreferredCopilotHarness(storageService)) {
+		markPreferredCopilotHarness(storageService);
+		return SessionType.AgentHostCopilot;
+	}
+
+	return getDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, workspace, options);
+}
+
+function getUsableRememberedSessionType(
+	storageService: IStorageService,
+	configurationService: IConfigurationService,
+	chatSessionsService: Pick<IChatSessionsService, 'getChatSessionContribution' | 'getAllChatSessionContributions'>,
+	workspace: IWorkspace
+): string | undefined {
+	const remembered = getRememberedSessionType(storageService);
+	return remembered && isRememberedSessionTypeUsable(remembered, configurationService, chatSessionsService, workspace) ? remembered : undefined;
 }
 
 export function getDefaultNewChatSessionResource(
@@ -381,7 +408,7 @@ export function isVisibleEditorChatSessionType(
 	workspace: IWorkspace
 ): boolean {
 	if (sessionType === localChatSessionType) {
-		if (!isEditorLocalAgentEnabled(configurationService, workspace) && configurationService.getValue<string>(ChatConfiguration.EditorDefaultProvider) === 'copilotAh') {
+		if (!isEditorLocalAgentEnabled(configurationService, workspace) && configurationService.getValue<boolean>(ChatConfiguration.EditorPreferCopilotHarness)) {
 			return false;
 		}
 		return isEditorLocalAgentEnabled(configurationService, workspace) || getVisibleNonLocalEditorChatSessionTypes(configurationService, chatSessionsService, workspace).length === 0;
@@ -392,19 +419,6 @@ export function isVisibleEditorChatSessionType(
 	}
 
 	return !!chatSessionsService.getChatSessionContribution(sessionType);
-}
-
-function getConfiguredEditorDefaultSessionType(defaultProvider: string | undefined): string | undefined {
-	switch (defaultProvider) {
-		case 'local':
-			return localChatSessionType;
-		case 'copilotAh':
-			return SessionType.AgentHostCopilot;
-		case 'copilotEh':
-			return SessionType.CopilotCLI;
-		default:
-			return undefined;
-	}
 }
 
 function getVisibleNonLocalEditorChatSessionTypes(
