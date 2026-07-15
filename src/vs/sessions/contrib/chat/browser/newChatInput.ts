@@ -757,8 +757,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		this._register(sttService.onDidChangeState(renderState));
 
 		const updateVisibility = () => {
-			const configured = !!(this.configurationService.getValue<string>('chat.speechToText.serverUrl') ?? '').trim();
-			button.classList.toggle('hidden', !configured);
+			button.classList.toggle('hidden', !sttService.isConfigured);
 		};
 		updateVisibility();
 		this._register(this.configurationService.onDidChangeConfiguration(e => {

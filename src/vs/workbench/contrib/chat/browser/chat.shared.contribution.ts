@@ -255,7 +255,7 @@ configurationRegistry.registerConfiguration({
 		},
 		'chat.speechToText.serverUrl': {
 			type: 'string',
-			markdownDescription: nls.localize('chat.speechToText.serverUrl', "URL of the transcription backend that converts dictated chat-input audio to text. The recorded audio is POSTed here with the user's GitHub token in the `Authorization` header; the backend holds the model credentials and returns `{{ \"text\": \"...\" }}`. The microphone button appears in the chat input once this is set."),
+			markdownDescription: nls.localize('chat.speechToText.serverUrl', "Developer override for the speech-to-text transcription backend used to dictate into the chat input. When set, audio is streamed over a WebSocket to this URL, authenticated with the user's GitHub token; the backend holds the model credentials and returns the transcript. Leave empty to use the product's default endpoint. The microphone button appears in the chat input once a backend is configured (via this setting or the product default)."),
 			default: '',
 			tags: ['experimental']
 		},
@@ -2647,7 +2647,7 @@ agentPluginDiscoveryRegistry.register(new SyncDescriptor(ExtensionAgentPluginDis
 agentPluginDiscoveryRegistry.register(new SyncDescriptor(CopilotCliAgentPluginDiscovery), AgentPluginDiscoveryPriority.CopilotCli);
 
 registerSingleton(IChatResponseResourceFileSystemProvider, ChatResponseResourceFileSystemProvider, InstantiationType.Delayed);
-registerSingleton(IChatSpeechToTextService, ChatSpeechToTextService, InstantiationType.Delayed);
+registerSingleton(IChatSpeechToTextService, ChatSpeechToTextService, InstantiationType.Eager);
 registerSingleton(IChatTransferService, ChatTransferService, InstantiationType.Delayed);
 registerSingleton(IChatService, ChatService, InstantiationType.Delayed);
 registerSingleton(IChatWidgetService, ChatWidgetService, InstantiationType.Delayed);

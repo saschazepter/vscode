@@ -49,6 +49,13 @@ export interface IChatSpeechToTextService {
 	readonly analyserNode: AnalyserNode | undefined;
 
 	/**
+	 * Whether a transcription backend is configured, via the
+	 * `chat.speechToText.serverUrl` setting or the product's default endpoint.
+	 * Callers gate the dictation UI on this.
+	 */
+	readonly isConfigured: boolean;
+
+	/**
 	 * Begin capturing microphone audio in the given window and streaming it to
 	 * the transcription backend. Rejects if the microphone or backend cannot be
 	 * reached.
@@ -81,6 +88,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	}
 
 	private readonly _recordingContextKey: IContextKey<boolean>;
+	private readonly _configuredContextKey: IContextKey<boolean>;
 
 	private _mediaStream: MediaStream | undefined;
 	private _audioContext: AudioContext | undefined;
@@ -92,6 +100,10 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	/** AnalyserNode for the audio-reactive dictation glow, available while recording. */
 	get analyserNode(): AnalyserNode | undefined {
 		return this._analyserNode;
+	}
+
+	get isConfigured(): boolean {
+		return !!this._getServerUrl();
 	}
 
 	/** Finalized (committed) utterances, space-joined. */
@@ -114,6 +126,17 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	) {
 		super();
 		this._recordingContextKey = ChatContextKeys.speechToTextRecording.bindTo(contextKeyService);
+		this._configuredContextKey = ChatContextKeys.speechToTextConfigured.bindTo(contextKeyService);
+		this._updateConfiguredContextKey();
+		this._register(this._configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('chat.speechToText.serverUrl')) {
+				this._updateConfiguredContextKey();
+			}
+		}));
+	}
+
+	private _updateConfiguredContextKey(): void {
+		this._configuredContextKey.set(!!this._getServerUrl());
 	}
 
 	private _setState(state: ChatSpeechToTextState): void {
@@ -185,8 +208,12 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			// socket already gone
 		}
 
+		// The backend signals `done` after flushing the final transcript, which
+		// resolves `_closePromise` promptly. The timeout is only a safety net so
+		// the UI never stays stuck in the transcribing state if the backend is
+		// unreachable.
 		if (this._closePromise) {
-			await Promise.race([this._closePromise, timeout(8000)]);
+			await Promise.race([this._closePromise, timeout(5000)]);
 		}
 
 		const text = this._transcript;
@@ -236,6 +263,11 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 					case 'ready':
 						ready = true;
 						resolve();
+						break;
+					case 'done':
+						// Backend finished flushing the final transcript. Release
+						// the stop wait immediately instead of waiting for close.
+						this._resolveClose?.();
 						break;
 					case 'delta':
 						this._deltaText += msg.text ?? '';

@@ -56,6 +56,7 @@ export namespace ChatContextKeys {
 	export const chatModeName = new RawContextKey<string>('chatModeName', '', { type: 'string', description: localize('chatModeName', "The name of the current chat mode (e.g. 'Plan' for custom modes).") });
 	export const chatModelId = new RawContextKey<string>('chatModelId', '', { type: 'string', description: localize('chatModelId', "The short id of the currently selected chat model (for example 'gpt-4.1').") });
 	export const speechToTextRecording = new RawContextKey<boolean>('chatSpeechToTextRecording', false, { type: 'boolean', description: localize('chatSpeechToTextRecording', "True while the chat input is recording audio for speech-to-text transcription.") });
+	export const speechToTextConfigured = new RawContextKey<boolean>('chatSpeechToTextConfigured', false, { type: 'boolean', description: localize('chatSpeechToTextConfigured', "True when a speech-to-text backend is configured, via the `chat.speechToText.serverUrl` setting or the product's default endpoint.") });
 
 	export const supported = ContextKeyExpr.or(IsWebContext.negate(), RemoteNameContext.notEqualsTo(''), ContextKeyExpr.has('config.chat.experimental.serverlessWebEnabled'));
 	export const enabled = new RawContextKey<boolean>('chatIsEnabled', false, { type: 'boolean', description: localize('chatIsEnabled', "True when chat is enabled because a default chat participant is activated with an implementation.") });

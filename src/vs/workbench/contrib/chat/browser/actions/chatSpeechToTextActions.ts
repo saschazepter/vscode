@@ -23,7 +23,7 @@ import { IChatWidgetService } from '../chat.js';
 import { ChatSpeechToTextState, IChatSpeechToTextService } from '../speechToText/chatSpeechToTextService.js';
 import { cancelDictation, isDictating, startDictation, stopDictation } from '../speechToText/dictationSession.js';
 
-export const ChatSpeechToTextConfigured = ContextKeyExpr.has('config.chat.speechToText.serverUrl');
+export const ChatSpeechToTextConfigured = ContextKeyExpr.has(ChatContextKeys.speechToTextConfigured.key);
 
 /** Releases shorter than this are treated as an accidental tap and discarded. */
 const HOLD_TO_TALK_THRESHOLD_MS = 500;
@@ -50,20 +50,17 @@ class ToggleChatSpeechToTextAction extends Action2 {
 				group: 'navigation',
 			}],
 			keybinding: {
-				weight: KeybindingWeight.WorkbenchContrib,
-				// Press-to-toggle, mirroring Voice Mode's chord (Cmd+Shift+Space).
-				// Voice Mode binds the same chord in the chat input, so dictation
-				// only claims it when Voice Mode is not enabled — otherwise the two
-				// bindings would be ambiguous.
+				// Outrank the legacy "Start Voice Chat" action, which binds the
+				// same Cmd+I in the chat input at WorkbenchContrib weight. When
+				// dictation is configured it should win the chord.
+				weight: KeybindingWeight.WorkbenchContrib + 1,
+				// Dedicated chord scoped to the chat input. Kept distinct from
+				// Voice Mode's Cmd+Shift+Space so the two never contend.
 				when: ContextKeyExpr.and(
 					ChatSpeechToTextConfigured,
 					ChatContextKeys.inChatInput,
-					ContextKeyExpr.notEquals('config.agents.voice.enabled', true),
 				),
-				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.Space,
-				linux: {
-					primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyMod.Shift | KeyCode.Space,
-				},
+				primary: KeyMod.CtrlCmd | KeyCode.KeyI,
 			},
 		});
 	}

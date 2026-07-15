@@ -236,9 +236,16 @@ async def transcribe_stream(client_ws: WebSocket) -> None:
 
             audio_frames = 0
             pending_since_commit = 0
+            # Set once the client asks to stop; whether a final commit is still
+            # outstanding decides how long we wait for the closing transcript.
+            stop_event = asyncio.Event()
+            awaiting_final_commit = False
+            # Set when the last transcript has been delivered after stop, so we
+            # can close promptly instead of blocking on the open Azure session.
+            final_delivered = asyncio.Event()
 
             async def pump_client_to_azure() -> None:
-                nonlocal audio_frames, pending_since_commit
+                nonlocal audio_frames, pending_since_commit, awaiting_final_commit
                 while True:
                     msg = await client_ws.receive_json()
                     mtype = msg.get("type")
@@ -253,6 +260,8 @@ async def transcribe_stream(client_ws: WebSocket) -> None:
                         # (VAD) commit; committing an empty buffer errors.
                         if pending_since_commit > 0:
                             await azure_ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+                            awaiting_final_commit = True
+                        stop_event.set()
                         return
 
             async def pump_azure_to_client() -> None:
@@ -266,6 +275,10 @@ async def transcribe_stream(client_ws: WebSocket) -> None:
                         await client_ws.send_json({"type": "delta", "text": evt.get("delta", "")})
                     elif etype == "conversation.item.input_audio_transcription.completed":
                         await client_ws.send_json({"type": "segment", "text": evt.get("transcript", "")})
+                        # After a stop, the completed transcript is the last one
+                        # we care about — release the closer immediately.
+                        if stop_event.is_set():
+                            final_delivered.set()
                     elif etype == "error":
                         err = evt.get("error", {}) or {}
                         code = err.get("code") if isinstance(err, dict) else None
@@ -277,6 +290,9 @@ async def transcribe_stream(client_ws: WebSocket) -> None:
                         # surface it to the user as a failed transcription.
                         if code in ("input_audio_buffer_commit_empty",):
                             print(f"[stt] ignoring benign azure error: {err}", flush=True)
+                            # The awaited final commit will never arrive; stop waiting.
+                            if stop_event.is_set():
+                                final_delivered.set()
                             continue
                         print(f"[stt] azure error: {err}", flush=True)
                         await client_ws.send_json({"type": "error", "message": str(evt.get("error", "realtime error"))})
@@ -284,12 +300,21 @@ async def transcribe_stream(client_ws: WebSocket) -> None:
             client_task = asyncio.create_task(pump_client_to_azure())
             azure_task = asyncio.create_task(pump_azure_to_client())
             try:
-                # When the client sends `stop`, wait briefly for the final
-                # segment to arrive before tearing down.
+                # Wait for the client to stop, then close promptly. The Azure
+                # realtime session stays open indefinitely, so we must not block
+                # on it: wait only for the outstanding final transcript (bounded),
+                # otherwise the client sits in its "transcribing" state.
                 await client_task
+                if awaiting_final_commit:
+                    try:
+                        await asyncio.wait_for(final_delivered.wait(), timeout=4)
+                    except asyncio.TimeoutError:
+                        pass
+                # Tell the client we're done so it can finalize without waiting
+                # for the socket close to propagate.
                 try:
-                    await asyncio.wait_for(azure_task, timeout=8)
-                except asyncio.TimeoutError:
+                    await client_ws.send_json({"type": "done"})
+                except Exception:
                     pass
             finally:
                 for task in (client_task, azure_task):
