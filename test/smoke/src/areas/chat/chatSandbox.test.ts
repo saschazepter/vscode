@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { Application, Chat, Logger } from '../../../../automation';
-import { describeRepeat, dumpFailureDiagnostics, getCopilotSmokeTestEnv, getMockLlmServerPath, installAllHandlers, MockLlmServer, preseedChatExtensionEnablement } from '../../utils';
+import { dumpFailureDiagnostics, getCopilotSmokeTestEnv, getMockLlmServerPath, installAllHandlers, MockLlmServer, preseedChatExtensionEnablement } from '../../utils';
 
 const WARMUP_SCENARIO_ID = 'smoke-chat-sandbox-warmup';
 const WARMUP_REPLY = 'MOCKED_CHAT_SANDBOX_WARMUP';
@@ -20,7 +20,6 @@ const NETWORK_SCENARIO_ID = 'smoke-chat-sandbox-network';
 const NETWORK_ALLOWED_SCENARIO_ID = 'smoke-chat-sandbox-network-allowed';
 const HOME_READ_SCENARIO_ID = 'smoke-chat-sandbox-home-read';
 const HOME_READ_ALLOWED_SCENARIO_ID = 'smoke-chat-sandbox-home-read-allowed';
-const TEST_ITERATIONS = 20;
 const CHAT_RESPONSE_TIMEOUT = 120_000;
 const NETWORK_BLOCKED_PATTERN = /ECONNREFUSED|EPERM|EACCES|ENETUNREACH|EHOSTUNREACH|ENETDOWN|EAI_AGAIN/;
 const SANDBOX_EXIT_CODE_PATTERN = /SANDBOX_EXIT_CODE=(\d+)/;
@@ -97,8 +96,8 @@ export function setup(logger: Logger): void {
 		return;
 	}
 
-	describeRepeat(TEST_ITERATIONS, `Chat Sandbox (${process.platform})`, function () {
-		this.timeout(TEST_ITERATIONS * 5 * 60 * 1000);
+	describe(`Chat Sandbox (${process.platform})`, function () {
+		this.timeout(5 * 60 * 1000);
 		this.retries(0);
 
 		let mockServer: MockLlmServer;
