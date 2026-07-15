@@ -31,7 +31,7 @@ import { AgentHostSessionConfigPicker } from '../../../browser/agentHostSessionC
 
 const SESSION_ID = 'local-agent-host:s1';
 
-/** A resolved schema exposing the two shared repo-config chips (isolation + branch). */
+/** A config exposing the two shared repo-config chips (isolation + branch). */
 function makeRepoConfig(branchValue?: string): ResolveSessionConfigResult {
 	return {
 		schema: {
@@ -52,14 +52,11 @@ function makeRepoConfig(branchValue?: string): ResolveSessionConfigResult {
 	} as ResolveSessionConfigResult;
 }
 
-/** The momentarily-empty schema a freshly created draft reports while resolving. */
-function makeEmptyConfig(): ResolveSessionConfigResult {
-	return {
-		schema: { type: 'object', properties: {} },
-		values: { [SessionConfigKey.Isolation]: 'worktree' },
-	} as ResolveSessionConfigResult;
-}
-
+/**
+ * Fake provider whose `getSessionConfig` returns whatever config is set. The
+ * provider (not the picker) owns the seeded schema, so a picker recreated by a
+ * toolbar rebuild still reads the seeded chips from here.
+ */
 class FakeProvider implements Pick<IAgentHostSessionsProvider, 'id' | 'onDidChangeSessionConfig' | 'getSessionConfig' | 'getCreateSessionConfig' | 'isSessionConfigResolving' | 'setSessionConfigValue'> {
 	readonly id = LOCAL_AGENT_HOST_PROVIDER_ID;
 	readonly onDidChangeSessionConfig: Event<string>;
@@ -76,8 +73,8 @@ class FakeProvider implements Pick<IAgentHostSessionsProvider, 'id' | 'onDidChan
 	isSessionConfigResolving() { return this.resolving; }
 	async setSessionConfigValue(): Promise<void> { }
 
-	/** Mimic the provider re-resolving: swap config + resolving flag, then pulse. */
-	update(config: ResolveSessionConfigResult, resolving: boolean): void {
+	/** Swap the config + resolving flag and pulse, as the real provider does. */
+	set(config: ResolveSessionConfigResult, resolving: boolean): void {
 		this.config = config;
 		this.resolving.set(resolving, undefined);
 		this._emitter.fire(SESSION_ID);
@@ -97,7 +94,7 @@ function branchLabel(container: HTMLElement): string | undefined {
 	return branchSlot(container)?.querySelector<HTMLElement>('.sessions-chat-dropdown-label')?.textContent ?? undefined;
 }
 
-function setupPicker(store: Pick<ReturnType<typeof ensureNoDisposablesAreLeakedInTestSuite>, 'add'>) {
+function setupServices(store: Pick<ReturnType<typeof ensureNoDisposablesAreLeakedInTestSuite>, 'add'>) {
 	const emitter = store.add(new Emitter<string>());
 	const provider = new FakeProvider(emitter);
 
@@ -124,11 +121,15 @@ function setupPicker(store: Pick<ReturnType<typeof ensureNoDisposablesAreLeakedI
 	})());
 
 	const sessionObs = observableValue<IActiveSession | undefined>('activeSession', { providerId: LOCAL_AGENT_HOST_PROVIDER_ID, sessionId: SESSION_ID } as IActiveSession);
-	const picker = store.add(instantiationService.createInstance(AgentHostSessionConfigPicker, sessionObs));
+	return { instantiationService, provider, sessionObs };
+}
+
+/** Create and render a fresh picker instance, as the toolbar does on a rebuild. */
+function renderPicker(store: Pick<ReturnType<typeof ensureNoDisposablesAreLeakedInTestSuite>, 'add'>, services: ReturnType<typeof setupServices>) {
+	const picker = store.add(services.instantiationService.createInstance(AgentHostSessionConfigPicker, services.sessionObs));
 	const container = document.createElement('div');
 	picker.render(container);
-
-	return { picker, container, provider };
+	return { picker, container };
 }
 
 suite('Agent Host Session Config Picker', () => {
@@ -174,46 +175,35 @@ suite('Agent Host Session Config Picker', () => {
 		});
 	});
 
-	test('keeps isolation + branch chips visible (disabled) while a new draft re-resolves', () => {
-		const { container, provider } = setupPicker(store);
+	test('a picker recreated on a session switch still renders the provider-seeded chips (disabled) while resolving', () => {
+		const services = setupServices(store);
+		const { provider } = services;
 
-		// 1. Resolved schema — chips present and enabled; this seeds the cache.
-		assert.ok(isolationSlot(container), 'isolation checkbox should render for a resolved schema');
-		assert.ok(branchSlot(container), 'branch chip should render for a resolved schema');
-		assert.strictEqual(isolationSlot(container)!.classList.contains('disabled'), false);
-		assert.strictEqual(branchSlot(container)!.classList.contains('disabled'), false);
+		// Draft resolved → chips present and enabled.
+		provider.set(makeRepoConfig('main'), false);
+		const first = renderPicker(store, services);
+		assert.ok(isolationSlot(first.container), 'isolation checkbox renders for a resolved schema');
+		assert.ok(branchSlot(first.container), 'branch chip renders for a resolved schema');
+		assert.strictEqual(isolationSlot(first.container)!.classList.contains('disabled'), false);
 
-		// 2. Fresh draft: empty schema + resolving. Both chips must stay visible
-		// and disabled (the value is left untouched, not reset).
-		provider.update(makeEmptyConfig(), true);
-		assert.ok(isolationSlot(container), 'isolation checkbox should persist while resolving');
-		assert.ok(branchSlot(container), 'branch chip should persist while resolving');
-		assert.strictEqual(isolationSlot(container)!.classList.contains('disabled'), true, 'isolation should be disabled while resolving');
-		assert.strictEqual(branchSlot(container)!.classList.contains('disabled'), true, 'branch should be disabled while resolving');
-		assert.strictEqual(branchSlot(container)!.querySelector('a.action-label')?.getAttribute('aria-disabled'), 'true');
+		// A session-type switch disposes the toolbar's picker; the provider seeds the
+		// new (still-resolving) draft's config with the cached chips.
+		first.picker.dispose();
+		provider.set(makeRepoConfig(), true);
 
-		// 3. Resolve lands — chips re-enable and reflect the new value.
-		provider.update(makeRepoConfig('dev'), false);
-		assert.strictEqual(isolationSlot(container)!.classList.contains('disabled'), false, 'isolation should re-enable after resolve');
-		assert.strictEqual(branchSlot(container)!.classList.contains('disabled'), false, 'branch should re-enable after resolve');
-		assert.strictEqual(branchLabel(container), 'dev', 'branch label reflects the resolved value');
-	});
+		// The freshly created picker still shows the chips (disabled) — the cache
+		// lives on the provider, not the disposed picker instance.
+		const second = renderPicker(store, services);
+		assert.ok(isolationSlot(second.container), 'isolation visible on a freshly created picker');
+		assert.ok(branchSlot(second.container), 'branch visible on a freshly created picker');
+		assert.strictEqual(isolationSlot(second.container)!.classList.contains('disabled'), true, 'isolation disabled while resolving');
+		assert.strictEqual(branchSlot(second.container)!.classList.contains('disabled'), true, 'branch disabled while resolving');
+		assert.strictEqual(branchSlot(second.container)!.querySelector('a.action-label')?.getAttribute('aria-disabled'), 'true');
 
-	test('stops injecting a repo chip once the resolved schema drops it', () => {
-		const { container, provider } = setupPicker(store);
-		assert.ok(branchSlot(container), 'branch chip present initially');
-
-		// Authoritative resolve without a branch property (e.g. a non-git folder)
-		// prunes it from the cache.
-		provider.update({
-			schema: { type: 'object', properties: { [SessionConfigKey.Isolation]: makeRepoConfig().schema.properties[SessionConfigKey.Isolation] } },
-			values: { [SessionConfigKey.Isolation]: 'worktree' },
-		} as ResolveSessionConfigResult, false);
-		assert.strictEqual(branchSlot(container), undefined, 'branch chip gone after a resolve without branch');
-
-		// A subsequent loading render must not resurrect the pruned branch chip.
-		provider.update(makeEmptyConfig(), true);
-		assert.ok(isolationSlot(container), 'isolation still injected while resolving');
-		assert.strictEqual(branchSlot(container), undefined, 'pruned branch chip is not re-injected');
+		// Resolve lands → chips re-enable and reflect the resolved value.
+		provider.set(makeRepoConfig('dev'), false);
+		assert.strictEqual(isolationSlot(second.container)!.classList.contains('disabled'), false, 'isolation re-enables after resolve');
+		assert.strictEqual(branchSlot(second.container)!.classList.contains('disabled'), false, 'branch re-enables after resolve');
+		assert.strictEqual(branchLabel(second.container), 'dev', 'branch label reflects the resolved value');
 	});
 });
