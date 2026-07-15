@@ -223,7 +223,7 @@
 	position: absolute;
 	right: 4px;
 	width: 9px;
-	border-radius: 5px;
+	border-radius: var(--vscode-cornerRadius-circle);
 	background-color: var(--vscode-scrollbarSlider-background);
 	pointer-events: none;
 	transition: opacity 160ms ease;
@@ -234,10 +234,11 @@
 	display: none;
 }
 
-/* The thumb recedes once the timeline is engaged (scrolling/hover), but stays visible while scrubbing
- * so dragging the lane feels like grabbing a scrollbar. */
+/* The thumb recedes whenever the marks are revealed (engaged/hover/keyboard focus), but stays visible
+ * while scrubbing so dragging the lane feels like grabbing a scrollbar. */
 .prompt-timeline-rail.engaged:not(.scrubbing) .prompt-timeline-ruler-thumb,
-.prompt-timeline-rail:hover:not(.scrubbing) .prompt-timeline-ruler-thumb {
+.prompt-timeline-rail:hover:not(.scrubbing) .prompt-timeline-ruler-thumb,
+.prompt-timeline-rail:focus-within:not(.scrubbing) .prompt-timeline-ruler-thumb {
 	opacity: 0;
 }
 

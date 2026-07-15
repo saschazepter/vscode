@@ -3,8 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { addDisposableListener, getWindow } from '../../../../base/browser/dom.js';
-import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { addDisposableListener, EventType, getWindow } from '../../../../base/browser/dom.js';
+import { IMouseWheelEvent, StandardWheelEvent } from '../../../../base/browser/mouseEvent.js';
+import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../base/common/observable.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -14,10 +15,10 @@ import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/con
 import { MIN_PROMPTS, PROMPT_TIMELINE_CONTRIB_ID, PROMPT_TIMELINE_ENABLED_SETTING } from '../common/promptTimeline.js';
 import { PromptTimelineModel, PromptEntry } from './promptTimelineModel.js';
 import { IPromptTimelineRail } from './promptTimelineRail.js';
-import { PromptTimelineRulerRail } from './promptTimelineRulerRail.js';
+import { MIN_HOST_WIDTH, PromptTimelineRulerRail } from './promptTimelineRulerRail.js';
 
-/** Wheel distance (|deltaY|) that must accumulate within {@link WHEEL_WINDOW_MS} to count as a hard/fast scroll. */
-const HARD_WHEEL_DISTANCE = 800;
+/** Normalized wheel distance (device-independent units, ~1 per notch) accumulated within {@link WHEEL_WINDOW_MS} to count as a hard/fast scroll. */
+const HARD_WHEEL_DISTANCE = 6;
 /** Rolling window for the wheel-velocity accumulator; a pause longer than this resets it. */
 const WHEEL_WINDOW_MS = 120;
 
@@ -38,6 +39,8 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 	/** Holds the model, rail and all their wiring while the feature is enabled. */
 	private readonly _enablement = this._register(new DisposableStore());
 	private _enabled = false;
+	/** Latest tick count is at or above {@link MIN_PROMPTS}; combined with the host width to decide whether the rail replaces the native scrollbar. */
+	private _hasEnoughPrompts = false;
 
 	constructor(
 		private readonly widget: IChatWidget,
@@ -69,6 +72,7 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 		this._enablement.clear();
 		this._model = undefined;
 		this._rail = undefined;
+		this._hasEnoughPrompts = false;
 		if (enabled) {
 			this._createRail();
 		}
@@ -90,48 +94,17 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 		this._enablement.add(rail.onDidReview(tick => { void model.reviewChanges(tick); }));
 		this._enablement.add(rail.onDidReviewFile(e => { void model.reviewChanges(e.tick, e.file); }));
 
-		// The transcript stays calm at rest AND during gentle scrolling — a plain scrollbar. Only a
-		// HARD / FAST scroll (a deliberate flick) that ACTUALLY moves the transcript reveals the
-		// timeline and blooms the fisheye "fan", which then follows the viewport as you continue. It
-		// lingers for a few seconds after you stop before collapsing back to a plain scrollbar.
-		//
-		// Two-part gate: (1) here we detect the hard flick from WHEEL velocity and record it via
-		// `notifyHardWheel()`; (2) the rail only blooms if a real scroll movement follows shortly after
-		// (see `setScrollLayout`). Splitting it this way means a flick against the top/bottom limit —
-		// which fires wheel events but scrolls nothing — never opens the fan, and programmatic scroll
-		// nudges during virtualization re-measure (no recent hard wheel) don't either.
-		//
-		// The listener is on the CAPTURE phase: the transcript's own ScrollableElement consumes the
-		// wheel and stops its propagation while there is room to scroll, so a bubble-phase listener
-		// here would only ever fire at the top/bottom scroll limit. Capturing on the widget root sees
-		// every wheel first, so a hard flick is detected anywhere in the transcript, not just the ends.
-		let wheelAcc = 0;
-		let wheelWindowStart = 0;
-		this._enablement.add(addDisposableListener(this.widget.domNode, 'wheel', (e: WheelEvent) => {
-			const now = Date.now();
-			// Rolling window: a pause longer than the window resets the accumulator, so only a sustained
-			// fast flick (lots of wheel distance in a short time) crosses the threshold — a gentle,
-			// steady scroll never accumulates enough.
-			if (now - wheelWindowStart > WHEEL_WINDOW_MS) {
-				wheelAcc = 0;
-				wheelWindowStart = now;
-			}
-			wheelAcc += Math.abs(e.deltaY);
-			if (wheelAcc >= HARD_WHEEL_DISTANCE) {
-				wheelAcc = 0;
-				rail.notifyHardWheel();
-			}
-		}, { capture: true, passive: true }));
+		// A deliberate hard/fast scroll reveals the fan; capture phase so it is seen before the
+		// transcript's ScrollableElement consumes the wheel mid-content (see `_registerHardWheelDetector`).
+		this._enablement.add(this._registerHardWheelDetector(rail));
 
 		this._enablement.add(autorun(reader => {
 			const ticks = model.ticks.read(reader);
 			// Toggle visibility before rendering so the rail's fit measurement in
 			// setTicks runs against the displayed (non-zero height) element.
-			const active = ticks.length >= MIN_PROMPTS;
-			rail.domNode.classList.toggle('hidden', !active);
-			// Mark the host so the transcript's native scrollbar is hidden only while the rail is
-			// actually showing (the rail becomes the scrollbar); few-prompt chats keep the native one.
-			this.widget.domNode.classList.toggle('prompt-timeline-active', active);
+			this._hasEnoughPrompts = ticks.length >= MIN_PROMPTS;
+			rail.domNode.classList.toggle('hidden', !this._hasEnoughPrompts);
+			this._updateNativeScrollbarHidden();
 			rail.setTicks(ticks);
 		}));
 
@@ -162,14 +135,49 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 			railNode.style.setProperty('--prompt-timeline-bottom', `${inputPart.height.read(reader)}px`);
 		}));
 
-		// Report the host width so the rail can hide on very narrow transcripts.
+		// Report the host width so the rail can hide on very narrow transcripts, and keep the native
+		// scrollbar whenever the rail is too narrow to replace it.
 		const ResizeObserverCtor = getWindow(host).ResizeObserver;
 		if (ResizeObserverCtor) {
-			const observer = new ResizeObserverCtor(() => rail.setHostWidth(host.clientWidth));
+			const observer = new ResizeObserverCtor(() => {
+				rail.setHostWidth(host.clientWidth);
+				this._updateNativeScrollbarHidden();
+			});
 			observer.observe(host);
 			this._enablement.add(toDisposable(() => observer.disconnect()));
 		}
 		rail.setHostWidth(host.clientWidth);
+		this._updateNativeScrollbarHidden();
+	}
+
+	/**
+	 * Detects a deliberate hard/fast scroll from wheel velocity and tells the rail (it only blooms if a
+	 * real scroll movement follows, so flicking against a scroll limit never opens it). Deltas are
+	 * normalized via {@link StandardWheelEvent} so line-mode devices are not stuck below the threshold,
+	 * and the listener is on the capture phase so it is seen before the transcript's ScrollableElement
+	 * consumes the wheel mid-content.
+	 */
+	private _registerHardWheelDetector(rail: IPromptTimelineRail): IDisposable {
+		let wheelAcc = 0;
+		let wheelWindowStart = 0;
+		return addDisposableListener(this.widget.domNode, EventType.MOUSE_WHEEL, (e: IMouseWheelEvent) => {
+			const now = Date.now();
+			if (now - wheelWindowStart > WHEEL_WINDOW_MS) {
+				wheelAcc = 0;
+				wheelWindowStart = now;
+			}
+			wheelAcc += Math.abs(new StandardWheelEvent(e).deltaY);
+			if (wheelAcc >= HARD_WHEEL_DISTANCE) {
+				wheelAcc = 0;
+				rail.notifyHardWheel();
+			}
+		}, { capture: true, passive: true });
+	}
+
+	/** Hide the transcript's native scrollbar only while the rail is actually acting as it: enough prompts AND wide enough (below {@link MIN_HOST_WIDTH} the rail hides, so the native slider must stay). */
+	private _updateNativeScrollbarHidden(): void {
+		const active = this._hasEnoughPrompts && this.widget.domNode.clientWidth >= MIN_HOST_WIDTH;
+		this.widget.domNode.classList.toggle('prompt-timeline-active', active);
 	}
 
 	// -- Navigation API (used by promptTimelineActions) --

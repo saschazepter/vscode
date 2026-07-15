@@ -51,6 +51,8 @@ export interface IPromptScrollLayout {
 	readonly scrollTop: number;
 	/** Full scrollable content height (px, the transcript's real scroll space). */
 	readonly scrollHeight: number;
+	/** Visible viewport height (px) of the transcript list — the scrollbar's `visibleSize`. */
+	readonly viewportHeight: number;
 }
 
 /** A single tick shown on the prompt timeline rail. */
@@ -236,7 +238,7 @@ export class PromptTimelineModel extends Disposable {
 				marks.push({ requestId: item.id, top: tops[i] });
 			}
 		}
-		return { marks, total, scrollTop: this.widget.scrollTop, scrollHeight: this.widget.scrollHeight };
+		return { marks, total, scrollTop: this.widget.scrollTop, scrollHeight: this.widget.scrollHeight, viewportHeight: this.widget.viewportHeight };
 	}
 
 	/**
