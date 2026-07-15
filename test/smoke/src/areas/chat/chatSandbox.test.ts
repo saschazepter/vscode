@@ -86,8 +86,10 @@ async function updateUserSettingsWhileChatIsOpen(app: Application, settings: [ke
 	await app.workbench.quickaccess.runCommand('workbench.action.closeActiveEditor');
 
 	// Settings are changed between chat requests, so restore the view that the
-	// following test interacts with without restarting the application.
-	await app.workbench.quickaccess.runCommand('workbench.action.chat.open');
+	// following test interacts with without restarting the application. The
+	// sandbox tests exercise the local participant harness, so select it
+	// explicitly (the panel default is Agent Host Copilot when enabled).
+	await app.workbench.quickaccess.runCommand('smoketest.openLocalChat');
 	await app.workbench.chat.waitForChatView();
 }
 
@@ -173,7 +175,7 @@ export function setup(logger: Logger): void {
 
 		before(async function () {
 			const app = this.app as Application;
-			await app.workbench.quickaccess.runCommand('workbench.action.chat.open');
+			await app.workbench.quickaccess.runCommand('smoketest.openLocalChat');
 			await app.workbench.chat.waitForChatView();
 			await warmUpChat(app.workbench.chat, logger);
 		});
