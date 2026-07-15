@@ -506,7 +506,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 				toolbarOptions: {
 					primaryGroup: () => true,
 				},
-				actionViewItemProvider: (action, options) => this.actionViewItemProvider(action, options),
+				actionViewItemProvider: (action, options) => createActionViewItem(this.instantiationService, action, options),
 				hoverDelegate: this.hoverDelegate
 			}));
 
@@ -623,7 +623,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 	private actionViewItemProvider(action: IAction, options: IBaseActionViewItemOptions): IActionViewItem | undefined {
 
 		// --- Custom view items registered via IActionViewItemService
-		for (const menuId of [MenuId.TitleBar, MenuId.TitleBarAdjacentCenter, MenuId.LayoutControlMenu]) {
+		for (const menuId of [MenuId.TitleBar, MenuId.LayoutControlMenu]) {
 			const customViewItem = this.actionViewItemService.lookUp(menuId, action.id);
 			if (customViewItem) {
 				const result = customViewItem(action, options, this.instantiationService, getWindowId(this.element ? getWindow(this.element) : mainWindow));
