@@ -1081,8 +1081,6 @@ suite('AgentSideEffects', () => {
 				action: { type: ActionType.ChatTurnComplete, turnId: 'turn-1', duration: 1000 },
 			});
 
-			// Persistence is fire-and-forget; let the write settle.
-			await new Promise(r => setTimeout(r, 10));
 			assert.strictEqual(await db.getMetadata('isRead'), '');
 		});
 

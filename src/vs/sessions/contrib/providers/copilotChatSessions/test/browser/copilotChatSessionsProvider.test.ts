@@ -636,8 +636,35 @@ suite('CopilotChatSessionsProvider', () => {
 		assert.strictEqual(provider.getSessions()[0].isRead.get(), true);
 	});
 
+	test('setSessionReadState clears unread across every chat in the group', async () => {
+		const rootResource = URI.from({ scheme: AgentSessionProviders.Background, path: '/root-session' });
+		const childResource = URI.from({ scheme: AgentSessionProviders.Background, path: '/child-session' });
+
+		model.addSession(createMockAgentSession(rootResource, { title: 'Root', createdAt: 1, read: true, onSetRead: () => model.fireDidChangeSessions() }));
+		model.addSession(createMockAgentSession(childResource, {
+			title: 'Child', createdAt: 2, read: false,
+			metadata: { repositoryPath: '/test/repo', sessionParentId: 'root-session' },
+			onSetRead: () => model.fireDidChangeSessions(),
+		}));
+
+		const provider = createProvider(disposables, model);
+		const session = provider.getSessions()[0];
+		const readBefore = session.isRead.get();
+
+		await provider.setSessionReadState(session.sessionId, true);
+
+		assert.deepStrictEqual({
+			readBefore,
+			readAfter: provider.getSessions()[0].isRead.get(),
+		}, {
+			readBefore: false,
+			readAfter: true,
+		});
+	});
+
 
 	// ---- Session creation -------
+
 	// Note: createNewSession tests are limited because CopilotCLISession
 	// requires IGitService and creates disposables that are hard to clean
 	// up in isolation. Full integration tests should cover session creation.

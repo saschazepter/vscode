@@ -592,9 +592,9 @@ export class LocalChatSessionsProvider extends Disposable implements ISessionsPr
 			if (stored.archived) {
 				session.setArchived(true);
 			}
-			if (stored.isRead !== undefined) {
-				session.setRead(stored.isRead);
-			}
+			// Entries persisted before `isRead` existed default to unread, so the
+			// additive migration can promote genuinely-read legacy sessions.
+			session.setRead(stored.isRead ?? false);
 			// Only honour the parent link when the primary is also present in
 			// storage; otherwise promote this orphan child to a primary.
 			if (stored.parentUri) {
@@ -804,10 +804,21 @@ export class LocalChatSessionsProvider extends Disposable implements ISessionsPr
 
 	async setSessionReadState(sessionId: string, isRead: boolean): Promise<void> {
 		const session = this._findSession(sessionId);
-		if (session && session.isRead.get() !== isRead) {
-			session.setRead(isRead);
-			this._updateStoredSession(session);
-			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [this._toISession(session)] });
+		if (!session) {
+			return;
+		}
+		// A group's read state aggregates across every chat, so update them all.
+		const primary = this._resolvePrimary(session);
+		let changed = false;
+		for (const chat of this._getGroupChats(primary)) {
+			if (chat.isRead.get() !== isRead) {
+				chat.setRead(isRead);
+				this._updateStoredSession(chat);
+				changed = true;
+			}
+		}
+		if (changed) {
+			this._onDidChangeSessions.fire({ added: [], removed: [], changed: [this._toISession(primary)] });
 		}
 	}
 
@@ -999,13 +1010,14 @@ export class LocalChatSessionsProvider extends Disposable implements ISessionsPr
 		this._addStoredSession(newSession);
 		this._newSessions.deleteAndLeak(newSession.sessionId);
 
-		// Track response completion to update session status and persist title
+		// Track the live model now, while the first turn is still in progress,
+		// so a background completion/error marks the session unread even if the
+		// user navigates away before it settles.
 		if (result.kind === 'sent') {
+			this._syncSessionFromModel(newSession);
 			result.data.responseCompletePromise.then(() => {
 				newSession.setStatus(SessionStatus.Completed);
-				this._syncSessionFromModel(newSession);
 			}, error => {
-				// Response failed — still mark session completed so it doesn't appear stuck.
 				this.logService.error(`[LocalChatSessionsProvider] Response failed for session ${newSession.sessionId}:`, error);
 				newSession.setStatus(SessionStatus.Completed);
 				this._updateStoredSession(newSession);

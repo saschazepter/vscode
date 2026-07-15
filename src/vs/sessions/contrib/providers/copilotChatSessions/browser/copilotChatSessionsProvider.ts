@@ -1929,9 +1929,16 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	}
 
 	async setSessionReadState(sessionId: string, isRead: boolean): Promise<void> {
-		const agentSession = this._findAgentSession(sessionId);
-		if (agentSession && agentSession.isRead() !== isRead) {
-			agentSession.setRead(isRead);
+		// A grouped session's read state aggregates across all its chats, so
+		// update every chat in the group; fall back to the id itself when the
+		// session is ungrouped.
+		const chatIds = this._getChatIdsInGroup(sessionId);
+		const targetIds = chatIds.length > 0 ? chatIds : [sessionId];
+		for (const chatId of targetIds) {
+			const agentSession = this._findAgentSession(chatId);
+			if (agentSession && agentSession.isRead() !== isRead) {
+				agentSession.setRead(isRead);
+			}
 		}
 	}
 
