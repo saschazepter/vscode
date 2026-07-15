@@ -819,6 +819,7 @@ export class QuickInputController extends Disposable {
 		this.onHideEmitter.fire();
 		if (container) {
 			if (this.hasRequiredAncestorClasses(container, QUICK_INPUT_MOTION_ANCESTOR_CLASSES)) {
+				container.inert = true;
 				container.classList.add(QUICK_INPUT_MOTION_CLOSING_CLASS);
 				this.closeAnimation.value = disposableTimeout(() => this.completeCloseAnimation(), QUICK_INPUT_CLOSE_ANIMATION_DURATION);
 			} else {
@@ -848,6 +849,7 @@ export class QuickInputController extends Disposable {
 		this.closeAnimation.clear();
 		const container = this.ui?.container;
 		if (container) {
+			container.inert = false;
 			container.classList.remove(QUICK_INPUT_MOTION_CLOSING_CLASS);
 			container.style.display = 'none';
 		}
