@@ -2263,6 +2263,10 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	position: relative;
 }
 
+.interactive-session .interactive-input-part:not(.chat-input-hidden) > .chat-input-persistent-content {
+	display: contents;
+}
+
 .interactive-session .interactive-input-part.chat-input-hidden > :not(.chat-input-persistent-content) {
 	display: none;
 }
