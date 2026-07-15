@@ -356,6 +356,7 @@ export function resolveDefaultNewChatSessionType(
 	}
 
 	if (options?.currentSessionType === localChatSessionType
+		&& agentHostEnabled
 		&& configurationService.getValue<boolean>(ChatConfiguration.EditorPreferCopilotHarness)
 		&& !hasPreferredCopilotHarness(storageService)) {
 		markPreferredCopilotHarness(storageService);

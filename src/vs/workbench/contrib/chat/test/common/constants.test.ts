@@ -186,19 +186,19 @@ suite('ChatConfiguration defaults', () => {
 		const chatSessionsService = createChatSessionsService(SessionType.AgentHostCopilot, SessionType.AgentHostClaude);
 		const storageService = disposables.add(new TestStorageService());
 
-		const firstNewSession = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, false, { currentSessionType: localChatSessionType });
+		const firstNewSession = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, true, { currentSessionType: localChatSessionType });
 		await configurationService.setUserConfiguration(ChatConfiguration.EditorPreferCopilotHarness, false);
-		const whileDisabled = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, false, { currentSessionType: localChatSessionType });
+		const whileDisabled = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, true, { currentSessionType: localChatSessionType });
 		await configurationService.setUserConfiguration(ChatConfiguration.EditorPreferCopilotHarness, true);
-		recordUserSelectedSessionType(storageService, configurationService, chatSessionsService, localWorkspace, SessionType.AgentHostClaude, false);
-		const afterNonLocalSelection = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, false, { currentSessionType: SessionType.AgentHostClaude });
-		recordUserSelectedSessionType(storageService, configurationService, chatSessionsService, localWorkspace, localChatSessionType, false);
+		recordUserSelectedSessionType(storageService, configurationService, chatSessionsService, localWorkspace, SessionType.AgentHostClaude, true);
+		const afterNonLocalSelection = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, true, { currentSessionType: SessionType.AgentHostClaude });
+		recordUserSelectedSessionType(storageService, configurationService, chatSessionsService, localWorkspace, localChatSessionType, true);
 
 		assert.deepStrictEqual({
 			firstNewSession,
 			whileDisabled,
 			afterNonLocalSelection,
-			afterReturningToLocal: resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, false, { currentSessionType: localChatSessionType }),
+			afterReturningToLocal: resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, true, { currentSessionType: localChatSessionType }),
 			preferenceApplied: hasPreferredCopilotHarness(storageService),
 		}, {
 			firstNewSession: SessionType.AgentHostCopilot,
@@ -206,6 +206,26 @@ suite('ChatConfiguration defaults', () => {
 			afterNonLocalSelection: SessionType.AgentHostClaude,
 			afterReturningToLocal: localChatSessionType,
 			preferenceApplied: true,
+		});
+	});
+
+	test('one-time Copilot swap is skipped and unmarked when the agent host is disabled', () => {
+		const configurationService = new TestConfigurationService({
+			[ChatConfiguration.EditorPreferCopilotHarness]: true,
+		});
+		const chatSessionsService = createChatSessionsService(SessionType.AgentHostCopilot);
+		const storageService = disposables.add(new TestStorageService());
+
+		// With the agent host disabled (e.g. on web) the swap must not fire, so it
+		// neither returns an unresolvable Copilot type nor marks the transition.
+		const resolved = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, false, { currentSessionType: localChatSessionType });
+
+		assert.deepStrictEqual({
+			resolved,
+			preferenceApplied: hasPreferredCopilotHarness(storageService),
+		}, {
+			resolved: localChatSessionType,
+			preferenceApplied: false,
 		});
 	});
 
