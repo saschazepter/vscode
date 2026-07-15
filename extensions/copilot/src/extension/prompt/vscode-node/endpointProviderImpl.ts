@@ -195,10 +195,7 @@ export class ProductionEndpointProvider extends Disposable implements IEndpointP
 				case BYOKUtilityModelDefault.None:
 					throw this._createMissingUtilityModelError(family);
 				case BYOKUtilityModelDefault.Copilot:
-					// The Copilot utility models require a Copilot token (CAPI auth).
-					// For air-gapped / signed-out BYOK users there is no token source,
-					// so they can't be used. Treat this like 'none' and ask the user to
-					// choose a utility model.
+					// Copilot utility models require a Copilot token source (unavailable for air-gapped / signed-out BYOK).
 					if (!this._authService.hasCopilotTokenSource) {
 						throw this._createMissingUtilityModelError(family);
 					}
@@ -214,13 +211,7 @@ export class ProductionEndpointProvider extends Disposable implements IEndpointP
 		}
 	}
 
-	/**
-	 * Builds the error thrown when a BYOK main agent model is selected but no
-	 * utility model is available — either because the user opted out
-	 * (`chat.byokUtilityModelDefault: none`) or because the Copilot utility
-	 * models can't be used (air-gapped / signed-out BYOK). The message points
-	 * the user at the settings they can change to resolve it.
-	 */
+	/** Creates an actionable error for when no usable utility model is available for a BYOK main agent model. */
 	private _createMissingUtilityModelError(family: 'copilot-utility' | 'copilot-utility-small'): Error {
 		const utilityModelSetting = family === 'copilot-utility' ? 'chat.utilityModel' : 'chat.utilitySmallModel';
 		// 'copilot' is only usable when a Copilot token is available; for
@@ -233,9 +224,7 @@ export class ProductionEndpointProvider extends Disposable implements IEndpointP
 		const value = this._configService.getNonExtensionConfig<unknown>(ProductionEndpointProvider.BYOK_UTILITY_MODEL_DEFAULT_CONFIG_KEY);
 		switch (value) {
 			case undefined:
-				// Match the registered default in `chat.shared.contribution.ts`. When
-				// the setting is unset (or unregistered in an older core), BYOK
-				// utility flows use GitHub Copilot's utility models.
+				// Preserve the Copilot default when running against a core that does not register this setting.
 				return BYOKUtilityModelDefault.Copilot;
 			case BYOKUtilityModelDefault.None:
 			case BYOKUtilityModelDefault.MainAgent:
