@@ -1753,6 +1753,27 @@ suite('AgentSessions', () => {
 		let instantiationService: TestInstantiationService;
 		let viewModel: AgentSessionsModel;
 
+		class MutableReadChatSessionItemController implements IChatSessionItemController {
+			readonly onDidChangeChatSessionItems = Event.None;
+			readonly readUpdates: boolean[] = [];
+
+			constructor(private sessionItem: IChatSessionItem) { }
+
+			get items(): readonly IChatSessionItem[] {
+				return [this.sessionItem];
+			}
+
+			async refresh(): Promise<void> { }
+
+			setChatSessionItemReadState(_resource: URI, isRead: boolean): void {
+				this.readUpdates.push(isRead);
+			}
+
+			setProviderRead(isRead: boolean): IChatSessionItem {
+				return this.sessionItem = { ...this.sessionItem, isRead };
+			}
+		}
+
 		setup(() => {
 			mockChatSessionsService = new MockChatSessionsService();
 			instantiationService = disposables.add(workbenchInstantiationService(undefined, disposables));
@@ -1767,6 +1788,117 @@ suite('AgentSessions', () => {
 		});
 
 		ensureNoDisposablesAreLeakedInTestSuite();
+
+		test('should ignore stale local state for controller-owned read state', async () => {
+			return runWithFakedTimers({}, async () => {
+				const item = makeSimpleSessionItem('session-1', { isRead: true });
+				instantiationService.get(IStorageService).store(
+					'agentSessions.state.cache',
+					JSON.stringify([{ resource: item.resource.toString(), read: -1 }]),
+					StorageScope.WORKSPACE,
+					StorageTarget.MACHINE,
+				);
+				const controller = new MutableReadChatSessionItemController(item);
+				mockChatSessionsService.registerChatSessionItemController(chatSessionTestType, controller);
+				viewModel = disposables.add(instantiationService.createInstance(AgentSessionsModel));
+
+				await viewModel.resolve(undefined);
+
+				assert.deepStrictEqual({
+					isRead: viewModel.sessions[0].isRead(),
+					isMarkedUnread: viewModel.sessions[0].isMarkedUnread(),
+				}, {
+					isRead: true,
+					isMarkedUnread: false,
+				});
+			});
+		});
+
+		test('should delegate controller-owned read writes without a local effective-state overlay', async () => {
+			return runWithFakedTimers({}, async () => {
+				const controller = new MutableReadChatSessionItemController(makeSimpleSessionItem('session-1', { isRead: true }));
+				mockChatSessionsService.registerChatSessionItemController(chatSessionTestType, controller);
+				viewModel = disposables.add(instantiationService.createInstance(AgentSessionsModel));
+				await viewModel.resolve(undefined);
+
+				viewModel.sessions[0].setRead(false);
+				const beforeUnreadUpdate = {
+					isRead: viewModel.sessions[0].isRead(),
+					isMarkedUnread: viewModel.sessions[0].isMarkedUnread(),
+				};
+
+				const unreadItem = controller.setProviderRead(false);
+				let sessionsChanged = Event.toPromise(viewModel.onDidChangeSessions);
+				mockChatSessionsService.fireDidChangeSessionItems({ addedOrUpdated: [unreadItem] });
+				await sessionsChanged;
+				const afterUnreadUpdate = {
+					isRead: viewModel.sessions[0].isRead(),
+					isMarkedUnread: viewModel.sessions[0].isMarkedUnread(),
+				};
+
+				viewModel.sessions[0].setRead(true);
+				const beforeReadUpdate = {
+					isRead: viewModel.sessions[0].isRead(),
+					isMarkedUnread: viewModel.sessions[0].isMarkedUnread(),
+				};
+
+				const readItem = controller.setProviderRead(true);
+				sessionsChanged = Event.toPromise(viewModel.onDidChangeSessions);
+				mockChatSessionsService.fireDidChangeSessionItems({ addedOrUpdated: [readItem] });
+				await sessionsChanged;
+
+				assert.deepStrictEqual({
+					readUpdates: controller.readUpdates,
+					beforeUnreadUpdate,
+					afterUnreadUpdate,
+					beforeReadUpdate,
+					afterReadUpdate: {
+						isRead: viewModel.sessions[0].isRead(),
+						isMarkedUnread: viewModel.sessions[0].isMarkedUnread(),
+					},
+				}, {
+					readUpdates: [false, true],
+					beforeUnreadUpdate: {
+						isRead: true,
+						isMarkedUnread: true,
+					},
+					afterUnreadUpdate: {
+						isRead: false,
+						isMarkedUnread: true,
+					},
+					beforeReadUpdate: {
+						isRead: false,
+						isMarkedUnread: false,
+					},
+					afterReadUpdate: {
+						isRead: true,
+						isMarkedUnread: false,
+					},
+				});
+			});
+		});
+
+		test('should surface provider-owned unread transitions without marking them explicit', async () => {
+			return runWithFakedTimers({}, async () => {
+				const controller = new MutableReadChatSessionItemController(makeSimpleSessionItem('session-1', { isRead: true }));
+				mockChatSessionsService.registerChatSessionItemController(chatSessionTestType, controller);
+				viewModel = disposables.add(instantiationService.createInstance(AgentSessionsModel));
+				await viewModel.resolve(undefined);
+
+				const unreadItem = controller.setProviderRead(false);
+				const sessionsChanged = Event.toPromise(viewModel.onDidChangeSessions);
+				mockChatSessionsService.fireDidChangeSessionItems({ addedOrUpdated: [unreadItem] });
+				await sessionsChanged;
+
+				assert.deepStrictEqual({
+					isRead: viewModel.sessions[0].isRead(),
+					isMarkedUnread: viewModel.sessions[0].isMarkedUnread(),
+				}, {
+					isRead: false,
+					isMarkedUnread: false,
+				});
+			});
+		});
 
 		test('should mark session as read and unread', async () => {
 			return runWithFakedTimers({}, async () => {

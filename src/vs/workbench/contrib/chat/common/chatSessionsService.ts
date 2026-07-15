@@ -224,12 +224,11 @@ export interface IChatSessionItem {
 		readonly deletions: number;
 	} | readonly IChatSessionFileChange[] | readonly IChatSessionFileChange2[];
 	readonly archived?: boolean;
+	readonly isRead?: boolean;
 	readonly metadata?: IChatSessionItemMetadata;
 	/**
-	 * Resource identifier the item was previously known by. When set, host-stored
-	 * per-resource state (archive, pin, read) recorded under that URI is adopted
-	 * forward onto {@link resource} on first state read, and the legacy entry is
-	 * removed. Scheme must match {@link resource}'s scheme; otherwise ignored.
+	 * Resource identifier the item was previously known by. Locally owned per-resource state is adopted forward onto
+	 * {@link resource}; controller-owned state remains provider-supplied, and cross-scheme mappings are ignored.
 	 */
 	readonly legacyResource?: URI;
 }
@@ -592,6 +591,11 @@ export interface IChatSessionItemController {
 	 * Set the authoritative archived state for the session identified by `resource`.
 	 */
 	setChatSessionItemArchived?(resource: URI, archived: boolean): void;
+
+	/**
+	 * Set the authoritative read state for the session identified by `resource`.
+	 */
+	setChatSessionItemReadState?(resource: URI, isRead: boolean): void;
 }
 
 export interface IChatSessionOptionsChangeEvent {
@@ -742,6 +746,16 @@ export interface IChatSessionsService {
 	 * Sets archived state by delegating to the registered item controller.
 	 */
 	setChatSessionItemArchived(sessionResource: URI, archived: boolean): void;
+
+	/**
+	 * Whether the registered item controller owns read state for the session.
+	 */
+	canSetChatSessionItemReadState(sessionResource: URI): boolean;
+
+	/**
+	 * Sets read state by delegating to the registered item controller.
+	 */
+	setChatSessionItemReadState(sessionResource: URI, isRead: boolean): void;
 
 	// #endregion
 

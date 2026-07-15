@@ -122,14 +122,28 @@ export class AgentHostSessionListStore extends Disposable {
 	}
 
 	setSessionArchived(provider: string, rawId: string, archived: boolean): void {
+		this._setSessionStatusFlag(provider, rawId, SessionStatus.IsArchived, archived, {
+			type: ActionType.SessionIsArchivedChanged,
+			isArchived: archived,
+		});
+	}
+
+	setSessionReadState(provider: string, rawId: string, isRead: boolean): void {
+		this._setSessionStatusFlag(provider, rawId, SessionStatus.IsRead, isRead, {
+			type: ActionType.SessionIsReadChanged,
+			isRead,
+		});
+	}
+
+	private _setSessionStatusFlag(provider: string, rawId: string, flag: SessionStatus, enabled: boolean, action: SessionAction): void {
 		const session = AgentSession.uri(provider, rawId);
 		const key = this._key(provider, rawId);
 		const cached = this._entries.get(key);
 		let updated: IAgentHostSessionListEntry | undefined;
 		if (cached) {
-			const status = archived
-				? cached.summary.status | SessionStatus.IsArchived
-				: cached.summary.status & ~SessionStatus.IsArchived;
+			const status = enabled
+				? cached.summary.status | flag
+				: cached.summary.status & ~flag;
 			if (status === cached.summary.status) {
 				return;
 			}
@@ -137,10 +151,7 @@ export class AgentHostSessionListStore extends Disposable {
 		}
 
 		this._mutationGeneration++;
-		this._connection.dispatch(session.toString(), {
-			type: ActionType.SessionIsArchivedChanged,
-			isArchived: archived,
-		});
+		this._connection.dispatch(session.toString(), action);
 		if (updated) {
 			this._entries.set(key, updated);
 			this._onDidChangeSessions.fire({ addedOrUpdated: [updated] });

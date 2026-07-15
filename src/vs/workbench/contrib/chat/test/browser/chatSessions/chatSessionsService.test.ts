@@ -249,7 +249,7 @@ suite('ChatSessionsService - getChatSessionItems availability', () => {
 	});
 });
 
-suite('ChatSessionsService - archive capability', () => {
+suite('ChatSessionsService - item state capabilities', () => {
 
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
@@ -258,6 +258,7 @@ suite('ChatSessionsService - archive capability', () => {
 
 		constructor(
 			readonly setChatSessionItemArchived?: (resource: URI, archived: boolean) => void,
+			readonly setChatSessionItemReadState?: (resource: URI, isRead: boolean) => void,
 		) { }
 
 		readonly items: readonly IChatSessionItem[] = [];
@@ -307,8 +308,39 @@ suite('ChatSessionsService - archive capability', () => {
 		store.add(service.registerChatSessionItemController(sessionType, new TestItemController()));
 
 		const resource = URI.from({ scheme: sessionType, path: '/session-1' });
-		assert.strictEqual(service.canSetChatSessionItemArchived(resource), false);
+		assert.deepStrictEqual({
+			canSetArchived: service.canSetChatSessionItemArchived(resource),
+			canSetReadState: service.canSetChatSessionItemReadState(resource),
+		}, {
+			canSetArchived: false,
+			canSetReadState: false,
+		});
 		assert.throws(() => service.setChatSessionItemArchived(resource, true), /does not support archiving/);
+		assert.throws(() => service.setChatSessionItemReadState(resource, true), /does not support read state/);
+	});
+
+	test('delegates read state to the registered controller', () => {
+		const sessionType = 'read-state-type';
+		const updates: { resource: string; isRead: boolean }[] = [];
+		const controller = new TestItemController(undefined, (resource, isRead) => updates.push({ resource: resource.toString(), isRead }));
+		store.add(service.registerChatSessionContribution({
+			type: sessionType,
+			name: sessionType,
+			displayName: sessionType,
+			description: '',
+		}));
+		store.add(service.registerChatSessionItemController(sessionType, controller));
+
+		const resource = URI.from({ scheme: sessionType, path: '/session-1' });
+		service.setChatSessionItemReadState(resource, false);
+
+		assert.deepStrictEqual({
+			canSetReadState: service.canSetChatSessionItemReadState(resource),
+			updates,
+		}, {
+			canSetReadState: true,
+			updates: [{ resource: resource.toString(), isRead: false }],
+		});
 	});
 });
 

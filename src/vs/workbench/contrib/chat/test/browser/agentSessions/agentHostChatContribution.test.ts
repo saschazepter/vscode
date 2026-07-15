@@ -1871,6 +1871,139 @@ suite('AgentHostChatContribution', () => {
 			assert.strictEqual(listController.items[0].archived, true);
 		});
 
+		test('refresh projects Agent Host read state', async () => {
+			const { listController, agentHostService } = createContribution(disposables);
+
+			agentHostService.addSession({
+				session: AgentSession.uri('copilot', 'read'),
+				startTime: 1000,
+				modifiedTime: 2000,
+				isRead: true,
+			});
+			agentHostService.addSession({
+				session: AgentSession.uri('copilot', 'unread'),
+				startTime: 3000,
+				modifiedTime: 4000,
+				isRead: false,
+			});
+
+			await listController.refresh(CancellationToken.None);
+
+			assert.deepStrictEqual(listController.items.map(item => item.isRead), [true, false]);
+		});
+
+		test('read mutations dispatch through AHP and reconcile server summaries', async () => {
+			const { instantiationService, agentHostService } = createTestServices(disposables);
+			const backendSession = AgentSession.uri('copilot', 'readable');
+			const baseStatus = SessionStatus.InProgress;
+			agentHostService.addSession({
+				session: backendSession,
+				startTime: 1000,
+				modifiedTime: 2000,
+				summary: 'Readable session',
+				status: baseStatus,
+			});
+
+			const sessionListStore = createSessionListStore(disposables, instantiationService, agentHostService);
+			const listController = disposables.add(instantiationService.createInstance(AgentHostSessionListController, 'agent-host-copilot', 'copilot', sessionListStore, undefined, 'local'));
+			await listController.refresh(CancellationToken.None);
+			agentHostService.dispatchedActions.length = 0;
+
+			const readEvents: boolean[] = [];
+			disposables.add(listController.onDidChangeChatSessionItems(delta => {
+				for (const item of delta.addedOrUpdated ?? []) {
+					readEvents.push(Boolean(item.isRead));
+				}
+			}));
+
+			const resource = listController.items[0].resource;
+			listController.setChatSessionItemReadState(resource, true);
+			listController.setChatSessionItemReadState(resource, true);
+			const readStatus = sessionListStore.getSessions('copilot')[0].summary.status;
+
+			listController.setChatSessionItemReadState(resource, false);
+			listController.setChatSessionItemReadState(resource, false);
+			const unreadStatus = sessionListStore.getSessions('copilot')[0].summary.status;
+
+			agentHostService.fireNotification({
+				type: 'root/sessionSummaryChanged',
+				channel: ROOT_STATE_URI,
+				session: backendSession.toString(),
+				changes: { status: baseStatus | SessionStatus.IsRead },
+			});
+
+			assert.deepStrictEqual({
+				actions: agentHostService.dispatchedActions.map(({ channel, action }) => ({ channel, action })),
+				readStatus,
+				unreadStatus,
+				reconciledRead: listController.items[0].isRead,
+				readEvents,
+			}, {
+				actions: [{
+					channel: backendSession.toString(),
+					action: { type: ActionType.SessionIsReadChanged, isRead: true },
+				}, {
+					channel: backendSession.toString(),
+					action: { type: ActionType.SessionIsReadChanged, isRead: false },
+				}],
+				readStatus: baseStatus | SessionStatus.IsRead,
+				unreadStatus: baseStatus,
+				reconciledRead: true,
+				readEvents: [true, false, true],
+			});
+		});
+
+		test('read mutation ignores resources from another session type', () => {
+			const { listController, agentHostService } = createContribution(disposables);
+
+			listController.setChatSessionItemReadState(URI.from({ scheme: 'agent-host-other', path: '/session' }), true);
+
+			assert.deepStrictEqual(agentHostService.dispatchedActions, []);
+		});
+
+		test('read mutation prevents an in-flight stale refresh from overwriting optimistic state', async () => {
+			const { instantiationService, agentHostService } = createTestServices(disposables);
+			const backendSession = AgentSession.uri('copilot', 'read-refresh-race');
+			const metadata: IAgentSessionMetadata = {
+				session: backendSession,
+				startTime: 1000,
+				modifiedTime: 2000,
+				summary: 'Read refresh race',
+			};
+			agentHostService.addSession(metadata);
+
+			const sessionListStore = createSessionListStore(disposables, instantiationService, agentHostService);
+			const listController = disposables.add(instantiationService.createInstance(AgentHostSessionListController, 'agent-host-copilot', 'copilot', sessionListStore, undefined, 'local'));
+			await listController.refresh(CancellationToken.None);
+
+			let listCalls = 0;
+			const releaseListSessions = disposables.add(new Emitter<void>());
+			const released = Event.toPromise(releaseListSessions.event);
+			agentHostService.listSessions = async () => {
+				listCalls++;
+				if (listCalls === 1) {
+					await released;
+					return [metadata];
+				}
+				return [{ ...metadata, isRead: true }];
+			};
+
+			sessionListStore.resetCache();
+			const refresh = listController.refresh(CancellationToken.None);
+			await timeout(0);
+			listController.setChatSessionItemReadState(listController.items[0].resource, true);
+			releaseListSessions.fire();
+			await refresh;
+
+			assert.deepStrictEqual({
+				listCalls,
+				isRead: listController.items[0].isRead,
+			}, {
+				listCalls: 2,
+				isRead: true,
+			});
+		});
+
 		test('archive mutations dispatch through AHP and reconcile server summaries', async () => {
 			const { instantiationService, agentHostService } = createTestServices(disposables);
 			const backendSession = AgentSession.uri('copilot', 'archivable');

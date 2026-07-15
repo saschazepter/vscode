@@ -64,7 +64,7 @@ export interface IAgentSessionsModel {
 	resolve(provider: string | string[] | undefined): Promise<void>;
 }
 
-interface IAgentSessionData extends Omit<IChatSessionItem, 'archived' | 'iconPath'> {
+interface IAgentSessionData extends Omit<IChatSessionItem, 'archived' | 'isRead' | 'iconPath'> {
 
 	readonly providerType: string;
 	readonly providerLabel: string;
@@ -144,6 +144,7 @@ interface IInternalAgentSessionData extends IAgentSessionData {
 	 * and `setArchived()` methods instead.
 	 */
 	readonly archived: boolean | undefined;
+	readonly providerRead: boolean | undefined;
 }
 
 interface IInternalAgentSession extends IAgentSession, IInternalAgentSessionData { }
@@ -404,6 +405,7 @@ class AgentSessionsLogger extends Disposable {
 			lines.push(`    Archived (stored): ${state?.archived ?? 'N/A'}`);
 			lines.push(`    Pinned: ${session.isPinned()}`);
 			lines.push(`    Pinned (stored): ${state?.pinned ?? 'N/A'}`);
+			lines.push(`    Read (provider): ${session.providerRead ?? 'N/A'}`);
 			lines.push(`    Read: ${session.isRead()}`);
 			lines.push(`    Read date (stored): ${state?.read ? new Date(state.read).toISOString() : 'N/A'}`);
 
@@ -662,6 +664,9 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 					? { files: changes.files, insertions: changes.insertions, deletions: changes.deletions }
 					: changes;
 
+				if (session.isRead) {
+					this.explicitlyMarkedUnreadSessions.delete(session.resource);
+				}
 				sessions.set(session.resource, this.toAgentSession({
 					providerType: chatSessionType,
 					providerLabel,
@@ -673,6 +678,7 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 					tooltip: session.tooltip,
 					status: session.status ?? AgentSessionStatus.Completed,
 					archived: session.archived,
+					providerRead: session.isRead,
 					timing: session.timing,
 					changes: normalizedChanges,
 					metadata: session.metadata,
@@ -691,6 +697,11 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 				(isBuiltInAgentSessionProvider(session.providerType) || mapSessionContributionToType.has(session.providerType))
 			) {
 				sessions.set(session.resource, session);
+			}
+		}
+		for (const resource of this.explicitlyMarkedUnreadSessions) {
+			if (!sessions.has(resource)) {
+				this.explicitlyMarkedUnreadSessions.delete(resource);
 			}
 		}
 
@@ -731,6 +742,7 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 	private static readonly UNREAD_MARKER = -1;
 
 	private readonly sessionStates: ResourceMap<IAgentSessionState>;
+	private readonly explicitlyMarkedUnreadSessions = new ResourceSet();
 
 	/**
 	 * Resolve the state entry for a session, honoring a one-way migration from
@@ -809,12 +821,19 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 	}
 
 	private isMarkedUnread(session: IInternalAgentSessionData): boolean {
+		if (this.chatSessionsService.canSetChatSessionItemReadState(session.resource)) {
+			return this.explicitlyMarkedUnreadSessions.has(session.resource);
+		}
 		return this.resolveStateEntry(session)?.read === AgentSessionsModel.UNREAD_MARKER;
 	}
 
 	private isRead(session: IInternalAgentSessionData): boolean {
 		if (this.isArchived(session)) {
 			return true; // archived sessions are always read
+		}
+
+		if (this.chatSessionsService.canSetChatSessionItemReadState(session.resource)) {
+			return Boolean(session.providerRead);
 		}
 
 		const storedReadDate = this.resolveStateEntry(session)?.read;
@@ -841,6 +860,18 @@ export class AgentSessionsModel extends Disposable implements IAgentSessionsMode
 	}
 
 	private setRead(session: IInternalAgentSessionData, read: boolean, skipEvent?: boolean): void {
+		if (this.chatSessionsService.canSetChatSessionItemReadState(session.resource)) {
+			if (read) {
+				this.explicitlyMarkedUnreadSessions.delete(session.resource);
+			} else {
+				this.explicitlyMarkedUnreadSessions.add(session.resource);
+			}
+			if (read !== Boolean(session.providerRead)) {
+				this.chatSessionsService.setChatSessionItemReadState(session.resource, read);
+			}
+			return;
+		}
+
 		// Adopt any legacy state forward first so we don't establish an own entry
 		// under the current resource and orphan the legacy one.
 		const state = this.resolveStateEntry(session) ?? {};
@@ -909,6 +940,7 @@ interface ISerializedAgentSession {
 	readonly icon: string;
 
 	readonly archived: boolean | undefined;
+	readonly providerRead: boolean | undefined;
 
 	readonly metadata: { [key: string]: unknown } | undefined;
 
@@ -957,6 +989,7 @@ class AgentSessionsCache {
 
 			status: isSessionInProgressStatus(session.status) ? AgentSessionStatus.Completed : session.status, // never cache sessions as in progress, this needs to be live state
 			archived: session.archived,
+			providerRead: session.providerRead,
 
 			timing: session.timing,
 
@@ -990,6 +1023,7 @@ class AgentSessionsCache {
 
 				status: session.status,
 				archived: session.archived,
+				providerRead: session.providerRead,
 
 				timing: {
 					created: session.timing.created ?? 0,

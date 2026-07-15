@@ -150,6 +150,20 @@ export class MockChatSessionsService implements IChatSessionsService {
 		controller.setChatSessionItemArchived(sessionResource, archived);
 	}
 
+	canSetChatSessionItemReadState(sessionResource: URI): boolean {
+		const sessionType = getChatSessionType(sessionResource);
+		return typeof this.sessionItemControllers.get(sessionType)?.controller.setChatSessionItemReadState === 'function';
+	}
+
+	setChatSessionItemReadState(sessionResource: URI, isRead: boolean): void {
+		const sessionType = getChatSessionType(sessionResource);
+		const controller = this.sessionItemControllers.get(sessionType)?.controller;
+		if (!controller?.setChatSessionItemReadState) {
+			throw new Error(`Session ${sessionResource.toString()} does not support read state`);
+		}
+		controller.setChatSessionItemReadState(sessionResource, isRead);
+	}
+
 	registerChatSessionContentProvider(chatSessionType: string, provider: IChatSessionContentProvider): IDisposable {
 		this.contentProviders.set(chatSessionType, provider);
 		this._onDidChangeContentProviderSchemes.fire({ added: [chatSessionType], removed: [] });
