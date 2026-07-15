@@ -247,3 +247,73 @@ export function codexMcpServersFromConfig(servers: Record<string, unknown> | und
 
 // #endregion
 
+// #region MCP server authentication (reuse the workbench OAuth path)
+//
+// codex won't expose an OAuth-gated http MCP server's tools until it is
+// authenticated (it reports a `failed` startup with a "not logged in" error).
+// Rather than drive codex's own `mcpServer/oauth/login` browser flow, we reuse
+// the *same* mechanism the Copilot agent uses: report the server as
+// `McpServerStatus.AuthRequired` so the workbench acquires an OAuth bearer
+// token (VS Code dynamic client registration), then inject that token into the
+// server's per-thread `http_headers.Authorization`. Verified against the real
+// codex binary: it forwards `http_headers` on every MCP HTTP request, so a
+// workbench-acquired bearer authenticates the connection.
+
+/**
+ * Canonicalizes an MCP server URL for matching a workbench-acquired token
+ * (keyed by the OAuth `resource`) against a configured server. Mirrors the
+ * Copilot agent's normalization: strips the fragment and any trailing slashes
+ * from the path. Returns `undefined` for a non-URL value (e.g. a stdio server).
+ */
+export function normalizeCodexMcpResourceUrl(value: string): string | undefined {
+	if (!URL.canParse(value)) {
+		return undefined;
+	}
+	const url = new URL(value);
+	url.hash = '';
+	url.pathname = url.pathname.replace(/\/+$/, '');
+	return url.href;
+}
+
+/**
+ * Whether a codex `mcpServer/startupStatus/updated` `failed` error indicates
+ * the server needs authentication (rather than a generic crash), so it should
+ * surface as {@link McpServerStatus.AuthRequired} (workbench "Authenticate"
+ * affordance) instead of a fatal error. codex has no structured auth state on
+ * this notification, so this matches its human-readable "not logged in" /
+ * "run `codex mcp login`" phrasing and the standard OAuth challenge vocabulary.
+ */
+export function codexStartupErrorNeedsAuth(error: string | null | undefined): boolean {
+	if (!error) {
+		return false;
+	}
+	return /not logged in|mcp login|log in to|unauthori[sz]ed|requires? (?:authentication|authorization|login)|\b401\b/i.test(error);
+}
+
+/**
+ * Returns a copy of `servers` with `Authorization: Bearer <token>` injected
+ * into the `http_headers` of every http server whose (normalized) URL has a
+ * token in `tokensByNormalizedUrl`. stdio servers and servers without a token
+ * are passed through unchanged. Any existing `Authorization` header is
+ * overwritten with the freshly acquired token.
+ */
+export function injectCodexMcpAuthTokens(
+	servers: Record<string, ICodexMcpServerConfigJson>,
+	tokensByNormalizedUrl: ReadonlyMap<string, string>,
+): Record<string, ICodexMcpServerConfigJson> {
+	if (tokensByNormalizedUrl.size === 0) {
+		return servers;
+	}
+	const out: Record<string, ICodexMcpServerConfigJson> = {};
+	for (const [name, server] of Object.entries(servers)) {
+		const normalized = server.url !== undefined ? normalizeCodexMcpResourceUrl(server.url) : undefined;
+		const token = normalized !== undefined ? tokensByNormalizedUrl.get(normalized) : undefined;
+		out[name] = token !== undefined
+			? { ...server, http_headers: { ...server.http_headers, Authorization: `Bearer ${token}` } }
+			: server;
+	}
+	return out;
+}
+
+// #endregion
+

@@ -21,7 +21,7 @@ import { IProductService } from '../../../product/common/productService.js';
 import { createSchema, platformRootSchema, platformSessionSchema, schemaProperty, AgentHostMcpServersConfigKey, type ISchemaProperty, type SessionMode } from '../../common/agentHostSchema.js';
 import { createPricingMetaFromBilling, normalizeCAPIBilling } from '../../common/agentModelPricing.js';
 import { getReasoningEffortDescription, getReasoningEffortLabel } from '../../common/reasoningEffort.js';
-import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentSession, AgentSignal, CODEX_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, type AgentProvider } from '../../common/agentService.js';
+import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentSession, AgentSignal, CODEX_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, type AgentProvider, type AuthenticateParams } from '../../common/agentService.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { ActionType, isChatAction, type SessionAction, type ChatAction } from '../../common/state/sessionActions.js';
@@ -31,11 +31,11 @@ import { buildDefaultChatUri, parseChatUri, type ClientPluginCustomization, type
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
 import { ActiveClientToolSet } from '../activeClientState.js';
 import { McpCustomizationController } from '../shared/mcpCustomizationController.js';
-import { buildCodexMcpReadResult, codexMcpListToInventory, codexMcpServersFromConfig, codexMcpToolsChanged, inventoryToSdkServers, translateCodexMcpStartupState, type ICodexMcpServerConfigJson, type ICodexMcpServerEntry } from './codexMcpServers.js';
+import { buildCodexMcpReadResult, codexMcpListToInventory, codexMcpServersFromConfig, codexMcpToolsChanged, codexStartupErrorNeedsAuth, injectCodexMcpAuthTokens, inventoryToSdkServers, normalizeCodexMcpResourceUrl, translateCodexMcpStartupState, type ICodexMcpServerConfigJson, type ICodexMcpServerEntry } from './codexMcpServers.js';
 import { codexHooksToContainers, codexSkillsToContainers } from './codexCustomizations.js';
 import { CodexClientCustomizationStore, codexMcpServersFromPlugins, codexSkillRootsFromPlugins, type ICodexClientPlugin } from './codexClientCustomizations.js';
 import { buildElicitationRequest, cancelledElicitationResponse, declinedElicitationResponse, elicitationResponseFromAnswers } from './codexElicitationMapper.js';
-import { McpServerStatus, type AhpMcpUiHostCapabilities, type Customization } from '../../common/state/protocol/channels-session/state.js';
+import { McpAuthRequiredReason, McpServerStatus, type AhpMcpUiHostCapabilities, type Customization, type McpServerState } from '../../common/state/protocol/channels-session/state.js';
 import { IAgentConfigurationService } from '../agentConfigurationService.js';
 import { IFileService } from '../../../files/common/files.js';
 import { INativeEnvironmentService } from '../../../environment/common/environment.js';
@@ -712,6 +712,16 @@ export class CodexAgent extends Disposable implements IAgent {
 	 * session's {@link ICodexSession.mcpController}. Keyed by server name.
 	 */
 	private readonly _mcpInventory = new Map<string, ICodexMcpServerEntry>();
+	/**
+	 * OAuth bearer tokens acquired for auth-gated http MCP servers, keyed by
+	 * the server's {@link normalizeCodexMcpResourceUrl | normalized URL} (the
+	 * OAuth `resource`). Populated by {@link handleAuthenticationToken} after
+	 * the workbench completes the sign-in, then injected into the per-thread
+	 * `http_headers` by {@link _buildSessionMcpServers}. Process-global: a
+	 * token for a given server URL applies to every session/thread that uses
+	 * it (codex runs one shared app-server).
+	 */
+	private readonly _mcpAuthTokens = new Map<string, string>();
 	private _githubToken: string | undefined;
 	private _connection: ConnectionState = { kind: 'idle' };
 	private _modelsRefreshPromise: Promise<void> | undefined;
@@ -772,6 +782,69 @@ export class CodexAgent extends Disposable implements IAgent {
 		}
 		this._logService.info('[Codex] Auth token updated');
 		return true;
+	}
+
+	/**
+	 * Receives a bearer token the workbench acquired for a protected resource
+	 * (the `authenticate` command is fanned out to every agent). If the
+	 * resource matches a configured auth-gated http MCP server, store the token
+	 * (so {@link _buildSessionMcpServers} injects it) and reconnect the affected
+	 * threads so codex picks it up. This is the codex end of the *same* OAuth
+	 * mechanism the Copilot agent uses: the workbench does the sign-in, the
+	 * agent injects the resulting bearer. Returns whether the token was
+	 * consumed by an MCP server (the GitHub agent token flows through
+	 * {@link authenticate} instead).
+	 */
+	async handleAuthenticationToken(params: AuthenticateParams): Promise<boolean> {
+		const normalized = normalizeCodexMcpResourceUrl(params.resource);
+		if (normalized === undefined) {
+			return false;
+		}
+		// Only claim the token when it targets a currently-configured http MCP server.
+		const matchesConfigured = [...this._sessions.values()].some(session =>
+			[...this._httpMcpServerUrls(session).values()].includes(normalized),
+		) || Object.values(codexMcpServersFromConfig(this._configurationService.getRootValue(platformRootSchema, AgentHostMcpServersConfigKey)))
+			.some(server => server.url !== undefined && normalizeCodexMcpResourceUrl(server.url) === normalized);
+		if (!matchesConfigured) {
+			return false;
+		}
+		if (this._mcpAuthTokens.get(normalized) === params.token) {
+			return true;
+		}
+		this._mcpAuthTokens.set(normalized, params.token);
+		this._logService.info(`[Codex] stored MCP auth token for ${params.resource}; reconnecting affected sessions`);
+		await this._reconnectSessionsForMcpAuth(normalized);
+		return true;
+	}
+
+	/**
+	 * Reconnects every materialized session whose merged MCP servers include the
+	 * newly-authenticated resource so codex re-reads `config.mcp_servers` with
+	 * the injected `Authorization` header. A thread that has not yet committed a
+	 * turn is restarted (`thread/start`, lossless); one with history is resumed
+	 * (`thread/resume` carries the same `config` field, loading history from the
+	 * rollout) on its next turn via {@link ICodexSession.needsResume}.
+	 */
+	private async _reconnectSessionsForMcpAuth(normalizedUrl: string): Promise<void> {
+		for (const session of this._sessions.values()) {
+			if (session.disposed || session.threadId === undefined) {
+				continue;
+			}
+			if (![...this._httpMcpServerUrls(session).values()].includes(normalizedUrl)) {
+				continue;
+			}
+			if (!session.firstTurnSent) {
+				try {
+					await this._restartThreadWithCurrentTools(session);
+				} catch (err) {
+					this._logService.warn(`[Codex:${session.sessionId}] reconnect after MCP auth failed: ${err instanceof Error ? err.message : String(err)}`);
+				}
+			} else {
+				// A thread with history is resumed (with the current config) on
+				// its next turn rather than restarted, so nothing is lost.
+				session.needsResume = true;
+			}
+		}
 	}
 
 	private _queueModelRefresh(token: string): void {
@@ -1247,12 +1320,50 @@ export class CodexAgent extends Disposable implements IAgent {
 	 * as process-global `-c` spawn overrides) means each new session picks up
 	 * the current root config without restarting the shared app-server, and it
 	 * merges with (leaves intact) the user's global `~/.codex/config.toml`.
-	 * Client-plugin servers win a name collision with the root config.
+	 * Client-plugin servers win a name collision with the root config. Any
+	 * OAuth bearer token acquired for an auth-gated http server (see
+	 * {@link handleAuthenticationToken}) is injected as an `Authorization`
+	 * header so codex connects authenticated.
 	 */
 	private _buildSessionMcpServers(session: ICodexSession): Record<string, ICodexMcpServerConfigJson> {
 		const root = codexMcpServersFromConfig(this._configurationService.getRootValue(platformRootSchema, AgentHostMcpServersConfigKey));
 		const clientPlugins = codexMcpServersFromPlugins(session.clientCustomizations.enabledPlugins());
-		return { ...root, ...clientPlugins };
+		return injectCodexMcpAuthTokens({ ...root, ...clientPlugins }, this._mcpAuthTokens);
+	}
+
+	/**
+	 * The normalized URLs of every configured http MCP server (root config +
+	 * the session's client plugins), keyed by server name. Used to (a) surface
+	 * an auth-required server's resource for the workbench sign-in and (b)
+	 * match a workbench-acquired token back to the server(s) it unlocks.
+	 * Computed from a token-free build so the URLs are the bare server URLs.
+	 */
+	private _httpMcpServerUrls(session: ICodexSession): Map<string, string> {
+		const root = codexMcpServersFromConfig(this._configurationService.getRootValue(platformRootSchema, AgentHostMcpServersConfigKey));
+		const clientPlugins = codexMcpServersFromPlugins(session.clientCustomizations.enabledPlugins());
+		const urls = new Map<string, string>();
+		for (const [name, server] of Object.entries({ ...root, ...clientPlugins })) {
+			const normalized = server.url !== undefined ? normalizeCodexMcpResourceUrl(server.url) : undefined;
+			if (normalized !== undefined) {
+				urls.set(name, normalized);
+			}
+		}
+		return urls;
+	}
+
+	/** The bare (un-normalized) URL of a configured http MCP server by name, across all sessions. */
+	private _mcpServerUrlForName(name: string): string | undefined {
+		const root = codexMcpServersFromConfig(this._configurationService.getRootValue(platformRootSchema, AgentHostMcpServersConfigKey));
+		if (root[name]?.url !== undefined) {
+			return root[name].url;
+		}
+		for (const session of this._sessions.values()) {
+			const fromPlugins = codexMcpServersFromPlugins(session.clientCustomizations.enabledPlugins());
+			if (fromPlugins[name]?.url !== undefined) {
+				return fromPlugins[name].url;
+			}
+		}
+		return undefined;
 	}
 
 	/**
@@ -2765,9 +2876,15 @@ export class CodexAgent extends Disposable implements IAgent {
 		const threadId = session.threadId!;
 		if (session.needsResume) {
 			try {
+				// Carry the current MCP servers (with any injected auth token)
+				// so a resumed thread reconnects auth-gated servers, matching
+				// the config a fresh `thread/start` would apply.
+				const mcpServers = this._buildSessionMcpServers(session);
 				await conn.client.request<'thread/resume'>('thread/resume', {
 					threadId,
+					...(Object.keys(mcpServers).length > 0 ? { config: { mcp_servers: mcpServers as JsonValue } } : {}),
 				});
+				session.materializedMcpSig = mcpServersSignature(mcpServers);
 				session.needsResume = false;
 			} catch (err) {
 				const duration = this._clearTurnStopWatch(session);
@@ -3654,12 +3771,42 @@ export class CodexAgent extends Disposable implements IAgent {
 		}
 		const prev = this._mcpInventory.get(name);
 		this._mcpInventory.set(name, {
-			state: translateCodexMcpStartupState(status, error),
+			state: this._mcpStartupState(name, status, error),
 			tools: prev?.tools ?? [],
 			resources: prev?.resources ?? [],
 			resourceTemplates: prev?.resourceTemplates ?? [],
 		});
 		this._applyMcpInventoryToSessions();
+	}
+
+	/**
+	 * Maps a non-`ready` codex startup transition to an AHP {@link McpServerState}.
+	 * A `failed` transition whose error indicates the http server needs sign-in
+	 * (and whose URL we know) becomes {@link McpServerStatus.AuthRequired} with
+	 * the server URL as the OAuth `resource`, so the workbench offers the same
+	 * "Authenticate" affordance it uses for the Copilot agent. Once the token
+	 * arrives via {@link handleAuthenticationToken} it is injected into the
+	 * per-thread `http_headers` and the server reconnects. Everything else
+	 * falls back to the plain lifecycle mapping.
+	 */
+	private _mcpStartupState(name: string, status: McpServerStartupState, error: string | null): McpServerState {
+		if (status === 'failed' && codexStartupErrorNeedsAuth(error)) {
+			const url = this._mcpServerUrlForName(name);
+			const normalized = url !== undefined ? normalizeCodexMcpResourceUrl(url) : undefined;
+			// Only offer sign-in when we know the http URL and don't already
+			// hold a token for it (a token in hand means we should be
+			// reconnecting, not re-prompting).
+			if (url !== undefined && normalized !== undefined && !this._mcpAuthTokens.has(normalized)) {
+				this._logService.info(`[Codex] MCP server '${name}' requires authentication for ${url}`);
+				return {
+					kind: McpServerStatus.AuthRequired,
+					reason: McpAuthRequiredReason.Required,
+					resource: { resource: url, resource_name: name },
+					description: error ?? undefined,
+				};
+			}
+		}
+		return translateCodexMcpStartupState(status, error);
 	}
 
 	/**
