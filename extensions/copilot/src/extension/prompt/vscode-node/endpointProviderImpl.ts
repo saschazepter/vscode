@@ -211,7 +211,10 @@ export class ProductionEndpointProvider extends Disposable implements IEndpointP
 		const value = this._configService.getNonExtensionConfig<unknown>(ProductionEndpointProvider.BYOK_UTILITY_MODEL_DEFAULT_CONFIG_KEY);
 		switch (value) {
 			case undefined:
-				return BYOKUtilityModelDefault.None;
+				// Match the registered default in `chat.shared.contribution.ts`. When
+				// the setting is unset (or unregistered in an older core), BYOK
+				// utility flows use GitHub Copilot's utility models.
+				return BYOKUtilityModelDefault.Copilot;
 			case BYOKUtilityModelDefault.None:
 			case BYOKUtilityModelDefault.MainAgent:
 			case BYOKUtilityModelDefault.Copilot:
