@@ -482,10 +482,10 @@ function render(modernUI: boolean, options: Omit<IRenderOptions, 'modernUI'>): (
 	return (ctx: ComponentFixtureContext) => renderTabBar(ctx, { ...options, modernUI });
 }
 
-function createFixtures(modernUI: boolean) {
+function createFixtures(modernUI: boolean, includeDarkHighContrast = false) {
 	return {
 		// Baseline: multiple tabs with mixed sticky / pinned / preview / dirty state.
-		Default: defineComponentFixture({ render: render(modernUI, {}) }),
+		Default: defineComponentFixture({ render: render(modernUI, {}), includeDarkHighContrast }),
 
 		// showTabs
 		ShowTabsSingle: defineComponentFixture({ render: render(modernUI, { partOptions: { showTabs: 'single' }, breadcrumbs: {} }) }),
@@ -586,5 +586,5 @@ function createFixtures(modernUI: boolean) {
 
 export default defineThemedFixtureGroup({ path: 'editor/editorTabBar/' }, {
 	ModernUIOff: defineThemedFixtureGroup(createFixtures(false)),
-	ModernUIOn: defineThemedFixtureGroup(createFixtures(true)),
+	ModernUIOn: defineThemedFixtureGroup(createFixtures(true, true)),
 });

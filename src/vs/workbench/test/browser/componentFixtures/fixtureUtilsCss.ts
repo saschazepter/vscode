@@ -7,7 +7,6 @@ import { IDisposable, toDisposable } from '../../../../base/common/lifecycle.js'
 import { IEnvironmentService } from '../../../../platform/environment/common/environment.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { getIconsStyleSheet } from '../../../../platform/theme/browser/iconsStyleSheet.js';
-import { ColorScheme } from '../../../../platform/theme/common/theme.js';
 import { IThemingRegistry, Extensions as ThemingExtensions } from '../../../../platform/theme/common/themeService.js';
 import { generateColorThemeCSS } from '../../../services/themes/browser/colorThemeCss.js';
 import { ColorThemeData } from '../../../services/themes/common/colorThemeData.js';
@@ -21,8 +20,7 @@ let bundlePromise: Promise<Bundle> | undefined;
 let bundle: Bundle | undefined;
 let activeOverride: object | undefined;
 let iconsStyleSheetCache: CSSStyleSheet | undefined;
-let darkThemeStyleSheet: CSSStyleSheet | undefined;
-let lightThemeStyleSheet: CSSStyleSheet | undefined;
+const themeStyleSheetCache = new WeakMap<ColorThemeData, CSSStyleSheet>();
 
 /**
  * Controls how the bundled stylesheet documents are reordered.
@@ -172,12 +170,9 @@ function getIconsStyleSheetCached(): CSSStyleSheet {
 }
 
 function getThemeStyleSheet(theme: ColorThemeData): CSSStyleSheet {
-	const isDark = theme.type === ColorScheme.DARK;
-	if (isDark && darkThemeStyleSheet) {
-		return darkThemeStyleSheet;
-	}
-	if (!isDark && lightThemeStyleSheet) {
-		return lightThemeStyleSheet;
+	const cachedStyleSheet = themeStyleSheetCache.get(theme);
+	if (cachedStyleSheet) {
+		return cachedStyleSheet;
 	}
 
 	const scopeSelector = '.' + theme.classNames[0];
@@ -190,11 +185,7 @@ function getThemeStyleSheet(theme: ColorThemeData): CSSStyleSheet {
 	);
 	sheet.replaceSync(css.code);
 
-	if (isDark) {
-		darkThemeStyleSheet = sheet;
-	} else {
-		lightThemeStyleSheet = sheet;
-	}
+	themeStyleSheetCache.set(theme, sheet);
 	return sheet;
 }
 

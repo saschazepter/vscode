@@ -254,6 +254,7 @@ class NullStorageService implements IStorageService {
 import dark_modern from '../../../../../../extensions/theme-defaults/themes/dark_modern.json' with { type: 'json' };
 import dark_plus from '../../../../../../extensions/theme-defaults/themes/dark_plus.json' with { type: 'json' };
 import dark_vs from '../../../../../../extensions/theme-defaults/themes/dark_vs.json' with { type: 'json' };
+import hc_black from '../../../../../../extensions/theme-defaults/themes/hc_black.json' with { type: 'json' };
 import light_modern from '../../../../../../extensions/theme-defaults/themes/light_modern.json' with { type: 'json' };
 import light_plus from '../../../../../../extensions/theme-defaults/themes/light_plus.json' with { type: 'json' };
 import light_vs from '../../../../../../extensions/theme-defaults/themes/light_vs.json' with { type: 'json' };
@@ -263,6 +264,7 @@ const themeJsonModules: Record<string, string> = {
 	'/extensions/theme-defaults/themes/dark_modern.json': dark_modern as unknown as string,
 	'/extensions/theme-defaults/themes/dark_plus.json': dark_plus as unknown as string,
 	'/extensions/theme-defaults/themes/dark_vs.json': dark_vs as unknown as string,
+	'/extensions/theme-defaults/themes/hc_black.json': hc_black as unknown as string,
 	'/extensions/theme-defaults/themes/light_modern.json': light_modern as unknown as string,
 	'/extensions/theme-defaults/themes/light_plus.json': light_plus as unknown as string,
 	'/extensions/theme-defaults/themes/light_vs.json': light_vs as unknown as string,
@@ -293,21 +295,25 @@ function createBuiltInTheme(themePath: string, uiTheme: ThemeTypeSelector): Colo
 
 export const darkTheme = createBuiltInTheme('/extensions/theme-defaults/themes/dark_modern.json', ThemeTypeSelector.VS_DARK);
 export const lightTheme = createBuiltInTheme('/extensions/theme-defaults/themes/light_modern.json', ThemeTypeSelector.VS);
+export const darkHighContrastTheme = createBuiltInTheme('/extensions/theme-defaults/themes/hc_black.json', ThemeTypeSelector.HC_BLACK);
+
+const darkThemeVariant = { label: 'Dark', background: 'dark', theme: darkTheme } as const;
+const lightThemeVariant = { label: 'Light', background: 'light', theme: lightTheme } as const;
+const darkHighContrastThemeVariant = { label: 'DarkHighContrast', background: 'dark', theme: darkHighContrastTheme } as const;
+const themeVariants = [darkThemeVariant, lightThemeVariant, darkHighContrastThemeVariant];
+type ComponentFixtureThemeVariant = typeof themeVariants[number];
 
 let themesLoadedPromise: Promise<void> | undefined;
 function ensureThemesLoaded(): Promise<void> {
 	if (!themesLoadedPromise) {
-		themesLoadedPromise = Promise.all([
-			darkTheme.ensureLoaded(fixtureExtensionResourceLoaderService),
-			lightTheme.ensureLoaded(fixtureExtensionResourceLoaderService),
-		]).then(() => undefined);
+		themesLoadedPromise = Promise.all(themeVariants.map(({ theme }) => theme.ensureLoaded(fixtureExtensionResourceLoaderService))).then(() => undefined);
 	}
 	return themesLoadedPromise;
 }
 
 export async function setupTheme(container: HTMLElement, theme: ColorThemeData): Promise<void> {
 	await ensureThemesLoaded();
-	await ensureGlobalStylesInstalled([darkTheme, lightTheme]);
+	await ensureGlobalStylesInstalled(themeVariants.map(({ theme }) => theme));
 	container.classList.add('monaco-workbench', getPlatformClass(), 'disable-animations', ...theme.classNames);
 }
 
@@ -827,6 +833,7 @@ export interface ComponentFixtureOptions {
 	render: (context: ComponentFixtureContext) => void | Promise<void>;
 	labels?: ThemedFixtureGroupLabels;
 	virtualTime?: { enabled?: boolean; durationMs?: number; teardownDrainMs?: number };
+	includeDarkHighContrast?: boolean;
 }
 
 type ThemedFixtures = ReturnType<typeof defineFixtureVariants>;
@@ -846,7 +853,7 @@ if (logOutsideTime) {
 let fixtureRenderCounter = 0;
 
 /**
- * Creates Dark and Light fixture variants from a single render function.
+ * Creates Dark and Light fixture variants from a single render function, with an optional Dark High Contrast variant.
  * The render function receives a context with container and disposableStore.
  *
  * Note: If render returns a Promise, the async work will run in background.
@@ -854,13 +861,14 @@ let fixtureRenderCounter = 0;
  * which should be sufficient for most async setup, but timing is not guaranteed.
  */
 export function defineComponentFixture(options: ComponentFixtureOptions): ThemedFixtures {
-	const createFixture = (theme: typeof darkTheme | typeof lightTheme) => defineFixture({
+	const createFixture = (themeVariant: ComponentFixtureThemeVariant) => defineFixture({
 		isolation: 'none',
 		displayMode: { type: 'component' },
-		background: theme === darkTheme ? 'dark' : 'light',
+		background: themeVariant.background,
 		render: async (container: HTMLElement, context) => {
 			const disposableStore = new DisposableStore();
 			const input = parseFixtureInput(context.input);
+			const { label: themeLabel, theme } = themeVariant;
 
 			// Replace Math.random with a seeded PRNG so fixtures render deterministically.
 			disposableStore.add(pushRandomOverwrite(42));
@@ -1011,7 +1019,7 @@ export function defineComponentFixture(options: ComponentFixtureOptions): Themed
 					if (virtualTimeEnabled && p.history.length > 0) {
 						const startTime = p.history[0].time;
 						const history = buildHistoryFromTasks(p.history, startTime);
-						console.error(`[ComponentFixture] ${theme === darkTheme ? 'Dark' : 'Light'} virtual-time history (${p.history.length} tasks):\n${renderSwimlanes(history)}`);
+						console.error(`[ComponentFixture] ${themeLabel} virtual-time history (${p.history.length} tasks):\n${renderSwimlanes(history)}`);
 					}
 					throw e;
 				} finally {
@@ -1025,7 +1033,6 @@ export function defineComponentFixture(options: ComponentFixtureOptions): Themed
 			// output by the scheduler / processor shows exactly which fixture
 			// caused each queued or historical timer, plus the full chain of
 			// setTimeout/rAF calls that led to it.
-			const themeLabel = theme === darkTheme ? 'Dark' : 'Light';
 			const fixtureRoot = createTraceRoot(`render#${++fixtureRenderCounter}(${themeLabel})`);
 
 			await TraceContext.instance.runAsHandler(fixtureRoot, actualRender, {
@@ -1052,8 +1059,9 @@ export function defineComponentFixture(options: ComponentFixtureOptions): Themed
 
 	const labels = resolveLabels(options.labels);
 	return defineFixtureVariants(labels.length > 0 ? { labels } : {}, {
-		Dark: createFixture(darkTheme),
-		Light: createFixture(lightTheme),
+		Dark: createFixture(darkThemeVariant),
+		Light: createFixture(lightThemeVariant),
+		...(options.includeDarkHighContrast ? { DarkHighContrast: createFixture(darkHighContrastThemeVariant) } : {}),
 	});
 }
 
