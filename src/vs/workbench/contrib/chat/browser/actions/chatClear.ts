@@ -11,6 +11,7 @@ import { IStorageService } from '../../../../../platform/storage/common/storage.
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IChatSessionsService } from '../../common/chatSessionsService.js';
+import { IAgentHostEnablementService } from '../../../../../platform/agentHost/common/agentHostEnablementService.js';
 import { getDefaultNewChatSessionResource } from '../../common/constants.js';
 import { IChatEditorOptions } from '../widgetHosts/editor/chatEditor.js';
 import { ChatEditorInput } from '../widgetHosts/editor/chatEditorInput.js';
@@ -21,6 +22,7 @@ export async function clearChatEditor(accessor: ServicesAccessor, chatEditorInpu
 	const chatSessionsService = accessor.get(IChatSessionsService);
 	const storageService = accessor.get(IStorageService);
 	const workspaceContextService = accessor.get(IWorkspaceContextService);
+	const agentHostEnablementService = accessor.get(IAgentHostEnablementService);
 
 	if (!chatEditorInput) {
 		const editorInput = editorService.activeEditor;
@@ -32,7 +34,7 @@ export async function clearChatEditor(accessor: ServicesAccessor, chatEditorInpu
 		// Otherwise create a generic new chat editor.
 		const resource = chatEditorInput.sessionResource && chatEditorInput.sessionResource.scheme !== Schemas.vscodeLocalChatSession
 			? chatEditorInput.sessionResource.with({ path: `/untitled-${generateUuid()}` })
-			: getDefaultNewChatSessionResource(configurationService, chatSessionsService, storageService, workspaceContextService.getWorkspace());
+			: getDefaultNewChatSessionResource(configurationService, chatSessionsService, storageService, workspaceContextService.getWorkspace(), agentHostEnablementService.enabled);
 
 		// A chat editor can only be open in one group
 		const identifier = editorService.findEditors(chatEditorInput.resource)[0];

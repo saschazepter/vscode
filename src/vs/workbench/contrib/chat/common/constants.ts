@@ -258,18 +258,20 @@ export function isSupportedChatFileScheme(accessor: ServicesAccessor, scheme: st
 
 /**
  * Returns the effective default session type for a new chat in the VS Code
- * editor window, honoring the experimental
- * {@link ChatConfiguration.EditorPreferCopilotHarness} setting.
+ * editor window.
  *
- * Falls back to {@link localChatSessionType} when local is enabled, or when no
- * visible non-local provider is available.
+ * When the agent host is enabled, Agent Host Copilot CLI is the default so that
+ * first-time users land on Copilot instead of the local harness. Otherwise it
+ * falls back to {@link localChatSessionType} when local is enabled, or to the
+ * first visible non-local provider.
  */
 export function getComputedDefaultSessionType(
 	configurationService: IConfigurationService,
 	chatSessionsService: Pick<IChatSessionsService, 'getChatSessionContribution' | 'getAllChatSessionContributions'>,
-	workspace: IWorkspace
+	workspace: IWorkspace,
+	agentHostEnabled: boolean
 ): string {
-	if (configurationService.getValue<boolean>(ChatConfiguration.EditorPreferCopilotHarness)) {
+	if (agentHostEnabled) {
 		return SessionType.AgentHostCopilot;
 	}
 
@@ -283,9 +285,10 @@ export function getComputedDefaultSessionType(
 export function getComputedDefaultSessionResource(
 	configurationService: IConfigurationService,
 	chatSessionsService: Pick<IChatSessionsService, 'getChatSessionContribution' | 'getAllChatSessionContributions'>,
-	workspace: IWorkspace
+	workspace: IWorkspace,
+	agentHostEnabled: boolean
 ): URI {
-	const defaultType = getComputedDefaultSessionType(configurationService, chatSessionsService, workspace);
+	const defaultType = getComputedDefaultSessionType(configurationService, chatSessionsService, workspace, agentHostEnabled);
 	return defaultType === localChatSessionType
 		? LocalChatSessionUri.getNewSessionUri()
 		: URI.from({ scheme: defaultType, path: `/untitled-${generateUuid()}` });
@@ -316,6 +319,7 @@ export function getDefaultNewChatSessionType(
 	chatSessionsService: Pick<IChatSessionsService, 'getChatSessionContribution' | 'getAllChatSessionContributions'>,
 	storageService: IStorageService,
 	workspace: IWorkspace,
+	agentHostEnabled: boolean,
 	options?: IDefaultNewChatSessionTypeOptions
 ): string {
 	if (options?.explicitOverride) {
@@ -331,7 +335,7 @@ export function getDefaultNewChatSessionType(
 		return options.currentSessionType;
 	}
 
-	return getComputedDefaultSessionType(configurationService, chatSessionsService, workspace);
+	return getComputedDefaultSessionType(configurationService, chatSessionsService, workspace, agentHostEnabled);
 }
 
 export function resolveDefaultNewChatSessionType(
@@ -339,6 +343,7 @@ export function resolveDefaultNewChatSessionType(
 	chatSessionsService: Pick<IChatSessionsService, 'getChatSessionContribution' | 'getAllChatSessionContributions'>,
 	storageService: IStorageService,
 	workspace: IWorkspace,
+	agentHostEnabled: boolean,
 	options?: IDefaultNewChatSessionTypeOptions
 ): string {
 	if (options?.explicitOverride) {
@@ -357,7 +362,7 @@ export function resolveDefaultNewChatSessionType(
 		return SessionType.AgentHostCopilot;
 	}
 
-	return getDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, workspace, options);
+	return getDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, workspace, agentHostEnabled, options);
 }
 
 function getUsableRememberedSessionType(
@@ -375,9 +380,10 @@ export function getDefaultNewChatSessionResource(
 	chatSessionsService: Pick<IChatSessionsService, 'getChatSessionContribution' | 'getAllChatSessionContributions'>,
 	storageService: IStorageService,
 	workspace: IWorkspace,
+	agentHostEnabled: boolean,
 	options?: IDefaultNewChatSessionTypeOptions
 ): URI {
-	const defaultType = getDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, workspace, options);
+	const defaultType = getDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, workspace, agentHostEnabled, options);
 	return defaultType === localChatSessionType
 		? LocalChatSessionUri.getNewSessionUri()
 		: URI.from({ scheme: defaultType, path: `/untitled-${generateUuid()}` });
@@ -388,9 +394,10 @@ export function recordUserSelectedSessionType(
 	configurationService: IConfigurationService,
 	chatSessionsService: Pick<IChatSessionsService, 'getChatSessionContribution' | 'getAllChatSessionContributions'>,
 	workspace: IWorkspace,
-	sessionType: string
+	sessionType: string,
+	agentHostEnabled: boolean
 ): void {
-	if (sessionType === getComputedDefaultSessionType(configurationService, chatSessionsService, workspace)) {
+	if (sessionType === getComputedDefaultSessionType(configurationService, chatSessionsService, workspace, agentHostEnabled)) {
 		clearUserSelectedSessionType(storageService);
 	} else {
 		storeUserSelectedSessionType(storageService, sessionType);
@@ -408,9 +415,6 @@ export function isVisibleEditorChatSessionType(
 	workspace: IWorkspace
 ): boolean {
 	if (sessionType === localChatSessionType) {
-		if (!isEditorLocalAgentEnabled(configurationService, workspace) && configurationService.getValue<boolean>(ChatConfiguration.EditorPreferCopilotHarness)) {
-			return false;
-		}
 		return isEditorLocalAgentEnabled(configurationService, workspace) || getVisibleNonLocalEditorChatSessionTypes(configurationService, chatSessionsService, workspace).length === 0;
 	}
 
