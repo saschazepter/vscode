@@ -8,9 +8,13 @@ import { URI } from '../../../../../../base/common/uri.js';
 import { type ProtectedResourceMetadata } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { type AgentInfo } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { NullLogService } from '../../../../../../platform/log/common/log.js';
+import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
+import { ILogService, NullLogService } from '../../../../../../platform/log/common/log.js';
+import { IAuthenticationMcpAccessService } from '../../../../../services/authentication/browser/authenticationMcpAccessService.js';
+import { IAuthenticationMcpService } from '../../../../../services/authentication/browser/authenticationMcpService.js';
+import { IAuthenticationMcpUsageService } from '../../../../../services/authentication/browser/authenticationMcpUsageService.js';
 import { IAuthenticationService } from '../../../../../services/authentication/common/authentication.js';
-import { authenticateProtectedResources, resolveAuthenticationInteractively, resolveTokenForResource, AgentHostAuthTokenCache, agentHostMcpServerId } from '../../../browser/agentSessions/agentHost/agentHostAuth.js';
+import { authenticateProtectedResources, resolveAuthenticationInteractively, resolveTokenForResource, AgentHostAuthTokenCache, agentHostMcpServerId, resolveMcpServerAuthentication } from '../../../browser/agentSessions/agentHost/agentHostAuth.js';
 
 function createMockAuthService(overrides: {
 	getOrActivateProviderIdForServer?: (serverUri: URI, resourceUri: URI) => Promise<string | undefined>;
