@@ -6,10 +6,13 @@
 import { getActiveWindow, getWindow } from '../../../../../base/browser/dom.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { KeyCode, KeyMod } from '../../../../../base/common/keyCodes.js';
 import { localize2 } from '../../../../../nls.js';
 import { Action2, MenuId, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
+import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
+import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { CHAT_CATEGORY } from './chatActions.js';
 import { IChatExecuteActionContext } from './chatExecuteActions.js';
@@ -20,6 +23,9 @@ export const ChatSpeechToTextConfigured = ContextKeyExpr.and(
 	ContextKeyExpr.has('config.chat.speechToText.azure.endpoint'),
 	ContextKeyExpr.has('config.chat.speechToText.azure.apiKey'),
 );
+
+/** Releases shorter than this are treated as an accidental tap and discarded. */
+const HOLD_TO_TALK_THRESHOLD_MS = 500;
 
 class ToggleChatSpeechToTextAction extends Action2 {
 	static readonly ID = 'workbench.action.chat.toggleSpeechToText';
@@ -72,6 +78,63 @@ class ToggleChatSpeechToTextAction extends Action2 {
 	}
 }
 
+class HoldToSpeechToTextAction extends Action2 {
+	static readonly ID = 'workbench.action.chat.holdToSpeechToText';
+
+	constructor() {
+		super({
+			id: HoldToSpeechToTextAction.ID,
+			title: localize2('chat.speechToText.hold', "Hold to Dictate (Speech to Text)"),
+			category: CHAT_CATEGORY,
+			f1: false,
+			keybinding: {
+				weight: KeybindingWeight.WorkbenchContrib,
+				when: ContextKeyExpr.and(ChatSpeechToTextConfigured, ChatContextKeys.inChatInput),
+				primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KeyV,
+			},
+		});
+	}
+
+	async run(accessor: ServicesAccessor, ...args: unknown[]): Promise<void> {
+		const context = args[0] as IChatExecuteActionContext | undefined;
+		const widgetService = accessor.get(IChatWidgetService);
+		const speechService = accessor.get(IChatSpeechToTextService);
+		const keybindingService = accessor.get(IKeybindingService);
+
+		const widget = context?.widget ?? widgetService.lastFocusedWidget;
+		if (!widget || speechService.state !== ChatSpeechToTextState.Idle) {
+			return;
+		}
+
+		// Resolves when the triggering key is released.
+		const holdMode = keybindingService.enableKeybindingHoldMode(HoldToSpeechToTextAction.ID);
+		if (!holdMode) {
+			return;
+		}
+
+		const window = getWindow(widget.domNode) ?? getActiveWindow();
+		const heldFrom = Date.now();
+		try {
+			await speechService.start(window);
+		} catch {
+			return; // microphone acquisition failed; already surfaced to the user
+		}
+
+		await holdMode;
+
+		// Treat a quick tap as accidental: discard instead of transcribing.
+		if (Date.now() - heldFrom < HOLD_TO_TALK_THRESHOLD_MS) {
+			speechService.cancel();
+			return;
+		}
+
+		const text = await speechService.stopAndTranscribe();
+		if (text) {
+			insertText(widget, text);
+		}
+	}
+}
+
 function insertText(widget: IChatWidget, text: string): void {
 	const editor = widget.inputEditor;
 	const model = editor.getModel();
@@ -93,5 +156,6 @@ function insertText(widget: IChatWidget, text: string): void {
 export function registerChatSpeechToTextActions(): DisposableStore {
 	const store = new DisposableStore();
 	store.add(registerAction2(ToggleChatSpeechToTextAction));
+	store.add(registerAction2(HoldToSpeechToTextAction));
 	return store;
 }
