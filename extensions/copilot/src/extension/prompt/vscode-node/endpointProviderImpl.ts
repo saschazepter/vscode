@@ -193,8 +193,15 @@ export class ProductionEndpointProvider extends Disposable implements IEndpointP
 				case BYOKUtilityModelDefault.MainAgent:
 					return this._instantiationService.createInstance(ExtensionContributedChatEndpoint, this._mainAgentBYOKModel);
 				case BYOKUtilityModelDefault.None:
-					throw new Error(`No utility model is configured for '${family}' while the selected main agent model is BYOK. Configure '${family === 'copilot-utility' ? 'chat.utilityModel' : 'chat.utilitySmallModel'}' or set 'chat.byokUtilityModelDefault' to 'mainAgent' or 'copilot'.`);
+					throw this._createMissingUtilityModelError(family);
 				case BYOKUtilityModelDefault.Copilot:
+					// The Copilot utility models require a Copilot token (CAPI auth).
+					// For air-gapped / signed-out BYOK users there is no token source,
+					// so they can't be used. Treat this like 'none' and ask the user to
+					// choose a utility model.
+					if (!this._authService.hasCopilotTokenSource) {
+						throw this._createMissingUtilityModelError(family);
+					}
 					break;
 			}
 		}
@@ -205,6 +212,17 @@ export class ProductionEndpointProvider extends Disposable implements IEndpointP
 			case 'copilot-utility':
 				return CopilotUtilityChatEndpoint.resolve(this._modelFetcher, this._instantiationService);
 		}
+	}
+
+	/**
+	 * Builds the error thrown when a BYOK main agent model is selected but no
+	 * utility model is available — either because the user opted out
+	 * (`chat.byokUtilityModelDefault: none`) or because the Copilot utility
+	 * models can't be used (air-gapped / signed-out BYOK). The message points
+	 * the user at the settings they can change to resolve it.
+	 */
+	private _createMissingUtilityModelError(family: 'copilot-utility' | 'copilot-utility-small'): Error {
+		return new Error(`No utility model is configured for '${family}' while the selected main agent model is BYOK. Configure setting '${family === 'copilot-utility' ? 'chat.utilityModel' : 'chat.utilitySmallModel'}' or set 'chat.byokUtilityModelDefault' to 'mainAgent' or 'copilot'.`);
 	}
 
 	private _getBYOKUtilityModelDefault(): BYOKUtilityModelDefault {
