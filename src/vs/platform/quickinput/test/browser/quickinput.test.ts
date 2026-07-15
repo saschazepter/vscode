@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import sinon from 'sinon';
 import { unthemedInboxStyles } from '../../../../base/browser/ui/inputbox/inputBox.js';
 import { unthemedButtonStyles } from '../../../../base/browser/ui/button/button.js';
 import { unthemedListStyles } from '../../../../base/browser/ui/list/listWidget.js';
@@ -53,9 +54,10 @@ async function setupWaitTilShownListener(controller: QuickInputController): Prom
 suite('QuickInput', () => { // https://github.com/microsoft/vscode/issues/147543
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 	let controller: QuickInputController;
+	let fixture: HTMLElement;
 
 	setup(() => {
-		const fixture = document.createElement('div');
+		fixture = document.createElement('div');
 		mainWindow.document.body.appendChild(fixture);
 		store.add(toDisposable(() => fixture.remove()));
 
@@ -115,6 +117,46 @@ suite('QuickInput', () => { // https://github.com/microsoft/vscode/issues/147543
 
 		// initial layout
 		controller.layout({ height: 20, width: 40 }, 0);
+	});
+
+	teardown(() => {
+		sinon.restore();
+	});
+
+	test('close motion requires modern UI with motion enabled', () => {
+		const clock = sinon.useFakeTimers();
+		const quickpick = store.add(controller.createQuickPick());
+		const widget = fixture.querySelector<HTMLElement>('.quick-input-widget')!;
+		const states: { display: string; closing: boolean; visible: boolean }[] = [];
+		const recordState = () => states.push({
+			display: widget.style.display,
+			closing: widget.classList.contains('quick-input-widget-closing'),
+			visible: controller.isVisible(),
+		});
+
+		fixture.classList.add('style-override', 'monaco-reduce-motion');
+		quickpick.show();
+		quickpick.hide();
+		recordState();
+
+		fixture.classList.replace('monaco-reduce-motion', 'monaco-enable-motion');
+		quickpick.show();
+		quickpick.hide();
+		recordState();
+
+		quickpick.show();
+		recordState();
+
+		quickpick.hide();
+		clock.tick(150);
+		recordState();
+
+		assert.deepStrictEqual(states, [
+			{ display: 'none', closing: false, visible: false },
+			{ display: '', closing: true, visible: false },
+			{ display: '', closing: false, visible: true },
+			{ display: 'none', closing: false, visible: false },
+		]);
 	});
 
 	test('pick - basecase', async () => {
