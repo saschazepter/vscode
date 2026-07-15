@@ -65,7 +65,7 @@ export interface IChatInputNotificationDelegate {
 	readonly modelTargetChatSessionType?: IObservable<string | undefined>;
 	readonly openModelPicker?: () => void;
 	/** Returns false to open this input's model picker as a fallback. */
-	readonly switchToModel?: (modelIdentifier: string) => boolean | Promise<boolean>;
+	readonly switchToModel?: (modelIdentifier: string) => boolean;
 }
 
 /**
@@ -274,16 +274,16 @@ export class ChatInputNotificationWidget extends Disposable {
 				this._openModelPicker();
 				break;
 			case ChatInputNotificationActionKind.SwitchToModel:
-				await this._switchToModel(action.modelIdentifier);
+				this._switchToModel(action.modelIdentifier);
 				break;
 		}
 		this._notificationService.dismissNotification(notification.id);
 	}
 
-	private async _switchToModel(modelIdentifier: string): Promise<void> {
+	private _switchToModel(modelIdentifier: string): void {
 		let switched = false;
 		try {
-			switched = await this._delegate?.switchToModel?.(modelIdentifier) ?? false;
+			switched = this._delegate?.switchToModel?.(modelIdentifier) ?? false;
 		} catch (error) {
 			this._logActionError(error);
 		}

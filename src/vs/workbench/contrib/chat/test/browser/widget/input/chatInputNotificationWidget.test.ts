@@ -117,14 +117,16 @@ suite('ChatInputNotificationWidget', () => {
 	function createRecordingNotificationService() {
 		const notifications = new Map<string, IChatInputNotification>();
 		const announced: (IChatInputNotification | undefined)[] = [];
+		const dismissed: string[] = [];
 		const onDidChange = store.add(new Emitter<void>());
+		const onDidDismiss = store.add(new Emitter<string>());
 		const service: IChatInputNotificationService = {
 			_serviceBrand: undefined,
 			onDidChange: onDidChange.event,
-			onDidDismiss: Event.None,
+			onDidDismiss: onDidDismiss.event,
 			setNotification(notification) { notifications.set(notification.id, notification); onDidChange.fire(); },
 			deleteNotification(id) { if (notifications.delete(id)) { onDidChange.fire(); } },
-			dismissNotification() { },
+			dismissNotification(id) { dismissed.push(id); onDidDismiss.fire(id); },
 			getActiveNotification(filter) {
 				let active: IChatInputNotification | undefined;
 				for (const notification of notifications.values()) {
@@ -138,7 +140,7 @@ suite('ChatInputNotificationWidget', () => {
 			handleMessageSent() { },
 			announceRendered(notification) { announced.push(notification); },
 		};
-		return { service, announced, set: (notification: IChatInputNotification) => service.setNotification(notification) };
+		return { service, announced, dismissed, set: (notification: IChatInputNotification) => service.setNotification(notification) };
 	}
 
 	function createWidget(options: {
@@ -180,60 +182,36 @@ suite('ChatInputNotificationWidget', () => {
 
 	test('action commands execute with provided args', async () => {
 		const commandService = new TestCommandService();
-		const notificationService = createRecordingNotificationService();
-
-		const instantiationService = store.add(workbenchInstantiationService(undefined, store));
-		instantiationService.stub(IChatInputNotificationService, notificationService.service);
-		instantiationService.stub(ICommandService, commandService);
-		instantiationService.stub(ITelemetryService, NullTelemetryService);
-
-		const widget = store.add(instantiationService.createInstance(ChatInputNotificationWidget, { modelTargetChatSessionType: constObservable(localChatSessionType) }));
-
-		notificationService.set({
+		const { notificationService, widget } = createWidget({ commandService });
+		showNotification(notificationService, {
 			id: 'promo',
-			severity: ChatInputNotificationSeverity.Info,
 			message: 'Promo',
-			description: undefined,
 			actions: [{ kind: ChatInputNotificationActionKind.Command, label: 'Use', commandId: 'test.usePromo', commandArgs: [{ modelIdentifier: 'm' }] }],
-			dismissible: true,
-			autoDismissOnMessage: false,
 		});
 
-		const button = widget.domNode.querySelector<HTMLElement>('.chat-input-notification-action-button');
-		assert.ok(button);
-		button.click();
-		await Promise.resolve();
+		const didDismiss = Event.toPromise(notificationService.service.onDidDismiss);
+		clickAction(widget);
+		await didDismiss;
 
 		assert.deepStrictEqual(commandService.executed, [{ id: 'test.usePromo', args: [{ modelIdentifier: 'm' }] }]);
+		assert.strictEqual(notificationService.dismissed.join(','), 'promo');
 	});
 
 	test('actions without explicit commandArgs are executed with empty args', async () => {
 		const commandService = new TestCommandService();
-		const notificationService = createRecordingNotificationService();
-
-		const instantiationService = store.add(workbenchInstantiationService(undefined, store));
-		instantiationService.stub(IChatInputNotificationService, notificationService.service);
-		instantiationService.stub(ICommandService, commandService);
-		instantiationService.stub(ITelemetryService, NullTelemetryService);
-
-		const widget = store.add(instantiationService.createInstance(ChatInputNotificationWidget, { modelTargetChatSessionType: constObservable(localChatSessionType) }));
-
-		notificationService.set({
+		const { notificationService, widget } = createWidget({ commandService });
+		showNotification(notificationService, {
 			id: 'info',
-			severity: ChatInputNotificationSeverity.Info,
 			message: 'Info',
-			description: undefined,
 			actions: [{ kind: ChatInputNotificationActionKind.Command, label: 'Upgrade', commandId: 'test.upgrade' }],
-			dismissible: true,
-			autoDismissOnMessage: false,
 		});
 
-		const button = widget.domNode.querySelector<HTMLElement>('.chat-input-notification-action-button');
-		assert.ok(button);
-		button.click();
-		await Promise.resolve();
+		const didDismiss = Event.toPromise(notificationService.service.onDidDismiss);
+		clickAction(widget);
+		await didDismiss;
 
 		assert.deepStrictEqual(commandService.executed, [{ id: 'test.upgrade', args: [] }]);
+		assert.strictEqual(notificationService.dismissed.join(','), 'info');
 	});
 
 	test('catches rejected command actions', async () => {
