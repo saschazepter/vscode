@@ -20,7 +20,7 @@ import { FileChangeType, FileOperationError, FileOperationResult, FileSystemProv
 import { InstantiationService } from '../../instantiation/common/instantiationService.js';
 import { ServiceCollection } from '../../instantiation/common/serviceCollection.js';
 import { ILogService } from '../../log/common/log.js';
-import { AgentProvider, AgentSession, AgentSignal, AgentHostSessionReleaseGraceMsEnvVar, IAgent, IAgentChatDataChange, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentHostAuthTokenRequest, IAgentHostNetworkDiagnosticsInfo, IAgentHostNetworkEndpoint, IAgentHostNetworkFetchResult, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSpawnChatEvent, AuthenticateParams, AuthenticateResult, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../common/agentService.js';
+import { AgentProvider, AgentSession, AgentSignal, AgentHostSessionReleaseGraceMsEnvVar, IAgent, IAgentChatDataChange, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentProvisionDefaultChat, IAgentHostAuthTokenRequest, IAgentHostNetworkDiagnosticsInfo, IAgentHostNetworkEndpoint, IAgentHostNetworkFetchResult, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSpawnChatEvent, AuthenticateParams, AuthenticateResult, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../common/agentService.js';
 import { ISessionDataService, SESSION_ATTACHMENTS_DIRNAME } from '../common/sessionDataService.js';
 import { SessionConfigKey } from '../common/sessionConfigKeys.js';
 import { parseChangesetUri } from '../common/changesetUri.js';
@@ -720,10 +720,39 @@ export class AgentService extends Disposable implements IAgentService {
 		};
 	}
 
+	/**
+	 * T2/T4: enumerate a provider's sessions. For an orchestrator-owned agent
+	 * this groups the agent's persisted CONVERSATIONS ({@link IAgent.listConversations})
+	 * into sessions using the default-chat URI convention — each session's
+	 * default chat is a conversation whose URI is `buildDefaultChatUri(session)`,
+	 * so the owning session URI is derivable and peer-chat conversations never
+	 * surface as top-level sessions. Storage-preserving: yields the same session
+	 * set the legacy `listSessions` did. Agents that have not opted in use the
+	 * legacy enumeration unchanged.
+	 */
+	private async _enumerateProviderSessions(provider: IAgent): Promise<IAgentSessionMetadata[]> {
+		if (!provider.orchestratorOwnsSession || !provider.listConversations) {
+			return provider.listSessions();
+		}
+		const conversations = await provider.listConversations();
+		const sessions: IAgentSessionMetadata[] = [];
+		for (const c of conversations) {
+			const sessionStr = parseDefaultChatUri(c.chat);
+			if (sessionStr === undefined) {
+				// A peer-chat conversation: grouped under its session (restored
+				// via the peer-chat catalog), never a top-level session.
+				continue;
+			}
+			const { chat, ...rest } = c;
+			sessions.push({ session: URI.parse(sessionStr), ...rest });
+		}
+		return sessions;
+	}
+
 	async listSessions(): Promise<IAgentSessionMetadata[]> {
 		this._logService.trace('[AgentService] listSessions called');
 		const results = await Promise.all(
-			[...this._providers.values()].map(p => p.listSessions())
+			[...this._providers.values()].map(p => this._enumerateProviderSessions(p))
 		);
 		const flat = results.flat();
 
@@ -1244,7 +1273,17 @@ export class AgentService extends Disposable implements IAgentService {
 
 		let created: IAgentCreateSessionResult | undefined;
 		try {
-			created = await provider.createSession(config ? this._toProviderConfig(config) : undefined);
+			// T2/T4: when the agent has ceded session ownership to the
+			// orchestrator, provision the session by creating its default chat
+			// through the chat surface (the agent-specific provisioning runs
+			// inside that call). Fork/import still use the legacy session path
+			// until they are migrated. Agents that have not opted in keep the
+			// legacy `createSession` path unchanged.
+			if (provider.orchestratorOwnsSession && !config?.fork && !config?.importConversation) {
+				created = await this._provisionSessionViaDefaultChat(provider, config);
+			} else {
+				created = await provider.createSession(config ? this._toProviderConfig(config) : undefined);
+			}
 			if (deferWorktreeCreation && created.provisional) {
 				this._worktree?.notePending(AgentSession.id(created.session));
 			}
@@ -1257,7 +1296,48 @@ export class AgentService extends Disposable implements IAgentService {
 		}
 	}
 
+	/**
+	 * T2/T4: provisions a session by driving the agent's chat surface. The
+	 * orchestrator owns session identity — it allocates the session URI (reusing
+	 * a client-supplied one) and derives the default-chat URI — then asks the
+	 * agent to stand up the session's shared infra inside creating that default
+	 * chat. The agent's {@link IAgentProvisionResult} is mapped back to the
+	 * legacy {@link IAgentCreateSessionResult} shape the rest of `createSession`
+	 * consumes, so provisional / working-directory / project semantics are
+	 * preserved. Storage-preserving: the session URI (and the derived
+	 * `sdkSessionId == session raw id`) are unchanged from the legacy path.
+	 */
+	private async _provisionSessionViaDefaultChat(provider: IAgent, config: IAgentCreateSessionConfig | undefined): Promise<IAgentCreateSessionResult> {
+		const sessionUri = config?.session ?? AgentSession.uri(provider.id, generateUuid());
+		const defaultChatUri = URI.parse(buildDefaultChatUri(sessionUri));
+		const providerConfig = config?.config !== undefined ? this._toProviderConfig({ config: config.config }).config : undefined;
+		const provisionSession: IAgentProvisionDefaultChat = {
+			...(config?.agent !== undefined ? { agent: config.agent } : {}),
+			...(config?.workingDirectory !== undefined ? { workingDirectory: config.workingDirectory } : {}),
+			...(providerConfig !== undefined ? { config: providerConfig } : {}),
+			...(config?.activeClient !== undefined ? { activeClient: config.activeClient } : {}),
+			...(config?.progressToken !== undefined ? { progressToken: config.progressToken } : {}),
+		};
+		const result = await provider.chats.createChat(defaultChatUri, { provisionSession });
+		const provision = result ? result.provision : undefined;
+		return {
+			session: sessionUri,
+			...(provision?.workingDirectory !== undefined ? { workingDirectory: provision.workingDirectory } : {}),
+			...(provision?.project !== undefined ? { project: provision.project } : {}),
+			...(provision?.provisional !== undefined ? { provisional: provision.provisional } : {}),
+		};
+	}
+
 	private async _disposeSession(provider: IAgent, session: URI): Promise<void> {
+		// T2/T4: for an orchestrator-owned session, disposal flows through the
+		// default chat (which owns the session's SDK backing); the agent tears
+		// down the shared infra when its default chat is disposed. Peer chats
+		// are already dropped via the catalog. Agents that have not opted in
+		// keep the legacy session-addressed disposal.
+		if (provider.orchestratorOwnsSession) {
+			await provider.chats.disposeChat(URI.parse(buildDefaultChatUri(session)));
+			return;
+		}
 		await provider.disposeSession(session);
 	}
 

@@ -26,13 +26,13 @@ import { createSchema, platformSessionSchema, schemaProperty } from '../../commo
 import { ClaudePermissionMode, ClaudeSessionConfigKey, narrowClaudePermissionMode } from '../../common/claudeSessionConfigKeys.js';
 import { createClaudeThinkingLevelSchema, isClaudeEffortLevel } from '../../common/claudeModelConfig.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
-import { AgentProvider, AgentSession, AgentSignal, CLAUDE_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChatDataChange, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, SubagentChatSignal } from '../../common/agentService.js';
+import { AgentProvider, AgentSession, AgentSignal, CLAUDE_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChatDataChange, IAgentChats, IAgentConversationMetadata, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentProvisionDefaultChat, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, SubagentChatSignal } from '../../common/agentService.js';
 import { ensureWorkspacelessScratchDir } from '../workspacelessScratchDir.js';
 import { ActionType, AuthRequiredReason, type AuthRequiredParams } from '../../common/state/sessionActions.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { PolicyState, ProtectedResourceMetadata, type AgentSelection, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
-import { isSubagentSession, parseSubagentSessionUri, buildDefaultChatUri, parseChatUri, parseRequiredSessionUriFromChatUri, isDefaultChatUri, ChatInputResponseKind, type ClientPluginCustomization, type Customization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, type ToolCallResult, type Turn } from '../../common/state/sessionState.js';
+import { isSubagentSession, parseSubagentSessionUri, buildDefaultChatUri, parseChatUri, parseDefaultChatUri, parseRequiredSessionUriFromChatUri, isDefaultChatUri, ChatInputResponseKind, type ClientPluginCustomization, type Customization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, type ToolCallResult, type Turn } from '../../common/state/sessionState.js';
 import { IAgentConfigurationService } from '../agentConfigurationService.js';
 import { IAgentHostGitHubEndpointService } from '../agentHostGitHubEndpointService.js';
 import { IAgentHostGitService } from '../../common/agentHostGitService.js';
@@ -857,10 +857,19 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	 * {@link _resolveChatTarget}).
 	 */
 	readonly chats: IAgentChats = {
-		createChat: (chat, options) => this._createChat(chat, options),
+		createChat: (chat, options) => {
+			if (options?.provisionSession) {
+				return this._provisionDefaultChat(chat, options.provisionSession);
+			}
+			return this._createChat(chat, options);
+		},
 		fork: (chat, source: IAgentCreateChatForkSource, options?: IAgentCreateChatOptions) =>
 			this._createChat(chat, { ...options, fork: source }),
 		disposeChat: chatUri => {
+			const sessionStr = parseDefaultChatUri(chatUri);
+			if (sessionStr !== undefined && isDefaultChatUri(chatUri)) {
+				return this.disposeSession(URI.parse(sessionStr));
+			}
 			const { session, chat } = this._resolveChatTarget(chatUri);
 			return this._disposeChat(session, chat);
 		},
@@ -1257,6 +1266,28 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		return result;
 	}
 
+	private async _provisionDefaultChat(chat: URI, provision: IAgentProvisionDefaultChat): Promise<IAgentCreateChatResult> {
+		const sessionStr = parseDefaultChatUri(chat);
+		if (sessionStr === undefined) {
+			throw new Error(`[Claude] provisionSession: malformed default chat URI ${chat.toString()}`);
+		}
+		const created = await this.createSession({
+			session: URI.parse(sessionStr),
+			...(provision.agent !== undefined ? { agent: provision.agent } : {}),
+			...(provision.workingDirectory !== undefined ? { workingDirectory: provision.workingDirectory } : {}),
+			...(provision.config !== undefined ? { config: provision.config } : {}),
+			...(provision.activeClient !== undefined ? { activeClient: provision.activeClient } : {}),
+			...(provision.progressToken !== undefined ? { progressToken: provision.progressToken } : {}),
+		});
+		return {
+			provision: {
+				...(created.workingDirectory !== undefined ? { workingDirectory: created.workingDirectory } : {}),
+				...(created.project !== undefined ? { project: created.project } : {}),
+				...(created.provisional !== undefined ? { provisional: created.provisional } : {}),
+			},
+		};
+	}
+
 	/**
 	 * Dispose an additional peer chat, tearing down its live chat (if
 	 * any) and dropping its live backing. The default chat cannot be disposed in
@@ -1293,7 +1324,16 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		// resumed again.
 	}
 
-	/**
+	readonly orchestratorOwnsSession = true;
+
+	async listConversations(): Promise<readonly IAgentConversationMetadata[]> {
+		const sessions = await this.listSessions();
+		return sessions.map(s => {
+			const { session, ...rest } = s;
+			return { chat: URI.parse(buildDefaultChatUri(session)), ...rest };
+		});
+	}
+
 	/**
 	 * Resolve the inherited session settings (working directory, project, model, agent,
 	 * permission mode) a new or resumed peer chat copies from its parent

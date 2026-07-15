@@ -12,6 +12,11 @@
 > **Status: COMPLETE** (2026-07-01)
 > All waves A–D and gates G-B1, G-C1, G-C2, G-D1 are done. Codex, Claude, and
 > Copilot all use the unified orchestrator path.
+>
+> The *operational* chat surface (send/abort/model/agent/history) is fully
+> chat-addressed and uniform across harnesses. Session ownership has moved into
+> the orchestrator via the chat-surface seam (opt-in per harness through
+> `IAgent.orchestratorOwnsSession`) — see [§7 Session Ownership (T2/T4)](#7-session-ownership-t2t4--the-orchestrator-owns-the-session).
 
 ---
 
@@ -321,3 +326,57 @@ An orthogonal `_chatBackings: Map<string, IPersistedChat>` records the live SDK 
 ### Codex (`node/codex/codexAgent.ts`)
 
 Single-chat harness. `_sessions: Map<string, ICodexSession>` keyed by session id; no peer-chat map. `chats.createChat` and `chats.fork` **throw** (`"Codex agent does not support multiple chats"` / `"Codex agent does not support chat forking"`); `chats.disposeChat` is a no-op; `sendMessage`/`abort`/`changeModel`/`getMessages` first resolve the addressed chat to Codex's single session and then operate on it (and `changeAgent` is a no-op). `getDescriptor().capabilities` omits `multipleChats` (absent = unsupported), so the UI never offers "Add Chat" or "Fork" for Codex sessions.
+
+---
+
+## 7. Session Ownership (T2/T4) — the orchestrator owns the Session
+
+**Status: implemented (opt-in per harness via `IAgent.orchestratorOwnsSession`).**
+
+Earlier the agent harness co-owned the *Session* type: it implemented
+`createSession`/`disposeSession`/`listSessions`/`getSessionMetadata` and kept an
+outer per-session grouping. T2/T4 makes the orchestrator own the Session concept
+entirely — identity, lifecycle, and grouping — while the agent talks only in
+chats. The tension that made this "contested" (session provisioning is
+agent-specific, so relocating it would leak agent logic into `AgentService`,
+violating §1) is resolved by a seam: **the orchestrator owns the session
+concept; the agent still runs its provisioning, but invoked through the chat
+surface rather than a Session-typed method.**
+
+### The seam
+
+- **Create.** `AgentService._provisionSessionViaDefaultChat` allocates the session
+  URI (reusing a client-supplied one), derives the default-chat URI
+  (`buildDefaultChatUri`), and calls `agent.chats.createChat(defaultChatUri, {
+  provisionSession })`. The agent-specific provisioning (working directory /
+  scratch dir, git project probe, permission mode, provisional SDK construction)
+  runs *inside* creating that default chat — it never moves into the
+  orchestrator. The agent returns `IAgentCreateChatResult.provision`
+  (`{ workingDirectory?, project?, provisional? }`), which the orchestrator maps
+  back to the legacy `IAgentCreateSessionResult` shape so provisional /
+  `onDidMaterializeSession` / deferred-`sessionAdded` semantics are preserved.
+- **Dispose.** `AgentService._disposeSession` routes to
+  `agent.chats.disposeChat(defaultChatUri)`; the agent tears down the session's
+  shared infra when its default chat is disposed.
+- **Enumerate.** `AgentService._enumerateProviderSessions` calls
+  `agent.listConversations()` (each entry is an `IAgentConversationMetadata`
+  addressed by a chat URI) and groups them into sessions via the default-chat URI
+  convention (`parseDefaultChatUri`): a conversation whose chat URI is a session's
+  default-chat URI *is* that session; peer-chat conversations are grouped under
+  their session (restored via the peer-chat catalog) and never surface as
+  top-level sessions.
+
+### Opt-in and storage-preservation
+
+The relocation is gated per harness by `IAgent.orchestratorOwnsSession`. When it
+is `false`/absent the orchestrator uses the legacy Session-typed methods
+unchanged; when `true` it uses the chat-surface seam above. This let the change
+land per-agent while every implementer stayed green (Codex first, then Claude and
+Copilot). It is **storage-preserving**: session URIs (and the derived
+`sdkSessionId == session raw id`, invariant I3) are unchanged, agents read/write
+the same SDK stores, and `providerData` / `PEER_CHATS_METADATA_KEY` formats are
+untouched. There is no data migration.
+
+Once all harnesses have opted in, the legacy `createSession`/`disposeSession`/
+`listSessions` methods and the `orchestratorOwnsSession` flag can be removed from
+`IAgent` (cleanup step); until then they remain as the fallback path.

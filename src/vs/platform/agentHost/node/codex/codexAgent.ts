@@ -21,13 +21,13 @@ import { IProductService } from '../../../product/common/productService.js';
 import { createSchema, platformSessionSchema, schemaProperty, type ISchemaProperty, type SessionMode } from '../../common/agentHostSchema.js';
 import { createPricingMetaFromBilling, normalizeCAPIBilling } from '../../common/agentModelPricing.js';
 import { getReasoningEffortDescription, getReasoningEffortLabel } from '../../common/reasoningEffort.js';
-import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentSession, AgentSignal, CODEX_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, type AgentProvider } from '../../common/agentService.js';
+import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentSession, AgentSignal, CODEX_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChats, IAgentConversationMetadata, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentProvisionDefaultChat, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, type AgentProvider } from '../../common/agentService.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { ActionType, isChatAction, type SessionAction, type ChatAction } from '../../common/state/sessionActions.js';
 import type { ConfigSchema, ModelSelection, ProtectedResourceMetadata, ToolDefinition, AgentSelection } from '../../common/state/protocol/state.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
-import { buildDefaultChatUri, parseChatUri, type ClientPluginCustomization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, ChatInputResponseKind, type PolicyState, type ToolCallResult, ToolResultContentType, type Turn, ResponsePartKind } from '../../common/state/sessionState.js';
+import { buildDefaultChatUri, isDefaultChatUri, parseChatUri, parseDefaultChatUri, type ClientPluginCustomization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, ChatInputResponseKind, type PolicyState, type ToolCallResult, ToolResultContentType, type Turn, ResponsePartKind } from '../../common/state/sessionState.js';
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
 import { ActiveClientToolSet } from '../activeClientState.js';
 import { McpCustomizationController } from '../shared/mcpCustomizationController.js';
@@ -2136,15 +2136,25 @@ export class CodexAgent extends Disposable implements IAgent {
 	 * URI is the deterministic default chat channel URI.
 	 */
 	readonly chats: IAgentChats = {
-		createChat: (_chat: URI, _options?: IAgentCreateChatOptions): Promise<IAgentCreateChatResult | void> => {
+		createChat: (chat: URI, options?: IAgentCreateChatOptions): Promise<IAgentCreateChatResult | void> => {
+			// T2/T4: the orchestrator provisions a Codex session by creating its
+			// default chat. Codex is single-chat, so a non-provisioning
+			// createChat (an additional peer chat) is still unsupported.
+			if (options?.provisionSession) {
+				return this._provisionDefaultChat(chat, options.provisionSession);
+			}
 			throw new Error('Codex agent does not support multiple chats');
 		},
 		fork: (_chat: URI, _source: IAgentCreateChatForkSource, _options?: IAgentCreateChatOptions): Promise<IAgentCreateChatResult | void> => {
 			throw new Error('Codex agent does not support chat forking');
 		},
-		disposeChat: (_chat: URI): Promise<void> => {
-			// Codex has no additional (peer) chats to dispose; the
-			// default chat lives and dies with its session.
+		disposeChat: (chat: URI): Promise<void> => {
+			// T2/T4: disposing a session's default chat tears down the session
+			// (Codex is single-chat). A non-default chat URI has nothing to
+			// dispose.
+			if (isDefaultChatUri(chat)) {
+				return this.disposeSession(this._sessionUriFromChat(chat));
+			}
 			return Promise.resolve();
 		},
 		sendMessage: (chat: URI, prompt: string, workingDirectory: URI | undefined, attachments?: readonly MessageAttachment[], turnId?: string, _senderClientId?: string): Promise<void> => {
@@ -2241,6 +2251,53 @@ export class CodexAgent extends Disposable implements IAgent {
 			workingDirectory: config.workingDirectory,
 			provisional: true,
 		};
+	}
+
+	/**
+	 * T2/T4: provision a Codex session by creating its default chat. The
+	 * orchestrator owns the session URI (derived from the default-chat URI); the
+	 * agent-specific provisioning stays here, delegating to {@link createSession}
+	 * and mapping its result into an {@link IAgentCreateChatResult}. Codex keeps
+	 * no separately-persisted peer-chat backing for the default chat
+	 * (`sdkSessionId == session raw id` is derivable), so `providerData` is unset.
+	 */
+	private async _provisionDefaultChat(chat: URI, provision: IAgentProvisionDefaultChat): Promise<IAgentCreateChatResult> {
+		const sessionStr = parseDefaultChatUri(chat);
+		if (sessionStr === undefined) {
+			throw new Error(`[Codex] provisionSession: malformed default chat URI ${chat.toString()}`);
+		}
+		const created = await this.createSession({
+			session: URI.parse(sessionStr),
+			...(provision.agent !== undefined ? { agent: provision.agent } : {}),
+			...(provision.workingDirectory !== undefined ? { workingDirectory: provision.workingDirectory } : {}),
+			...(provision.config !== undefined ? { config: provision.config } : {}),
+			...(provision.activeClient !== undefined ? { activeClient: provision.activeClient } : {}),
+			...(provision.progressToken !== undefined ? { progressToken: provision.progressToken } : {}),
+		});
+		return {
+			provision: {
+				...(created.workingDirectory !== undefined ? { workingDirectory: created.workingDirectory } : {}),
+				...(created.project !== undefined ? { project: created.project } : {}),
+				...(created.provisional !== undefined ? { provisional: created.provisional } : {}),
+			},
+		};
+	}
+
+	/** T2/T4: Codex has ceded session ownership to the orchestrator. */
+	readonly orchestratorOwnsSession = true;
+
+	/**
+	 * T2/T4: enumerate persisted Codex conversations. Codex is single-chat, so
+	 * each session has exactly one (default) conversation; this re-expresses
+	 * {@link listSessions} as conversations addressed by each session's
+	 * default-chat URI, which the orchestrator groups back into sessions.
+	 */
+	async listConversations(): Promise<readonly IAgentConversationMetadata[]> {
+		const sessions = await this.listSessions();
+		return sessions.map(s => {
+			const { session, ...rest } = s;
+			return { chat: URI.parse(buildDefaultChatUri(session)), ...rest };
+		});
 	}
 
 	/**
