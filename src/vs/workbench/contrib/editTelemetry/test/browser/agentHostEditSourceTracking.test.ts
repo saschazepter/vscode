@@ -33,7 +33,7 @@ suite('Agent Host Edit Source Tracking', () => {
 			() => { },
 		));
 
-		await trackedFile.applyEdit('', 'alpha\n', agentHostEditSource('copilot-sdk', 'session-1', 'turn-1'), 'typescript');
+		await trackedFile.applyEdit('', 'alpha\n', agentHostEditSource('copilotcli', 'session-1', 'turn-1'), 'typescript');
 		await trackedFile.applyEdit('alpha\n', 'alpha\nbeta\n', agentHostEditSource('claude', 'session-1', 'turn-2'), 'typescript');
 		currentText = 'alpha\nX\n';
 		await trackedFile.flush('hashChange');
@@ -43,8 +43,8 @@ suite('Agent Host Edit Source Tracking', () => {
 			{
 				data: {
 					mode: 'longterm',
-					sourceKey: 'source:Chat.applyEdits-$harness:copilot-sdk-$origin:agentHost-$trackingScope:agentHostAIOnly',
-					sourceKeyCleaned: 'source:Chat.applyEdits-$harness:copilot-sdk-$origin:agentHost-$trackingScope:agentHostAIOnly',
+					sourceKey: 'source:Chat.applyEdits-$harness:copilotcli-$origin:agentHost-$trackingScope:agentHostAIOnly',
+					sourceKeyCleaned: 'source:Chat.applyEdits-$harness:copilotcli-$origin:agentHost-$trackingScope:agentHostAIOnly',
 					extensionId: undefined,
 					extensionVersion: undefined,
 					modelId: undefined,
@@ -54,7 +54,7 @@ suite('Agent Host Edit Source Tracking', () => {
 					conversationId: 'session-1',
 					requestId: 'turn-1',
 					origin: 'agentHost',
-					harness: 'copilot-sdk',
+					harness: 'copilotcli',
 					trackingScope: 'agentHostAIOnly',
 					modifiedCount: 6,
 					deltaModifiedCount: 6,
