@@ -137,11 +137,6 @@ export async function toSdkCustomAgents(agents: readonly INamedPluginResource[],
 					prompt: raw,
 				});
 			} else {
-				if (md.getBooleanValue('disable-model-invocation') === true || md.getBooleanValue('infer') === false) {
-					// Skip agents that explicitly disable model invocation (e.g. skills that are only to be used as slash commands)
-					continue;
-				}
-
 				// Match `parseAgentFile`'s name derivation (trim + falsy fallback) so
 				// the SDK config name equals the `resolvedAgentName` resolved from the
 				// parsed plugin agent; otherwise a whitespace-padded frontmatter `name`
@@ -150,6 +145,11 @@ export async function toSdkCustomAgents(agents: readonly INamedPluginResource[],
 				const description = md.getStringValue('description');
 				const tools = md.getStringArrayValue('tools');
 				const skills = md.getStringArrayValue('skills');
+				let infer = md.getBooleanValue('infer');
+				const disableModelInvocation = md.getBooleanValue('disable-model-invocation');
+				if (infer === undefined && disableModelInvocation === true) {
+					infer = false;
+				}
 				const prompt = md.body ?? raw;
 				let model: string | undefined = md.getStringValue('model') ?? undefined;
 				const models = md.getStringArrayValue('model') ?? undefined;
@@ -162,6 +162,7 @@ export async function toSdkCustomAgents(agents: readonly INamedPluginResource[],
 					...(model ? { model } : {}),
 					tools: tools && tools.length > 0 ? tools : null,
 					...(skills !== undefined ? { skills } : {}),
+					...(infer !== undefined ? { infer } : {}),
 					prompt,
 				});
 			}
