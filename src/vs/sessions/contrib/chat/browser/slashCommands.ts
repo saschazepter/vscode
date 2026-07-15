@@ -6,6 +6,8 @@
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../base/common/observable.js';
+import { isEqual } from '../../../../base/common/resources.js';
+import { URI } from '../../../../base/common/uri.js';
 import { CodeEditorWidget } from '../../../../editor/browser/widget/codeEditor/codeEditorWidget.js';
 import { CompletionContext, CompletionItem, CompletionItemKind } from '../../../../editor/common/languages.js';
 import { IModelDeltaDecoration, InjectedTextCursorStops, ITextModel } from '../../../../editor/common/model.js';
@@ -59,6 +61,7 @@ export class SlashCommandHandler extends Disposable {
 
 	private readonly _slashCommands: ISessionsSlashCommandData[] = [];
 	private _cachedPromptCommands: readonly IChatPromptSlashCommand[] = [];
+	private _promptCommandsRefreshGeneration = 0;
 
 	private readonly _commandDecorations: IEditorDecorationsCollection;
 	private readonly _placeholderDecorations: IEditorDecorationsCollection;
@@ -77,12 +80,15 @@ export class SlashCommandHandler extends Disposable {
 		this._registerSlashCommands();
 		this._registerCompletions();
 		this._registerDecorations();
-		this._refreshPromptCommands();
+
+		this._register(autorun(reader => {
+			this._refreshPromptCommands(this.sessionContext.session.read(reader)?.resource);
+		}));
 
 		this._register(this.harnessService.onDidChangeSlashCommands((e) => {
 			const sessionResource = this.sessionContext.session.get()?.resource;
 			if (sessionResource && e.sessionType === getChatSessionType(sessionResource)) {
-				this._refreshPromptCommands();
+				this._refreshPromptCommands(sessionResource);
 			}
 		}));
 	}
@@ -91,17 +97,28 @@ export class SlashCommandHandler extends Disposable {
 		this._editor.getModel()?.setValue('');
 	}
 
-	private _refreshPromptCommands(): void {
-		const sessionResource = this.sessionContext.session.get()?.resource;
+	private _refreshPromptCommands(sessionResource: URI | undefined): void {
+		const refreshGeneration = ++this._promptCommandsRefreshGeneration;
 		if (!sessionResource) {
 			this._cachedPromptCommands = [];
 			this._updateDecorations();
 			return;
 		}
 		this.harnessService.getSlashCommands(sessionResource, CancellationToken.None).then(commands => {
+			const currentSessionResource = this.sessionContext.session.get()?.resource;
+			if (refreshGeneration !== this._promptCommandsRefreshGeneration || !currentSessionResource || !isEqual(currentSessionResource, sessionResource)) {
+				return;
+			}
 			this._cachedPromptCommands = commands;
 			this._updateDecorations();
-		}, () => { /* swallow errors from stale refresh */ });
+		}, () => {
+			const currentSessionResource = this.sessionContext.session.get()?.resource;
+			if (refreshGeneration !== this._promptCommandsRefreshGeneration || !currentSessionResource || !isEqual(currentSessionResource, sessionResource)) {
+				return;
+			}
+			this._cachedPromptCommands = [];
+			this._updateDecorations();
+		});
 	}
 
 	/**
