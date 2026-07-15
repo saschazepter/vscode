@@ -1565,15 +1565,6 @@ export interface IAgent {
 	setPendingMessages?(session: URI, steeringMessage: PendingMessage | undefined, queuedMessages: readonly PendingMessage[], chat?: URI): void;
 
 	/**
-	 * Retrieve the reconstructed turns for a session, used when restoring
-	 * sessions from persistent storage. Each agent owns the conversion from
-	 * its SDK-specific event log to protocol {@link Turn}s, including
-	 * subagent sessions (callers pass the subagent URI to retrieve the
-	 * child session's turns).
-	 */
-	getSessionMessages(session: URI): Promise<readonly Turn[]>;
-
-	/**
 	 * Returns the subagent child sessions discoverable in a session's event
 	 * log so a parent restore can eagerly register them in a single pass.
 	 * Without this, every child is restored separately by re-fetching and
@@ -1609,9 +1600,6 @@ export interface IAgent {
 
 	/** Available models from this provider. */
 	readonly models: IObservable<readonly IAgentModelInfo[]>;
-
-	/** List persisted sessions from this provider. */
-	listSessions(): Promise<IAgentSessionMetadata[]>;
 
 	/**
 	 * Enumerate the agent's persisted conversations, which the orchestrator

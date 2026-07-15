@@ -2885,7 +2885,7 @@ export class AgentService extends Disposable implements IAgentService {
 		const sessionStr = session.toString();
 		let allSessions;
 		try {
-			allSessions = await agent.listSessions();
+			allSessions = await this._enumerateProviderSessions(agent);
 		} catch (err) {
 			if (err instanceof ProtocolError) {
 				throw err;

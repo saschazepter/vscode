@@ -376,8 +376,17 @@ id`, invariant I3) are unchanged, agents read/write the same SDK stores, and
 `providerData` / `PEER_CHATS_METADATA_KEY` formats are untouched. There is no data
 migration.
 
-Each harness keeps its `createSession`/`disposeSession`/`listSessions` as the
-private provisioning implementation the chat-surface bridge delegates to; the
-orchestrator no longer calls them for a normal create/dispose/enumerate. They
-remain on `IAgent` for the fork/import create path and the single-session metadata
-lookup, whose relocation is a later follow-up.
+### Interface surface
+
+`IAgent` no longer exposes `listSessions` or `getSessionMessages` — they are
+superseded by `listConversations` and `chats.getMessages`. Each harness keeps
+those as private methods its own chat/conversation bridge delegates to.
+
+`createSession` and `disposeSession` remain on `IAgent`: they are the
+session-lifecycle provisioning primitives the chat-surface bridge delegates to
+(`chats.createChat({ provisionSession })` / `chats.disposeChat(defaultChat)`).
+`createSession` is additionally still called directly for the **fork/import**
+create path — a fork's session id is minted server-side by the SDK
+(`sessions.fork`), so the orchestrator cannot pre-allocate the session URI the way
+the provisioning seam requires; migrating fork/import is deliberately left as a
+follow-up. `getSessionMetadata` likewise stays as a genuine single-session lookup.
