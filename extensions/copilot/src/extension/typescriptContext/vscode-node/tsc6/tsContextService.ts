@@ -6,14 +6,14 @@
 import * as vscode from 'vscode';
 
 import { IConfigurationService } from '../../../../platform/configuration/common/configurationService';
-import { type ContextItem, type RequestContext } from '../../../../platform/languageServer/common/languageContextService';
+import { type ContextItem, type RequestContext, KnownSources } from '../../../../platform/languageServer/common/languageContextService';
 import { ILogService } from '../../../../platform/log/common/logService';
 import { IExperimentationService } from '../../../../platform/telemetry/common/nullExperimentationService';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry';
 import { CancellationToken } from '../../../../util/vs/base/common/cancellation';
 import * as protocol from '../../common/serverProtocol';
 import { ContextItemResultBuilder, ResolvedRunnableResult } from '../types';
-import { currentTokenBudget, InflightRequestInfo, OnTimeoutData, PendingRequestInfo, TSLanguageContextService } from '../languageContextService';
+import { currentTokenBudget, TSLanguageContextService } from '../tsContextService';
 
 enum ExecutionTarget {
 	Semantic,
@@ -33,6 +33,7 @@ type ComputeContextRequestArgs = Omit<protocol.ComputeContextRequestArgs, 'file'
 	offset: number;
 	$traceId?: string;
 };
+
 namespace ComputeContextRequestArgs {
 	export function create(document: vscode.TextDocument, position: vscode.Position, context: RequestContext, startTime: number, timeBudget: number, willLogRequestTelemetry: boolean, neighborFiles: readonly string[] | undefined, clientSideRunnableResults: readonly protocol.CachedContextRunnableResult[] | undefined, includeDocumentation: boolean): ComputeContextRequestArgs {
 		return {
@@ -48,6 +49,81 @@ namespace ComputeContextRequestArgs {
 			clientSideRunnableResults: clientSideRunnableResults,
 			$traceId: willLogRequestTelemetry ? context.requestId : undefined
 		};
+	}
+}
+
+class PendingRequestInfo {
+
+	public readonly document: string;
+	public readonly version: number;
+	public readonly position: vscode.Position;
+	public readonly context: RequestContext;
+
+	constructor(document: vscode.TextDocument, position: vscode.Position, context: RequestContext) {
+		this.document = document.uri.toString();
+		this.version = document.version;
+		this.position = position;
+		this.context = context;
+	}
+}
+
+class InflightRequestInfo {
+
+	public readonly document: string;
+	public readonly position: vscode.Position;
+	public readonly requestId: string;
+	public readonly source: KnownSources | string;
+	public readonly serverPromise: Thenable<protocol.ComputeContextResponse>;
+
+	private readonly tokenSource: vscode.CancellationTokenSource;
+
+	constructor(document: vscode.TextDocument, position: vscode.Position, context: RequestContext, tokenSource: vscode.CancellationTokenSource, serverPromise: Thenable<protocol.ComputeContextResponse>) {
+		this.document = document.uri.toString();
+		this.position = position;
+		this.requestId = context.requestId;
+		this.source = context.source ?? KnownSources.unknown;
+		this.tokenSource = tokenSource;
+		this.serverPromise = serverPromise;
+	}
+
+	public matches(document: vscode.TextDocument, position: vscode.Position): boolean {
+		return this.document === document.uri.toString() && this.position.isEqual(position);
+	}
+
+	public matchesDocument(document: vscode.TextDocument): boolean {
+		return this.document === document.uri.toString();
+	}
+
+	public cancel(): void {
+		this.tokenSource.cancel();
+	}
+}
+
+class OnTimeoutData {
+
+	private readonly document: string;
+	private readonly version: number;
+	private readonly position: vscode.Position;
+
+	public readonly runnableResults: ResolvedRunnableResult[] = [];
+	public resultBuilder: ContextItemResultBuilder | undefined;
+
+	constructor(document: vscode.TextDocument, position: vscode.Position) {
+		this.document = document.uri.toString();
+		this.version = document.version;
+		this.position = position;
+	}
+
+	addRunnableResult(result: ResolvedRunnableResult): void {
+		this.runnableResults.push(result);
+	}
+
+	addRunnableResults(results: readonly ResolvedRunnableResult[]): void {
+		this.runnableResults.push(...results);
+	}
+
+	matches(document: vscode.TextDocument, position: vscode.Position): boolean {
+		return this.document === document.uri.toString() && this.version === document.version && this.position.isEqual(position);
 	}
 }
 
