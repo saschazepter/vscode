@@ -2137,9 +2137,6 @@ export class CodexAgent extends Disposable implements IAgent {
 	 */
 	readonly chats: IAgentChats = {
 		createChat: (chat: URI, options?: IAgentCreateChatOptions): Promise<IAgentCreateChatResult | void> => {
-			// T2/T4: the orchestrator provisions a Codex session by creating its
-			// default chat. Codex is single-chat, so a non-provisioning
-			// createChat (an additional peer chat) is still unsupported.
 			if (options?.provisionSession) {
 				return this._provisionDefaultChat(chat, options.provisionSession);
 			}
@@ -2149,9 +2146,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			throw new Error('Codex agent does not support chat forking');
 		},
 		disposeChat: (chat: URI): Promise<void> => {
-			// T2/T4: disposing a session's default chat tears down the session
-			// (Codex is single-chat). A non-default chat URI has nothing to
-			// dispose.
+			// Disposing the default chat tears down the (single-chat) session.
 			if (isDefaultChatUri(chat)) {
 				return this.disposeSession(this._sessionUriFromChat(chat));
 			}
@@ -2253,14 +2248,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		};
 	}
 
-	/**
-	 * T2/T4: provision a Codex session by creating its default chat. The
-	 * orchestrator owns the session URI (derived from the default-chat URI); the
-	 * agent-specific provisioning stays here, delegating to {@link createSession}
-	 * and mapping its result into an {@link IAgentCreateChatResult}. Codex keeps
-	 * no separately-persisted peer-chat backing for the default chat
-	 * (`sdkSessionId == session raw id` is derivable), so `providerData` is unset.
-	 */
+	/** Provision a session's default chat by delegating to {@link createSession}. */
 	private async _provisionDefaultChat(chat: URI, provision: IAgentProvisionDefaultChat): Promise<IAgentCreateChatResult> {
 		const sessionStr = parseDefaultChatUri(chat);
 		if (sessionStr === undefined) {
@@ -2283,12 +2271,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		};
 	}
 
-	/**
-	 * T2/T4: enumerate persisted Codex conversations. Codex is single-chat, so
-	 * each session has exactly one (default) conversation; this re-expresses
-	 * {@link listSessions} as conversations addressed by each session's
-	 * default-chat URI, which the orchestrator groups back into sessions.
-	 */
+	/** Enumerate persisted conversations (one default chat per Codex session). */
 	async listConversations(): Promise<readonly IAgentConversationMetadata[]> {
 		const sessions = await this.listSessions();
 		return sessions.map(s => {

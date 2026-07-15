@@ -3176,19 +3176,15 @@ suite('AgentService (node dispatcher)', () => {
 			await service.disposeSession(session);
 
 			const defaultChatUri = buildDefaultChatUri(session);
+			// Session create/dispose route through the chat surface, not the
+			// legacy session-addressed methods.
 			assert.deepStrictEqual({
-				// The orchestrator owns the session concept and never calls the
-				// legacy session-addressed createSession/disposeSession for a
-				// normal create/dispose - it drives the chat surface (the default
-				// chat) instead.
 				sessionCreate: agent.sessionCreateCalls.map(s => s.toString()),
 				sessionDispose: agent.sessionDisposeCalls.map(s => s.toString()),
 				legacyCreateChat: agent.legacyCreateChatCalls.length,
 				chatOps: agent.chatCalls.map(c => c.op),
-				// First createChat provisions the session's default chat; second is the peer chat.
 				provisionChatArgs: agent.chatCalls.filter(c => c.op === 'createChat')[0]?.args,
 				peerChatArgs: agent.chatCalls.filter(c => c.op === 'createChat')[1]?.args,
-				// First disposeChat drops the peer; second disposes the session via its default chat.
 				disposeChatArgs: agent.chatCalls.filter(c => c.op === 'disposeChat').map(c => c.args[0]),
 			}, {
 				sessionCreate: [],

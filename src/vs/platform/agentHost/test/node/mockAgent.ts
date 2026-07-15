@@ -237,10 +237,7 @@ export class MockAgent implements IAgent {
 		return { session: URI.parse(parsed.session), chat: URI.parse(chat.toString()) };
 	}
 
-	/**
-	 * Provision a session's default chat (mirrors the real harness bridge):
-	 * delegate to {@link createSession} and map its result to the chat result.
-	 */
+	/** Provision a session's default chat by delegating to {@link createSession}. */
 	private async _provisionDefaultChat(chat: URI, provision: IAgentProvisionDefaultChat): Promise<IAgentCreateChatResult> {
 		const sessionStr = parseDefaultChatUri(chat);
 		if (sessionStr === undefined) {

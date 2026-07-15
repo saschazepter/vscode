@@ -726,16 +726,12 @@ export interface IAgentSessionMetadata {
 }
 
 /**
- * T4: metadata for one persisted CONVERSATION (a default/peer chat backing)
- * enumerated by {@link IAgent.listConversations}. The orchestrator groups these
- * into sessions via the default-chat URI convention. `chat` is the conversation's
- * chat channel URI; for a session's default chat that is `buildDefaultChatUri(session)`
- * (from which the owning session URI is derivable). All other fields mirror the
- * corresponding {@link IAgentSessionMetadata} slots so grouping needs no
- * agent-specific knowledge.
+ * Metadata for one persisted conversation enumerated by
+ * {@link IAgent.listConversations}, mirroring {@link IAgentSessionMetadata} but
+ * addressed by its chat channel URI so the orchestrator can group conversations
+ * into sessions via the default-chat URI convention.
  */
 export interface IAgentConversationMetadata {
-	/** The conversation's chat channel URI (default-chat URI for a session's main chat). */
 	readonly chat: URI;
 	readonly startTime: number;
 	readonly modifiedTime: number;
@@ -958,35 +954,24 @@ export interface IAgentCreateChatOptions {
 	 */
 	readonly fork?: IAgentCreateChatForkSource;
 	/**
-	 * Present only when this `createChat` provisions a session's DEFAULT
-	 * (main) chat. The orchestrator (T2/T4) owns session identity and
-	 * lifecycle, so it allocates the session + default-chat URIs and drives
-	 * the agent to stand up the session's shared infra through this option.
-	 * The agent-specific provisioning (working directory / scratch dir, git
-	 * project probe, permission mode, SDK client construction) runs inside
-	 * creating this default chat — it never moves into the orchestrator.
-	 * Absent for additional (peer) chats, which inherit the session's scope.
+	 * Set only when this `createChat` provisions a session's default (main)
+	 * chat. The agent stands up the session's shared infra (working directory,
+	 * SDK client, etc.) while creating this chat.
 	 */
 	readonly provisionSession?: IAgentProvisionDefaultChat;
 }
 
 /**
- * Session-provisioning intent carried on {@link IAgentCreateChatOptions.provisionSession}
- * when the orchestrator asks the agent to stand up a session by creating its
- * default (main) chat. Mirrors the agent-specific fields of the legacy
- * `IAgentCreateSessionConfig`; the session/default-chat URIs are owned and
- * supplied by the orchestrator via the `createChat` `chat` argument, not here.
+ * Session-provisioning intent carried on {@link IAgentCreateChatOptions.provisionSession}.
+ * Mirrors the agent-specific fields of the legacy `IAgentCreateSessionConfig`; the
+ * session/default-chat URIs come from the `createChat` `chat` argument.
  */
 export interface IAgentProvisionDefaultChat {
-	/** Initial custom agent selection; omit for provider default. */
 	readonly agent?: AgentSelection;
 	/** Requested working directory; the agent may resolve a different one (e.g. worktree/scratch). */
 	readonly workingDirectory?: URI;
-	/** Provider-specific session configuration bag. */
 	readonly config?: Record<string, unknown>;
-	/** Eagerly claim the active-client role for the new session. */
 	readonly activeClient?: SessionActiveClient;
-	/** MCP-style progress token for long-running bring-up (e.g. lazy SDK download). */
 	readonly progressToken?: string;
 }
 
@@ -1023,32 +1008,18 @@ export interface IAgentCreateChatResult {
 	 */
 	readonly backingSession?: URI;
 	/**
-	 * Provisioning outcome — set ONLY when this `createChat` provisioned a
-	 * session's default (main) chat (i.e. {@link IAgentCreateChatOptions.provisionSession}
-	 * was set). Mirrors the legacy `IAgentCreateSessionResult` so the
-	 * orchestrator can record the resolved working directory / project and
-	 * defer the `sessionAdded` notification for a provisional default chat.
+	 * Provisioning outcome, set only when this `createChat` provisioned a
+	 * session's default chat. Mirrors the legacy `IAgentCreateSessionResult`.
 	 */
 	readonly provision?: IAgentProvisionResult;
 }
 
-/**
- * Outcome of provisioning a session's default chat, returned on
- * {@link IAgentCreateChatResult.provision}. Mirrors the agent-owned fields of
- * the legacy `IAgentCreateSessionResult`.
- */
+/** Outcome of provisioning a session's default chat (see {@link IAgentCreateChatResult.provision}). */
 export interface IAgentProvisionResult {
 	/** The resolved working directory, which may differ from the requested one (e.g. worktree). */
 	readonly workingDirectory?: URI;
-	/** Detected code-project info for the resolved working directory, if any. */
 	readonly project?: IAgentSessionProjectInfo;
-	/**
-	 * `true` when the agent only allocated an in-memory placeholder (no SDK
-	 * session/worktree/on-disk state yet); materialization happens lazily on
-	 * the first send, at which point the agent fires
-	 * {@link IAgent.onDidMaterializeSession}. The orchestrator defers the
-	 * `sessionAdded` notification until then.
-	 */
+	/** `true` when the agent allocated only a placeholder, materialized lazily on first send. */
 	readonly provisional?: boolean;
 }
 
@@ -1643,12 +1614,8 @@ export interface IAgent {
 	listSessions(): Promise<IAgentSessionMetadata[]>;
 
 	/**
-	 * Enumerate the agent's persisted CONVERSATIONS (one per default/peer chat
-	 * backing), which the orchestrator groups into sessions using the
-	 * default-chat URI convention. The orchestrator owns the Session concept
-	 * (identity, lifecycle, grouping); the agent only enumerates conversations.
-	 * Storage-preserving — the agent reads the same SDK store its legacy
-	 * `listSessions` does, re-expressed as chats.
+	 * Enumerate the agent's persisted conversations, which the orchestrator
+	 * groups into sessions via the default-chat URI convention.
 	 */
 	listConversations(): Promise<readonly IAgentConversationMetadata[]>;
 
