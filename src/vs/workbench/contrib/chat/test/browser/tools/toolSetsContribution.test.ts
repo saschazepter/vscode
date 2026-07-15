@@ -35,9 +35,7 @@ suite('ToolSetsContribution', () => {
 			toolReferenceName: name,
 			source: ToolDataSource.Internal,
 		});
-		// A tool that remains a member of the vscode-general set.
 		const toolSearch = makeTool('toolSearch');
-		// Tools that were removed from the vscode-general set.
 		const removed = ['extensions', 'installExtension', 'newWorkspace', 'runCommand', 'vscodeAPI'].map(makeTool);
 		for (const tool of [toolSearch, ...removed]) {
 			store.add(toolsService.registerToolData(tool));
