@@ -45,6 +45,8 @@ suite('Sessions - Workbench', () => {
 	const revealEditorOnOpenSinglePane = Reflect.get(SinglePaneWorkbench.prototype, 'revealEditorOnOpen') as (this: IWillOpenTestHarness, e: { groupId: number; editor: unknown }) => void;
 	const createDesktopGridDescriptor = Reflect.get(Workbench.prototype, 'createDesktopGridDescriptor') as (this: IGridDescriptorTestHarness, width: number, height: number) => { root: { data: readonly unknown[] } };
 	const savePartSizes = Reflect.get(Workbench.prototype, '_savePartSizes') as (this: ISavePartSizesTestHarness) => void;
+	const isEditorPaneVisible = Workbench.prototype.isEditorPaneVisible as (this: ITestWorkbench) => boolean;
+	const isSinglePaneEditorPaneVisible = SinglePaneWorkbench.prototype.isEditorPaneVisible as (this: ITestWorkbench) => boolean;
 
 	// --- Harness ------------------------------------------------------------
 
@@ -133,6 +135,7 @@ suite('Sessions - Workbench', () => {
 			[auxiliaryBarPartView, { width: 300, height: 800 }],
 		]);
 
+		const partVisibility = { sidebar: true, auxiliaryBar: true, editor: false, panel: false, sessions: true, ...options.partVisibility };
 		const host = {
 			editorPartView,
 			sessionsPartView,
@@ -140,10 +143,11 @@ suite('Sessions - Workbench', () => {
 			auxiliaryBarPartView,
 			_editorPartContainer: undefined,
 			mainContainer: { classList: { toggle: (name: string, force: boolean) => { classToggles.push({ name, force }); } } },
-			partVisibility: { sidebar: true, auxiliaryBar: true, editor: false, panel: false, sessions: true, ...options.partVisibility },
+			partVisibility,
 			workbenchGrid: {
 				width: options.windowWidth ?? 1000,
 				getViewSize: (view: object) => viewSizes.get(view) ?? { width: 0, height: 0 },
+				isViewVisible: (view: object) => view === editorPartView ? partVisibility.editor || partVisibility.auxiliaryBar : true,
 				setViewVisible: (_view: object, visible: boolean) => { visibilityChanges.push(visible); },
 				resizeView: (view: object, size: IViewSize) => { resizes.push(size); viewSizes.set(view, size); },
 			},
@@ -188,6 +192,42 @@ suite('Sessions - Workbench', () => {
 	}
 
 	// --- Editor split / reveal ---------------------------------------------
+
+	test('tracks editor pane visibility across editor and auxiliary bar changes', () => {
+		const host = createHost({ partVisibility: { editor: false, auxiliaryBar: true } });
+
+		setAuxiliaryBarHidden.call(host, true);
+		const hidden = isEditorPaneVisible.call(host);
+		setEditorHidden.call(host, false);
+		const editorVisible = isEditorPaneVisible.call(host);
+		setEditorHidden.call(host, true);
+		const closed = isEditorPaneVisible.call(host);
+
+		assert.deepStrictEqual({
+			hidden,
+			editorVisible,
+			closed,
+			noEditorPaneClasses: host.classToggles.filter(toggle => toggle.name === 'noeditorpane'),
+		}, {
+			hidden: false,
+			editorVisible: true,
+			closed: false,
+			noEditorPaneClasses: [
+				{ name: 'noeditorpane', force: true },
+				{ name: 'noeditorpane', force: false },
+				{ name: 'noeditorpane', force: true },
+			],
+		});
+	});
+
+	test('reads the single-pane editor grid node visibility', () => {
+		const host = createHost({ single: true, partVisibility: { editor: false, auxiliaryBar: true } }) as ITestWorkbench & {
+			workbenchGrid: { isViewVisible(view: object): boolean };
+		};
+		host.workbenchGrid.isViewVisible = () => false;
+
+		assert.strictEqual(isSinglePaneEditorPaneVisible.call(host), false);
+	});
 
 	test('applies an even editor split the first time the editor is revealed', () => {
 		const host = createHost({ sessionsWidth: 1000, windowWidth: 1000 });

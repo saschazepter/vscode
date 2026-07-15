@@ -51,7 +51,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 	/** Visual margin values for the card-like appearance (non-docked layout). */
 	static readonly MARGIN_TOP = 0;
-	static readonly MARGIN_BOTTOM = 5;
+	static readonly MARGIN_BOTTOM = 0;
 	static readonly MARGIN_LEFT = 5;
 
 	// Action ID for run script - defined here to avoid layering issues
@@ -313,9 +313,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		const editorVisible = this.layoutService.isVisible(Parts.EDITOR_PART, mainWindow);
 		const marginLeft = editorVisible ? 0 : AuxiliaryBarPart.MARGIN_LEFT;
 		const paddingLeft = editorVisible ? AuxiliaryBarPart.MARGIN_LEFT : 0;
-		const marginBottom = this.layoutService.isVisible(Parts.PANEL_PART)
-			? AuxiliaryBarPart.MARGIN_BOTTOM
-			: 0;
+		const marginBottom = AuxiliaryBarPart.MARGIN_BOTTOM;
 
 		super.layout(
 			width - marginLeft - borderTotal - paddingLeft,
