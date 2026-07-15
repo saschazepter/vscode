@@ -267,7 +267,18 @@ async def transcribe_stream(client_ws: WebSocket) -> None:
                     elif etype == "conversation.item.input_audio_transcription.completed":
                         await client_ws.send_json({"type": "segment", "text": evt.get("transcript", "")})
                     elif etype == "error":
-                        print(f"[stt] azure error: {evt.get('error')}", flush=True)
+                        err = evt.get("error", {}) or {}
+                        code = err.get("code") if isinstance(err, dict) else None
+                        # With server VAD, Azure auto-commits speech segments and
+                        # clears the buffer. A trailing manual commit (or a stop
+                        # with only non-speech/silence buffered) then races that
+                        # and reports an empty buffer. The audio was already
+                        # transcribed via VAD, so this is benign — log, don't
+                        # surface it to the user as a failed transcription.
+                        if code in ("input_audio_buffer_commit_empty",):
+                            print(f"[stt] ignoring benign azure error: {err}", flush=True)
+                            continue
+                        print(f"[stt] azure error: {err}", flush=True)
                         await client_ws.send_json({"type": "error", "message": str(evt.get("error", "realtime error"))})
 
             client_task = asyncio.create_task(pump_client_to_azure())

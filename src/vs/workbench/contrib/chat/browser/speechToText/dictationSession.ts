@@ -53,6 +53,7 @@ class LiveTranscriptInserter {
 
 interface IActiveDictation {
 	readonly service: IChatSpeechToTextService;
+	readonly editor: ICodeEditor;
 	readonly inserter: LiveTranscriptInserter;
 	readonly listener: IDisposable;
 }
@@ -69,6 +70,11 @@ export function isDictating(): boolean {
 	return !!_active;
 }
 
+/** The editor currently being dictated into, if any (used to scope the glow). */
+export function activeDictationEditor(): ICodeEditor | undefined {
+	return _active?.editor;
+}
+
 /** Start dictating into `editor`, rendering the transcript live. */
 export async function startDictation(service: IChatSpeechToTextService, editor: ICodeEditor, window: Window & typeof globalThis): Promise<void> {
 	if (_active || service.state !== ChatSpeechToTextState.Idle) {
@@ -76,7 +82,7 @@ export async function startDictation(service: IChatSpeechToTextService, editor: 
 	}
 	const inserter = new LiveTranscriptInserter(editor);
 	const listener = service.onDidUpdateTranscript(text => inserter.update(text));
-	_active = { service, inserter, listener };
+	_active = { service, editor, inserter, listener };
 	try {
 		await service.start(window);
 	} catch {

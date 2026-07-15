@@ -36,6 +36,8 @@ import { AGENT_SESSIONS_SCOPED_INPUT_HISTORY_SETTING } from './sessionsChatHisto
 import { activeSessionViewBackground, activeSessionViewForeground, agentsPanelBackground, inactiveSessionViewBackground, inactiveSessionViewForeground } from '../../../common/theme.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { setupVoiceInputDecorations } from './voiceInputDecorations.js';
+import { IChatSpeechToTextService } from '../../../../workbench/contrib/chat/browser/speechToText/chatSpeechToTextService.js';
+import { setupDictationGlow } from '../../../../workbench/contrib/chat/browser/speechToText/dictationGlow.js';
 
 /**
  * A session view that hosts a {@link NewChatWidget} — the "new session" UI
@@ -154,6 +156,7 @@ export class ChatView extends AbstractChatView {
 		@IVoiceSessionController private readonly voiceSessionController: IVoiceSessionController,
 		@IMicCaptureService private readonly micCaptureService: IMicCaptureService,
 		@ITtsPlaybackService private readonly ttsPlaybackService: ITtsPlaybackService,
+		@IChatSpeechToTextService private readonly chatSpeechToTextService: IChatSpeechToTextService,
 	) {
 		super();
 
@@ -392,6 +395,8 @@ export class ChatView extends AbstractChatView {
 			isActive: this._isActiveObs,
 			getCurrentResource: () => this._currentChatResource,
 		}));
+
+		this._register(setupDictationGlow(this.chatSpeechToTextService, inputContainerEl));
 	}
 
 	//#endregion

@@ -45,6 +45,9 @@ export interface IChatSpeechToTextService {
 	 */
 	readonly onDidUpdateTranscript: Event<string>;
 
+	/** Fired while recording; exposes the audio-reactive glow analyser. */
+	readonly analyserNode: AnalyserNode | undefined;
+
 	/**
 	 * Begin capturing microphone audio in the given window and streaming it to
 	 * the transcription backend. Rejects if the microphone or backend cannot be
@@ -83,7 +86,13 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private _audioContext: AudioContext | undefined;
 	private _sourceNode: MediaStreamAudioSourceNode | undefined;
 	private _processorNode: ScriptProcessorNode | undefined;
+	private _analyserNode: AnalyserNode | undefined;
 	private _socket: WebSocket | undefined;
+
+	/** AnalyserNode for the audio-reactive dictation glow, available while recording. */
+	get analyserNode(): AnalyserNode | undefined {
+		return this._analyserNode;
+	}
 
 	/** Finalized (committed) utterances, space-joined. */
 	private _finalizedText = '';
@@ -193,8 +202,13 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		this._setState(ChatSpeechToTextState.Idle);
 	}
 
-	private _openSocket(serverUrl: string, window: Window & typeof globalThis): Promise<void> {
+	private async _openSocket(serverUrl: string, window: Window & typeof globalThis): Promise<void> {
 		const wsUrl = toStreamUrl(serverUrl);
+		// Resolve the auth token up front so the auth frame can be sent
+		// synchronously as the very first frame on open. Awaiting inside
+		// `onopen` leaves a window where the backend can read a different first
+		// frame and reject the connection with "Expected auth frame".
+		const token = await this._getAuthToken();
 		return new Promise<void>((resolve, reject) => {
 			let socket: WebSocket;
 			try {
@@ -208,8 +222,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			this._closePromise = new Promise<void>(res => { this._resolveClose = res; });
 
 			let ready = false;
-			socket.onopen = async () => {
-				const token = await this._getAuthToken();
+			socket.onopen = () => {
 				socket.send(JSON.stringify({ type: 'auth', token: token ?? '' }));
 			};
 			socket.onmessage = ev => {
@@ -265,6 +278,12 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		ctx.resume().catch(() => { /* ignore */ });
 		const source = ctx.createMediaStreamSource(stream);
 		this._sourceNode = source;
+
+		const analyser = ctx.createAnalyser();
+		analyser.fftSize = 256;
+		source.connect(analyser);
+		this._analyserNode = analyser;
+
 		const processor = ctx.createScriptProcessor(4096, 1, 1);
 		this._processorNode = processor;
 
@@ -289,6 +308,8 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		}
 		try { this._sourceNode?.disconnect(); } catch { /* ignore */ }
 		this._sourceNode = undefined;
+		try { this._analyserNode?.disconnect(); } catch { /* ignore */ }
+		this._analyserNode = undefined;
 		this._audioContext?.close().catch(() => { /* ignore */ });
 		this._audioContext = undefined;
 		this._mediaStream?.getTracks().forEach(track => track.stop());
