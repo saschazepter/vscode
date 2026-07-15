@@ -240,18 +240,11 @@ export class TextFileContentProvider extends Disposable implements ITextModelCon
 
 export class OpenEditor implements IEditorIdentifier {
 
+	private id: number;
 	private static COUNTER = 0;
-	private static readonly editorIds = new WeakMap<EditorInput, number>();
-	private readonly id: number;
 
 	constructor(private _editor: EditorInput, private _group: IEditorGroup) {
-		let id = OpenEditor.editorIds.get(_editor);
-		if (id === undefined) {
-			id = OpenEditor.COUNTER++;
-			OpenEditor.editorIds.set(_editor, id);
-		}
-
-		this.id = id;
+		this.id = OpenEditor.COUNTER++;
 	}
 
 	get editor() {

@@ -151,7 +151,7 @@
 	color: var(--vscode-tab-activeForeground);
 }
 
-.monaco-workbench .part.editor > .content .editor-group-container > .title .tabs-container > .tab.selected:not(.active) {
+.monaco-workbench .part.editor > .content .editor-group-container.active > .title .tabs-container > .tab.selected:not(.active) {
 	background-color: var(--vscode-tab-selectedBackground);
 	color: var(--vscode-tab-selectedForeground);
 }
