@@ -80,6 +80,15 @@ export class DocumentEditSourceTracker<T = void> extends Disposable {
 		return this._representativePerKey.get(key);
 	}
 
+	public applyPendingExternalEdits(): void {
+		if (this._pendingExternalEdits.isEmpty()) {
+			return;
+		}
+		this._applyEdit(this._pendingExternalEdits);
+		this._pendingExternalEdits = AnnotatedStringEdit.empty;
+		this._update.trigger(undefined);
+	}
+
 	public getTrackedRanges(reader?: IReader): TrackedEdit[] {
 		this._update.read(reader);
 		const ranges = this._edits.getNewRanges();

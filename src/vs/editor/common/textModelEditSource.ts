@@ -108,12 +108,18 @@ export const EditSources = {
 		mode: string | undefined;
 		extensionId: VersionedExtensionId | undefined;
 		codeBlockSuggestionId: EditSuggestionId | undefined;
+		harness?: string;
+		origin?: string;
+		trackingScope?: string;
 	}) {
 		return createEditSource({
 			source: 'Chat.applyEdits',
 			$modelId: avoidPathRedaction(data.modelId),
 			$extensionId: data.extensionId?.extensionId,
 			$extensionVersion: data.extensionId?.version,
+			$harness: data.harness,
+			$origin: data.origin,
+			$trackingScope: data.trackingScope,
 			$$languageId: data.languageId,
 			$$sessionId: data.sessionId,
 			$$requestId: data.requestId,
