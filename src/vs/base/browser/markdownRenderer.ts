@@ -883,13 +883,32 @@ function completeSingleLinePattern(token: marked.Tokens.Text | marked.Tokens.Par
 }
 
 function hasLinkTextAndStartOfLinkTarget(str: string): boolean {
-	// The `[` may be preceded by start-of-line, whitespace, or an emphasis/strikethrough marker
-	// (e.g. `**[text](htt`) so that links nested inside bold/italic/strikethrough are detected.
-	return !!str.match(/(^|\s|\*|_|~)\[.*\]\(\w*/);
+	// Allow links after opening parentheses and emphasis/strikethrough markers, such as `**[text](htt`.
+	return !!str.match(/(?:^|[\s(*_~])\[.*\]\(\w*/);
 }
 
 function hasStartOfLinkTargetAndNoLinkText(str: string): boolean {
 	return !!str.match(/^[^\[]*\]\([^\)]*$/);
+}
+
+function completeBlockquotePattern(blockquote: marked.Tokens.Blockquote): marked.Tokens.Blockquote | undefined {
+	const lastToken = blockquote.tokens.at(-1);
+	if (lastToken?.type !== 'paragraph') {
+		return undefined;
+	}
+
+	const completedToken = completeSingleLinePattern(lastToken as marked.Tokens.Paragraph);
+	if (!completedToken) {
+		return undefined;
+	}
+
+	const completion = completedToken.raw.slice(lastToken.raw.trimEnd().length);
+	const completedBlockquote = completeWithString(blockquote, completion);
+	if (completedBlockquote.type === 'blockquote') {
+		return completedBlockquote as marked.Tokens.Blockquote;
+	}
+
+	return undefined;
 }
 
 function completeListItemPattern(list: marked.Tokens.List): marked.Tokens.List | undefined {
@@ -1023,6 +1042,14 @@ function fillInIncompleteTokensOnce(tokens: marked.TokensList): marked.TokensLis
 		const newListToken = completeListItemPattern(lastInterestingToken as marked.Tokens.List);
 		if (newListToken) {
 			newTokens = [newListToken, ...trailingTokens];
+			i = lastInterestingIdx;
+		}
+	}
+
+	if (!newTokens && lastInterestingToken?.type === 'blockquote') {
+		const newBlockquoteToken = completeBlockquotePattern(lastInterestingToken as marked.Tokens.Blockquote);
+		if (newBlockquoteToken) {
+			newTokens = [newBlockquoteToken, ...trailingTokens];
 			i = lastInterestingIdx;
 		}
 	}

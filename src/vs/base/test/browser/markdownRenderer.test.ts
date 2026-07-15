@@ -906,6 +906,17 @@ suite('MarkdownRenderer', () => {
 			});
 		});
 
+		suite('blockquote', () => {
+			test('incomplete double star', () => {
+				const incomplete = '> **text';
+				const tokens = marked.marked.lexer(incomplete);
+				const newTokens = fillInIncompleteTokens(tokens);
+
+				const completeTokens = marked.marked.lexer(incomplete + '**');
+				assert.deepStrictEqual(newTokens, completeTokens);
+			});
+		});
+
 		suite('codespan', () => {
 			simpleMarkdownTestSuite('codespan', '`');
 
@@ -1032,6 +1043,15 @@ suite('MarkdownRenderer', () => {
 
 			test('incomplete link target 2', () => {
 				const incomplete = 'foo [text](http://microsoft.com';
+				const tokens = marked.marked.lexer(incomplete);
+				const newTokens = fillInIncompleteTokens(tokens);
+
+				const completeTokens = marked.marked.lexer(incomplete + ')');
+				assert.deepStrictEqual(newTokens, completeTokens);
+			});
+
+			test('incomplete link target inside parentheses', () => {
+				const incomplete = '([text](http://microsoft.com';
 				const tokens = marked.marked.lexer(incomplete);
 				const newTokens = fillInIncompleteTokens(tokens);
 
