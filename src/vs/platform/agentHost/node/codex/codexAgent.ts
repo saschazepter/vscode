@@ -2536,8 +2536,10 @@ export class CodexAgent extends Disposable implements IAgent {
 		const threadConfig: Record<string, JsonValue> = {
 			web_search: narrowWebSearchMode(config[CodexSessionConfigKey.WebSearchMode]) ?? codexSessionConfigDefaults[CodexSessionConfigKey.WebSearchMode],
 		};
-		if (Object.keys(mcpServers).length > 0) {
+		const mcpServerNames = Object.keys(mcpServers);
+		if (mcpServerNames.length > 0) {
 			threadConfig.mcp_servers = mcpServers as JsonValue;
+			this._logService.info(`[Codex] thread/start for session=${session.sessionUri.toString()} with ${mcpServerNames.length} MCP server(s): ${mcpServerNames.join(', ')}`);
 		}
 		const startResult = await conn.client.request<'thread/start', { thread: { id: string } }>('thread/start', {
 			cwd: session.workingDirectory.fsPath,
@@ -3628,6 +3630,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		for (const [name, entry] of next) {
 			this._mcpInventory.set(name, entry);
 		}
+		this._logService.info(`[Codex] MCP inventory refreshed: ${this._mcpInventory.size === 0 ? '(none)' : [...this._mcpInventory].map(([name, entry]) => `${name} [${entry.state.kind}, ${entry.tools.length} tool(s)]`).join(', ')}`);
 		this._applyMcpInventoryToSessions();
 		for (const name of toolsChanged) {
 			this._fireMcpToolsListChanged(name);
@@ -3644,6 +3647,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		if (this._connection.kind === 'ready' && this._connection.client !== client) {
 			return;
 		}
+		this._logService.info(`[Codex] MCP server '${name}' startup status: ${status}${error ? ` (${error})` : ''}`);
 		if (status === 'ready') {
 			void this._refreshMcpInventory(client);
 			return;
