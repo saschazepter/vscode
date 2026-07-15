@@ -27,6 +27,56 @@
 	margin-left: 24px;
 }
 
+/*
+ * Reposition the notification center so it sits further inside the workbench
+ * edges. `!important` is required to win over the base positioning rules (which
+ * vary with the status bar) and, for `top-right`, over the inline `top` offset
+ * the notification controller applies in JS.
+ */
+.style-override.monaco-workbench > .notifications-center {
+	right: 8px !important;
+	bottom: 34px !important;
+}
+
+.style-override.monaco-workbench > .notifications-center.bottom-left {
+	right: auto !important;
+	left: 8px !important;
+	bottom: 34px !important;
+}
+
+.style-override.monaco-workbench > .notifications-center.top-right {
+	bottom: auto !important;
+	top: 35px !important;
+}
+
+/*
+ * Toasts match the center, but each toast carries a 4px margin, so the
+ * container offsets are reduced by 4px to keep the visible surface aligned.
+ */
+.style-override.monaco-workbench > .notifications-toasts {
+	right: 4px !important;
+	bottom: 30px !important;
+}
+
+.style-override.monaco-workbench > .notifications-toasts.bottom-left {
+	right: auto !important;
+	left: 4px !important;
+	bottom: 30px !important;
+}
+
+.style-override.monaco-workbench > .notifications-toasts.top-right {
+	bottom: auto !important;
+	top: 31px !important;
+}
+
+.style-override.monaco-workbench > .notifications-center > .notifications-center-header > .notifications-center-header-title {
+	font-weight: var(--vscode-agents-fontWeight-semiBold);
+}
+
+.style-override.monaco-workbench > .notifications-center > .notifications-center-header {
+	padding-right: 2px;
+}
+
 .style-override .monaco-dialog-box {
 	padding: 4px;
 	min-width: 440px;
