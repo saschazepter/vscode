@@ -222,7 +222,11 @@ export class ProductionEndpointProvider extends Disposable implements IEndpointP
 	 * the user at the settings they can change to resolve it.
 	 */
 	private _createMissingUtilityModelError(family: 'copilot-utility' | 'copilot-utility-small'): Error {
-		return new Error(`No utility model is configured for '${family}' while the selected main agent model is BYOK. Configure setting '${family === 'copilot-utility' ? 'chat.utilityModel' : 'chat.utilitySmallModel'}' or set 'chat.byokUtilityModelDefault' to 'mainAgent' or 'copilot'.`);
+		const utilityModelSetting = family === 'copilot-utility' ? 'chat.utilityModel' : 'chat.utilitySmallModel';
+		// 'copilot' is only usable when a Copilot token is available; for
+		// air-gapped / signed-out BYOK it cannot be used, so don't offer it.
+		const defaultOptions = this._authService.hasCopilotTokenSource ? `'mainAgent' or 'copilot'` : `'mainAgent'`;
+		return new Error(`No utility model is configured for '${family}' while the selected main agent model is BYOK. Configure setting '${utilityModelSetting}' or set 'chat.byokUtilityModelDefault' to ${defaultOptions}.`);
 	}
 
 	private _getBYOKUtilityModelDefault(): BYOKUtilityModelDefault {
