@@ -204,7 +204,7 @@ export function getModelHoverContent(
 
 function appendCostSection(container: HTMLElement, pricing: string): void {
 	const costSection = dom.$('.chat-model-hover-cost');
-	costSection.appendChild(dom.$('span', undefined, localize('models.cost', 'Cost: {0}', pricing)));
+	costSection.appendChild(dom.$('span', undefined, localize('models.cost', "Cost: {0}", pricing)));
 	container.appendChild(costSection);
 }
 

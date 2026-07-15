@@ -16,6 +16,7 @@ import { ContextKeyExpr, IContextKeyService } from '../../../../../../platform/c
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { SessionConfigKey } from '../../../../../../platform/agentHost/common/sessionConfigKeys.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
+import { IUriIdentityService } from '../../../../../../platform/uriIdentity/common/uriIdentity.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../../../workbench/common/contributions.js';
 import { type ILanguageModelChatMetadataAndIdentifier } from '../../../../../../workbench/contrib/chat/common/languageModels.js';
 import { IChatPhoneInputPresenter } from '../../../../../../workbench/contrib/chat/browser/widget/input/chatPhoneInputPresenter.js';
@@ -32,7 +33,7 @@ import { getAgentHostModeIcon } from '../agentHostModeIcon.js';
 import { INewChatModelPickerService } from '../../../../chat/browser/newChatModelPicker.js';
 import { ISessionModelSelectionModel } from '../../../../chat/browser/modelPickerModel.js';
 import { reportNewChatPickerClosed } from '../../../../chat/browser/newChatPickerTelemetry.js';
-import { createChatPhoneInputTarget, matchesChatPhoneInputTarget } from './mobileChatPhoneInputTarget.js';
+import { createChatPhoneInputSessionContext, createChatPhoneInputTarget, matchesChatPhoneInputTarget } from './mobileChatPhoneInputTarget.js';
 
 const MOBILE_CHAT_INPUT_CONFIG_PICKER_ID = 'sessions.agentHost.mobileChatInputConfigPicker';
 
@@ -79,6 +80,7 @@ class MobileChatInputConfigPicker extends Disposable {
 		@IChatPhoneInputPresenter private readonly _phonePresenter: IChatPhoneInputPresenter,
 		@INewChatModelPickerService private readonly _newChatModelPickerService: INewChatModelPickerService,
 		@ISessionModelSelectionModel private readonly _selectionModel: ISessionModelSelectionModel,
+		@IUriIdentityService private readonly _uriIdentityService: IUriIdentityService,
 	) {
 		super();
 		this._register(this._newChatModelPickerService.registerModelPicker({
@@ -275,16 +277,21 @@ class MobileChatInputConfigPicker extends Disposable {
 		// reads the active session's provider-owned config and models.
 		const trigger = this._triggerElement;
 		const beforeCtx = ctx;
-		const target = createChatPhoneInputTarget(beforeCtx?.session);
+		const target = createChatPhoneInputTarget(createChatPhoneInputSessionContext(beforeCtx?.session), this._uriIdentityService);
 		const beforeMode = beforeCtx?.currentMode;
 		const beforeModeItem = beforeCtx?.modeItems.find(i => i.value === beforeMode);
 		const beforeModelId = beforeCtx?.currentModelId;
 		const beforeModel = beforeModelId ? beforeCtx?.modelItems.find(m => m.identifier === beforeModelId) : undefined;
 		trigger.setAttribute('aria-expanded', 'true');
 		try {
-			await this._phonePresenter.showCombinedModeAndModelSheet(trigger, undefined, undefined);
+			await this._phonePresenter.showCombinedModeAndModelSheet(
+				trigger,
+				undefined,
+				undefined,
+				() => createChatPhoneInputSessionContext(this._session.get()),
+			);
 			const afterCtx = this._getContext();
-			if (beforeCtx && afterCtx && matchesChatPhoneInputTarget(target, afterCtx.session)) {
+			if (beforeCtx && afterCtx && matchesChatPhoneInputTarget(target, createChatPhoneInputSessionContext(afterCtx.session), this._uriIdentityService)) {
 				if (beforeCtx.modeItems.length > 0) {
 					const afterMode = afterCtx.currentMode;
 					const afterModeItem = afterCtx.modeItems.find(i => i.value === afterMode);

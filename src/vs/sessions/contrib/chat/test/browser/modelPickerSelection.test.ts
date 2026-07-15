@@ -43,7 +43,7 @@ function transition(overrides: ITransitionOverrides = {}) {
 			key: 'provider/type',
 			chatKey: 'chat:one',
 			modelId: undefined,
-			modelVendorResolved: false,
+			modelCatalogResolved: false,
 			...overrides.session,
 		},
 		catalog: {
@@ -105,7 +105,7 @@ suite('ModelPickerSelection', () => {
 
 	test('waits for the vendor before repairing a missing existing-session model', () => {
 		assert.deepStrictEqual(summarize(transition({
-			session: { kind: 'existing', modelId: 'target:missing', modelVendorResolved: false },
+			session: { kind: 'existing', modelId: 'target:missing', modelCatalogResolved: false },
 			previous: { currentModel: first },
 		})), {
 			current: undefined,
@@ -118,7 +118,7 @@ suite('ModelPickerSelection', () => {
 
 	test('repairs a confirmed removed model with the remembered fallback', () => {
 		assert.deepStrictEqual(summarize(transition({
-			session: { kind: 'existing', modelId: 'target:missing', modelVendorResolved: true },
+			session: { kind: 'existing', modelId: 'target:missing', modelCatalogResolved: true },
 			catalog: { rememberedModelId: second.identifier },
 		})), {
 			current: second.identifier,
@@ -226,7 +226,7 @@ suite('ModelPickerSelection', () => {
 		const writes: string[] = [];
 		const session = { providerId: 'provider', sessionType: 'type', sessionId: 'session' };
 		const provider = {
-			getModels: () => [first],
+			getModelCatalog: () => ({ models: [first], resolved: true }),
 			setModel: (_sessionId: string, modelIdentifier: string) => writes.push(modelIdentifier),
 		};
 

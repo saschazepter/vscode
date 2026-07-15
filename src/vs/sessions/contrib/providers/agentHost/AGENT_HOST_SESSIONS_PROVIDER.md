@@ -72,7 +72,7 @@ A single agent host session uses several distinct identifiers:
 
 `ISession.sessionType` is intentionally the agent name (not the scheme) so a logical type like `copilotcli` covers local agent host, remote agent host, and extension-host Copilot CLI sessions in the filter menu and new-session picker. Routing (`registerChatSessionContentProvider`, model registration) is keyed off the per-provider `resource.scheme` instead.
 
-`getModels(sessionId)` is the authoritative model catalog and filters registered language models by `session.resource.scheme`; `getModelPickerOptions` returns grouped/featured models and whether Auto is supported. Desktop and phone picker surfaces both consume these provider APIs.
+`getModelCatalog(sessionId, restoredModelId)` is the authoritative model snapshot and filters registered language models by `session.resource.scheme`. Its `resolved` bit follows readiness of that scheme's language-model vendor, while `getModelPickerOptions` returns grouped/featured models and whether Auto is supported. Desktop and phone picker surfaces both consume these provider APIs.
 
 ## Architecture
 
@@ -116,7 +116,7 @@ handed and sends through `IChatService`. The agent host plugs into chat through
    the request stream.
 2. **`AgentHostLanguageModelProvider`** — publishes language models under
    `targetChatSessionType` = the same resource scheme so
-   `BaseAgentHostSessionsProvider.getModels` resolves the right catalog.
+   `BaseAgentHostSessionsProvider.getModelCatalog` resolves the right catalog.
 
 End-to-end in the Agents window:
 

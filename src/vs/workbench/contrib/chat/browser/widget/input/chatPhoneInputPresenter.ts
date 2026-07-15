@@ -11,12 +11,23 @@ import { BaseActionViewItem } from '../../../../../../base/browser/ui/actionbar/
 import { IAction } from '../../../../../../base/common/actions.js';
 import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { autorun, derived, IObservable, observableValue } from '../../../../../../base/common/observable.js';
+import { URI } from '../../../../../../base/common/uri.js';
 import { localize } from '../../../../../../nls.js';
 import { InstantiationType, registerSingleton } from '../../../../../../platform/instantiation/common/extensions.js';
 import { createDecorator } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IModePickerDelegate } from './modePickerActionItem.js';
 import { IModelPickerDelegate } from './modelPicker/modelPickerActionItem.js';
 import { getModelProviderIcon } from './modelPicker/modelProviderIcons.js';
+
+export interface IChatPhoneInputSessionContext {
+	readonly providerId: string;
+	readonly sessionId: string;
+	readonly sessionType: string;
+	readonly chatResource: URI;
+	readonly modelId: string | undefined;
+}
+
+export type ChatPhoneInputSessionContextProvider = () => IChatPhoneInputSessionContext | undefined;
 
 /**
  * Implementation of the phone-only chat-input picker presenter, registered
@@ -46,6 +57,7 @@ export interface IChatPhonePresenterImpl {
 		target: HTMLElement,
 		modeDelegate: IModePickerDelegate | undefined,
 		modelDelegate: IModelPickerDelegate | undefined,
+		getSessionContext?: ChatPhoneInputSessionContextProvider,
 	): Promise<void>;
 }
 
@@ -79,6 +91,7 @@ export interface IChatPhoneInputPresenter {
 		target: HTMLElement,
 		modeDelegate: IModePickerDelegate | undefined,
 		modelDelegate: IModelPickerDelegate | undefined,
+		getSessionContext?: ChatPhoneInputSessionContextProvider,
 	): Promise<void>;
 
 	/**
@@ -104,9 +117,10 @@ class ChatPhoneInputPresenterService extends Disposable implements IChatPhoneInp
 		target: HTMLElement,
 		modeDelegate: IModePickerDelegate | undefined,
 		modelDelegate: IModelPickerDelegate | undefined,
+		getSessionContext?: ChatPhoneInputSessionContextProvider,
 	): Promise<void> {
 		const impl = this._impl.get();
-		return impl ? impl.showCombinedModeAndModelSheet(target, modeDelegate, modelDelegate) : Promise.resolve();
+		return impl ? impl.showCombinedModeAndModelSheet(target, modeDelegate, modelDelegate, getSessionContext) : Promise.resolve();
 	}
 
 	setImpl(impl: IChatPhonePresenterImpl): IDisposable {

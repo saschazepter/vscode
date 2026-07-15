@@ -9,7 +9,7 @@ import { IConfigurationService } from '../../../../platform/configuration/common
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { IStorageService, StorageScope } from '../../../../platform/storage/common/storage.js';
 import { ChatConfiguration } from '../../../../workbench/contrib/chat/common/constants.js';
-import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../../workbench/contrib/chat/common/languageModels.js';
+import { ILanguageModelChatMetadataAndIdentifier } from '../../../../workbench/contrib/chat/common/languageModels.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { ISessionsProvider } from '../../../services/sessions/common/sessionsProvider.js';
 import { SessionStatus } from '../../../services/sessions/common/session.js';
@@ -53,7 +53,6 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 		@ISessionsProvidersService private readonly _sessionsProvidersService: ISessionsProvidersService,
 		@IStorageService private readonly _storageService: IStorageService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
-		@ILanguageModelsService private readonly _languageModelsService: ILanguageModelsService,
 	) {
 		super();
 
@@ -79,7 +78,7 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 			return false;
 		}
 
-		const models = provider.getModels(session.sessionId);
+		const models = provider.getModelCatalog(session.sessionId).models;
 		const model = models.find(model => model.identifier === modelIdentifier);
 		if (!model) {
 			return false;
@@ -101,10 +100,11 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 	private _refresh(session = this._session.get()): void {
 		const provider = session ? this._sessionsProvidersService.getProvider(session.providerId) : undefined;
 		this._setProvider(provider);
-		const models = session && provider ? provider.getModels(session.sessionId) : [];
-		const options = normalizeModelPickerOptions(session && provider ? provider.getModelPickerOptions(session.sessionId) : undefined);
 		const sessionKey = session ? this._sessionKey(session) : undefined;
 		const sessionModelId = session?.modelId.get();
+		const catalog = session && provider ? provider.getModelCatalog(session.sessionId, sessionModelId) : { models: [], resolved: false };
+		const models = catalog.models;
+		const options = normalizeModelPickerOptions(session && provider ? provider.getModelPickerOptions(session.sessionId) : undefined);
 		const rememberedModelId = session
 			? this._storageService.get(modelPickerStorageKey(session.providerId, session.sessionType), StorageScope.PROFILE)
 			: undefined;
@@ -114,7 +114,7 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 				key: sessionKey!,
 				chatKey: session.activeChat.get().resource.toString(),
 				modelId: sessionModelId,
-				modelVendorResolved: !!sessionModelId && this._hasResolvedVendor(sessionModelId),
+				modelCatalogResolved: !!sessionModelId && catalog.resolved,
 			} : { kind: 'none' },
 			catalog: {
 				models,
@@ -158,8 +158,4 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 		return `${session.providerId}/${session.sessionType}`;
 	}
 
-	private _hasResolvedVendor(modelIdentifier: string): boolean {
-		const separator = modelIdentifier.search(/[/:]/);
-		return separator !== -1 && this._languageModelsService.hasResolvedVendor(modelIdentifier.substring(0, separator));
-	}
 }

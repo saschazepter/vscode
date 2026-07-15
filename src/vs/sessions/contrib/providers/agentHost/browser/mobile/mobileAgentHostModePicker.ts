@@ -11,6 +11,7 @@ import { IObservable } from '../../../../../../base/common/observable.js';
 import { ISessionsProvidersService } from '../../../../../services/sessions/browser/sessionsProvidersService.js';
 import { IActiveSession } from '../../../../../services/sessions/common/sessionsManagement.js';
 import { AgentHostModePicker } from '../agentHostModePicker.js';
+import { createChatPhoneInputSessionContext } from './mobileChatPhoneInputTarget.js';
 
 /**
  * Phone-aware variant of {@link AgentHostModePicker}. On phone-layout
@@ -47,7 +48,12 @@ export class MobileAgentHostModePicker extends AgentHostModePicker {
 			// The presenter's agent-host branch reads mode + model
 			// directly from the active session's provider, so we don't
 			// need to pass chat-input delegates here.
-			this._phonePresenter.showCombinedModeAndModelSheet(anchor, undefined, undefined)
+			this._phonePresenter.showCombinedModeAndModelSheet(
+				anchor,
+				undefined,
+				undefined,
+				() => createChatPhoneInputSessionContext(this._session.get()),
+			)
 				.finally(() => {
 					anchor.focus();
 					onHide?.();

@@ -4,10 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize } from '../../../../../../../nls.js';
-import { ILanguageModelChatMetadataAndIdentifier } from '../../../../common/languageModels.js';
+import { ILanguageModelChatMetadataAndIdentifier, isAutoLanguageModel } from '../../../../common/languageModels.js';
 
 export function isAutoModel(model: ILanguageModelChatMetadataAndIdentifier): boolean {
-	return model.metadata.id === 'auto';
+	return isAutoLanguageModel(model);
 }
 
 export function isMultiplierPricing(model: ILanguageModelChatMetadataAndIdentifier): boolean {

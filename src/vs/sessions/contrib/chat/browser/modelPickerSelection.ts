@@ -55,11 +55,11 @@ export function persistSessionModelSelection(
 
 export function selectAvailableSessionModel(
 	session: ISessionModelSelectionTarget,
-	provider: Pick<ISessionsProvider, 'getModels' | 'setModel'>,
+	provider: Pick<ISessionsProvider, 'getModelCatalog' | 'setModel'>,
 	storageService: Pick<IStorageService, 'store'>,
 	modelIdentifier: string,
 ): ILanguageModelChatMetadataAndIdentifier | undefined {
-	const model = provider.getModels(session.sessionId).find(model => model.identifier === modelIdentifier);
+	const model = provider.getModelCatalog(session.sessionId).models.find(model => model.identifier === modelIdentifier);
 	if (!model) {
 		return undefined;
 	}
@@ -96,7 +96,7 @@ export type IModelSelectionSessionContext =
 		readonly key: string;
 		readonly chatKey: string | undefined;
 		readonly modelId: string | undefined;
-		readonly modelVendorResolved: boolean;
+		readonly modelCatalogResolved: boolean;
 	};
 
 export interface IModelSelectionCatalogContext {
@@ -146,7 +146,7 @@ export function transitionModelSelection(input: IModelSelectionTransitionInput):
 	const fallback = resolveFallbackModel(catalog.models, catalog.rememberedModelId);
 
 	if (session.kind === 'existing') {
-		if (!sessionModelId || sessionModel || !session.modelVendorResolved) {
+		if (!sessionModelId || sessionModel || !session.modelCatalogResolved) {
 			return {
 				currentModel: sessionModel,
 				effect: !sessionModel && currentModel

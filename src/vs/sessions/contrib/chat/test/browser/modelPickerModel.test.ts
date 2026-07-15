@@ -12,7 +12,7 @@ import { IConfigurationChangeEvent, IConfigurationService } from '../../../../..
 import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
 import { InMemoryStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ChatConfiguration } from '../../../../../workbench/contrib/chat/common/constants.js';
-import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../../../workbench/contrib/chat/common/languageModels.js';
+import { ILanguageModelChatMetadataAndIdentifier } from '../../../../../workbench/contrib/chat/common/languageModels.js';
 import { ISessionsProvidersService } from '../../../../services/sessions/browser/sessionsProvidersService.js';
 import { ISessionsProvider, ISessionModelPickerOptions } from '../../../../services/sessions/common/sessionsProvider.js';
 import { IChat, SessionStatus } from '../../../../services/sessions/common/session.js';
@@ -69,6 +69,7 @@ interface ITestProvider extends ISessionsProvider {
 	readonly modelChanges: Emitter<void>;
 	readonly writes: string[];
 	getModelsCalls: number;
+	catalogResolved: boolean;
 	dispose(): void;
 }
 
@@ -80,11 +81,12 @@ function createProvider(id: string, onSetModel?: (modelIdentifier: string) => vo
 		modelChanges,
 		writes: [],
 		getModelsCalls: 0,
+		catalogResolved: true,
 		dispose: () => modelChanges.dispose(),
 		onDidChangeModels: modelChanges.event,
-		getModels() {
+		getModelCatalog() {
 			provider.getModelsCalls++;
-			return provider.models;
+			return { models: provider.models, resolved: provider.catalogResolved };
 		},
 		getModelPickerOptions(): ISessionModelPickerOptions {
 			return {
@@ -117,12 +119,6 @@ function createConfigurationService(defaultModel?: string): IConfigurationServic
 	} as IConfigurationService;
 }
 
-function createLanguageModelsService(resolvedVendors: readonly string[] = []): ILanguageModelsService {
-	return {
-		hasResolvedVendor: vendor => resolvedVendors.includes(vendor),
-	} as ILanguageModelsService;
-}
-
 suite('SessionModelSelectionModel', () => {
 
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
@@ -137,7 +133,6 @@ suite('SessionModelSelectionModel', () => {
 			createProvidersService([provider]),
 			storage,
 			createConfigurationService(),
-			createLanguageModelsService(),
 		));
 
 		assert.deepStrictEqual({
@@ -163,7 +158,6 @@ suite('SessionModelSelectionModel', () => {
 			createProvidersService([provider]),
 			disposables.add(new InMemoryStorageService()),
 			createConfigurationService(),
-			createLanguageModelsService(),
 		));
 
 		assert.deepStrictEqual({ current: selection.state.get().currentModel?.identifier, writes: provider.writes }, {
@@ -183,7 +177,6 @@ suite('SessionModelSelectionModel', () => {
 			createProvidersService([firstProvider, secondProvider]),
 			disposables.add(new InMemoryStorageService()),
 			createConfigurationService(),
-			createLanguageModelsService(),
 		));
 
 		session.set(secondSession.session, undefined);
@@ -214,7 +207,6 @@ suite('SessionModelSelectionModel', () => {
 			createProvidersService([provider]),
 			storage,
 			createConfigurationService(),
-			createLanguageModelsService(),
 		));
 
 		const selected = selection.selectModel(second.identifier);
@@ -244,7 +236,6 @@ suite('SessionModelSelectionModel', () => {
 			createProvidersService([provider]),
 			disposables.add(new InMemoryStorageService()),
 			createConfigurationService(),
-			createLanguageModelsService(),
 		));
 
 		testSession.modelId.set(second.identifier, undefined);
@@ -262,7 +253,6 @@ suite('SessionModelSelectionModel', () => {
 			createProvidersService([]),
 			disposables.add(new InMemoryStorageService()),
 			createConfigurationService(),
-			createLanguageModelsService(),
 		));
 
 		assert.deepStrictEqual({
@@ -276,10 +266,11 @@ suite('SessionModelSelectionModel', () => {
 		});
 	});
 
-	test('repairs a removed colon-delimited Agent Host model after its vendor resolves', () => {
-		const removedModelId = 'agent-host-copilotcli:removed';
+	test('waits for an arbitrary synthetic catalog before repairing a removed model', () => {
+		const removedModelId = 'removed-cloud-model';
 		const testSession = createSession('provider', SessionStatus.Completed, removedModelId);
 		const provider = disposables.add(createProvider('provider', identifier => testSession.modelId.set(identifier, undefined)));
+		provider.catalogResolved = false;
 		const storage = disposables.add(new InMemoryStorageService());
 		storage.store(modelPickerStorageKey('provider', 'type'), second.identifier, StorageScope.PROFILE, StorageTarget.MACHINE);
 		const selection = disposables.add(new SessionModelSelectionModel(
@@ -287,12 +278,17 @@ suite('SessionModelSelectionModel', () => {
 			createProvidersService([provider]),
 			storage,
 			createConfigurationService(),
-			createLanguageModelsService(['agent-host-copilotcli']),
 		));
+		const beforeResolve = { current: selection.state.get().currentModel?.identifier, writes: [...provider.writes] };
+		provider.catalogResolved = true;
+		provider.modelChanges.fire();
 
-		assert.deepStrictEqual({ current: selection.state.get().currentModel?.identifier, writes: provider.writes }, {
-			current: second.identifier,
-			writes: [second.identifier],
+		assert.deepStrictEqual({
+			beforeResolve,
+			afterResolve: { current: selection.state.get().currentModel?.identifier, writes: provider.writes },
+		}, {
+			beforeResolve: { current: undefined, writes: [] },
+			afterResolve: { current: second.identifier, writes: [second.identifier] },
 		});
 	});
 
@@ -304,7 +300,6 @@ suite('SessionModelSelectionModel', () => {
 			createProvidersService([provider]),
 			disposables.add(new InMemoryStorageService()),
 			createConfigurationService(),
-			createLanguageModelsService(),
 		));
 
 		testSession.activeChat.set({ resource: URI.parse('chat:/provider/two') } as IChat, undefined);

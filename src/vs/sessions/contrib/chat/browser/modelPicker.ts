@@ -26,7 +26,7 @@ import { reportNewChatPickerClosed } from './newChatPickerTelemetry.js';
 /**
  * The sessions-core model picker. Unlike the previous per-provider pickers,
  * this single widget reads the model list from the active session's provider
- * via {@link ISessionsProvider.getModels}, remembers the last used model per
+ * via {@link ISessionsProvider.getModelCatalog}, remembers the last used model per
  * provider per session type, and applies the selection through the existing
  * {@link ISessionsProvider.setModel} API. It reuses the shared workbench
  * {@link ModelPickerActionItem} so the dropdown looks and behaves like the

@@ -149,7 +149,7 @@ class TestSessionsProvider extends mock<ISessionsProvider>() {
 	override createNewSession(): ISession { return this._session; }
 	override getSessionTypes(): ISessionType[] { return [...this.sessionTypes]; }
 	override async renameChat(): Promise<void> { }
-	override getModels(): readonly ILanguageModelChatMetadataAndIdentifier[] { return []; }
+	override getModelCatalog(): { models: readonly ILanguageModelChatMetadataAndIdentifier[]; resolved: boolean } { return { models: [], resolved: true }; }
 	override getModelPickerOptions(): ISessionModelPickerOptions { return { useGroupedModelPicker: true, showFeatured: true, showUnavailableFeatured: false, showManageModelsAction: false }; }
 	override readonly onDidChangeModels = Event.None;
 	override setModel(_sessionId: string, _modelId: string): void { }

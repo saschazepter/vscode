@@ -20,7 +20,7 @@
 	display: flex;
 	align-items: center;
 	height: 16px;
-	padding: 3px 5px;
+	padding: var(--vscode-spacing-size40) var(--vscode-spacing-size60);
 	border-radius: 4px;
 	cursor: pointer;
 	text-decoration: none;
@@ -96,6 +96,10 @@
 	background-color: transparent;
 }
 
+.action-widget:has(.chat-model-picker-dropdown) .action-list-filter-input:focus {
+	border-color: var(--vscode-focusBorder);
+}
+
 .action-widget:has(.chat-model-picker-dropdown) .action-list-filter {
 	margin-bottom: 4px;
 }
@@ -161,8 +165,8 @@
 }
 
 .chat-model-hover-name {
-	font-weight: 500;
-	font-size: 14px;
+	font-weight: var(--vscode-fontWeight-semiBold);
+	font-size: var(--vscode-fontSize-heading3);
 }
 
 .chat-model-hover-description {
@@ -280,7 +284,7 @@
 
 .chat-model-hover-cost-number {
 	padding-left: 6px;
-	font-weight: 700;
+	font-weight: var(--vscode-fontWeight-semiBold);
 	color: var(--vscode-foreground);
 	background-color: var(--model-hover-surface-background, var(--vscode-menu-background));
 }
@@ -330,6 +334,6 @@
 	font-size: 11px;
 }
 
-.monaco-workbench .chat-model-hover-configurable > .monaco-button .codicon[class*='codicon-'] {
+.monaco-workbench .chat-model-hover-configurable-buttons > .monaco-button .codicon[class*='codicon-'] {
 	font-size: var(--vscode-codiconFontSize-compact);
 }
