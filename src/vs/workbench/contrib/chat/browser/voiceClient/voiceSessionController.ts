@@ -477,6 +477,19 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 */
 	private readonly _pendingNarrationRetries = new Map<string, { kind: 'response' | 'confirmation'; text: string }>();
 
+	/**
+	 * Narrations we requested (got a `narration_id` back) but whose audio has not
+	 * yet finished arriving. Keyed by that narration id. A request being accepted
+	 * by the backend is NOT proof the reply was heard - the audio can still be
+	 * dropped, deferred, or never returned - so we defer marking the reply as
+	 * narrated ({@link _lastNarratedText}) and clearing its pending indicator
+	 * until the final audio chunk for this id arrives (see {@link _markNarrationHeard}).
+	 * A safety timer releases the in-flight guard if no audio ever comes, so a
+	 * later focus/state event can retry rather than the reply being lost.
+	 */
+	private readonly _pendingSolicitedNarrations = new Map<string, { sessionId: string; kind: 'response' | 'confirmation'; text: string; timer: ReturnType<typeof setTimeout> }>();
+	private static readonly _SOLICITED_NARRATION_TIMEOUT_MS = 30_000;
+
 
 	// --- Telemetry tracking ---
 	private _telemetrySessionIndex = 0;
@@ -1418,6 +1431,17 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			if (e.isFinal && e.transcript) {
 				this._persistTurn('assistant', e.transcript);
 			}
+			// A solicited narration's audio has finished arriving: NOW mark its
+			// reply actually heard (set the exactly-once dedup and clear the
+			// session's pending indicator). Deliberately not done when the request
+			// was merely accepted - that could clear the indicator for a reply the
+			// user never hears (dropped/deferred/interrupted audio) and destroy the
+			// state needed to retry. Runs even when the chunk was deferred/dropped
+			// above: the reply IS accounted for (buffered for flush on focus, or a
+			// duplicate we already read), so its indicator should not linger.
+			if (e.isFinal && e.responseId) {
+				this._markNarrationHeard(e.responseId);
+			}
 			// Retire the per-response route once its stream ends. Done last so the
 			// route stays inspectable for the whole handler (defer/dedupe/enqueue).
 			if (e.isFinal && e.responseId) {
@@ -1614,6 +1638,8 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._lastResponseSummaryById.clear();
 		this._lastNarratedText.clear();
 		this._pendingNarrationRetries.clear();
+		for (const s of this._pendingSolicitedNarrations.values()) { clearTimeout(s.timer); }
+		this._pendingSolicitedNarrations.clear();
 		this._userLogin = undefined;
 		this._lastPersistedTurnId = undefined;
 		this._pendingPriorTimeline = [];
@@ -2619,13 +2645,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				// responses on focus are narrated exactly like confirmations.
 				const alreadyNarrated = narratable.kind === 'response'
 					&& this._getLastNarratedText(key) === narratable.text;
-				const requested = this._narrate(key, narratable.kind, narratable.text);
+				this._narrate(key, narratable.kind, narratable.text);
 				if (narratable.kind === 'response') {
-					// Treat an already-narrated reply as handled too: _narrate
-					// returns false when it de-dupes, but the reply WAS read, so its
-					// indicator should still clear (only a socket-closed retry or a
-					// not-yet-loaded model should retain it).
-					handledResponse = handledResponse || requested || alreadyNarrated;
+					// A request being SENT is not the reply being heard: keep the
+					// pending indicator until its audio finalizes (_markNarrationHeard
+					// clears it then). Only an already-narrated reply is handled here,
+					// so a re-focus of a genuinely-read reply still clears promptly.
+					handledResponse = handledResponse || alreadyNarrated;
 				}
 			}
 		}
@@ -2643,13 +2669,20 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this.voiceClientService.flushSessionContext();
 	}
 
-	/** Ask the backend to narrate a session's pending item, de-duped by the exact text last spoken for it ({@link _lastNarratedText}); the single narration trigger for both live and on-focus paths. Returns `true` when a request was actually sent. */
+	/** Ask the backend to narrate a session's pending item, de-duped by the exact text last spoken for it ({@link _lastNarratedText}) and by any in-flight request for the same text ({@link _pendingSolicitedNarrations}); the single narration trigger for both live and on-focus paths. Returns `true` when a request was actually SENT - NOT that the reply was heard (the audio may still be dropped/deferred/never arrive). The reply is marked narrated and its pending indicator cleared only once its audio finalizes (see {@link _markNarrationHeard}). */
 	private _narrate(sessionId: string, kind: 'response' | 'confirmation', text: string): boolean {
 		if (!text) {
 			return false;
 		}
 		if (this._getLastNarratedText(sessionId) === text) {
 			return false;
+		}
+		// A request for this exact text is already in flight (its audio hasn't
+		// finalized yet); don't re-request or we'd narrate it twice.
+		for (const s of this._pendingSolicitedNarrations.values()) {
+			if (s.text === text && this._isSameSession(s.sessionId, sessionId)) {
+				return false;
+			}
 		}
 		this.logService.trace(`[voice] narrate kind=${kind} id=${sessionId.slice(-32)}`);
 		const narrationId = this.voiceClientService.requestNarration(sessionId, kind, text);
@@ -2668,7 +2701,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// only once a request is actually in flight.
 		this._prepareForPlayback();
 		this._pendingNarrationRetries.delete(sessionId);
-		this._lastNarratedText.set(sessionId, text);
 		// Remember this id so the echoed audio (responseId === narrationId) is
 		// never dropped as an unsolicited duplicate by _isRenarration, even when
 		// its transcript matches a reply we recently read for this session. Bound
@@ -2681,7 +2713,39 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			}
 		}
 		this._solicitedNarrationIds.add(narrationId);
+		// Do NOT mark the reply narrated / clear its pending indicator yet - a
+		// request being accepted is not the reply being heard. Track it until its
+		// audio finalizes (_markNarrationHeard). A safety timer releases the guard
+		// if no audio ever arrives so a later focus/state event can retry.
+		const timer = setTimeout(() => {
+			// No audio finalized in time: release the in-flight guard but leave
+			// _lastNarratedText/pending untouched so the reply can be retried and
+			// isn't silently lost.
+			this._pendingSolicitedNarrations.delete(narrationId);
+			this.logService.trace(`[voice] solicited narration ${narrationId.slice(0, 8)} timed out with no final audio; releasing guard for retry`);
+		}, VoiceSessionController._SOLICITED_NARRATION_TIMEOUT_MS);
+		this._pendingSolicitedNarrations.set(narrationId, { sessionId, kind, text, timer });
 		return true;
+	}
+
+	/** Mark a solicited narration's reply as actually heard once its final audio
+	 *  chunk arrives (responseId === the narration id we sent). Only now do we set
+	 *  the exactly-once dedup and clear the session's pending-response indicator,
+	 *  since a mere request acceptance is not proof the reply played. */
+	private _markNarrationHeard(narrationId: string): void {
+		const solicited = this._pendingSolicitedNarrations.get(narrationId);
+		if (!solicited) {
+			return;
+		}
+		clearTimeout(solicited.timer);
+		this._pendingSolicitedNarrations.delete(narrationId);
+		this._lastNarratedText.set(solicited.sessionId, solicited.text);
+		if (solicited.kind === 'response') {
+			const pendingKey = this._matchPendingSummaryKey(solicited.sessionId);
+			if (pendingKey) {
+				this._clearPendingResponse(pendingKey);
+			}
+		}
 	}
 
 	/** The pending item a session would narrate now (waiting confirmation prompt or completed reply summary), from the resident model or cached summary/status; returns undefined (kicking off a load) if a confirmation's detail isn't ready. */
@@ -3558,14 +3622,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return;
 		}
 		if (currentState === 'idle' && lastResponseSummary) {
-			// Clear the pending indicator only once the reply was actually sent
-			// (or was already read, and _narrate de-duped it). If the request
-			// couldn't be sent (socket closed - kept in _pendingNarrationRetries),
-			// retain the summary so a later focus/state event can retry it, instead
-			// of dropping the only record of the unread reply.
+			// Narrate the shown session's reply now. Clear its pending indicator
+			// only if it was ALREADY read (a re-fire of a reply we narrated before);
+			// a freshly requested narration keeps the indicator until its audio
+			// finalizes (_markNarrationHeard clears it then), so a request that is
+			// accepted but never produces audio doesn't lose the reply.
 			const alreadyNarrated = this._getLastNarratedText(sessionId) === lastResponseSummary;
-			const requested = this._narrate(sessionId, 'response', lastResponseSummary);
-			if (requested || alreadyNarrated) {
+			this._narrate(sessionId, 'response', lastResponseSummary);
+			if (alreadyNarrated) {
 				const pendingKey = this._matchPendingSummaryKey(sessionId) ?? sessionId;
 				this._clearPendingResponse(pendingKey);
 			}
