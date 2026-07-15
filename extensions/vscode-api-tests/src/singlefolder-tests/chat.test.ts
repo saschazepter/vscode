@@ -59,9 +59,17 @@ suite('chat', () => {
 		return emitter.event;
 	}
 
+	// Chat participants are a Local-harness feature. The panel defaults to Agent
+	// Host Copilot when the agent host is enabled, so open the view and switch it
+	// to a Local session before exercising the participant APIs.
+	async function openLocalChat(): Promise<void> {
+		await commands.executeCommand('workbench.action.chat.open');
+		await commands.executeCommand('workbench.action.chat.newLocalChat');
+	}
+
 	test('participant and slash command history', async () => {
 		const onRequest = setupParticipant();
-		await commands.executeCommand('workbench.action.chat.newChat');
+		await openLocalChat();
 		commands.executeCommand('workbench.action.chat.open', { query: '@participant /hello friend' });
 
 		const deferred = new DeferredPromise<void>();
@@ -103,6 +111,7 @@ suite('chat', () => {
 		};
 		disposables.push(participant);
 
+		await openLocalChat();
 		commands.executeCommand('workbench.action.chat.open', { query: '@participant /hello friend' });
 		const result = await deferred.p;
 		assert.deepStrictEqual(result.metadata, { key: 'value' });
@@ -112,6 +121,7 @@ suite('chat', () => {
 		const onRequest = setupParticipant();
 		const onRequest2 = setupParticipant(true);
 
+		await openLocalChat();
 		commands.executeCommand('workbench.action.chat.open', { query: '@participant hi' });
 		await asPromise(onRequest);
 
@@ -205,11 +215,7 @@ suite('chat', () => {
 		};
 		disposables.push(participant);
 
-		// The panel defaults to Agent Host Copilot when the agent host is enabled.
-		// Title generation only runs on the local chat pipeline, so open the view
-		// and switch it to a Local session before sending the participant request.
-		await commands.executeCommand('workbench.action.chat.open');
-		await commands.executeCommand('workbench.action.chat.newLocalChat');
+		await openLocalChat();
 		commands.executeCommand('workbench.action.chat.open', { query: '@participant /hello friend' });
 
 		// Wait for title provider to be called once
