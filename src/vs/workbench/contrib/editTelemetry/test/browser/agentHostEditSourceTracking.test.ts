@@ -8,9 +8,10 @@ import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { computeStringDiff } from '../../../../../editor/common/services/editorWebWorker.js';
+import { ITextModel } from '../../../../../editor/common/model.js';
 import { EditSources } from '../../../../../editor/common/textModelEditSource.js';
 import { NullLogService } from '../../../../../platform/log/common/log.js';
-import { AgentHostTrackedFile } from '../../browser/telemetry/agentHostEditSourceTracking.js';
+import { AgentHostTrackedFile, isDirtyOpenTextModel } from '../../browser/telemetry/agentHostEditSourceTracking.js';
 import { IEditSourcesDetailsTelemetryData } from '../../browser/telemetry/editSourceTelemetry.js';
 
 suite('Agent Host Edit Source Tracking', () => {
@@ -87,6 +88,21 @@ suite('Agent Host Edit Source Tracking', () => {
 		]);
 
 		disposables.dispose();
+	});
+
+	test('only skips attribution for open dirty text models', () => {
+		const resource = URI.file('C:\\repo\\file.ts');
+		const model = Object.create(null) as ITextModel;
+
+		assert.deepStrictEqual({
+			closedDirty: isDirtyOpenTextModel(resource, { getModel: () => null }, { isDirty: () => true }),
+			openClean: isDirtyOpenTextModel(resource, { getModel: () => model }, { isDirty: () => false }),
+			openDirty: isDirtyOpenTextModel(resource, { getModel: () => model }, { isDirty: () => true }),
+		}, {
+			closedDirty: false,
+			openClean: false,
+			openDirty: true,
+		});
 	});
 });
 
