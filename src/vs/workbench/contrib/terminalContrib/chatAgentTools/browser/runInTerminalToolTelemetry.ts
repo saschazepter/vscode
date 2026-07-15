@@ -216,24 +216,6 @@ export class RunInTerminalToolTelemetry {
 		});
 	}
 
-	logCompactionHint(command: string): void {
-		const tokens = command.toLowerCase().split(/[\s;|&<>(){}]+/).filter(t => t.length > 0);
-		if (!compactionHintKeywords.some(keyword => tokens.includes(keyword))) {
-			return;
-		}
-		type TelemetryEvent = {
-			message: string;
-		};
-		type TelemetryClassification = {
-			owner: 'aiday-mar';
-			comment: 'Marks commands where compaction is done by copilot CLI';
-			message: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'A fixed marker indicating command output compaction is done by Copilot CLI.' };
-		};
-		this._telemetryService.publicLog2<TelemetryEvent, TelemetryClassification>('toolUse.runInTerminal.compactionDone', {
-			message: 'compaction is done by Copilot CLI',
-		});
-	}
-
 	/**
 	 * Reports the measurements produced by the terminal output compaction
 	 * {@link Report}, so the effectiveness of compaction (how much output was
@@ -260,38 +242,6 @@ export class RunInTerminalToolTelemetry {
 	}
 }
 
-const compactionHintKeywords: readonly string[] = [
-	'apt',
-	'npm',
-	'npm-pack',
-	'yarn-berry',
-	'pnpm',
-	'composer',
-	'poetry',
-	'pip',
-	'uv',
-	'maven',
-	'dotnet',
-	'python-build',
-	'go',
-	'unittest',
-	'js-test',
-	'cargo',
-	'node',
-	'pytest',
-	'git',
-	'git-clean',
-	'nx',
-	'python-build-ext',
-	'django-test',
-	'golangci-lint',
-	'clang-format-linter',
-	'gradle',
-	'cmake',
-	'make',
-	'shell-grep',
-	'python-script',
-];
 
 const commandAllowList: ReadonlySet<string> = new Set([
 	// Special chars/scripting

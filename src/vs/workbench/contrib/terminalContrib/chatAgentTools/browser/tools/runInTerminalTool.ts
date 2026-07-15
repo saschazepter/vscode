@@ -1894,7 +1894,6 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		// runs in its own tool-calling loop and should poll with get_terminal_output.
 		const shouldSendNotifications = !invocation.subAgentInvocationId;
 		const command = toolSpecificData.commandLine.userEdited ?? toolSpecificData.commandLine.toolEdited ?? toolSpecificData.commandLine.original;
-		this._telemetry.logCompactionHint(args.command);
 		const didUserEditCommand = (
 			toolSpecificData.commandLine.userEdited !== undefined &&
 			toolSpecificData.commandLine.userEdited !== toolSpecificData.commandLine.original
