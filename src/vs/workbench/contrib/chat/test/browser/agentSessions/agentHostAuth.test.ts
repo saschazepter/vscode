@@ -200,6 +200,7 @@ suite('resolveMcpServerAuthentication', () => {
 
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
 
+<<<<<<< HEAD
 	test('uses challenge scopes without replacing the protected resource scope catalog', async () => {
 		const requestedScopes: (readonly string[] | undefined)[] = [];
 		const authService = createMockAuthService({
@@ -238,6 +239,8 @@ suite('resolveMcpServerAuthentication', () => {
 		});
 	});
 
+=======
+>>>>>>> 6e3c53c9430 (Merge pull request #326058 from microsoft/connor/defer-mcp-dynamic-registration-release-1.129)
 	test('does not attempt dynamic provider creation without user interaction', async () => {
 		const warnings: string[] = [];
 		const logService = new class extends NullLogService {
