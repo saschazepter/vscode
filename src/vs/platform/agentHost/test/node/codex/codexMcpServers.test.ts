@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { McpServerStatus } from '../../../common/state/protocol/channels-session/state.js';
-import { buildCodexMcpReadResult, codexMcpListToInventory, codexMcpStatusToEntry, codexMcpToolsChanged, codexToolMapToArray, inventoryToSdkServers, translateCodexMcpStartupState } from '../../../node/codex/codexMcpServers.js';
+import { buildCodexMcpReadResult, buildCodexMcpServerOverrides, codexMcpListToInventory, codexMcpStatusToEntry, codexMcpToolsChanged, codexToolMapToArray, inventoryToSdkServers, translateCodexMcpStartupState } from '../../../node/codex/codexMcpServers.js';
 import type { McpServerStatus as CodexMcpServerStatus } from '../../../node/codex/protocol/generated/v2/McpServerStatus.js';
 import type { Tool } from '../../../node/codex/protocol/generated/Tool.js';
 
@@ -89,5 +89,71 @@ suite('codexMcpServers', () => {
 			codexMcpToolsChanged(a, added),
 			codexMcpToolsChanged(undefined, a),
 		], [false, true, true]);
+	});
+
+	suite('buildCodexMcpServerOverrides', () => {
+
+		test('encodes stdio + http servers and maps headers → http_headers', () => {
+			assert.deepStrictEqual(buildCodexMcpServerOverrides({
+				local: { type: 'stdio', command: 'npx', args: ['-y', 'pkg'], env: { KEY: 'val', N: 3, DROP: null }, cwd: '/w' },
+				remote: { type: 'http', url: 'https://x/mcp', headers: { Authorization: 'Bearer t' } },
+			}), {
+				overrides: [
+					'mcp_servers.local={ command = "npx", args = ["-y", "pkg"], env = { KEY = "val", N = "3" }, cwd = "/w" }',
+					'mcp_servers.remote={ url = "https://x/mcp", http_headers = { Authorization = "Bearer t" } }',
+				],
+				skipped: [],
+			});
+		});
+
+		test('omits empty args/env/headers and command-only stdio', () => {
+			assert.deepStrictEqual(buildCodexMcpServerOverrides({
+				bare: { type: 'stdio', command: 'run', args: [], env: {} },
+				plain: { type: 'http', url: 'https://y' },
+			}), {
+				overrides: [
+					'mcp_servers.bare={ command = "run" }',
+					'mcp_servers.plain={ url = "https://y" }',
+				],
+				skipped: [],
+			});
+		});
+
+		test('escapes TOML strings and quotes non-bare env keys', () => {
+			assert.deepStrictEqual(buildCodexMcpServerOverrides({
+				esc: { type: 'stdio', command: 'a"b\\c', env: { 'we.ird key': 'line1\nline2\t"q"' } },
+			}), {
+				overrides: [
+					'mcp_servers.esc={ command = "a\\"b\\\\c", env = { "we.ird key" = "line1\\nline2\\t\\"q\\"" } }',
+				],
+				skipped: [],
+			});
+		});
+
+		test('skips malformed entries and names codex cannot address', () => {
+			assert.deepStrictEqual(buildCodexMcpServerOverrides({
+				noCommand: { type: 'stdio' },
+				noUrl: { type: 'http' },
+				unknownType: { type: 'sse', url: 'https://z' },
+				notObject: 42,
+				'dotted.name': { type: 'stdio', command: 'ok' },
+				'has=eq': { type: 'stdio', command: 'ok' },
+				' spaced ': { type: 'stdio', command: 'ok' },
+				good: { type: 'stdio', command: 'ok' },
+			} as Record<string, unknown>), {
+				overrides: ['mcp_servers.good={ command = "ok" }'],
+				skipped: ['noCommand', 'noUrl', 'unknownType', 'notObject', 'dotted.name', 'has=eq', ' spaced '],
+			});
+		});
+
+		test('returns empty for undefined / empty config', () => {
+			assert.deepStrictEqual([
+				buildCodexMcpServerOverrides(undefined),
+				buildCodexMcpServerOverrides({}),
+			], [
+				{ overrides: [], skipped: [] },
+				{ overrides: [], skipped: [] },
+			]);
+		});
 	});
 });

@@ -18,7 +18,7 @@ import { IInstantiationService } from '../../../instantiation/common/instantiati
 import { localize } from '../../../../nls.js';
 import { ILogService } from '../../../log/common/log.js';
 import { IProductService } from '../../../product/common/productService.js';
-import { createSchema, platformSessionSchema, schemaProperty, type ISchemaProperty, type SessionMode } from '../../common/agentHostSchema.js';
+import { createSchema, platformRootSchema, platformSessionSchema, schemaProperty, AgentHostMcpServersConfigKey, type ISchemaProperty, type SessionMode } from '../../common/agentHostSchema.js';
 import { createPricingMetaFromBilling, normalizeCAPIBilling } from '../../common/agentModelPricing.js';
 import { getReasoningEffortDescription, getReasoningEffortLabel } from '../../common/reasoningEffort.js';
 import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentSession, AgentSignal, CODEX_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, type AgentProvider } from '../../common/agentService.js';
@@ -31,7 +31,7 @@ import { buildDefaultChatUri, parseChatUri, type ClientPluginCustomization, type
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
 import { ActiveClientToolSet } from '../activeClientState.js';
 import { McpCustomizationController } from '../shared/mcpCustomizationController.js';
-import { buildCodexMcpReadResult, codexMcpListToInventory, codexMcpToolsChanged, inventoryToSdkServers, translateCodexMcpStartupState, type ICodexMcpServerEntry } from './codexMcpServers.js';
+import { buildCodexMcpReadResult, buildCodexMcpServerOverrides, codexMcpListToInventory, codexMcpToolsChanged, inventoryToSdkServers, translateCodexMcpStartupState, type ICodexMcpServerEntry } from './codexMcpServers.js';
 import { buildElicitationRequest, cancelledElicitationResponse, declinedElicitationResponse, elicitationResponseFromAnswers } from './codexElicitationMapper.js';
 import { McpServerStatus, type AhpMcpUiHostCapabilities, type Customization } from '../../common/state/protocol/channels-session/state.js';
 import { IAgentConfigurationService } from '../agentConfigurationService.js';
@@ -1067,7 +1067,7 @@ export class CodexAgent extends Disposable implements IAgent {
 
 		// Extra args forwarded as JSON from the workbench setting.
 		const extraArgs = parseBinaryArgs(process.env[AgentHostCodexAgentBinaryArgsEnvVar]);
-		const args = ['app-server', ...providerOverrides.flatMap(kv => ['-c', kv]), ...extraArgs];
+		const args = ['app-server', ...providerOverrides.flatMap(kv => ['-c', kv]), ...this._buildMcpServerOverrides().flatMap(kv => ['-c', kv]), ...extraArgs];
 
 		this._logService.info(`[Codex] spawning ${binaryPath} ${args.join(' ')}`);
 		const child = spawn(binaryPath, args, { env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -1199,6 +1199,30 @@ export class CodexAgent extends Disposable implements IAgent {
 		void this._refreshMcpInventory(client);
 
 		return { client, proxyHandle, child };
+	}
+
+	/**
+	 * Builds the `mcp_servers.<name>=<toml>` config overrides that make the
+	 * codex app-server launch the workbench's configured MCP servers (the
+	 * root `mcpServers` config). These merge with any servers in the user's
+	 * global `~/.codex/config.toml`. Mirrors how the Copilot agent forwards
+	 * the same root config to its SDK. Empty when no servers are configured,
+	 * so the user's global MCP config is left untouched.
+	 *
+	 * The codex app-server is process-global (shared across threads), and the
+	 * root `mcpServers` config is likewise a global workbench setting, so the
+	 * servers are resolved once at spawn time rather than per session.
+	 */
+	private _buildMcpServerOverrides(): readonly string[] {
+		const servers = this._configurationService.getRootValue(platformRootSchema, AgentHostMcpServersConfigKey);
+		const { overrides, skipped } = buildCodexMcpServerOverrides(servers);
+		if (skipped.length > 0) {
+			this._logService.warn(`[Codex] skipping ${skipped.length} MCP server(s) that are malformed or have a name codex cannot address via a config override: ${skipped.join(', ')}`);
+		}
+		if (overrides.length > 0) {
+			this._logService.info(`[Codex] configuring ${overrides.length} MCP server(s) from workbench config`);
+		}
+		return overrides;
 	}
 
 	/**
