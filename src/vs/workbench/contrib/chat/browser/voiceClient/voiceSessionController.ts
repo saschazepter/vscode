@@ -435,6 +435,18 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private readonly _pendingIdleNarration = new Set<string>();
 
 	/**
+	 * Sessions that entered `thinking` during this controller's lifetime and are
+	 * therefore genuinely awaiting a completion. A summary-only transition (idle
+	 * state unchanged, but `last_response_summary` appeared/changed) only counts
+	 * as a NEW reply when the session is in this set - otherwise an OLD summary
+	 * surfacing because a dormant model was (re)hydrated would be mistaken for a
+	 * fresh response and wrongly light the sessions-list pending indicator.
+	 * Armed on an observed idle/waiting→thinking transition (never during eager
+	 * loading / replay) and consumed once the resulting idle+summary is accepted.
+	 */
+	private readonly _sessionsAwaitingResponseSummary = new Set<string>();
+
+	/**
 	 * Last response summary captured per session WHILE its chat model was
 	 * resident. Copilot/remote session models are disposed as soon as the user
 	 * switches away, so a completion that lands while the session is unfocused
@@ -1001,14 +1013,22 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 						// transition (or updates while still idle); the model stays
 						// idle so no state transition fires. Detect the summary
 						// becoming available/changing as its own narratable transition,
-						// mirroring the confirmation detail transition above.
-						const isResponseSummaryTransition = !isStateTransition && prev !== undefined && currentState === 'idle' && !!normalizedSummary && normalizedSummary !== prev.lastResponseSummary;
+						// mirroring the confirmation detail transition above - but ONLY
+						// for a session that actually ran this lifetime (see
+						// _sessionsAwaitingResponseSummary), so an old summary surfacing
+						// from a rehydrated dormant model isn't mistaken for a new reply.
+						const isResponseSummaryTransition = !isStateTransition && prev !== undefined && currentState === 'idle' && !!normalizedSummary && normalizedSummary !== prev.lastResponseSummary && this._sessionsAwaitingResponseSummary.has(sessionId);
 						const isTransition = isStateTransition || isDetailTransition || isResponseSummaryTransition;
 						if (isTransition) {
 							this.logService.trace(`[voice] autorun transition id=${sessionId.slice(-32)} ${prev?.state}→${currentState} detailChanged=${isDetailTransition} summaryChanged=${isResponseSummaryTransition} hasDetail=${!!detail}`);
-							// A new turn supersedes prior narration; clear dedup here (before coalescing collapses a fast idle→thinking→idle to net-zero), skipping eager-reload wobble.
+							// A new turn supersedes prior narration; clear dedup here (before coalescing collapses a fast idle→thinking→idle to net-zero), skipping eager-reload wobble. Arm the awaiting-summary marker so this run's completion (whenever its summary lands) is recognized as new.
 							if (currentState === 'thinking' && !this._eagerModelLoading.has(sessionId)) {
 								this._clearLastNarratedText(sessionId);
+								this._sessionsAwaitingResponseSummary.add(sessionId);
+							}
+							// The completion for this run has been accepted; consume the marker so a later rehydration of the same summary can't re-fire.
+							if (currentState === 'idle' && !!normalizedSummary) {
+								this._sessionsAwaitingResponseSummary.delete(sessionId);
 							}
 							const cancelExpiry = this._userCancelledSessions.get(sessionId);
 							if (cancelExpiry) {
@@ -1020,7 +1040,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 							}
 						}
 						if (currentState !== 'unknown') {
-							this._prevSessionStates.set(sessionId, { state: currentState, detail: detail ?? '', lastResponseSummary: normalizedSummary });
+							// Preserve a known summary rather than clobbering it with ''
+							// so a model unload→reload can't manufacture an ''→old-summary
+							// "transition" that looks like a fresh reply.
+							const rememberedSummary = normalizedSummary || this._lastResponseSummaryById.get(sessionId) || prev?.lastResponseSummary || '';
+							this._prevSessionStates.set(sessionId, { state: currentState, detail: detail ?? '', lastResponseSummary: rememberedSummary });
 						}
 
 						if (currentState === 'waiting_for_confirmation') {
@@ -1052,6 +1076,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 							const prev = this._prevSessionStates.get(sessionId);
 							const isStateTransition = prev !== undefined && prev.state !== currentState && currentState !== 'unknown';
 
+							// Arm the awaiting-summary marker on a genuine new turn so the
+							// completion detected once the model loads counts as new.
+							if (isStateTransition && currentState === 'thinking') {
+								this._sessionsAwaitingResponseSummary.add(sessionId);
+							}
+
 							// Remote/Copilot sessions don't keep their model resident, so a
 							// coarse ``idle`` transition would carry no last_response_summary
 							// and the backend would narrate an empty completion. If we
@@ -1066,6 +1096,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 									this._deferIdleNarrationUntilModelLoaded(s.resource);
 									continue;
 								}
+								this._sessionsAwaitingResponseSummary.delete(sessionId);
 								if (!this._userCancelledSessions.has(sessionId)) {
 									stateChanges.push({ sessionId, currentState, label: s.label || 'Untitled session', lastResponseSummary: cachedSummary, fromState: prev?.state ?? currentState, fromDetail: prev?.detail ?? '', fromResponseSummary: prev?.lastResponseSummary ?? '' });
 								}
@@ -1083,7 +1114,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 								}
 							}
 							if (currentState !== 'unknown') {
-								this._prevSessionStates.set(sessionId, { state: currentState, detail: '', lastResponseSummary: '' });
+								// Preserve a known summary rather than clobbering with ''
+								// (a later reload of the same summary must not look new).
+								const rememberedSummary = this._lastResponseSummaryById.get(sessionId) || prev?.lastResponseSummary || '';
+								this._prevSessionStates.set(sessionId, { state: currentState, detail: '', lastResponseSummary: rememberedSummary });
 							}
 							if (currentState === 'waiting_for_confirmation') {
 								waitingForConfirmationSessions.push({ sessionId, label: s.label || 'Untitled session', detail: undefined, transition: isStateTransition });
@@ -1576,6 +1610,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._eagerModelRefs.clear();
 		this._eagerModelLoading.clear();
 		this._pendingIdleNarration.clear();
+		this._sessionsAwaitingResponseSummary.clear();
 		this._lastResponseSummaryById.clear();
 		this._lastNarratedText.clear();
 		this._pendingNarrationRetries.clear();
@@ -3713,6 +3748,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			const isStateChange = prev !== undefined && prev.state !== currentState && currentState !== 'unknown';
 			const isDetailChange = !isStateChange && prev !== undefined && currentState === 'waiting_for_confirmation' && (detail ?? '') !== prev.detail;
 
+			// Arm the awaiting-summary marker on a genuine new turn so this run's
+			// completion is later recognized as new (see autorun for rationale).
+			if (isStateChange && currentState === 'thinking' && !this._eagerModelLoading.has(sessionId)) {
+				this._sessionsAwaitingResponseSummary.add(sessionId);
+			}
+
 			// Summary-less idle transitions for remote/Copilot sessions: narrate
 			// from the cached summary if we have one, otherwise defer until the
 			// model loads (see _deferIdleNarrationUntilModelLoaded).
@@ -3727,9 +3768,17 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 			// A completed reply's summary can land after the idle transition (or
 			// change while still idle), producing no state change; treat it as its
-			// own narratable transition so the reply is still surfaced/narrated.
+			// own narratable transition so the reply is still surfaced/narrated -
+			// but ONLY for a session that actually ran this lifetime, so an old
+			// summary surfacing from a rehydrated dormant model isn't mistaken for
+			// a new reply.
 			const normalizedSummary = lastResponseSummary ?? '';
-			const isResponseSummaryChange = !isStateChange && prev !== undefined && currentState === 'idle' && !!normalizedSummary && normalizedSummary !== prev.lastResponseSummary;
+			const isResponseSummaryChange = !isStateChange && prev !== undefined && currentState === 'idle' && !!normalizedSummary && normalizedSummary !== prev.lastResponseSummary && this._sessionsAwaitingResponseSummary.has(sessionId);
+
+			// The completion for this run has been accepted; consume the marker.
+			if ((isStateChange && currentState === 'idle' && !!normalizedSummary) || isResponseSummaryChange) {
+				this._sessionsAwaitingResponseSummary.delete(sessionId);
+			}
 
 			if (isStateChange || isDetailChange || isResponseSummaryChange) {
 				const cancelExpiry = this._userCancelledSessions.get(sessionId);
@@ -3744,7 +3793,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				}
 			}
 			if (currentState !== 'unknown') {
-				this._prevSessionStates.set(sessionId, { state: currentState, detail: detail ?? '', lastResponseSummary: normalizedSummary });
+				// Preserve a known summary rather than clobbering with '' so a
+				// model unload→reload can't manufacture a fresh-reply transition.
+				const rememberedSummary = normalizedSummary || this._lastResponseSummaryById.get(sessionId) || prev?.lastResponseSummary || '';
+				this._prevSessionStates.set(sessionId, { state: currentState, detail: detail ?? '', lastResponseSummary: rememberedSummary });
 			}
 			if (currentState === 'waiting_for_confirmation') {
 				waitingSessionIds.add(sessionId);
@@ -3765,8 +3817,20 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			const prev = this._prevSessionStates.get(key);
 			const isStateChange = prev !== undefined && prev.state !== currentState && currentState !== 'unknown';
 			const isDetailChange = !isStateChange && prev !== undefined && currentState === 'waiting_for_confirmation' && (detail ?? '') !== prev.detail;
+
+			// Arm the awaiting-summary marker on a genuine new turn.
+			if (isStateChange && currentState === 'thinking' && !this._eagerModelLoading.has(key)) {
+				this._sessionsAwaitingResponseSummary.add(key);
+			}
+
 			const normalizedSummary = lastResponseSummary ?? '';
-			const isResponseSummaryChange = !isStateChange && prev !== undefined && currentState === 'idle' && !!normalizedSummary && normalizedSummary !== prev.lastResponseSummary;
+			const isResponseSummaryChange = !isStateChange && prev !== undefined && currentState === 'idle' && !!normalizedSummary && normalizedSummary !== prev.lastResponseSummary && this._sessionsAwaitingResponseSummary.has(key);
+
+			// The completion for this run has been accepted; consume the marker.
+			if ((isStateChange && currentState === 'idle' && !!normalizedSummary) || isResponseSummaryChange) {
+				this._sessionsAwaitingResponseSummary.delete(key);
+			}
+
 			if (isStateChange || isDetailChange || isResponseSummaryChange) {
 				if (isDetailChange) {
 					this.voiceClientService.invalidateSessionCache(key);
@@ -3774,7 +3838,8 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				stateChanges.push({ sessionId: key, currentState, label: chatModel.title || 'Chat', detail, lastResponseSummary });
 			}
 			if (currentState !== 'unknown') {
-				this._prevSessionStates.set(key, { state: currentState, detail: detail ?? '', lastResponseSummary: normalizedSummary });
+				const rememberedSummary = normalizedSummary || this._lastResponseSummaryById.get(key) || prev?.lastResponseSummary || '';
+				this._prevSessionStates.set(key, { state: currentState, detail: detail ?? '', lastResponseSummary: rememberedSummary });
 			}
 			if (currentState === 'waiting_for_confirmation') {
 				waitingSessionIds.add(key);
@@ -4057,6 +4122,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		for (const id of this._lastNarratedText.keys()) {
 			if (!liveSessionIds.has(id)) {
 				this._lastNarratedText.delete(id);
+			}
+		}
+		for (const id of Array.from(this._sessionsAwaitingResponseSummary)) {
+			if (!liveSessionIds.has(id)) {
+				this._sessionsAwaitingResponseSummary.delete(id);
 			}
 		}
 		// A background session that completed a reply but was archived/removed
