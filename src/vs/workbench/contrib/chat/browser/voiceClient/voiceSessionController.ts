@@ -389,7 +389,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private _replaySourceNode: AudioBufferSourceNode | undefined;
 
 	// --- Session state tracking for explicit change notifications ---
-	private readonly _prevSessionStates = new Map<string, { state: string; detail: string }>();
+	private readonly _prevSessionStates = new Map<string, { state: string; detail: string; lastResponseSummary: string }>();
 
 	// Sessions the user explicitly cancelled from VS Code UI. We swallow the
 	// NEXT state change for each (typically the chat model going `idle`) so the
@@ -416,7 +416,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * also records the burst's baseline (``fromState``/``fromDetail``) so a wobble
 	 * that returns to its starting state is recognized as net-zero.
 	 */
-	private readonly _pendingStateChanges = new Map<string, { sessionId: string; currentState: string; label: string; detail?: string; lastResponseSummary?: string; fromState: string; fromDetail: string }>();
+	private readonly _pendingStateChanges = new Map<string, { sessionId: string; currentState: string; label: string; detail?: string; lastResponseSummary?: string; fromState: string; fromDetail: string; fromResponseSummary: string }>();
 	private _stateChangeEmitTimer: ReturnType<typeof setTimeout> | undefined;
 	private static readonly _STATE_CHANGE_SETTLE_MS = 120;
 
@@ -921,7 +921,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 								: s.status === AgentSessionStatus.Completed ? 'idle'
 									: 'unknown');
 					if (currentState !== 'unknown') {
-						this._prevSessionStates.set(s.resource.toString(), { state: currentState, detail: info?.detail ?? '' });
+						this._prevSessionStates.set(s.resource.toString(), { state: currentState, detail: info?.detail ?? '', lastResponseSummary: info?.last_response_summary ?? '' });
 					}
 				}
 				// Also seed regular chat sessions so the autorun doesn't trigger false transitions
@@ -931,7 +931,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 					if (chatModel.getRequests().length === 0) { continue; }
 					const info = this._getAgentStateInfo(chatModel);
 					if (info.state !== 'unknown') {
-						this._prevSessionStates.set(key, { state: info.state, detail: info.detail ?? '' });
+						this._prevSessionStates.set(key, { state: info.state, detail: info.detail ?? '', lastResponseSummary: info.last_response_summary ?? '' });
 					}
 				}
 
@@ -946,7 +946,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				const autorunDisposable = autorun(reader => {
 					const agentSessions = this.agentSessionsService.model.sessions.filter(s => !s.isArchived());
 					let needsRecheck = false;
-					const stateChanges: { sessionId: string; currentState: string; label: string; detail?: string; lastResponseSummary?: string; fromState: string; fromDetail: string }[] = [];
+					const stateChanges: { sessionId: string; currentState: string; label: string; detail?: string; lastResponseSummary?: string; fromState: string; fromDetail: string; fromResponseSummary: string }[] = [];
 					const waitingForConfirmationSessions: { sessionId: string; label: string; detail?: string; transition: boolean }[] = [];
 					const processedResources = new Set<string>();
 
@@ -994,11 +994,18 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 						this._cacheResponseSummary(sessionId, info.state, lastResponseSummary);
 
 						const prev = this._prevSessionStates.get(sessionId);
+						const normalizedSummary = lastResponseSummary ?? '';
 						const isStateTransition = prev !== undefined && prev.state !== currentState && currentState !== 'unknown';
 						const isDetailTransition = !isStateTransition && prev !== undefined && currentState === 'waiting_for_confirmation' && (detail ?? '') !== prev.detail;
-						const isTransition = isStateTransition || isDetailTransition;
+						// A completed reply's summary often lands AFTER the idle
+						// transition (or updates while still idle); the model stays
+						// idle so no state transition fires. Detect the summary
+						// becoming available/changing as its own narratable transition,
+						// mirroring the confirmation detail transition above.
+						const isResponseSummaryTransition = !isStateTransition && prev !== undefined && currentState === 'idle' && !!normalizedSummary && normalizedSummary !== prev.lastResponseSummary;
+						const isTransition = isStateTransition || isDetailTransition || isResponseSummaryTransition;
 						if (isTransition) {
-							this.logService.trace(`[voice] autorun transition id=${sessionId.slice(-32)} ${prev?.state}→${currentState} detailChanged=${isDetailTransition} hasDetail=${!!detail}`);
+							this.logService.trace(`[voice] autorun transition id=${sessionId.slice(-32)} ${prev?.state}→${currentState} detailChanged=${isDetailTransition} summaryChanged=${isResponseSummaryTransition} hasDetail=${!!detail}`);
 							// A new turn supersedes prior narration; clear dedup here (before coalescing collapses a fast idle→thinking→idle to net-zero), skipping eager-reload wobble.
 							if (currentState === 'thinking' && !this._eagerModelLoading.has(sessionId)) {
 								this._clearLastNarratedText(sessionId);
@@ -1009,11 +1016,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 								clearTimeout(cancelExpiry);
 								this._userCancelledSessions.delete(sessionId);
 							} else {
-								stateChanges.push({ sessionId, currentState, label, detail, lastResponseSummary, fromState: prev?.state ?? currentState, fromDetail: prev?.detail ?? '' });
+								stateChanges.push({ sessionId, currentState, label, detail, lastResponseSummary, fromState: prev?.state ?? currentState, fromDetail: prev?.detail ?? '', fromResponseSummary: prev?.lastResponseSummary ?? '' });
 							}
 						}
 						if (currentState !== 'unknown') {
-							this._prevSessionStates.set(sessionId, { state: currentState, detail: detail ?? '' });
+							this._prevSessionStates.set(sessionId, { state: currentState, detail: detail ?? '', lastResponseSummary: normalizedSummary });
 						}
 
 						if (currentState === 'waiting_for_confirmation') {
@@ -1060,9 +1067,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 									continue;
 								}
 								if (!this._userCancelledSessions.has(sessionId)) {
-									stateChanges.push({ sessionId, currentState, label: s.label || 'Untitled session', lastResponseSummary: cachedSummary, fromState: prev?.state ?? currentState, fromDetail: prev?.detail ?? '' });
+									stateChanges.push({ sessionId, currentState, label: s.label || 'Untitled session', lastResponseSummary: cachedSummary, fromState: prev?.state ?? currentState, fromDetail: prev?.detail ?? '', fromResponseSummary: prev?.lastResponseSummary ?? '' });
 								}
-								this._prevSessionStates.set(sessionId, { state: currentState, detail: '' });
+								this._prevSessionStates.set(sessionId, { state: currentState, detail: '', lastResponseSummary: cachedSummary ?? '' });
 								continue;
 							}
 
@@ -1072,11 +1079,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 									clearTimeout(cancelExpiry);
 									this._userCancelledSessions.delete(sessionId);
 								} else {
-									stateChanges.push({ sessionId, currentState, label: s.label || 'Untitled session', fromState: prev?.state ?? currentState, fromDetail: prev?.detail ?? '' });
+									stateChanges.push({ sessionId, currentState, label: s.label || 'Untitled session', fromState: prev?.state ?? currentState, fromDetail: prev?.detail ?? '', fromResponseSummary: prev?.lastResponseSummary ?? '' });
 								}
 							}
 							if (currentState !== 'unknown') {
-								this._prevSessionStates.set(sessionId, { state: currentState, detail: '' });
+								this._prevSessionStates.set(sessionId, { state: currentState, detail: '', lastResponseSummary: '' });
 							}
 							if (currentState === 'waiting_for_confirmation') {
 								waitingForConfirmationSessions.push({ sessionId, label: s.label || 'Untitled session', detail: undefined, transition: isStateTransition });
@@ -1117,7 +1124,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 						for (const change of stateChanges) {
 							const existing = this._pendingStateChanges.get(change.sessionId);
 							this._pendingStateChanges.set(change.sessionId, existing
-								? { ...change, fromState: existing.fromState, fromDetail: existing.fromDetail }
+								? { ...change, fromState: existing.fromState, fromDetail: existing.fromDetail, fromResponseSummary: existing.fromResponseSummary }
 								: change);
 						}
 						this._scheduleStateChangeEmit();
@@ -2129,7 +2136,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 
 		// Seed the state cache so the delta mechanism sees thinking→idle as a transition
 		// and includes last_response_summary in the patch.
-		this._prevSessionStates.set(sessionResource.toString(), { state: 'thinking', detail: '' });
+		this._prevSessionStates.set(sessionResource.toString(), { state: 'thinking', detail: '', lastResponseSummary: '' });
 		this._sendContext();
 
 		const disposables = new DisposableStore();
@@ -2154,7 +2161,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			if (response.isComplete || response.isCanceled) {
 				// Notify the voice backend of the state transition so it can
 				// narrate the response for this non-focused session.
-				this._prevSessionStates.set(sessionResource.toString(), { state: 'idle', detail: '' });
+				this._prevSessionStates.set(sessionResource.toString(), { state: 'idle', detail: '', lastResponseSummary: '' });
 				this._sendContext();
 				this.voiceClientService.flushSessionContext();
 				disposables.dispose();
@@ -3555,9 +3562,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		const netChanges: { change: typeof changes[number]; detailOnly: boolean }[] = [];
 		for (const change of changes) {
 			const detail = change.detail ?? '';
+			const summary = change.lastResponseSummary ?? '';
 			const stateChanged = change.fromState !== change.currentState;
 			const detailOnly = !stateChanged && change.currentState === 'waiting_for_confirmation' && change.fromDetail !== detail;
-			if (stateChanged || detailOnly) {
+			// A summary that appeared/changed while the session stayed idle is a
+			// real narratable change even though the coarse state didn't move.
+			const responseSummaryOnly = !stateChanged && change.currentState === 'idle' && !!summary && change.fromResponseSummary !== summary;
+			if (stateChanged || detailOnly || responseSummaryOnly) {
 				netChanges.push({ change, detailOnly });
 			}
 		}
@@ -3714,7 +3725,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				lastResponseSummary = cachedSummary;
 			}
 
-			if (isStateChange || isDetailChange) {
+			// A completed reply's summary can land after the idle transition (or
+			// change while still idle), producing no state change; treat it as its
+			// own narratable transition so the reply is still surfaced/narrated.
+			const normalizedSummary = lastResponseSummary ?? '';
+			const isResponseSummaryChange = !isStateChange && prev !== undefined && currentState === 'idle' && !!normalizedSummary && normalizedSummary !== prev.lastResponseSummary;
+
+			if (isStateChange || isDetailChange || isResponseSummaryChange) {
 				const cancelExpiry = this._userCancelledSessions.get(sessionId);
 				if (cancelExpiry) {
 					clearTimeout(cancelExpiry);
@@ -3727,7 +3744,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				}
 			}
 			if (currentState !== 'unknown') {
-				this._prevSessionStates.set(sessionId, { state: currentState, detail: detail ?? '' });
+				this._prevSessionStates.set(sessionId, { state: currentState, detail: detail ?? '', lastResponseSummary: normalizedSummary });
 			}
 			if (currentState === 'waiting_for_confirmation') {
 				waitingSessionIds.add(sessionId);
@@ -3748,14 +3765,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			const prev = this._prevSessionStates.get(key);
 			const isStateChange = prev !== undefined && prev.state !== currentState && currentState !== 'unknown';
 			const isDetailChange = !isStateChange && prev !== undefined && currentState === 'waiting_for_confirmation' && (detail ?? '') !== prev.detail;
-			if (isStateChange || isDetailChange) {
+			const normalizedSummary = lastResponseSummary ?? '';
+			const isResponseSummaryChange = !isStateChange && prev !== undefined && currentState === 'idle' && !!normalizedSummary && normalizedSummary !== prev.lastResponseSummary;
+			if (isStateChange || isDetailChange || isResponseSummaryChange) {
 				if (isDetailChange) {
 					this.voiceClientService.invalidateSessionCache(key);
 				}
 				stateChanges.push({ sessionId: key, currentState, label: chatModel.title || 'Chat', detail, lastResponseSummary });
 			}
 			if (currentState !== 'unknown') {
-				this._prevSessionStates.set(key, { state: currentState, detail: detail ?? '' });
+				this._prevSessionStates.set(key, { state: currentState, detail: detail ?? '', lastResponseSummary: normalizedSummary });
 			}
 			if (currentState === 'waiting_for_confirmation') {
 				waitingSessionIds.add(key);
