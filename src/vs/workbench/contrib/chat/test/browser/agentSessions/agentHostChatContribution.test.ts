@@ -1912,6 +1912,14 @@ suite('AgentHostChatContribution', () => {
 			});
 		});
 
+		test('archive mutation ignores resources from another session type', () => {
+			const { listController, agentHostService } = createContribution(disposables);
+
+			listController.setChatSessionItemArchived(URI.from({ scheme: 'agent-host-other', path: '/session' }), true);
+
+			assert.deepStrictEqual(agentHostService.dispatchedActions, []);
+		});
+
 		test('archive mutation prevents an in-flight stale refresh from overwriting optimistic state', async () => {
 			const { instantiationService, agentHostService } = createTestServices(disposables);
 			const backendSession = AgentSession.uri('copilot', 'archive-refresh-race');

@@ -138,7 +138,7 @@ export class AgentHostSessionListController extends Disposable implements IChatS
 
 	setChatSessionItemArchived(resource: URI, archived: boolean): void {
 		if (resource.scheme !== this._sessionType) {
-			throw new Error(`Session ${resource.toString()} does not belong to controller ${this._sessionType}`);
+			return;
 		}
 
 		this._sessionListStore.setSessionArchived(this._provider, AgentSession.id(resource), archived);
