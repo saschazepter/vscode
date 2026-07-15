@@ -15,6 +15,7 @@ import { IAuthenticationService } from '../../../../services/authentication/comm
 import { IProductService } from '../../../../../platform/product/common/productService.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IStorageService, StorageScope } from '../../../../../platform/storage/common/storage.js';
+import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { AgentsVoiceStorageKeys } from '../../../agentsVoice/common/agentsVoice.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 
@@ -22,6 +23,28 @@ export const IChatSpeechToTextService = createDecorator<IChatSpeechToTextService
 
 /** Sample rate (Hz) of the PCM16 audio streamed to the transcription backend. */
 const SAMPLE_RATE = 16000;
+
+/** Setting that enables the dictation feature; a kill-switch for rollout. */
+const ENABLED_SETTING = 'chat.speechToText.enabled';
+/** Developer override for the transcription backend URL. */
+const SERVER_URL_SETTING = 'chat.speechToText.serverUrl';
+
+type SpeechToTextSessionEvent = {
+	outcome: 'completed' | 'cancelled' | 'error';
+	durationMs: number;
+	segments: number;
+	transcriptLength: number;
+	errorCode: string;
+};
+type SpeechToTextSessionClassification = {
+	owner: 'meganrogge';
+	comment: 'Tracks usage and reliability of chat-input dictation (speech-to-text).';
+	outcome: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'How the dictation session ended.' };
+	durationMs: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'Recording duration in milliseconds.' };
+	segments: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Number of transcript segments returned.' };
+	transcriptLength: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Character length of the final transcript.' };
+	errorCode: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'Short error identifier when the session failed, else empty.' };
+};
 
 export const enum ChatSpeechToTextState {
 	/** Not recording. */
@@ -103,7 +126,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	}
 
 	get isConfigured(): boolean {
-		return !!this._getServerUrl();
+		return this._configurationService.getValue<boolean>(ENABLED_SETTING) !== false && !!this._getServerUrl();
 	}
 
 	/** Finalized (committed) utterances, space-joined. */
@@ -114,6 +137,11 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private _closePromise: Promise<void> | undefined;
 	private _resolveClose: (() => void) | undefined;
 
+	// Per-session telemetry accumulators.
+	private _sessionStartMs = 0;
+	private _sessionSegments = 0;
+	private _sessionErrorCode = '';
+
 	constructor(
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@INotificationService private readonly _notificationService: INotificationService,
@@ -123,20 +151,36 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		@IProductService private readonly _productService: IProductService,
 		@IDefaultAccountService private readonly _defaultAccountService: IDefaultAccountService,
 		@IStorageService private readonly _storageService: IStorageService,
+		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 	) {
 		super();
 		this._recordingContextKey = ChatContextKeys.speechToTextRecording.bindTo(contextKeyService);
 		this._configuredContextKey = ChatContextKeys.speechToTextConfigured.bindTo(contextKeyService);
 		this._updateConfiguredContextKey();
 		this._register(this._configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration('chat.speechToText.serverUrl')) {
+			if (e.affectsConfiguration(SERVER_URL_SETTING) || e.affectsConfiguration(ENABLED_SETTING)) {
 				this._updateConfiguredContextKey();
 			}
 		}));
 	}
 
 	private _updateConfiguredContextKey(): void {
-		this._configuredContextKey.set(!!this._getServerUrl());
+		this._configuredContextKey.set(this.isConfigured);
+	}
+
+	private _logSessionTelemetry(outcome: 'completed' | 'cancelled' | 'error'): void {
+		if (this._sessionStartMs === 0) {
+			return;
+		}
+		const durationMs = Date.now() - this._sessionStartMs;
+		this._telemetryService.publicLog2<SpeechToTextSessionEvent, SpeechToTextSessionClassification>('chatSpeechToText.session', {
+			outcome,
+			durationMs,
+			segments: this._sessionSegments,
+			transcriptLength: this._transcript.length,
+			errorCode: this._sessionErrorCode,
+		});
+		this._sessionStartMs = 0;
 	}
 
 	private _setState(state: ChatSpeechToTextState): void {
@@ -166,10 +210,16 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			return;
 		}
 
+		this._sessionStartMs = Date.now();
+		this._sessionSegments = 0;
+		this._sessionErrorCode = '';
+
 		let stream: MediaStream;
 		try {
 			stream = await this._acquireStream(window);
 		} catch (err) {
+			this._sessionErrorCode = this._sessionErrorCode || 'microphone';
+			this._logSessionTelemetry('error');
 			this._logService.error('[chat-stt] microphone acquisition failed', err);
 			this._notificationService.error(localize('chatStt.micError', "Could not access the microphone for speech-to-text: {0}", toErrorMessage(err)));
 			throw err;
@@ -183,6 +233,8 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			await this._openSocket(serverUrl, window);
 		} catch (err) {
 			this._teardown();
+			this._sessionErrorCode = this._sessionErrorCode || 'connect';
+			this._logSessionTelemetry('error');
 			this._logService.error('[chat-stt] failed to connect to transcription backend', err);
 			this._notificationService.error(localize('chatStt.connectError', "Could not connect to the speech-to-text backend: {0}", toErrorMessage(err)));
 			throw err;
@@ -217,12 +269,14 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		}
 
 		const text = this._transcript;
+		this._logSessionTelemetry(this._sessionErrorCode ? 'error' : 'completed');
 		this._teardown();
 		this._setState(ChatSpeechToTextState.Idle);
 		return text || undefined;
 	}
 
 	cancel(): void {
+		this._logSessionTelemetry('cancelled');
 		this._teardown();
 		this._finalizedText = '';
 		this._deltaText = '';
@@ -274,11 +328,13 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 						this._onDidUpdateTranscript.fire(this._transcript);
 						break;
 					case 'segment':
+						this._sessionSegments++;
 						this._finalizedText = [this._finalizedText, (msg.text ?? '').trim()].filter(Boolean).join(' ');
 						this._deltaText = '';
 						this._onDidUpdateTranscript.fire(this._transcript);
 						break;
 					case 'error':
+						this._sessionErrorCode = this._sessionErrorCode || 'backend';
 						this._logService.error('[chat-stt] backend error', msg.message);
 						this._notificationService.error(localize('chatStt.transcribeError', "Speech-to-text transcription failed: {0}", msg.message ?? ''));
 						if (!ready) {

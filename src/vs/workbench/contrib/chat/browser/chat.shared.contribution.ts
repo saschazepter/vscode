@@ -253,6 +253,12 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('chat.fontFamily', "Controls the font family in chat messages."),
 			default: 'default'
 		},
+		'chat.speechToText.enabled': {
+			type: 'boolean',
+			markdownDescription: nls.localize('chat.speechToText.enabled', "Enables dictating into the chat input using speech-to-text. When enabled and a transcription backend is configured (via the product default or `#chat.speechToText.serverUrl#`), a microphone button appears in the chat input."),
+			default: true,
+			tags: ['experimental']
+		},
 		'chat.speechToText.serverUrl': {
 			type: 'string',
 			markdownDescription: nls.localize('chat.speechToText.serverUrl', "Developer override for the speech-to-text transcription backend used to dictate into the chat input. When set, audio is streamed over a WebSocket to this URL, authenticated with the user's GitHub token; the backend holds the model credentials and returns the transcript. Leave empty to use the product's default endpoint. The microphone button appears in the chat input once a backend is configured (via this setting or the product default)."),
