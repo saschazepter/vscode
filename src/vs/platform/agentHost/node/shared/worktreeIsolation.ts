@@ -14,7 +14,7 @@ import { generateUuid } from '../../../../base/common/uuid.js';
 import { localize } from '../../../../nls.js';
 import { ILogService } from '../../../log/common/log.js';
 import { IAgentSessionProjectInfo } from '../../common/agentService.js';
-import { IAgentHostGitService, META_DIFF_BASE_BRANCH } from '../../common/agentHostGitService.js';
+import { IAgentHostGitService, IDefaultBranch, META_DIFF_BASE_BRANCH } from '../../common/agentHostGitService.js';
 import { ISchemaProperty, schemaProperty } from '../../common/agentHostSchema.js';
 import { ISessionDataService } from '../../common/sessionDataService.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
@@ -47,11 +47,6 @@ export class SessionWorkingDirectoryMissingError extends Error {
 
 /** Default upper bound on branch names returned for the branch picker. */
 const BRANCH_COMPLETION_LIMIT = 25;
-
-function branchNameFromStartPoint(startPoint: string): string {
-	const remotePrefix = 'origin/';
-	return startPoint.startsWith(remotePrefix) ? startPoint.substring(remotePrefix.length) : startPoint;
-}
 
 interface ICreatedWorktree {
 	readonly repositoryRoot: URI;
@@ -326,7 +321,7 @@ export class WorktreeIsolation extends Disposable {
 		let worktreeIncludeFilesProperty: ISchemaProperty<readonly string[]> | undefined;
 		if (gitInfo) {
 			const branchReadOnly = isolationValue === 'folder';
-			branchDefault = isolationValue === 'worktree' ? gitInfo.defaultBranch : gitInfo.currentBranch;
+			branchDefault = isolationValue === 'worktree' ? gitInfo.defaultBranch.name : gitInfo.currentBranch;
 			branchProperty = schemaProperty<string>({
 				type: 'string',
 				title: localize('agentHost.sessionConfig.branch', "Branch"),
@@ -708,7 +703,7 @@ export class WorktreeIsolation extends Disposable {
 		return worktree ? projectFromRepositoryRoot(worktree.repositoryRoot) : undefined;
 	}
 
-	private async _getGitInfo(workingDirectory: URI): Promise<{ currentBranch: string; defaultBranch: string } | undefined> {
+	private async _getGitInfo(workingDirectory: URI): Promise<{ currentBranch: string; defaultBranch: IDefaultBranch } | undefined> {
 		const repositoryRoot = await this._gitService.getRepositoryRoot(workingDirectory);
 		if (!repositoryRoot) {
 			return undefined;
@@ -721,14 +716,14 @@ export class WorktreeIsolation extends Disposable {
 		}
 
 		const currentBranch = await this._gitService.getCurrentBranch(repositoryRoot) ?? 'HEAD';
-		const defaultBranch = branchNameFromStartPoint(await this._gitService.getDefaultBranch(repositoryRoot) ?? currentBranch);
+		const defaultBranch = await this._gitService.getDefaultBranch(repositoryRoot) ?? { name: currentBranch, startPoint: currentBranch };
 		return { currentBranch, defaultBranch };
 	}
 
 	private async _resolveBranchStartPoint(repositoryRoot: URI, selectedBranch: string): Promise<string> {
-		const defaultStartPoint = await this._gitService.getDefaultBranch(repositoryRoot);
-		return defaultStartPoint && branchNameFromStartPoint(defaultStartPoint) === selectedBranch
-			? defaultStartPoint
+		const defaultBranch = await this._gitService.getDefaultBranch(repositoryRoot);
+		return defaultBranch?.name === selectedBranch
+			? defaultBranch.startPoint
 			: selectedBranch;
 	}
 

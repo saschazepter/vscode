@@ -64,7 +64,7 @@ suite('WorktreeIsolation', () => {
 			getRepositoryRoot: async () => repoRoot,
 			revParse: async (_root, expr) => expr === 'HEAD' ? headCommit : undefined,
 			getCurrentBranch: async () => 'feature',
-			getDefaultBranch: async () => 'main',
+			getDefaultBranch: async () => ({ name: 'main', startPoint: 'main' }),
 			getBranches: async () => ['main', 'feature'],
 			branchExists: async () => branchExists,
 			hasUncommittedChanges: async () => hasUncommittedChanges,
@@ -173,7 +173,7 @@ suite('WorktreeIsolation', () => {
 
 	test('uses the local default branch name in config and its remote ref as the worktree start point', async () => {
 		const gitService = createGitService();
-		gitService.getDefaultBranch = async () => 'origin/main';
+		gitService.getDefaultBranch = async () => ({ name: 'main', startPoint: 'origin/main' });
 		const isolation = createIsolation(disposables, { gitService });
 
 		const config = await isolation.resolveIsolationConfig({ workingDirectory: repoRoot, config: undefined });

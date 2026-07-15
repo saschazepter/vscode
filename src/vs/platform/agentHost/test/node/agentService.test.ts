@@ -214,7 +214,7 @@ suite('AgentService (node dispatcher)', () => {
 		gitService.getRepositoryRoot = async () => workingDirectory;
 		gitService.revParse = async () => 'head';
 		gitService.getCurrentBranch = async () => 'feature';
-		gitService.getDefaultBranch = async () => 'main';
+		gitService.getDefaultBranch = async () => ({ name: 'main', startPoint: 'main' });
 		const localService = disposables.add(new AgentService(new NullLogService(), fileService, nullSessionDataService, { _serviceBrand: undefined } as IProductService, gitService));
 		localService.setWorktreeIsolation(disposables.add(new WorktreeIsolation(
 			{ generateBranchName: async () => 'agents/test' },
@@ -258,7 +258,7 @@ suite('AgentService (node dispatcher)', () => {
 		gitService.getRepositoryRoot = async () => workingDirectory;
 		gitService.revParse = async () => 'head';
 		gitService.getCurrentBranch = async () => 'feature';
-		gitService.getDefaultBranch = async () => 'origin/main';
+		gitService.getDefaultBranch = async () => ({ name: 'main', startPoint: 'origin/main' });
 		const localService = disposables.add(new AgentService(new NullLogService(), fileService, nullSessionDataService, { _serviceBrand: undefined } as IProductService, gitService));
 		localService.setWorktreeIsolation(disposables.add(new WorktreeIsolation(
 			{ generateBranchName: async () => 'agents/test' },
@@ -296,7 +296,7 @@ suite('AgentService (node dispatcher)', () => {
 		gitService.getRepositoryRoot = async () => workingDirectory;
 		gitService.revParse = async () => 'head';
 		gitService.getCurrentBranch = async () => 'feature';
-		gitService.getDefaultBranch = async () => 'main';
+		gitService.getDefaultBranch = async () => ({ name: 'main', startPoint: 'main' });
 		const localService = disposables.add(new AgentService(new NullLogService(), fileService, nullSessionDataService, { _serviceBrand: undefined } as IProductService, gitService));
 		const isolation = disposables.add(new WorktreeIsolation(
 			{ generateBranchName: async () => 'agents/test' },
