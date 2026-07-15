@@ -2750,7 +2750,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 
 	private showWorkingProgressAfterMcp(context: IChatContentPartRenderContext, templateData: IChatListItemTemplate): void {
 		const originalElement = context.element;
-		const originalContent = [...context.content];
 		const originalRenderedParts = templateData.renderedParts;
 		queueMicrotask(() => {
 			if (!isResponseVM(originalElement) || templateData.currentElement !== originalElement || originalElement.isComplete || originalElement.isCanceled) {
@@ -2761,25 +2760,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				return;
 			}
 
-			const workingProgress = this.shouldShowWorkingProgress(originalElement, originalContent, false, templateData);
-			if (!workingProgress) {
-				return;
-			}
-
-			const content = [...originalContent, workingProgress];
-			const workingPart = this.renderChatContentPart(workingProgress, templateData, {
-				...context,
-				content,
-				contentIndex: content.length - 1,
-			});
-			if (!workingPart) {
-				return;
-			}
-
-			if (workingPart.domNode) {
-				templateData.value.appendChild(workingPart.domNode);
-			}
-			originalRenderedParts.push(workingPart);
+			this.renderChatResponseBasic(originalElement, context.elementIndex, templateData);
 			this.fireItemHeightChange(templateData);
 		});
 	}
