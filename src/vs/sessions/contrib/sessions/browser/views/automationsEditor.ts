@@ -23,6 +23,7 @@ import { automationIcon } from '../../../../../workbench/contrib/chat/browser/ai
 import { basename } from '../../../../../base/common/resources.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { status } from '../../../../../base/browser/ui/aria/aria.js';
 import { ISessionsService } from '../../../../services/sessions/browser/sessionsService.js';
 import { URI } from '../../../../../base/common/uri.js';
@@ -47,6 +48,8 @@ export class AutomationsCardsWidget extends Disposable {
 	private readonly cardDisposables = this._register(new DisposableStore());
 	private readonly historyDisposables = this._register(new DisposableStore());
 
+	private static readonly READ_AUTOMATION_RUNS_KEY = 'sessionsListControl.readAutomationRuns';
+
 	constructor(
 		@IAutomationService private readonly automationService: IAutomationService,
 		@IAutomationRunner private readonly automationRunner: IAutomationRunner,
@@ -54,6 +57,7 @@ export class AutomationsCardsWidget extends Disposable {
 		@IHoverService private readonly hoverService: IHoverService,
 		@ILogService private readonly logService: ILogService,
 		@ISessionsService private readonly sessionsService: ISessionsService,
+		@IStorageService private readonly storageService: IStorageService,
 	) {
 		super();
 
@@ -301,7 +305,27 @@ export class AutomationsCardsWidget extends Disposable {
 			card.setAttribute('role', 'button');
 			this.historyDisposables.add(DOM.addDisposableListener(card, 'click', () => {
 				this.sessionsService.openSession(URI.parse(run.sessionResource!), { preserveFocus: false });
+				this.markRunRead(run.id);
 			}));
+		}
+	}
+
+	private markRunRead(runId: string): void {
+		const raw = this.storageService.get(AutomationsCardsWidget.READ_AUTOMATION_RUNS_KEY, StorageScope.PROFILE);
+		let ids: string[];
+		try {
+			ids = raw ? JSON.parse(raw) : [];
+		} catch {
+			ids = [];
+		}
+		if (!ids.includes(runId)) {
+			ids.push(runId);
+			this.storageService.store(
+				AutomationsCardsWidget.READ_AUTOMATION_RUNS_KEY,
+				JSON.stringify(ids),
+				StorageScope.PROFILE,
+				StorageTarget.USER,
+			);
 		}
 	}
 

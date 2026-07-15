@@ -882,13 +882,13 @@ class SessionSectionRenderer implements ITreeRenderer<SessionListItem, FuzzyScor
 		container.classList.add('session-section');
 		const icon = DOM.append(container, $('span.session-section-icon'));
 		icon.setAttribute('aria-hidden', 'true');
-		const statusIndicator = DOM.append(container, $('span.session-section-status-indicator'));
-		statusIndicator.setAttribute('aria-hidden', 'true');
 		const label = DOM.append(container, $('span.session-section-label'));
 		const count = DOM.append(container, $('span.session-section-count'));
 		const toolbarContainer = DOM.append(container, $('.session-section-toolbar'));
 		const chevron = DOM.append(container, $('span.session-section-chevron'));
 		chevron.setAttribute('aria-hidden', 'true');
+		const statusIndicator = DOM.append(container, $('span.session-section-status-indicator'));
+		statusIndicator.setAttribute('aria-hidden', 'true');
 
 		const contextKeyService = disposables.add(this.contextKeyService.createScoped(container));
 		const scopedInstantiationService = disposables.add(this.instantiationService.createChild(new ServiceCollection([IContextKeyService, contextKeyService])));
@@ -923,6 +923,14 @@ class SessionSectionRenderer implements ITreeRenderer<SessionListItem, FuzzyScor
 		if (element.id === AUTOMATIONS_SECTION_ID) {
 			template.statusIndicator.style.display = '';
 			const statusIcon = template.elementDisposables.add(this.instantiationService.createInstance(SessionStatusIcon, template.statusIndicator));
+			// React to storage changes from the automations editor marking runs as read
+			template.elementDisposables.add(this.storageService.onDidChangeValue(StorageScope.PROFILE, SessionSectionRenderer.READ_AUTOMATION_RUNS_KEY, template.elementDisposables)(() => {
+				this._readAutomationRunIds.clear();
+				for (const id of this.loadReadAutomationRuns()) {
+					this._readAutomationRunIds.add(id);
+				}
+				this._readStateVersion.set(this._readStateVersion.get() + 1, undefined);
+			}));
 			template.elementDisposables.add(autorun(reader => {
 				const runs = this.automationService.runs.read(reader);
 				this._readStateVersion.read(reader);
@@ -1995,7 +2003,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 			}
 			if (isSessionSection(element) && element.id === AUTOMATIONS_SECTION_ID) {
 				this.commandService.executeCommand('sessionsView.manageAutomations');
-				this._sectionRenderer.markAllAutomationRunsRead();
 				return;
 			}
 			if (!isSessionSection(element) && !isSessionGroupItem(element)) {
