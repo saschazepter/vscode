@@ -30,13 +30,13 @@ import { DiffService, EditKeySourceData, EditSourceData, IDocumentWithAnnotatedE
 import { IRandomService } from '../randomService.js';
 import { DocumentEditSourceTracker } from './editTracker.js';
 import { EditTelemetryTrigger, IEditSourcesDetailsTelemetryData, sendEditSourcesDetailsTelemetry } from './editSourceTelemetry.js';
-import { ScmAdapter, ScmRepoAdapter } from './scmAdapter.js';
+import { IScmRepoAdapter, ScmAdapter } from './scmAdapter.js';
 
 const MAX_TRACKED_FILE_SIZE = 5 * 1024 * 1024;
 const AGENT_HOST_TRACKING_SCOPE = 'agentHostAIOnly';
 
 type ComputeDiff = (original: string, modified: string) => Promise<StringEdit>;
-type GetRepo = (resource: URI, reader: IReader) => ScmRepoAdapter | undefined;
+type GetRepo = (resource: URI, reader: IReader) => IScmRepoAdapter | undefined;
 type SendDetails = (data: IEditSourcesDetailsTelemetryData, forwardToGitHub: boolean) => void;
 
 /**
