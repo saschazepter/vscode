@@ -5,6 +5,7 @@
 
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { autorun } from '../../../../base/common/observable.js';
 import { CodeEditorWidget } from '../../../../editor/browser/widget/codeEditor/codeEditorWidget.js';
 import { CompletionContext, CompletionItem, CompletionItemKind } from '../../../../editor/common/languages.js';
 import { IModelDeltaDecoration, InjectedTextCursorStops, ITextModel } from '../../../../editor/common/model.js';
@@ -21,7 +22,7 @@ import { IChatPromptSlashCommand, IPromptsService } from '../../../../workbench/
 import { INewChatModelPickerService } from './newChatModelPicker.js';
 import { isAgentHostTarget } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { getChatSessionType } from '../../../../workbench/contrib/chat/common/model/chatUri.js';
-import { ISessionsService } from '../../../services/sessions/browser/sessionsService.js';
+import { ISessionContext } from '../../../services/sessions/browser/sessionContext.js';
 /**
  * Static command ID used by completion items to trigger immediate slash command execution,
  * mirroring the pattern of core's `ChatSubmitAction` for `executeImmediately` commands.
@@ -69,7 +70,7 @@ export class SlashCommandHandler extends Disposable {
 		@IAICustomizationWorkspaceService private readonly aiCustomizationWorkspaceService: IAICustomizationWorkspaceService,
 		@IPromptsService private readonly promptsService: IPromptsService,
 		@INewChatModelPickerService private readonly newChatModelPickerService: INewChatModelPickerService,
-		@ISessionsService private readonly sessionsService: ISessionsService,
+		@ISessionContext private readonly sessionContext: ISessionContext,
 	) {
 		super();
 		this._commandDecorations = this._editor.createDecorationsCollection();
@@ -155,6 +156,10 @@ export class SlashCommandHandler extends Disposable {
 
 	private _registerDecorations(): void {
 		this._register(this._editor.onDidChangeModelContent(() => this._updateDecorations()));
+		this._register(autorun(reader => {
+			this.sessionContext.session.read(reader);
+			this._updateDecorations();
+		}));
 		this._updateDecorations();
 	}
 
@@ -162,7 +167,7 @@ export class SlashCommandHandler extends Disposable {
 		const model = this._editor.getModel();
 		const value = model?.getValue() ?? '';
 		const match = value.match(/^\/([\w\p{L}\d_\-\.:]+)\s?/u);
-		const activeSession = this.sessionsService.activeSession.get();
+		const activeSession = this.sessionContext.session.get();
 
 		// Agent-host sessions should not get decorations as this class is only for use with Local Agent Harness and Copilot Chat Extension.
 		if (!match || (activeSession && isAgentHostTarget(getChatSessionType(activeSession.resource)))) {
@@ -251,7 +256,7 @@ export class SlashCommandHandler extends Disposable {
 			_debugDisplayName: 'sessionsPromptSlashCommands',
 			triggerCharacters: ['/'],
 			provideCompletionItems: async (model: ITextModel, position: Position, _context: CompletionContext, token: CancellationToken) => {
-				const activeSession = this.sessionsService.activeSession.get();
+				const activeSession = this.sessionContext.session.get();
 				if (activeSession && isAgentHostTarget(getChatSessionType(activeSession.resource))) {
 					// Agent-host sessions delegate completions to the host
 					// process via `AgentHostInputCompletions`.
