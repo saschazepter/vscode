@@ -359,6 +359,8 @@ class LocalSession extends Disposable {
 
 	private readonly _modelTracker = this._register(new MutableDisposable());
 
+	private _wasRequestInProgress = false;
+
 	/**
 	 * Subscribe to live updates from the given chat model. Subsequent calls
 	 * replace any prior subscription. Disposed automatically with the session.
@@ -367,6 +369,11 @@ class LocalSession extends Disposable {
 		this._modelTracker.value = autorun(reader => {
 			const inProgress = model.requestInProgress.read(reader);
 			this._status.set(inProgress ? SessionStatus.InProgress : SessionStatus.Completed, undefined);
+			// A completed turn (in-progress → idle) marks the session unread.
+			if (this._wasRequestInProgress && !inProgress) {
+				this._isRead.set(false, undefined);
+			}
+			this._wasRequestInProgress = inProgress;
 			onChange();
 		});
 	}

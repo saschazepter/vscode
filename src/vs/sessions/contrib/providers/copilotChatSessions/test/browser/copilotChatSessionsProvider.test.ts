@@ -50,7 +50,9 @@ function createMockAgentSession(resource: URI, opts?: {
 	archived?: boolean;
 	read?: boolean;
 	createdAt?: number;
+	status?: ChatSessionStatus;
 	metadata?: Record<string, unknown>;
+	onSetRead?: () => void;
 }): IAgentSession {
 	const providerType = opts?.providerType ?? AgentSessionProviders.Background;
 	let archived = opts?.archived ?? false;
@@ -60,7 +62,7 @@ function createMockAgentSession(resource: URI, opts?: {
 		override readonly providerType = providerType;
 		override readonly providerLabel = 'Copilot';
 		override readonly label = opts?.title ?? 'Test Session';
-		override readonly status = ChatSessionStatus.Completed;
+		override readonly status = opts?.status ?? ChatSessionStatus.Completed;
 		override readonly icon = Codicon.copilot;
 		override readonly timing = { created: opts?.createdAt ?? Date.now(), lastRequestStarted: undefined, lastRequestEnded: undefined };
 		override readonly metadata = opts?.metadata ?? { repositoryPath: '/test/repo' };
@@ -70,7 +72,12 @@ function createMockAgentSession(resource: URI, opts?: {
 		override setPinned(): void { }
 		override isRead(): boolean { return read; }
 		override isMarkedUnread(): boolean { return false; }
-		override setRead(value: boolean): void { read = value; }
+		override setRead(value: boolean): void {
+			read = value;
+			// The real model fires its change event from `setRead`, which is how
+			// the provider mirrors the new read state back onto the adapter.
+			opts?.onSetRead?.();
+		}
 	}();
 }
 
@@ -601,6 +608,34 @@ suite('CopilotChatSessionsProvider', () => {
 			changed: ['Updated Session'],
 		}]);
 	});
+
+	test('marks a session unread when its turn completes (InProgress → terminal)', () => {
+		const resource = URI.from({ scheme: AgentSessionProviders.Background, path: '/turn-session' });
+		// Session starts a turn (in progress) and is currently read.
+		model.addSession(createMockAgentSession(resource, { title: 'Turn Session', createdAt: 1, status: ChatSessionStatus.InProgress, read: true }));
+
+		const provider = createProvider(disposables, model);
+		provider.getSessions(); // Initialize cache with the in-progress session
+
+		// The turn completes: the underlying session flips to a terminal status.
+		model.replaceSession(createMockAgentSession(resource, { title: 'Turn Session', createdAt: 1, status: ChatSessionStatus.Completed, read: true, onSetRead: () => model.fireDidChangeSessions() }));
+
+		assert.strictEqual(provider.getSessions()[0].isRead.get(), false);
+	});
+
+	test('does not mark unread when status stays in progress', () => {
+		const resource = URI.from({ scheme: AgentSessionProviders.Background, path: '/still-running' });
+		model.addSession(createMockAgentSession(resource, { title: 'Running', createdAt: 1, status: ChatSessionStatus.InProgress, read: true }));
+
+		const provider = createProvider(disposables, model);
+		provider.getSessions();
+
+		// A refresh that does not complete the turn must not mark it unread.
+		model.replaceSession(createMockAgentSession(resource, { title: 'Running (updated)', createdAt: 1, status: ChatSessionStatus.InProgress, read: true }));
+
+		assert.strictEqual(provider.getSessions()[0].isRead.get(), true);
+	});
+
 
 	// ---- Session creation -------
 	// Note: createNewSession tests are limited because CopilotCLISession

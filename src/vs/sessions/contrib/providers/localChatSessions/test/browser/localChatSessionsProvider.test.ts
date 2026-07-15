@@ -297,6 +297,46 @@ suite('LocalChatSessionsProvider', () => {
 		assert.strictEqual(provider.getSessions()[0].status.get(), SessionStatus.Completed);
 	});
 
+	test('marks the session unread when a tracked turn completes', async () => {
+		const store = leaks.add(new DisposableStore());
+		const { instantiationService, chatService } = createFixture(store);
+
+		const provider = store.add(instantiationService.createInstance(LocalChatSessionsProvider));
+		const session = await commitNewSession(provider);
+
+		const inProgress = observableValue<boolean>('inProgress', false);
+		chatService.registerModel(createMockModel(session.resource, { requestInProgress: inProgress }));
+		chatService.fireSubmitRequest(session.resource);
+
+		// A freshly-tracked, idle session is read; a completed turn flips it unread.
+		const readBefore = provider.getSessions()[0].isRead.get();
+		inProgress.set(true, undefined);
+		inProgress.set(false, undefined);
+
+		assert.deepStrictEqual({
+			readBefore,
+			readAfter: provider.getSessions()[0].isRead.get(),
+		}, {
+			readBefore: true,
+			readAfter: false,
+		});
+	});
+
+	test('does not mark unread when the model was never in progress', async () => {
+		const store = leaks.add(new DisposableStore());
+		const { instantiationService, chatService } = createFixture(store);
+
+		const provider = store.add(instantiationService.createInstance(LocalChatSessionsProvider));
+		const session = await commitNewSession(provider);
+
+		const inProgress = observableValue<boolean>('inProgress', false);
+		chatService.registerModel(createMockModel(session.resource, { requestInProgress: inProgress }));
+		// Tracking starts (idle) — no in-progress → idle transition occurs.
+		chatService.fireSubmitRequest(session.resource);
+
+		assert.strictEqual(provider.getSessions()[0].isRead.get(), true);
+	});
+
 	test('Event.None and exports remain stable', () => {
 		assert.strictEqual(LocalSessionType.id, 'local');
 		assert.strictEqual(LOCAL_SESSION_ENABLED_SETTING, 'sessions.chat.localAgent.enabled');

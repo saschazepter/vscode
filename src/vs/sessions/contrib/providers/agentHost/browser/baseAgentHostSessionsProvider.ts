@@ -3801,8 +3801,13 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 	 * own constructor. Persisted summaries are hydrated into {@link _sessionCache}
 	 * immediately so {@link getSessions} returns them before the first
 	 * `listSessions()` round-trip resolves.
+	 *
+	 * `legacyStorageKey`, when given, is removed so stale entries are discarded.
 	 */
-	protected _enableSessionCachePersistence(storageKey: string): void {
+	protected _enableSessionCachePersistence(storageKey: string, legacyStorageKey?: string): void {
+		if (legacyStorageKey) {
+			this._storageService.remove(legacyStorageKey, StorageScope.APPLICATION);
+		}
 		this._sessionCacheStorageKey = storageKey;
 		this._loadCachedSessions();
 	}

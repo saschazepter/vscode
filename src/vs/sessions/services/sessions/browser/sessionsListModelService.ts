@@ -52,6 +52,11 @@ export interface ISessionsListModelService {
 	unpinSessions(sessions: ISession[]): void;
 	isSessionPinned(session: ISession): boolean;
 
+	// -- Legacy read-state migration --
+
+	/** One-time, per-session migration of the legacy read set into provider-owned read state. */
+	migrateLegacyReadState(session: ISession): void;
+
 	// -- Manual sort order --
 
 	/**
@@ -99,12 +104,17 @@ export class SessionsListModelService extends Disposable implements ISessionsLis
 
 	private static readonly PINNED_SESSIONS_KEY = 'sessionsListControl.pinnedSessions';
 	private static readonly SORT_OVERRIDES_KEY = 'sessionsListControl.sortOverrides';
+	private static readonly LEGACY_READ_SESSIONS_KEY = 'sessionsListControl.readSessions';
+	private static readonly READ_MIGRATION_DONE_KEY = 'sessionsListControl.readMigrationDone';
+	private static readonly UNREAD_DEFAULT_CUTOFF = new Date('2026-05-12T00:00:00.000Z');
 
 	private readonly _onDidChange = this._register(new Emitter<ISessionListModelChangeEvent>());
 	readonly onDidChange: Event<ISessionListModelChangeEvent> = this._onDidChange.event;
 
 	private readonly _pinnedSessionIds: Set<string>;
 	private readonly _sortOverrides: Record<SessionSortMode, Map<string, number>>;
+	private readonly _legacyReadSessionIds: Set<string> | undefined;
+	private readonly _migratedReadSessionIds: Set<string>;
 
 	constructor(
 		@IStorageService private readonly storageService: IStorageService,
@@ -114,12 +124,35 @@ export class SessionsListModelService extends Disposable implements ISessionsLis
 
 		this._pinnedSessionIds = this.loadSet(SessionsListModelService.PINNED_SESSIONS_KEY);
 		this._sortOverrides = this.loadSortOverrides();
+		const legacyRead = this.loadSet(SessionsListModelService.LEGACY_READ_SESSIONS_KEY);
+		this._legacyReadSessionIds = legacyRead.size > 0 ? legacyRead : undefined;
+		this._migratedReadSessionIds = this.loadSet(SessionsListModelService.READ_MIGRATION_DONE_KEY);
 
 		this._register(this.sessionsManagementService.onDidChangeSessions(e => {
 			for (const session of e.removed) {
 				this.deleteSession(session);
 			}
 		}));
+	}
+
+	// -- Legacy read-state migration --
+
+	// TODO@sandy081 Remove after 2026-10-14. Additive only: never marks unread
+	// (the provider already defaults to unread); the one-shot guard stops a later
+	// legitimate unread from being re-flipped to read on refresh.
+	migrateLegacyReadState(session: ISession): void {
+		const sessionId = session.sessionId;
+		if (this._migratedReadSessionIds.has(sessionId)) {
+			return;
+		}
+		const wasRead = (this._legacyReadSessionIds?.has(sessionId) ?? false)
+			|| session.updatedAt.get() < SessionsListModelService.UNREAD_DEFAULT_CUTOFF;
+		if (!wasRead) {
+			return;
+		}
+		this.sessionsManagementService.markRead(session);
+		this._migratedReadSessionIds.add(sessionId);
+		this.saveSet(SessionsListModelService.READ_MIGRATION_DONE_KEY, this._migratedReadSessionIds);
 	}
 
 	// -- Pinning --

@@ -16,17 +16,17 @@ import { ISessionListModelChangeEvent, SessionListModelChangeKind, SessionsListM
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { mock } from '../../../../../base/test/common/mock.js';
 
-function createSession(id: string, status: SessionStatus = SessionStatus.Completed): ISession {
+function createSession(id: string, status: SessionStatus = SessionStatus.Completed, opts?: { createdAt?: Date; updatedAt?: Date }): ISession {
 	return {
 		sessionId: id,
 		resource: URI.parse(`session://${id}`),
 		providerId: 'test',
 		sessionType: 'test',
 		icon: Codicon.account,
-		createdAt: new Date(),
+		createdAt: opts?.createdAt ?? new Date(),
 		workspace: observableValue(`workspace-${id}`, undefined),
 		title: observableValue(`title-${id}`, id),
-		updatedAt: observableValue(`updatedAt-${id}`, new Date()),
+		updatedAt: observableValue(`updatedAt-${id}`, opts?.updatedAt ?? new Date()),
 		status: observableValue(`status-${id}`, status),
 		changesets: observableValue(`changesets-${id}`, []),
 		changes: observableValue(`changes-${id}`, []),
@@ -222,5 +222,97 @@ suite('SessionsListModelService', () => {
 
 		// Should not throw and should return empty state
 		assert.strictEqual(loadedService.isSessionPinned(createSession('s1')), false);
+	});
+
+	// -- Legacy read-state migration --
+
+	suite('migrateLegacyReadState', () => {
+
+		const LEGACY_KEY = 'sessionsListControl.readSessions';
+		// Fixed reference points relative to the migration's 2026-05-12 cutoff.
+		const PRE_CUTOFF = new Date('2026-01-01T00:00:00.000Z');
+		const POST_CUTOFF = new Date('2026-06-01T00:00:00.000Z');
+
+		function createServiceWithLegacyRead(ids: string[] | undefined): { service: SessionsListModelService; storage: InMemoryStorageService; readMarks: string[]; unreadMarks: string[] } {
+			const storage = disposables.add(new InMemoryStorageService());
+			if (ids !== undefined) {
+				storage.store(LEGACY_KEY, JSON.stringify(ids), StorageScope.PROFILE, StorageTarget.USER);
+			}
+			const readMarks: string[] = [];
+			const unreadMarks: string[] = [];
+			const instantiationService = disposables.add(new TestInstantiationService());
+			instantiationService.stub(IStorageService, storage);
+			instantiationService.stub(ISessionsManagementService, {
+				...mock<ISessionsManagementService>(),
+				onDidChangeSessions: disposables.add(new Emitter<ISessionsChangeEvent>()).event,
+				markRead: async (session: ISession) => { readMarks.push(session.sessionId); },
+				markUnread: async (session: ISession) => { unreadMarks.push(session.sessionId); },
+			});
+			const service = disposables.add(instantiationService.createInstance(SessionsListModelService));
+			return { service, storage, readMarks, unreadMarks };
+		}
+
+		test('marks a session with a legacy read entry read', () => {
+			const { readMarks, unreadMarks, service } = createServiceWithLegacyRead(['s1']);
+			service.migrateLegacyReadState(createSession('s1', SessionStatus.Completed, { updatedAt: POST_CUTOFF }));
+
+			assert.deepStrictEqual({ readMarks, unreadMarks }, { readMarks: ['s1'], unreadMarks: [] });
+		});
+
+		test('marks a pre-cutoff session read even without a legacy read entry', () => {
+			const { readMarks, unreadMarks, service } = createServiceWithLegacyRead(undefined);
+			service.migrateLegacyReadState(createSession('old', SessionStatus.Completed, { updatedAt: PRE_CUTOFF }));
+
+			assert.deepStrictEqual({ readMarks, unreadMarks }, { readMarks: ['old'], unreadMarks: [] });
+		});
+
+		test('never marks a session unread (recent session without a legacy read entry is left alone)', () => {
+			const { readMarks, unreadMarks, service } = createServiceWithLegacyRead(['other']);
+			service.migrateLegacyReadState(createSession('s1', SessionStatus.Completed, { updatedAt: POST_CUTOFF }));
+
+			assert.deepStrictEqual({ readMarks, unreadMarks }, { readMarks: [], unreadMarks: [] });
+		});
+
+		test('is a no-op when there is no legacy read state and the session is recent', () => {
+			const { readMarks, unreadMarks, service } = createServiceWithLegacyRead(undefined);
+			service.migrateLegacyReadState(createSession('s1', SessionStatus.Completed, { updatedAt: POST_CUTOFF }));
+
+			assert.deepStrictEqual({ readMarks, unreadMarks }, { readMarks: [], unreadMarks: [] });
+		});
+
+		test('migrating the same read session twice marks it once', () => {
+			const { readMarks, unreadMarks, service } = createServiceWithLegacyRead(['s1']);
+			const session = createSession('s1', SessionStatus.Completed, { updatedAt: POST_CUTOFF });
+			service.migrateLegacyReadState(session);
+			service.migrateLegacyReadState(session);
+
+			assert.deepStrictEqual({ readMarks, unreadMarks }, { readMarks: ['s1'], unreadMarks: [] });
+		});
+
+		test('persists migrated read sessions so a fresh service does not re-mark them', () => {
+			const storage = disposables.add(new InMemoryStorageService());
+			storage.store(LEGACY_KEY, JSON.stringify(['s1']), StorageScope.PROFILE, StorageTarget.USER);
+			const readMarks: string[] = [];
+			const unreadMarks: string[] = [];
+			const makeService = () => {
+				const instantiationService = disposables.add(new TestInstantiationService());
+				instantiationService.stub(IStorageService, storage);
+				instantiationService.stub(ISessionsManagementService, {
+					...mock<ISessionsManagementService>(),
+					onDidChangeSessions: disposables.add(new Emitter<ISessionsChangeEvent>()).event,
+					markRead: async (session: ISession) => { readMarks.push(session.sessionId); },
+					markUnread: async (session: ISession) => { unreadMarks.push(session.sessionId); },
+				});
+				return disposables.add(instantiationService.createInstance(SessionsListModelService));
+			};
+			const session = createSession('s1', SessionStatus.Completed, { updatedAt: POST_CUTOFF });
+
+			makeService().migrateLegacyReadState(session);
+			// A later launch reloads the persisted "done" set and must skip it,
+			// so a subsequent unread (e.g. a new turn) is not re-flipped to read.
+			makeService().migrateLegacyReadState(session);
+
+			assert.deepStrictEqual({ readMarks, unreadMarks }, { readMarks: ['s1'], unreadMarks: [] });
+		});
 	});
 });

@@ -277,12 +277,6 @@ export class SessionsService extends Disposable implements ISessionsService {
 	/** The in-flight foreground send's "keep newest chat active" follow. */
 	private readonly _sendFollow = this._register(new MutableDisposable<DisposableStore>());
 
-	/**
-	 * Last observed status per session, used to detect background turn
-	 * completions so the session can be marked unread through its provider.
-	 */
-	private readonly _lastKnownStatus = new Map<string, SessionStatus>();
-
 	constructor(
 		@IStorageService private readonly storageService: IStorageService,
 		@ILogService private readonly logService: ILogService,
@@ -333,7 +327,6 @@ export class SessionsService extends Disposable implements ISessionsService {
 			this.logService,
 		));
 		this._register(this.sessionsManagementService.onDidChangeSessions(e => this._navigation.onDidRemoveSessions(e)));
-		this._register(this.sessionsManagementService.onDidChangeSessions(e => this._updateUnreadOnBackgroundCompletion(e)));
 		this._register(this.sessionsManagementService.onDidDeleteSession(session => this._recencyHistory.remove(entry => entry.sessionResource.toString() === session.resource.toString())));
 
 		// Keep the active-session context keys in sync with the visible active
@@ -357,6 +350,16 @@ export class SessionsService extends Disposable implements ISessionsService {
 			const activeSession = this.activeSession.read(reader);
 			if (activeSession) {
 				reader.store.add(this._activeSessionViewListeners(activeSession));
+			}
+		}));
+
+		// Viewing a session marks it read. This keeps the active session read
+		// while it stays active, so `ISession.isRead` is the single source of
+		// truth for read state (no display-only overlay needed).
+		this._register(autorun(reader => {
+			const activeSession = this.activeSession.read(reader);
+			if (activeSession && !activeSession.isRead.read(reader)) {
+				this.sessionsManagementService.markRead(activeSession);
 			}
 		}));
 
@@ -468,38 +471,6 @@ export class SessionsService extends Disposable implements ISessionsService {
 		}));
 
 		return disposables;
-	}
-
-	/**
-	 * Mark a session unread through its provider when it completes a turn in the
-	 * background — i.e. transitions out of {@link SessionStatus.InProgress} to a
-	 * terminal status while it is not the active session. Mirrors the behaviour
-	 * previously owned by the view-level read tracking, but now routes the actual
-	 * marking through the owning provider.
-	 */
-	private _updateUnreadOnBackgroundCompletion(e: ISessionsChangeEvent): void {
-		for (const session of e.removed) {
-			this._lastKnownStatus.delete(session.sessionId);
-		}
-		for (const session of e.added) {
-			this._lastKnownStatus.set(session.sessionId, session.status.get());
-		}
-
-		const activeSessionId = this.activeSession.get()?.sessionId;
-		for (const session of e.changed) {
-			const previous = this._lastKnownStatus.get(session.sessionId);
-			const current = session.status.get();
-			this._lastKnownStatus.set(session.sessionId, current);
-
-			if (
-				previous === SessionStatus.InProgress &&
-				current !== SessionStatus.InProgress &&
-				current !== SessionStatus.Untitled &&
-				session.sessionId !== activeSessionId
-			) {
-				this.sessionsManagementService.markUnread(session).catch(err => this.logService.error(err));
-			}
-		}
 	}
 
 	private _onDidChangeSessions(e: ISessionsChangeEvent): void {
