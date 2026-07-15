@@ -153,18 +153,7 @@ export interface ISessionPlaceholder {
 	readonly label: string;
 }
 
-/** An automation run shown as a child of the Automations section. */
-export interface IAutomationRunItem {
-	readonly automationRun: true;
-	readonly id: string;
-	readonly name: string;
-	readonly status: string;
-	readonly startedAt: string;
-	readonly errorMessage?: string;
-	readonly sessionResource?: string;
-}
-
-export type SessionListItem = ISession | ISessionSection | ISessionGroupItem | ISessionShowMore | ISessionPlaceholder | IAutomationRunItem;
+export type SessionListItem = ISession | ISessionSection | ISessionGroupItem | ISessionShowMore | ISessionPlaceholder;
 
 function isSessionGroupItem(item: SessionListItem): item is ISessionGroupItem {
 	return 'group' in item;
@@ -182,12 +171,8 @@ function isSessionPlaceholder(item: SessionListItem): item is ISessionPlaceholde
 	return 'placeholder' in item && (item as ISessionPlaceholder).placeholder === true;
 }
 
-function isAutomationRunItem(item: SessionListItem): item is IAutomationRunItem {
-	return 'automationRun' in item && (item as IAutomationRunItem).automationRun === true;
-}
-
 function isSessionItem(item: SessionListItem): item is ISession {
-	return !isSessionGroupItem(item) && !isSessionSection(item) && !isSessionShowMore(item) && !isSessionPlaceholder(item) && !isAutomationRunItem(item);
+	return !isSessionGroupItem(item) && !isSessionSection(item) && !isSessionShowMore(item) && !isSessionPlaceholder(item);
 }
 
 const SHOW_MORE_FOLDERS_LABEL = '__more_folders__';
@@ -234,9 +219,6 @@ class SessionsTreeDelegate implements IListVirtualDelegate<SessionListItem> {
 		if (isSessionPlaceholder(element)) {
 			return SessionsTreeDelegate.PLACEHOLDER_HEIGHT;
 		}
-		if (isAutomationRunItem(element)) {
-			return SessionsTreeDelegate.PLACEHOLDER_HEIGHT;
-		}
 
 		let height = this._isPhone() ? SessionsTreeDelegate.ITEM_HEIGHT_PHONE : SessionsTreeDelegate.ITEM_HEIGHT;
 		if (this._approvalModel) {
@@ -267,9 +249,6 @@ class SessionsTreeDelegate implements IListVirtualDelegate<SessionListItem> {
 		}
 		if (isSessionPlaceholder(element)) {
 			return SessionPlaceholderRenderer.TEMPLATE_ID;
-		}
-		if (isAutomationRunItem(element)) {
-			return AutomationRunRenderer.TEMPLATE_ID;
 		}
 		return SessionItemRenderer.TEMPLATE_ID;
 	}
@@ -1195,60 +1174,6 @@ class SessionPlaceholderRenderer implements ITreeRenderer<SessionListItem, Fuzzy
 	disposeTemplate(_template: HTMLElement): void { }
 }
 
-interface IAutomationRunTemplate {
-	readonly container: HTMLElement;
-	readonly statusIcon: HTMLElement;
-	readonly label: HTMLElement;
-	readonly time: HTMLElement;
-}
-
-class AutomationRunRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, IAutomationRunTemplate> {
-	static readonly TEMPLATE_ID = 'automation-run';
-	readonly templateId = AutomationRunRenderer.TEMPLATE_ID;
-
-	renderTemplate(container: HTMLElement): IAutomationRunTemplate {
-		container.classList.add('automation-run-item');
-		const statusIcon = DOM.append(container, $('span.automation-run-status-icon'));
-		const label = DOM.append(container, $('span.automation-run-label'));
-		const time = DOM.append(container, $('span.automation-run-time'));
-		return { container, statusIcon, label, time };
-	}
-
-	renderElement(node: ITreeNode<SessionListItem, FuzzyScore>, _index: number, template: IAutomationRunTemplate): void {
-		const element = node.element;
-		if (!isAutomationRunItem(element)) {
-			return;
-		}
-		const iconId = element.status === 'completed' ? 'pass'
-			: element.status === 'failed' ? 'error'
-				: element.status === 'running' ? 'sync~spin'
-					: 'circle-outline';
-		template.statusIcon.className = `automation-run-status-icon codicon codicon-${iconId}`;
-		template.label.textContent = element.name;
-		template.time.textContent = this.formatTime(element.startedAt);
-		if (element.errorMessage) {
-			template.time.textContent += ` · ${element.errorMessage}`;
-		}
-	}
-
-	private formatTime(iso: string): string {
-		const date = new Date(iso);
-		const now = new Date();
-		const isToday = date.toDateString() === now.toDateString();
-		if (isToday) {
-			return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-		}
-		const yesterday = new Date(now);
-		yesterday.setDate(yesterday.getDate() - 1);
-		if (date.toDateString() === yesterday.toDateString()) {
-			return `Yesterday ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
-		}
-		return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-	}
-
-	disposeTemplate(_template: IAutomationRunTemplate): void { }
-}
-
 //#region Accessibility
 
 class SessionsAccessibilityProvider {
@@ -1280,9 +1205,6 @@ class SessionsAccessibilityProvider {
 		}
 		if (isSessionPlaceholder(element)) {
 			return element.label;
-		}
-		if (isAutomationRunItem(element)) {
-			return `${element.name}, ${element.status}`;
 		}
 		const title = element.title.get();
 		const updated = fromNow(element.updatedAt.get(), true);
@@ -1365,9 +1287,6 @@ class SessionsListDragAndDrop extends Disposable implements ITreeDragAndDrop<Ses
 			return null;
 		}
 		if (isSessionPlaceholder(element)) {
-			return null;
-		}
-		if (isAutomationRunItem(element)) {
 			return null;
 		}
 		return element.resource.toString();
@@ -1858,7 +1777,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 		const showMoreRenderer = new SessionShowMoreRenderer();
 		const placeholderRenderer = new SessionPlaceholderRenderer();
-		const automationRunRenderer = new AutomationRunRenderer();
 		const sectionRenderer = new SessionSectionRenderer(true /* hideSectionCount */, instantiationService, contextKeyService);
 		this._sectionRenderer = sectionRenderer;
 		const groupRenderer = new SessionGroupRenderer({
@@ -1884,7 +1802,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 				groupRenderer,
 				showMoreRenderer,
 				placeholderRenderer,
-				automationRunRenderer,
 			],
 			{
 				accessibilityProvider: new SessionsAccessibilityProvider(),
@@ -1913,9 +1830,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 						if (isSessionPlaceholder(element)) {
 							return `placeholder:${element.sectionId}`;
 						}
-						if (isAutomationRunItem(element)) {
-							return `automation-run:${element.id}`;
-						}
 						return element.resource.toString();
 					},
 					getGroupId: (element: SessionListItem) => {
@@ -1930,9 +1844,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 						}
 						if (isSessionPlaceholder(element)) {
 							return NotSelectableGroupId;
-						}
-						if (isAutomationRunItem(element)) {
-							return 3;
 						}
 						// Use a distinct group for archived (done) sessions so that
 						// multi-selection cannot span the workspace and done sections.
@@ -1966,9 +1877,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 						if (isSessionPlaceholder(element)) {
 							return element.label;
 						}
-						if (isAutomationRunItem(element)) {
-							return element.name;
-						}
 						return element.title.get();
 					}
 				},
@@ -1997,12 +1905,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 				return;
 			}
 			if (isSessionPlaceholder(element)) {
-				return;
-			}
-			if (isAutomationRunItem(element)) {
-				if (element.sessionResource) {
-					this.options.onSessionOpen(URI.parse(element.sessionResource), false, false);
-				}
 				return;
 			}
 			if (isSessionSection(element) && element.id === AUTOMATIONS_SECTION_ID) {
@@ -2847,10 +2749,6 @@ export class SessionsList extends Disposable implements ISessionsList {
 
 		if (isSessionGroupItem(element)) {
 			this.showGroupContextMenu(element, e.anchor);
-			return;
-		}
-
-		if (isAutomationRunItem(element)) {
 			return;
 		}
 

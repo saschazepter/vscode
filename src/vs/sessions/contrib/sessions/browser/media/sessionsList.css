@@ -8,8 +8,7 @@
 	height: 100%;
 	min-height: 0;
 
-	.monaco-list-row:has(.session-item),
-	.monaco-list-row:has(.automation-run-item) {
+	.monaco-list-row:has(.session-item) {
 		border-radius: var(--vscode-cornerRadius-medium);
 		margin: 0 10px;
 		width: calc(100% - 20px);
@@ -45,9 +44,7 @@
 		}
 	}
 
-	.monaco-list-row.selected .session-title,
-	.monaco-list-row.selected .automation-run-label,
-	.monaco-list-row.selected .automation-run-time {
+	.monaco-list-row.selected .session-title {
 		color: unset;
 	}
 
@@ -501,34 +498,6 @@
 	display: block;
 }
 
-/* Automation run items */
-.automation-run-item {
-	display: flex;
-	flex-direction: row;
-	align-items: center;
-	gap: 6px;
-	padding: 0 12px;
-	height: 100%;
-	overflow: hidden;
-}
-
-.automation-run-item .automation-run-status-icon {
-	flex-shrink: 0;
-}
-
-.automation-run-item .automation-run-label {
-	flex: 1;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.automation-run-item .automation-run-time {
-	flex-shrink: 0;
-	opacity: 0.7;
-	font-size: 0.9em;
-}
-
 .monaco-list-row:hover .session-section .session-section-chevron.collapsible,
 .monaco-list-row.focused .session-section .session-section-chevron.collapsible {
 	display: flex;
@@ -560,9 +529,7 @@
 
 	&.session-section-focus-from-pointer {
 		.monaco-list-row.focused:has(.session-section),
-		.monaco-list-row.selected:has(.session-section),
-		.monaco-list-row.focused:has(.automation-run-item),
-		.monaco-list-row.selected:has(.automation-run-item) {
+		.monaco-list-row.selected:has(.session-section) {
 			outline: none !important;
 		}
 	}
