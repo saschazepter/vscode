@@ -12,6 +12,7 @@ import { AnnotatedStringEdit, StringEdit } from '../../../../../editor/common/co
 import { StringText } from '../../../../../editor/common/core/text/abstractText.js';
 import { ILanguageService } from '../../../../../editor/common/languages/language.js';
 import { IEditorWorkerService } from '../../../../../editor/common/services/editorWorker.js';
+import { IModelService } from '../../../../../editor/common/services/model.js';
 import { EditSources, TextModelEditSource } from '../../../../../editor/common/textModelEditSource.js';
 import { AgentSession } from '../../../../../platform/agentHost/common/agentService.js';
 import { IAgentHostConnectionsService } from '../../../../../platform/agentHost/common/agentHostConnectionsService.js';
@@ -24,6 +25,7 @@ import { ILogService } from '../../../../../platform/log/common/log.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentity.js';
 import { ISCMService } from '../../../scm/common/scm.js';
+import { ITextFileService } from '../../../../services/textfile/common/textfiles.js';
 import { DiffService, EditKeySourceData, EditSourceData, IDocumentWithAnnotatedEdits } from '../helpers/documentWithAnnotatedEdits.js';
 import { IRandomService } from '../randomService.js';
 import { DocumentEditSourceTracker } from './editTracker.js';
@@ -268,7 +270,9 @@ export class AgentHostEditSourceTracking extends Disposable {
 		@IAgentHostConnectionsService private readonly _connectionsService: IAgentHostConnectionsService,
 		@IFileService private readonly _fileService: IFileService,
 		@IEditorWorkerService editorWorkerService: IEditorWorkerService,
+		@IModelService private readonly _modelService: IModelService,
 		@ILanguageService private readonly _languageService: ILanguageService,
+		@ITextFileService private readonly _textFileService: ITextFileService,
 		@ISCMService scmService: ISCMService,
 		@IUriIdentityService private readonly _uriIdentityService: IUriIdentityService,
 		@IRandomService private readonly _randomService: IRandomService,
@@ -333,6 +337,14 @@ export class AgentHostEditSourceTracking extends Disposable {
 
 		const resource = toAgentHostUri(normalized.resource, connectionAuthority);
 		if (extname(resource.path).toLowerCase() === '.ipynb') {
+			return;
+		}
+		const editedResources = [normalized.beforeUri, normalized.afterUri]
+			.filter(resource => resource !== undefined)
+			.map(resource => toAgentHostUri(resource, connectionAuthority));
+		const dirtyResource = editedResources.find(resource => isDirtyOpenTextModel(resource, this._modelService, this._textFileService));
+		if (dirtyResource) {
+			this._logService.trace(`[AgentHostEditSourceTracking] Skipping attribution for dirty open file ${dirtyResource.toString()}`);
 			return;
 		}
 
@@ -452,4 +464,8 @@ export class AgentHostEditSourceTracking extends Disposable {
 function firstLine(text: string): string {
 	const lineBreak = text.search(/\r\n|\r|\n/);
 	return lineBreak === -1 ? text : text.substring(0, lineBreak);
+}
+
+export function isDirtyOpenTextModel(resource: URI, modelService: Pick<IModelService, 'getModel'>, textFileService: Pick<ITextFileService, 'isDirty'>): boolean {
+	return modelService.getModel(resource) !== null && textFileService.isDirty(resource);
 }
