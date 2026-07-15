@@ -40,6 +40,7 @@ from typing import Optional
 
 import httpx
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 # --- Configuration (server-side only) ---------------------------------------
@@ -57,6 +58,18 @@ REQUIRE_GITHUB_AUTH = os.environ.get("REQUIRE_GITHUB_AUTH", "true").lower() != "
 MAX_AUDIO_BYTES = int(os.environ.get("MAX_AUDIO_BYTES", str(25 * 1024 * 1024)))
 
 app = FastAPI(title="chat-stt-backend")
+
+# The VS Code renderer issues a cross-origin request (and sends an
+# `Authorization` header), so the browser fires a CORS preflight. Allow all
+# origins/headers/methods -- auth is by bearer token, not cookies, so there is
+# no credentialed-origin concern. Tighten `allow_origins` for production if the
+# calling origin is known.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # --- Authorization ----------------------------------------------------------
