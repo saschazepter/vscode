@@ -65,6 +65,26 @@ const copilotTgrepPlatforms = [
 
 const mxcArchitectures = ['x64', 'arm64'];
 
+/**
+ * The platform-arch native addon packages that `koffi` ships. `koffi` is a
+ * transitive dependency of `@github/copilot-sdk` and, starting with koffi 3.x,
+ * its native binary is delivered through per-platform
+ * `@koromix/koffi-{platform}-{arch}` optional dependency packages instead of a
+ * single bundled package. koffi names them using Node's
+ * `${process.platform}-${process.arch}` convention.
+ *
+ * npm only installs the host-compatible optional dependency, so the full set is
+ * used both to strip wrong-platform packages at packaging time and to know
+ * which package to materialize for cross-builds.
+ */
+const koffiPlatforms = [
+	'darwin-arm64', 'darwin-x64',
+	'freebsd-arm64', 'freebsd-ia32', 'freebsd-x64',
+	'linux-arm64', 'linux-ia32', 'linux-loong64', 'linux-riscv64', 'linux-x64',
+	'openbsd-ia32', 'openbsd-x64',
+	'win32-arm64', 'win32-ia32', 'win32-x64',
+];
+
 function toCopilotTgrepPlatformArch(platform: string, arch: string): string {
 	if (platform === 'alpine') {
 		return `linuxmusl-${arch}`;
@@ -156,6 +176,25 @@ export function getCopilotTgrepExcludeFilter(platform: string, arch: string): st
 }
 
 /**
+ * Returns a glob filter that strips `@koromix/koffi-*` native addon packages
+ * for platforms other than the build target. koffi ships one optional package
+ * per platform-arch; only the target platform's package is needed in the
+ * shipped product. Wrong-platform packages (for example the FreeBSD/OpenBSD
+ * builds, or a Linux koffi.node in a Windows build) are stripped so they do not
+ * bloat the package or break per-platform codesigning of native `.node` files.
+ */
+export function getKoffiExcludeFilter(platform: string, arch: string): string[] {
+	const { nodePlatform, nodeArch } = toNodePlatformArch(platform, arch);
+	const target = `${nodePlatform}-${nodeArch}`;
+	const nonTargetPlatforms = koffiPlatforms.filter(p => p !== target);
+
+	return [
+		'**',
+		...nonTargetPlatforms.map(p => `!**/node_modules/@koromix/koffi-${p}/**`),
+	];
+}
+
+/**
  * Returns a glob filter that strips @github/copilot platform packages
  * for architectures other than the build target.
  *
@@ -213,6 +252,24 @@ export function ensureCopilotPlatformPackage(platform: string, arch: string, nod
 	}
 
 	const packageName = `@github/copilot-${copilotPackagePlatformArch}`;
+	ensureNpmPackage(packageName, nodeModulesRoot, options);
+}
+
+/**
+ * Ensures the selected `@koromix/koffi-{platform}` native addon package is
+ * present before packaging. npm only installs the host-compatible optional
+ * dependency of `koffi`, but VS Code packaging can cross-build targets such as
+ * win32-x64 on a linux-x64 host, so the target platform's koffi package must be
+ * materialized from the lockfile when it is missing.
+ */
+export function ensureKoffiPlatformPackage(platform: string, arch: string, nodeModulesRoot = 'node_modules', options: EnsureNpmPackageOptions = {}): void {
+	const { nodePlatform, nodeArch } = toNodePlatformArch(platform, arch);
+	const target = `${nodePlatform}-${nodeArch}`;
+	if (!koffiPlatforms.includes(target)) {
+		return;
+	}
+
+	const packageName = `@koromix/koffi-${target}`;
 	ensureNpmPackage(packageName, nodeModulesRoot, options);
 }
 

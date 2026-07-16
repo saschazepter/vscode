@@ -9,7 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { suite, test } from 'node:test';
 import { create } from 'tar';
-import { copilotPlatforms, ensureCopilotPlatformPackage, getCopilotExcludeFilter, getCopilotRuntimePrebuildFiles, getMxcExcludeFilter, prepareBuiltInCopilotRipgrepShim } from '../copilot.ts';
+import { copilotPlatforms, ensureCopilotPlatformPackage, getCopilotExcludeFilter, getCopilotRuntimePrebuildFiles, getKoffiExcludeFilter, getMxcExcludeFilter, prepareBuiltInCopilotRipgrepShim } from '../copilot.ts';
 
 suite('copilot', () => {
 	test('keeps the public copilot platform package include list scoped to the selected package', () => {
@@ -241,6 +241,36 @@ suite('copilot', () => {
 				'!**/node_modules/@microsoft/mxc-sdk/bin/x64/**',
 				'!**/node_modules/@microsoft/mxc-sdk/bin/arm64/**',
 			]
+		);
+	});
+
+	test('keeps only the target platform of @koromix/koffi', () => {
+		assert.deepStrictEqual(
+			getKoffiExcludeFilter('win32', 'x64'),
+			[
+				'**',
+				'!**/node_modules/@koromix/koffi-darwin-arm64/**',
+				'!**/node_modules/@koromix/koffi-darwin-x64/**',
+				'!**/node_modules/@koromix/koffi-freebsd-arm64/**',
+				'!**/node_modules/@koromix/koffi-freebsd-ia32/**',
+				'!**/node_modules/@koromix/koffi-freebsd-x64/**',
+				'!**/node_modules/@koromix/koffi-linux-arm64/**',
+				'!**/node_modules/@koromix/koffi-linux-ia32/**',
+				'!**/node_modules/@koromix/koffi-linux-loong64/**',
+				'!**/node_modules/@koromix/koffi-linux-riscv64/**',
+				'!**/node_modules/@koromix/koffi-linux-x64/**',
+				'!**/node_modules/@koromix/koffi-openbsd-ia32/**',
+				'!**/node_modules/@koromix/koffi-openbsd-x64/**',
+				'!**/node_modules/@koromix/koffi-win32-arm64/**',
+				'!**/node_modules/@koromix/koffi-win32-ia32/**',
+			]
+		);
+	});
+
+	test('maps alpine koffi builds to the glibc linux package', () => {
+		assert.deepStrictEqual(
+			getKoffiExcludeFilter('alpine', 'arm64').filter(pattern => pattern.includes('koffi-linux-arm64')),
+			[]
 		);
 	});
 });
