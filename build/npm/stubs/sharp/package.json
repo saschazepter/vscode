@@ -1,7 +1,7 @@
 {
 	"name": "sharp",
 	"version": "0.34.5",
-	"description": "Pure-JS stub of sharp. @huggingface/transformers imports sharp eagerly for its image backend, but VS Code only uses the audio (speech-to-text) pipeline, which never calls it. Stubbing avoids sharp's native (libvips) binary and its Electron build failures.",
+	"description": "Pure-JS stub of sharp; see index.js for rationale.",
 	"main": "index.js",
 	"license": "MIT"
 }
