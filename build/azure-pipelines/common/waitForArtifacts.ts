@@ -29,17 +29,27 @@ async function getPipelineTimeline(): Promise<Timeline> {
 
 class ProducerFailedError extends Error { }
 
-// Finds the timeline record for the job that produces the given artifact, matched
-// by its display name or identifier, but only if it has completed without success.
-// A producer that succeeded (even with issues) is expected to have uploaded its
-// artifact, so it does not count as a failure here.
+// Determines whether the job that produces the given artifact has failed for good,
+// matched by its display name or identifier. A producer counts as failed only when
+// at least one of its records completed unsuccessfully and none of its records is
+// still running or completed successfully. This guards against job retries, where an
+// earlier failed attempt and a newer in-progress or successful attempt can both appear
+// in the timeline. A producer that succeeded (even with issues) is expected to have
+// uploaded its artifact, so it does not count as a failure here.
 function findFailedProducer(timeline: Timeline, producer: string): TimelineRecord | undefined {
-	return timeline.records.find(r =>
-		r.type === 'Job' &&
-		(r.name === producer || r.identifier === producer) &&
-		r.state === 'completed' &&
-		r.result !== 'succeeded' &&
-		r.result !== 'succeededWithIssues');
+	const records = timeline.records.filter(r =>
+		r.type === 'Job' && (r.name === producer || r.identifier === producer));
+
+	if (records.length === 0) {
+		return undefined;
+	}
+
+	// A still-running or successful attempt means the artifact may still be uploaded.
+	if (records.some(r => r.state !== 'completed' || r.result === 'succeeded' || r.result === 'succeededWithIssues')) {
+		return undefined;
+	}
+
+	return records[0];
 }
 
 // Parses the command line into the set of artifacts to wait for and an optional
