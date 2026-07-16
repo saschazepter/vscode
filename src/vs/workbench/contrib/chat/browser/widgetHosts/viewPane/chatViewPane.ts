@@ -1050,6 +1050,10 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		// Make the initial session resolution cancelable so an explicit request
 		// (e.g. New Local Chat via `startNewLocalSession`) can preempt a slow /
 		// blocking default-provider resolution instead of waiting for it.
+		// Cancel any previous in-flight resolution first: assigning to the
+		// MutableDisposable only disposes the old source, and disposing a
+		// CancellationTokenSource does not cancel it.
+		this._applyModelCts.value?.cancel();
 		const cts = this._applyModelCts.value = new CancellationTokenSource();
 		this.restoringSession = this._applyModel(cts.token).catch(err => {
 			if (!isCancellationError(err)) {
