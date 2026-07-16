@@ -16,9 +16,11 @@ import { UnifiedDocumentReconciler } from '../../browser/helpers/unifiedDocument
 import { DocumentEditSourceTracker } from '../../browser/telemetry/editTracker.js';
 import {
 	compareEditTrackerSnapshots,
+	filterEditTrackerSnapshot,
 	IEditTrackerSnapshot,
 	projectUnifiedDocumentTracker,
 	snapshotDocumentEditSourceTracker,
+	snapshotEditSourceDetails,
 } from '../../browser/telemetry/unifiedDocumentTrackerProjection.js';
 
 suite('Unified Document Tracker Projection', () => {
@@ -133,6 +135,55 @@ suite('Unified Document Tracker Projection', () => {
 				'targetContent: expected "reference", got "candidate"',
 				'totalRetainedCount: expected 0, got 1',
 			],
+		});
+	});
+
+	test('projects details payload fields for a filtered source scope', async () => {
+		const initialContent = '';
+		const agent = agentSource();
+		const reconciler = new UnifiedDocumentReconciler<TextModelEditSource>(initialContent, EditSources.reloadFromDisk());
+		reconciler.modelConnected({ content: '', dirty: false });
+		reconciler.modelEdit({
+			before: '',
+			after: 'user',
+			source: EditSources.cursor({ kind: 'type' }),
+			kind: 'model',
+			dirty: true,
+		});
+		reconciler.diskSnapshot('user');
+		reconciler.agentTransition({
+			before: 'user',
+			after: 'useragent',
+			source: agent,
+			correlation: 'tool-1',
+			kind: 'edit',
+		});
+
+		const projected = await projectUnifiedDocumentTracker(reconciler.getSnapshot(), computeDiff);
+		const filtered = filterEditTrackerSnapshot(projected, source => source.trackingScope === 'agentHostAIOnly');
+
+		assert.deepStrictEqual({
+			sourceIndex: filtered.sources[0]?.sourceIndex,
+			details: snapshotEditSourceDetails(filtered),
+		}, {
+			sourceIndex: 0,
+			details: {
+				totalModifiedCount: 9,
+				rows: [{
+					sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost-$trackingScope:agentHostAIOnly',
+					cleanedSourceKey: 'source:Chat.applyEdits-$harness:copilotcli-$origin:agentHost-$trackingScope:agentHostAIOnly',
+					extensionId: undefined,
+					extensionVersion: undefined,
+					modelId: 'model',
+					conversationId: 'session',
+					requestId: 'request',
+					origin: 'agentHost',
+					harness: 'copilotcli',
+					trackingScope: 'agentHostAIOnly',
+					modifiedCount: 9,
+					deltaModifiedCount: 9,
+				}],
+			},
 		});
 	});
 });

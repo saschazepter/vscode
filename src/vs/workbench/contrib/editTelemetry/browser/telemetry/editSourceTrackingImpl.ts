@@ -12,12 +12,15 @@ import { ITelemetryService } from '../../../../../platform/telemetry/common/tele
 import { IUserAttentionService } from '../../../../services/userAttention/common/userAttentionService.js';
 import { AnnotatedDocument, IAnnotatedDocuments } from '../helpers/annotatedDocuments.js';
 import { CreateSuggestionIdForChatOrInlineChatCaller, EditTelemetryReportEditArcForChatOrInlineChatSender, EditTelemetryReportInlineEditArcSender } from './arcTelemetrySender.js';
-import { createDocWithJustReason, EditSource } from '../helpers/documentWithAnnotatedEdits.js';
+import { createDocWithJustReason, DiffService, EditSource } from '../helpers/documentWithAnnotatedEdits.js';
 import { DocumentEditSourceTracker, TrackedEdit } from './editTracker.js';
 import { sumByCategory } from '../helpers/utils.js';
 import { IScmRepoAdapter, ScmAdapter } from './scmAdapter.js';
 import { IRandomService } from '../randomService.js';
 import { EditTelemetryMode, EditTelemetryTrigger, sendEditSourcesDetailsTelemetry } from './editSourceTelemetry.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
+import { UnifiedEditTrackerShadowTracking } from './unifiedEditTrackerShadowTracking.js';
+import { getEditTrackerComparisonDifferenceFields, snapshotDocumentEditSourceTracker, UnifiedDocumentComputeDiff } from './unifiedDocumentTrackerProjection.js';
 
 export type EditTelemetryCategory = 'nes' | 'inlineCompletionsCopilot' | 'inlineCompletionsNES' | 'inlineCompletionsOther' | 'otherAI' | 'user' | 'ide' | 'external' | 'unknown';
 
@@ -43,13 +46,22 @@ export class EditSourceTrackingImpl extends Disposable {
 	constructor(
 		private readonly _statsEnabled: IObservable<boolean>,
 		private readonly _annotatedDocuments: IAnnotatedDocuments,
+		private readonly _shadowTracking: UnifiedEditTrackerShadowTracking | undefined,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 	) {
 		super();
 
 		const scmBridge = this._instantiationService.createInstance(ScmAdapter);
+		const diffService = this._instantiationService.createInstance(DiffService);
 		this._states = mapObservableArrayCached(this, this._annotatedDocuments.documents, (doc, store) => {
-			return [doc.document, store.add(this._instantiationService.createInstance(TrackedDocumentInfo, doc, scmBridge, this._statsEnabled))] as const;
+			return [doc.document, store.add(this._instantiationService.createInstance(
+				TrackedDocumentInfo,
+				doc,
+				scmBridge,
+				this._statsEnabled,
+				this._shadowTracking,
+				(original, modified) => diffService.computeDiff(original, modified),
+			))] as const;
 		});
 		this.docsState = this._states.map((entries) => new Map(entries));
 
@@ -68,10 +80,13 @@ class TrackedDocumentInfo extends Disposable {
 		private readonly _doc: AnnotatedDocument,
 		private readonly _scm: ScmAdapter,
 		private readonly _statsEnabled: IObservable<boolean>,
+		private readonly _shadowTracking: UnifiedEditTrackerShadowTracking | undefined,
+		private readonly _computeDiff: UnifiedDocumentComputeDiff,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@IRandomService private readonly _randomService: IRandomService,
 		@IUserAttentionService private readonly _userAttentionService: IUserAttentionService,
+		@ILogService private readonly _logService: ILogService,
 	) {
 		super();
 
@@ -86,10 +101,12 @@ class TrackedDocumentInfo extends Disposable {
 			if (!this._statsEnabled.read(reader)) { return undefined; }
 			longtermResetSignal.read(reader);
 
+			this._shadowTracking?.startComparison('local', this._doc.document.uri);
 			const t = reader.store.add(new DocumentEditSourceTracker(docWithJustReason, undefined));
 			const startFocusTime = this._userAttentionService.totalFocusTimeMs;
 			const startTime = Date.now();
 			reader.store.add(toDisposable(() => {
+				this._compareLongTermShadow(t);
 				// send long term document telemetry
 				if (!t.isEmpty()) {
 					this.sendTelemetry('longterm', longtermReason, t, this._userAttentionService.totalFocusTimeMs - startFocusTime, Date.now() - startTime);
@@ -183,6 +200,33 @@ class TrackedDocumentInfo extends Disposable {
 			return t;
 		}).recomputeInitiallyAndOnChange(this._store);
 
+	}
+
+	private _compareLongTermShadow(tracker: DocumentEditSourceTracker): void {
+		const shadowTracking = this._shadowTracking;
+		if (!shadowTracking) {
+			return;
+		}
+		const reference = snapshotDocumentEditSourceTracker(tracker, this._doc.document.value.get().value);
+		shadowTracking.compareAndCheckpoint(
+			'local',
+			this._doc.document.uri,
+			reference,
+			this._computeDiff,
+			{ skipAgentHostTransitions: true, detailsOrder: 'retained' },
+		).then(result => {
+			if (!result) {
+				return;
+			}
+			const detailsFields = getEditTrackerComparisonDifferenceFields(result.detailsComparison);
+			if (detailsFields.length === 0) {
+				this._logService.trace('[EditSourceTrackingImpl] Unified long-term details shadow comparison matched');
+			} else {
+				this._logService.trace(`[EditSourceTrackingImpl] Unified long-term details shadow comparison differed: ${detailsFields.join(',')}`);
+			}
+		}, () => {
+			this._logService.error('[EditSourceTrackingImpl] Unified long-term details shadow comparison failed');
+		});
 	}
 
 	async sendTelemetry(mode: EditTelemetryMode, trigger: EditTelemetryTrigger, t: DocumentEditSourceTracker, focusTime: number, actualTime: number) {

@@ -32,6 +32,7 @@ import { DocumentEditSourceTracker } from './editTracker.js';
 import { EditTelemetryTrigger, IEditSourcesDetailsTelemetryData, sendEditSourcesDetailsTelemetry } from './editSourceTelemetry.js';
 import { IScmRepoAdapter, ScmAdapter } from './scmAdapter.js';
 import { UnifiedEditTrackerShadowTracking } from './unifiedEditTrackerShadowTracking.js';
+import { getEditTrackerComparisonDifferenceFields, IEditTrackerSnapshot, snapshotDocumentEditSourceTracker } from './unifiedDocumentTrackerProjection.js';
 
 const MAX_TRACKED_FILE_SIZE = 5 * 1024 * 1024;
 const AGENT_HOST_TRACKING_SCOPE = 'agentHostAIOnly';
@@ -103,7 +104,7 @@ export class AgentHostTrackedFile extends Disposable {
 		private readonly _sendDetails: SendDetails,
 		private readonly _logService: ILogService,
 		private readonly _onDidExpire: () => void,
-		private readonly _onDidReconcile?: (resource: URI, content: string) => void,
+		private readonly _onDidFlush?: (resource: URI, content: string, reference: IEditTrackerSnapshot) => void,
 	) {
 		super();
 		this._resource = observableValue(this, resource);
@@ -154,14 +155,15 @@ export class AgentHostTrackedFile extends Disposable {
 			}
 
 			await this._document.reconcile(currentText, this._computeDiff);
-			this._onDidReconcile?.(this.resource, currentText);
 			const tracker = this._tracker.value;
 			if (!tracker) {
 				return;
 			}
 			tracker.applyPendingExternalEdits();
+			const reference = snapshotDocumentEditSourceTracker(tracker, currentText);
 			this._sendTelemetry(trigger, tracker);
 			this._tracker.value = new DocumentEditSourceTracker(this._document, undefined);
+			this._onDidFlush?.(this.resource, currentText, reference);
 		});
 	}
 
@@ -412,13 +414,42 @@ export class AgentHostEditSourceTracking extends Disposable {
 				(data, forwardToGitHub) => sendEditSourcesDetailsTelemetry(this._telemetryService, data, forwardToGitHub),
 				this._logService,
 				() => this._removeTrackedFile(createdTrackedFile),
-				(currentResource, content) => this._shadowTracking?.applyDiskSnapshot(currentResource, content),
+				(currentResource, content, reference) => this._compareAgentHostShadow(currentResource, content, reference),
 			);
 			trackedFile = createdTrackedFile;
 			this._trackedFiles.set(resourceKey, trackedFile);
 		}
+		this._shadowTracking?.retainAgentResource(resource);
 
 		await trackedFile.applyEdit(beforeText, afterText, source, languageId);
+	}
+
+	private _compareAgentHostShadow(resource: URI, content: string, reference: IEditTrackerSnapshot): void {
+		const shadowTracking = this._shadowTracking;
+		if (!shadowTracking) {
+			return;
+		}
+		shadowTracking.applyDiskSnapshot(resource, content);
+		shadowTracking.compareAndCheckpoint(
+			'agentHost',
+			resource,
+			reference,
+			(original, modified) => this._diffService.computeDiff(original, modified),
+			{ sourceFilter: source => source.trackingScope === AGENT_HOST_TRACKING_SCOPE },
+		).then(result => {
+			if (!result) {
+				return;
+			}
+			const trackerFields = getEditTrackerComparisonDifferenceFields(result.trackerComparison);
+			const detailsFields = getEditTrackerComparisonDifferenceFields(result.detailsComparison);
+			if (trackerFields.length === 0 && detailsFields.length === 0) {
+				this._logService.trace('[AgentHostEditSourceTracking] Unified shadow comparison matched');
+			} else {
+				this._logService.trace(`[AgentHostEditSourceTracking] Unified shadow comparison differed: tracker=${trackerFields.join(',')}; details=${detailsFields.join(',')}`);
+			}
+		}, () => {
+			this._logService.error('[AgentHostEditSourceTracking] Unified shadow comparison failed');
+		});
 	}
 
 	private async _readSnapshot(resource: URI, connectionAuthority: string): Promise<string | undefined> {
@@ -461,6 +492,7 @@ export class AgentHostEditSourceTracking extends Disposable {
 		for (const [key, value] of this._trackedFiles) {
 			if (value === trackedFile) {
 				this._trackedFiles.delete(key);
+				this._shadowTracking?.releaseAgentResource(trackedFile.resource);
 				trackedFile.dispose();
 				return;
 			}
@@ -469,6 +501,7 @@ export class AgentHostEditSourceTracking extends Disposable {
 
 	private _clearTrackedFiles(): void {
 		for (const trackedFile of this._trackedFiles.values()) {
+			this._shadowTracking?.releaseAgentResource(trackedFile.resource);
 			trackedFile.dispose();
 		}
 		this._trackedFiles.clear();

@@ -74,12 +74,12 @@ export class EditTrackingFeature extends Disposable {
 		const instantiationServiceWithInterceptedTelemetry = this._instantiationService.createChild(new ServiceCollection(
 			[ITelemetryService, this._instantiationService.createInstance(DataChannelForwardingTelemetryService)]
 		));
-		const impl = this._register(instantiationServiceWithInterceptedTelemetry.createInstance(EditSourceTrackingImpl, shouldSendDetails, this._annotatedDocuments));
 		const unifiedShadowTracking = this._register(new UnifiedEditTrackerShadowTracking(this._workspace, {
 			isDirty: resource => this._textFileService.isDirty(resource),
 			canonicalize: resource => this._uriIdentityService.asCanonicalUri(resource),
 			getComparisonKey: resource => this._uriIdentityService.extUri.getComparisonKey(resource),
 		}));
+		const impl = this._register(instantiationServiceWithInterceptedTelemetry.createInstance(EditSourceTrackingImpl, shouldSendDetails, this._annotatedDocuments, unifiedShadowTracking));
 		this._register(instantiationServiceWithInterceptedTelemetry.createInstance(AgentHostEditSourceTracking, shouldSendDetails, unifiedShadowTracking));
 
 		this._register(autorun((reader) => {

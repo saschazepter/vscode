@@ -16,7 +16,18 @@ export type UnifiedDocumentComputeDiff = (before: string, after: string) => Prom
 
 export interface IEditTrackerSourceSnapshot {
 	readonly sourceKey: string;
+	readonly sourceIndex: number;
+	readonly retainedIndex: number | undefined;
 	readonly representativeKey: string;
+	readonly cleanedSourceKey: string;
+	readonly extensionId: string | undefined;
+	readonly extensionVersion: string | undefined;
+	readonly modelId: string | undefined;
+	readonly conversationId: string | undefined;
+	readonly requestId: string | undefined;
+	readonly origin: string | undefined;
+	readonly harness: string | undefined;
+	readonly trackingScope: string | undefined;
 	readonly insertedCount: number;
 	readonly retainedCount: number;
 }
@@ -41,6 +52,29 @@ export interface IEditTrackerShadowComparison {
 	readonly differences: readonly string[];
 }
 
+export interface IEditSourceDetailsRowSnapshot {
+	readonly sourceKey: string;
+	readonly cleanedSourceKey: string;
+	readonly extensionId: string | undefined;
+	readonly extensionVersion: string | undefined;
+	readonly modelId: string | undefined;
+	readonly conversationId: string | undefined;
+	readonly requestId: string | undefined;
+	readonly origin: string | undefined;
+	readonly harness: string | undefined;
+	readonly trackingScope: string | undefined;
+	readonly modifiedCount: number;
+	readonly deltaModifiedCount: number;
+}
+
+export interface IEditSourceDetailsSnapshot {
+	readonly totalModifiedCount: number;
+	readonly rows: readonly IEditSourceDetailsRowSnapshot[];
+}
+
+export type EditTrackerSourceSnapshotFilter = (source: IEditTrackerSourceSnapshot) => boolean;
+export type EditSourceDetailsOrder = 'tracker' | 'retained';
+
 /**
  * Replays a unified transition snapshot through the existing edit-source tracker.
  */
@@ -55,7 +89,7 @@ export async function projectUnifiedDocumentTracker(
 		let content = snapshot.initialContent;
 		for (const transition of snapshot.transitions) {
 			if (transition.before !== content) {
-				throw new Error(`Unified transition ${transition.id} starts from ${JSON.stringify(transition.before)}, expected ${JSON.stringify(content)}`);
+				throw new Error(`Unified transition ${transition.id} starts from unexpected content`);
 			}
 			if (transition.before !== transition.after) {
 				const edit = await computeDiff(transition.before, transition.after);
@@ -70,7 +104,7 @@ export async function projectUnifiedDocumentTracker(
 				throw new Error('Unified pending reload does not connect projected and target content');
 			}
 		} else if (content !== snapshot.content) {
-			throw new Error(`Unified transition replay produced ${JSON.stringify(content)}, expected ${JSON.stringify(snapshot.content)}`);
+			throw new Error('Unified transition replay produced unexpected content');
 		}
 
 		return snapshotDocumentEditSourceTracker(tracker, content, snapshot.content, !!snapshot.pendingReload);
@@ -91,15 +125,33 @@ export function snapshotDocumentEditSourceTracker(
 		sourceKey: range.sourceKey,
 	}));
 	const retainedByKey = new Map<string, number>();
-	for (const range of ranges) {
+	const retainedIndexByKey = new Map<string, number>();
+	for (const [rangeIndex, range] of ranges.entries()) {
 		retainedByKey.set(range.sourceKey, (retainedByKey.get(range.sourceKey) ?? 0) + range.endExclusive - range.start);
+		if (!retainedIndexByKey.has(range.sourceKey)) {
+			retainedIndexByKey.set(range.sourceKey, rangeIndex);
+		}
 	}
-	const sources = tracker.getAllKeys().map(sourceKey => ({
-		sourceKey,
-		representativeKey: tracker.getRepresentative(sourceKey)?.toKey(Number.MAX_SAFE_INTEGER) ?? '',
-		insertedCount: tracker.getTotalInsertedCharactersCount(sourceKey),
-		retainedCount: retainedByKey.get(sourceKey) ?? 0,
-	})).sort((left, right) => left.sourceKey.localeCompare(right.sourceKey));
+	const sources = tracker.getAllKeys().map((sourceKey, sourceIndex) => {
+		const representative = tracker.getRepresentative(sourceKey);
+		return {
+			sourceKey,
+			sourceIndex,
+			retainedIndex: retainedIndexByKey.get(sourceKey),
+			representativeKey: representative?.toKey(Number.MAX_SAFE_INTEGER) ?? '',
+			cleanedSourceKey: representative?.toKey(1, { $extensionId: false, $extensionVersion: false, $modelId: false }) ?? '',
+			extensionId: representative?.props.$extensionId,
+			extensionVersion: representative?.props.$extensionVersion,
+			modelId: representative?.props.$modelId,
+			conversationId: representative?.props.$$sessionId,
+			requestId: representative?.props.$$requestId,
+			origin: representative?.props.$origin,
+			harness: representative?.props.$harness,
+			trackingScope: representative?.props.$trackingScope,
+			insertedCount: tracker.getTotalInsertedCharactersCount(sourceKey),
+			retainedCount: retainedByKey.get(sourceKey) ?? 0,
+		};
+	}).sort((left, right) => left.sourceKey.localeCompare(right.sourceKey));
 
 	return {
 		content,
@@ -108,6 +160,57 @@ export function snapshotDocumentEditSourceTracker(
 		totalRetainedCount: ranges.reduce((sum, range) => sum + range.endExclusive - range.start, 0),
 		sources,
 		ranges,
+	};
+}
+
+export function filterEditTrackerSnapshot(
+	snapshot: IEditTrackerSnapshot,
+	filter: EditTrackerSourceSnapshotFilter,
+): IEditTrackerSnapshot {
+	const sources = snapshot.sources
+		.filter(filter)
+		.sort((left, right) => left.sourceIndex - right.sourceIndex)
+		.map((source, sourceIndex) => ({ ...source, sourceIndex }))
+		.sort((left, right) => left.sourceKey.localeCompare(right.sourceKey));
+	const sourceKeys = new Set(sources.map(source => source.sourceKey));
+	const ranges = snapshot.ranges.filter(range => sourceKeys.has(range.sourceKey));
+	return {
+		...snapshot,
+		totalRetainedCount: ranges.reduce((sum, range) => sum + range.endExclusive - range.start, 0),
+		sources,
+		ranges,
+	};
+}
+
+export function snapshotEditSourceDetails(
+	snapshot: IEditTrackerSnapshot,
+	filter: EditTrackerSourceSnapshotFilter = () => true,
+	limit = 30,
+	order: EditSourceDetailsOrder = 'tracker',
+): IEditSourceDetailsSnapshot {
+	const filteredSources = snapshot.sources.filter(filter);
+	const getOrder = (source: IEditTrackerSourceSnapshot) => order === 'retained'
+		? source.retainedIndex ?? snapshot.ranges.length + source.sourceIndex
+		: source.sourceIndex;
+	const sources = filteredSources
+		.sort((left, right) => right.retainedCount - left.retainedCount || getOrder(left) - getOrder(right))
+		.slice(0, limit);
+	return {
+		totalModifiedCount: filteredSources.reduce((sum, source) => sum + source.retainedCount, 0),
+		rows: sources.map(source => ({
+			sourceKey: source.sourceKey,
+			cleanedSourceKey: source.cleanedSourceKey,
+			extensionId: source.extensionId,
+			extensionVersion: source.extensionVersion,
+			modelId: source.modelId,
+			conversationId: source.conversationId,
+			requestId: source.requestId,
+			origin: source.origin,
+			harness: source.harness,
+			trackingScope: source.trackingScope,
+			modifiedCount: source.retainedCount,
+			deltaModifiedCount: source.insertedCount,
+		})).sort((left, right) => left.sourceKey.localeCompare(right.sourceKey)),
 	};
 }
 
@@ -123,6 +226,20 @@ export function compareEditTrackerSnapshots(
 	compareField('sources', reference.sources, candidate.sources, differences);
 	compareField('ranges', reference.ranges, candidate.ranges, differences);
 	return { equal: differences.length === 0, differences };
+}
+
+export function compareEditSourceDetailsSnapshots(
+	reference: IEditSourceDetailsSnapshot,
+	candidate: IEditSourceDetailsSnapshot,
+): IEditTrackerShadowComparison {
+	const differences: string[] = [];
+	compareField('totalModifiedCount', reference.totalModifiedCount, candidate.totalModifiedCount, differences);
+	compareField('rows', reference.rows, candidate.rows, differences);
+	return { equal: differences.length === 0, differences };
+}
+
+export function getEditTrackerComparisonDifferenceFields(comparison: IEditTrackerShadowComparison): readonly string[] {
+	return comparison.differences.map(difference => difference.substring(0, difference.indexOf(':')));
 }
 
 function compareField(field: string, reference: unknown, candidate: unknown, differences: string[]): void {

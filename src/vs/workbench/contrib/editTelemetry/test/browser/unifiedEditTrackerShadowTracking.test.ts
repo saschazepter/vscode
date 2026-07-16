@@ -13,7 +13,8 @@ import { StringText } from '../../../../../editor/common/core/text/abstractText.
 import { computeStringDiff } from '../../../../../editor/common/services/editorWebWorker.js';
 import { EditSources, TextModelEditSource } from '../../../../../editor/common/textModelEditSource.js';
 import { IObservableDocument, ObservableWorkspace, StringEditWithReason } from '../../browser/helpers/observableWorkspace.js';
-import { IEditTrackerSnapshot } from '../../browser/telemetry/unifiedDocumentTrackerProjection.js';
+import { UnifiedDocumentReconciler } from '../../browser/helpers/unifiedDocumentReconciler.js';
+import { IEditTrackerSnapshot, projectUnifiedDocumentTracker } from '../../browser/telemetry/unifiedDocumentTrackerProjection.js';
 import { UnifiedEditTrackerShadowTracking } from '../../browser/telemetry/unifiedEditTrackerShadowTracking.js';
 
 suite('Unified Edit Tracker Shadow Tracking', () => {
@@ -117,9 +118,157 @@ suite('Unified Edit Tracker Shadow Tracking', () => {
 		};
 		const result = await shadow.compare(resource, reference, computeDiff);
 
-		assert.deepStrictEqual(result?.comparison, {
+		assert.deepStrictEqual(result?.trackerComparison, {
 			equal: false,
 			differences: ['totalRetainedCount: expected 0, got 5'],
+		});
+		store.dispose();
+	});
+
+	test('checkpoints repeated Agent Host comparison windows', async () => {
+		const store = new DisposableStore();
+		const workspace = new TestWorkspace();
+		const shadow = store.add(createShadow(workspace, () => false));
+		const resource = URI.file('C:\\repo\\file.ts');
+		shadow.applyAgentEdit({
+			resource,
+			before: '',
+			after: 'one',
+			source: agentSource(),
+			correlation: 'tool-1',
+			kind: 'create',
+		});
+		const firstReference = await projectSingleAgentTransition('', 'one', 'tool-1', 'create');
+		const first = await shadow.compareAndCheckpoint(
+			'agentHost',
+			resource,
+			firstReference,
+			computeDiff,
+			{ sourceFilter: source => source.trackingScope === 'agentHostAIOnly' },
+		);
+
+		shadow.applyAgentEdit({
+			resource,
+			before: 'one',
+			after: 'two',
+			source: agentSource(),
+			correlation: 'tool-2',
+			kind: 'edit',
+		});
+		const secondReference = await projectSingleAgentTransition('one', 'two', 'tool-2', 'edit');
+		const second = await shadow.compareAndCheckpoint(
+			'agentHost',
+			resource,
+			secondReference,
+			computeDiff,
+			{ sourceFilter: source => source.trackingScope === 'agentHostAIOnly' },
+		);
+
+		assert.deepStrictEqual({
+			firstTracker: first?.trackerComparison,
+			firstDetails: first?.detailsComparison,
+			secondTracker: second?.trackerComparison,
+			secondDetails: second?.detailsComparison,
+			secondCandidateContent: second?.candidate.content,
+			secondInsertedCount: second?.candidate.sources[0]?.insertedCount,
+		}, {
+			firstTracker: { equal: true, differences: [] },
+			firstDetails: { equal: true, differences: [] },
+			secondTracker: { equal: true, differences: [] },
+			secondDetails: { equal: true, differences: [] },
+			secondCandidateContent: 'two',
+			secondInsertedCount: 3,
+		});
+		store.dispose();
+	});
+
+	test('checkpoints local windows containing Agent Host transitions without comparing them', async () => {
+		const store = new DisposableStore();
+		const workspace = new TestWorkspace();
+		const document = store.add(new TestObservableDocument('before'));
+		workspace.setDocuments([document]);
+		const shadow = store.add(createShadow(workspace, () => false));
+		shadow.startComparison('local', document.uri);
+		shadow.applyAgentEdit({
+			resource: document.uri,
+			before: 'before',
+			after: 'after',
+			source: agentSource(),
+			correlation: 'tool-1',
+			kind: 'edit',
+		});
+		document.apply(StringEditWithReason.replace(OffsetRange.ofLength(6), 'after', EditSources.reloadFromDisk()));
+		const skipped = await shadow.compareAndCheckpoint(
+			'local',
+			document.uri,
+			emptySnapshot('after'),
+			computeDiff,
+			{ skipAgentHostTransitions: true },
+		);
+
+		document.apply(StringEditWithReason.replace(new OffsetRange(5, 5), '!', EditSources.cursor({ kind: 'type' })));
+		const userReference = await projectSingleModelTransition('after', 'after!');
+		const compared = await shadow.compareAndCheckpoint(
+			'local',
+			document.uri,
+			userReference,
+			computeDiff,
+			{ skipAgentHostTransitions: true },
+		);
+
+		assert.deepStrictEqual({
+			skipped,
+			trackerComparison: compared?.trackerComparison,
+			detailsComparison: compared?.detailsComparison,
+		}, {
+			skipped: undefined,
+			trackerComparison: { equal: true, differences: [] },
+			detailsComparison: { equal: true, differences: [] },
+		});
+		store.dispose();
+	});
+
+	test('releases closed resources after queued comparisons complete', async () => {
+		const store = new DisposableStore();
+		const workspace = new TestWorkspace();
+		const document = store.add(new TestObservableDocument('content'));
+		workspace.setDocuments([document]);
+		const shadow = store.add(createShadow(workspace, () => false));
+		shadow.startComparison('local', document.uri);
+		const comparison = shadow.compareAndCheckpoint('local', document.uri, emptySnapshot('content'), computeDiff);
+
+		workspace.setDocuments([]);
+		await comparison;
+		await Promise.resolve();
+
+		assert.strictEqual(shadow.getSnapshot(document.uri), undefined);
+		store.dispose();
+	});
+
+	test('retains closed resources while an Agent Host tracker owns them', async () => {
+		const store = new DisposableStore();
+		const workspace = new TestWorkspace();
+		const shadow = store.add(createShadow(workspace, () => false));
+		const resource = URI.file('C:\\repo\\file.ts');
+		shadow.applyAgentEdit({
+			resource,
+			before: '',
+			after: 'content',
+			source: agentSource(),
+			correlation: 'tool-1',
+			kind: 'create',
+		});
+		shadow.retainAgentResource(resource);
+		const retained = !!shadow.getSnapshot(resource);
+		shadow.releaseAgentResource(resource);
+		await Promise.resolve();
+
+		assert.deepStrictEqual({
+			retained,
+			afterRelease: shadow.getSnapshot(resource),
+		}, {
+			retained: true,
+			afterRelease: undefined,
 		});
 		store.dispose();
 	});
@@ -150,6 +299,41 @@ function agentSource(): TextModelEditSource {
 		origin: 'agentHost',
 		trackingScope: 'agentHostAIOnly',
 	});
+}
+
+async function projectSingleAgentTransition(
+	before: string,
+	after: string,
+	correlation: string,
+	kind: 'create' | 'edit',
+): Promise<IEditTrackerSnapshot> {
+	const reconciler = new UnifiedDocumentReconciler<TextModelEditSource>(before, EditSources.reloadFromDisk());
+	reconciler.agentTransition({ before, after, source: agentSource(), correlation, kind });
+	return projectUnifiedDocumentTracker(reconciler.getSnapshot(), computeDiff);
+}
+
+async function projectSingleModelTransition(before: string, after: string): Promise<IEditTrackerSnapshot> {
+	const reconciler = new UnifiedDocumentReconciler<TextModelEditSource>(before, EditSources.reloadFromDisk());
+	reconciler.modelConnected({ content: before, dirty: false });
+	reconciler.modelEdit({
+		before,
+		after,
+		source: EditSources.cursor({ kind: 'type' }),
+		kind: 'model',
+		dirty: true,
+	});
+	return projectUnifiedDocumentTracker(reconciler.getSnapshot(), computeDiff);
+}
+
+function emptySnapshot(content: string): IEditTrackerSnapshot {
+	return {
+		content,
+		targetContent: content,
+		hasPendingReload: false,
+		totalRetainedCount: 0,
+		sources: [],
+		ranges: [],
+	};
 }
 
 class TestWorkspace extends ObservableWorkspace {

@@ -104,6 +104,45 @@ suite('Agent Host Edit Source Tracking', () => {
 			openDirty: true,
 		});
 	});
+
+	test('provides a stable tracker snapshot at flush', async () => {
+		const disposables = new DisposableStore();
+		let currentText = '';
+		const snapshots: { content: string; sources: readonly { sourceKey: string; insertedCount: number; retainedCount: number }[] }[] = [];
+		const trackedFile = disposables.add(new AgentHostTrackedFile(
+			URI.file('C:\\repo\\file.ts'),
+			'',
+			async () => currentText,
+			async (original, modified) => computeStringDiff(original, modified, { maxComputationTimeMs: 500 }, 'advanced'),
+			() => undefined,
+			() => 'stats-1',
+			() => { },
+			new NullLogService(),
+			() => { },
+			(_resource, content, snapshot) => snapshots.push({
+				content,
+				sources: snapshot.sources.map(source => ({
+					sourceKey: source.sourceKey,
+					insertedCount: source.insertedCount,
+					retainedCount: source.retainedCount,
+				})),
+			}),
+		));
+
+		currentText = 'agent';
+		await trackedFile.applyEdit('', currentText, agentHostEditSource('copilotcli', 'session-1', 'turn-1'), 'typescript');
+		await trackedFile.flush('hashChange');
+
+		assert.deepStrictEqual(snapshots, [{
+			content: 'agent',
+			sources: [{
+				sourceKey: 'source:Chat.applyEdits-$harness:copilotcli-$origin:agentHost-$trackingScope:agentHostAIOnly',
+				insertedCount: 5,
+				retainedCount: 5,
+			}],
+		}]);
+		disposables.dispose();
+	});
 });
 
 function agentHostEditSource(harness: string, sessionId: string, turnId: string) {
