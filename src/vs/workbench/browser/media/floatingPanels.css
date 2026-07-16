@@ -323,7 +323,7 @@
  * gap. Match that larger bottom inset. Excluded when a bottom panel is present, since
  * then the side/aux bars abut the panel card and keep the normal 2px trailing margin.
  */
-.monaco-workbench.floating-panels.nostatusbar:not(.panel-position-bottom) .monaco-sash.vertical:not(.part .monaco-sash)::before {
+.monaco-workbench.floating-panels.nostatusbar:is(:not(.panel-position-bottom), .nopanel) .monaco-sash.vertical:not(.part .monaco-sash)::before {
 	bottom: calc(var(--vscode-spacing-size40) * 2);
 }
 
