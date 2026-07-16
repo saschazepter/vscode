@@ -310,6 +310,21 @@ suite('ChatConfiguration defaults', () => {
 		});
 	});
 
+	test('explicit New Local Chat wins over a non-local current session even when the agent host default is Copilot', () => {
+		const configurationService = new TestConfigurationService();
+		const chatSessionsService = createChatSessionsService(SessionType.AgentHostCopilot);
+		const storageService = disposables.add(new TestStorageService());
+
+		// "New Local Chat" from a Copilot session must resolve to local: the explicit
+		// override outranks both the current session type and the computed default,
+		// so the clear path opens a local session instead of dropping the request.
+		assert.deepStrictEqual({
+			resolved: resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, true, { explicitOverride: localChatSessionType, currentSessionType: SessionType.AgentHostCopilot }),
+		}, {
+			resolved: { sessionType: localChatSessionType, isPreferCopilotHarnessSwap: false },
+		});
+	});
+
 	test('default session resource follows the agent host default', () => {
 		const configurationService = new TestConfigurationService();
 		const chatSessionsService = createChatSessionsService(SessionType.AgentHostCopilot);
