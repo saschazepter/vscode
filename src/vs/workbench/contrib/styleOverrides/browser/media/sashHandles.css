@@ -63,7 +63,7 @@
 }
 
 /* Modal editors already separate panes with a gap, so their hover highlight is redundant. */
-.style-override .modal-editor-part .monaco-sash:is(.hover, .active)::before {
+.style-override .modal-editor-part > .content .monaco-sash:is(.hover, .active)::before {
 	background: transparent;
 }
 
