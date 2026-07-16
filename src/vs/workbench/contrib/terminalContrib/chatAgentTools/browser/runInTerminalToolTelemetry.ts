@@ -240,6 +240,16 @@ export class RunInTerminalToolTelemetry {
 			compactedChars: report.compacted.chars
 		});
 	}
+
+	logCompactionFailed(): void {
+		type TelemetryEvent = Record<never, never>;
+		type TelemetryClassification = {
+			owner: 'aiday-mar';
+			comment: 'Tracks failures when terminal output compaction throws before producing a report';
+		};
+
+		this._telemetryService.publicLog2<TelemetryEvent, TelemetryClassification>('toolUse.runInTerminal.compactionFailed', {});
+	}
 }
 
 

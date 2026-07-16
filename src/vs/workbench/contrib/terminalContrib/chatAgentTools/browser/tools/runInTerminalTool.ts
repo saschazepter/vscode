@@ -2496,11 +2496,15 @@ export class RunInTerminalTool extends Disposable implements IToolImpl {
 		}
 		let outputForResult = terminalResult;
 		if (this._configurationService.getValue<boolean>(TerminalChatAgentToolsSettingId.OutputCompaction) === true) {
-			const commandForCompaction = toolSpecificData.commandLine.forDisplay ?? command;
-			const report = compact(commandForCompaction, terminalResult);
-			this._telemetry.logCompaction(report);
-			if (report.applied) {
-				outputForResult = report.compactedOutput;
+			try {
+				const commandForCompaction = toolSpecificData.commandLine.forDisplay ?? command;
+				const report = compact(commandForCompaction, terminalResult);
+				this._telemetry.logCompaction(report);
+				if (report.applied) {
+					outputForResult = report.compactedOutput;
+				}
+			} catch {
+				this._telemetry.logCompactionFailed();
 			}
 		}
 		// Process large output: write to file if needed, then truncate with file path
