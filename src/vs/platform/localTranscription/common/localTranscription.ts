@@ -54,7 +54,9 @@ export interface ILocalTranscriptionService {
 
 	/**
 	 * Whether on-device transcription can run in this environment. False on web
-	 * (no utility process); consumers should fall back to a cloud backend.
+	 * (no utility process) and on desktop platforms/architectures without an
+	 * onnxruntime-node binary. When false, dictation is unavailable — there is
+	 * no cloud fallback.
 	 */
 	readonly isSupported: boolean;
 

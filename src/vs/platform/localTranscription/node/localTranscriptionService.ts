@@ -22,6 +22,15 @@ const DEFAULT_MODEL = 'onnx-community/whisper-base';
 /** Minimum audio (seconds) before a first interim transcription is attempted. */
 const MIN_INTERIM_SECONDS = 1.0;
 
+/**
+ * Upper bound (seconds) on how much audio interim passes will re-transcribe.
+ * Each interim pass re-runs Whisper over all audio since recording began, so
+ * cost grows with utterance length; past this we stop scheduling interims and
+ * let the final pass produce the complete transcript, keeping interim CPU
+ * bounded. The last interim result stays visible until stop().
+ */
+const MAX_INTERIM_SECONDS = 45;
+
 /** Debounce (ms) between interim transcription passes while recording. */
 const INTERIM_DEBOUNCE_MS = 1200;
 
@@ -59,6 +68,13 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 	private _language: string | undefined;
 	private _sessionActive = false;
 
+	/**
+	 * Monotonically bumped whenever a session starts or is reset, so a slow
+	 * inference started for one session can detect that it is now stale and
+	 * avoid emitting its transcript into a later session.
+	 */
+	private _generation = 0;
+
 	/** Coalesces interim passes so only one inference runs at a time. */
 	private _inferenceInFlight = false;
 	private _interimTimer: ReturnType<typeof setTimeout> | undefined;
@@ -80,7 +96,6 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 		// Kick off (or reuse) model loading; do not block starting capture on it.
 		this._ensurePipeline(options.cacheDir, options.model ?? DEFAULT_MODEL).catch(() => { /* status already reported */ });
 	}
-
 	private async _ensurePipeline(cacheDir: string, model: string): Promise<ASRPipeline> {
 		if (this._pipeline && this._loadedModel === model) {
 			return this._pipeline;
@@ -143,6 +158,12 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 		if (this._sampleCount < SAMPLE_RATE * MIN_INTERIM_SECONDS) {
 			return;
 		}
+		// Stop live interim passes once the utterance is long enough that
+		// re-transcribing all of it each time gets expensive; the final pass on
+		// stop() still transcribes the full recording.
+		if (this._sampleCount > SAMPLE_RATE * MAX_INTERIM_SECONDS) {
+			return;
+		}
 		this._interimTimer = setTimeout(() => {
 			this._interimTimer = undefined;
 			void this._runInference(false);
@@ -157,6 +178,7 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 		if (this._inferenceInFlight && !isFinal) {
 			return this._lastText;
 		}
+		const generation = this._generation;
 		this._inferenceInFlight = true;
 		try {
 			const audio = this._mergedSamples();
@@ -166,6 +188,11 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 				language: this._language,
 				task: 'transcribe',
 			});
+			// The session may have been cancelled/replaced while this inference
+			// was running; drop the result so it can't leak into a later session.
+			if (generation !== this._generation) {
+				return this._lastText;
+			}
 			const text = (Array.isArray(result) ? result.map(r => r.text).join(' ') : result.text ?? '').trim();
 			this._lastText = text;
 			if (this._sessionActive || isFinal) {
@@ -196,6 +223,17 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 			clearTimeout(this._interimTimer);
 			this._interimTimer = undefined;
 		}
+		// On first use the model may still be downloading/loading when the user
+		// stops. Wait for it so the whole recording is transcribed instead of
+		// being dropped and returning an empty string.
+		if (!this._pipeline && this._pipelinePromise) {
+			try {
+				await this._pipelinePromise;
+			} catch {
+				// Load failed; status already reported as Error below we fall
+				// through to the no-pipeline path.
+			}
+		}
 		if (!this._pipeline) {
 			// Model never finished loading; nothing to transcribe.
 			const text = this._lastText;
@@ -221,6 +259,8 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 
 	private _resetSession(): void {
 		this._sessionActive = false;
+		// Invalidate any inference still running for the session being torn down.
+		this._generation++;
 		this._samples = [];
 		this._sampleCount = 0;
 		this._lastText = '';

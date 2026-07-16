@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IDisposable } from '../../../../../base/common/lifecycle.js';
+import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { ICodeEditor } from '../../../../../editor/browser/editorBrowser.js';
 import { Position } from '../../../../../editor/common/core/position.js';
 import { Range } from '../../../../../editor/common/core/range.js';
@@ -49,13 +49,33 @@ class LiveTranscriptInserter {
 		this._end = new Position(endLine, endColumn);
 		this._editor.setPosition(this._end);
 	}
+
+	/**
+	 * Remove everything this inserter has written (including any leading space it
+	 * added) and restore the caret to where dictation began. Used when dictation
+	 * is cancelled so no dictated text is left behind.
+	 */
+	revert(): void {
+		const model = this._editor.getModel();
+		if (!model || !this._anchor || !this._end) {
+			return;
+		}
+		this._editor.executeEdits('chatSpeechToText', [{
+			range: Range.fromPositions(this._anchor, this._end),
+			text: '',
+			forceMoveMarkers: true,
+		}]);
+		this._editor.setPosition(this._anchor);
+		this._anchor = undefined;
+		this._end = undefined;
+	}
 }
 
 interface IActiveDictation {
 	readonly service: IChatSpeechToTextService;
 	readonly editor: ICodeEditor;
 	readonly inserter: LiveTranscriptInserter;
-	readonly listener: IDisposable;
+	readonly disposables: DisposableStore;
 }
 
 /**
@@ -81,14 +101,30 @@ export async function startDictation(service: IChatSpeechToTextService, editor: 
 		return;
 	}
 	const inserter = new LiveTranscriptInserter(editor);
-	const listener = service.onDidUpdateTranscript(text => inserter.update(text));
-	_active = { service, editor, inserter, listener };
+	const disposables = new DisposableStore();
+	disposables.add(service.onDidUpdateTranscript(text => inserter.update(text)));
+	// If the service ends the session on its own (e.g. the model failed to load
+	// and it surfaced an error), drop the stale active reference so the toolbar
+	// and glow reflect that dictation is no longer running.
+	disposables.add(service.onDidChangeState(state => {
+		if (state === ChatSpeechToTextState.Idle && _active?.service === service) {
+			_active = undefined;
+			disposables.dispose();
+		}
+	}));
+	// The target editor can be disposed out from under us (e.g. the Agents
+	// composer is closed); cancel dictation instead of leaving the microphone
+	// and local transcription running against a dead editor.
+	disposables.add(editor.onDidDispose(() => cancelDictation()));
+	_active = { service, editor, inserter, disposables };
 	try {
 		await service.start(window);
 	} catch {
 		// Acquisition/connection failure is surfaced by the service.
-		listener.dispose();
-		_active = undefined;
+		if (_active?.service === service) {
+			_active = undefined;
+		}
+		disposables.dispose();
 	}
 }
 
@@ -105,7 +141,7 @@ export async function stopDictation(): Promise<void> {
 			active.inserter.update(text);
 		}
 	} finally {
-		active.listener.dispose();
+		active.disposables.dispose();
 	}
 }
 
@@ -116,6 +152,9 @@ export function cancelDictation(): void {
 		return;
 	}
 	_active = undefined;
-	active.listener.dispose();
+	// Remove any live transcript already written to the editor so Escape leaves
+	// the input exactly as it was before dictation started.
+	active.inserter.revert();
+	active.disposables.dispose();
 	active.service.cancel();
 }

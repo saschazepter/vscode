@@ -9,9 +9,9 @@ import { registerSingleton, InstantiationType } from '../../../../platform/insta
 import { ILocalTranscriptionModelStatus, ILocalTranscriptionResult, ILocalTranscriptionService, LocalTranscriptionModelState } from '../../../../platform/localTranscription/common/localTranscription.js';
 
 /**
- * Web fallback: on-device transcription requires a utility process, which is
- * not available on web. `isSupported` is false so consumers fall back to a
- * configured cloud backend.
+ * Web/no-op implementation: on-device transcription requires a utility process,
+ * which is not available on web. `isSupported` is false, so dictation is simply
+ * unavailable there — there is no cloud fallback (that transport was removed).
  */
 export class NullLocalTranscriptionService implements ILocalTranscriptionService {
 

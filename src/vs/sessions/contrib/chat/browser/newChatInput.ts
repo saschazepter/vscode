@@ -6,6 +6,8 @@
 import './media/chatInput.css';
 import './media/chatInputMobile.css';
 import * as dom from '../../../../base/browser/dom.js';
+import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
+import { Gesture, EventType as TouchEventType } from '../../../../base/browser/touch.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { spinningLoading } from '../../../../platform/theme/common/iconRegistry.js';
 import { Emitter } from '../../../../base/common/event.js';
@@ -320,6 +322,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		@IKeybindingService private readonly keybindingService: IKeybindingService,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
 		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
+		@IChatSpeechToTextService private readonly chatSpeechToTextService: IChatSpeechToTextService,
 	) {
 		super();
 		this._scopedInstantiationService = this._register(this.instantiationService.createChild(new ServiceCollection(
@@ -583,6 +586,13 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 				e.stopPropagation();
 				this._contextAttachments.showPicker(this.options.getContextFolderUri());
 			}
+			// Cmd+I / Ctrl+I — dictate into the input using on-device speech-to-text.
+			// The global Dictate action can't reach this composer, so route here.
+			if (this.chatSpeechToTextService.isConfigured && e.equals(KeyMod.CtrlCmd | KeyCode.KeyI)) {
+				e.preventDefault();
+				e.stopPropagation();
+				void this._toggleDictation();
+			}
 		}));
 
 		// Update history navigation enablement based on cursor position
@@ -730,7 +740,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 	}
 
 	private _createSpeechToTextButton(container: HTMLElement): void {
-		const sttService = this.instantiationService.invokeFunction(accessor => accessor.get(IChatSpeechToTextService));
+		const sttService = this.chatSpeechToTextService;
 
 		const button = dom.append(container, dom.$('.sessions-chat-stt-button'));
 		button.tabIndex = 0;
@@ -768,16 +778,44 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 			}
 		}));
 
-		this._register(dom.addDisposableListener(button, dom.EventType.CLICK, async () => {
-			if (isDictating()) {
-				await stopDictation();
-				return;
+		const toggle = () => this._toggleDictation();
+		// A styled div doesn't get Enter/Space activation or touch tap for free;
+		// wire them explicitly so the button is keyboard- and touch-accessible.
+		this._register(Gesture.addTarget(button));
+		[dom.EventType.CLICK, TouchEventType.Tap].forEach(eventType => {
+			this._register(dom.addDisposableListener(button, eventType, e => {
+				dom.EventHelper.stop(e);
+				void toggle();
+			}));
+		});
+		this._register(dom.addDisposableListener(button, dom.EventType.KEY_DOWN, e => {
+			const event = new StandardKeyboardEvent(e);
+			if (event.equals(KeyCode.Enter) || event.equals(KeyCode.Space)) {
+				dom.EventHelper.stop(event, true);
+				void toggle();
 			}
-			if (sttService.state !== ChatSpeechToTextState.Idle || !this._editor) {
-				return;
-			}
-			await startDictation(sttService, this._editor, dom.getWindow(button));
 		}));
+	}
+
+	/**
+	 * Toggle on-device dictation into this composer's editor. Shared by the mic
+	 * button and the Cmd/Ctrl+I chord. The global Dictate action can't target
+	 * this composer (it isn't an IChatWidget), so routing is handled here.
+	 */
+	private async _toggleDictation(): Promise<void> {
+		const sttService = this.chatSpeechToTextService;
+		if (isDictating()) {
+			await stopDictation();
+			return;
+		}
+		if (!sttService.isConfigured || sttService.state !== ChatSpeechToTextState.Idle || !this._editor) {
+			return;
+		}
+		const domNode = this._editor.getDomNode();
+		if (!domNode) {
+			return;
+		}
+		await startDictation(sttService, this._editor, dom.getWindow(domNode));
 	}
 
 	// --- Input History (IHistoryNavigationWidget) ---

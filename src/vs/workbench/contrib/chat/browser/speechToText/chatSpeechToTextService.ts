@@ -16,7 +16,6 @@ import { localize } from '../../../../../nls.js';
 import { IStorageService, StorageScope } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IEnvironmentService } from '../../../../../platform/environment/common/environment.js';
-import { IProgressService, ProgressLocation } from '../../../../../platform/progress/common/progress.js';
 import { ILocalTranscriptionService, LocalTranscriptionModelState } from '../../../../../platform/localTranscription/common/localTranscription.js';
 import { AccessibilitySignal, IAccessibilitySignalService } from '../../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
 import { AgentsVoiceStorageKeys } from '../../../agentsVoice/common/agentsVoice.js';
@@ -79,9 +78,8 @@ export interface IChatSpeechToTextService {
 
 	/**
 	 * Fires when the model-preparation state changes. `true` while the model is
-	 * downloading/loading (and the progress notification is shown), `false`
-	 * once it is ready, errors, or the session ends. Callers can swap the mic
-	 * affordance for a spinner while preparing.
+	 * downloading/loading, `false` once it is ready, errors, or the session
+	 * ends. Callers swap the mic affordance for a spinner while preparing.
 	 */
 	readonly onDidChangePreparingModel: Event<boolean>;
 	/** Whether the on-device model is currently downloading/loading. */
@@ -137,8 +135,6 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private _processorNode: ScriptProcessorNode | undefined;
 
 	private readonly _localSessionDisposables = this._register(new DisposableStore());
-	/** Resolves the in-flight model-preparation progress, if any. */
-	private _resolveModelProgress: (() => void) | undefined;
 
 	get isConfigured(): boolean {
 		if (this._configurationService.getValue<boolean>(ENABLED_SETTING) === false) {
@@ -168,7 +164,6 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		@IStorageService private readonly _storageService: IStorageService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@IEnvironmentService private readonly _environmentService: IEnvironmentService,
-		@IProgressService private readonly _progressService: IProgressService,
 		@ILocalTranscriptionService private readonly _localTranscription: ILocalTranscriptionService,
 		@IAccessibilitySignalService private readonly _accessibilitySignalService: IAccessibilitySignalService,
 	) {
@@ -272,7 +267,20 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			throw err;
 		}
 
-		this._startCapture(window, stream);
+		try {
+			this._startCapture(window, stream);
+		} catch (err) {
+			// Capture setup (AudioContext/nodes) can fail after the mic and the
+			// utility-process session are already live; make sure both are torn
+			// down instead of leaking an active recording in the Idle state.
+			this._localTranscription.cancel();
+			this._teardown();
+			this._sessionErrorCode = this._sessionErrorCode || 'capture';
+			this._logSessionTelemetry('error');
+			this._logService.error('[chat-stt] failed to start audio capture', err);
+			this._notificationService.error(localize('chatStt.captureError', "Could not start audio capture for speech-to-text: {0}", toErrorMessage(err)));
+			throw err;
+		}
 		this._setState(ChatSpeechToTextState.Recording);
 		this._accessibilitySignalService.playSignal(AccessibilitySignal.voiceRecordingStarted);
 	}
@@ -302,7 +310,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		// interim transcripts begin once the model finishes loading.
 		const status = await local.getModelStatus();
 		if (status.state !== LocalTranscriptionModelState.Ready && status.state !== LocalTranscriptionModelState.Error) {
-			this._showModelProgress();
+			this._trackModelPreparation();
 		}
 	}
 
@@ -312,34 +320,53 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	}
 
 	/**
-	 * Show a background notification with model download/load progress. Resolves
-	 * when the model becomes ready or errors, or when the session is torn down.
+	 * Track model download/load so the toolbar mic can show a spinner until the
+	 * model is ready. Intentionally silent — the spinner in place of the mic is
+	 * the only progress affordance; no notification is shown. Recording proceeds
+	 * meanwhile and interim transcripts begin once the model finishes loading.
 	 */
-	private _showModelProgress(): void {
+	private _trackModelPreparation(): void {
 		this._setPreparingModel(true);
-		this._progressService.withProgress({
-			location: ProgressLocation.Notification,
-			title: localize('chatStt.preparingModel', "Preparing on-device speech-to-text model…"),
-		}, progress => new Promise<void>(resolve => {
-			this._resolveModelProgress = resolve;
-			this._localSessionDisposables.add(this._localTranscription.onDidChangeModelStatus(status => {
-				switch (status.state) {
-					case LocalTranscriptionModelState.Downloading: {
-						const pct = typeof status.progress === 'number' ? Math.round(status.progress * 100) : undefined;
-						progress.report({ message: pct !== undefined ? localize('chatStt.downloadingPct', "Downloading model… {0}%", pct) : localize('chatStt.downloading', "Downloading model…") });
-						break;
-					}
-					case LocalTranscriptionModelState.Loading:
-						progress.report({ message: localize('chatStt.loadingModel', "Loading model…") });
-						break;
-					case LocalTranscriptionModelState.Ready:
-					case LocalTranscriptionModelState.Error:
-						this._resolveModelProgress = undefined;
-						resolve();
-						break;
-				}
-			}));
-		}).finally(() => this._setPreparingModel(false)));
+		this._localSessionDisposables.add(this._localTranscription.onDidChangeModelStatus(status => {
+			if (status.state === LocalTranscriptionModelState.Ready) {
+				this._setPreparingModel(false);
+			} else if (status.state === LocalTranscriptionModelState.Error) {
+				this._setPreparingModel(false);
+				this._failSession('model', localize('chatStt.modelError', "On-device speech-to-text model failed to load: {0}", status.error ?? ''));
+			}
+		}));
+	}
+
+	/**
+	 * Abort the active recording because of an unrecoverable error (e.g. the
+	 * model failed to download/load), surfacing a notification instead of
+	 * silently returning an empty transcript.
+	 */
+	private _failSession(errorCode: string, message: string): void {
+		if (this._state === ChatSpeechToTextState.Idle) {
+			return;
+		}
+		this._sessionErrorCode = this._sessionErrorCode || errorCode;
+		this._logSessionTelemetry('error');
+		this._localTranscription.cancel();
+		this._teardown();
+		this._finalizedText = '';
+		this._deltaText = '';
+		this._setState(ChatSpeechToTextState.Idle);
+		this._notificationService.error(message);
+	}
+
+	/**
+	 * A `pushAudio` IPC call rejected (e.g. the utility process exited or the
+	 * channel failed). Stop the recording once and surface the error rather than
+	 * leaving the UI showing an active recording with unhandled rejections.
+	 */
+	private _onAudioPushError(err: unknown): void {
+		if (this._state !== ChatSpeechToTextState.Recording) {
+			return;
+		}
+		this._logService.error('[chat-stt] failed to stream audio to transcription', err);
+		this._failSession('audio', localize('chatStt.audioError', "Speech-to-text stopped because audio could not be sent for transcription: {0}", toErrorMessage(err instanceof Error ? err : new Error(String(err)))));
 	}
 
 	async stopAndTranscribe(): Promise<string | undefined> {
@@ -395,7 +422,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 
 		processor.onaudioprocess = e => {
 			const samples = e.inputBuffer.getChannelData(0);
-			this._localTranscription.pushAudio(encodeRawPcm16Buffer(samples));
+			this._localTranscription.pushAudio(encodeRawPcm16Buffer(samples)).catch(err => this._onAudioPushError(err));
 		};
 
 		source.connect(processor);
@@ -418,8 +445,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 
 	private _teardown(): void {
 		this._stopCapture();
-		this._resolveModelProgress?.();
-		this._resolveModelProgress = undefined;
+		this._setPreparingModel(false);
 		this._localSessionDisposables.clear();
 	}
 

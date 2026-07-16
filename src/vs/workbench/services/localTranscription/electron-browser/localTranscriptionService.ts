@@ -4,9 +4,29 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { getDelayedChannel, IChannel, ProxyChannel } from '../../../../base/parts/ipc/common/ipc.js';
+import { arch, platform } from '../../../../base/common/process.js';
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
 import { ILocalTranscriptionService, localTranscriptionChannelName } from '../../../../platform/localTranscription/common/localTranscription.js';
 import { IUtilityProcessWorkerWorkbenchService } from '../../utilityProcess/electron-browser/utilityProcessWorkerWorkbenchService.js';
+
+/**
+ * Platform/architecture combinations for which onnxruntime-node ships a prebuilt
+ * binary and packaging keeps it (see `onnxRuntimeShippedTargets` in
+ * build/gulpfile.vscode.ts). On anything else (e.g. darwin/x64, linux/armhf) the
+ * native addon is absent, so on-device transcription cannot run and the feature
+ * must report itself unsupported rather than showing a mic that fails on use.
+ */
+const SUPPORTED_TARGETS = new Set<string>([
+	'darwin-arm64',
+	'linux-x64',
+	'linux-arm64',
+	'win32-x64',
+	'win32-arm64',
+]);
+
+function isOnDeviceTranscriptionSupported(): boolean {
+	return !!platform && !!arch && SUPPORTED_TARGETS.has(`${platform}-${arch}`);
+}
 
 /**
  * Renderer-side proxy for the on-device transcription service, which runs in a
@@ -17,7 +37,7 @@ export class LocalTranscriptionService {
 
 	declare readonly _serviceBrand: undefined;
 
-	readonly isSupported = true;
+	readonly isSupported = isOnDeviceTranscriptionSupported();
 
 	private _channel: IChannel | undefined;
 	private _proxy: ILocalTranscriptionService | undefined;
