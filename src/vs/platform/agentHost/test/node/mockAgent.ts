@@ -119,11 +119,12 @@ export class MockAgent implements IAgent {
 		});
 	}
 
-	async getSessionMetadata(session: URI): Promise<IAgentSessionMetadata | undefined> {
-		if (!this._sessions.has(AgentSession.id(session))) {
+	async getConversationMetadata(chat: URI): Promise<IAgentConversationMetadata | undefined> {
+		const sessionStr = parseDefaultChatUri(chat);
+		if (sessionStr === undefined || !this._sessions.has(AgentSession.id(URI.parse(sessionStr)))) {
 			return undefined;
 		}
-		return { session, startTime: Date.now(), modifiedTime: Date.now(), project: mockProject(this.id), ...this.sessionMetadataOverrides };
+		return { chat, startTime: Date.now(), modifiedTime: Date.now(), project: mockProject(this.id), ...this.sessionMetadataOverrides };
 	}
 
 	/** Optional override for the working directory returned by createSession. */
@@ -474,16 +475,17 @@ export class ScriptedMockAgent implements IAgent {
 		});
 	}
 
-	async getSessionMetadata(session: URI): Promise<IAgentSessionMetadata | undefined> {
-		if (!this._sessions.has(AgentSession.id(session))) {
+	async getConversationMetadata(chat: URI): Promise<IAgentConversationMetadata | undefined> {
+		const sessionStr = parseDefaultChatUri(chat);
+		if (sessionStr === undefined || !this._sessions.has(AgentSession.id(URI.parse(sessionStr)))) {
 			return undefined;
 		}
 		return {
-			session,
+			chat,
 			startTime: Date.now(),
 			modifiedTime: Date.now(),
 			project: mockProject(this.id),
-			summary: session.toString() === PRE_EXISTING_SESSION_URI.toString() ? 'Pre-existing session' : undefined,
+			summary: sessionStr === PRE_EXISTING_SESSION_URI.toString() ? 'Pre-existing session' : undefined,
 		};
 	}
 

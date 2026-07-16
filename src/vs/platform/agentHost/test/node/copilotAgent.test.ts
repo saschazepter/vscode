@@ -34,7 +34,7 @@ import { AgentHostTelemetryService } from '../../node/agentHostTelemetryService.
 import { CopilotCliConfigKey } from '../../common/copilotCliConfig.js';
 import { AgentHostPreferLongContextEnabledConfigKey } from '../../common/agentHostSchema.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
-import { AgentSession, GITHUB_COPILOT_PROTECTED_RESOURCE, type AgentSignal, type IAgentCreateChatForkSource, type IAgentSessionMetadata, type IAgentSpawnChatEvent } from '../../common/agentService.js';
+import { AgentSession, GITHUB_COPILOT_PROTECTED_RESOURCE, type AgentSignal, type IAgentConversationMetadata, type IAgentCreateChatForkSource, type IAgentSessionMetadata, type IAgentSpawnChatEvent } from '../../common/agentService.js';
 import { ISessionDataService } from '../../common/sessionDataService.js';
 import { buildDefaultChatUri, buildChatUri, buildSubagentChatUri, parseRequiredSessionUriFromChatUri, CustomizationLoadStatus, ResponsePartKind, ToolResultContentType, customizationId, type ClientPluginCustomization, type PluginCustomization, type ToolCallResult, type Turn, RuleCustomization } from '../../common/state/sessionState.js';
 import { CustomizationType, ToolCallContributorKind, type AgentSelection, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
@@ -655,7 +655,7 @@ function createAgentSessionThroughAgent(agent: CopilotAgent, instantiationServic
 	return { session: agentInternals._createAgentSession(launchPlan, undefined, activeClient), createOptions: () => createOptions };
 }
 
-function withoutUndefinedProperties(metadata: IAgentSessionMetadata): Record<string, unknown> {
+function withoutUndefinedProperties(metadata: IAgentSessionMetadata | IAgentConversationMetadata): Record<string, unknown> {
 	const result: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(metadata)) {
 		if (value !== undefined) {
@@ -2052,10 +2052,11 @@ suite('CopilotAgent', () => {
 		try {
 			await agent.authenticate('https://api.github.com', 'token');
 
-			const metadata = await agent.getSessionMetadata(session);
+			const chat = URI.parse(buildDefaultChatUri(session));
+			const metadata = await agent.getConversationMetadata(chat);
 			assert.ok(metadata);
 			assert.deepStrictEqual(withoutUndefinedProperties(metadata), {
-				session,
+				chat,
 				startTime: 1000,
 				modifiedTime: 2000,
 				summary: 'SDK target',
@@ -2080,10 +2081,11 @@ suite('CopilotAgent', () => {
 		try {
 			await agent.authenticate('https://api.github.com', 'token');
 
-			const metadata = await agent.getSessionMetadata(session);
+			const chat = URI.parse(buildDefaultChatUri(session));
+			const metadata = await agent.getConversationMetadata(chat);
 			assert.ok(metadata);
 			assert.deepStrictEqual(withoutUndefinedProperties(metadata), {
-				session,
+				chat,
 				startTime: 1000,
 				modifiedTime: 2000,
 				summary: 'SDK legacy-customization-directory',
@@ -2102,7 +2104,7 @@ suite('CopilotAgent', () => {
 		try {
 			await agent.authenticate('https://api.github.com', 'token');
 
-			assert.strictEqual(await agent.getSessionMetadata(session), undefined);
+			assert.strictEqual(await agent.getConversationMetadata(URI.parse(buildDefaultChatUri(session))), undefined);
 			assert.deepStrictEqual(client.getSessionMetadataCalls, []);
 			assert.strictEqual(client.listSessionCallCount, 0);
 			assert.deepStrictEqual(sessionDataService.openedSessions, []);

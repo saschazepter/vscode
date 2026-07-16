@@ -386,7 +386,15 @@ those as private methods its own chat/conversation bridge delegates to.
 session-lifecycle provisioning primitives the chat-surface bridge delegates to
 (`chats.createChat({ provisionSession })` / `chats.disposeChat(defaultChat)`).
 `createSession` is additionally still called directly for the **fork/import**
-create path — a fork's session id is minted server-side by the SDK
-(`sessions.fork`), so the orchestrator cannot pre-allocate the session URI the way
-the provisioning seam requires; migrating fork/import is deliberately left as a
-follow-up. `getSessionMetadata` likewise stays as a genuine single-session lookup.
+create path. This is a permanent, by-design exception rather than debt: a fork's
+session id is minted server-side by the SDK (`sessions.fork`), so the orchestrator
+cannot pre-allocate the session URI the way the provisioning seam requires. The
+fork/import caller therefore stays on `createSession` and adopts the
+server-minted id after the fact.
+
+Per-session metadata lookup is exposed as `getConversationMetadata(chat)` (renamed
+from `getSessionMetadata`): it is addressed by a chat URI and returns the same
+`IAgentConversationMetadata` shape as `listConversations`, keeping the single-item
+and list lookups terminologically aligned. It remains a genuine single-conversation
+fast path — the orchestrator maps the default-chat URI back to a session when it
+hydrates restore metadata.

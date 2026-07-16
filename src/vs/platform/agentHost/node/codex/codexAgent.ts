@@ -2187,7 +2187,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		// because the workbench may rebind this URI to a fresh one when the
 		// user changes a chip selection, and we'd otherwise leak an
 		// orphan codex thread per rebind. The actual `thread/start` happens
-		// on the first `sendMessage` (or `getSessionMetadata` for restore).
+		// on the first `sendMessage` (or `getConversationMetadata` for restore).
 		const effectiveModel = this._supportedModelOrUndefined(config.model);
 		const sessionId = config.session ? AgentSession.id(config.session) : generateUuid();
 		const sessionUri = config.session ?? AgentSession.uri(this.id, sessionId);
@@ -2405,7 +2405,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		}
 
 		// Codex convention (Decision 7): session id == thread id, so a restore
-		// round-trips through `getSessionMetadata`.
+		// round-trips through `getConversationMetadata`.
 		const newSessionUri = AgentSession.uri(this.id, newThreadId);
 		const workingDirectory = forkResult.cwd
 			? URI.file(forkResult.cwd)
@@ -3084,7 +3084,12 @@ export class CodexAgent extends Disposable implements IAgent {
 		return this._readSession(this._sessionUriFromChat(chat)).then(read => read ? replayThreadToTurns(read.thread) : []);
 	}
 
-	async getSessionMetadata(session: URI): Promise<IAgentSessionMetadata | undefined> {
+	async getConversationMetadata(chat: URI): Promise<IAgentConversationMetadata | undefined> {
+		const sessionStr = parseDefaultChatUri(chat);
+		if (sessionStr === undefined) {
+			return undefined;
+		}
+		const session = URI.parse(sessionStr);
 		const sessionId = AgentSession.id(session);
 		const read = await this._readSession(session);
 		if (!read) {
@@ -3107,7 +3112,8 @@ export class CodexAgent extends Disposable implements IAgent {
 				this._serverToolHost.advertise(restored.sessionUri.toString());
 			}
 		}
-		return this._threadToMetadata(read.thread, session);
+		const { session: _session, ...rest } = this._threadToMetadata(read.thread, session);
+		return { chat, ...rest };
 	}
 
 	private async _readSession(session: URI): Promise<ThreadReadResponse | undefined> {

@@ -1587,7 +1587,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	async getSessionMessages(session: URI): Promise<readonly Turn[]> {
 		// Don't trigger a cold SDK download just to reconstruct a transcript
 		// during restore (the renderer subscribes to the last-active session
-		// on startup). Mirrors `listSessions` / `getSessionMetadata`: when the
+		// on startup). Mirrors `listSessions` / `getConversationMetadata`: when the
 		// SDK isn't local yet, defer with an empty transcript. The download
 		// fires (with host-level progress) once the user sends the first
 		// message, after which the transcript re-hydrates on the next restore.
@@ -1724,7 +1724,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 
 	/**
 	 * Phase 6.1 / Cycle D4 — per-session lookup. Mirrors
-	 * {@link CopilotAgent.getSessionMetadata} but accepts the
+	 * {@link CopilotAgent.getConversationMetadata} but accepts the
 	 * external-CLI case: a session that exists on disk via the raw
 	 * Anthropic CLI has no per-session DB, so we MUST NOT gate on the
 	 * sidecar (the way Copilot's variant does). The SDK is the source
@@ -1735,15 +1735,18 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	 * the SDK lookup propagate (the caller is doing a single targeted
 	 * fetch and should learn that the SDK module is broken).
 	 */
-	async getSessionMetadata(session: URI): Promise<IAgentSessionMetadata | undefined> {
-		// Don't trigger a cold SDK download just to hydrate session metadata
-		// during restore (the renderer subscribes to the last-active session
-		// on startup). Mirrors `listSessions` / `getSessionMessages`: when the
-		// SDK isn't local yet, defer. The download fires (with host-level
-		// progress) once the user sends the first message, after which the
-		// session re-hydrates on the next restore.
+	async getConversationMetadata(chat: URI): Promise<IAgentConversationMetadata | undefined> {
+		const sessionStr = parseDefaultChatUri(chat);
+		if (sessionStr === undefined) {
+			return undefined;
+		}
+		const session = URI.parse(sessionStr);
+		// Don't trigger a cold SDK download just to hydrate metadata during
+		// restore (the renderer subscribes to the last-active session on
+		// startup). When the SDK isn't local yet, defer; the download fires
+		// once the user sends the first message.
 		if (!(await this._sdkService.canLoadWithoutDownload())) {
-			this._logService.info('[Claude] SDK not downloaded yet; deferring session metadata until a session triggers the download');
+			this._logService.info('[Claude] SDK not downloaded yet; deferring conversation metadata until a session triggers the download');
 			return undefined;
 		}
 		const sessionId = AgentSession.id(session);
@@ -1757,7 +1760,8 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		} catch (err) {
 			this._logService.warn(`[Claude] Overlay read failed for session ${sessionId}`, err);
 		}
-		return this._metadataStore.project(sdkInfo, overlay);
+		const { session: _session, ...rest } = this._metadataStore.project(sdkInfo, overlay);
+		return { chat, ...rest };
 	}
 
 	resolveSessionConfig(_params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult> {

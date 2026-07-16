@@ -20,7 +20,7 @@ import { FileChangeType, FileOperationError, FileOperationResult, FileSystemProv
 import { InstantiationService } from '../../instantiation/common/instantiationService.js';
 import { ServiceCollection } from '../../instantiation/common/serviceCollection.js';
 import { ILogService } from '../../log/common/log.js';
-import { AgentProvider, AgentSession, AgentSignal, AgentHostSessionReleaseGraceMsEnvVar, IAgent, IAgentChatDataChange, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentProvisionDefaultChat, IAgentHostAuthTokenRequest, IAgentHostNetworkDiagnosticsInfo, IAgentHostNetworkEndpoint, IAgentHostNetworkFetchResult, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSpawnChatEvent, AuthenticateParams, AuthenticateResult, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../common/agentService.js';
+import { AgentProvider, AgentSession, AgentSignal, AgentHostSessionReleaseGraceMsEnvVar, IAgent, IAgentChatDataChange, IAgentConversationMetadata, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentProvisionDefaultChat, IAgentHostAuthTokenRequest, IAgentHostNetworkDiagnosticsInfo, IAgentHostNetworkEndpoint, IAgentHostNetworkFetchResult, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSpawnChatEvent, AuthenticateParams, AuthenticateResult, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../common/agentService.js';
 import { ISessionDataService, SESSION_ATTACHMENTS_DIRNAME } from '../common/sessionDataService.js';
 import { SessionConfigKey } from '../common/sessionConfigKeys.js';
 import { parseChangesetUri } from '../common/changesetUri.js';
@@ -721,21 +721,28 @@ export class AgentService extends Disposable implements IAgentService {
 	}
 
 	/**
-	 * Group a provider's persisted conversations into sessions via the
-	 * default-chat URI convention (a conversation whose chat URI is a session's
-	 * default-chat URI is that session).
+	 * Map a conversation's metadata to its session's metadata via the
+	 * default-chat URI convention. Returns `undefined` for a non-default
+	 * (peer-chat) conversation, which is not a top-level session.
 	 */
+	private _conversationToSessionMetadata(conversation: IAgentConversationMetadata): IAgentSessionMetadata | undefined {
+		const sessionStr = parseDefaultChatUri(conversation.chat);
+		if (sessionStr === undefined) {
+			return undefined;
+		}
+		const { chat, ...rest } = conversation;
+		return { session: URI.parse(sessionStr), ...rest };
+	}
+
+	/** Group a provider's persisted conversations into sessions. */
 	private async _enumerateProviderSessions(provider: IAgent): Promise<IAgentSessionMetadata[]> {
 		const conversations = await provider.listConversations();
 		const sessions: IAgentSessionMetadata[] = [];
 		for (const c of conversations) {
-			const sessionStr = parseDefaultChatUri(c.chat);
-			if (sessionStr === undefined) {
-				// Peer-chat conversation: grouped under its session, not top-level.
-				continue;
+			const session = this._conversationToSessionMetadata(c);
+			if (session) {
+				sessions.push(session);
 			}
-			const { chat, ...rest } = c;
-			sessions.push({ session: URI.parse(sessionStr), ...rest });
 		}
 		return sessions;
 	}
@@ -2842,9 +2849,11 @@ export class AgentService extends Disposable implements IAgentService {
 
 	private async _getSessionMetadataForRestore(agent: IAgent, session: URI): Promise<IAgentSessionMetadata | undefined> {
 		const sessionStr = session.toString();
-		if (agent.getSessionMetadata) {
+		if (agent.getConversationMetadata) {
 			try {
-				return await this._withWorktreeProject(session, await agent.getSessionMetadata(session));
+				const conversation = await agent.getConversationMetadata(URI.parse(buildDefaultChatUri(session)));
+				const meta = conversation ? this._conversationToSessionMetadata(conversation) : undefined;
+				return await this._withWorktreeProject(session, meta);
 			} catch (err) {
 				if (err instanceof ProtocolError) {
 					throw err;

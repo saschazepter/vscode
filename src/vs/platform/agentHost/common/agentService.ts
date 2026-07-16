@@ -1607,8 +1607,8 @@ export interface IAgent {
 	 */
 	listConversations(): Promise<readonly IAgentConversationMetadata[]>;
 
-	/** Retrieve metadata for a single persisted session, without enumerating the provider catalog. */
-	getSessionMetadata?(session: URI): Promise<IAgentSessionMetadata | undefined>;
+	/** Retrieve metadata for a single persisted conversation, without enumerating the provider catalog. */
+	getConversationMetadata?(chat: URI): Promise<IAgentConversationMetadata | undefined>;
 
 	/** Declare protected resources this agent requires auth for (RFC 9728). */
 	getProtectedResources(): ProtectedResourceMetadata[];

@@ -1268,7 +1268,12 @@ export class CopilotAgent extends Disposable implements IAgent {
 		return result;
 	}
 
-	async getSessionMetadata(session: URI): Promise<IAgentSessionMetadata | undefined> {
+	async getConversationMetadata(chat: URI): Promise<IAgentConversationMetadata | undefined> {
+		const sessionStr = parseDefaultChatUri(chat);
+		if (sessionStr === undefined) {
+			return undefined;
+		}
+		const session = URI.parse(sessionStr);
 		const sessionId = AgentSession.id(session);
 		const storedMetadata = await this._readStoredSessionMetadata(session);
 		if (!storedMetadata) {
@@ -1290,7 +1295,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 		const workingDirectory = storedMetadata?.workingDirectory ?? (typeof sessionMetadata?.context?.workingDirectory === 'string' ? URI.file(sessionMetadata.context.workingDirectory) : undefined);
 		return {
-			session,
+			chat,
 			startTime: sessionMetadata?.startTime.getTime() ?? Date.now(),
 			modifiedTime: sessionMetadata?.modifiedTime.getTime() ?? Date.now(),
 			project,
