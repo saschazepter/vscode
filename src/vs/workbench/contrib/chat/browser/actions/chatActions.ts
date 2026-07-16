@@ -59,6 +59,7 @@ import { ISCMHistoryItemChangeRangeVariableEntry, ISCMHistoryItemChangeVariableE
 import { IChatRequestViewModel, IChatResponseViewModel, isRequestVM } from '../../common/model/chatViewModel.js';
 import { IChatWidgetHistoryService } from '../../common/widget/chatWidgetHistoryService.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, getDefaultNewChatSessionResource, resolveDefaultNewChatSessionType } from '../../common/constants.js';
+import { markPreferredCopilotHarness } from '../../common/chatSessionTypePreference.js';
 import { AICustomizationManagementCommands } from '../aiCustomization/aiCustomizationManagement.js';
 import { ILanguageModelChatSelector, ILanguageModelsService } from '../../common/languageModels.js';
 import { CopilotUsageExtensionFeatureId } from '../../common/languageModelStats.js';
@@ -1766,14 +1767,19 @@ export interface IClearEditingSessionConfirmationOptions {
 export async function clearChatSessionPreservingType(widget: IChatWidget, viewsService: IViewsService, sessionType: string | undefined, configurationService: IConfigurationService, chatSessionsService: IChatSessionsService, storageService: IStorageService, workspace: IWorkspace, agentHostEnabled: boolean): Promise<void> {
 	const currentResource = widget.viewModel?.model.sessionResource;
 	const currentSessionType = currentResource ? getChatSessionType(currentResource) : undefined;
-	const newSessionType = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, workspace, agentHostEnabled, { explicitOverride: sessionType, currentSessionType });
+	const { sessionType: newSessionType, isPreferCopilotHarnessSwap } = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, workspace, agentHostEnabled, { explicitOverride: sessionType, currentSessionType });
 	if (isIChatViewViewContext(widget.viewContext) && newSessionType !== localChatSessionType) {
 		// For the sidebar, we need to explicitly load a session with the same type
 		const newResource = URI.from({ scheme: newSessionType, path: `/untitled-${generateUuid()}` });
 		const view = await viewsService.openView(ChatViewId) as ChatViewPane;
 		await view.loadSession(newResource);
+		// Consume the one-time migration only now that the swap has been applied.
+		if (isPreferCopilotHarnessSwap) {
+			markPreferredCopilotHarness(storageService);
+		}
 	} else {
-		// For the editor, widget.clear() already preserves the session type via clearChatEditor
+		// For the editor, clearChatEditor resolves and applies the new session type
+		// (including the one-time preferCopilotHarness swap) when clearing.
 		await widget.clear();
 	}
 }

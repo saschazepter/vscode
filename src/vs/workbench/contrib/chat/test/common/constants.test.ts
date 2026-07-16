@@ -12,7 +12,7 @@ import { ChatConfiguration, getComputedDefaultSessionType, getDefaultNewChatSess
 import { localChatSessionType, SessionType, IChatSessionsExtensionPoint } from '../../common/chatSessionsService.js';
 import { MockChatSessionsService } from './mockChatSessionsService.js';
 import { TestStorageService } from '../../../../test/common/workbenchTestServices.js';
-import { getRememberedSessionType, hasPreferredCopilotHarness } from '../../common/chatSessionTypePreference.js';
+import { getRememberedSessionType, hasPreferredCopilotHarness, markPreferredCopilotHarness } from '../../common/chatSessionTypePreference.js';
 
 suite('ChatConfiguration defaults', () => {
 
@@ -124,7 +124,7 @@ suite('ChatConfiguration defaults', () => {
 		}, {
 			computed: localChatSessionType,
 			remembered: SessionType.AgentHostClaude,
-			rememberedAware: SessionType.AgentHostClaude,
+			rememberedAware: { sessionType: SessionType.AgentHostClaude, isPreferCopilotHarnessSwap: false },
 		});
 	});
 
@@ -164,33 +164,40 @@ suite('ChatConfiguration defaults', () => {
 		});
 	});
 
-	test('preferCopilotHarness swaps local to Copilot once, only when the agent host is enabled', () => {
+	test('preferCopilotHarness resolves the swap without consuming the marker until applied', () => {
 		const configurationService = new TestConfigurationService({
 			[ChatConfiguration.EditorPreferCopilotHarness]: true,
 		});
 		const chatSessionsService = createChatSessionsService(SessionType.AgentHostCopilot, SessionType.AgentHostClaude);
 		const storageService = disposables.add(new TestStorageService());
 
-		// Not swapped while the agent host is disabled, and the marker stays unset.
+		// Not swapped while the agent host is disabled.
 		const whileAgentHostDisabled = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, false, { currentSessionType: localChatSessionType });
-		const markerAfterDisabled = hasPreferredCopilotHarness(storageService);
 
-		// First swap once the agent host is enabled, then never again (marker set).
-		const firstNewSession = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, true, { currentSessionType: localChatSessionType });
-		const afterReturningToLocal = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, true, { currentSessionType: localChatSessionType });
+		// Resolving does not consume the marker on its own: repeated resolves keep
+		// returning the swap until the caller applies it and marks it.
+		const firstResolve = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, true, { currentSessionType: localChatSessionType });
+		const markerBeforeApply = hasPreferredCopilotHarness(storageService);
+		const secondResolveBeforeApply = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, true, { currentSessionType: localChatSessionType });
+
+		// The caller applies the swap and marks it; further resolves stay local.
+		markPreferredCopilotHarness(storageService);
+		const afterApply = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, localWorkspace, true, { currentSessionType: localChatSessionType });
 
 		assert.deepStrictEqual({
 			whileAgentHostDisabled,
-			markerAfterDisabled,
-			firstNewSession,
-			afterReturningToLocal,
-			markerApplied: hasPreferredCopilotHarness(storageService),
+			firstResolve,
+			markerBeforeApply,
+			secondResolveBeforeApply,
+			afterApply,
+			markerAfterApply: hasPreferredCopilotHarness(storageService),
 		}, {
-			whileAgentHostDisabled: localChatSessionType,
-			markerAfterDisabled: false,
-			firstNewSession: SessionType.AgentHostCopilot,
-			afterReturningToLocal: localChatSessionType,
-			markerApplied: true,
+			whileAgentHostDisabled: { sessionType: localChatSessionType, isPreferCopilotHarnessSwap: false },
+			firstResolve: { sessionType: SessionType.AgentHostCopilot, isPreferCopilotHarnessSwap: true },
+			markerBeforeApply: false,
+			secondResolveBeforeApply: { sessionType: SessionType.AgentHostCopilot, isPreferCopilotHarnessSwap: true },
+			afterApply: { sessionType: localChatSessionType, isPreferCopilotHarnessSwap: false },
+			markerAfterApply: true,
 		});
 	});
 
