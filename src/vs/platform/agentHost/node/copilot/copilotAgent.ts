@@ -3180,7 +3180,7 @@ interface IResolvedCustomization {
 	readonly input?: ClientPluginCustomization;
 }
 
-const REFRESH_DEBOUNCE_MS = 100;
+export const REFRESH_DEBOUNCE_MS = 100;
 
 /**
  * A per-working-directory bundle of customizations the agent host
