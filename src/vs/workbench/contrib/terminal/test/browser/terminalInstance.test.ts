@@ -244,26 +244,33 @@ suite('Workbench - TerminalInstance', () => {
 			deepStrictEqual(disposalOrder, ['onWillDispose', 'xterm', 'onDisposed']);
 		});
 
-		test('disposing an xterm addon within onWillDispose should happen while xterm is alive (#315722)', async () => {
+		test('should dispose contribution-owned xterm addons before xterm disposal', async () => {
 			const instance = await createTerminalInstance();
 			const xterm = await instance.xtermReadyPromise;
-			let xtermDisposed = false;
-			let addonDisposedWhileXtermAlive = false;
+			const disposalOrder: string[] = [];
+			let addonDisposeCount = 0;
 
-			store.add(xterm!.onDidDispose(() => xtermDisposed = true));
-			// Simulates a terminal contribution that owns an xterm addon and disposes it when the
-			// instance is being disposed. Doing this after xterm has been disposed throws "Could
-			// not dispose an addon that has not been loaded".
 			const addon = {
 				activate: () => { },
-				dispose: () => addonDisposedWhileXtermAlive = !xtermDisposed
+				dispose: () => {
+					addonDisposeCount++;
+					disposalOrder.push('addon');
+				}
 			};
 			xterm!.raw.loadAddon(addon);
-			store.add(instance.onWillDispose(() => addon.dispose()));
+			store.add(instance.onWillDispose(() => {
+				disposalOrder.push('onWillDispose');
+				addon.dispose();
+			}));
+			store.add(xterm!.onDidDispose(() => disposalOrder.push('xterm')));
+			store.add(instance.onDisposed(() => disposalOrder.push('onDisposed')));
 
 			instance.dispose();
 
-			strictEqual(addonDisposedWhileXtermAlive, true);
+			deepStrictEqual(
+				{ disposalOrder, addonDisposeCount },
+				{ disposalOrder: ['onWillDispose', 'addon', 'xterm', 'onDisposed'], addonDisposeCount: 1 }
+			);
 		});
 
 		test('custom key event handler should handle commands in DEFAULT_COMMANDS_TO_SKIP_SHELL in VS Code and not xterm when sendKeybindingsToShell is disabled', async () => {
