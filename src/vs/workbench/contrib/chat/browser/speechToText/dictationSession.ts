@@ -11,10 +11,13 @@ import { IEditorDecorationsCollection } from '../../../../../editor/common/edito
 import { Position } from '../../../../../editor/common/core/position.js';
 import { Range } from '../../../../../editor/common/core/range.js';
 import { localize } from '../../../../../nls.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
 import { ChatSpeechToTextState, IChatSpeechToTextService } from './chatSpeechToTextService.js';
 
 /** Inline decoration class that shimmers not-yet-finalized dictation text. */
 const INTERIM_SHIMMER_CLASS = 'dictation-interim-shimmer';
+
+const LOG_PREFIX = '[chat-stt-dictation]';
 
 /**
  * Renders the cumulative transcript into a code editor, replacing its own
@@ -27,7 +30,10 @@ class LiveTranscriptInserter {
 	private _shimmerDecorations: IEditorDecorationsCollection | undefined;
 	private _finalized = false;
 
-	constructor(private readonly _editor: ICodeEditor) { }
+	constructor(
+		private readonly _editor: ICodeEditor,
+		private readonly _logService: ILogService,
+	) { }
 
 	/**
 	 * Render the cumulative transcript. While `interim` is true the text is not
@@ -40,7 +46,9 @@ class LiveTranscriptInserter {
 	 * overwrite the final text and re-apply the shimmer.
 	 */
 	update(fullText: string, interim: boolean = true): void {
+		this._logService.trace(`${LOG_PREFIX} inserter.update interim=${interim} finalized=${this._finalized} len=${fullText.length}`);
 		if (this._finalized && interim) {
+			this._logService.trace(`${LOG_PREFIX} inserter.update ignored (already finalized)`);
 			return;
 		}
 		if (!interim) {
@@ -48,6 +56,7 @@ class LiveTranscriptInserter {
 		}
 		const model = this._editor.getModel();
 		if (!model) {
+			this._logService.trace(`${LOG_PREFIX} inserter.update no model`);
 			return;
 		}
 
@@ -79,12 +88,14 @@ class LiveTranscriptInserter {
 	/** Shimmer the inserted (interim) region, or clear it once finalized. */
 	private _updateShimmer(interim: boolean): void {
 		if (!interim || !this._anchor || !this._end || Position.equals(this._anchor, this._end)) {
+			this._logService.trace(`${LOG_PREFIX} shimmer clear (interim=${interim})`);
 			this._shimmerDecorations?.clear();
 			return;
 		}
 		if (!this._shimmerDecorations) {
 			this._shimmerDecorations = this._editor.createDecorationsCollection();
 		}
+		this._logService.trace(`${LOG_PREFIX} shimmer set range=${this._anchor.lineNumber}:${this._anchor.column}-${this._end.lineNumber}:${this._end.column}`);
 		this._shimmerDecorations.set([{
 			range: Range.fromPositions(this._anchor, this._end),
 			options: {
@@ -96,6 +107,20 @@ class LiveTranscriptInserter {
 
 	/** Stop shimmering, leaving whatever text is currently inserted as solid. */
 	clearShimmer(): void {
+		this._logService.trace(`${LOG_PREFIX} clearShimmer`);
+		this._shimmerDecorations?.clear();
+	}
+
+	/**
+	 * Lock out further interim updates and stop shimmering immediately. Called
+	 * when the user stops talking, before the (async) final transcription
+	 * resolves, so a trailing interim transcript can neither overwrite the text
+	 * nor re-apply the shimmer. The subsequent final `update(text, false)` still
+	 * applies because it is not an interim update.
+	 */
+	beginFinalize(): void {
+		this._logService.trace(`${LOG_PREFIX} beginFinalize`);
+		this._finalized = true;
 		this._shimmerDecorations?.clear();
 	}
 
@@ -126,6 +151,7 @@ interface IActiveDictation {
 	readonly editor: ICodeEditor;
 	readonly inserter: LiveTranscriptInserter;
 	readonly disposables: DisposableStore;
+	readonly logService: ILogService;
 }
 
 /**
@@ -146,11 +172,11 @@ export function activeDictationEditor(): ICodeEditor | undefined {
 }
 
 /** Start dictating into `editor`, rendering the transcript live. */
-export async function startDictation(service: IChatSpeechToTextService, editor: ICodeEditor, window: Window & typeof globalThis): Promise<void> {
+export async function startDictation(service: IChatSpeechToTextService, editor: ICodeEditor, window: Window & typeof globalThis, logService: ILogService): Promise<void> {
 	if (_active || service.state !== ChatSpeechToTextState.Idle) {
 		return;
 	}
-	const inserter = new LiveTranscriptInserter(editor);
+	const inserter = new LiveTranscriptInserter(editor, logService);
 	const disposables = new DisposableStore();
 	// Show a "Listening…" placeholder only once the session is actually
 	// connected and recording, i.e. the service is in the Recording state and
@@ -184,9 +210,13 @@ export async function startDictation(service: IChatSpeechToTextService, editor: 
 		}
 		editor.updateOptions({ placeholder: previousPlaceholder });
 	}));
-	disposables.add(service.onDidUpdateTranscript(text => inserter.update(text)));
+	disposables.add(service.onDidUpdateTranscript(text => {
+		logService.trace(`${LOG_PREFIX} onDidUpdateTranscript len=${text.length} state=${service.state}`);
+		inserter.update(text);
+	}));
 	disposables.add(service.onDidChangePreparingModel(() => applyPlaceholder()));
 	disposables.add(service.onDidChangeState(state => {
+		logService.trace(`${LOG_PREFIX} onDidChangeState ${state}`);
 		if (state === ChatSpeechToTextState.Idle && _active?.service === service) {
 			// If the service ends the session on its own (e.g. the model failed
 			// to load and it surfaced an error), drop the stale active reference
@@ -201,7 +231,7 @@ export async function startDictation(service: IChatSpeechToTextService, editor: 
 	// composer is closed); cancel dictation instead of leaving the microphone
 	// and local transcription running against a dead editor.
 	disposables.add(editor.onDidDispose(() => cancelDictation()));
-	_active = { service, editor, inserter, disposables };
+	_active = { service, editor, inserter, disposables, logService };
 	try {
 		await service.start(window);
 	} catch {
@@ -220,13 +250,24 @@ export async function stopDictation(): Promise<void> {
 		return;
 	}
 	_active = undefined;
+	active.logService.trace(`${LOG_PREFIX} stopDictation begin, state=${active.service.state}`);
+	// Stop shimmering and lock out interim updates right away so a trailing
+	// interim transcript emitted while transcription finalizes cannot re-apply
+	// the shimmer or overwrite the final text.
+	active.inserter.beginFinalize();
 	try {
 		const text = await active.service.stopAndTranscribe();
+		active.logService.trace(`${LOG_PREFIX} stopAndTranscribe resolved text=${text === undefined ? 'undefined' : `len=${text.length}`}`);
 		if (text !== undefined) {
 			// Final transcript: render it solid (no shimmer).
 			active.inserter.update(text, false);
+		} else {
+			// No final transcript to apply; make sure the shimmer does not linger
+			// over the last interim text.
+			active.inserter.clearShimmer();
 		}
 	} finally {
+		active.logService.trace(`${LOG_PREFIX} stopDictation dispose`);
 		active.disposables.dispose();
 	}
 }
