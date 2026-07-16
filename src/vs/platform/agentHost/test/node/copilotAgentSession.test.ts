@@ -82,6 +82,7 @@ class MockCopilotSession {
 	private readonly _handlers = new Map<string, Set<(event: SessionEvent) => void>>();
 	private readonly _allHandlers = new Set<SessionEventHandler>();
 	planReadResult: { exists: boolean; content: string | null; path: string | null } = { exists: false, content: null, path: null };
+	planReadPromise: Promise<{ exists: boolean; content: string | null; path: string | null }> | undefined;
 
 	getInstructionSourcesResult: { sources: Array<{ id: string; label: string; sourcePath: string; content: string; type: string; location: string; applyTo?: string[] }> } = { sources: [] };
 	getInstructionSourcesError: unknown = undefined;
@@ -145,7 +146,7 @@ class MockCopilotSession {
 			},
 		},
 		plan: {
-			read: async () => this.planReadResult,
+			read: async () => this.planReadPromise ?? this.planReadResult,
 			update: async (_params: { content: string }) => { /* no-op */ },
 			delete: async () => { /* no-op */ },
 		},
@@ -3859,7 +3860,7 @@ suite('CopilotAgentSession', () => {
 			);
 
 			assert.deepStrictEqual({ result, signals }, {
-				result: { answer: '', wasFreeform: true },
+				result: { answer: 'No active turn', wasFreeform: true },
 				signals: [],
 			});
 		});
@@ -4928,6 +4929,25 @@ suite('CopilotAgentSession', () => {
 			// Resolve the request so the deferred completes and the test can clean up.
 			session.respondToUserInputRequest(request.id, ChatInputResponseKind.Decline);
 			await responsePromise;
+		});
+
+		test('handleExitPlanModeRequest rejects when its turn changes while reading the plan', async () => {
+			const { session, runtime, mockSession, signals } = await createAgentSession(disposables);
+			const planRead = new DeferredPromise<{ exists: boolean; content: string | null; path: string | null }>();
+			mockSession.planReadPromise = planRead.p;
+			session.resetTurnState('turn-plan');
+
+			const responsePromise = runtime.handleExitPlanModeRequest(planRequestParams(), { sessionId: 'test-session-1' });
+			session.resetTurnState('turn-next');
+			planRead.complete({ exists: true, content: '## Plan', path: '/sessions/abc/plan.md' });
+
+			assert.deepStrictEqual({
+				response: await responsePromise,
+				inputRequests: signals.filter(signal => isAction(signal, ActionType.ChatInputRequested)).length,
+			}, {
+				response: { approved: false },
+				inputRequests: 0,
+			});
 		});
 
 		test('completing the input request with autopilot preserves Ask When Needed and syncs mode=autopilot', async () => {

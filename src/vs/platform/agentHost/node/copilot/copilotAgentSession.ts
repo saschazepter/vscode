@@ -3577,7 +3577,8 @@ export class CopilotAgentSession extends Disposable {
 	 * `currentMode` so the model can continue with implementation.
 	 */
 	private async _handleExitPlanModeRequest(data: ExitPlanModeRequest, _invocation: { sessionId: string }): Promise<IExitPlanModeResponse> {
-		if (!this.hasActiveTurn) {
+		const turnId = this._currentTurn?.id;
+		if (!turnId) {
 			this._logService.warn(`[Copilot:${this.sessionId}] Rejecting plan review request without an active turn`);
 			return { approved: false };
 		}
@@ -3591,6 +3592,10 @@ export class CopilotAgentSession extends Disposable {
 			planPath = planRead.path ?? null;
 		} catch (err) {
 			this._logService.warn(`[Copilot:${this.sessionId}] rpc.plan.read failed for exit_plan_mode: ${err instanceof Error ? err.message : String(err)}`);
+		}
+		if (this._currentTurn?.id !== turnId) {
+			this._logService.warn(`[Copilot:${this.sessionId}] Rejecting plan review request after its turn ended`);
+			return { approved: false };
 		}
 
 		const options = data.actions.map(actionId => {

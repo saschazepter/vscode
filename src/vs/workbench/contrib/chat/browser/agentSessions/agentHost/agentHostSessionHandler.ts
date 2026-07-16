@@ -63,7 +63,7 @@ import {
 	type IImageVariableEntry
 } from '../../../common/attachments/chatVariableEntries.js';
 import { coerceImageBuffer } from '../../../common/chatImageExtraction.js';
-import { ChatRequestQueueKind, ConfirmedReason, ElicitationState, IChatProgress, IChatQuestion, IChatQuestionAnswers, IChatService, IChatToolInvocation, ToolConfirmKind, type IChatAutoModeResolutionPart, type IChatMcpAuthenticationRequired, type IChatMcpAuthenticationRequiredServer, type IChatMcpStartingServer, type IChatMultiSelectAnswer, type IChatPlanReviewResult, type IChatQuestionAnswerValue, type IChatResponseErrorDetails, type IChatSingleSelectAnswer, type IChatTerminalToolInvocationData } from '../../../common/chatService/chatService.js';
+import { ChatRequestQueueKind, ConfirmedReason, ElicitationState, IChatProgress, IChatQuestionAnswers, IChatService, IChatToolInvocation, ToolConfirmKind, type IChatAutoModeResolutionPart, type IChatMcpAuthenticationRequired, type IChatMcpAuthenticationRequiredServer, type IChatMcpStartingServer, type IChatMultiSelectAnswer, type IChatPlanReviewResult, type IChatResponseErrorDetails, type IChatSingleSelectAnswer, type IChatTerminalToolInvocationData } from '../../../common/chatService/chatService.js';
 import { IChatSession, IChatSessionContentProvider, IChatSessionHistoryItem, IChatSessionItem, IChatSessionRequestHistoryItem, isTerminalCommandPrompt, SessionType, type IChatInputCompletionItem, type IChatInputCompletionsParams, type IChatInputCompletionsResult, type IChatSessionServerRequest } from '../../../common/chatSessionsService.js';
 import { IChatEntitlementService } from '../../../../../services/chat/common/chatEntitlementService.js';
 import { IWorkingCopyService } from '../../../../../services/workingCopy/common/workingCopyService.js';
@@ -73,8 +73,6 @@ import { IChatEditingService } from '../../../common/editing/chatEditingService.
 import { ILanguageModelChatMetadata, ILanguageModelsService } from '../../../common/languageModels.js';
 import { type IChatModel, type IChatModelInputState, type IChatRequestVariableData, type ISerializableChatModelInputState } from '../../../common/model/chatModel.js';
 import { ChatElicitationRequestPart } from '../../../common/model/chatProgressTypes/chatElicitationRequestPart.js';
-import { ChatPlanReviewData } from '../../../common/model/chatProgressTypes/chatPlanReviewData.js';
-import { ChatQuestionCarouselData } from '../../../common/model/chatProgressTypes/chatQuestionCarouselData.js';
 import { ChatToolInvocation } from '../../../common/model/chatProgressTypes/chatToolInvocation.js';
 import { getChatSessionType } from '../../../common/model/chatUri.js';
 import { IChatAgentData, IChatAgentImplementation, IChatAgentRequest, IChatAgentResult, IChatAgentService } from '../../../common/participants/chatAgents.js';
@@ -93,7 +91,7 @@ import { buildHostLocalEventsPath } from '../../copilotCliEventsUri.js';
 import { toolDataToDefinition } from './agentHostToolUtils.js';
 import { IAgentHostUntitledProvisionalSessionService } from './agentHostUntitledProvisionalSessionService.js';
 import { IAgentHostImportConversationStore } from './agentHostImportConversationStore.js';
-import { activeTurnToProgress, completedToolCallToEditParts, completedToolCallToSerialized, finalizeToolInvocation, formatTurnResponseDetails, getTerminalContentUri, isSubagentTool, makeAhpTerminalToolSessionId, messageAttachmentsToVariableData, messageToVariableData, parseAhpTerminalToolSessionId, rawMarkdownToString, rewriteAgentHostLinkTarget, stringOrMarkdownToString, systemNotificationToChatPart, toolCallAuthenticationServer, toolCallConfirmationMessages, toolCallStateToInvocation, turnsToHistory, updateRunningToolSpecificData, usageInfoToAutoModeResolution, usageInfoToChatUsage, usageInfoToQuotas, type IToolCallFileEdit, type TurnModelLookup } from './stateToProgressAdapter.js';
+import { activeTurnToProgress, BOOLEAN_TRUE_OPTION_ID, completedToolCallToEditParts, completedToolCallToSerialized, convertProtocolAnswers, convertProtocolPlanReviewResult, createInputRequestCarousel, createInputRequestPlanReview, finalizeToolInvocation, formatTurnResponseDetails, getTerminalContentUri, getUrlInputRequestPresentation, isSubagentTool, makeAhpTerminalToolSessionId, messageAttachmentsToVariableData, messageToVariableData, parseAhpTerminalToolSessionId, rewriteAgentHostLinkTarget, stringOrMarkdownToString, systemNotificationToChatPart, toolCallAuthenticationServer, toolCallConfirmationMessages, toolCallStateToInvocation, turnsToHistory, updateRunningToolSpecificData, usageInfoToAutoModeResolution, usageInfoToChatUsage, usageInfoToQuotas, type IToolCallFileEdit, type TurnModelLookup } from './stateToProgressAdapter.js';
 import { resolveMcpServerAuthentication, agentHostMcpServerId } from './agentHostAuth.js';
 export { toolDataToDefinition };
 
@@ -102,8 +100,6 @@ export { toolDataToDefinition };
  * elsewhere (`chatRepoInfo`). Larger buffers are not inlined; a dirty saved file then falls back to its on-disk path.
  */
 const MAX_INLINED_UNSAVED_EDITOR_BYTES = 1024 * 1024;
-const BOOLEAN_TRUE_OPTION_ID = 'true';
-const BOOLEAN_FALSE_OPTION_ID = 'false';
 
 // =============================================================================
 // AgentHostSessionHandler - renderer-side handler for a single agent host
@@ -337,43 +333,6 @@ export function convertCarouselAnswers(raw: IChatQuestionAnswers, questions: rea
 	return answers;
 }
 
-function convertProtocolAnswer(answer: ChatInputAnswer): IChatQuestionAnswerValue | undefined {
-	if (answer.state !== ChatInputAnswerState.Submitted) {
-		return undefined;
-	}
-	switch (answer.value.kind) {
-		case ChatInputAnswerValueKind.Text:
-			return answer.value.value;
-		case ChatInputAnswerValueKind.Number:
-		case ChatInputAnswerValueKind.Boolean:
-			return String(answer.value.value);
-		case ChatInputAnswerValueKind.Selected:
-			return {
-				selectedValue: answer.value.value,
-				freeformValue: answer.value.freeformValues?.[0],
-			};
-		case ChatInputAnswerValueKind.SelectedMany:
-			return {
-				selectedValues: answer.value.value,
-				freeformValue: answer.value.freeformValues?.[0],
-			};
-	}
-}
-
-function convertProtocolAnswers(raw: Record<string, ChatInputAnswer> | undefined): IChatQuestionAnswers | undefined {
-	if (!raw) {
-		return undefined;
-	}
-	const answers: IChatQuestionAnswers = {};
-	for (const [questionId, answer] of Object.entries(raw)) {
-		const converted = convertProtocolAnswer(answer);
-		if (converted !== undefined) {
-			answers[questionId] = converted;
-		}
-	}
-	return Object.keys(answers).length > 0 ? answers : undefined;
-}
-
 type PlanReviewInputCompletion = { response: ChatInputResponseKind; answers?: Record<string, ChatInputAnswer> };
 
 function getPlanReviewAction(planReview: IAgentHostPlanReview, actionId: string | undefined, actionLabel: string | undefined) {
@@ -438,36 +397,8 @@ function convertPlanReviewResult(planReview: IAgentHostPlanReview, result: IChat
 	};
 }
 
-function convertProtocolPlanReviewResult(planReview: IAgentHostPlanReview, response: ChatInputResponseKind, answers: Record<string, ChatInputAnswer> | undefined): IChatPlanReviewResult | undefined {
-	if (response === ChatInputResponseKind.Decline) {
-		return { rejected: true };
-	}
-	if (response !== ChatInputResponseKind.Accept) {
-		return undefined;
-	}
-
-	const answer = answers?.[planReview.answerQuestionId];
-	if (!answer || answer.state === ChatInputAnswerState.Skipped) {
-		return undefined;
-	}
-
-	const value = answer.value;
-	if (value.kind === ChatInputAnswerValueKind.Text) {
-		const feedback = value.value.trim();
-		return feedback ? { rejected: false, feedback, feedbackOverall: feedback } : undefined;
-	}
-	if (value.kind !== ChatInputAnswerValueKind.Selected) {
-		return undefined;
-	}
-
-	const action = getPlanReviewAction(planReview, value.value, undefined);
-	const feedback = value.freeformValues?.find(v => v.trim().length > 0)?.trim();
-	return {
-		rejected: false,
-		action: action?.label ?? value.value,
-		actionId: action?.id ?? value.value,
-		...(feedback ? { feedback, feedbackOverall: feedback } : {}),
-	};
+function inputRequestResponsePartKey(part: InputRequestResponsePart): string {
+	return `ir:${part.request.id}:${JSON.stringify({ ...part.request, answers: undefined })}`;
 }
 
 // =============================================================================
@@ -959,7 +890,15 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 						}
 						const fallbackRawModelId = lastTurnModelSelection(sessionState)?.id;
 						const lookup = this._createTurnModelLookup(sessionResource, fallbackRawModelId);
-						history.push(...turnsToHistory(resolvedSession, sessionState.turns, this._config.agentId, this._config.connectionAuthority, lookup, this._chatErrorContext(), this._config.connection.initializeResult.get()?.terminalCommandPrefix));
+						history.push(...turnsToHistory(
+							resolvedSession,
+							sessionState.turns,
+							this._config.agentId,
+							this._config.connectionAuthority,
+							lookup,
+							this._chatErrorContext(),
+							this._config.connection.initializeResult.get()?.terminalCommandPrefix,
+						));
 
 						// Enrich history with inner tool calls from subagent
 						// child sessions. Subscribes to each child session so
@@ -1986,7 +1925,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 					: rp.kind === ResponsePartKind.Reasoning
 						? `rs:${rp.id}`
 						: rp.kind === ResponsePartKind.InputRequest
-							? `ir:${rp.request.id}`
+							? inputRequestResponsePartKey(rp)
 							: `other:${responseParts$.get().indexOf(rp)}`,
 			(_key, part$, partStore) => {
 				const initial = part$.get();
@@ -2860,90 +2799,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			return;
 		}
 
-		const questions: IChatQuestion[] = (inputReq.questions ?? []).map((q): IChatQuestion => {
-			let title = q.title;
-			let message = q.message;
-			if (!title) {
-				const EOL = q.message.indexOf('\n');
-				title = EOL === -1 ? q.message : q.message.substring(0, EOL).trim();
-				message = EOL === -1 ? '' : q.message.substring(EOL + 1).trim();
-			}
-			const detailedMessage = new MarkdownString(message, { isTrusted: false });
-
-			switch (q.kind) {
-				case ChatInputQuestionKind.SingleSelect:
-					return {
-						id: q.id,
-						type: 'singleSelect',
-						title,
-						detailedMessage,
-						required: q.required,
-						allowFreeformInput: q.allowFreeformInput ?? true,
-						options: q.options.map(o => ({ id: o.id, label: o.label, value: o.id })),
-					};
-				case ChatInputQuestionKind.MultiSelect:
-					return {
-						id: q.id,
-						type: 'multiSelect',
-						title,
-						detailedMessage,
-						required: q.required,
-						allowFreeformInput: q.allowFreeformInput ?? true,
-						options: q.options.map(o => ({ id: o.id, label: o.label, value: o.id })),
-					};
-				case ChatInputQuestionKind.Boolean:
-					return {
-						id: q.id,
-						type: 'singleSelect',
-						title,
-						detailedMessage,
-						required: q.required,
-						allowFreeformInput: false,
-						defaultValue: q.defaultValue === undefined ? undefined : String(q.defaultValue),
-						options: [
-							{ id: BOOLEAN_TRUE_OPTION_ID, label: localize('chat.inputRequest.boolean.true', "True"), value: BOOLEAN_TRUE_OPTION_ID },
-							{ id: BOOLEAN_FALSE_OPTION_ID, label: localize('chat.inputRequest.boolean.false', "False"), value: BOOLEAN_FALSE_OPTION_ID },
-						],
-					};
-				case ChatInputQuestionKind.Text:
-					return {
-						id: q.id,
-						type: 'text',
-						title,
-						detailedMessage,
-						required: q.required,
-						defaultValue: q.defaultValue,
-					};
-				default:
-					return {
-						id: q.id,
-						type: 'text',
-						title,
-						detailedMessage,
-						required: q.required,
-					};
-			}
-		});
-
-		if (questions.length === 0) {
-			// Fallback for input requests with no structured questions —
-			// create a single text question from the message.
-			questions.push({
-				id: 'answer',
-				type: 'text',
-				title: inputReq.message ?? '',
-				required: true,
-			});
-		}
-
-		const carousel = new ChatQuestionCarouselData(
-			questions,
-			/* allowSkip */ true,
-			inputReq.id,
-			/* data */ undefined,
-			/* isUsed */ undefined,
-			/* message */ inputReq.message ? rawMarkdownToString(inputReq.message, this._config.connectionAuthority) : undefined,
-		);
+		const carousel = createInputRequestCarousel(inputReq, this._config.connectionAuthority);
 		opts.sink([carousel]);
 
 		let completedFromServer = false;
@@ -3021,20 +2877,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		opts: IObserveTurnOptions,
 	): void {
 		const inputReq = part$.get().request;
-		const review = new ChatPlanReviewData(
-			planReview.title,
-			planReview.content,
-			planReview.actions.map(action => ({
-				id: action.id,
-				label: action.label,
-				...(action.description ? { description: action.description } : {}),
-				...(action.default ? { default: true } : {}),
-				...(action.permissionLevel ? { permissionLevel: action.permissionLevel } : {}),
-			})),
-			planReview.canProvideFeedback,
-			planReview.planUri ? URI.parse(planReview.planUri).toJSON() : undefined,
-			inputReq.id,
-		);
+		const review = createInputRequestPlanReview(inputReq, planReview);
 		opts.sink([review]);
 
 		let inputCompleted = false;
@@ -3100,7 +2943,6 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		}));
 	}
 
-
 	/**
 	 * Handle a URL-style {@link ChatInputRequest} by rendering a
 	 * {@link ChatElicitationRequestPart} that prompts the user to open the
@@ -3129,26 +2971,13 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			});
 		};
 
-		let authority = url;
-		try {
-			authority = URI.parse(url).authority || url;
-		} catch {
-			// Fall back to the raw URL string.
-		}
-
-		const message = new MarkdownString();
-		if (inputReq.message) {
-			message.appendText(inputReq.message);
-			message.appendMarkdown('\n\n');
-		}
-		message.appendMarkdown(localize('agentHost.elicit.url.instruction', "Open this URL?"));
-		message.appendCodeblock('', url);
+		const presentation = getUrlInputRequestPresentation(inputReq, url);
 
 		const part = new ChatElicitationRequestPart(
 			localize('agentHost.elicit.url.title', "Authorization Required"),
-			message,
+			presentation.message,
 			'',
-			localize('agentHost.elicit.url.open', "Open {0}", authority),
+			localize('agentHost.elicit.url.open', "Open {0}", presentation.authority),
 			localize('agentHost.elicit.url.cancel', "Cancel"),
 			async () => {
 				try {
