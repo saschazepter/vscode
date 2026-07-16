@@ -1035,6 +1035,13 @@ class SessionSectionRenderer implements ITreeRenderer<SessionListItem, FuzzyScor
 	}
 
 	private saveReadAutomationRuns(): void {
+		// Prune IDs for runs that no longer exist to prevent unbounded growth
+		const currentRunIds = new Set(this.automationService.runs.get().map(r => r.id));
+		for (const id of this._readAutomationRunIds) {
+			if (!currentRunIds.has(id)) {
+				this._readAutomationRunIds.delete(id);
+			}
+		}
 		this.storageService.store(
 			SessionSectionRenderer.READ_AUTOMATION_RUNS_KEY,
 			JSON.stringify([...this._readAutomationRunIds]),

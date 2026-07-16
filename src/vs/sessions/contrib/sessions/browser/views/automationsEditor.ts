@@ -217,13 +217,13 @@ export class AutomationsCardsWidget extends Disposable {
 		const desc = DOM.append(this.emptyContainer, $('p.automations-cards-empty-description'));
 		desc.textContent = localize('noAutomationsDesc', "Create an automation to schedule an agent session to run on a cadence you choose.");
 
-		const createButton = this._register(new Button(this.emptyContainer, {
+		const createButton = this.cardDisposables.add(new Button(this.emptyContainer, {
 			...defaultButtonStyles,
 			title: localize('createAutomation', "Create automation"),
 		}));
 		createButton.label = localize('createAutomation', "Create automation");
 		createButton.element.classList.add('automations-cards-create-button');
-		this._register(createButton.onDidClick(() => this.openCreateDialog()));
+		this.cardDisposables.add(createButton.onDidClick(() => this.openCreateDialog()));
 	}
 
 	private formatSchedule(automation: IAutomation): string {
@@ -320,6 +320,9 @@ export class AutomationsCardsWidget extends Disposable {
 		}
 		if (!ids.includes(runId)) {
 			ids.push(runId);
+			// Prune stale IDs to prevent unbounded growth
+			const currentRunIds = new Set(this.automationService.runs.get().map(r => r.id));
+			ids = ids.filter(id => id === runId || currentRunIds.has(id));
 			this.storageService.store(
 				AutomationsCardsWidget.READ_AUTOMATION_RUNS_KEY,
 				JSON.stringify(ids),
