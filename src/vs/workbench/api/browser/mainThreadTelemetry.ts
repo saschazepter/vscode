@@ -57,6 +57,10 @@ export class MainThreadTelemetry extends Disposable implements MainThreadTelemet
 	$publicLog2<E extends ClassifiedEvent<OmitMetadata<T>> = never, T extends IGDPRProperty = never>(eventName: string, data?: StrictPropertyCheck<T, E>): void {
 		this.$publicLog(eventName, data);
 	}
+
+	$setExperimentProperty(name: string, value: string): void {
+		this._telemetryService.setExperimentProperty(name, value);
+	}
 }
 
 
