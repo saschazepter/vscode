@@ -3729,6 +3729,7 @@ suite('CopilotAgentSession', () => {
 
 		test('handleUserInputRequest fires user_input_request progress event', async () => {
 			const { session, runtime, signals } = await createAgentSession(disposables);
+			session.resetTurnState('turn-input');
 
 			// Start the request (don't await — it blocks waiting for response)
 			const resultPromise = runtime.handleUserInputRequest(
@@ -3759,6 +3760,7 @@ suite('CopilotAgentSession', () => {
 
 		test('handleUserInputRequest with choices generates SingleSelect question', async () => {
 			const { session, runtime, signals } = await createAgentSession(disposables);
+			session.resetTurnState('turn-input');
 
 			const resultPromise = runtime.handleUserInputRequest(
 				{ question: 'Pick a color', choices: ['red', 'blue', 'green'] },
@@ -3791,6 +3793,7 @@ suite('CopilotAgentSession', () => {
 
 		test('handleUserInputRequest returns empty answer on cancel', async () => {
 			const { session, runtime, signals } = await createAgentSession(disposables);
+			session.resetTurnState('turn-input');
 
 			const resultPromise = runtime.handleUserInputRequest(
 				{ question: 'Cancel me' },
@@ -3812,6 +3815,7 @@ suite('CopilotAgentSession', () => {
 
 		test('handleUserInputRequest returns empty answer on skipped question', async () => {
 			const { session, runtime, signals } = await createAgentSession(disposables);
+			session.resetTurnState('turn-input');
 
 			const resultPromise = runtime.handleUserInputRequest(
 				{ question: 'Skip me' },
@@ -3833,6 +3837,7 @@ suite('CopilotAgentSession', () => {
 
 		test('pending user inputs are cancelled on dispose', async () => {
 			const { session, runtime } = await createAgentSession(disposables);
+			session.resetTurnState('turn-input');
 
 			const resultPromise = runtime.handleUserInputRequest(
 				{ question: 'Will be cancelled' },
@@ -3843,6 +3848,20 @@ suite('CopilotAgentSession', () => {
 			const result = await resultPromise;
 			assert.strictEqual(result.answer, '');
 			assert.strictEqual(result.wasFreeform, true);
+		});
+
+		test('handleUserInputRequest rejects without an active turn', async () => {
+			const { runtime, signals } = await createAgentSession(disposables);
+
+			const result = await runtime.handleUserInputRequest(
+				{ question: 'Cannot be displayed' },
+				{ sessionId: 'test-session-1' },
+			);
+
+			assert.deepStrictEqual({ result, signals }, {
+				result: { answer: '', wasFreeform: true },
+				signals: [],
+			});
 		});
 
 		test('autopilot auto-answers a free-form question without firing a progress event', async () => {
@@ -3866,9 +3885,10 @@ suite('CopilotAgentSession', () => {
 		test('autopilot does not auto-answer when mode is not "autopilot"', async () => {
 			// Sanity check: with mode=interactive the question must
 			// still be surfaced as a progress event (the existing behavior).
-			const { runtime, signals } = await createAgentSession(disposables, {
+			const { session, runtime, signals } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.Mode]: 'interactive' },
 			});
+			session.resetTurnState('turn-input');
 
 			runtime.handleUserInputRequest(
 				{ question: 'Need user input' },
@@ -3907,6 +3927,7 @@ suite('CopilotAgentSession', () => {
 
 		test('form-mode request projects schema fields to questions and accept round-trips content', async () => {
 			const { session, runtime, signals } = await createAgentSession(disposables);
+			session.resetTurnState('turn-elicitation');
 
 			const resultPromise = runtime.handleElicitationRequest({
 				sessionId: 'test-session-1',
@@ -3967,6 +3988,7 @@ suite('CopilotAgentSession', () => {
 
 		test('skipped and missing answers are omitted from accept content', async () => {
 			const { session, runtime, signals } = await createAgentSession(disposables);
+			session.resetTurnState('turn-elicitation');
 
 			const resultPromise = runtime.handleElicitationRequest({
 				sessionId: 'test-session-1',
@@ -3992,6 +4014,7 @@ suite('CopilotAgentSession', () => {
 
 		test('url-mode request surfaces url and accept returns no content', async () => {
 			const { session, runtime, signals } = await createAgentSession(disposables);
+			session.resetTurnState('turn-elicitation');
 
 			const resultPromise = runtime.handleElicitationRequest({
 				sessionId: 'test-session-1',
@@ -4010,6 +4033,7 @@ suite('CopilotAgentSession', () => {
 
 		test('free-form request (no schema) returns submitted text as content.answer', async () => {
 			const { session, runtime, signals } = await createAgentSession(disposables);
+			session.resetTurnState('turn-elicitation');
 
 			const resultPromise = runtime.handleElicitationRequest({
 				sessionId: 'test-session-1',
@@ -4030,6 +4054,7 @@ suite('CopilotAgentSession', () => {
 
 		test('decline response maps to action=decline', async () => {
 			const { session, runtime, signals } = await createAgentSession(disposables);
+			session.resetTurnState('turn-elicitation');
 
 			const resultPromise = runtime.handleElicitationRequest({
 				sessionId: 'test-session-1',
@@ -4045,6 +4070,7 @@ suite('CopilotAgentSession', () => {
 
 		test('cancel response maps to action=cancel', async () => {
 			const { session, runtime, signals } = await createAgentSession(disposables);
+			session.resetTurnState('turn-elicitation');
 
 			const resultPromise = runtime.handleElicitationRequest({
 				sessionId: 'test-session-1',
@@ -4076,6 +4102,7 @@ suite('CopilotAgentSession', () => {
 
 		test('pending elicitations are cancelled on dispose', async () => {
 			const { session, runtime } = await createAgentSession(disposables);
+			session.resetTurnState('turn-elicitation');
 
 			const resultPromise = runtime.handleElicitationRequest({
 				sessionId: 'test-session-1',
@@ -4087,6 +4114,22 @@ suite('CopilotAgentSession', () => {
 			session.dispose();
 			assert.deepStrictEqual(await resultPromise, { action: 'cancel' });
 		});
+
+		test('elicitation rejects without an active turn', async () => {
+			const { runtime, signals } = await createAgentSession(disposables);
+
+			const result = await runtime.handleElicitationRequest({
+				sessionId: 'test-session-1',
+				message: 'Cannot be displayed',
+				mode: 'form',
+				requestedSchema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+			});
+
+			assert.deepStrictEqual({ result, signals }, {
+				result: { action: 'decline' },
+				signals: [],
+			});
+		});
 	});
 
 	suite('SDK callback logging', () => {
@@ -4094,6 +4137,7 @@ suite('CopilotAgentSession', () => {
 		test('logs and rethrows user input callback failures', async () => {
 			const logService = new CapturingLogService();
 			const { session, runtime } = await createAgentSession(disposables, { logService });
+			session.resetTurnState('turn-input');
 			const sessionInternals = session as unknown as ISessionInternalsForTest;
 			sessionInternals._onDidSessionProgress.fire = () => {
 				throw new Error('user input boom');
@@ -4888,6 +4932,7 @@ suite('CopilotAgentSession', () => {
 
 		test('completing the input request with autopilot preserves Ask When Needed and syncs mode=autopilot', async () => {
 			const { session, runtime, waitForSignal, sessionConfigUpdates } = await createAgentSession(disposables);
+			session.resetTurnState('turn-plan');
 
 			const responsePromise = runtime.handleExitPlanModeRequest(planRequestParams({ actions: ['autopilot', 'interactive'], recommendedAction: 'autopilot' }), { sessionId: 'test-session-1' });
 			const signal = await waitForSignal(s => isAction(s, ActionType.ChatInputRequested));
@@ -4913,6 +4958,7 @@ suite('CopilotAgentSession', () => {
 			const { session, runtime, waitForSignal } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'autoApprove' },
 			});
+			session.resetTurnState('turn-plan');
 
 			const responsePromise = runtime.handleExitPlanModeRequest(planRequestParams({ actions: ['autopilot', 'interactive'], recommendedAction: 'autopilot' }), { sessionId: 'test-session-1' });
 			const request = getInputRequest(await waitForSignal(s => isAction(s, ActionType.ChatInputRequested)));
@@ -4928,6 +4974,7 @@ suite('CopilotAgentSession', () => {
 
 		test('completing the input request with interactive resolves with approved + interactive (no autoApprove) and syncs mode=interactive', async () => {
 			const { session, runtime, waitForSignal, sessionConfigUpdates } = await createAgentSession(disposables);
+			session.resetTurnState('turn-plan');
 
 			const responsePromise = runtime.handleExitPlanModeRequest(planRequestParams({ actions: ['autopilot', 'interactive'], recommendedAction: 'interactive' }), { sessionId: 'test-session-1' });
 			const signal = await waitForSignal(s => isAction(s, ActionType.ChatInputRequested));
@@ -4950,6 +4997,7 @@ suite('CopilotAgentSession', () => {
 
 		test('declining the input request resolves with approved=false', async () => {
 			const { session, runtime, waitForSignal } = await createAgentSession(disposables);
+			session.resetTurnState('turn-plan');
 
 			const responsePromise = runtime.handleExitPlanModeRequest(planRequestParams(), { sessionId: 'test-session-1' });
 			const signal = await waitForSignal(s => isAction(s, ActionType.ChatInputRequested));
@@ -4961,6 +5009,7 @@ suite('CopilotAgentSession', () => {
 
 		test('exit_only resolves as approved + interactive without autoApproveEdits', async () => {
 			const { session, runtime, waitForSignal } = await createAgentSession(disposables);
+			session.resetTurnState('turn-plan');
 
 			const responsePromise = runtime.handleExitPlanModeRequest(planRequestParams({ actions: ['autopilot', 'interactive', 'exit_only'], recommendedAction: 'exit_only' }), { sessionId: 'test-session-1' });
 			const signal = await waitForSignal(s => isAction(s, ActionType.ChatInputRequested));
@@ -4980,6 +5029,7 @@ suite('CopilotAgentSession', () => {
 
 		test('freeform feedback alongside a selected action becomes a revision request', async () => {
 			const { session, runtime, waitForSignal } = await createAgentSession(disposables);
+			session.resetTurnState('turn-plan');
 
 			const responsePromise = runtime.handleExitPlanModeRequest(planRequestParams({ actions: ['autopilot', 'interactive'], recommendedAction: 'interactive' }), { sessionId: 'test-session-1' });
 			const signal = await waitForSignal(s => isAction(s, ActionType.ChatInputRequested));
@@ -5007,6 +5057,7 @@ suite('CopilotAgentSession', () => {
 
 		test('selectedAction not in offered actions falls back to recommendedAction', async () => {
 			const { session, runtime, waitForSignal } = await createAgentSession(disposables);
+			session.resetTurnState('turn-plan');
 
 			const responsePromise = runtime.handleExitPlanModeRequest(planRequestParams({ actions: ['interactive', 'exit_only'], recommendedAction: 'interactive' }), { sessionId: 'test-session-1' });
 			const signal = await waitForSignal(s => isAction(s, ActionType.ChatInputRequested));
@@ -5030,6 +5081,7 @@ suite('CopilotAgentSession', () => {
 
 		test('selectedAction not in offered actions and no fallback resolves to approved=false', async () => {
 			const { session, runtime, waitForSignal } = await createAgentSession(disposables);
+			session.resetTurnState('turn-plan');
 
 			// SDK offered `exit_only` only and recommended a value not in
 			// the offered set. The client picked something invalid. With
@@ -5052,6 +5104,7 @@ suite('CopilotAgentSession', () => {
 
 		test('text answer with feedback becomes a revision request without selectedAction', async () => {
 			const { session, runtime, waitForSignal } = await createAgentSession(disposables);
+			session.resetTurnState('turn-plan');
 
 			const responsePromise = runtime.handleExitPlanModeRequest(planRequestParams({ actions: ['autopilot', 'interactive'], recommendedAction: 'interactive' }), { sessionId: 'test-session-1' });
 			const signal = await waitForSignal(s => isAction(s, ActionType.ChatInputRequested));
@@ -5079,6 +5132,7 @@ suite('CopilotAgentSession', () => {
 
 		test('whitespace-only freeform feedback is ignored', async () => {
 			const { session, runtime, waitForSignal } = await createAgentSession(disposables);
+			session.resetTurnState('turn-plan');
 
 			const responsePromise = runtime.handleExitPlanModeRequest(planRequestParams({ actions: ['autopilot', 'interactive'], recommendedAction: 'interactive' }), { sessionId: 'test-session-1' });
 			const signal = await waitForSignal(s => isAction(s, ActionType.ChatInputRequested));
@@ -5159,6 +5213,7 @@ suite('CopilotAgentSession', () => {
 			const { session, runtime, waitForSignal } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.Mode]: 'autopilot' },
 			});
+			session.resetTurnState('turn-plan');
 
 			const responsePromise = runtime.handleExitPlanModeRequest(planRequestParams({
 				actions: ['autopilot', 'interactive', 'exit_only'],
@@ -5176,6 +5231,7 @@ suite('CopilotAgentSession', () => {
 			const { session, runtime, waitForSignal } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'default' },
 			});
+			session.resetTurnState('turn-plan');
 
 			const responsePromise = runtime.handleExitPlanModeRequest(planRequestParams(), { sessionId: 'test-session-1' });
 
