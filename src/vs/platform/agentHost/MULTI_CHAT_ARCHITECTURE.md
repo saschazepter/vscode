@@ -374,6 +374,12 @@ surface rather than a Session-typed method.**
   (`{ workingDirectory?, project?, provisional? }`), which the orchestrator maps
   back to the legacy `IAgentCreateSessionResult` shape so provisional /
   `onDidMaterializeSession` / deferred-`sessionAdded` semantics are preserved.
+  The orchestrator's `defaultChatUri` is the authority: `_provisionDefaultChat`
+  threads it straight into `createSession` (its optional `defaultChat` argument),
+  which seeds the session entry with that URI verbatim rather than decoding it to
+  a session and re-deriving the identical URI. Copilot has no synchronous create
+  seed (it stores a provisional session and materializes on first send), so it
+  has no provision round-trip to thread.
 - **Dispose.** `AgentService._disposeSession` routes to
   `agent.chats.disposeChat(defaultChatUri)`; the agent tears down the session's
   shared infra when its default chat is disposed.
@@ -384,6 +390,23 @@ surface rather than a Session-typed method.**
   default-chat URI *is* that session; peer-chat conversations are grouped under
   their session (restored via the peer-chat catalog) and never surface as
   top-level sessions.
+
+### Residual session-to-default-chat derivations
+
+The provision path threads the orchestrator's default-chat URI through, but a few
+agent-internal paths still derive it via the single sanctioned
+`defaultChatUriForSession` helper. These are exactly the **restart-lazy** paths
+that rebuild a session's in-memory entry on demand, where the orchestrator has
+handed only a session URI (or a *peer* chat URI) in that call, never the
+default-chat URI: a cold resume, a peer send that must seed a provisional default
+container to host the peer (`_ensureSessionEntry`), and Codex's fork/restore
+`_createResumedSessionEntry` / no-entry `_fire` fallback. Copilot's
+`_registerInitializedSession` / `_createAgentSession` derivations are the same
+category (materialize-on-first-send + resume). These cannot be replaced with an
+orchestrator-supplied URI without either an AHP protocol change (shipping the
+default-chat URI alongside peer operations) or re-keying the agents' internal
+maps by session URI; they are the agent applying the shared `common/state` codec
+to index its own resource map, not a grouping decision.
 
 ### Storage-preservation
 

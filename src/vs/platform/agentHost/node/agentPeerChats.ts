@@ -11,11 +11,15 @@ import { buildDefaultChatUri } from '../common/state/sessionState.js';
 /**
  * The single node-layer conversion from a session URI to its deterministic
  * default-chat channel URI, shared by the multi-chat agents. Agents call this
- * ONLY where the default-chat URI is first born from a session URI that exists
- * only inside the agent - a freshly forked session id assigned by the SDK, or a
- * cold-restore session URI handed in by the orchestrator. Everywhere else agents
- * reuse the chat URI they were already given (an entry's {@link AgentSessionEntry.defaultChatKey}
- * or a live session's stored chat channel) instead of re-deriving it.
+ * only where they hold a session URI that the orchestrator has NOT paired with
+ * a default-chat URI in the current call: the restart-lazy paths that rebuild a
+ * session's in-memory entry on demand (a cold resume, a peer send that seeds a
+ * provisional default, a fork/restore materialize), plus direct createSession
+ * callers that pass only a session URI. The provision (create) path instead
+ * threads the orchestrator's default-chat URI straight through so it is reused
+ * verbatim. Everywhere a chat URI is already in hand (an entry's
+ * {@link AgentSessionEntry.defaultChatKey} or a live session's stored channel),
+ * agents reuse it rather than re-deriving here.
  */
 export function defaultChatUriForSession(sessionUri: URI): URI {
 	return URI.parse(buildDefaultChatUri(sessionUri));

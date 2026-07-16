@@ -4869,9 +4869,14 @@ suite('ClaudeAgent (Phase 7 §3.4 — _handleCanUseTool)', () => {
 		ctx.agent.respondToPermissionRequest('tu_shape', true);
 		await promise;
 
+		// The agent keys its chat map by the default-chat URI, which populates
+		// that URI's cached string form on the emitted object; mirror it on the
+		// expected URI so the deep-equal is not tripped by the internal cache.
+		const expectedChat = URI.parse(buildDefaultChatUri(sessionUri));
+		expectedChat.toString();
 		assert.deepStrictEqual(captured, {
 			kind: 'pending_confirmation',
-			chat: URI.parse(buildDefaultChatUri(sessionUri)),
+			chat: expectedChat,
 			state: {
 				status: ToolCallStatus.PendingConfirmation,
 				toolCallId: 'tu_shape',
@@ -5171,6 +5176,10 @@ suite('ClaudeAgent (Phase 7 §3.5 — INTERACTIVE_CLAUDE_TOOLS)', () => {
 
 		const fakeQuery = ctx.sdk.warmQueries.at(-1)?.produced;
 		const persistedMode = ctx.configService.getSessionConfigValues(sessionUri.toString())?.['permissionMode'];
+		// See Test 7: the agent keys its chat map by the default-chat URI, which
+		// populates the emitted URI's cached string form; mirror it here.
+		const expectedChat = URI.parse(buildDefaultChatUri(sessionUri));
+		expectedChat.toString();
 		assert.deepStrictEqual({
 			signal: captured,
 			result,
@@ -5179,7 +5188,7 @@ suite('ClaudeAgent (Phase 7 §3.5 — INTERACTIVE_CLAUDE_TOOLS)', () => {
 		}, {
 			signal: {
 				kind: 'pending_confirmation',
-				chat: URI.parse(buildDefaultChatUri(sessionUri)),
+				chat: expectedChat,
 				state: {
 					status: ToolCallStatus.PendingConfirmation,
 					toolCallId: 'tu_plan_ok',

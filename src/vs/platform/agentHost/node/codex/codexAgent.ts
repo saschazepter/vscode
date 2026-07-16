@@ -2382,7 +2382,13 @@ export class CodexAgent extends Disposable implements IAgent {
 		},
 	};
 
-	async createSession(config: IAgentCreateSessionConfig = {}): Promise<IAgentCreateSessionResult> {
+	/**
+	 * `defaultChat` is the orchestrator-allocated default-chat URI, threaded in
+	 * by the provision path so the session records the URI it was handed instead
+	 * of re-deriving it. Direct callers omit it and fall back to the sanctioned
+	 * session-derived URI.
+	 */
+	async createSession(config: IAgentCreateSessionConfig = {}, defaultChat?: URI): Promise<IAgentCreateSessionResult> {
 		this._logService.info(`[Codex DEBUG] createSession session=${config.session?.toString() ?? '(none)'} model=${config.model?.id ?? '(none)'} cwd=${config.workingDirectory?.toString() ?? '(none)'}`);
 		this._ensureAuthenticated();
 		if (config.fork) {
@@ -2418,11 +2424,15 @@ export class CodexAgent extends Disposable implements IAgent {
 		}
 
 		const clientToolSet = new ActiveClientToolSet();
+		// Prefer the orchestrator-supplied default-chat URI (the provision path
+		// hands it in) over re-deriving it; the fallback covers direct callers
+		// that pass only a session URI.
+		const defaultChatUri = defaultChat ?? defaultChatUriForSession(sessionUri);
 		const session: ICodexSession = {
 			sessionId,
 			threadId: undefined,
 			sessionUri,
-			defaultChat: defaultChatUriForSession(sessionUri),
+			defaultChat: defaultChatUri,
 			workingDirectory: config.workingDirectory,
 			managedWorkingDirectory: undefined,
 			mapState: createCodexSessionMapState(new Set(this._serverToolHost?.toolNames ?? []), clientToolSet),
@@ -2469,6 +2479,8 @@ export class CodexAgent extends Disposable implements IAgent {
 		if (sessionStr === undefined) {
 			throw new Error(`[Codex] provisionSession: malformed default chat URI ${chat.toString()}`);
 		}
+		// Seed the session with the orchestrator's default-chat URI (`chat`)
+		// rather than decoding it to a session and re-deriving the identical URI.
 		const created = await this.createSession({
 			session: URI.parse(sessionStr),
 			...(provision.agent !== undefined ? { agent: provision.agent } : {}),
@@ -2476,7 +2488,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			...(provision.config !== undefined ? { config: provision.config } : {}),
 			...(provision.activeClient !== undefined ? { activeClient: provision.activeClient } : {}),
 			...(provision.progressToken !== undefined ? { progressToken: provision.progressToken } : {}),
-		});
+		}, chat);
 		return {
 			provision: {
 				...(created.workingDirectory !== undefined ? { workingDirectory: created.workingDirectory } : {}),

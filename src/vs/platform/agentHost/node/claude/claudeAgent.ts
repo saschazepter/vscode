@@ -411,12 +411,13 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	 * Create a session container seeding its default (main) chat as the first
 	 * entry in the uniform chat map, keyed by the session's default-chat URI.
 	 */
-	private _seedSessionEntry(sessionId: string, session: URI, mainSession: ClaudeAgentSession): ClaudeSessionEntry {
+	private _seedSessionEntry(sessionId: string, defaultChat: URI, mainSession: ClaudeAgentSession): ClaudeSessionEntry {
 		const container = new ClaudeSessionEntry();
-		// Key by the deterministic default-chat URI. Derive it from a fresh URI
-		// (not the session's live chatChannelUri) so we never eagerly cache the
-		// emitted object's string form.
-		container.setDefaultChat(defaultChatUriForSession(session).toString(), this._wireEntry(mainSession));
+		// Key by the default-chat URI supplied by the caller: the orchestrator's
+		// URI on the create path, or the sanctioned session-derived URI on the
+		// restart-lazy resume/ensure paths. Reused verbatim so this seed never
+		// re-derives the session-to-default-chat mapping itself.
+		container.setDefaultChat(defaultChat.toString(), this._wireEntry(mainSession));
 		this._sessions.set(sessionId, container);
 		return container;
 	}
@@ -675,7 +676,13 @@ export class ClaudeAgent extends Disposable implements IAgent {
 
 	// #region Stubs — implemented in later phases
 
-	async createSession(config: IAgentCreateSessionConfig = {}): Promise<IAgentCreateSessionResult> {
+	/**
+	 * `defaultChat` is the orchestrator-allocated default-chat URI, threaded in
+	 * by the provision path so the agent seeds its entry with the URI it was
+	 * handed instead of re-deriving it. Direct callers (e.g. remove-all) omit it
+	 * and fall back to the sanctioned session-derived URI.
+	 */
+	async createSession(config: IAgentCreateSessionConfig = {}, defaultChat?: URI): Promise<IAgentCreateSessionResult> {
 		this._ensureAuthenticated();
 		if (config.fork) {
 			return this._forkSession(config, config.fork);
@@ -714,10 +721,14 @@ export class ClaudeAgent extends Disposable implements IAgent {
 
 		const permissionMode = this._resolvePermissionMode(config.config);
 
+		// Prefer the orchestrator-supplied default-chat URI (the provision path
+		// hands it in) over re-deriving it; the fallback covers direct
+		// createSession callers that pass only a session URI.
+		const defaultChatUri = defaultChat ?? defaultChatUriForSession(sessionUri);
 		const session = ClaudeAgentSession.createProvisional(
 			sessionId,
 			sessionUri,
-			defaultChatUriForSession(sessionUri),
+			defaultChatUri,
 			workingDirectory,
 			project,
 			config.model,
@@ -728,7 +739,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			this._metadataStore,
 			this._instantiationService,
 		);
-		this._seedSessionEntry(sessionId, sessionUri, session);
+		this._seedSessionEntry(sessionId, defaultChatUri, session);
 		await this._seedEagerActiveClient(sessionUri, config.activeClient);
 
 		return {
@@ -1090,10 +1101,11 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			this._logService.warn(`[Claude:${sessionId}] project resolution failed during resume; continuing without project`, err);
 		}
 
+		const defaultChatUri = defaultChatUriForSession(sessionUri);
 		const session = ClaudeAgentSession.createProvisional(
 			sessionId,
 			sessionUri,
-			defaultChatUriForSession(sessionUri),
+			defaultChatUri,
 			workingDirectory,
 			project,
 			overlay.model,
@@ -1104,7 +1116,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			this._metadataStore,
 			this._instantiationService,
 		);
-		this._seedSessionEntry(sessionId, sessionUri, session);
+		this._seedSessionEntry(sessionId, defaultChatUri, session);
 
 		const canUseTool = this._makeCanUseTool(sessionId);
 		const onElicitation = this._makeOnElicitation(sessionId);
@@ -1303,6 +1315,8 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		if (sessionStr === undefined) {
 			throw new Error(`[Claude] provisionSession: malformed default chat URI ${chat.toString()}`);
 		}
+		// Seed the entry with the orchestrator's default-chat URI (`chat`) rather
+		// than decoding it to a session and re-deriving the identical URI.
 		const created = await this.createSession({
 			session: URI.parse(sessionStr),
 			...(provision.agent !== undefined ? { agent: provision.agent } : {}),
@@ -1310,7 +1324,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			...(provision.config !== undefined ? { config: provision.config } : {}),
 			...(provision.activeClient !== undefined ? { activeClient: provision.activeClient } : {}),
 			...(provision.progressToken !== undefined ? { progressToken: provision.progressToken } : {}),
-		});
+		}, chat);
 		return {
 			provision: {
 				...(created.workingDirectory !== undefined ? { workingDirectory: created.workingDirectory } : {}),
@@ -1451,10 +1465,11 @@ export class ClaudeAgent extends Disposable implements IAgent {
 				return existing;
 			}
 			const parentSession = await this._resolveParentSession(session, sessionId);
+			const defaultChatUri = defaultChatUriForSession(session);
 			const mainSession = ClaudeAgentSession.createProvisional(
 				sessionId,
 				session,
-				defaultChatUriForSession(session),
+				defaultChatUri,
 				parentSession.workingDirectory,
 				parentSession.project,
 				parentSession.model,
@@ -1465,7 +1480,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 				this._metadataStore,
 				this._instantiationService,
 			);
-			return this._seedSessionEntry(sessionId, session, mainSession);
+			return this._seedSessionEntry(sessionId, defaultChatUri, mainSession);
 		});
 	}
 
