@@ -3,13 +3,18 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import './media/dictationSession.css';
 import { DisposableStore, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { ICodeEditor } from '../../../../../editor/browser/editorBrowser.js';
 import { EditorOption } from '../../../../../editor/common/config/editorOptions.js';
+import { IEditorDecorationsCollection } from '../../../../../editor/common/editorCommon.js';
 import { Position } from '../../../../../editor/common/core/position.js';
 import { Range } from '../../../../../editor/common/core/range.js';
 import { localize } from '../../../../../nls.js';
 import { ChatSpeechToTextState, IChatSpeechToTextService } from './chatSpeechToTextService.js';
+
+/** Inline decoration class that shimmers not-yet-finalized dictation text. */
+const INTERIM_SHIMMER_CLASS = 'dictation-interim-shimmer';
 
 /**
  * Renders the cumulative transcript into a code editor, replacing its own
@@ -19,10 +24,16 @@ class LiveTranscriptInserter {
 	private _anchor: Position | undefined;
 	private _end: Position | undefined;
 	private _needsLeadingSpace = false;
+	private _shimmerDecorations: IEditorDecorationsCollection | undefined;
 
 	constructor(private readonly _editor: ICodeEditor) { }
 
-	update(fullText: string): void {
+	/**
+	 * Render the cumulative transcript. While `interim` is true the text is not
+	 * yet finalized, so it is decorated with a shimmer animation; the final
+	 * update (`interim === false`) clears the shimmer, leaving solid text.
+	 */
+	update(fullText: string, interim: boolean = true): void {
 		const model = this._editor.getModel();
 		if (!model) {
 			return;
@@ -50,6 +61,30 @@ class LiveTranscriptInserter {
 		const endColumn = lines.length === 1 ? this._anchor.column + lines[0].length : lines[lines.length - 1].length + 1;
 		this._end = new Position(endLine, endColumn);
 		this._editor.setPosition(this._end);
+		this._updateShimmer(interim);
+	}
+
+	/** Shimmer the inserted (interim) region, or clear it once finalized. */
+	private _updateShimmer(interim: boolean): void {
+		if (!interim || !this._anchor || !this._end || Position.equals(this._anchor, this._end)) {
+			this._shimmerDecorations?.clear();
+			return;
+		}
+		if (!this._shimmerDecorations) {
+			this._shimmerDecorations = this._editor.createDecorationsCollection();
+		}
+		this._shimmerDecorations.set([{
+			range: Range.fromPositions(this._anchor, this._end),
+			options: {
+				description: 'chatSpeechToText-interim',
+				inlineClassName: INTERIM_SHIMMER_CLASS,
+			},
+		}]);
+	}
+
+	/** Stop shimmering, leaving whatever text is currently inserted as solid. */
+	clearShimmer(): void {
+		this._shimmerDecorations?.clear();
 	}
 
 	/**
@@ -58,6 +93,7 @@ class LiveTranscriptInserter {
 	 * is cancelled so no dictated text is left behind.
 	 */
 	revert(): void {
+		this._shimmerDecorations?.clear();
 		const model = this._editor.getModel();
 		if (!model || !this._anchor || !this._end) {
 			return;
@@ -128,6 +164,9 @@ export async function startDictation(service: IChatSpeechToTextService, editor: 
 		}
 	};
 	disposables.add(toDisposable(() => {
+		// Ensure the interim shimmer never lingers, regardless of how the session
+		// ends (final transcript, cancel, editor disposal, or a service-side error).
+		inserter.clearShimmer();
 		if (!editor.getModel() || editor.getOption(EditorOption.placeholder) !== listeningPlaceholder) {
 			return;
 		}
@@ -172,7 +211,8 @@ export async function stopDictation(): Promise<void> {
 	try {
 		const text = await active.service.stopAndTranscribe();
 		if (text !== undefined) {
-			active.inserter.update(text);
+			// Final transcript: render it solid (no shimmer).
+			active.inserter.update(text, false);
 		}
 	} finally {
 		active.disposables.dispose();

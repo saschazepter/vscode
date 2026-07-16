@@ -1,0 +1,32 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* Shimmer applied to not-yet-finalized (interim) dictation text as it streams
+ * in, so the user can tell which portion is still being transcribed. Once the
+ * transcript is finalized the decoration is removed, leaving solid text. */
+@keyframes dictation-interim-shimmer {
+	0% {
+		background-position: 120% 0;
+	}
+
+	100% {
+		background-position: -120% 0;
+	}
+}
+
+.monaco-editor .dictation-interim-shimmer {
+	background: linear-gradient(90deg,
+			var(--vscode-disabledForeground) 0%,
+			var(--vscode-disabledForeground) 30%,
+			var(--vscode-foreground) 50%,
+			var(--vscode-disabledForeground) 70%,
+			var(--vscode-disabledForeground) 100%);
+	background-size: 400% 100%;
+	background-clip: text;
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
+	animation: dictation-interim-shimmer 2s linear infinite;
+	will-change: background-position;
+}
