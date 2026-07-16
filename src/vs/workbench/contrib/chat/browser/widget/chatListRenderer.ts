@@ -286,6 +286,7 @@ export function renderChatRequestTimestamp(container: HTMLElement, timestamp: nu
 		const element = dom.append(container, $('time.chat-request-timestamp', {
 			datetime: formatted.dateTime,
 			'aria-label': localize('chatRequestSentAt', "Sent {0}", formatted.fullText),
+			tabindex: 0,
 		}, formatted.text));
 		return { element, hoverText: formatted.fullText };
 	}
