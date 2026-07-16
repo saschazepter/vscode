@@ -313,13 +313,6 @@ async function main() {
 	log('.', `Running ${parallelTasks.length} npm installs with concurrency ${concurrency}...`);
 	await runWithConcurrency(parallelTasks, concurrency);
 
-	run(npm, ['rebuild', '@vscode/policy-watcher'], {
-		cwd: root,
-		env: { ...process.env },
-		stdio: 'inherit',
-		shell: true,
-	});
-
 	child_process.execSync('git config pull.rebase merges');
 	child_process.execSync('git config blame.ignoreRevsFile .git-blame-ignore-revs');
 
