@@ -321,15 +321,47 @@ export class TaskApiBackend implements TaskCloudAgentBackend {
 			}
 		}
 
-		return tasksWithRepo
-			.filter(({ task }) => !task.archived_at && isCloudCodingAgentTask(task))
-			.map(({ task, repo }): CloudSessionData => ({
-				latestSession: taskToSessionInfo(task),
-				pullArtifact: taskToPullArtifactRef(task),
-				diffRefs: taskToDiffRefs(task, repo),
-				repo: repo ?? parseRepoFromTaskUrl(task.html_url),
-				taskState: task.state,
-			}));
+		// Resolve `{owner, name}` per task: known list-scope repo → parse `html_url` →
+		// non-interactive numeric `repository.id` lookup (global-list tasks may carry only the
+		// id). Without a repo the session groups under "Unknown" in the sessions list. The
+		// id lookup is cached (by promise) per repo id so a page of same-repo tasks — resolved
+		// concurrently via `Promise.all` — shares a single in-flight call.
+		const repoByIdCache = new Map<number, Promise<{ owner: string; name: string } | undefined>>();
+		const resolveRepo = (task: AgentTask, listRepo: { owner: string; name: string } | undefined): Promise<{ owner: string; name: string } | undefined> => {
+			const known = listRepo ?? parseRepoFromTaskUrl(task.html_url);
+			if (known) {
+				return Promise.resolve(known);
+			}
+			const repoId = task.repository?.id;
+			if (typeof repoId !== 'number') {
+				return Promise.resolve(undefined);
+			}
+			let pending = repoByIdCache.get(repoId);
+			if (!pending) {
+				// Non-interactive: no `createIfNone`, so a background refresh never prompts sign-in.
+				pending = this._octoKitService.getRepositoryById(repoId, {}).catch(e => {
+					this._logService.warn(`Failed to resolve repository ${repoId} for task ${task.id}: ${e}`);
+					return undefined;
+				});
+				repoByIdCache.set(repoId, pending);
+			}
+			return pending;
+		};
+
+		return Promise.all(
+			tasksWithRepo
+				.filter(({ task }) => !task.archived_at && isCloudCodingAgentTask(task))
+				.map(async ({ task, repo }): Promise<CloudSessionData> => {
+					const resolvedRepo = await resolveRepo(task, repo);
+					return {
+						latestSession: taskToSessionInfo(task),
+						pullArtifact: taskToPullArtifactRef(task),
+						diffRefs: taskToDiffRefs(task, resolvedRepo),
+						repo: resolvedRepo,
+						taskState: task.state,
+					};
+				}),
+		);
 	}
 
 	/**
