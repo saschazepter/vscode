@@ -59,7 +59,7 @@ export {
 	ChatInteractivity,
 	ChatOriginKind,
 	SessionLifecycle,
-	SessionStatus, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallContributorKind, ToolCallStatus,
+	SessionStatus, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallContributorKind, ToolCallRiskAssessmentKind, ToolCallRiskAssessmentStatus, ToolCallStatus,
 	ToolResultContentType,
 	TurnState, type ActiveTurn, type AgentCustomization, type AgentCapabilities, type AgentInfo, type AgentSelection, type Annotation, type AnnotationEntry, type AnnotationsState, type AnnotationsSummary, type Changeset, type ChangesetFile,
 	type ChangesetOperation, type ChangesetState, type ChatState, type ChatSummary, type ChatOrigin, type ChildCustomization, type ClientPluginCustomization, type ConfigPropertySchema,
@@ -80,6 +80,9 @@ export {
 	type ToolCallPendingResultConfirmationState,
 	type ToolCallResponsePart,
 	type ToolCallResult,
+	type ToolCallRiskAssessment,
+	type ToolCallRiskAssessmentCompleteState,
+	type ToolCallRiskAssessmentLoadingState,
 	type ToolCallRunningState,
 	type ToolCallState,
 	type ToolCallStreamingState,
@@ -716,9 +719,10 @@ export function isChatReadOnly(interactivity: ChatInteractivity | undefined, ses
 	return effectiveChatInteractivity(interactivity, sessionArchived) === ChatInteractivity.ReadOnly;
 }
 
-export function createActiveTurn(id: string, message: Message): ActiveTurn {
+export function createActiveTurn(id: string, message: Message, startedAt: string): ActiveTurn {
 	return {
 		id,
+		startedAt,
 		message,
 		responseParts: [],
 		usage: undefined,

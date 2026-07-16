@@ -460,9 +460,12 @@ configurationRegistry.registerConfiguration({
 			type: 'boolean',
 			description: nls.localize('agents.voice.enabled', "Enable the Voice Mode panel in the chat view for voice-driven coding conversations."),
 			default: false,
+			experiment: {
+				mode: 'auto',
+			},
+			tags: ['experimental', 'advanced'],
 			scope: ConfigurationScope.APPLICATION,
 			restricted: true,
-			included: false,
 		},
 		'agents.voice.backendUrl': {
 			type: 'string',
@@ -500,7 +503,7 @@ configurationRegistry.registerConfiguration({
 		'agents.voice.handsFree': {
 			type: 'boolean',
 			markdownDescription: nls.localize('agents.voice.handsFree', "When enabled, voice mode automatically re-enters listening after the assistant finishes speaking, so you can hold a hands-free back-and-forth conversation. When disabled, you start each turn manually. This controls only the auto-listen loop; how a turn ends is controlled by {0} and {1}.", '`#agents.voice.turn.silenceMs#`', '`#agents.voice.turn.stopPhrases#`'),
-			default: true,
+			default: false,
 			scope: ConfigurationScope.APPLICATION,
 		},
 		'agents.voice.turn.silenceMs': {
