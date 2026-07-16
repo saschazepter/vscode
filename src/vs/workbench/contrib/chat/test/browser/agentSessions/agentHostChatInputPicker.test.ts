@@ -128,7 +128,7 @@ suite('AgentHostChatInputPicker - resolveConfigChipValue', () => {
 
 		test('explains approval choices on item hover', () => {
 			assert.deepStrictEqual({
-				auto: getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'assisted', label: 'Assisted permissions', description: 'Evaluates risk before running tools' }, false),
+				auto: getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'assisted', label: 'Assisted permissions (Preview)', description: 'Evaluates risk before running tools' }, false),
 				bypass: getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'autoApprove', label: 'Allow all', description: 'Runs tool calls without asking' }, false),
 			}, {
 				auto: 'An LLM judge evaluates each tool call. Tools it doesn\'t approve require your approval.',
@@ -138,7 +138,7 @@ suite('AgentHostChatInputPicker - resolveConfigChipValue', () => {
 
 		test('directs users to their administrator when approvals are disabled by policy', () => {
 			assert.strictEqual(
-				getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'assisted', label: 'Assisted permissions' }, true),
+				getConfigPickerItemHover(SessionConfigKey.AutoApprove, { value: 'assisted', label: 'Assisted permissions (Preview)' }, true),
 				'Disabled by your organization. Contact your administrator.'
 			);
 		});
