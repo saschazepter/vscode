@@ -104,13 +104,29 @@ export async function startDictation(service: IChatSpeechToTextService, editor: 
 	}
 	const inserter = new LiveTranscriptInserter(editor);
 	const disposables = new DisposableStore();
-	// Show a "Listening…" placeholder only once recording actually starts (the
-	// service transitions to Recording and plays the recording-started signal at
-	// the same moment), not during the preceding microphone acquisition and
-	// model preparation. The placeholder remains visible until transcript text
-	// is inserted, and is restored to its previous value when the session ends.
+	// Show a "Listening…" placeholder only once the session is actually
+	// connected and recording, i.e. the service is in the Recording state and
+	// the on-device model has finished preparing (downloading/loading). It must
+	// not appear during microphone acquisition or while the model is still being
+	// prepared, since transcription cannot happen yet. The placeholder remains
+	// visible until transcript text is inserted, and is restored to its previous
+	// value when the session ends.
 	const previousPlaceholder = editor.getOption(EditorOption.placeholder);
 	const listeningPlaceholder = localize('chatStt.listening', "Listening…");
+	const applyPlaceholder = () => {
+		if (!editor.getModel()) {
+			return;
+		}
+		const shouldListen = service.state === ChatSpeechToTextState.Recording && !service.isPreparingModel;
+		const current = editor.getOption(EditorOption.placeholder);
+		if (shouldListen) {
+			if (current !== listeningPlaceholder) {
+				editor.updateOptions({ placeholder: listeningPlaceholder });
+			}
+		} else if (current === listeningPlaceholder) {
+			editor.updateOptions({ placeholder: previousPlaceholder });
+		}
+	};
 	disposables.add(toDisposable(() => {
 		if (!editor.getModel() || editor.getOption(EditorOption.placeholder) !== listeningPlaceholder) {
 			return;
@@ -118,16 +134,17 @@ export async function startDictation(service: IChatSpeechToTextService, editor: 
 		editor.updateOptions({ placeholder: previousPlaceholder });
 	}));
 	disposables.add(service.onDidUpdateTranscript(text => inserter.update(text)));
+	disposables.add(service.onDidChangePreparingModel(() => applyPlaceholder()));
 	disposables.add(service.onDidChangeState(state => {
-		if (state === ChatSpeechToTextState.Recording) {
-			editor.updateOptions({ placeholder: listeningPlaceholder });
-		} else if (state === ChatSpeechToTextState.Idle && _active?.service === service) {
+		if (state === ChatSpeechToTextState.Idle && _active?.service === service) {
 			// If the service ends the session on its own (e.g. the model failed
 			// to load and it surfaced an error), drop the stale active reference
 			// so the toolbar and glow reflect that dictation is no longer running.
 			_active = undefined;
 			disposables.dispose();
+			return;
 		}
+		applyPlaceholder();
 	}));
 	// The target editor can be disposed out from under us (e.g. the Agents
 	// composer is closed); cancel dictation instead of leaving the microphone
