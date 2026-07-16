@@ -273,11 +273,7 @@
 	font-size: 12px;
 	font-weight: 600;
 	color: var(--vscode-descriptionForeground);
-	text-transform: uppercase;
-	letter-spacing: 0.5px;
 	margin-bottom: 8px;
-	padding-bottom: 4px;
-	border-bottom: 1px solid var(--vscode-widget-border);
 }
 
 /* Run cards grid — rectangular cards in a vertical list */
