@@ -14,6 +14,22 @@ const DMGBUILD_REPO = 'https://github.com/dmgbuild/dmgbuild.git';
 const DMGBUILD_COMMIT = '75c8a6c7835c5b73dfd4510d92a8f357f93a5fbf';
 const MIN_PYTHON_VERSION = [3, 10];
 
+/** Walk a directory and sum the sizes of all files (in bytes). */
+function getDirectorySizeBytes(dirPath: string): number {
+	let total = 0;
+	for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+		const full = path.join(dirPath, entry.name);
+		if (entry.isSymbolicLink()) {
+			// Symlinks themselves are tiny; skip following to avoid cycles.
+		} else if (entry.isDirectory()) {
+			total += getDirectorySizeBytes(full);
+		} else {
+			total += fs.statSync(full).size;
+		}
+	}
+	return total;
+}
+
 function getDmgBuildPath(): string {
 	return path.join(import.meta.dirname, '.dmgbuild');
 }
@@ -192,12 +208,20 @@ async function main(buildDir?: string, outDir?: string): Promise<void> {
 	const settingsTemplatePath = path.join(import.meta.dirname, 'dmg-settings.py.template');
 	const settingsFile = path.join(outDir, '.dmg-settings.py');
 	let settingsContent = fs.readFileSync(settingsTemplatePath, 'utf8');
+
+	// Compute the volume size dynamically: measure the app on disk and add a
+	// 20% headroom so the DMG never runs out of space as the build grows.
+	const appSizeMB = getDirectorySizeBytes(appPath) / (1024 * 1024);
+	const dmgSizeMB = Math.ceil(appSizeMB * 1.2);
+	console.log(`  App size on disk: ${appSizeMB.toFixed(1)} MB → DMG volume: ${dmgSizeMB} MB`);
+
 	settingsContent = settingsContent
 		.replace('{{VOLUME_NAME}}', JSON.stringify(title))
 		.replace('{{BADGE_ICON}}', JSON.stringify(diskIconPath))
 		.replace('{{BACKGROUND}}', JSON.stringify(backgroundPath))
 		.replace('{{APP_PATH}}', JSON.stringify(appPath))
-		.replace('{{APP_NAME}}', JSON.stringify(product.nameLong + '.app'));
+		.replace('{{APP_NAME}}', JSON.stringify(product.nameLong + '.app'))
+		.replace('{{SIZE}}', JSON.stringify(`${dmgSizeMB}m`));
 	fs.writeFileSync(settingsFile, settingsContent);
 
 	try {
