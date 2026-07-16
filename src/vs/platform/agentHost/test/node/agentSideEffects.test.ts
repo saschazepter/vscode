@@ -3558,7 +3558,7 @@ suite('AgentSideEffects', () => {
 			);
 			assert.ok(toolCall?.kind === ResponsePartKind.ToolCall);
 			assert.strictEqual(readToolCallMeta(toolCall.toolCall).subagentChatUri, expectedUri);
-			assert.strictEqual(stateManager.getSessionState(expectedUri), undefined);
+			assert.strictEqual(stateManager.getSnapshot(expectedUri), undefined);
 		});
 
 		test('nested subagent_started routes its discovery content block to the immediate parent chat (arbitrary depth)', () => {
