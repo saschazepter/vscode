@@ -47,8 +47,8 @@
 
 @keyframes action-widget-dropdown-close {
 	0% {
-		opacity: 1;
-		transform: scale(1);
+		opacity: var(--action-widget-close-start-opacity, 1);
+		transform: var(--action-widget-close-start-transform, scale(1));
 	}
 
 	100% {
