@@ -30,6 +30,7 @@ import { ChatInteractivity, IChat } from '../../../services/sessions/common/sess
 import { IChatViewFactory } from '../../../services/chatView/browser/chatViewFactory.js';
 import { NewChatWidget } from './newChatWidget.js';
 import { NewChatInSessionWidget } from './newChatInSessionWidget.js';
+import { AutomationsView } from '../../sessions/browser/views/automationsEditor.js';
 import { SessionInputBanners } from '../../sessionInputBanners/browser/sessionInputBanners.js';
 import { SessionChatInputToolbar } from './sessionChatInputToolbar.js';
 import { ISessionChatPillsDebugService } from './sessionChatInputToolbarDebug.js';
@@ -425,5 +426,9 @@ export class ChatViewFactory implements IChatViewFactory {
 
 	createChatView(): AbstractChatView {
 		return this.instantiationService.createInstance(ChatView);
+	}
+
+	createAutomationsView(): AbstractChatView {
+		return this.instantiationService.createInstance(AutomationsView);
 	}
 }
