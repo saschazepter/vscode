@@ -31,6 +31,7 @@ import { IRandomService } from '../randomService.js';
 import { DocumentEditSourceTracker } from './editTracker.js';
 import { EditTelemetryTrigger, IEditSourcesDetailsTelemetryData, sendEditSourcesDetailsTelemetry } from './editSourceTelemetry.js';
 import { IScmRepoAdapter, ScmAdapter } from './scmAdapter.js';
+import { UnifiedEditTrackerShadowTracking } from './unifiedEditTrackerShadowTracking.js';
 
 const MAX_TRACKED_FILE_SIZE = 5 * 1024 * 1024;
 const AGENT_HOST_TRACKING_SCOPE = 'agentHostAIOnly';
@@ -102,6 +103,7 @@ export class AgentHostTrackedFile extends Disposable {
 		private readonly _sendDetails: SendDetails,
 		private readonly _logService: ILogService,
 		private readonly _onDidExpire: () => void,
+		private readonly _onDidReconcile?: (resource: URI, content: string) => void,
 	) {
 		super();
 		this._resource = observableValue(this, resource);
@@ -152,6 +154,7 @@ export class AgentHostTrackedFile extends Disposable {
 			}
 
 			await this._document.reconcile(currentText, this._computeDiff);
+			this._onDidReconcile?.(this.resource, currentText);
 			const tracker = this._tracker.value;
 			if (!tracker) {
 				return;
@@ -267,6 +270,7 @@ export class AgentHostEditSourceTracking extends Disposable {
 
 	constructor(
 		private readonly _detailsEnabled: IObservable<boolean>,
+		private readonly _shadowTracking: UnifiedEditTrackerShadowTracking | undefined,
 		@IAgentHostConnectionsService private readonly _connectionsService: IAgentHostConnectionsService,
 		@IFileService private readonly _fileService: IFileService,
 		@IEditorWorkerService editorWorkerService: IEditorWorkerService,
@@ -312,9 +316,9 @@ export class AgentHostEditSourceTracking extends Disposable {
 					if (!provider) {
 						return;
 					}
-					for (const content of action.result.content ?? []) {
+					for (const [contentIndex, content] of (action.result.content ?? []).entries()) {
 						if (content.type === ToolResultContentType.FileEdit) {
-							await this._processFileEdit(connectionInfo.authority, session, provider, action.turnId, content);
+							await this._processFileEdit(connectionInfo.authority, session, provider, action.turnId, action.toolCallId, contentIndex, content);
 						}
 					}
 				});
@@ -328,6 +332,8 @@ export class AgentHostEditSourceTracking extends Disposable {
 		session: URI,
 		provider: string,
 		turnId: string,
+		toolCallId: string,
+		contentIndex: number,
 		fileEdit: ToolResultFileEditContent,
 	): Promise<void> {
 		const normalized = normalizeFileEdit(fileEdit);
@@ -343,7 +349,7 @@ export class AgentHostEditSourceTracking extends Disposable {
 			.filter(resource => resource !== undefined)
 			.map(resource => toAgentHostUri(resource, connectionAuthority));
 		const dirtyResource = editedResources.find(resource => isDirtyOpenTextModel(resource, this._modelService, this._textFileService));
-		if (dirtyResource) {
+		if (dirtyResource && !this._shadowTracking) {
 			this._logService.trace(`[AgentHostEditSourceTracking] Skipping attribution for dirty open file ${dirtyResource.toString()}`);
 			return;
 		}
@@ -369,9 +375,22 @@ export class AgentHostEditSourceTracking extends Disposable {
 			origin: 'agentHost',
 			trackingScope: AGENT_HOST_TRACKING_SCOPE,
 		});
+		const beforeResource = normalized.beforeUri ? toAgentHostUri(normalized.beforeUri, connectionAuthority) : undefined;
+		this._shadowTracking?.applyAgentEdit({
+			resource,
+			previousResource: beforeResource,
+			before: beforeText,
+			after: afterText,
+			source,
+			correlation: `${session.toString()}:${toolCallId}:${contentIndex}`,
+			kind: normalized.kind,
+		});
+		if (dirtyResource) {
+			this._logService.trace(`[AgentHostEditSourceTracking] Skipping attribution for dirty open file ${dirtyResource.toString()}`);
+			return;
+		}
 
 		const resourceKey = this._uriIdentityService.extUri.getComparisonKey(resource);
-		const beforeResource = normalized.beforeUri ? toAgentHostUri(normalized.beforeUri, connectionAuthority) : undefined;
 		const beforeResourceKey = beforeResource ? this._uriIdentityService.extUri.getComparisonKey(beforeResource) : undefined;
 		let trackedFile = this._trackedFiles.get(resourceKey);
 		if (!trackedFile && beforeResourceKey && beforeResourceKey !== resourceKey) {
@@ -393,6 +412,7 @@ export class AgentHostEditSourceTracking extends Disposable {
 				(data, forwardToGitHub) => sendEditSourcesDetailsTelemetry(this._telemetryService, data, forwardToGitHub),
 				this._logService,
 				() => this._removeTrackedFile(createdTrackedFile),
+				(currentResource, content) => this._shadowTracking?.applyDiskSnapshot(currentResource, content),
 			);
 			trackedFile = createdTrackedFile;
 			this._trackedFiles.set(resourceKey, trackedFile);
