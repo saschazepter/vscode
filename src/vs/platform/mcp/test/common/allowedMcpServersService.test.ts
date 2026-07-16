@@ -36,7 +36,7 @@ suite('AllowedMcpServersService', () => {
 
 		const result = service.isServerAllowed({ name: 'gitlab' });
 		assert.notStrictEqual(result, true);
-		assert.ok(result !== true && result.value.includes('not in the list of allowed servers'));
+		assert.ok(result !== true && result.value.includes('not in the list of servers allowed by your organization'));
 	});
 
 	test('denylist blocks a matching server even when it is also allowed', () => {

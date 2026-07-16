@@ -60,6 +60,7 @@ class TestMcpResourceManagementService extends AbstractMcpResourceManagementServ
 			uriIdentityService,
 			new NullLogService(),
 			mcpResourceScannerService,
+			{ _serviceBrand: undefined, onDidChangeAllowedMcpServers: Event.None, isAllowed: () => true, isServerAllowed: () => true },
 		);
 	}
 

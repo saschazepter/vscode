@@ -106,15 +106,40 @@ function matchesMatcher(matcher: IMcpServerMatcher, identity: IMcpServerIdentity
 }
 
 /**
- * Matches a URL against a pattern that may contain `*` wildcards (each `*` matches any run of
- * characters). Matching is case-insensitive, anchored to the whole string, and every other
- * character is matched literally.
+ * Matches a URL against a pattern that may contain `*` wildcards. Matching is case-insensitive,
+ * anchored to the whole string, and every non-wildcard character is matched literally.
+ *
+ * Wildcard reach is region-aware so an authority wildcard cannot swallow the path: a `*` inside
+ * the authority region (scheme + `//` + host/port, i.e. everything before the first `/` of the
+ * path) matches any run of non-`/` characters, while a `*` in the path/query region matches any
+ * run of characters. This prevents patterns like `https://*.example.com/*` from matching a URL
+ * whose real host is untrusted, e.g. `https://evil.test/.example.com/tool`.
  */
 function matchesUrlPattern(pattern: string, url: string): boolean {
-	const regexSource = `^${pattern.split('*').map(escapeRegExpCharacters).join('.*')}$`;
+	const regexSource = buildUrlPatternRegexSource(pattern);
 	try {
 		return new RegExp(regexSource, 'i').test(url);
 	} catch {
 		return false;
 	}
+}
+
+function buildUrlPatternRegexSource(pattern: string): string {
+	// The authority region spans from the start of the pattern up to (but not including) the first
+	// `/` of the path. Wildcards there must not cross a `/` so they cannot consume path segments.
+	const schemeSeparator = pattern.indexOf('://');
+	const authorityStart = schemeSeparator >= 0 ? schemeSeparator + 3 : 0;
+	const pathStart = pattern.indexOf('/', authorityStart);
+	const authorityEnd = pathStart >= 0 ? pathStart : pattern.length;
+
+	let source = '^';
+	for (let i = 0; i < pattern.length; i++) {
+		const char = pattern[i];
+		if (char === '*') {
+			source += i < authorityEnd ? '[^/]*' : '.*';
+		} else {
+			source += escapeRegExpCharacters(char);
+		}
+	}
+	return source + '$';
 }

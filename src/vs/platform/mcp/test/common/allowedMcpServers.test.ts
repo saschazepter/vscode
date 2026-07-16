@@ -64,6 +64,8 @@ suite('AllowedMcpServers', () => {
 			assert.strictEqual(isMcpServerMatched(matchers, { name: 's', url: 'https://MCP.EXAMPLE.COM/api' }), true);
 			assert.strictEqual(isMcpServerMatched(matchers, { name: 's', url: 'https://example.com/api' }), false);
 			assert.strictEqual(isMcpServerMatched(matchers, { name: 's', url: 'https://mcp.evil.com/api' }), false);
+			// An authority wildcard must not swallow the path separator and let an untrusted host through.
+			assert.strictEqual(isMcpServerMatched(matchers, { name: 's', url: 'https://evil.test/.example.com/tool' }), false);
 			assert.strictEqual(isMcpServerMatched(matchers, { name: 's', command: ['node', 'x.js'] }), false);
 		});
 

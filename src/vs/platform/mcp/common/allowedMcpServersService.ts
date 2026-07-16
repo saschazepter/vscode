@@ -44,14 +44,10 @@ export class AllowedMcpServersService extends Disposable implements IAllowedMcpS
 		const allowlist = getMcpServerMatchers(this.configurationService.getValue(mcpAllowedServersConfig));
 		const denylist = getMcpServerMatchers(this.configurationService.getValue(mcpDeniedServersConfig));
 		switch (checkMcpServerAllowed(allowlist, denylist, identity)) {
-			case McpServerAllowResult.Denied: {
-				const settingsCommandLink = createCommandUri('workbench.action.openSettings', { query: `@id:${mcpDeniedServersConfig}` }).toString();
-				return new MarkdownString(nls.localize('mcp server is denied', "This Model Context Protocol server is blocked by your organization's policy. Please check your [settings]({0}).", settingsCommandLink));
-			}
-			case McpServerAllowResult.NotAllowed: {
-				const settingsCommandLink = createCommandUri('workbench.action.openSettings', { query: `@id:${mcpAllowedServersConfig}` }).toString();
-				return new MarkdownString(nls.localize('mcp server not in allowlist', "This Model Context Protocol server is not in the list of allowed servers. Please check your [settings]({0}).", settingsCommandLink));
-			}
+			case McpServerAllowResult.Denied:
+				return new MarkdownString(nls.localize('mcp server is denied', "This Model Context Protocol server is blocked by your organization's policy. Please contact your administrator for more information."));
+			case McpServerAllowResult.NotAllowed:
+				return new MarkdownString(nls.localize('mcp server not in allowlist', "This Model Context Protocol server is not in the list of servers allowed by your organization. Please contact your administrator for more information."));
 		}
 
 		return true;
