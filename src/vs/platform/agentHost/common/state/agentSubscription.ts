@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { assertNever } from '../../../../base/common/assert.js';
+import { timeout } from '../../../../base/common/async.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, IReference } from '../../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../../base/common/map.js';
@@ -775,6 +776,14 @@ export class AnnotationsStateSubscription extends BaseAgentSubscription<Annotati
 
 type ManagedSubscriptionEntry = { sub: ManagedSubscription; kind: StateComponents; refCount: number; holders: Map<number, string> };
 
+/**
+ * Backoff schedule for {@link AgentSubscriptionManager._subscribeWithRetry}.
+ * Bounds the total retry window to a few seconds — enough to absorb a
+ * benign "resource not yet registered" race without masking a genuinely
+ * invalid resource for long.
+ */
+const SUBSCRIBE_RETRY_DELAYS_MS = [100, 250, 500, 1000, 2000];
+
 // --- Subscription Manager ----------------------------------------------------
 
 
@@ -910,19 +919,48 @@ export class AgentSubscriptionManager extends Disposable {
 					// subscription, matching the no-inflight path.
 				}
 			}
+			await this._subscribeWithRetry(resource, entry, sub);
+		})();
+
+		return this._acquireReference<T>(resource, entry, owner);
+	}
+
+	/**
+	 * Subscribes to `resource` on the server, retrying a bounded number of
+	 * times (with a short backoff) before giving up via `sub.setError()`.
+	 *
+	 * This absorbs a benign startup race where a resource is referenced by
+	 * an action delivered to the client (e.g. a subagent tool call's
+	 * initial state, which reports the subagent chat URI) slightly before
+	 * the server has finished registering that resource — subscribing
+	 * fails immediately with "unknown resource" even though the resource
+	 * exists moments later. Without a retry here, callers that acquire the
+	 * subscription exactly once at setup time (as subagent progress
+	 * observation does) are left permanently stuck on the error, silently
+	 * missing all subsequent state for that resource — e.g. a subagent
+	 * that never appears to finish in the UI even though it has completed.
+	 */
+	private async _subscribeWithRetry(resource: URI, entry: ManagedSubscriptionEntry, sub: ManagedSubscription): Promise<void> {
+		for (let attempt = 0; ; attempt++) {
 			try {
 				const snapshot = await this._subscribe(resource);
 				if (this._subscriptions.get(resource) === entry) {
 					sub.handleSnapshot(snapshot.state as never, snapshot.fromSeq);
 				}
+				return;
 			} catch (err) {
-				if (this._subscriptions.get(resource) === entry) {
-					sub.setError(err instanceof Error ? err : new Error(String(err)));
+				// The entry was replaced or released (e.g. all references
+				// disposed) while this attempt was in flight — abandon it.
+				if (this._subscriptions.get(resource) !== entry) {
+					return;
 				}
+				if (attempt >= SUBSCRIBE_RETRY_DELAYS_MS.length) {
+					sub.setError(err instanceof Error ? err : new Error(String(err)));
+					return;
+				}
+				await timeout(SUBSCRIBE_RETRY_DELAYS_MS[attempt]);
 			}
-		})();
-
-		return this._acquireReference<T>(resource, entry, owner);
+		}
 	}
 
 	/**

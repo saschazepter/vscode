@@ -640,6 +640,34 @@ suite('AgentSubscriptionManager', () => {
 		ref.dispose();
 	});
 
+	test('getSubscription retries a transient subscribe failure instead of erroring immediately', async () => {
+		// Mirrors the benign race where a resource (e.g. a subagent chat) is
+		// referenced by an action delivered to the client slightly before the
+		// server has finished registering it: the first subscribe attempt
+		// fails with "unknown resource" even though the resource exists
+		// moments later. Without a retry, callers that acquire the
+		// subscription once at setup time (e.g. subagent progress
+		// observation) would be stuck on the error forever.
+		let attempts = 0;
+		const mgr = createManager(async (resource) => {
+			attempts++;
+			if (attempts < 2) {
+				throw new Error(`Cannot subscribe to unknown resource: ${resource.toString()}`);
+			}
+			return { resource: resource.toString(), state: makeSessionState(resource.toString()), fromSeq: 0 };
+		});
+		const uri = URI.parse(sessionUri);
+		const ref = mgr.getSubscription<SessionState>(StateComponents.Session, uri, 'test');
+
+		// Wait past the first retry delay so the second attempt has a chance to run.
+		await new Promise(r => setTimeout(r, 200));
+
+		assert.strictEqual(attempts, 2);
+		assert.ok(ref.object.value);
+		assert.ok(!(ref.object.value instanceof Error));
+		ref.dispose();
+	});
+
 	test('second call for same resource increments refcount', async () => {
 		const mgr = createManager();
 		const uri = URI.parse(sessionUri);
