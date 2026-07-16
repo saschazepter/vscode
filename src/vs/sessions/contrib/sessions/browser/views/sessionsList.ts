@@ -561,10 +561,6 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 			template.container.classList.toggle('unread', !isRead && !isArchived);
 			// Quick-chat rows use a more compact layout (smaller icon, tighter row height).
 			template.container.classList.toggle('quick-chat', isQuickChat);
-			// Single-line (no title-row bottom padding) only applies to quick
-			// chats rendered under the default Chats section; a quick chat
-			// pinned or moved into a custom group keeps normal spacing.
-			template.container.classList.toggle('in-chats-section', suppressChatIcon);
 		}));
 
 		// Title — reactive

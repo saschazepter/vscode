@@ -151,12 +151,9 @@
 
 		.session-title-row {
 			line-height: 16px;
-		}
-
-		/* Single-line spacing only applies under the default Chats section;
-		 * a quick chat pinned or moved into a custom group keeps the normal
-		 * title-row bottom padding (see `.session-title-row` below). */
-		&.in-chats-section .session-title-row {
+			/* The delegate always reserves a fixed 28px row for quick chats
+			 * regardless of section, so the title's bottom padding must be
+			 * cleared unconditionally — otherwise it overflows the row. */
 			padding-bottom: 0;
 		}
 
@@ -717,6 +714,13 @@
 		 * of the title-row flow so a 44px tap target doesn't inflate
 		 * the title line-height or shift the details row down). */
 		position: relative;
+
+		/* Quick chats keep the icon/title top-aligned (same as desktop) so an
+		 * approval/CI row growing the main column taller doesn't center the
+		 * icon against the whole multi-line block and throw it off the title. */
+		&.quick-chat {
+			align-items: flex-start;
+		}
 	}
 
 	.session-item .session-icon {
