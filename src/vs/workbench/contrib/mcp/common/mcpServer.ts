@@ -21,6 +21,8 @@ import { localize } from '../../../../nls.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
+import { IMcpServerIdentity } from '../../../../platform/mcp/common/allowedMcpServers.js';
+import { IAllowedMcpServersService } from '../../../../platform/mcp/common/mcpManagement.js';
 import { ILogger, ILoggerService } from '../../../../platform/log/common/log.js';
 import { INotificationService, IPromptChoice, Severity } from '../../../../platform/notification/common/notification.js';
 import { IOpenerService } from '../../../../platform/opener/common/opener.js';
@@ -389,7 +391,9 @@ export class McpServer extends Disposable implements IMcpServer {
 	private readonly _connection = this._register(disposableObservableValue<IMcpServerConnection | undefined>(this, undefined));
 
 	public readonly connection = this._connection;
-	public readonly connectionState: IObservable<McpConnectionState> = derived(reader => this._connection.read(reader)?.state.read(reader) ?? { state: McpConnectionState.Kind.Stopped });
+	/** Holds an error state when the server is blocked by the `chat.mcp.allowedServers` policy, so the block surfaces in the UI without a real connection. */
+	private readonly _policyBlockState = observableValue<McpConnectionState.Error | undefined>(this, undefined);
+	public readonly connectionState: IObservable<McpConnectionState> = derived(reader => this._connection.read(reader)?.state.read(reader) ?? this._policyBlockState.read(reader) ?? { state: McpConnectionState.Kind.Stopped });
 
 
 	private readonly _capabilities: CachedPrimitive<number | undefined, number | undefined>;
@@ -483,6 +487,7 @@ export class McpServer extends Disposable implements IMcpServer {
 		prefixGenerator: McpPrefixGenerator,
 		enablementModel: IEnablementModel,
 		@IMcpRegistry private readonly _mcpRegistry: IMcpRegistry,
+		@IAllowedMcpServersService private readonly _allowedMcpServersService: IAllowedMcpServersService,
 		@IWorkspaceContextService workspacesService: IWorkspaceContextService,
 		@IExtensionService private readonly _extensionService: IExtensionService,
 		@ILoggerService private readonly _loggerService: ILoggerService,
@@ -648,10 +653,29 @@ export class McpServer extends Disposable implements IMcpServer {
 		}, token);
 	}
 
+	private _getIdentity(): IMcpServerIdentity {
+		const launch = this._fullDefinitions.get().server?.launch;
+		if (launch?.type === McpServerTransportType.HTTP) {
+			return { name: this.definition.label, url: launch.uri.toString(true) };
+		}
+		if (launch?.type === McpServerTransportType.Stdio) {
+			return { name: this.definition.label, command: [launch.command, ...launch.args] };
+		}
+		return { name: this.definition.label };
+	}
+
 	public start({ interaction, autoTrustChanges, promptType, debug, errorOnUserInteraction }: IMcpServerStartOpts = {}): Promise<McpConnectionState> {
 		interaction?.participants.set(this.definition.id, { s: 'unknown' });
 
 		return this._connectionSequencer.queue<McpConnectionState>(async () => {
+			const allowed = this._allowedMcpServersService.isServerAllowed(this._getIdentity());
+			if (allowed !== true) {
+				const blocked: McpConnectionState = { state: McpConnectionState.Kind.Error, message: allowed.value };
+				this._policyBlockState.set(blocked, undefined);
+				return blocked;
+			}
+			this._policyBlockState.set(undefined, undefined);
+
 			const activationEvent = mcpActivationEvent(this.collection.id.slice(extensionMcpCollectionPrefix.length));
 			if (this._requiresExtensionActivation && !this._extensionService.activationEventIsDone(activationEvent)) {
 				await this._extensionService.activateByEvent(activationEvent);

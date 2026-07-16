@@ -17,6 +17,16 @@ import { normalizeManagedSettings } from '../../../../platform/policy/common/cop
  *
  * Exported for unit-testing the {@link adaptManagedSettings} shape transformation.
  */
+/**
+ * A single MCP server matcher entry in the `allowedMcpServers` / `deniedMcpServers` managed
+ * settings, identifying a server by exactly one strategy: name, remote URL pattern, or local
+ * command invocation.
+ */
+export type IManagedMcpServerMatcher =
+	| { readonly serverName: string }
+	| { readonly serverUrl: string }
+	| { readonly serverCommand: readonly string[] };
+
 export interface IManagedSettingsResponse {
 	readonly permissions?: {
 		readonly disableBypassPermissionsMode?: string;
@@ -28,6 +38,8 @@ export interface IManagedSettingsResponse {
 		| { readonly source: 'git'; readonly url: string; readonly ref?: string };
 	}>;
 	readonly strictKnownMarketplaces?: readonly unknown[];
+	readonly allowedMcpServers?: ReadonlyArray<IManagedMcpServerMatcher>;
+	readonly deniedMcpServers?: ReadonlyArray<IManagedMcpServerMatcher>;
 	readonly telemetry?: {
 		readonly enabled?: boolean;
 		readonly endpoint?: string;
