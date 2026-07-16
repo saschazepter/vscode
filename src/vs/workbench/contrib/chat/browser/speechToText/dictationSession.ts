@@ -104,10 +104,13 @@ export async function startDictation(service: IChatSpeechToTextService, editor: 
 	}
 	const inserter = new LiveTranscriptInserter(editor);
 	const disposables = new DisposableStore();
-	// The placeholder remains visible until transcript text is inserted.
+	// Show a "Listening…" placeholder only once recording actually starts (the
+	// service transitions to Recording and plays the recording-started signal at
+	// the same moment), not during the preceding microphone acquisition and
+	// model preparation. The placeholder remains visible until transcript text
+	// is inserted, and is restored to its previous value when the session ends.
 	const previousPlaceholder = editor.getOption(EditorOption.placeholder);
 	const listeningPlaceholder = localize('chatStt.listening', "Listening…");
-	editor.updateOptions({ placeholder: listeningPlaceholder });
 	disposables.add(toDisposable(() => {
 		if (!editor.getModel() || editor.getOption(EditorOption.placeholder) !== listeningPlaceholder) {
 			return;
@@ -115,11 +118,13 @@ export async function startDictation(service: IChatSpeechToTextService, editor: 
 		editor.updateOptions({ placeholder: previousPlaceholder });
 	}));
 	disposables.add(service.onDidUpdateTranscript(text => inserter.update(text)));
-	// If the service ends the session on its own (e.g. the model failed to load
-	// and it surfaced an error), drop the stale active reference so the toolbar
-	// and glow reflect that dictation is no longer running.
 	disposables.add(service.onDidChangeState(state => {
-		if (state === ChatSpeechToTextState.Idle && _active?.service === service) {
+		if (state === ChatSpeechToTextState.Recording) {
+			editor.updateOptions({ placeholder: listeningPlaceholder });
+		} else if (state === ChatSpeechToTextState.Idle && _active?.service === service) {
+			// If the service ends the session on its own (e.g. the model failed
+			// to load and it surfaced an error), drop the stale active reference
+			// so the toolbar and glow reflect that dictation is no longer running.
 			_active = undefined;
 			disposables.dispose();
 		}
