@@ -26,6 +26,8 @@ export interface IChatInputPickerOptions {
 	readonly actionContext?: IChatExecuteActionContext;
 
 	readonly compact: IObservable<boolean>;
+
+	readonly listOptions?: IActionListOptions;
 }
 
 export function withChatInputPickerMotion(listOptions: IActionListOptions | undefined): IActionListOptions {
