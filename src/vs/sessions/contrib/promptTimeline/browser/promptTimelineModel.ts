@@ -170,6 +170,17 @@ export class PromptTimelineModel extends Disposable {
 	private readonly _activeRequestId: ISettableObservable<string | undefined> = observableValue<string | undefined>(this, undefined);
 	get activeRequestId(): IObservable<string | undefined> { return this._activeRequestId; }
 
+	/** True once the active prompt's own row has scrolled above the viewport top (drives the sticky header). */
+	private readonly _activePinned: ISettableObservable<boolean> = observableValue<boolean>(this, false);
+	get activePinned(): IObservable<boolean> { return this._activePinned; }
+
+	/** The decorated tick (with diff stat) for the active prompt, or undefined when none is active. */
+	private readonly _activeTick = derived<PromptTick | undefined>(this, reader => {
+		const id = this._activeRequestId.read(reader);
+		return id === undefined ? undefined : this._ticks.read(reader).find(t => t.requestId === id);
+	});
+	get activeTick(): IObservable<PromptTick | undefined> { return this._activeTick; }
+
 	/** Fires when the transcript scroll offset or content height changes (drives the ruler rail). */
 	private readonly _scrollLayoutSignal: IObservableSignal<void> = observableSignal<void>(this);
 	get onDidChangeScrollLayout(): IObservable<void> { return this._scrollLayoutSignal; }
@@ -344,7 +355,10 @@ export class PromptTimelineModel extends Disposable {
 		const ticks = this._baseTicks.get();
 		const items = this.widget.viewModel?.getItems();
 		if (!items || ticks.length === 0) {
-			this._activeRequestId.set(undefined, undefined);
+			transaction(tx => {
+				this._activeRequestId.set(undefined, tx);
+				this._activePinned.set(false, tx);
+			});
 			return;
 		}
 
@@ -355,20 +369,25 @@ export class PromptTimelineModel extends Disposable {
 		const threshold = 24;
 		let activeRequestId: string | undefined;
 		let activeTimestamp = 0;
+		let activeTop = -1;
 		for (const item of items) {
 			if (isRequestVM(item)) {
 				const top = this.widget.getElementTop(item);
 				if (top !== undefined && top <= scrollTop + threshold) {
 					activeRequestId = item.id;
 					activeTimestamp = item.timestamp;
+					activeTop = top;
 				}
 			}
 		}
 
 		if (activeRequestId === undefined) {
 			// Scrolled above the oldest prompt: the oldest tick is the active one
-			// (the loop advances oldest -> newest as you scroll down).
-			this._activeRequestId.set(ticks.at(0)?.requestId, undefined);
+			// (the loop advances oldest -> newest as you scroll down). Nothing is pinned yet.
+			transaction(tx => {
+				this._activeRequestId.set(ticks.at(0)?.requestId, tx);
+				this._activePinned.set(false, tx);
+			});
 			return;
 		}
 
@@ -384,7 +403,13 @@ export class PromptTimelineModel extends Disposable {
 				}
 			}
 		}
-		this._activeRequestId.set((activeTick ?? ticks[ticks.length - 1]).requestId, undefined);
+		// Pin the sticky header only once the active prompt's own row has scrolled above the
+		// viewport top; the small epsilon avoids flicker as its top crosses the edge.
+		const pinned = activeTop < scrollTop - 2;
+		transaction(tx => {
+			this._activeRequestId.set((activeTick ?? ticks[ticks.length - 1]).requestId, tx);
+			this._activePinned.set(pinned, tx);
+		});
 	}
 
 	/** Reveals the request with the given id near the top of the transcript. */
