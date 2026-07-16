@@ -2010,7 +2010,7 @@ suite('CopilotAgent', () => {
 				results: [firstResult, duplicateResult, thirdResult],
 				pendingPermissionCount,
 			}, {
-				results: [{ kind: 'approve-once' }, { kind: 'approve-once' }, { kind: 'reject' }],
+				results: [{ kind: 'approve-once' }, { kind: 'approve-once' }, { kind: 'denied-interactively-by-user' }],
 				pendingPermissionCount: 2,
 			});
 		} finally {
@@ -2066,7 +2066,7 @@ suite('CopilotAgent', () => {
 				results: [firstResult, changedResult],
 				pendingPermissionCount,
 			}, {
-				results: [{ kind: 'approve-once' }, { kind: 'reject' }],
+				results: [{ kind: 'approve-once' }, { kind: 'denied-interactively-by-user' }],
 				pendingPermissionCount: 2,
 			});
 		} finally {
@@ -2115,7 +2115,7 @@ suite('CopilotAgent', () => {
 				results: [firstResult, duplicateResult, thirdResult],
 				pendingPermissionCount,
 			}, {
-				results: [{ kind: 'approve-once' }, { kind: 'approve-once' }, { kind: 'reject' }],
+				results: [{ kind: 'approve-once' }, { kind: 'approve-once' }, { kind: 'denied-interactively-by-user' }],
 				pendingPermissionCount: 2,
 			});
 		} finally {
