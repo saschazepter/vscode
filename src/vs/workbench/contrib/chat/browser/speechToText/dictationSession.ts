@@ -104,11 +104,7 @@ export async function startDictation(service: IChatSpeechToTextService, editor: 
 	}
 	const inserter = new LiveTranscriptInserter(editor);
 	const disposables = new DisposableStore();
-	// While recording and nothing has been transcribed yet the input is empty,
-	// so swap its placeholder to "Listening…" to signal dictation is live. The
-	// editor's placeholder is only shown while empty, so it disappears on its
-	// own once the first transcript is inserted, and is restored below when the
-	// session ends.
+	// The placeholder remains visible until transcript text is inserted.
 	const previousPlaceholder = editor.getOption(EditorOption.placeholder);
 	editor.updateOptions({ placeholder: localize('chatStt.listening', "Listening…") });
 	disposables.add(toDisposable(() => {
