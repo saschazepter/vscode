@@ -59,7 +59,11 @@
     "kerberos@2.1.1": {
       "node-addon-api": "7.1.0"
     },
+    "ssh2": {
+      "cpu-features": "0.0.0"
+    },
     "yauzl": "^3.3.1"
+<<<<<<< HEAD
   },
   "allowScripts": {
     "kerberos@2.1.1": true,
@@ -75,5 +79,7 @@
     "cpu-features": false,
     "@vscode/windows-ca-certs@0.3.4": true,
     "@vscode/windows-process-tree@0.8.0": true
+=======
+>>>>>>> 6acd0b9a3b7 (Revert "chore: update electron@42.6.0 (#325428)" (#326219))
   }
 }

@@ -1,7 +1,12 @@
 {
   "name": "code-oss-dev",
+<<<<<<< HEAD
   "version": "1.130.0",
   "distro": "ac355fb4d039edb8cc28e1f8e45c6d5d8c437fe2",
+=======
+  "version": "1.129.0",
+  "distro": "a78eb8284ce7699e371b36071b579f557406f153",
+>>>>>>> 6acd0b9a3b7 (Revert "chore: update electron@42.6.0 (#325428)" (#326219))
   "author": {
     "name": "Microsoft Corporation"
   },
@@ -212,7 +217,7 @@
     "cookie": "^0.7.2",
     "debounce": "^1.0.0",
     "deemon": "^1.13.6",
-    "electron": "42.6.0",
+    "electron": "42.5.0",
     "eslint": "^9.36.0",
     "eslint-formatter-compact": "^8.40.0",
     "eslint-plugin-header": "3.1.1",
@@ -277,6 +282,9 @@
       "node-addon-api": "7.1.0"
     },
     "serialize-javascript": "^7.0.3",
+    "ssh2": {
+      "cpu-features": "0.0.0"
+    },
     "yauzl": "^3.3.1"
   },
   "repository": {
@@ -288,6 +296,7 @@
   },
   "optionalDependencies": {
     "windows-foreground-love": "0.6.1"
+<<<<<<< HEAD
   },
   "allowScripts": {
     "bufferutil@4.1.0": true,
@@ -318,5 +327,7 @@
     "husky": false,
     "@vscode/windows-ca-certs@0.3.4": true,
     "@vscode/windows-process-tree@0.8.0": true
+=======
+>>>>>>> 6acd0b9a3b7 (Revert "chore: update electron@42.6.0 (#325428)" (#326219))
   }
 }
