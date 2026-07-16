@@ -237,6 +237,7 @@ export function shouldScheduleInitialHeightChange(normalizedHeight: number, allo
 
 export function renderChatResponseDetails(container: HTMLElement, details: string | undefined, completedAt: number | undefined, elapsedMs: number | undefined, verbose: boolean): HTMLElement | undefined {
 	dom.clearNode(container);
+	container.classList.remove('chat-response-flip-active', 'chat-response-flip-down', 'chat-response-flip-reset');
 
 	const completion = verbose ? formatChatRequestTimestamp(completedAt) : undefined;
 	const elapsed = completion && typeof elapsedMs === 'number' && elapsedMs >= 1000
