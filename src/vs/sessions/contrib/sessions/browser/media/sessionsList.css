@@ -128,6 +128,43 @@
 		padding-left: 4px;
 	}
 
+	/* Quick-chat rows are compact single-line entries — no second (details) row.
+	 * Icon and title top-align naturally (same mechanics as regular sessions),
+	 * so the first row still lines up correctly when an approval/CI row grows
+	 * the row taller — a row-level vertical-center would instead center the
+	 * whole (now multi-line) content block, throwing the title off the icon. */
+	&.quick-chat {
+		padding: 6px 6px 6px 12px;
+
+		.session-icon {
+			line-height: 16px;
+
+			> .codicon {
+				font-size: var(--vscode-codiconFontSize-compact, 12px);
+			}
+
+			> .monaco-pixel-spinner {
+				width: 14px;
+				height: 14px;
+			}
+		}
+
+		.session-title-row {
+			line-height: 16px;
+		}
+
+		/* Single-line spacing only applies under the default Chats section;
+		 * a quick chat pinned or moved into a custom group keeps the normal
+		 * title-row bottom padding (see `.session-title-row` below). */
+		&.in-chats-section .session-title-row {
+			padding-bottom: 0;
+		}
+
+		.session-details-row {
+			display: none;
+		}
+	}
+
 	.session-main,
 	.session-title-row,
 	.session-details-row {
