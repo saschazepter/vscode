@@ -10,6 +10,7 @@ import { EditorOption } from '../../../../../editor/common/config/editorOptions.
 import { IEditorDecorationsCollection } from '../../../../../editor/common/editorCommon.js';
 import { Position } from '../../../../../editor/common/core/position.js';
 import { Range } from '../../../../../editor/common/core/range.js';
+import { Selection } from '../../../../../editor/common/core/selection.js';
 import { localize } from '../../../../../nls.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { ChatSpeechToTextState, IChatSpeechToTextService } from './chatSpeechToTextService.js';
@@ -109,21 +110,29 @@ class LiveTranscriptInserter {
 		}
 
 		const text = (this._needsLeadingSpace ? ' ' : '') + fullText;
-		this._editor.executeEdits('chatSpeechToText', [{
-			range: Range.fromPositions(this._anchor, this._end!),
-			text,
-			forceMoveMarkers: true,
-		}]);
+
+		// The edit replaces the region this inserter wrote last time (anchor ..
+		// previous end) with the new cumulative transcript.
+		const replaceRange = Range.fromPositions(this._anchor, this._end ?? this._anchor);
 
 		const lines = text.split('\n');
 		const endLine = this._anchor.lineNumber + lines.length - 1;
 		const endColumn = lines.length === 1 ? this._anchor.column + lines[0].length : lines[lines.length - 1].length + 1;
 		this._end = new Position(endLine, endColumn);
+
 		// While transcription is in progress keep the caret parked at the start
 		// of the dictated region (a blinking cursor at the beginning) rather than
 		// chasing the growing/revised interim text. Once finalized, move it to the
-		// end so the user can continue typing after the dictated text.
-		this._editor.setPosition(interim ? this._anchor : this._end);
+		// end so the user can continue typing after the dictated text. The caret
+		// is passed as executeEdits' endCursorState so the editor never briefly
+		// places it at the end of the applied edit first.
+		const caret = interim ? this._anchor : this._end;
+		this._editor.executeEdits(
+			'chatSpeechToText',
+			[{ range: replaceRange, text, forceMoveMarkers: true }],
+			[Selection.fromPositions(caret)],
+		);
+
 		this._updateInterimDecorations(text, fullText, interim);
 		this._prevInterimText = interim ? fullText : '';
 	}
