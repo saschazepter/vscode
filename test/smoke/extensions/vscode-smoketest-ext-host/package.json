@@ -34,7 +34,7 @@
 			},
 			{
 				"command": "smoketest.openLocalChat",
-				"title": "Smoke Test: Open Local Chat Session"
+				"title": "Smoke Test: Open Local Test Session"
 			}
 		]
 	}
