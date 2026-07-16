@@ -50,8 +50,8 @@ export class Protocol implements IMessagePassingProtocol {
 		// so we must not forward it: doing so makes the channel readers
 		// deserialize an `undefined` header and crash. Filter these out at
 		// the transport boundary instead.
-		const onMessage = Event.fromDOMEventEmitter<VSBuffer | undefined>(this.port, 'message', (e: MessageEvent) => e.data ? VSBuffer.wrap(e.data) : undefined);
-		this.onMessage = Event.filter(onMessage, (data): data is VSBuffer => !!data && data.byteLength > 0);
+		const onMessage = Event.fromDOMEventEmitter<VSBuffer>(this.port, 'message', (e: MessageEvent) => e.data ? VSBuffer.wrap(e.data) : VSBuffer.alloc(0));
+		this.onMessage = Event.filter(onMessage, data => data.byteLength > 0);
 		// we must call start() to ensure messages are flowing
 		port.start();
 	}
