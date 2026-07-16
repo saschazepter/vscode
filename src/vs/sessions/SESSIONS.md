@@ -507,7 +507,7 @@ chat immediately, including during an active turn, so leaving Allow all
 cannot leave the SDK in allow-all mode for later tool calls in that turn.
 `chat.experimental.autoApprovals.enabled` controls whether Assisted permissions (Preview) is
 offered in approval pickers and defaults on outside Stable builds. Enterprise
-policy still leaves Approve When Safe and Allow All visible, but disables both with an
+policy still leaves Assisted permissions (Preview) and Allow All visible, but disables both with an
 administrator-directed explanation and normalizes either value back to Ask When Needed.
 The agent mode axis is independent: Autopilot with Ask When Needed still uses
 SDK permission mode `off` and preserves the configured sandbox policy.

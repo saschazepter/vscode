@@ -1904,7 +1904,7 @@ suite('CopilotAgentSession', () => {
 			assert.deepStrictEqual(mockSession.permissionModeSetCalls, ['on']);
 		});
 
-		test('per-request permissions: delegates approvals to the SDK under Approve When Safe', async () => {
+		test('per-request permissions: delegates approvals to the SDK under Assisted permissions (Preview)', async () => {
 			const { session, mockSession } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -1920,7 +1920,7 @@ suite('CopilotAgentSession', () => {
 			});
 		});
 
-		test('does not send when the SDK rejects experimental mode for Approve When Safe', async () => {
+		test('does not send when the SDK rejects experimental mode for Assisted permissions (Preview)', async () => {
 			const { session, mockSession } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -1960,7 +1960,7 @@ suite('CopilotAgentSession', () => {
 			});
 		});
 
-		test('switching from Approve When Safe to Ask When Needed disables SDK experimental mode', async () => {
+		test('switching from Assisted permissions (Preview) to Ask When Needed disables SDK experimental mode', async () => {
 			const configValues: Record<string, unknown> = { [SessionConfigKey.AutoApprove]: 'assisted' };
 			const { session, mockSession } = await createAgentSession(disposables, { configValues });
 
@@ -1977,7 +1977,7 @@ suite('CopilotAgentSession', () => {
 			});
 		});
 
-		test('Approve When Safe honors approve recommendations without prompting', async () => {
+		test('Assisted permissions (Preview) honors approve recommendations without prompting', async () => {
 			const { session, runtime, mockSession, signals } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -2006,7 +2006,7 @@ suite('CopilotAgentSession', () => {
 			});
 		});
 
-		test('Approve When Safe correlates a recommendation event that arrives after the permission callback', async () => {
+		test('Assisted permissions (Preview) correlates a recommendation event that arrives after the permission callback', async () => {
 			const { session, runtime, mockSession, signals } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -2049,7 +2049,7 @@ suite('CopilotAgentSession', () => {
 			});
 		});
 
-		test('Approve When Safe prompts when the model requires approval', async () => {
+		test('Assisted permissions (Preview) prompts when the model requires approval', async () => {
 			const { session, runtime, mockSession, waitForSignal } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
@@ -2083,7 +2083,7 @@ suite('CopilotAgentSession', () => {
 			assert.strictEqual((await resultPromise).kind, 'approve-once');
 		});
 
-		test('Approve When Safe never bypasses sandbox-escape confirmation', async () => {
+		test('Assisted permissions (Preview) never bypasses sandbox-escape confirmation', async () => {
 			const { session, runtime, mockSession, waitForSignal } = await createAgentSession(disposables, {
 				configValues: { [SessionConfigKey.AutoApprove]: 'assisted' },
 			});
