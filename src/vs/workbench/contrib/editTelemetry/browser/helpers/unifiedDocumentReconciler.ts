@@ -94,6 +94,14 @@ export class UnifiedDocumentReconciler<TSource> {
 		if (state.dirty) {
 			return this._result('skippedDirty');
 		}
+		const latestAgentTransition = this._findLatestTransition('agentHost');
+		if (
+			latestAgentTransition?.before === state.content &&
+			latestAgentTransition.after === this._content &&
+			this._diskContent === this._content
+		) {
+			return this._result('applied');
+		}
 		if (state.content !== this._diskContent) {
 			return this._result('conflict');
 		}
@@ -313,6 +321,16 @@ export class UnifiedDocumentReconciler<TSource> {
 		for (let index = this._transitions.length - 1; index >= 0; index--) {
 			const transition = this._transitions[index];
 			if (transition.kind === kind && transition.before === before && transition.after === after) {
+				return transition;
+			}
+		}
+		return undefined;
+	}
+
+	private _findLatestTransition(kind: UnifiedDocumentTransitionKind): IUnifiedDocumentTransition<TSource> | undefined {
+		for (let index = this._transitions.length - 1; index >= 0; index--) {
+			const transition = this._transitions[index];
+			if (transition.kind === kind) {
 				return transition;
 			}
 		}

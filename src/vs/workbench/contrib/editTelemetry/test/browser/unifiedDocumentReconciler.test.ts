@@ -323,6 +323,15 @@ suite('UnifiedDocumentReconciler', () => {
 		assert.deepStrictEqual(reconciler.getSnapshot().transitions, expectedAgentSnapshot('before', 'after').transitions);
 	});
 
+	test('connects a stale clean model after Agent Host and waits for reload', () => {
+		const reconciler = createReconciler('before');
+		reconciler.agentTransition(agentEdit('before', 'after'));
+
+		assert.strictEqual(reconciler.modelConnected({ content: 'before', dirty: false }).outcome, 'applied');
+		assert.strictEqual(reconciler.modelEdit(reloadEdit('before', 'after')).outcome, 'duplicate');
+		assert.deepStrictEqual(reconciler.getSnapshot(), expectedAgentSnapshot('before', 'after'));
+	});
+
 	test('reports conflicting state and correlation reuse', () => {
 		const reconciler = createReconciler('before');
 
