@@ -12,7 +12,8 @@ import { resolveAmdNodeModulePath } from '../../../../amdX.js';
 import { editorBackground, editorForeground, editorSelectionBackground, editorInactiveSelection } from '../../../../platform/theme/common/colorRegistry.js';
 import { isHighContrast } from '../../../../platform/theme/common/theme.js';
 import { editorActiveLineNumber, editorGutter, editorLineNumbers, editorLineHighlight, editorLineHighlightBorder, editorInactiveLineHighlight, editorCursorForeground, editorCursorBackground, editorMultiCursorPrimaryForeground, editorMultiCursorPrimaryBackground, editorMultiCursorSecondaryForeground, editorMultiCursorSecondaryBackground } from '../../../common/core/editorColorRegistry.js';
-import { EditorOption, TextEditorCursorBlinkingStyle, TextEditorCursorStyle } from '../../../common/config/editorOptions.js';
+import { EditorOption, RenderLineNumbersType, TextEditorCursorBlinkingStyle, TextEditorCursorStyle } from '../../../common/config/editorOptions.js';
+import { Position } from '../../../common/core/position.js';
 import { TokenizationRegistry } from '../../../common/languages.js';
 import type { IViewLineTokens } from '../../../common/tokens/lineTokens.js';
 import type * as viewEvents from '../../../common/viewEvents.js';
@@ -398,7 +399,60 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 		return {
 			text: lineData.content,
 			tokens: this._buildTokens(lineData.tokens, colorMap, defaultForeground),
+			gutterLabel: this._getGutterLabel(viewLineNumber),
 		};
+	}
+
+	/**
+	 * The gutter (line-number) label for a 1-based **view** line, mirroring the
+	 * DOM `LineNumbersOverlay._getLineRenderLineNumber`. Soft-wrap continuation
+	 * rows (whose model position is not at column 1) return `''` so their gutter
+	 * stays blank; otherwise the label follows the `lineNumbers` option
+	 * (off/on/relative/interval/custom). The renderer draws exactly this string,
+	 * so wrapped lines no longer number every continuation row.
+	 */
+	private _getGutterLabel(viewLineNumber: number): string {
+		const converter = this._context.viewModel.coordinatesConverter;
+		const modelPosition = converter.convertViewPositionToModelPosition(new Position(viewLineNumber, 1));
+		if (modelPosition.column !== 1) {
+			// A soft-wrap continuation row: no number.
+			return '';
+		}
+		const modelLineNumber = modelPosition.lineNumber;
+		const lineNumbers = this._context.configuration.options.get(EditorOption.lineNumbers);
+		switch (lineNumbers.renderType) {
+			case RenderLineNumbersType.Off:
+				return '';
+			case RenderLineNumbersType.Custom:
+				return lineNumbers.renderFn ? lineNumbers.renderFn(modelLineNumber) : '';
+			case RenderLineNumbersType.Relative: {
+				const diff = Math.abs(this._primaryCursorModelLineNumber() - modelLineNumber);
+				return diff === 0 ? String(modelLineNumber) : String(diff);
+			}
+			case RenderLineNumbersType.Interval: {
+				if (this._primaryCursorModelLineNumber() === modelLineNumber) {
+					return String(modelLineNumber);
+				}
+				if (modelLineNumber % 10 === 0) {
+					return String(modelLineNumber);
+				}
+				return '';
+			}
+			case RenderLineNumbersType.On:
+			default:
+				return String(modelLineNumber);
+		}
+	}
+
+	/** Model line number of the primary cursor (for relative/interval labels). */
+	private _primaryCursorModelLineNumber(): number {
+		const primary = this._cursorPositions[0];
+		if (!primary) {
+			return 1;
+		}
+		return this._context.viewModel.coordinatesConverter
+			.convertViewPositionToModelPosition(new Position(primary.lineNumber, primary.column))
+			.lineNumber;
 	}
 
 	/**
