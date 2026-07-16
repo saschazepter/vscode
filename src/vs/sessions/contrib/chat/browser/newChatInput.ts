@@ -272,6 +272,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 	private _slashCommandHandler: SlashCommandHandler | undefined;
 	private _agentHostInputCompletionHandler: AgentHostInputCompletionHandler | undefined;
 	private readonly _scopedInstantiationService: IInstantiationService;
+	private readonly _newChatModelPickerService = new NewChatModelPickerService();
 	private readonly _compactModelPicker = observableValue(this, false);
 
 	// Input state
@@ -319,7 +320,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 	) {
 		super();
 		this._scopedInstantiationService = this._register(this.instantiationService.createChild(new ServiceCollection(
-			[INewChatModelPickerService, new NewChatModelPickerService()],
+			[INewChatModelPickerService, this._newChatModelPickerService],
 			[ISessionContext, new SessionContext(this.options.session)],
 		)));
 		this._history = this._register(this.instantiationService.createInstance(ChatHistoryNavigator, ChatAgentLocation.Chat));
@@ -337,7 +338,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		// the same class regardless of construction-time viewport
 		// avoids a class-mismatch when the user resizes across the
 		// phone breakpoint after the chat input mounted.
-		this.sessionTypePicker = this._register(this.instantiationService.createInstance(MobileSessionTypePicker, this.options.session));
+		this.sessionTypePicker = this._register(this.instantiationService.createInstance(MobileSessionTypePicker, this.options.session, undefined));
 		this._register(this._contextAttachments.onDidChangeContext(() => {
 			this._updateDraftState();
 			this._updateSendButtonState();
@@ -373,10 +374,13 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		const notificationContainer = dom.append(chatInputContainer, dom.$('.chat-input-notification-container'));
 		const notificationWidget = this._register(this.instantiationService.createInstance(
 			ChatInputNotificationWidget,
-			() => this.sessionTypePicker.selectedPick?.sessionTypeId,
+			{
+				modelTargetChatSessionType: this.sessionTypePicker.modelTargetChatSessionType,
+				openModelPicker: () => this._newChatModelPickerService.openModelPicker(),
+				switchToModel: modelIdentifier => this._newChatModelPickerService.switchToModel(modelIdentifier),
+			},
 		));
 		notificationContainer.appendChild(notificationWidget.domNode);
-		this._register(this.sessionTypePicker.onDidSelectSessionType(() => notificationWidget.rerender()));
 
 		// Input area inside the input slot
 		const inputArea = dom.append(chatInputContainer, dom.$('.new-chat-input-area'));
@@ -680,12 +684,17 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 
 		// Voice controls (mic/stop/settings/disconnect). The hand-built toolbar
 		// can't use the shared `MenuId.ChatExecute`, so a dedicated menu is used.
+		// Keep the session picker usable when optional voice initialization fails.
 		const voiceContainer = dom.append(toolbar, dom.$('.sessions-chat-voice-toolbar'));
-		this._register(this.instantiationService.createInstance(NewChatVoiceController, {
-			toolbarContainer: voiceContainer,
-			inputContainer: container,
-			composer: this,
-		}));
+		try {
+			this._register(this.instantiationService.createInstance(NewChatVoiceController, {
+				toolbarContainer: voiceContainer,
+				inputContainer: container,
+				composer: this,
+			}));
+		} catch (error) {
+			this.logService.error('Failed to create new-session voice controls:', error);
+		}
 
 		this._loadingSpinner = dom.append(toolbar, dom.$('.sessions-chat-loading-spinner'));
 		const loadingIcon = dom.append(this._loadingSpinner, renderIcon(ThemeIcon.modify(Codicon.loading, 'spin')));
@@ -899,7 +908,9 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		}
 		const model = this._editor?.getModel();
 		if (model) {
-			model.setValue(text);
+			const existing = model.getValue();
+			const combined = existing && !/\s$/.test(existing) ? `${existing} ${text}` : `${existing}${text}`;
+			model.setValue(combined);
 			this._send();
 		}
 	}

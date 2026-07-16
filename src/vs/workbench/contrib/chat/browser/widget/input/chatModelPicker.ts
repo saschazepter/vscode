@@ -34,12 +34,12 @@ import { ITelemetryService } from '../../../../../../platform/telemetry/common/t
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
 import { TelemetryTrustedValue } from '../../../../../../platform/telemetry/common/telemetryUtils.js';
 import { MANAGE_CHAT_COMMAND_ID } from '../../../common/constants.js';
-import { IModelControlEntry, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService, IModelsControlManifest } from '../../../common/languageModels.js';
+import { IModelControlEntry, ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService, IModelsControlManifest } from '../../../common/languageModels.js';
 import { ChatEntitlement, chatRequiresSetup, IChatEntitlementService, isProUser } from '../../../../../services/chat/common/chatEntitlementService.js';
 import * as semver from '../../../../../../base/common/semver/semver.js';
 import { IModelConfigurationAccess, IModelPickerDelegate } from './modelPickerActionItem.js';
 import { getModelProviderIcon } from './modelProviderIcons.js';
-import { getModelPickerUnavailableReason, ModelPickerUnavailableReason } from './chatModelSelectionLogic.js';
+import { getModelPickerUnavailableReason, ModelPickerUnavailableReason, shouldShowCacheBreakHint as computeShouldShowCacheBreakHint } from './chatModelSelectionLogic.js';
 import { CHAT_SETUP_ACTION_ID } from '../../actions/chatActions.js';
 import { IUriIdentityService } from '../../../../../../platform/uriIdentity/common/uriIdentity.js';
 import { GitHubPaths, IDefaultAccountService } from '../../../../../../platform/defaultAccount/common/defaultAccount.js';
@@ -74,6 +74,10 @@ function getUpdateHoverContent(updateState: StateType): MarkdownString {
 
 export function getControlModelsForEntitlement(manifest: IModelsControlManifest, entitlement: ChatEntitlement): IStringDictionary<IModelControlEntry> {
 	return isProUser(entitlement) && entitlement !== ChatEntitlement.EDU ? manifest.paid : manifest.free;
+}
+
+export function getModelPickerIcon(model: ILanguageModelChatMetadataAndIdentifier, useGenericIcon = false): ThemeIcon {
+	return model.metadata.statusIcon ?? getModelProviderIcon(model, useGenericIcon);
 }
 
 /**
@@ -393,7 +397,8 @@ function createModelAction(
 	// Strip the detail when suppressVendorInDetail is set — the vendor is
 	// shown either inline (promoted) or in a section header (Other Models).
 	const detail = suppressVendorInDetail ? undefined : model.metadata.detail;
-	const promoDetail = model.metadata.promo ? localize('chat.promo.discount', "{0}% discount", model.metadata.promo.discountPercent) : undefined;
+	const promo = ILanguageModelChatMetadata.hasPromoDiscount(model.metadata) ? model.metadata.promo : undefined;
+	const promoDetail = promo ? localize('chat.promo.discount', "{0}% discount", promo.discountPercent) : undefined;
 	const textParts = [detail, promoDetail, pricingForDescription].filter(Boolean);
 	const textDescription = textParts.length > 0 ? textParts.join(' · ') : undefined;
 
@@ -651,12 +656,12 @@ export function buildModelPickerItems(
 				items.push(createModelItem(autoAction, autoModel, openerService, undefined, isUBB, autoAriaDesc));
 			}
 
-			// --- 1b. Promo models (boosted next to Auto) ---
+			// --- 1b. Discounted promo models (boosted next to Auto) ---
 			for (const model of models) {
 				if (placed.has(model.identifier) || placed.has(model.metadata.id)) {
 					continue;
 				}
-				if (model.metadata.promo) {
+				if (ILanguageModelChatMetadata.hasPromoDiscount(model.metadata)) {
 					markPlaced(model.identifier, model.metadata.id);
 					const { action: promoAction, ariaDescription: promoAriaDesc } = createModelAction(model, selectedModelId, onSelect);
 					items.push(createModelItem(promoAction, model, openerService, undefined, isUBB, promoAriaDesc));
@@ -745,6 +750,15 @@ export function buildModelPickerItems(
 			// Recently used models (filtered to exclude pinned, limited to 3)
 			for (const id of filteredRecentIds) {
 				tryPlaceModel(id);
+			}
+
+			// Non-discount promos are featured without promotional presentation.
+			if (showFeatured) {
+				for (const model of models) {
+					if (model.metadata.promo && !ILanguageModelChatMetadata.hasPromoDiscount(model.metadata)) {
+						tryPlaceModel(model.identifier);
+					}
+				}
 			}
 
 			// Featured models from control manifest
@@ -1026,6 +1040,18 @@ function createUnavailableModelItem(
 }
 
 type ModelPickerBadge = 'info' | 'warning';
+
+/** Why the picker has no model to offer, and the label states that follow from it. */
+interface IModelPickerAvailability {
+	/** Untrusted workspace or sign-in / setup required, or `undefined` when a model is available. */
+	readonly reason: ModelPickerUnavailableReason | undefined;
+	/** Trusted, but models are still loading while the chat extension activates. */
+	readonly activating: boolean;
+	/** Trusted and set up, but the list is empty and there is no Auto fallback. */
+	readonly genericNoModels: boolean;
+	/** Any of the above: the picker has nothing to offer. */
+	readonly noModels: boolean;
+}
 
 /**
  * A model selection dropdown widget.
@@ -1314,24 +1340,28 @@ export class ModelPickerWidget extends Disposable {
 	}
 
 	/**
-	 * Whether a picker should show the cache-break hint: the hint has not been
-	 * dismissed and the session's cache is warm. When `excludeAutoModel` is
-	 * set (the model picker), the hint is suppressed for the Auto model, since
-	 * Auto routes each request dynamically so "switching models" does not apply.
-	 * The options picker passes `false`: changing reasoning effort / context size
-	 * resets the cache even under Auto, which only routes the model.
+	 * The picker's current availability, derived once so the label states and the "nothing to switch
+	 * to" hint suppression (#325185) cannot disagree.
 	 */
+	private _availability(): IModelPickerAvailability {
+		// Queried directly rather than through the isRestrictedMode()/isSetupRequired() wrappers,
+		// which would each recompute it.
+		const reason = this._unavailableReason();
+		const empty = this._delegate.getModels().length === 0;
+		const activating = reason === undefined && empty && this._activatingAfterTrust;
+		const genericNoModels = reason === undefined && !activating && empty && !(this._delegate.showAutoModel?.() ?? false);
+		return { reason, activating, genericNoModels, noModels: reason !== undefined || activating || genericNoModels };
+	}
+
+	/** Thin wrapper over {@link computeShouldShowCacheBreakHint} that supplies this picker's live state. */
 	private shouldShowCacheBreakHint(excludeAutoModel: boolean): boolean {
-		if (this.isCacheBreakHintDismissed()) {
-			return false;
-		}
-		if (!(this._delegate.isCacheWarm?.() ?? false)) {
-			return false;
-		}
-		if (excludeAutoModel && !!this._selectedModel && isAutoModel(this._selectedModel)) {
-			return false;
-		}
-		return true;
+		return computeShouldShowCacheBreakHint({
+			dismissed: this.isCacheBreakHintDismissed(),
+			cacheWarm: this._delegate.isCacheWarm?.() ?? false,
+			noModelsAvailable: this._availability().noModels,
+			excludeAutoModel,
+			selectedModelIsAuto: !!this._selectedModel && isAutoModel(this._selectedModel),
+		});
 	}
 
 	show(anchor?: HTMLElement): void {
@@ -1433,6 +1463,7 @@ export class ModelPickerWidget extends Disposable {
 		const unavailable = this.isRestrictedMode() || this.isSetupRequired();
 		const showCacheBreakHint = this.shouldShowCacheBreakHint(/* excludeAutoModel */ true);
 		const listOptions = withChatInputPickerMotion({
+			className: 'chat-model-picker-dropdown',
 			headerText: showCacheBreakHint ? localize('chat.modelPicker.cacheBreakHint', "Switching models mid-session resets the prompt cache and may increase cost.") : undefined,
 			headerIcon: showCacheBreakHint ? Codicon.info : undefined,
 			headerLink: showCacheBreakHint ? this.getCacheBreakLearnMoreLink() : undefined,
@@ -1485,11 +1516,6 @@ export class ModelPickerWidget extends Disposable {
 			getModelPickerAccessibilityProvider(),
 			listOptions
 		);
-
-		const activeElement = dom.getActiveElement();
-		if (dom.isHTMLInputElement(activeElement) && activeElement.classList.contains('action-list-filter-input')) {
-			activeElement.classList.add('chat-model-picker-filter-input');
-		}
 	}
 
 	private _updateBadge(): void {
@@ -1511,41 +1537,24 @@ export class ModelPickerWidget extends Disposable {
 			return;
 		}
 
-		const { name, statusIcon } = this._selectedModel?.metadata || {};
+		const { name } = this._selectedModel?.metadata || {};
 
-		// Untrusted workspace: present a normal "Models" placeholder (no badge)
-		// rather than a dead-end label; the hover and dropdown carry the Restricted
-		// Mode explanation and the Trust Workspace action.
-		const restrictedMode = this.isRestrictedMode();
-
-		// Trusted, but Chat still needs sign-in / setup before any model is
-		// usable: present the same "Models" placeholder, with the dropdown
-		// carrying a Sign In action instead of a misleading "Auto".
-		const setupRequired = this.isSetupRequired();
-		const unavailable = restrictedMode || setupRequired;
-
-		// Just after Trust, models load asynchronously while the chat extension
-		// activates. Show a transient "Activating..." state — only when there is
-		// nothing else to display — instead of a misleading "Auto" fallback.
-		const activating = !unavailable && this._activatingAfterTrust && this._delegate.getModels().length === 0;
-
-		// Generic empty state (e.g. an agent-host session with no Auto fallback);
-		// not evaluated while unavailable/activating, which take precedence.
-		const genericNoModels = !unavailable && !activating
-			&& !(this._delegate.showAutoModel?.() ?? false)
-			&& this._delegate.getModels().length === 0;
-		const noModelsAvailable = unavailable || activating || genericNoModels;
+		const { reason, activating, genericNoModels, noModels: noModelsAvailable } = this._availability();
+		const restrictedMode = reason === ModelPickerUnavailableReason.Restricted;
+		const setupRequired = reason === ModelPickerUnavailableReason.SetupRequired;
+		const unavailable = reason !== undefined;
 
 		// --- Name section ---
 		const nameChildren: (HTMLElement | string)[] = [];
-		const modelIcon = this._selectedModel ? getModelProviderIcon(this._selectedModel, this._delegate.useGenericModelIcon?.()) : undefined;
+		const modelIcon = this._selectedModel ? getModelPickerIcon(this._selectedModel, this._delegate.useGenericModelIcon?.()) : undefined;
 		const compact = this._compact?.get() ?? false;
 		if (modelIcon && !noModelsAvailable) {
 			nameChildren.push(renderIcon(modelIcon));
 		}
-		if (statusIcon && !noModelsAvailable) {
-			nameChildren.push(renderIcon(statusIcon));
-		}
+		// A "Models" placeholder (no badge) beats a dead-end label while unavailable — the hover and
+		// dropdown carry the Restricted Mode explanation and the Trust Workspace / Sign In action.
+		// "Activating..." is transient while models load after a Trust grant; "No models available"
+		// is the genuinely empty state (e.g. an agent-host session with no Auto fallback).
 		const modelLabel = unavailable
 			? localize('chat.modelPicker.modelsLabel', "Models")
 			: activating
@@ -1821,6 +1830,7 @@ const SUPPORTED_CONFIG_GROUPS: readonly string[] = ['navigation', 'tokens'];
 
 export function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentifier, isUBB: boolean | undefined, onConfigure: ((group: string) => void) | undefined, openerService: IOpenerService): { element: HTMLElement; disposable: DisposableStore } | undefined {
 	const isAuto = isAutoModel(model);
+	const promo = !isAuto && ILanguageModelChatMetadata.hasPromoDiscount(model.metadata) ? model.metadata.promo : undefined;
 	const container = dom.$('.chat-model-hover');
 	const disposables = new DisposableStore();
 
@@ -1828,7 +1838,7 @@ export function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentif
 	const titleRow = dom.$('.chat-model-hover-title-row');
 	titleRow.appendChild(dom.$('.chat-model-hover-name', undefined, model.metadata.name));
 	const tags = dom.$('.chat-model-hover-title-tags');
-	const categoryLabel = !isAuto && !model.metadata.promo ? getCategoryLabel(model.metadata.category) : undefined;
+	const categoryLabel = !isAuto && !promo ? getCategoryLabel(model.metadata.category) : undefined;
 	if (categoryLabel) {
 		tags.appendChild(dom.$('span.chat-model-hover-category', undefined, categoryLabel));
 	}
@@ -1842,8 +1852,8 @@ export function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentif
 		tags.appendChild(badge);
 	}
 	// When a model carries a promo discount, show a discount pill alongside the price category.
-	if (!isAuto && model.metadata.promo) {
-		const discountLabel = localize('chat.promo.discountBadge', "{0}% discount", model.metadata.promo.discountPercent);
+	if (promo) {
+		const discountLabel = localize('chat.promo.discountBadge', "{0}% discount", promo.discountPercent);
 		tags.appendChild(dom.$('span.chat-model-hover-price-badge', undefined, discountLabel));
 	}
 	if (tags.childElementCount > 0) {
@@ -1867,12 +1877,12 @@ export function getModelHoverContent(model: ILanguageModelChatMetadataAndIdentif
 	}
 
 	// --- Promo info ---
-	if (!isAuto && model.metadata.promo) {
+	if (promo) {
 		const promoContainer = dom.$('.chat-model-hover-promo-text');
 		promoContainer.appendChild(renderIcon(Codicon.info));
-		const endsAtDate = new Date(model.metadata.promo.endsAt);
+		const endsAtDate = new Date(promo.endsAt);
 		const formattedDate = endsAtDate.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-		const promoMessage = model.metadata.promo.message + ' ' + localize('chat.promo.endsAt', "Ends {0}.", formattedDate);
+		const promoMessage = promo.message + ' ' + localize('chat.promo.endsAt', "Ends {0}.", formattedDate);
 		const promoMd = new MarkdownString(promoMessage, { isTrusted: false, supportThemeIcons: true });
 		const rendered = disposables.add(renderMarkdown(promoMd, {
 			actionHandler: (link: string) => { void openerService.open(link, { allowCommands: false, fromUserGesture: true }); },

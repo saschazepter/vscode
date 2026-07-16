@@ -5,25 +5,14 @@
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
-import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
-import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { localChatSessionType } from '../common/chatSessionsService.js';
-import { ILanguageModelChatMetadata, ILanguageModelsService } from '../common/languageModels.js';
-import { IChatWidgetService } from './chat.js';
-import { ChatInputNotificationSeverity, IChatInputNotificationService } from './widget/input/chatInputNotificationService.js';
+import { ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../common/languageModels.js';
+import { ChatInputNotificationActionKind, ChatInputNotificationSeverity, IChatInputNotificationService } from './widget/input/chatInputNotificationService.js';
 
 const PROMO_NOTIFICATION_ID = 'copilot.promoNotification';
 const DISMISSED_PROMOS_STORAGE_KEY = 'chat.dismissedPromoIds';
-const USE_PROMO_MODEL_COMMAND_ID = 'workbench.action.chat.usePromoModel';
-
-interface IUsePromoModelArgs {
-	/** Identifier of the model to switch to. */
-	readonly modelIdentifier: string;
-	/** Notification to dismiss once the model has been selected. */
-	readonly notificationId: string;
-}
 
 /**
  * Watches for models with active promotions and surfaces a chat input
@@ -44,17 +33,9 @@ export class ChatPromoNotificationContribution extends Disposable implements IWo
 	) {
 		super();
 
-		this._register(CommandsRegistry.registerCommand(USE_PROMO_MODEL_COMMAND_ID, (accessor: ServicesAccessor, args: IUsePromoModelArgs) => {
-			const chatWidgetService = accessor.get(IChatWidgetService);
-			const widget = chatWidgetService.lastFocusedWidget;
-			widget?.input.switchModelByIdentifier(args.modelIdentifier);
-			// Dismissing fires `onDidDismiss`, which persists this promo so it isn't shown again.
-			this._chatInputNotificationService.dismissNotification(args.notificationId);
-		}));
-
 		this._register(this._languageModelsService.onDidChangeLanguageModels(() => this._update()));
 		this._register(this._chatInputNotificationService.onDidDismiss(id => {
-			const promoId = this._shownNotifications.get(id);
+			const promoId = this._shownNotifications.get(id)?.promoId;
 			if (promoId) {
 				this._persistDismissedPromo(promoId);
 				this._update();
@@ -63,58 +44,57 @@ export class ChatPromoNotificationContribution extends Disposable implements IWo
 		this._update();
 	}
 
-	/** Maps each currently shown notification id to the promo id it represents. */
-	private readonly _shownNotifications = new Map<string, string>();
+	private readonly _shownNotifications = new Map<string, { promoId: string; modelIdentifier: string }>();
 
 	private _update(): void {
 		const dismissed = this._getDismissedPromoIds();
 		const modelIds = this._languageModelsService.getLanguageModelIds();
 
 		// A promo can appear in several harnesses at once (e.g. the same model
-		// offered in the Local, Copilot, and Codex sessions). Each harness has its
-		// own model copy, so the notification must advertise the model that belongs
-		// to the harness the chat input is actually in — otherwise the "Use <model>"
-		// action would switch to a model that isn't valid for that session. Bucket
-		// the first non-dismissed promo per harness (a model's `targetChatSessionType`,
+		// offered in the Local, Copilot, and Codex sessions). Bucket the first
+		// non-dismissed promo per harness (a model's `targetChatSessionType`,
 		// or the local pool when unset).
-		const promoByHarness = new Map<string, { readonly promo: NonNullable<ILanguageModelChatMetadata['promo']>; readonly name: string; readonly identifier: string }>();
+		const promoByHarness = new Map<string, ILanguageModelChatMetadataAndIdentifier>();
 		for (const id of modelIds) {
 			const meta = this._languageModelsService.lookupLanguageModel(id);
-			if (!meta?.promo || dismissed.has(meta.promo.id)) {
+			if (!meta || !ILanguageModelChatMetadata.hasPromoDiscount(meta) || dismissed.has(meta.promo.id)) {
 				continue;
 			}
 			const harness = meta.targetChatSessionType ?? localChatSessionType;
 			if (!promoByHarness.has(harness)) {
-				promoByHarness.set(harness, { promo: meta.promo, name: meta.name, identifier: id });
+				promoByHarness.set(harness, { identifier: id, metadata: meta });
 			}
 		}
 
 		// Refresh the notification for every harness that has an eligible promo,
 		// scoping each one to its harness so it only renders in matching sessions.
 		const desired = new Set<string>();
-		for (const [harness, { promo, name, identifier }] of promoByHarness) {
+		for (const [harness, model] of promoByHarness) {
+			const promo = model.metadata.promo!;
 			const notificationId = `${PROMO_NOTIFICATION_ID}.${harness}`;
 			desired.add(notificationId);
 
 			// Don't re-push an unchanged notification: re-setting it would clear a
 			// pending user dismissal in the notification service.
-			if (this._shownNotifications.get(notificationId) === promo.id) {
+			const shownNotification = this._shownNotifications.get(notificationId);
+			if (shownNotification?.modelIdentifier === model.identifier && shownNotification.promoId === promo.id) {
 				continue;
 			}
-			this._shownNotifications.set(notificationId, promo.id);
+			this._shownNotifications.set(notificationId, { promoId: promo.id, modelIdentifier: model.identifier });
 
 			const endsAtDate = new Date(promo.endsAt);
 			const formattedDate = endsAtDate.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 
 			this._chatInputNotificationService.setNotification({
 				id: notificationId,
+				telemetryId: promo.id,
 				severity: ChatInputNotificationSeverity.Info,
 				message: promo.message,
 				description: localize('chat.promo.endsAt', "Ends {0}.", formattedDate),
 				actions: [{
-					label: localize('chat.promo.useModel', "Use {0}", name),
-					commandId: USE_PROMO_MODEL_COMMAND_ID,
-					commandArgs: [{ modelIdentifier: identifier, notificationId } satisfies IUsePromoModelArgs],
+					label: localize('chat.promo.tryModel', "Try {0}", model.metadata.name),
+					kind: ChatInputNotificationActionKind.SwitchToModel,
+					modelIdentifier: model.identifier,
 				}],
 				dismissible: true,
 				autoDismissOnMessage: false,
