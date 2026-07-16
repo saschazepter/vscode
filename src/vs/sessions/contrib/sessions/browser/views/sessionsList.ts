@@ -927,6 +927,13 @@ class SessionSectionRenderer implements ITreeRenderer<SessionListItem, FuzzyScor
 		if (element.id === AUTOMATIONS_SECTION_ID) {
 			template.statusIndicator.style.display = '';
 			const statusIcon = template.elementDisposables.add(this.instantiationService.createInstance(SessionStatusIcon, template.statusIndicator));
+			template.elementDisposables.add(this.storageService.onDidChangeValue(StorageScope.PROFILE, SessionSectionRenderer.READ_AUTOMATION_RUNS_KEY, template.elementDisposables)(() => {
+				this._readAutomationRunIds.clear();
+				for (const id of this.loadReadAutomationRuns()) {
+					this._readAutomationRunIds.add(id);
+				}
+				this._readStateVersion.set(this._readStateVersion.get() + 1, undefined);
+			}));
 			template.elementDisposables.add(autorun(reader => {
 				const runs = this.automationService.runs.read(reader);
 				this._readStateVersion.read(reader);
