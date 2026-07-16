@@ -15,6 +15,7 @@ import { IKeybindingService } from '../../../../../platform/keybinding/common/ke
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { IQuickInputService } from '../../../../../platform/quickinput/common/quickInput.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { spinningLoading } from '../../../../../platform/theme/common/iconRegistry.js';
 import { AgentsVoiceStorageKeys } from '../../../agentsVoice/common/agentsVoice.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 import { CHAT_CATEGORY } from './chatActions.js';
@@ -24,6 +25,9 @@ import { ChatSpeechToTextState, IChatSpeechToTextService } from '../speechToText
 import { cancelDictation, isDictating, startDictation, stopDictation } from '../speechToText/dictationSession.js';
 
 export const ChatSpeechToTextConfigured = ContextKeyExpr.has(ChatContextKeys.speechToTextConfigured.key);
+/** True while the on-device model is downloading/loading (the mic shows a spinner instead). */
+export const ChatSpeechToTextPreparing = ContextKeyExpr.has(ChatContextKeys.speechToTextPreparing.key);
+
 
 /** Releases shorter than this are treated as an accidental tap and discarded. */
 const HOLD_TO_TALK_THRESHOLD_MS = 500;
@@ -46,7 +50,7 @@ class ToggleChatSpeechToTextAction extends Action2 {
 			menu: [{
 				id: MenuId.ChatExecute,
 				order: -11,
-				when: ChatSpeechToTextConfigured,
+				when: ContextKeyExpr.and(ChatSpeechToTextConfigured, ChatSpeechToTextPreparing.negate()),
 				group: 'navigation',
 			}],
 			keybinding: {
@@ -86,6 +90,37 @@ class ToggleChatSpeechToTextAction extends Action2 {
 
 		const window = getWindow(widget.domNode) ?? getActiveWindow();
 		await startDictation(speechService, widget.inputEditor, window);
+	}
+}
+
+/**
+ * Shown in place of the mic button while the on-device model is downloading/loading.
+ * Renders a spinner; clicking it cancels an in-flight dictation (if any).
+ */
+class ChatSpeechToTextPreparingAction extends Action2 {
+	static readonly ID = 'workbench.action.chat.speechToTextPreparing';
+
+	constructor() {
+		super({
+			id: ChatSpeechToTextPreparingAction.ID,
+			title: localize2('chat.speechToText.preparing', "Preparing Speech to Text Model…"),
+			category: CHAT_CATEGORY,
+			f1: false,
+			icon: spinningLoading,
+			precondition: ChatSpeechToTextPreparing,
+			menu: [{
+				id: MenuId.ChatExecute,
+				order: -11,
+				when: ContextKeyExpr.and(ChatSpeechToTextConfigured, ChatSpeechToTextPreparing),
+				group: 'navigation',
+			}],
+		});
+	}
+
+	async run(): Promise<void> {
+		if (isDictating()) {
+			cancelDictation();
+		}
 	}
 }
 
@@ -238,6 +273,7 @@ class CancelChatSpeechToTextAction extends Action2 {
 export function registerChatSpeechToTextActions(): DisposableStore {
 	const store = new DisposableStore();
 	store.add(registerAction2(ToggleChatSpeechToTextAction));
+	store.add(registerAction2(ChatSpeechToTextPreparingAction));
 	store.add(registerAction2(HoldToSpeechToTextAction));
 	store.add(registerAction2(CancelChatSpeechToTextAction));
 	store.add(registerAction2(SelectSpeechToTextMicrophoneAction));

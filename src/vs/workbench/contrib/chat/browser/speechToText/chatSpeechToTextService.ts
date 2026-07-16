@@ -78,6 +78,16 @@ export interface IChatSpeechToTextService {
 	readonly isConfigured: boolean;
 
 	/**
+	 * Fires when the model-preparation state changes. `true` while the model is
+	 * downloading/loading (and the progress notification is shown), `false`
+	 * once it is ready, errors, or the session ends. Callers can swap the mic
+	 * affordance for a spinner while preparing.
+	 */
+	readonly onDidChangePreparingModel: Event<boolean>;
+	/** Whether the on-device model is currently downloading/loading. */
+	readonly isPreparingModel: boolean;
+
+	/**
 	 * Begin capturing microphone audio in the given window and streaming it to
 	 * the on-device transcription model. Rejects if the microphone cannot be
 	 * accessed.
@@ -104,6 +114,14 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private readonly _onDidUpdateTranscript = this._register(new Emitter<string>());
 	readonly onDidUpdateTranscript = this._onDidUpdateTranscript.event;
 
+	private readonly _onDidChangePreparingModel = this._register(new Emitter<boolean>());
+	readonly onDidChangePreparingModel = this._onDidChangePreparingModel.event;
+
+	private _isPreparingModel = false;
+	get isPreparingModel(): boolean {
+		return this._isPreparingModel;
+	}
+
 	private _state = ChatSpeechToTextState.Idle;
 	get state(): ChatSpeechToTextState {
 		return this._state;
@@ -111,6 +129,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 
 	private readonly _recordingContextKey: IContextKey<boolean>;
 	private readonly _configuredContextKey: IContextKey<boolean>;
+	private readonly _preparingContextKey: IContextKey<boolean>;
 
 	private _mediaStream: MediaStream | undefined;
 	private _audioContext: AudioContext | undefined;
@@ -156,6 +175,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		super();
 		this._recordingContextKey = ChatContextKeys.speechToTextRecording.bindTo(contextKeyService);
 		this._configuredContextKey = ChatContextKeys.speechToTextConfigured.bindTo(contextKeyService);
+		this._preparingContextKey = ChatContextKeys.speechToTextPreparing.bindTo(contextKeyService);
 		this._updateConfiguredContextKey();
 		this._register(this._configurationService.onDidChangeConfiguration(e => {
 			if (e.affectsConfiguration(ENABLED_SETTING)) {
@@ -166,6 +186,15 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 
 	private _updateConfiguredContextKey(): void {
 		this._configuredContextKey.set(this.isConfigured);
+	}
+
+	private _setPreparingModel(preparing: boolean): void {
+		if (this._isPreparingModel === preparing) {
+			return;
+		}
+		this._isPreparingModel = preparing;
+		this._preparingContextKey.set(preparing);
+		this._onDidChangePreparingModel.fire(preparing);
 	}
 
 	private _logSessionTelemetry(outcome: 'completed' | 'cancelled' | 'error'): void {
@@ -287,6 +316,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	 * when the model becomes ready or errors, or when the session is torn down.
 	 */
 	private _showModelProgress(): void {
+		this._setPreparingModel(true);
 		this._progressService.withProgress({
 			location: ProgressLocation.Notification,
 			title: localize('chatStt.preparingModel', "Preparing on-device speech-to-text model…"),
@@ -309,7 +339,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 						break;
 				}
 			}));
-		}));
+		}).finally(() => this._setPreparingModel(false)));
 	}
 
 	async stopAndTranscribe(): Promise<string | undefined> {

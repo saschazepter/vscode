@@ -678,7 +678,7 @@ const configuration: IConfigurationNode = {
 				'sound': {
 					'description': localize('accessibility.signals.voiceRecordingStopped.sound', "Plays a sound when the voice recording has stopped."),
 					...soundFeatureBase,
-					default: 'off'
+					default: 'on'
 				},
 			}
 		},

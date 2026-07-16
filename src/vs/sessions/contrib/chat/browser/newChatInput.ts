@@ -7,6 +7,7 @@ import './media/chatInput.css';
 import './media/chatInputMobile.css';
 import * as dom from '../../../../base/browser/dom.js';
 import { Codicon } from '../../../../base/common/codicons.js';
+import { spinningLoading } from '../../../../platform/theme/common/iconRegistry.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
@@ -742,15 +743,20 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 			appearance: { showPointer: true }
 		}));
 
-		const renderState = (state: ChatSpeechToTextState) => {
-			const recording = state !== ChatSpeechToTextState.Idle;
+		const renderState = () => {
+			const preparing = sttService.isPreparingModel;
+			const recording = sttService.state !== ChatSpeechToTextState.Idle;
 			dom.clearNode(button);
-			dom.append(button, renderIcon(recording ? Codicon.stopCircle : Codicon.mic));
-			button.classList.toggle('recording', recording);
-			button.ariaLabel = recording ? stopLabel : micLabel;
+			const icon = preparing ? spinningLoading : (recording ? Codicon.stopCircle : Codicon.mic);
+			dom.append(button, renderIcon(icon));
+			button.classList.toggle('recording', recording && !preparing);
+			button.ariaLabel = preparing
+				? localize('sessionsStt.preparing', "Preparing Speech to Text Model…")
+				: (recording ? stopLabel : micLabel);
 		};
-		renderState(sttService.state);
+		renderState();
 		this._register(sttService.onDidChangeState(renderState));
+		this._register(sttService.onDidChangePreparingModel(renderState));
 
 		const updateVisibility = () => {
 			button.classList.toggle('hidden', !sttService.isConfigured);
