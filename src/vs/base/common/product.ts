@@ -431,7 +431,6 @@ export interface IDefaultChatAgent {
 	readonly tokenEntitlementUrl: string;
 	readonly mcpRegistryDataUrl: string;
 	readonly managedSettingsUrl: string;
-	readonly speechToTextUrl: string;
 
 	readonly chatQuotaExceededContext: string;
 	readonly completionsQuotaExceededContext: string;

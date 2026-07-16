@@ -685,9 +685,10 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		dom.append(toolbar, dom.$('.sessions-chat-toolbar-spacer'));
 
 		// Dictation (speech-to-text) mic button. Shares the STT service, mic
-		// device, and gating (`chat.speechToText.serverUrl`) with the main chat
-		// input; inserts the transcript into this composer's editor. Placed
-		// before the voice controls so dictation leads the mic-related group.
+		// device, and gating (on-device support + `chat.speechToText.enabled`)
+		// with the main chat input; inserts the transcript into this composer's
+		// editor. Placed before the voice controls so dictation leads the
+		// mic-related group.
 		try {
 			this._createSpeechToTextButton(toolbar);
 		} catch (error) {
@@ -756,7 +757,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		};
 		updateVisibility();
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration('chat.speechToText.serverUrl')) {
+			if (e.affectsConfiguration('chat.speechToText.enabled')) {
 				updateVisibility();
 			}
 		}));

@@ -255,14 +255,8 @@ configurationRegistry.registerConfiguration({
 		},
 		'chat.speechToText.enabled': {
 			type: 'boolean',
-			markdownDescription: nls.localize('chat.speechToText.enabled', "Enables dictating into the chat input using speech-to-text. When enabled and a transcription backend is configured (via the product default or `#chat.speechToText.serverUrl#`), a microphone button appears in the chat input."),
+			markdownDescription: nls.localize('chat.speechToText.enabled', "Enables dictating into the chat input using on-device speech-to-text. When enabled on a supported platform, a microphone button appears in the chat input; the transcription model is downloaded on first use and runs locally."),
 			default: true,
-			tags: ['experimental']
-		},
-		'chat.speechToText.serverUrl': {
-			type: 'string',
-			markdownDescription: nls.localize('chat.speechToText.serverUrl', "Developer override for the speech-to-text transcription backend used to dictate into the chat input. When set, audio is streamed over a WebSocket to this URL, authenticated with the user's GitHub token; the backend holds the model credentials and returns the transcript. Leave empty to use the product's default endpoint. The microphone button appears in the chat input once a backend is configured (via this setting or the product default)."),
-			default: '',
 			tags: ['experimental']
 		},
 		'chat.speechToText.model': {
@@ -2575,6 +2569,23 @@ class ToolReferenceNamesContribution extends Disposable implements IWorkbenchCon
 	}
 }
 
+/**
+ * Forces the eager {@link ChatSpeechToTextService} to instantiate at startup so
+ * it can publish the `chatSpeechToTextConfigured` context key that gates the
+ * dictation (mic) button. Registered singletons are created lazily on first
+ * access, so without this the key would never be set and the button never shows.
+ */
+class ChatSpeechToTextInitContribution implements IWorkbenchContribution {
+
+	static readonly ID = 'workbench.contrib.chatSpeechToTextInit';
+
+	constructor(
+		@IChatSpeechToTextService _chatSpeechToTextService: IChatSpeechToTextService,
+	) {
+		// Injecting the service is enough to construct it.
+	}
+}
+
 AccessibleViewRegistry.register(new ChatTerminalOutputAccessibleView());
 AccessibleViewRegistry.register(new ChatResponseAccessibleView());
 AccessibleViewRegistry.register(new PanelChatAccessibilityHelp());
@@ -2587,6 +2598,7 @@ Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).registerEdit
 Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).registerEditorSerializer(ChatDebugEditorInput.ID, ChatDebugEditorInputSerializer);
 
 registerWorkbenchContribution2(CopilotTelemetryContribution.ID, CopilotTelemetryContribution, WorkbenchPhase.BlockRestore);
+registerWorkbenchContribution2(ChatSpeechToTextInitContribution.ID, ChatSpeechToTextInitContribution, WorkbenchPhase.BlockRestore);
 registerWorkbenchContribution2(ChatResolverContribution.ID, ChatResolverContribution, WorkbenchPhase.BlockStartup);
 registerWorkbenchContribution2(ChatDebugResolverContribution.ID, ChatDebugResolverContribution, WorkbenchPhase.BlockStartup);
 registerWorkbenchContribution2(PromptsDebugContribution.ID, PromptsDebugContribution, WorkbenchPhase.BlockRestore);

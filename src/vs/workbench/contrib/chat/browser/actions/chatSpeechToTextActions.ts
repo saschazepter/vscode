@@ -205,10 +205,41 @@ class SelectSpeechToTextMicrophoneAction extends Action2 {
 	}
 }
 
+class CancelChatSpeechToTextAction extends Action2 {
+	static readonly ID = 'workbench.action.chat.cancelSpeechToText';
+
+	constructor() {
+		super({
+			id: CancelChatSpeechToTextAction.ID,
+			title: localize2('chat.speechToText.cancel', "Cancel Dictation (Speech to Text)"),
+			category: CHAT_CATEGORY,
+			f1: false,
+			keybinding: {
+				// Escape aborts an in-progress dictation, discarding what was
+				// recorded. Scoped to the chat input while recording and ranked
+				// above the input's other Escape handlers so it wins the chord.
+				weight: KeybindingWeight.WorkbenchContrib + 1,
+				when: ContextKeyExpr.and(
+					ChatContextKeys.speechToTextRecording,
+					ChatContextKeys.inChatInput,
+				),
+				primary: KeyCode.Escape,
+			},
+		});
+	}
+
+	async run(): Promise<void> {
+		if (isDictating()) {
+			cancelDictation();
+		}
+	}
+}
+
 export function registerChatSpeechToTextActions(): DisposableStore {
 	const store = new DisposableStore();
 	store.add(registerAction2(ToggleChatSpeechToTextAction));
 	store.add(registerAction2(HoldToSpeechToTextAction));
+	store.add(registerAction2(CancelChatSpeechToTextAction));
 	store.add(registerAction2(SelectSpeechToTextMicrophoneAction));
 	return store;
 }

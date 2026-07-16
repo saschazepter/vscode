@@ -13,14 +13,12 @@ import { IConfigurationService } from '../../../../../platform/configuration/com
 import { INotificationService, Severity } from '../../../../../platform/notification/common/notification.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { localize } from '../../../../../nls.js';
-import { IAuthenticationService } from '../../../../services/authentication/common/authentication.js';
-import { IProductService } from '../../../../../platform/product/common/productService.js';
-import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IStorageService, StorageScope } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IEnvironmentService } from '../../../../../platform/environment/common/environment.js';
 import { IProgressService, ProgressLocation } from '../../../../../platform/progress/common/progress.js';
 import { ILocalTranscriptionService, LocalTranscriptionModelState } from '../../../../../platform/localTranscription/common/localTranscription.js';
+import { AccessibilitySignal, IAccessibilitySignalService } from '../../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
 import { AgentsVoiceStorageKeys } from '../../../agentsVoice/common/agentsVoice.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 
@@ -31,8 +29,6 @@ const SAMPLE_RATE = 16000;
 
 /** Setting that enables the dictation feature; a kill-switch for rollout. */
 const ENABLED_SETTING = 'chat.speechToText.enabled';
-/** Developer override for the transcription backend URL. */
-const SERVER_URL_SETTING = 'chat.speechToText.serverUrl';
 /** On-device Whisper model to use for dictation. */
 const MODEL_SETTING = 'chat.speechToText.model';
 
@@ -76,16 +72,15 @@ export interface IChatSpeechToTextService {
 	readonly onDidUpdateTranscript: Event<string>;
 
 	/**
-	 * Whether a transcription backend is configured, via the
-	 * `chat.speechToText.serverUrl` setting or the product's default endpoint.
-	 * Callers gate the dictation UI on this.
+	 * Whether on-device speech-to-text is available on this platform. Callers
+	 * gate the dictation UI on this.
 	 */
 	readonly isConfigured: boolean;
 
 	/**
 	 * Begin capturing microphone audio in the given window and streaming it to
-	 * the transcription backend. Rejects if the microphone or backend cannot be
-	 * reached.
+	 * the on-device transcription model. Rejects if the microphone cannot be
+	 * accessed.
 	 */
 	start(window: Window & typeof globalThis): Promise<void>;
 
@@ -121,10 +116,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private _audioContext: AudioContext | undefined;
 	private _sourceNode: MediaStreamAudioSourceNode | undefined;
 	private _processorNode: ScriptProcessorNode | undefined;
-	private _socket: WebSocket | undefined;
 
-	/** True while the active session uses the on-device (local model) path. */
-	private _useLocal = false;
 	private readonly _localSessionDisposables = this._register(new DisposableStore());
 	/** Resolves the in-flight model-preparation progress, if any. */
 	private _resolveModelProgress: (() => void) | undefined;
@@ -133,19 +125,16 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		if (this._configurationService.getValue<boolean>(ENABLED_SETTING) === false) {
 			return false;
 		}
-		// On-device transcription (when available) needs no configuration — the
-		// model downloads on first use. Otherwise fall back to a configured
-		// cloud backend URL.
-		return this._localTranscription.isSupported || !!this._getServerUrl();
+		// On-device transcription needs no configuration — the model downloads
+		// on first use. It is only unavailable where the platform lacks native
+		// inference support (e.g. web).
+		return this._localTranscription.isSupported;
 	}
 
 	/** Finalized (committed) utterances, space-joined. */
 	private _finalizedText = '';
 	/** In-progress text for the current utterance (from delta events). */
 	private _deltaText = '';
-	/** Resolves when the backend closes after a `stop`, delivering the final text. */
-	private _closePromise: Promise<void> | undefined;
-	private _resolveClose: (() => void) | undefined;
 
 	// Per-session telemetry accumulators.
 	private _sessionStartMs = 0;
@@ -157,21 +146,19 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		@INotificationService private readonly _notificationService: INotificationService,
 		@ILogService private readonly _logService: ILogService,
 		@IContextKeyService contextKeyService: IContextKeyService,
-		@IAuthenticationService private readonly _authenticationService: IAuthenticationService,
-		@IProductService private readonly _productService: IProductService,
-		@IDefaultAccountService private readonly _defaultAccountService: IDefaultAccountService,
 		@IStorageService private readonly _storageService: IStorageService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@IEnvironmentService private readonly _environmentService: IEnvironmentService,
 		@IProgressService private readonly _progressService: IProgressService,
 		@ILocalTranscriptionService private readonly _localTranscription: ILocalTranscriptionService,
+		@IAccessibilitySignalService private readonly _accessibilitySignalService: IAccessibilitySignalService,
 	) {
 		super();
 		this._recordingContextKey = ChatContextKeys.speechToTextRecording.bindTo(contextKeyService);
 		this._configuredContextKey = ChatContextKeys.speechToTextConfigured.bindTo(contextKeyService);
 		this._updateConfiguredContextKey();
 		this._register(this._configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration(SERVER_URL_SETTING) || e.affectsConfiguration(ENABLED_SETTING)) {
+			if (e.affectsConfiguration(ENABLED_SETTING)) {
 				this._updateConfiguredContextKey();
 			}
 		}));
@@ -218,11 +205,10 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			return;
 		}
 
-		this._useLocal = this._localTranscription.isSupported;
-		if (!this._useLocal && !this._getServerUrl()) {
+		if (!this._localTranscription.isSupported) {
 			this._notificationService.notify({
 				severity: Severity.Warning,
-				message: localize('chatStt.notConfigured', "Speech-to-text is not configured. Set chat.speechToText.serverUrl to your transcription backend."),
+				message: localize('chatStt.notSupported', "On-device speech-to-text is not available on this platform."),
 			});
 			return;
 		}
@@ -247,11 +233,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		this._mediaStream = stream;
 
 		try {
-			if (this._useLocal) {
-				await this._startLocalSession();
-			} else {
-				await this._openSocket(this._getServerUrl(), window);
-			}
+			await this._startLocalSession();
 		} catch (err) {
 			this._teardown();
 			this._sessionErrorCode = this._sessionErrorCode || 'connect';
@@ -263,6 +245,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 
 		this._startCapture(window, stream);
 		this._setState(ChatSpeechToTextState.Recording);
+		this._accessibilitySignalService.playSignal(AccessibilitySignal.voiceRecordingStarted);
 	}
 
 	/**
@@ -336,41 +319,18 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 
 		this._setState(ChatSpeechToTextState.Transcribing);
 		this._stopCapture();
+		this._accessibilitySignalService.playSignal(AccessibilitySignal.voiceRecordingStopped);
 
-		if (this._useLocal) {
-			let text = this._transcript;
-			try {
-				const finalText = await this._localTranscription.stop();
-				if (finalText) {
-					text = finalText;
-				}
-			} catch (err) {
-				this._sessionErrorCode = this._sessionErrorCode || 'transcribe';
-				this._logService.error('[chat-stt] on-device final transcription failed', err);
-			}
-			this._logSessionTelemetry(this._sessionErrorCode ? 'error' : 'completed');
-			this._teardown();
-			this._setState(ChatSpeechToTextState.Idle);
-			return text || undefined;
-		}
-
-		// Ask the backend to flush the final utterance, then wait for it to
-		// close (bounded) so the last `segment` lands before we return.
+		let text = this._transcript;
 		try {
-			this._socket?.send(JSON.stringify({ type: 'stop' }));
-		} catch {
-			// socket already gone
+			const finalText = await this._localTranscription.stop();
+			if (finalText) {
+				text = finalText;
+			}
+		} catch (err) {
+			this._sessionErrorCode = this._sessionErrorCode || 'transcribe';
+			this._logService.error('[chat-stt] on-device final transcription failed', err);
 		}
-
-		// The backend signals `done` after flushing the final transcript, which
-		// resolves `_closePromise` promptly. The timeout is only a safety net so
-		// the UI never stays stuck in the transcribing state if the backend is
-		// unreachable.
-		if (this._closePromise) {
-			await Promise.race([this._closePromise, timeout(5000)]);
-		}
-
-		const text = this._transcript;
 		this._logSessionTelemetry(this._sessionErrorCode ? 'error' : 'completed');
 		this._teardown();
 		this._setState(ChatSpeechToTextState.Idle);
@@ -378,96 +338,24 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	}
 
 	cancel(): void {
+		const wasRecording = this._state === ChatSpeechToTextState.Recording;
 		this._logSessionTelemetry('cancelled');
-		if (this._useLocal) {
-			this._localTranscription.cancel();
-		}
+		this._localTranscription.cancel();
 		this._teardown();
 		this._finalizedText = '';
 		this._deltaText = '';
 		this._setState(ChatSpeechToTextState.Idle);
-	}
-
-	private async _openSocket(serverUrl: string, window: Window & typeof globalThis): Promise<void> {
-		const wsUrl = toStreamUrl(serverUrl);
-		// Resolve the auth token up front so the auth frame can be sent
-		// synchronously as the very first frame on open. Awaiting inside
-		// `onopen` leaves a window where the backend can read a different first
-		// frame and reject the connection with "Expected auth frame".
-		const token = await this._getAuthToken();
-		return new Promise<void>((resolve, reject) => {
-			let socket: WebSocket;
-			try {
-				socket = new window.WebSocket(wsUrl);
-			} catch (err) {
-				reject(err);
-				return;
-			}
-			this._socket = socket;
-
-			this._closePromise = new Promise<void>(res => { this._resolveClose = res; });
-
-			let ready = false;
-			socket.onopen = () => {
-				socket.send(JSON.stringify({ type: 'auth', token: token ?? '' }));
-			};
-			socket.onmessage = ev => {
-				let msg: { type?: string; text?: string; message?: string };
-				try {
-					msg = JSON.parse(typeof ev.data === 'string' ? ev.data : '');
-				} catch {
-					return;
-				}
-				switch (msg.type) {
-					case 'ready':
-						ready = true;
-						resolve();
-						break;
-					case 'done':
-						// Backend finished flushing the final transcript. Release
-						// the stop wait immediately instead of waiting for close.
-						this._resolveClose?.();
-						break;
-					case 'delta':
-						this._deltaText += msg.text ?? '';
-						this._onDidUpdateTranscript.fire(this._transcript);
-						break;
-					case 'segment':
-						this._sessionSegments++;
-						this._finalizedText = [this._finalizedText, (msg.text ?? '').trim()].filter(Boolean).join(' ');
-						this._deltaText = '';
-						this._onDidUpdateTranscript.fire(this._transcript);
-						break;
-					case 'error':
-						this._sessionErrorCode = this._sessionErrorCode || 'backend';
-						this._logService.error('[chat-stt] backend error', msg.message);
-						this._notificationService.error(localize('chatStt.transcribeError', "Speech-to-text transcription failed: {0}", msg.message ?? ''));
-						if (!ready) {
-							reject(new Error(msg.message ?? 'backend error'));
-						}
-						break;
-				}
-			};
-			socket.onerror = () => {
-				if (!ready) {
-					reject(new Error('WebSocket error'));
-				}
-			};
-			socket.onclose = () => {
-				this._resolveClose?.();
-				if (!ready) {
-					reject(new Error('WebSocket closed before ready'));
-				}
-			};
-		});
+		if (wasRecording) {
+			this._accessibilitySignalService.playSignal(AccessibilitySignal.voiceRecordingStopped);
+		}
 	}
 
 	private _startCapture(window: Window & typeof globalThis, stream: MediaStream): void {
 		const ctx = new window.AudioContext({ sampleRate: SAMPLE_RATE });
 		this._audioContext = ctx;
 		// The context is created several awaits after the user gesture (mic
-		// acquisition + socket handshake), so it can start suspended; resume it
-		// or `onaudioprocess` never fires and no audio is streamed.
+		// acquisition + model startup), so it can start suspended; resume it or
+		// `onaudioprocess` never fires and no audio is streamed.
 		ctx.resume().catch(() => { /* ignore */ });
 		const source = ctx.createMediaStreamSource(stream);
 		this._sourceNode = source;
@@ -477,15 +365,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 
 		processor.onaudioprocess = e => {
 			const samples = e.inputBuffer.getChannelData(0);
-			if (this._useLocal) {
-				this._localTranscription.pushAudio(encodeRawPcm16Buffer(samples));
-				return;
-			}
-			const socket = this._socket;
-			if (!socket || socket.readyState !== socket.OPEN) {
-				return;
-			}
-			socket.send(JSON.stringify({ type: 'audio', data: encodeRawPcm16Base64(samples, window) }));
+			this._localTranscription.pushAudio(encodeRawPcm16Buffer(samples));
 		};
 
 		source.connect(processor);
@@ -511,18 +391,6 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		this._resolveModelProgress?.();
 		this._resolveModelProgress = undefined;
 		this._localSessionDisposables.clear();
-		this._useLocal = false;
-		if (this._socket) {
-			this._socket.onopen = null;
-			this._socket.onmessage = null;
-			this._socket.onerror = null;
-			this._socket.onclose = null;
-			try { this._socket.close(); } catch { /* ignore */ }
-			this._socket = undefined;
-		}
-		this._resolveClose?.();
-		this._resolveClose = undefined;
-		this._closePromise = undefined;
 	}
 
 	private async _acquireStream(window: Window & typeof globalThis): Promise<MediaStream> {
@@ -552,47 +420,6 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			return window.navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
 		}
 	}
-
-	private _getServerUrl(): string {
-		const configured = (this._configurationService.getValue<string>('chat.speechToText.serverUrl') ?? '').trim();
-		return configured || this._productService.defaultChatAgent?.speechToTextUrl || '';
-	}
-
-	private async _getAuthToken(): Promise<string | undefined> {
-		try {
-			const providerId = this._defaultAccountService.getDefaultAccountAuthenticationProvider().id;
-			const sessions = await this._authenticationService.getSessions(providerId);
-			return sessions[0]?.accessToken;
-		} catch (err) {
-			this._logService.warn('[chat-stt] failed to resolve authentication session', err);
-			return undefined;
-		}
-	}
-}
-
-/** Convert an `http(s)` transcription URL into its `ws(s)` streaming variant. */
-function toStreamUrl(serverUrl: string): string {
-	const url = serverUrl.replace(/^http/, 'ws').replace(/\/+$/, '');
-	if (url.endsWith('/transcribe')) {
-		return `${url}/stream`;
-	}
-	return `${url}/stream`;
-}
-
-/** Encode PCM Float32 samples into base64-encoded raw PCM16 (no WAV header). */
-function encodeRawPcm16Base64(samples: Float32Array, win: Window & typeof globalThis): string {
-	const buf = new ArrayBuffer(samples.length * 2);
-	const view = new DataView(buf);
-	for (let i = 0; i < samples.length; i++) {
-		const s = Math.max(-1, Math.min(1, samples[i]));
-		view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-	}
-	const bytes = new Uint8Array(buf);
-	let binaryStr = '';
-	for (let i = 0; i < bytes.length; i++) {
-		binaryStr += String.fromCharCode(bytes[i]);
-	}
-	return win.btoa(binaryStr);
 }
 
 function encodeRawPcm16Buffer(samples: Float32Array): VSBuffer {
@@ -603,10 +430,6 @@ function encodeRawPcm16Buffer(samples: Float32Array): VSBuffer {
 		view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
 	}
 	return VSBuffer.wrap(bytes);
-}
-
-function timeout(ms: number): Promise<void> {
-	return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function toErrorMessage(err: unknown): string {
