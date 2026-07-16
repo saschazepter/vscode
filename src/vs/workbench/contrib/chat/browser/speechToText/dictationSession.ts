@@ -151,9 +151,9 @@ class LiveTranscriptInserter {
 	/**
 	 * Render the interim text in the placeholder color, shimmering only the
 	 * still-processing trailing portion. The settled prefix is the part of the
-	 * transcript that has not changed since the previous interim update (trimmed
-	 * back to a word boundary), so words stop shimmering once the recognizer
-	 * stops revising them. Cleared entirely once the text is finalized.
+	 * transcript that has not changed since the previous interim update, so words
+	 * stop shimmering once the recognizer stops revising them. Cleared entirely
+	 * once the text is finalized.
 	 */
 	private _updateInterimDecorations(text: string, fullText: string, interim: boolean): void {
 		if (!interim || !this._anchor || !this._end || Position.equals(this._anchor, this._end)) {
@@ -164,7 +164,13 @@ class LiveTranscriptInserter {
 		}
 
 		const leading = this._needsLeadingSpace ? 1 : 0;
-		const settledChars = wordBoundaryAtOrBefore(fullText, commonPrefixLength(fullText, this._prevInterimText));
+		const common = commonPrefixLength(fullText, this._prevInterimText);
+		// When the tail diverges from the previous interim (a word is being
+		// revised) settle only up to the last word boundary so the whole
+		// in-progress word shimmers. But once the transcript stops changing (the
+		// common prefix already covers the entire current text) settle
+		// everything, otherwise the last word would shimmer forever.
+		const settledChars = common >= fullText.length ? fullText.length : wordBoundaryAtOrBefore(fullText, common);
 		const splitPosition = this._positionAtOffset(text, leading + settledChars);
 
 		this._settledDecorations ??= this._editor.createDecorationsCollection();
