@@ -29,7 +29,7 @@ import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProt
 import { ActionType, isChatAction, type SessionAction, type ChatAction } from '../../common/state/sessionActions.js';
 import type { ConfigSchema, ModelSelection, ProtectedResourceMetadata, ToolDefinition, AgentSelection } from '../../common/state/protocol/state.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
-import { buildDefaultChatUri, isDefaultChatUri, parseChatUri, parseDefaultChatUri, type ClientPluginCustomization, type DirectoryCustomization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, ChatInputResponseKind, type PolicyState, type ToolCallResult, ToolResultContentType, type Turn, ResponsePartKind } from '../../common/state/sessionState.js';
+import { isDefaultChatUri, parseChatUri, parseDefaultChatUri, type ClientPluginCustomization, type DirectoryCustomization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, ChatInputResponseKind, type PolicyState, type ToolCallResult, ToolResultContentType, type Turn, ResponsePartKind } from '../../common/state/sessionState.js';
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
 import { ActiveClientToolSet } from '../activeClientState.js';
 import { McpCustomizationController } from '../shared/mcpCustomizationController.js';
@@ -39,6 +39,7 @@ import { CodexClientCustomizationStore, codexMcpServersFromPlugins, codexSkillRo
 import { buildElicitationRequest, cancelledElicitationResponse, declinedElicitationResponse, elicitationResponseFromAnswers } from './codexElicitationMapper.js';
 import { McpAuthRequiredReason, McpServerStatus, type AhpMcpUiHostCapabilities, type Customization, type McpServerState } from '../../common/state/protocol/channels-session/state.js';
 import { IAgentConfigurationService } from '../agentConfigurationService.js';
+import { defaultChatUriForSession } from '../agentPeerChats.js';
 import { IFileService } from '../../../files/common/files.js';
 import { INativeEnvironmentService } from '../../../environment/common/environment.js';
 import { IAgentPluginManager, type ISyncedCustomization } from '../../common/agentPluginManager.js';
@@ -374,6 +375,13 @@ interface ICodexSession {
 	 */
 	threadId: string | undefined;
 	readonly sessionUri: URI;
+	/**
+	 * The session's default-chat URI. Established once at session creation and
+	 * reused by outbound event sites instead of re-deriving it from
+	 * {@link sessionUri}, keeping the session->default-chat conversion out of
+	 * the agent. Subagent sessions copy their parent's value.
+	 */
+	readonly defaultChat: URI;
 	/**
 	 * Effective working directory. Starts as the folder the client passed to
 	 * {@link CodexAgent.createSession}; at first materialization it is replaced
@@ -1729,7 +1737,7 @@ export class CodexAgent extends Disposable implements IAgent {
 	}
 
 	private _fireSteeringConsumed(session: ICodexSession, id: string): void {
-		this._onDidSessionProgress.fire({ kind: 'steering_consumed', chat: URI.parse(buildDefaultChatUri(session.sessionUri)), id });
+		this._onDidSessionProgress.fire({ kind: 'steering_consumed', chat: session.defaultChat, id });
 	}
 
 	private _registerIgnoredNotifications(client: ICodexAppServerClient): void {
@@ -1842,7 +1850,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			subagent.session.pendingCommandApprovals.denyAll('decline');
 			this._onDidSessionProgress.fire({
 				kind: 'subagent_completed',
-				chat: URI.parse(buildDefaultChatUri(subagent.session.sessionUri)),
+				chat: subagent.session.defaultChat,
 				toolCallId: subagent.toolCallId,
 			});
 			return;
@@ -1866,7 +1874,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		if (!entry) {
 			return;
 		}
-		const parentChat = URI.parse(buildDefaultChatUri(session.sessionUri));
+		const parentChat = session.defaultChat;
 		const model = item.model || undefined;
 		const taskDescription = item.prompt || undefined;
 		for (const childThreadId of item.receiverThreadIds) {
@@ -1906,6 +1914,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			sessionId: parent.sessionId,
 			threadId: childThreadId,
 			sessionUri: parent.sessionUri,
+			defaultChat: parent.defaultChat,
 			workingDirectory: parent.workingDirectory,
 			managedWorkingDirectory: undefined,
 			mapState: createCodexSessionMapState(new Set(this._serverToolHost?.toolNames ?? []), clientToolSet),
@@ -1948,7 +1957,7 @@ export class CodexAgent extends Disposable implements IAgent {
 	private _fireSubagent(subagent: ICodexSubagent, action: SessionAction | ChatAction): void {
 		this._onDidSessionProgress.fire({
 			kind: 'action',
-			resource: URI.parse(buildDefaultChatUri(subagent.session.sessionUri)),
+			resource: subagent.session.defaultChat,
 			action,
 			parentToolCallId: subagent.toolCallId,
 		});
@@ -2413,6 +2422,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			sessionId,
 			threadId: undefined,
 			sessionUri,
+			defaultChat: defaultChatUriForSession(sessionUri),
 			workingDirectory: config.workingDirectory,
 			managedWorkingDirectory: undefined,
 			mapState: createCodexSessionMapState(new Set(this._serverToolHost?.toolNames ?? []), clientToolSet),
@@ -2489,6 +2499,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			sessionId,
 			threadId,
 			sessionUri,
+			defaultChat: defaultChatUriForSession(sessionUri),
 			workingDirectory,
 			managedWorkingDirectory: undefined,
 			mapState: createCodexSessionMapState(new Set(this._serverToolHost?.toolNames ?? []), clientToolSet),
@@ -4024,7 +4035,9 @@ export class CodexAgent extends Disposable implements IAgent {
 	// #endregion
 
 	private _fire(sessionUri: URI, action: SessionAction | ChatAction): void {
-		this._onDidSessionProgress.fire({ kind: 'action', resource: isChatAction(action) ? URI.parse(buildDefaultChatUri(sessionUri)) : sessionUri, action });
+		const entry = this._sessions.get(AgentSession.id(sessionUri));
+		const chat = entry?.defaultChat ?? defaultChatUriForSession(sessionUri);
+		this._onDidSessionProgress.fire({ kind: 'action', resource: isChatAction(action) ? chat : sessionUri, action });
 	}
 
 	override dispose(): void {

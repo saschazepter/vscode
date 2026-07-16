@@ -37,7 +37,7 @@ import { AgentHostConfigKey, agentHostCustomizationConfigSchema, toContainerCust
 import { CopilotCliConfigKey, copilotCliConfigSchema, type CopilotSdkLogLevelSetting } from '../../common/copilotCliConfig.js';
 import { AgentHostMcpServersConfigKey, AgentHostPreferLongContextEnabledConfigKey, AgentHostSessionSyncEnabledConfigKey, AutoApproveLevel, SessionMode, migrateLegacyAutopilotConfig, platformRootSchema, platformSessionSchema, type AgentHostMcpServers } from '../../common/agentHostSchema.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
-import { AgentSessionEntry, decodeProviderData, encodeProviderData, type IPersistedChat } from '../agentPeerChats.js';
+import { AgentSessionEntry, decodeProviderData, defaultChatUriForSession, encodeProviderData, type IPersistedChat } from '../agentPeerChats.js';
 import { AgentSession, AgentSignal, AuthenticateParams, IActiveClient, IAgent, IAgentChatDataChange, IAgentChats, IAgentLegacyChat, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentHostNetworkEndpoint, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentProvisionDefaultChat, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../../common/agentService.js';
 import { getReasoningEffortDescription, getReasoningEffortLabel } from '../../common/reasoningEffort.js';
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
@@ -48,7 +48,7 @@ import { IAgentHostProxyResolver } from '../agentHostProxyResolver.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
 import { ProtectedResourceMetadata, type AgentSelection, type ChildCustomizationType, type ConfigPropertySchema, type ConfigSchema, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
 import { ActionType, type SessionAction } from '../../common/state/sessionActions.js';
-import { AgentCustomization, CustomizationLoadStatus, CustomizationType, RuleCustomization, ChatInputResponseKind, SkillCustomization, customizationId, buildChatUri, buildDefaultChatUri, isDefaultChatUri, parseChatUri, parseDefaultChatUri, parseRequiredSessionUriFromChatUri, parseSubagentSessionUri, AH_META_WORKSPACELESS_DB_KEY, type ChildCustomization, type ClientPluginCustomization, type Customization, type DirectoryCustomization, type HookCustomization, type MessageAttachment, type PendingMessage, type PluginCustomization, type PolicyState, type ChatInputAnswer, type ToolCallResult, type Turn } from '../../common/state/sessionState.js';
+import { AgentCustomization, CustomizationLoadStatus, CustomizationType, RuleCustomization, ChatInputResponseKind, SkillCustomization, customizationId, buildChatUri, isDefaultChatUri, parseChatUri, parseDefaultChatUri, parseSubagentSessionUri, AH_META_WORKSPACELESS_DB_KEY, type ChildCustomization, type ClientPluginCustomization, type Customization, type DirectoryCustomization, type HookCustomization, type MessageAttachment, type PendingMessage, type PluginCustomization, type PolicyState, type ChatInputAnswer, type ToolCallResult, type Turn } from '../../common/state/sessionState.js';
 import { ActiveClientToolSet } from '../activeClientState.js';
 import { IAgentConfigurationService } from '../agentConfigurationService.js';
 import { IAgentHostGitHubEndpointService } from '../agentHostGitHubEndpointService.js';
@@ -1397,20 +1397,22 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 	private _getChatContext(chatOrSession: URI): { session: URI; sessionId: string; chatKey: string; target: CopilotAgentSession | undefined; isPeerChat: boolean } {
 		// Accept either a chat channel URI or a bare session URI: per the AHP
-		// convention the default chat's URI equals the session URI, so callers
-		// that address the default chat by the session URI resolve here in one
-		// place rather than each operational method re-deriving it.
-		const chat = parseChatUri(chatOrSession) ? chatOrSession : URI.parse(buildDefaultChatUri(chatOrSession));
-		const session = URI.parse(parseRequiredSessionUriFromChatUri(chat));
+		// convention a bare session URI addresses the session's default chat, so
+		// callers that address the default chat by the session URI resolve here
+		// in one place. The default chat's stored key comes from the entry rather
+		// than re-deriving it from the session URI.
+		const parsed = parseChatUri(chatOrSession);
+		const session = parsed ? URI.parse(parsed.session) : chatOrSession;
 		const sessionId = AgentSession.id(session);
-		const chatKey = chat.toString();
-		const resolved = this._sessions.get(sessionId)?.resolveChat(chatKey);
+		const entry = this._sessions.get(sessionId);
+		const chatKey = parsed ? chatOrSession.toString() : (entry?.defaultChatKey ?? chatOrSession.toString());
+		const resolved = entry?.resolveChat(chatKey);
 		return {
 			session,
 			sessionId,
 			chatKey,
 			target: resolved?.chatSession,
-			isPeerChat: resolved ? !resolved.isDefault : chatKey !== buildDefaultChatUri(session),
+			isPeerChat: resolved ? !resolved.isDefault : (parsed ? !isDefaultChatUri(chatOrSession) : false),
 		};
 	}
 
@@ -2082,10 +2084,13 @@ export class CopilotAgent extends Disposable implements IAgent {
 			return parentEntry.getSubagentMessages(subagentInfo.toolCallId);
 		}
 
-		const chat = parseChatUri(session) ? session : URI.parse(buildDefaultChatUri(session));
-		const context = this._getChatContext(chat);
+		// `session` is either a bare session URI (the default chat) or a peer
+		// chat channel URI; `_getChatContext` normalizes both without re-deriving
+		// the default-chat URI from the session URI.
+		const context = this._getChatContext(session);
 		if (context.isPeerChat) {
-			const entry = await this._ensureChatSession(context.session, chat);
+			// `session` is itself the peer chat channel URI here.
+			const entry = await this._ensureChatSession(context.session, session);
 			return entry ? entry.getMessages() : [];
 		}
 
@@ -2803,7 +2808,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 	 */
 	private _createAgentSession(launchPlan: CopilotSessionLaunchPlan, customizationDirectory: URI | undefined, activeClient: ActiveClient, channelUri?: URI): CopilotAgentSession {
 		const sessionUri = channelUri ?? AgentSession.uri(this.id, launchPlan.sessionId);
-		const chatChannelUri = channelUri ?? URI.parse(buildDefaultChatUri(sessionUri));
+		const chatChannelUri = channelUri ?? defaultChatUriForSession(sessionUri);
 
 		const agentSession = this._instantiationService.createInstance(
 			CopilotAgentSession,
@@ -2851,8 +2856,10 @@ export class CopilotAgent extends Disposable implements IAgent {
 		// Reuse an existing entry (which may already host peer chats created
 		// while the default chat was still provisional) rather than replacing
 		// it, which would dispose those peers. The default chat is seeded into
-		// the entry's uniform chat map keyed by its default-chat URI.
-		const defaultChatKey = buildDefaultChatUri(agentSession.sessionUri.toString());
+		// the entry's uniform chat map keyed by its default-chat URI. Derive the
+		// key from a fresh URI (not the session's live chatChannelUri) so we
+		// never eagerly cache the emitted object's string form.
+		const defaultChatKey = defaultChatUriForSession(agentSession.sessionUri).toString();
 		let entry = this._sessions.get(sessionId);
 		if (!entry) {
 			entry = new CopilotSessionEntry();

@@ -20,7 +20,7 @@ import { INativeEnvironmentService } from '../../../environment/common/environme
 import { ILogService } from '../../../log/common/log.js';
 import { IProductService } from '../../../product/common/productService.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
-import { AgentSessionEntry, decodeProviderData, encodeProviderData, type IPersistedChat } from '../agentPeerChats.js';
+import { AgentSessionEntry, decodeProviderData, defaultChatUriForSession, encodeProviderData, type IPersistedChat } from '../agentPeerChats.js';
 import { AgentHostConfigKey, agentHostCustomizationConfigSchema } from '../../common/agentHostCustomizationConfig.js';
 import { createSchema, platformSessionSchema, schemaProperty } from '../../common/agentHostSchema.js';
 import { ClaudePermissionMode, ClaudeSessionConfigKey, narrowClaudePermissionMode } from '../../common/claudeSessionConfigKeys.js';
@@ -32,7 +32,7 @@ import { ActionType, AuthRequiredReason, type AuthRequiredParams } from '../../c
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { PolicyState, ProtectedResourceMetadata, type AgentSelection, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
-import { isSubagentSession, parseSubagentSessionUri, buildDefaultChatUri, parseChatUri, parseDefaultChatUri, parseRequiredSessionUriFromChatUri, isDefaultChatUri, ChatInputResponseKind, type ClientPluginCustomization, type Customization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, type ToolCallResult, type Turn } from '../../common/state/sessionState.js';
+import { isSubagentSession, parseSubagentSessionUri, parseChatUri, parseDefaultChatUri, isDefaultChatUri, ChatInputResponseKind, type ClientPluginCustomization, type Customization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, type ToolCallResult, type Turn } from '../../common/state/sessionState.js';
 import { IAgentConfigurationService } from '../agentConfigurationService.js';
 import { IAgentHostGitHubEndpointService } from '../agentHostGitHubEndpointService.js';
 import { IAgentHostGitService } from '../../common/agentHostGitService.js';
@@ -352,25 +352,30 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		if (!entry) {
 			return undefined;
 		}
-		return entry.getChat((chat ?? URI.parse(buildDefaultChatUri(session))).toString());
+		// A `undefined` chat addresses the session's default chat: reuse the
+		// stored default-chat key rather than re-deriving it from the session URI.
+		const chatKey = chat ? chat.toString() : entry.defaultChatKey;
+		return chatKey ? entry.getChat(chatKey) : undefined;
 	}
 
 	private _getChatContext(chatOrSession: URI): { session: URI; sessionId: string; chatKey: string; target: ClaudeAgentSession | undefined; isPeerChat: boolean } {
 		// Accept either a chat channel URI or a bare session URI: per the AHP
-		// convention the default chat's URI equals the session URI, so callers
-		// that address the default chat by the session URI resolve here in one
-		// place rather than each operational method re-deriving it.
-		const chat = parseChatUri(chatOrSession) ? chatOrSession : URI.parse(buildDefaultChatUri(chatOrSession));
-		const session = URI.parse(parseRequiredSessionUriFromChatUri(chat));
+		// convention a bare session URI addresses the session's default chat, so
+		// callers that address the default chat by the session URI resolve here
+		// in one place. The default chat's stored key comes from the entry rather
+		// than re-deriving it from the session URI.
+		const parsed = parseChatUri(chatOrSession);
+		const session = parsed ? URI.parse(parsed.session) : chatOrSession;
 		const sessionId = AgentSession.id(session);
-		const chatKey = chat.toString();
-		const resolved = this._sessions.get(sessionId)?.resolveChat(chatKey);
+		const entry = this._sessions.get(sessionId);
+		const chatKey = parsed ? chatOrSession.toString() : (entry?.defaultChatKey ?? chatOrSession.toString());
+		const resolved = entry?.resolveChat(chatKey);
 		return {
 			session,
 			sessionId,
 			chatKey,
 			target: resolved?.chatSession,
-			isPeerChat: resolved ? !resolved.isDefault : chatKey !== buildDefaultChatUri(session),
+			isPeerChat: resolved ? !resolved.isDefault : (parsed ? !isDefaultChatUri(chatOrSession) : false),
 		};
 	}
 
@@ -408,7 +413,10 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	 */
 	private _seedSessionEntry(sessionId: string, session: URI, mainSession: ClaudeAgentSession): ClaudeSessionEntry {
 		const container = new ClaudeSessionEntry();
-		container.setDefaultChat(buildDefaultChatUri(session), this._wireEntry(mainSession));
+		// Key by the deterministic default-chat URI. Derive it from a fresh URI
+		// (not the session's live chatChannelUri) so we never eagerly cache the
+		// emitted object's string form.
+		container.setDefaultChat(defaultChatUriForSession(session).toString(), this._wireEntry(mainSession));
 		this._sessions.set(sessionId, container);
 		return container;
 	}
@@ -709,7 +717,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		const session = ClaudeAgentSession.createProvisional(
 			sessionId,
 			sessionUri,
-			URI.parse(buildDefaultChatUri(sessionUri)),
+			defaultChatUriForSession(sessionUri),
 			workingDirectory,
 			project,
 			config.model,
@@ -1085,7 +1093,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		const session = ClaudeAgentSession.createProvisional(
 			sessionId,
 			sessionUri,
-			URI.parse(buildDefaultChatUri(sessionUri)),
+			defaultChatUriForSession(sessionUri),
 			workingDirectory,
 			project,
 			overlay.model,
@@ -1446,7 +1454,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			const mainSession = ClaudeAgentSession.createProvisional(
 				sessionId,
 				session,
-				URI.parse(buildDefaultChatUri(session)),
+				defaultChatUriForSession(session),
 				parentSession.workingDirectory,
 				parentSession.project,
 				parentSession.model,
@@ -1633,20 +1641,17 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			}
 		}
 
-		const chat = parseChatUri(session) ? session : URI.parse(buildDefaultChatUri(session));
-		const chatInfo = parseChatUri(chat);
-		if (!chatInfo) {
-			return [];
-		}
-		const parentSessionUri = URI.parse(chatInfo.session);
-		const sessionId = AgentSession.id(parentSessionUri);
-		const context = this._getChatContext(chat);
+		// `session` is either a bare session URI (the default chat) or a peer
+		// chat channel URI; `_getChatContext` normalizes both without re-deriving
+		// the default-chat URI from the session URI.
+		const context = this._getChatContext(session);
 		if (context.isPeerChat) {
-			const sdkId = await this._resolveChatSdkId(parentSessionUri, chat);
+			// `session` is itself the peer chat channel URI here.
+			const sdkId = await this._resolveChatSdkId(context.session, session);
 			if (!sdkId) {
 				return [];
 			}
-			return this._reconstructTurns(sdkId, chat, context.target);
+			return this._reconstructTurns(sdkId, session, context.target);
 		}
 
 		const sess = context.target;
@@ -1654,7 +1659,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			return [];
 		}
 		// Default chat: its SDK chat id is the session id.
-		return this._reconstructTurns(sessionId, parentSessionUri, sess);
+		return this._reconstructTurns(context.sessionId, context.session, sess);
 	}
 
 	/**

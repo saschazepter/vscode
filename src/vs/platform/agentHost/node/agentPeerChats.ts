@@ -4,7 +4,22 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable, DisposableMap, IDisposable } from '../../../base/common/lifecycle.js';
+import { URI } from '../../../base/common/uri.js';
 import { type ModelSelection } from '../common/state/protocol/state.js';
+import { buildDefaultChatUri } from '../common/state/sessionState.js';
+
+/**
+ * The single node-layer conversion from a session URI to its deterministic
+ * default-chat channel URI, shared by the multi-chat agents. Agents call this
+ * ONLY where the default-chat URI is first born from a session URI that exists
+ * only inside the agent - a freshly forked session id assigned by the SDK, or a
+ * cold-restore session URI handed in by the orchestrator. Everywhere else agents
+ * reuse the chat URI they were already given (an entry's {@link AgentSessionEntry.defaultChatKey}
+ * or a live session's stored chat channel) instead of re-deriving it.
+ */
+export function defaultChatUriForSession(sessionUri: URI): URI {
+	return URI.parse(buildDefaultChatUri(sessionUri));
+}
 
 /**
  * In-memory backing for an additional (non-default) peer chat. Records the SDK
@@ -115,6 +130,16 @@ export class AgentSessionEntry<TSession extends IDisposable> extends Disposable 
 	/** The session's materialized default (main) chat, or `undefined` while provisional. */
 	get defaultChat(): TSession | undefined {
 		return this._defaultChatKey !== undefined ? this._chats.get(this._defaultChatKey)?.ownSession : undefined;
+	}
+
+	/**
+	 * The session's default-chat URI (as a string key), as handed to
+	 * {@link setDefaultChat}. Exposed so agents reuse the chat URI they were
+	 * given for outbound events instead of re-deriving it from the session URI
+	 * (the session-to-chat mapping is orchestrator/protocol knowledge).
+	 */
+	get defaultChatKey(): string | undefined {
+		return this._defaultChatKey;
 	}
 
 	/** Uniform lookup: the chat's session (default OR peer) by its chat-URI key. */
