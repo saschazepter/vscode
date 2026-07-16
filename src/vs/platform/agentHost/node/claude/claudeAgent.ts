@@ -1128,6 +1128,15 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	}
 
 	disposeSession(session: URI): Promise<void> {
+		// `session` is the agent's OWN provider session (the SDK's terminology),
+		// not the AH-level Session grouping - that grouping lives in the
+		// orchestrator, and the agent only ever deals in chats. This URI is the
+		// SDK session that backs the default chat (invariant I3: its raw id is
+		// the SDK session id), so `chats.disposeChat` routes here when a
+		// *default* chat is disposed; peer chats go to `_disposeChat` instead.
+		// Tearing it down disposes that SDK session plus the peer-chat backings
+		// the agent parents under it for lifecycle bookkeeping.
+		//
 		// Routed through {@link _disposeSequencer} so a concurrent
 		// {@link shutdown} already serializing teardown for this same
 		// session id awaits this work first (and vice versa). When the session
