@@ -11,9 +11,65 @@ async function getPipelineArtifacts(): Promise<Artifact[]> {
 	return result.value.filter(a => !/sbom$/.test(a.name));
 }
 
-async function main(artifacts: string[]): Promise<void> {
+interface TimelineRecord {
+	readonly name: string;
+	readonly identifier?: string;
+	readonly type: string;
+	readonly state: string;
+	readonly result: string;
+}
+
+interface Timeline {
+	readonly records: TimelineRecord[];
+}
+
+async function getPipelineTimeline(): Promise<Timeline> {
+	return await requestAZDOAPI<Timeline>('timeline');
+}
+
+class ProducerFailedError extends Error { }
+
+// Finds the timeline record for the job that produces the given artifact, matched
+// by its display name or identifier, but only if it has completed without success.
+// A producer that succeeded (even with issues) is expected to have uploaded its
+// artifact, so it does not count as a failure here.
+function findFailedProducer(timeline: Timeline, producer: string): TimelineRecord | undefined {
+	return timeline.records.find(r =>
+		r.type === 'Job' &&
+		(r.name === producer || r.identifier === producer) &&
+		r.state === 'completed' &&
+		r.result !== 'succeeded' &&
+		r.result !== 'succeededWithIssues');
+}
+
+// Parses the command line into the set of artifacts to wait for and an optional
+// mapping from artifact name to the job that produces it. Producers are declared
+// as `--producer=<artifactName>=<producerJob>` and let us short circuit as soon
+// as a producer of a still-missing artifact fails, instead of waiting the full
+// 60 minutes. Bare arguments are treated as artifact names without a producer.
+function parseArgs(args: string[]): { artifacts: string[]; producers: Map<string, string> } {
+	const artifacts = new Set<string>();
+	const producers = new Map<string, string>();
+
+	for (const arg of args) {
+		const match = /^--producer=(?<artifact>[^=]+)=(?<job>.+)$/.exec(arg);
+		if (match) {
+			const { artifact, job } = match.groups!;
+			artifacts.add(artifact);
+			producers.set(artifact, job);
+		} else {
+			artifacts.add(arg);
+		}
+	}
+
+	return { artifacts: [...artifacts], producers };
+}
+
+async function main(args: string[]): Promise<void> {
+	const { artifacts, producers } = parseArgs(args);
+
 	if (artifacts.length === 0) {
-		throw new Error(`Usage: node waitForArtifacts.ts <artifactName1> <artifactName2> ...`);
+		throw new Error(`Usage: node waitForArtifacts.ts [--producer=<artifactName>=<producerJob> ...] <artifactName1> <artifactName2> ...`);
 	}
 
 	// This loop will run for 60 minutes and waits to the x64 and arm64 artifacts
@@ -33,7 +89,25 @@ async function main(artifacts: string[]): Promise<void> {
 				console.log(`  * All artifacts were found`);
 				return;
 			}
+
+			// Short circuit if a producer of a still-missing artifact has already
+			// completed without success, since that artifact will never be uploaded.
+			const missingWithProducers = artifacts.filter(a => producers.has(a) && !foundArtifacts.some(f => f.name === a));
+			if (missingWithProducers.length > 0) {
+				const timeline = await retry(() => getPipelineTimeline());
+				for (const artifact of missingWithProducers) {
+					const producer = producers.get(artifact)!;
+					const failed = findFailedProducer(timeline, producer);
+					if (failed) {
+						throw new ProducerFailedError(`Producer job "${failed.name}" ${failed.result} before uploading artifact "${artifact}". It will never be uploaded.`);
+					}
+				}
+			}
 		} catch (err) {
+			if (err instanceof ProducerFailedError) {
+				throw err;
+			}
+
 			console.error(`ERROR: Failed to get pipeline artifacts: ${err}`);
 		}
 
