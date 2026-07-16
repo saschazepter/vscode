@@ -79,6 +79,7 @@ import { ElementsDragAndDropData, ListViewTargetSector } from '../../../../../ba
 import { ISessionsProvidersService } from '../../../../services/sessions/browser/sessionsProvidersService.js';
 import { buildSessionHoverContent } from '../sessionHoverContent.js';
 import { SessionStatusIcon } from '../../../../browser/sessionStatusIcon.js';
+import { ChatAutomationsEnabledContext } from '../../../../../workbench/contrib/chat/common/automations/automationsEnabled.js';
 
 const $ = DOM.$;
 
@@ -902,13 +903,14 @@ class SessionSectionRenderer implements ITreeRenderer<SessionListItem, FuzzyScor
 		// Leading icon for the "Pinned" and "Chats" (quick chats) section headers.
 		// Templates are reused across rows, so recompute the icon every render.
 		const sectionIcon = element.id === QUICK_CHATS_SECTION_ID ? Codicon.commentDiscussion
-			: element.id === 'pinned' ? Codicon.pinned
+			: element.id === AUTOMATIONS_SECTION_ID ? Codicon.watch
+				: element.id === 'pinned' ? Codicon.pinned
 				: undefined;
 		template.icon.className = sectionIcon ? `session-section-icon ${ThemeIcon.asClassName(sectionIcon)}` : 'session-section-icon';
 		template.icon.style.display = sectionIcon ? '' : 'none';
 
 		template.label.textContent = element.label;
-		if (this.hideSectionCount) {
+		if (this.hideSectionCount || element.id === AUTOMATIONS_SECTION_ID) {
 			template.count.textContent = '';
 			template.count.style.display = 'none';
 		} else {
@@ -1186,6 +1188,9 @@ class SessionsAccessibilityProvider {
 			return `${element.group.name}, ${element.sessions.length}`;
 		}
 		if (isSessionSection(element)) {
+			if (element.id === AUTOMATIONS_SECTION_ID) {
+				return element.label;
+			}
 			return `${element.label}, ${element.sessions.length}`;
 		}
 		if (isSessionShowMore(element)) {
@@ -1902,6 +1907,10 @@ export class SessionsList extends Disposable implements ISessionsList {
 			if (isSessionPlaceholder(element)) {
 				return;
 			}
+			if (isSessionSection(element) && element.id === AUTOMATIONS_SECTION_ID) {
+				this.commandService.executeCommand('sessionsView.manageAutomations');
+				return;
+			}
 			if (!isSessionSection(element) && !isSessionGroupItem(element)) {
 				this.markRead(element);
 				// A deliberate left mouse click on a session should move keyboard
@@ -2250,6 +2259,16 @@ export class SessionsList extends Disposable implements ISessionsList {
 		};
 
 		const renderSection = (section: ISessionSection): IObjectTreeElement<SessionListItem> => {
+			// The "Automations" section is a non-expandable shortcut that opens
+			// the automations management editor on click.
+			if (section.id === AUTOMATIONS_SECTION_ID) {
+				return {
+					element: section as SessionListItem,
+					children: [],
+					collapsible: false,
+				};
+			}
+
 			const isWorkspaceGroup = grouping === SessionsGrouping.Workspace
 				&& section.id.startsWith('workspace:');
 			const limitSessions = isWorkspaceGroup
@@ -2297,6 +2316,11 @@ export class SessionsList extends Disposable implements ISessionsList {
 				children: renderSessionChildren(groupItem.sessions, `group:${groupItem.group.id}`, groupItem.group.name, !this.hasFindPattern && this.workspaceGroupCapped),
 			};
 		};
+
+		// Automations shortcut. Always first. Gated by the enabled context key.
+		if (this.contextKeyService.getContextKeyValue<boolean>(ChatAutomationsEnabledContext.key)) {
+			children.push(renderSection({ id: AUTOMATIONS_SECTION_ID, label: localize('automations', "Automations"), sessions: [] }));
+		}
 
 		const pinnedSection = sections.find(s => s.id === 'pinned');
 		if (pinnedSection) {
@@ -3206,6 +3230,9 @@ export function computeReorderSortChanges(input: IReorderSortInput): { set: Map<
 
 /** Fixed section id for workspace-less "quick chat" sessions. */
 export const QUICK_CHATS_SECTION_ID = 'quickchats';
+
+/** Fixed section id for the non-expandable "Automations" shortcut row. */
+export const AUTOMATIONS_SECTION_ID = 'automations';
 
 /**
  * Whether a session is a workspace-less "quick chat", per the session's own

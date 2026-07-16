@@ -32,6 +32,8 @@ import { ChatContextKeys } from '../../../../../workbench/contrib/chat/common/ac
 import { AGENT_HOST_ENABLED_CONTEXT_KEY } from '../../../../../platform/agentHost/common/agentHostEnablementService.js';
 import { ISessionsPartService } from '../../../../services/sessions/browser/sessionsPartService.js';
 import { ISessionsService } from '../../../../services/sessions/browser/sessionsService.js';
+import { IAutomationDialogService } from '../../../../../workbench/contrib/chat/common/automations/automationDialogService.js';
+import { IAutomationService } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
 
 const CLOSE_SESSION_COMMAND_ID = 'sessionsViewPane.closeSession';
 registerAction2(class CloseSessionAction extends Action2 {
@@ -523,6 +525,43 @@ registerAction2(class NewQuickChatAction extends Action2 {
 	}
 });
 
+registerAction2(class ManageAutomationsAction extends Action2 {
+	constructor() {
+		super({
+			id: 'sessionsView.manageAutomations',
+			title: localize2('manageAutomations', "Manage Automations"),
+			menu: []
+		});
+	}
+	override run(accessor: ServicesAccessor): void {
+		accessor.get(ISessionsPartService).showAutomationsPage();
+	}
+});
+
+registerAction2(class NewAutomationAction extends Action2 {
+	constructor() {
+		super({
+			id: 'sessionsView.newAutomation',
+			title: localize2('newAutomation', "New Automation"),
+			icon: Codicon.plus,
+			menu: [{
+				id: SessionSectionToolbarMenuId,
+				group: 'navigation',
+				order: 0,
+				when: ContextKeyExpr.equals(SessionSectionTypeContext.key, 'automations'),
+			}]
+		});
+	}
+	override async run(accessor: ServicesAccessor): Promise<void> {
+		const dialogService = accessor.get(IAutomationDialogService);
+		const automationService = accessor.get(IAutomationService);
+		const result = await dialogService.showAutomationDialog({});
+		if (result?.kind === 'create') {
+			await automationService.createAutomation(result.value);
+		}
+	}
+});
+
 const ConfirmArchiveStorageKey = 'sessions.confirmArchive';
 
 function getArchiveSectionConfirmationMessage(context: ISessionSection): string {
@@ -551,11 +590,12 @@ registerAction2(class ArchiveSectionAction extends Action2 {
 				id: SessionSectionToolbarMenuId,
 				group: 'navigation',
 				order: 0,
-				// Not on Done itself, and not on the "Chats" (quick chats) section —
-				// quick chats have no archive/Done action.
+				// Not on Done itself, and not on the "Chats" (quick chats) section.
+				// Also not on Automations.
 				when: ContextKeyExpr.and(
 					ContextKeyExpr.notEquals(SessionSectionTypeContext.key, 'archived'),
 					ContextKeyExpr.notEquals(SessionSectionTypeContext.key, 'quickchats'),
+					ContextKeyExpr.notEquals(SessionSectionTypeContext.key, 'automations'),
 				),
 			}]
 		});
