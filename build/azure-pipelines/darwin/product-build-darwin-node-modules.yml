@@ -69,11 +69,17 @@ jobs:
         condition: and(succeeded(), ne(variables.NODE_MODULES_RESTORED, 'true'), ne(variables['NPM_REGISTRY'], 'none'))
         displayName: Setup NPM Authentication
 
+      - task: PipAuthenticate@1
+        inputs:
+          artifactFeeds: Monaco/vscode
+        condition: and(succeeded(), ne(variables.NODE_MODULES_RESTORED, 'true'))
+        displayName: Setup PyPI Authentication
+
       - script: |
           set -e
           c++ --version
           xcode-select -print-path
-          python3 -m pip install setuptools --index-url https://pkgs.dev.azure.com/monacotools/Monaco/_packaging/vscode/pypi/simple/
+          python3 -m pip install setuptools
 
           for i in {1..5}; do # try 5 times
             npm ci && break
