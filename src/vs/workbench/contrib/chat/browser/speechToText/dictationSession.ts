@@ -3,10 +3,12 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { DisposableStore, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { ICodeEditor } from '../../../../../editor/browser/editorBrowser.js';
+import { EditorOption } from '../../../../../editor/common/config/editorOptions.js';
 import { Position } from '../../../../../editor/common/core/position.js';
 import { Range } from '../../../../../editor/common/core/range.js';
+import { localize } from '../../../../../nls.js';
 import { ChatSpeechToTextState, IChatSpeechToTextService } from './chatSpeechToTextService.js';
 
 /**
@@ -102,6 +104,19 @@ export async function startDictation(service: IChatSpeechToTextService, editor: 
 	}
 	const inserter = new LiveTranscriptInserter(editor);
 	const disposables = new DisposableStore();
+	// While recording and nothing has been transcribed yet the input is empty,
+	// so swap its placeholder to "Listening…" to signal dictation is live. The
+	// editor's placeholder is only shown while empty, so it disappears on its
+	// own once the first transcript is inserted, and is restored below when the
+	// session ends.
+	const previousPlaceholder = editor.getOption(EditorOption.placeholder);
+	editor.updateOptions({ placeholder: localize('chatStt.listening', "Listening…") });
+	disposables.add(toDisposable(() => {
+		if (!editor.getModel()) {
+			return; // editor was disposed; nothing to restore
+		}
+		editor.updateOptions({ placeholder: previousPlaceholder });
+	}));
 	disposables.add(service.onDidUpdateTranscript(text => inserter.update(text)));
 	// If the service ends the session on its own (e.g. the model failed to load
 	// and it surfaced an error), drop the stale active reference so the toolbar
