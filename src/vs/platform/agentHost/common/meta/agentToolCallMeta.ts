@@ -4,11 +4,20 @@
  *--------------------------------------------------------------------------------------------*/
 
 import type { Mutable } from '../../../../base/common/types.js';
-import type { ToolCallState } from '../state/protocol/state.js';
 
 /**
- * Well-known typed view over a tool call's open `_meta` bag (see
- * {@link ToolCallState._meta}). Producers and
+ * Structural supertype of anything carrying a tool call's open `_meta` bag —
+ * both the persisted tool call state and the wire actions that produce it
+ * (`ChatToolCallStartAction`, `ChatToolCallDeltaAction`,
+ * `ChatToolCallReadyAction`) satisfy this, so {@link readToolCallMeta} can
+ * validate either.
+ */
+interface IHasToolCallMeta {
+	readonly _meta?: Record<string, unknown>;
+}
+
+/**
+ * Well-known typed view over a tool call's open `_meta` bag. Producers and
  * consumers agree on these keys here so the two sides can't drift; always read
  * the bag through {@link readToolCallMeta}, which validates each field and drops
  * wrong-typed values.
@@ -27,6 +36,19 @@ export interface IToolCallMeta {
 	readonly subagentDescription?: string;
 	/** Agent name for a `subagent` tool call (e.g. "explore"). */
 	readonly subagentAgentName?: string;
+	/**
+	 * Chat URI of the subagent session this tool call spawns, stamped by the
+	 * host's side-effect layer as soon as `toolKind` is recognized as
+	 * `subagent` (see {@link buildSubagentChatUri}). Clients should prefer this
+	 * over deriving the URI themselves: the host is authoritative for the
+	 * naming scheme, and centralizing the computation here means clients never
+	 * have to duplicate — or risk drifting from — that logic. The chat resource
+	 * behind this URI is not guaranteed to be registered yet at the moment this
+	 * is set (it's created once the underlying agent SDK actually starts the
+	 * subagent turn); subscribers should tolerate a transient "unknown
+	 * resource" error until then.
+	 */
+	readonly subagentChatUri?: string;
 	/** Raw, pre-stringified tool arguments captured for display/debugging. */
 	readonly toolArguments?: unknown;
 	/** Originating MCP server name, when the call came from an MCP server. */
@@ -84,7 +106,7 @@ function readToolCallUiMeta(value: unknown): IToolCallUiMeta | undefined {
  * Reads the well-known {@link IToolCallMeta} keys from a tool call's `_meta`
  * bag, dropping unknown keys and wrong-typed values.
  */
-export function readToolCallMeta(source: ToolCallState): IToolCallMeta {
+export function readToolCallMeta(source: IHasToolCallMeta): IToolCallMeta {
 	const meta = source._meta;
 	if (!meta) {
 		return {};
@@ -94,6 +116,7 @@ export function readToolCallMeta(source: ToolCallState): IToolCallMeta {
 	if (typeof meta['language'] === 'string') { result.language = meta['language']; }
 	if (typeof meta['subagentDescription'] === 'string') { result.subagentDescription = meta['subagentDescription']; }
 	if (typeof meta['subagentAgentName'] === 'string') { result.subagentAgentName = meta['subagentAgentName']; }
+	if (typeof meta['subagentChatUri'] === 'string') { result.subagentChatUri = meta['subagentChatUri']; }
 	if (meta['toolArguments'] !== undefined) { result.toolArguments = meta['toolArguments']; }
 	if (typeof meta['mcpServerName'] === 'string') { result.mcpServerName = meta['mcpServerName']; }
 	if (typeof meta['mcpToolName'] === 'string') { result.mcpToolName = meta['mcpToolName']; }

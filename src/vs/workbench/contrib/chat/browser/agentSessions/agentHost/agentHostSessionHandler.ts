@@ -2522,7 +2522,13 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			// renderer nests the whole tree under one container; for the
 			// top-level subagent the root is this tool call itself.
 			const rootInvocationId = subAgentInvocationId ?? toolCallId;
-			this._observeSubagentSession(opts.sessionResource, opts.backendSession, toolCallId, rootInvocationId, invocation, opts.sink, store, subagentContext, perInvocationCredits, perInvocationModel);
+			// Reuse the same resource `toolCallStateToInvocation` resolved via
+			// `getSubagentChatResource` (host-provided `_meta.subagentChatUri`
+			// when present, else a locally derived fallback) rather than
+			// resolving it again here.
+			const childChatUri = (invocation.toolSpecificData?.kind === 'subagent' && invocation.toolSpecificData.chatResource)
+				|| buildSubagentChatUri(opts.backendSession.toString(), toolCallId);
+			this._observeSubagentSession(opts.sessionResource, opts.backendSession, toolCallId, childChatUri, rootInvocationId, invocation, opts.sink, store, subagentContext, perInvocationCredits, perInvocationModel);
 		};
 
 		// Initial confirmation hookup. The autorun below only handles
@@ -3440,6 +3446,11 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	 * `subAgentInvocationId` set so the renderer groups them under the parent
 	 * subagent widget.
 	 *
+	 * `childChatUri` is resolved by the caller (see `getSubagentChatResource`)
+	 * — preferring the host-provided `_meta.subagentChatUri` over the locally
+	 * derived {@link buildSubagentChatUri} fallback — so this method doesn't
+	 * need to duplicate that resolution.
+	 *
 	 * Implementation: builds a per-turn-id keyed observation over the child
 	 * session's `turns` and `activeTurn`. Each turn id discovered gets its
 	 * own {@link _observeTurn} instance running in subagent mode (which skips
@@ -3452,6 +3463,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		sessionResource: URI,
 		parentSession: URI,
 		parentToolCallId: string,
+		childChatUri: string,
 		rootInvocationId: string,
 		parentInvocation: ChatToolInvocation,
 		emitProgress: (parts: IChatProgress[]) => void,
@@ -3461,7 +3473,6 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		perInvocationModel: ISettableObservable<string | undefined>,
 	): void {
 		const parentSessionUri = parentSession.toString();
-		const childChatUri = buildSubagentChatUri(parentSessionUri, parentToolCallId);
 
 		const cts = new CancellationTokenSource();
 		disposables.add(toDisposable(() => cts.dispose(true)));

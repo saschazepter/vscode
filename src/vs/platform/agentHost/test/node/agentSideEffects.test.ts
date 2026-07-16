@@ -20,6 +20,7 @@ import { ServiceCollection } from '../../../instantiation/common/serviceCollecti
 import { ILogService, NullLogService } from '../../../log/common/log.js';
 import { AgentSession, IAgent, SubagentChatSignal } from '../../common/agentService.js';
 import { buildDefaultChangesetCatalog } from '../../common/changesetUri.js';
+import { readToolCallMeta } from '../../common/meta/agentToolCallMeta.js';
 import { ISessionDataService } from '../../common/sessionDataService.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import type { RootConfigChangedAction } from '../../common/state/protocol/actions.js';
@@ -3534,6 +3535,44 @@ suite('AgentSideEffects', () => {
 				assert.ok(parentToolCall.toolCall.content);
 				assert.strictEqual(parentToolCall.toolCall.content![0].type, ToolResultContentType.Subagent);
 			}
+		});
+
+		test('stamps _meta.subagentChatUri onto a subagent-spawning tool call as soon as toolKind is known', () => {
+			// Regression for microsoft/vscode#326051: the client used to have
+			// to derive the subagent's chat URI itself (`buildSubagentChatUri`)
+			// as soon as it saw the spawning tool call, racing the host's own,
+			// separate creation of that chat resource (driven by
+			// `subagent_started` below, fired much later here). Stamping the
+			// same, deterministically-computed URI onto `_meta` here — before
+			// the resource is guaranteed to exist — means the client reads an
+			// authoritative value from the wire instead of recomputing it, but
+			// the underlying resource-registration race is unaffected by this
+			// alone (subscribers still need to tolerate the resource not being
+			// registered yet).
+			setupSession();
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+
+			agent.fireProgress({
+				kind: 'action', resource: URI.parse(defaultChatUri),
+				action: {
+					type: ActionType.ChatToolCallStart, turnId: 'turn-1',
+					toolCallId: 'tc-1', toolName: 'task', displayName: 'Task', contributor: undefined,
+					_meta: { toolKind: 'subagent', language: undefined },
+				},
+			});
+
+			const expectedUri = buildSubagentChatUri(sessionUri.toString(), 'tc-1');
+			const parentState = stateManager.getSessionState(sessionUri.toString());
+			const toolCall = parentState?.activeTurn?.responseParts.find(
+				rp => rp.kind === ResponsePartKind.ToolCall && rp.toolCall.toolCallId === 'tc-1'
+			);
+			assert.ok(toolCall?.kind === ResponsePartKind.ToolCall);
+			assert.strictEqual(readToolCallMeta(toolCall.toolCall).subagentChatUri, expectedUri);
+
+			// The subagent chat itself is not created until `subagent_started`
+			// arrives — the stamped URI intentionally precedes that.
+			assert.strictEqual(stateManager.getSessionState(expectedUri), undefined);
 		});
 
 		test('nested subagent_started routes its discovery content block to the immediate parent chat (arbitrary depth)', () => {
