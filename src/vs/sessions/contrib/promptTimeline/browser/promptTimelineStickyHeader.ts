@@ -4,10 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { $, addDisposableListener, append, EventType } from '../../../../base/browser/dom.js';
-import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { localize } from '../../../../nls.js';
@@ -41,22 +39,17 @@ export class PromptTimelineStickyHeader extends Disposable {
 		this._count = append(content, $('span.prompt-timeline-sticky-count'));
 		append(content, $(`span.prompt-timeline-sticky-chevron${ThemeIcon.asCSSSelector(Codicon.chevronDown)}`));
 
+		// A native <button> already activates on click and on Enter/Space, so no manual key handling.
 		this._register(addDisposableListener(this._button, EventType.CLICK, () => this._onDidActivate.fire()));
-		this._register(addDisposableListener(this._button, EventType.KEY_DOWN, e => {
-			const event = new StandardKeyboardEvent(e);
-			if (event.keyCode === KeyCode.Enter || event.keyCode === KeyCode.Space) {
-				event.preventDefault();
-				this._onDidActivate.fire();
-			}
-		}));
 	}
 
-	/** Names the pinned prompt (1-based index within the visible prompts). */
+	/** Names the pinned prompt (1-based index within all prompts). */
 	update(text: string, index: number, total: number): void {
-		this._label.textContent = text;
+		const label = text || localize('promptTimeline.emptyPrompt', "(empty prompt)");
+		this._label.textContent = label;
 		this._count.textContent = localize('promptTimeline.stickyCount', "{0}/{1}", index, total);
-		this._button.title = text;
-		this._button.setAttribute('aria-label', localize('promptTimeline.stickyLabel', "Go to prompt {0} of {1}: {2}", index, total, text));
+		this._button.title = label;
+		this._button.setAttribute('aria-label', localize('promptTimeline.stickyLabel', "Go to prompt {0} of {1}: {2}", index, total, label));
 	}
 
 	setVisible(visible: boolean): void {

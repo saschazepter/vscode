@@ -121,6 +121,13 @@ export interface PromptEntry {
 	readonly stat?: PromptDiffStat;
 }
 
+/** The prompt currently pinned by the sticky header, with its 1-based position among all prompts. */
+export interface IActivePrompt {
+	readonly text: string;
+	readonly index: number;
+	readonly total: number;
+}
+
 /**
  * Derives the prompt timeline (bucketed ticks + the active tick) from a chat
  * widget's view model, and reveals prompts on request.
@@ -170,16 +177,24 @@ export class PromptTimelineModel extends Disposable {
 	private readonly _activeRequestId: ISettableObservable<string | undefined> = observableValue<string | undefined>(this, undefined);
 	get activeRequestId(): IObservable<string | undefined> { return this._activeRequestId; }
 
+	/** The exact request currently scrolled to the top, unbucketed — drives the sticky header's label/position. */
+	private readonly _activePromptId: ISettableObservable<string | undefined> = observableValue<string | undefined>(this, undefined);
+
 	/** True once the active prompt's own row has scrolled above the viewport top (drives the sticky header). */
 	private readonly _activePinned: ISettableObservable<boolean> = observableValue<boolean>(this, false);
 	get activePinned(): IObservable<boolean> { return this._activePinned; }
 
-	/** The decorated tick (with diff stat) for the active prompt, or undefined when none is active. */
-	private readonly _activeTick = derived<PromptTick | undefined>(this, reader => {
-		const id = this._activeRequestId.read(reader);
-		return id === undefined ? undefined : this._ticks.read(reader).find(t => t.requestId === id);
+	/** The active prompt with its 1-based position among all (unbucketed) prompts, for the sticky header. */
+	private readonly _activePrompt = derived<IActivePrompt | undefined>(this, reader => {
+		const id = this._activePromptId.read(reader);
+		if (id === undefined) {
+			return undefined;
+		}
+		const prompts = this._prompts.read(reader);
+		const index = prompts.findIndex(p => p.requestId === id);
+		return index < 0 ? undefined : { text: prompts[index].text, index: index + 1, total: prompts.length };
 	});
-	get activeTick(): IObservable<PromptTick | undefined> { return this._activeTick; }
+	get activePrompt(): IObservable<IActivePrompt | undefined> { return this._activePrompt; }
 
 	/** Fires when the transcript scroll offset or content height changes (drives the ruler rail). */
 	private readonly _scrollLayoutSignal: IObservableSignal<void> = observableSignal<void>(this);
@@ -357,6 +372,7 @@ export class PromptTimelineModel extends Disposable {
 		if (!items || ticks.length === 0) {
 			transaction(tx => {
 				this._activeRequestId.set(undefined, tx);
+				this._activePromptId.set(undefined, tx);
 				this._activePinned.set(false, tx);
 			});
 			return;
@@ -386,6 +402,7 @@ export class PromptTimelineModel extends Disposable {
 			// (the loop advances oldest -> newest as you scroll down). Nothing is pinned yet.
 			transaction(tx => {
 				this._activeRequestId.set(ticks.at(0)?.requestId, tx);
+				this._activePromptId.set(this._prompts.get().at(0)?.requestId, tx);
 				this._activePinned.set(false, tx);
 			});
 			return;
@@ -408,6 +425,8 @@ export class PromptTimelineModel extends Disposable {
 		const pinned = activeTop < scrollTop - 2;
 		transaction(tx => {
 			this._activeRequestId.set((activeTick ?? ticks[ticks.length - 1]).requestId, tx);
+			// The sticky header names the exact current prompt (unbucketed), not the bucket representative.
+			this._activePromptId.set(activeRequestId, tx);
 			this._activePinned.set(pinned, tx);
 		});
 	}

@@ -173,16 +173,16 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 			void this.commandService.executeCommand(PromptTimelineCommandId.GoToPrompt);
 		}));
 		this._enablement.add(autorun(reader => {
-			const ticks = model.ticks.read(reader);
-			const active = model.activeTick.read(reader);
+			// Drive the header from the unbucketed active prompt so the label and N/M position match
+			// the real prompt list (the rail's ticks are bucketed/capped and would misreport long chats).
+			const active = model.activePrompt.read(reader);
 			const pinned = model.activePinned.read(reader);
-			const index = active ? ticks.findIndex(t => t.requestId === active.requestId) : -1;
-			if (index >= 0) {
-				sticky.update(ticks[index].text, index + 1, ticks.length);
+			if (active) {
+				sticky.update(active.text, active.index, active.total);
 			}
 			// The header reveals once its prompt is pinned above the viewport; it is independent of the
 			// rail, so a narrow transcript (where the rail hides) still gets the header.
-			sticky.setVisible(pinned && index >= 0 && ticks.length >= MIN_PROMPTS);
+			sticky.setVisible(pinned && !!active && active.total >= MIN_PROMPTS);
 		}));
 	}
 

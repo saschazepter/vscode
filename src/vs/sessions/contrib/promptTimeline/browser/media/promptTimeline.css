@@ -88,6 +88,12 @@
 	cursor: pointer;
 }
 
+/* High-contrast themes rely on the explicit contrast border and suppress decorative shadows. */
+.hc-black .prompt-timeline-sticky-button,
+.hc-light .prompt-timeline-sticky-button {
+	box-shadow: none;
+}
+
 /* Layer the (translucent) hover tint over the opaque surface so the band never turns see-through. */
 .prompt-timeline-sticky-button:hover {
 	background:
