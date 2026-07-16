@@ -5,14 +5,103 @@
 
 import * as vscode from 'vscode';
 
+import { API } from '@typescript/native/unstable/async';
+
 import { IConfigurationService } from '../../../../platform/configuration/common/configurationService';
-import { type ContextItem, type RequestContext } from '../../../../platform/languageServer/common/languageContextService';
+import { type ContextItem, type RequestContext, KnownSources } from '../../../../platform/languageServer/common/languageContextService';
 import { ILogService } from '../../../../platform/log/common/logService';
 import { IExperimentationService } from '../../../../platform/telemetry/common/nullExperimentationService';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry';
-import { TSLanguageContextService } from '../tsContextService';
+import * as protocol from '../../common/serverProtocol';
+import { ContextItemResultBuilder, ResolvedRunnableResult } from '../types';
+import { currentTokenBudget, TSLanguageContextService } from '../tsContextService';
+import { computeContext as computeServerContext } from './api';
+import { CharacterBudget, ComputeContextSession, ContextResult, RequestContext as ServerRequestContext, TokenBudgetExhaustedError } from './contextProvider';
+import { CancellationTokenWithTimer, OperationCanceledException } from './typescripts';
+
+interface NativePreviewExtensionApi {
+	onLanguageServerInitialized: vscode.Event<void>;
+	initializeAPIConnection(pipePath?: string): Promise<string>;
+}
+
+class PendingRequestInfo {
+	public readonly document: string;
+	public readonly version: number;
+	public readonly position: vscode.Position;
+	public readonly context: RequestContext;
+
+	constructor(document: vscode.TextDocument, position: vscode.Position, context: RequestContext) {
+		this.document = document.uri.toString();
+		this.version = document.version;
+		this.position = position;
+		this.context = context;
+	}
+}
+
+class InflightRequestInfo {
+	public readonly document: string;
+	public readonly position: vscode.Position;
+	public readonly requestId: string;
+	public readonly source: KnownSources | string;
+	public readonly serverPromise: Promise<protocol.ComputeContextResponse.OK | undefined>;
+
+	private readonly tokenSource: vscode.CancellationTokenSource;
+
+	constructor(document: vscode.TextDocument, position: vscode.Position, context: RequestContext, tokenSource: vscode.CancellationTokenSource, serverPromise: Promise<protocol.ComputeContextResponse.OK | undefined>) {
+		this.document = document.uri.toString();
+		this.position = position;
+		this.requestId = context.requestId;
+		this.source = context.source ?? KnownSources.unknown;
+		this.tokenSource = tokenSource;
+		this.serverPromise = serverPromise;
+	}
+
+	public matches(document: vscode.TextDocument, position: vscode.Position): boolean {
+		return this.document === document.uri.toString() && this.position.isEqual(position);
+	}
+
+	public matchesDocument(document: vscode.TextDocument): boolean {
+		return this.document === document.uri.toString();
+	}
+
+	public cancel(): void {
+		this.tokenSource.cancel();
+	}
+}
+
+class OnTimeoutData {
+	private readonly document: string;
+	private readonly version: number;
+	private readonly position: vscode.Position;
+
+	public readonly runnableResults: ResolvedRunnableResult[] = [];
+	public resultBuilder: ContextItemResultBuilder | undefined;
+
+	constructor(document: vscode.TextDocument, position: vscode.Position) {
+		this.document = document.uri.toString();
+		this.version = document.version;
+		this.position = position;
+	}
+
+	public addRunnableResults(results: readonly ResolvedRunnableResult[]): void {
+		this.runnableResults.push(...results);
+	}
+
+	public matches(document: vscode.TextDocument, position: vscode.Position): boolean {
+		return this.document === document.uri.toString() && this.version === document.version && this.position.isEqual(position);
+	}
+}
 
 export class TS7LanguageContextService extends TSLanguageContextService {
+	private static readonly defaultCachePopulationRaceTimeout: number = 20;
+
+	private api: API<true> | undefined;
+	private apiPromise: Promise<API<true> | undefined> | undefined;
+	private nativePreviewApi: NativePreviewExtensionApi | undefined;
+	private readonly isDebugging: boolean;
+	private pendingRequest: PendingRequestInfo | undefined;
+	private inflightCachePopulationRequest: InflightRequestInfo | undefined;
+	private onTimeoutData: OnTimeoutData | undefined;
 
 	constructor(
 		telemetryService: ITelemetryService,
@@ -21,9 +110,20 @@ export class TS7LanguageContextService extends TSLanguageContextService {
 		logService: ILogService
 	) {
 		super(telemetryService, logService, configurationService, experimentationService);
+		this.isDebugging = process.execArgv.some(arg => /^--(?:inspect|debug)(?:-brk)?(?:=\d+)?$/i.test(arg));
 	}
 
 	public override dispose(): void {
+		this.inflightCachePopulationRequest?.cancel();
+		this.inflightCachePopulationRequest = undefined;
+		const api = this.api;
+		this.api = undefined;
+		this.apiPromise = undefined;
+		if (api !== undefined) {
+			api.close().catch(error => this.logService.error(error, 'Error closing TypeScript 7 API connection'));
+		}
+		this.runnableResultManager.dispose();
+		this.neighborFileModel.dispose();
 		super.dispose();
 	}
 
@@ -32,18 +132,307 @@ export class TS7LanguageContextService extends TSLanguageContextService {
 		if (languageId !== 'typescript' && languageId !== 'typescriptreact') {
 			return false;
 		}
-		return false;
+		return await this.getApi() !== undefined;
 	}
 
 	async populateCache(document: vscode.TextDocument, position: vscode.Position, context: RequestContext): Promise<void> {
-		return;
+		if (document.languageId !== 'typescript' && document.languageId !== 'typescriptreact') {
+			return;
+		}
+		if (this.inflightCachePopulationRequest !== undefined) {
+			if (!this.inflightCachePopulationRequest.matches(document, position)) {
+				this.pendingRequest = new PendingRequestInfo(document, position, context);
+			}
+			return;
+		}
+		const startTime = Date.now();
+		const contextRequestState = this.runnableResultManager.getContextRequestState(document, position);
+		if (contextRequestState !== undefined && contextRequestState.server.length === 0) {
+			return;
+		}
+		const api = await this.getApi();
+		if (api === undefined) {
+			return;
+		}
+		const neighborFiles = this.neighborFileModel.getNeighborFiles(document);
+		const timeBudget = this.cachePopulationTimeout;
+		try {
+			const isDebugging = this.isDebugging;
+			const forDebugging: ContextItem[] | undefined = isDebugging ? [] : undefined;
+			const tokenSource = new vscode.CancellationTokenSource();
+			const token = tokenSource.token;
+			const documentVersion = document.version;
+			const cacheState = this.runnableResultManager.getCacheState();
+			let body: protocol.ComputeContextResponse.OK | undefined;
+			let inflightRequest: InflightRequestInfo | undefined;
+			try {
+				const promise = this.computeContext(api, document, position, context, startTime, timeBudget, neighborFiles, contextRequestState?.server, token);
+				inflightRequest = new InflightRequestInfo(document, position, context, tokenSource, promise);
+				this.inflightCachePopulationRequest = inflightRequest;
+				body = await promise;
+			} finally {
+				if (this.inflightCachePopulationRequest === inflightRequest) {
+					this.inflightCachePopulationRequest = undefined;
+				}
+				tokenSource.dispose();
+			}
+			const timeTaken = Date.now() - startTime;
+			if (body === undefined) {
+				this.telemetrySender.sendRequestCancelledTelemetry(context, timeTaken);
+			} else {
+				const contextItemResult = new ContextItemResultBuilder(timeTaken);
+				const { resolved, cached, referenced, serverComputed } = this.runnableResultManager.update(document, documentVersion, position, context, body, contextRequestState);
+				contextItemResult.cachedItems += cached;
+				contextItemResult.referencedItems += referenced;
+				contextItemResult.serverComputed = serverComputed;
+				for (const runnableResult of resolved) {
+					for (const converted of contextItemResult.update(runnableResult)) {
+						forDebugging?.push(converted.item);
+					}
+				}
+				contextItemResult.updateResponse(body, token);
+				this.telemetrySender.sendRequestTelemetry(document, position, context, contextItemResult, timeTaken, { before: cacheState, after: this.runnableResultManager.getCacheState() }, undefined);
+				// eslint-disable-next-line local/code-no-unused-expressions
+				isDebugging && forDebugging?.length;
+				this._onCachePopulated.fire({ document, position, source: context.source, items: resolved, summary: contextItemResult });
+			}
+		} catch (error) {
+			this.logService.error(error, `Error populating cache for document: ${document.uri.toString()} at position: ${position.line + 1}:${position.character + 1}`);
+		} finally {
+			this.runPendingRequest();
+		}
+	}
+
+	private async computeContext(api: API<true>, document: vscode.TextDocument, position: vscode.Position, context: RequestContext, startTime: number, timeBudget: number, neighborFiles: readonly string[], clientSideRunnableResults: readonly protocol.CachedContextRunnableResult[] | undefined, token: vscode.CancellationToken): Promise<protocol.ComputeContextResponse.OK | undefined> {
+		const snapshot = await api.updateSnapshot();
+		try {
+			if (token.isCancellationRequested) {
+				return undefined;
+			}
+			const project = await snapshot.getDefaultProjectForFile({ uri: document.uri.toString() });
+			if (project === undefined) {
+				return undefined;
+			}
+			const sourceFile = await project.program.getSourceFile({ uri: document.uri.toString() });
+			if (sourceFile === undefined || sourceFile.text !== document.getText()) {
+				return undefined;
+			}
+			const cancellationToken = new CancellationTokenWithTimer(token, startTime, timeBudget);
+			const session = new ComputeContextSession(project, cancellationToken);
+			const cachedResults = clientSideRunnableResults ?? [];
+			const requestContext = new ServerRequestContext(session, neighborFiles, new Map(cachedResults.map(result => [result.id, result])), this.includeDocumentation);
+			const result = new ContextResult(
+				new CharacterBudget((context.tokenBudget ?? 7 * 1024) * 4),
+				new CharacterBudget(currentTokenBudget * 4),
+				requestContext,
+			);
+			const computeStart = Date.now();
+			try {
+				const offset = sourceFile.getPositionOfLineAndCharacter(position.line, position.character);
+				await computeServerContext(result, session, project, sourceFile, offset, cancellationToken);
+			} catch (error) {
+				if (!(error instanceof OperationCanceledException) && !(error instanceof TokenBudgetExhaustedError)) {
+					throw error;
+				}
+			}
+			const endTime = Date.now();
+			result.addTimings(endTime - startTime, endTime - computeStart);
+			result.setTimedOut(cancellationToken.isTimedOut());
+			return result.toJson();
+		} finally {
+			await snapshot.dispose();
+		}
+	}
+
+	private runPendingRequest(): void {
+		if (this.pendingRequest === undefined) {
+			return;
+		}
+		const pendingRequest = this.pendingRequest;
+		this.pendingRequest = undefined;
+		const document = vscode.window.activeTextEditor?.document;
+		if (document !== undefined && document.uri.toString() === pendingRequest.document && document.version === pendingRequest.version && document.validatePosition(pendingRequest.position).isEqual(pendingRequest.position)) {
+			this.populateCache(document, pendingRequest.position, pendingRequest.context).catch(() => { /* handled in populateCache */ });
+		}
 	}
 
 	public async *getContext(document: vscode.TextDocument, position: vscode.Position, context: RequestContext, token: vscode.CancellationToken): AsyncIterable<ContextItem> {
-		return;
+		this.onTimeoutData = undefined;
+		if (document.languageId !== 'typescript' && document.languageId !== 'typescriptreact') {
+			return;
+		}
+
+		const startTime = Date.now();
+		let cacheRequest = 'none';
+		const cachePopulationRequestInflight = this.inflightCachePopulationRequest !== undefined && this.inflightCachePopulationRequest.matchesDocument(document);
+		if (cachePopulationRequestInflight) {
+			this.onTimeoutData = new OnTimeoutData(document, position);
+		}
+		if (token.isCancellationRequested) {
+			this.telemetrySender.sendRequestCancelledTelemetry(context, Date.now() - startTime);
+			return;
+		}
+
+		const isDebugging = this.isDebugging;
+		const forDebugging: ContextItem[] | undefined = isDebugging ? [] : undefined;
+		const contextItemResult = new ContextItemResultBuilder(Date.now() - startTime);
+		if (this.onTimeoutData !== undefined) {
+			this.onTimeoutData.resultBuilder = contextItemResult;
+		}
+		const characterBudget = this.getCharacterBudget(context, document);
+		const itemsToYield: ContextItem[] = [];
+		const { mandatory, optional, onTimeout } = this.getRunnables(document, position, cachePopulationRequestInflight);
+		this.onTimeoutData?.addRunnableResults(onTimeout);
+
+		outer: for (const runnableResult of mandatory) {
+			for (const { item, size } of contextItemResult.update(runnableResult, true)) {
+				forDebugging?.push(item);
+				characterBudget.spend(size);
+				if (characterBudget.isExhausted()) {
+					break outer;
+				}
+				itemsToYield.push(item);
+			}
+		}
+		if (!characterBudget.isOptionalExhausted()) {
+			outer: for (const runnableResult of optional) {
+				for (const { item, size } of contextItemResult.update(runnableResult, true)) {
+					forDebugging?.push(item);
+					characterBudget.spend(size);
+					if (characterBudget.isOptionalExhausted()) {
+						break outer;
+					}
+					itemsToYield.push(item);
+				}
+			}
+		}
+
+		if (!token.isCancellationRequested) {
+			for (const item of itemsToYield) {
+				if (token.isCancellationRequested) {
+					this.onTimeoutData = undefined;
+					return;
+				}
+				yield item;
+			}
+
+			if (this.inflightCachePopulationRequest !== undefined && this.inflightCachePopulationRequest.matchesDocument(document)) {
+				cacheRequest = 'inflight';
+				const timeout = Math.max(0, Math.min(context.timeBudget ?? TS7LanguageContextService.defaultCachePopulationRaceTimeout, TS7LanguageContextService.defaultCachePopulationRaceTimeout));
+				const response = await Promise.race([
+					this.inflightCachePopulationRequest.serverPromise,
+					new Promise<'timedOut'>(resolve => setTimeout(() => resolve('timedOut'), timeout)),
+				]);
+				if (response !== 'timedOut') {
+					this.inflightCachePopulationRequest = undefined;
+					if (this.onTimeoutData !== undefined) {
+						this.onTimeoutData = undefined;
+						for (const runnableResult of this.runnableResultManager.getCachedRunnableResults(document, position, protocol.EmitMode.ClientBasedOnTimeout)) {
+							for (const { item } of contextItemResult.update(runnableResult)) {
+								forDebugging?.push(item);
+								yield item;
+							}
+						}
+						cacheRequest = 'awaited';
+					}
+				}
+			}
+		} else {
+			this.onTimeoutData = undefined;
+		}
+
+		if (context.proposedEdits !== undefined) {
+			this.telemetrySender.sendSpeculativeRequestTelemetry(context, this.runnableResultManager.getRequestId() ?? 'unknown', contextItemResult.stats.yielded);
+		} else {
+			const cacheState = this.runnableResultManager.getCacheState();
+			contextItemResult.path = this.runnableResultManager.getNodePath();
+			contextItemResult.cancelled = token.isCancellationRequested;
+			contextItemResult.serverTime = 0;
+			contextItemResult.contextComputeTime = 0;
+			contextItemResult.fromCache = true;
+			this.telemetrySender.sendRequestTelemetry(document, position, context, contextItemResult, Date.now() - startTime, { before: cacheState, after: cacheState }, cacheRequest);
+			// eslint-disable-next-line local/code-no-unused-expressions
+			isDebugging && forDebugging?.length;
+			this._onContextComputed.fire({ document, position, source: context.source, items: itemsToYield, summary: contextItemResult });
+		}
+	}
+
+	private getRunnables(document: vscode.TextDocument, position: vscode.Position, cachePopulationInflight: boolean): { mandatory: readonly ResolvedRunnableResult[]; optional: readonly ResolvedRunnableResult[]; onTimeout: readonly ResolvedRunnableResult[] } {
+		const mandatory: ResolvedRunnableResult[] = [];
+		const optional: ResolvedRunnableResult[] = [];
+		const onTimeout: ResolvedRunnableResult[] = [];
+		for (const runnable of this.runnableResultManager.getCachedRunnableResults(document, position)) {
+			if (cachePopulationInflight && runnable.cache?.emitMode === protocol.EmitMode.ClientBasedOnTimeout) {
+				onTimeout.push(runnable);
+			} else if (runnable.priority === protocol.Priorities.Expression || runnable.priority === protocol.Priorities.Locals || runnable.priority === protocol.Priorities.Inherited || runnable.priority === protocol.Priorities.Traits) {
+				mandatory.push(runnable);
+			} else {
+				optional.push(runnable);
+			}
+		}
+		return { mandatory, optional, onTimeout };
 	}
 
 	public getContextOnTimeout(document: vscode.TextDocument, position: vscode.Position, context: RequestContext): readonly ContextItem[] | undefined {
-		return undefined;
+		try {
+			if (this.onTimeoutData === undefined || !this.onTimeoutData.matches(document, position) || this.onTimeoutData.resultBuilder === undefined) {
+				return [];
+			}
+			const result: ContextItem[] = [];
+			for (const runnableResult of this.onTimeoutData.runnableResults) {
+				for (const { item } of this.onTimeoutData.resultBuilder.update(runnableResult, true)) {
+					result.push(item);
+				}
+			}
+			return result;
+		} finally {
+			this.onTimeoutData = undefined;
+		}
+	}
+
+	private async getApi(): Promise<API<true> | undefined> {
+		if (this.api !== undefined) {
+			return this.api;
+		}
+		if (this.apiPromise === undefined) {
+			this.apiPromise = this.createApi();
+		}
+		return this.apiPromise;
+	}
+
+	private async createApi(): Promise<API<true> | undefined> {
+		try {
+			if (this.nativePreviewApi === undefined) {
+				const extension = vscode.extensions.getExtension<NativePreviewExtensionApi>('typescriptteam.native-preview');
+				if (extension === undefined) {
+					return undefined;
+				}
+				this.nativePreviewApi = await extension.activate();
+				this.disposables.add(this.nativePreviewApi.onLanguageServerInitialized(() => this.reconnect()));
+			}
+			const pipe = await this.nativePreviewApi.initializeAPIConnection();
+			const api = await API.fromLSPConnection({ pipe });
+			this.api = api;
+			return api;
+		} catch (error) {
+			this.logService.error(error, 'Error connecting to the TypeScript 7 API');
+			return undefined;
+		} finally {
+			this.apiPromise = undefined;
+		}
+	}
+
+	private reconnect(): void {
+		this.inflightCachePopulationRequest?.cancel();
+		this.inflightCachePopulationRequest = undefined;
+		this.pendingRequest = undefined;
+		this.onTimeoutData = undefined;
+		const api = this.api;
+		this.api = undefined;
+		this.apiPromise = undefined;
+		this.runnableResultManager.clear();
+		if (api !== undefined) {
+			api.close().catch(error => this.logService.error(error, 'Error closing stale TypeScript 7 API connection'));
+		}
 	}
 }
