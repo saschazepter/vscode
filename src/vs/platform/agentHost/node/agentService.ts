@@ -20,7 +20,7 @@ import { FileChangeType, FileOperationError, FileOperationResult, FileSystemProv
 import { InstantiationService } from '../../instantiation/common/instantiationService.js';
 import { ServiceCollection } from '../../instantiation/common/serviceCollection.js';
 import { ILogService } from '../../log/common/log.js';
-import { AgentProvider, AgentSession, AgentSignal, AgentHostSessionReleaseGraceMsEnvVar, IAgent, IAgentChatDataChange, IAgentConversationMetadata, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentProvisionDefaultChat, IAgentHostAuthTokenRequest, IAgentHostNetworkDiagnosticsInfo, IAgentHostNetworkEndpoint, IAgentHostNetworkFetchResult, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSpawnChatEvent, AuthenticateParams, AuthenticateResult, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../common/agentService.js';
+import { AgentProvider, AgentSession, AgentSignal, AgentHostSessionReleaseGraceMsEnvVar, IAgent, IAgentChatDataChange, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentProvisionDefaultChat, IAgentHostAuthTokenRequest, IAgentHostNetworkDiagnosticsInfo, IAgentHostNetworkEndpoint, IAgentHostNetworkFetchResult, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSpawnChatEvent, AuthenticateParams, AuthenticateResult, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../common/agentService.js';
 import { ISessionDataService, SESSION_ATTACHMENTS_DIRNAME } from '../common/sessionDataService.js';
 import { SessionConfigKey } from '../common/sessionConfigKeys.js';
 import { parseChangesetUri } from '../common/changesetUri.js';
@@ -720,31 +720,9 @@ export class AgentService extends Disposable implements IAgentService {
 		};
 	}
 
-	/**
-	 * Map a conversation's metadata to its session's metadata via the
-	 * default-chat URI convention. Returns `undefined` for a non-default
-	 * (peer-chat) conversation, which is not a top-level session.
-	 */
-	private _conversationToSessionMetadata(conversation: IAgentConversationMetadata): IAgentSessionMetadata | undefined {
-		const sessionStr = parseDefaultChatUri(conversation.chat);
-		if (sessionStr === undefined) {
-			return undefined;
-		}
-		const { chat, ...rest } = conversation;
-		return { session: URI.parse(sessionStr), ...rest };
-	}
-
-	/** Group a provider's persisted conversations into sessions. */
+	/** Enumerate a provider's persisted sessions. */
 	private async _enumerateProviderSessions(provider: IAgent): Promise<IAgentSessionMetadata[]> {
-		const conversations = await provider.listConversations();
-		const sessions: IAgentSessionMetadata[] = [];
-		for (const c of conversations) {
-			const session = this._conversationToSessionMetadata(c);
-			if (session) {
-				sessions.push(session);
-			}
-		}
-		return sessions;
+		return [...await provider.listSessions()];
 	}
 
 	async listSessions(): Promise<IAgentSessionMetadata[]> {
@@ -2849,10 +2827,9 @@ export class AgentService extends Disposable implements IAgentService {
 
 	private async _getSessionMetadataForRestore(agent: IAgent, session: URI): Promise<IAgentSessionMetadata | undefined> {
 		const sessionStr = session.toString();
-		if (agent.getConversationMetadata) {
+		if (agent.getSessionMetadata) {
 			try {
-				const conversation = await agent.getConversationMetadata(URI.parse(buildDefaultChatUri(session)));
-				const meta = conversation ? this._conversationToSessionMetadata(conversation) : undefined;
+				const meta = await agent.getSessionMetadata(session);
 				return await this._withWorktreeProject(session, meta);
 			} catch (err) {
 				if (err instanceof ProtocolError) {

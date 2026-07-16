@@ -710,36 +710,6 @@ export interface IAgentSessionMetadata {
 	readonly _meta?: SessionMeta;
 }
 
-/**
- * Metadata for one persisted conversation enumerated by
- * {@link IAgent.listConversations}, mirroring {@link IAgentSessionMetadata} but
- * addressed by its chat channel URI so the orchestrator can group conversations
- * into sessions via the default-chat URI convention.
- */
-export interface IAgentConversationMetadata {
-	readonly chat: URI;
-	readonly startTime: number;
-	readonly modifiedTime: number;
-	readonly project?: IAgentSessionProjectInfo;
-	readonly summary?: string;
-	readonly status?: SessionStatus;
-	readonly activity?: string;
-	readonly workingDirectory?: URI;
-	readonly customizationDirectory?: URI;
-	readonly isRead?: boolean;
-	readonly isArchived?: boolean;
-	readonly changes?: ChangesSummary;
-	readonly changesets?: readonly Changeset[];
-	/**
-	 * The session-level `_meta` bag carried through verbatim. This is
-	 * intentionally the same {@link SessionMeta} alias used by
-	 * {@link IAgentSessionMetadata._meta} rather than a conversation-specific
-	 * type: `_meta` is the protocol's open property bag on `SessionState` /
-	 * `SessionSummary`, so it is session-generic by design.
-	 */
-	readonly _meta?: SessionMeta;
-}
-
 export interface IAgentSessionProjectInfo {
 	readonly uri: URI;
 	readonly displayName: string;
@@ -1594,13 +1564,14 @@ export interface IAgent {
 	readonly models: IObservable<readonly IAgentModelInfo[]>;
 
 	/**
-	 * Enumerate the agent's persisted conversations, which the orchestrator
-	 * groups into sessions via the default-chat URI convention.
+	 * Enumerate the agent's own persisted SDK sessions, keyed by session URI
+	 * ({@link AgentSession.uri}). The orchestrator owns the session-to-chat
+	 * mapping, so the agent never derives chat URIs here.
 	 */
-	listConversations(): Promise<readonly IAgentConversationMetadata[]>;
+	listSessions(): Promise<readonly IAgentSessionMetadata[]>;
 
-	/** Retrieve metadata for a single persisted conversation, without enumerating the provider catalog. */
-	getConversationMetadata?(chat: URI): Promise<IAgentConversationMetadata | undefined>;
+	/** Retrieve metadata for a single persisted session, without enumerating the provider catalog. */
+	getSessionMetadata?(session: URI): Promise<IAgentSessionMetadata | undefined>;
 
 	/** Declare protected resources this agent requires auth for (RFC 9728). */
 	getProtectedResources(): ProtectedResourceMetadata[];

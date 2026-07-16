@@ -9,7 +9,7 @@ import { observableValue } from '../../../../base/common/observable.js';
 import type { IAuthorizationProtectedResourceMetadata } from '../../../../base/common/oauth.js';
 import { URI } from '../../../../base/common/uri.js';
 import { type ISyncedCustomization } from '../../common/agentPluginManager.js';
-import { AgentSession, type AgentProvider, type AgentSignal, type IActiveClient, type IAgent, type IAgentActionSignal, type IAgentChats, type IAgentConversationMetadata, type IAgentCreateChatForkSource, type IAgentCreateChatOptions, type IAgentCreateChatResult, type IAgentCreateSessionConfig, type IAgentCreateSessionResult, type IAgentDescriptor, type IAgentModelInfo, type IAgentProvisionDefaultChat, type IAgentResolveSessionConfigParams, type IAgentSessionConfigCompletionsParams, type IAgentSessionMetadata, type IAgentToolPendingConfirmationSignal } from '../../common/agentService.js';
+import { AgentSession, type AgentProvider, type AgentSignal, type IActiveClient, type IAgent, type IAgentActionSignal, type IAgentChats, type IAgentCreateChatForkSource, type IAgentCreateChatOptions, type IAgentCreateChatResult, type IAgentCreateSessionConfig, type IAgentCreateSessionResult, type IAgentDescriptor, type IAgentModelInfo, type IAgentProvisionDefaultChat, type IAgentResolveSessionConfigParams, type IAgentSessionConfigCompletionsParams, type IAgentSessionMetadata, type IAgentToolPendingConfirmationSignal } from '../../common/agentService.js';
 import { buildSubagentTurnsFromHistory, buildTurnsFromHistory, type IHistoryRecord } from './historyRecordFixtures.js';
 import { ProtectedResourceMetadata, ToolCallContributorKind, type AgentSelection, type MessageAttachment, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
@@ -111,20 +111,11 @@ export class MockAgent implements IAgent {
 		return [...this._sessions.values()].map(s => ({ session: s, startTime: Date.now(), modifiedTime: Date.now(), project: mockProject(this.id), ...this.sessionMetadataOverrides }));
 	}
 
-	async listConversations(): Promise<readonly IAgentConversationMetadata[]> {
-		const sessions = await this.listSessions();
-		return sessions.map(s => {
-			const { session, ...rest } = s;
-			return { chat: URI.parse(buildDefaultChatUri(session)), ...rest };
-		});
-	}
-
-	async getConversationMetadata(chat: URI): Promise<IAgentConversationMetadata | undefined> {
-		const sessionStr = parseDefaultChatUri(chat);
-		if (sessionStr === undefined || !this._sessions.has(AgentSession.id(URI.parse(sessionStr)))) {
+	async getSessionMetadata(session: URI): Promise<IAgentSessionMetadata | undefined> {
+		if (!this._sessions.has(AgentSession.id(session))) {
 			return undefined;
 		}
-		return { chat, startTime: Date.now(), modifiedTime: Date.now(), project: mockProject(this.id), ...this.sessionMetadataOverrides };
+		return { session, startTime: Date.now(), modifiedTime: Date.now(), project: mockProject(this.id), ...this.sessionMetadataOverrides };
 	}
 
 	/** Optional override for the working directory returned by createSession. */
@@ -467,25 +458,16 @@ export class ScriptedMockAgent implements IAgent {
 		}));
 	}
 
-	async listConversations(): Promise<readonly IAgentConversationMetadata[]> {
-		const sessions = await this.listSessions();
-		return sessions.map(s => {
-			const { session, ...rest } = s;
-			return { chat: URI.parse(buildDefaultChatUri(session)), ...rest };
-		});
-	}
-
-	async getConversationMetadata(chat: URI): Promise<IAgentConversationMetadata | undefined> {
-		const sessionStr = parseDefaultChatUri(chat);
-		if (sessionStr === undefined || !this._sessions.has(AgentSession.id(URI.parse(sessionStr)))) {
+	async getSessionMetadata(session: URI): Promise<IAgentSessionMetadata | undefined> {
+		if (!this._sessions.has(AgentSession.id(session))) {
 			return undefined;
 		}
 		return {
-			chat,
+			session,
 			startTime: Date.now(),
 			modifiedTime: Date.now(),
 			project: mockProject(this.id),
-			summary: sessionStr === PRE_EXISTING_SESSION_URI.toString() ? 'Pre-existing session' : undefined,
+			summary: session.toString() === PRE_EXISTING_SESSION_URI.toString() ? 'Pre-existing session' : undefined,
 		};
 	}
 

@@ -38,7 +38,7 @@ import { CopilotCliConfigKey, copilotCliConfigSchema, type CopilotSdkLogLevelSet
 import { AgentHostMcpServersConfigKey, AgentHostPreferLongContextEnabledConfigKey, AgentHostSessionSyncEnabledConfigKey, AutoApproveLevel, SessionMode, migrateLegacyAutopilotConfig, platformRootSchema, platformSessionSchema, type AgentHostMcpServers } from '../../common/agentHostSchema.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { AgentSessionEntry, decodeProviderData, encodeProviderData, type IPersistedChat } from '../agentPeerChats.js';
-import { AgentSession, AgentSignal, AuthenticateParams, IActiveClient, IAgent, IAgentChatDataChange, IAgentChats, IAgentConversationMetadata, IAgentLegacyChat, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentHostNetworkEndpoint, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentProvisionDefaultChat, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../../common/agentService.js';
+import { AgentSession, AgentSignal, AuthenticateParams, IActiveClient, IAgent, IAgentChatDataChange, IAgentChats, IAgentLegacyChat, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentHostNetworkEndpoint, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentProvisionDefaultChat, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../../common/agentService.js';
 import { getReasoningEffortDescription, getReasoningEffortLabel } from '../../common/reasoningEffort.js';
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
 import { IAgentHostOTelService } from '../../common/otel/agentHostOTelService.js';
@@ -1249,12 +1249,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		return result;
 	}
 
-	async getConversationMetadata(chat: URI): Promise<IAgentConversationMetadata | undefined> {
-		const sessionStr = parseDefaultChatUri(chat);
-		if (sessionStr === undefined) {
-			return undefined;
-		}
-		const session = URI.parse(sessionStr);
+	async getSessionMetadata(session: URI): Promise<IAgentSessionMetadata | undefined> {
 		const sessionId = AgentSession.id(session);
 		const storedMetadata = await this._readStoredSessionMetadata(session);
 		if (!storedMetadata) {
@@ -1276,7 +1271,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 		const workingDirectory = storedMetadata?.workingDirectory ?? (typeof sessionMetadata?.context?.workingDirectory === 'string' ? URI.file(sessionMetadata.context.workingDirectory) : undefined);
 		return {
-			chat,
+			session,
 			startTime: sessionMetadata?.startTime.getTime() ?? Date.now(),
 			modifiedTime: sessionMetadata?.modifiedTime.getTime() ?? Date.now(),
 			project,
@@ -1679,14 +1674,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 				...(created.provisional !== undefined ? { provisional: created.provisional } : {}),
 			},
 		};
-	}
-
-	async listConversations(): Promise<readonly IAgentConversationMetadata[]> {
-		const sessions = await this.listSessions();
-		return sessions.map(s => {
-			const { session, ...rest } = s;
-			return { chat: URI.parse(buildDefaultChatUri(session)), ...rest };
-		});
 	}
 
 	/**

@@ -2375,7 +2375,7 @@ suite('AgentService (node dispatcher)', () => {
 				{ type: 'message', session, role: 'assistant', messageId: 'msg-2', content: 'Hi', toolRequests: [] },
 			];
 
-			copilotAgent.getConversationMetadata = async () => {
+			copilotAgent.getSessionMetadata = async () => {
 				throw new Error('direct metadata unavailable');
 			};
 			const originalListSessions = copilotAgent.listSessions.bind(copilotAgent);
@@ -2403,11 +2403,11 @@ suite('AgentService (node dispatcher)', () => {
 				getSessionMetadataCalls = 0;
 				getSessionMessagesCalls = 0;
 
-				override async getConversationMetadata(chat: URI) {
+				override async getSessionMetadata(session: URI) {
 					this.getSessionMetadataCalls++;
 					this.metadataReached.complete();
 					await this.metadataGate.p;
-					return super.getConversationMetadata(chat);
+					return super.getSessionMetadata(session);
 				}
 
 				override async getSessionMessages(session: URI): Promise<readonly Turn[]> {

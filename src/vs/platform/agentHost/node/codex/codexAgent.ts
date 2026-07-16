@@ -23,7 +23,7 @@ import { IProductService } from '../../../product/common/productService.js';
 import { createSchema, platformRootSchema, platformSessionSchema, schemaProperty, AgentHostMcpServersConfigKey, type ISchemaProperty, type SessionMode } from '../../common/agentHostSchema.js';
 import { createPricingMetaFromBilling, normalizeCAPIBilling } from '../../common/agentModelPricing.js';
 import { getReasoningEffortDescription, getReasoningEffortLabel } from '../../common/reasoningEffort.js';
-import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentSession, AgentSignal, CODEX_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChats, IAgentConversationMetadata, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentProvisionDefaultChat, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, type AgentProvider, type AuthenticateParams } from '../../common/agentService.js';
+import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentSession, AgentSignal, CODEX_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentProvisionDefaultChat, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, type AgentProvider, type AuthenticateParams } from '../../common/agentService.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { ActionType, isChatAction, type SessionAction, type ChatAction } from '../../common/state/sessionActions.js';
@@ -2476,15 +2476,6 @@ export class CodexAgent extends Disposable implements IAgent {
 		};
 	}
 
-	/** Enumerate persisted conversations (one default chat per Codex session). */
-	async listConversations(): Promise<readonly IAgentConversationMetadata[]> {
-		const sessions = await this.listSessions();
-		return sessions.map(s => {
-			const { session, ...rest } = s;
-			return { chat: URI.parse(buildDefaultChatUri(session)), ...rest };
-		});
-	}
-
 	/**
 	 * Build an {@link ICodexSession} entry for a thread that already exists on
 	 * the app-server (a restored session or a freshly forked one). Such a
@@ -3324,12 +3315,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		return this._readSession(this._sessionUriFromChat(chat)).then(read => read ? replayThreadToTurns(read.thread) : []);
 	}
 
-	async getConversationMetadata(chat: URI): Promise<IAgentConversationMetadata | undefined> {
-		const sessionStr = parseDefaultChatUri(chat);
-		if (sessionStr === undefined) {
-			return undefined;
-		}
-		const session = URI.parse(sessionStr);
+	async getSessionMetadata(session: URI): Promise<IAgentSessionMetadata | undefined> {
 		const sessionId = AgentSession.id(session);
 		const read = await this._readSession(session);
 		if (!read) {
@@ -3352,8 +3338,7 @@ export class CodexAgent extends Disposable implements IAgent {
 				this._serverToolHost.advertise(restored.sessionUri.toString());
 			}
 		}
-		const { session: _session, ...rest } = this._threadToMetadata(read.thread, session);
-		return { chat, ...rest };
+		return this._threadToMetadata(read.thread, session);
 	}
 
 	private async _readSession(session: URI): Promise<ThreadReadResponse | undefined> {

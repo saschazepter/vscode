@@ -26,7 +26,7 @@ import { createSchema, platformSessionSchema, schemaProperty } from '../../commo
 import { ClaudePermissionMode, ClaudeSessionConfigKey, narrowClaudePermissionMode } from '../../common/claudeSessionConfigKeys.js';
 import { createClaudeThinkingLevelSchema, isClaudeEffortLevel } from '../../common/claudeModelConfig.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
-import { AgentProvider, AgentSession, AgentSignal, CLAUDE_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChatDataChange, IAgentChats, IAgentConversationMetadata, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentProvisionDefaultChat, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, SubagentChatSignal } from '../../common/agentService.js';
+import { AgentProvider, AgentSession, AgentSignal, CLAUDE_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChatDataChange, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentProvisionDefaultChat, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, SubagentChatSignal } from '../../common/agentService.js';
 import { ensureWorkspacelessScratchDir } from '../workspacelessScratchDir.js';
 import { ActionType, AuthRequiredReason, type AuthRequiredParams } from '../../common/state/sessionActions.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
@@ -1348,14 +1348,6 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		// resumed again.
 	}
 
-	async listConversations(): Promise<readonly IAgentConversationMetadata[]> {
-		const sessions = await this.listSessions();
-		return sessions.map(s => {
-			const { session, ...rest } = s;
-			return { chat: URI.parse(buildDefaultChatUri(session)), ...rest };
-		});
-	}
-
 	/**
 	 * Resolve the inherited session settings (working directory, project, model, agent,
 	 * permission mode) a new or resumed peer chat copies from its parent
@@ -1749,7 +1741,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 
 	/**
 	 * Phase 6.1 / Cycle D4 — per-session lookup. Mirrors
-	 * {@link CopilotAgent.getConversationMetadata} but accepts the
+	 * {@link CopilotAgent.getSessionMetadata} but accepts the
 	 * external-CLI case: a session that exists on disk via the raw
 	 * Anthropic CLI has no per-session DB, so we MUST NOT gate on the
 	 * sidecar (the way Copilot's variant does). The SDK is the source
@@ -1760,18 +1752,13 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	 * the SDK lookup propagate (the caller is doing a single targeted
 	 * fetch and should learn that the SDK module is broken).
 	 */
-	async getConversationMetadata(chat: URI): Promise<IAgentConversationMetadata | undefined> {
-		const sessionStr = parseDefaultChatUri(chat);
-		if (sessionStr === undefined) {
-			return undefined;
-		}
-		const session = URI.parse(sessionStr);
+	async getSessionMetadata(session: URI): Promise<IAgentSessionMetadata | undefined> {
 		// Don't trigger a cold SDK download just to hydrate metadata during
 		// restore (the renderer subscribes to the last-active session on
 		// startup). When the SDK isn't local yet, defer; the download fires
 		// once the user sends the first message.
 		if (!(await this._sdkService.canLoadWithoutDownload())) {
-			this._logService.info('[Claude] SDK not downloaded yet; deferring conversation metadata until a session triggers the download');
+			this._logService.info('[Claude] SDK not downloaded yet; deferring session metadata until a session triggers the download');
 			return undefined;
 		}
 		const sessionId = AgentSession.id(session);
@@ -1785,8 +1772,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		} catch (err) {
 			this._logService.warn(`[Claude] Overlay read failed for session ${sessionId}`, err);
 		}
-		const { session: _session, ...rest } = this._metadataStore.project(sdkInfo, overlay);
-		return { chat, ...rest };
+		return this._metadataStore.project(sdkInfo, overlay);
 	}
 
 	resolveSessionConfig(_params: IAgentResolveSessionConfigParams): Promise<ResolveSessionConfigResult> {

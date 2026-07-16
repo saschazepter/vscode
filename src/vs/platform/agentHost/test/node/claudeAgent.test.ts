@@ -3833,13 +3833,13 @@ suite('ClaudeAgent', () => {
 		const externalUri = AgentSession.uri('claude', 'external');
 		const unknownUri = AgentSession.uri('claude', 'unknown');
 
-		const sidecar = await agent.getConversationMetadata!(URI.parse(buildDefaultChatUri(sidecarUri)));
-		const external = await agent.getConversationMetadata!(URI.parse(buildDefaultChatUri(externalUri)));
-		const unknown = await agent.getConversationMetadata!(URI.parse(buildDefaultChatUri(unknownUri)));
+		const sidecar = await agent.getSessionMetadata!(sidecarUri);
+		const external = await agent.getSessionMetadata!(externalUri);
+		const unknown = await agent.getSessionMetadata!(unknownUri);
 
 		assert.deepStrictEqual({
 			sidecar: {
-				session: sidecar?.chat.toString(),
+				session: sidecar?.session.toString(),
 				summary: sidecar?.summary,
 				startTime: sidecar?.startTime,
 				modifiedTime: sidecar?.modifiedTime,
@@ -3847,7 +3847,7 @@ suite('ClaudeAgent', () => {
 				customizationDirectory: sidecar?.customizationDirectory?.toString(),
 			},
 			external: {
-				session: external?.chat.toString(),
+				session: external?.session.toString(),
 				summary: external?.summary,
 				startTime: external?.startTime,
 				modifiedTime: external?.modifiedTime,
@@ -3858,7 +3858,7 @@ suite('ClaudeAgent', () => {
 			sdkLookups: sdk.getSessionInfoCalls.slice().sort(),
 		}, {
 			sidecar: {
-				session: buildDefaultChatUri(sidecarUri),
+				session: sidecarUri.toString(),
 				summary: 'With Sidecar',
 				startTime: 4900,
 				modifiedTime: 5000,
@@ -3866,7 +3866,7 @@ suite('ClaudeAgent', () => {
 				customizationDirectory: URI.file('/cust').toString(),
 			},
 			external: {
-				session: buildDefaultChatUri(externalUri),
+				session: externalUri.toString(),
 				summary: 'External',
 				startTime: 5900,
 				modifiedTime: 6000,
@@ -3909,7 +3909,7 @@ suite('ClaudeAgent', () => {
 		const agent = disposables.add(instantiationService.createInstance(ClaudeAgent));
 
 		const sessionUri = AgentSession.uri('claude', 'materialized');
-		const metadata = await agent.getConversationMetadata!(URI.parse(buildDefaultChatUri(sessionUri)));
+		const metadata = await agent.getSessionMetadata!(sessionUri);
 		const messages = await agent.getSessionMessages(sessionUri);
 		const sessions = await agent.listSessions();
 
