@@ -119,7 +119,11 @@ class LiveTranscriptInserter {
 		const endLine = this._anchor.lineNumber + lines.length - 1;
 		const endColumn = lines.length === 1 ? this._anchor.column + lines[0].length : lines[lines.length - 1].length + 1;
 		this._end = new Position(endLine, endColumn);
-		this._editor.setPosition(this._end);
+		// While transcription is in progress keep the caret parked at the start
+		// of the dictated region (a blinking cursor at the beginning) rather than
+		// chasing the growing/revised interim text. Once finalized, move it to the
+		// end so the user can continue typing after the dictated text.
+		this._editor.setPosition(interim ? this._anchor : this._end);
 		this._updateInterimDecorations(text, fullText, interim);
 		this._prevInterimText = interim ? fullText : '';
 	}
