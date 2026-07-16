@@ -10,9 +10,9 @@ import { ServicesAccessor } from '../../../../../platform/instantiation/common/i
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { IStorageService } from '../../../../../platform/storage/common/storage.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
-import { IAgentHostEnablementService } from '../../../../../platform/agentHost/common/agentHostEnablementService.js';
 import { IEditorService } from '../../../../services/editor/common/editorService.js';
 import { IChatSessionsService } from '../../common/chatSessionsService.js';
+import { IAgentHostEnablementService } from '../../../../../platform/agentHost/common/agentHostEnablementService.js';
 import { getDefaultNewChatSessionResource, resolveDefaultNewChatSessionType } from '../../common/constants.js';
 import { markPreferredCopilotHarness } from '../../common/chatSessionTypePreference.js';
 import { getChatSessionType } from '../../common/model/chatUri.js';
@@ -48,7 +48,7 @@ export async function clearChatEditor(accessor: ServicesAccessor, chatEditorInpu
 				markPreferredCopilotHarness(storageService);
 				resource = URI.from({ scheme: resolved.sessionType, path: `/untitled-${generateUuid()}` });
 			} else {
-				resource = getDefaultNewChatSessionResource(configurationService, chatSessionsService, storageService, workspaceContextService.getWorkspace());
+				resource = getDefaultNewChatSessionResource(configurationService, chatSessionsService, storageService, workspaceContextService.getWorkspace(), agentHostEnablementService.enabled);
 			}
 		}
 
