@@ -22,7 +22,11 @@
   "icon": "assets/copilot.png",
   "pricing": "Trial",
   "engines": {
+<<<<<<< HEAD
     "vscode": "^1.130.0",
+=======
+    "vscode": "^1.129.1",
+>>>>>>> 2075dc76aa0 (Bump version to 1.129.1 (#326222))
     "npm": ">=9.0.0",
     "node": ">=22.14.0"
   },
