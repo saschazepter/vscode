@@ -371,6 +371,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			this._progressService.withProgress({
 				location: ProgressLocation.Notification,
 				title: localize('chatStt.downloadingModel', "Downloading speech-to-text model…"),
+				delay: 500,
 			}, progress => {
 				report = progress;
 				return deferred.p;
