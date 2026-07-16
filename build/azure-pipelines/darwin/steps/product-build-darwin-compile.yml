@@ -77,7 +77,7 @@ steps:
       set -e
       c++ --version
       xcode-select -print-path
-      python3 -m pip install setuptools
+      python3 -m pip install setuptools --index-url https://pkgs.dev.azure.com/monacotools/Monaco/_packaging/vscode/pypi/simple/
 
       for i in {1..5}; do # try 5 times
         npm ci && break
