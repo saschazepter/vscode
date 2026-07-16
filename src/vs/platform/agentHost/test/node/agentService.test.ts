@@ -3480,6 +3480,68 @@ suite('AgentService (node dispatcher)', () => {
 				hasActiveTurn: false,
 			});
 		});
+
+		test('subscribe to a subagent chat announced via _meta.subagentChatUri waits for the resource instead of failing immediately', async () => {
+			// Regression for microsoft/vscode#326051: the spawning tool call's
+			// ChatToolCallReady action (carrying _meta.subagentChatUri, see
+			// AgentSideEffects) can reach a client before the agent SDK
+			// confirms the spawn (subagent_started) and the resource is
+			// actually registered. A subscribe that races this window must
+			// wait for the registration rather than throwing immediately.
+			service.registerProvider(copilotAgent);
+			const session = await service.createSession({ provider: 'copilot' });
+			const parentChat = buildDefaultChatUri(session.toString());
+			startParentTurn(session, 'turn-1');
+
+			copilotAgent.fireProgress({
+				kind: 'action', resource: URI.parse(parentChat),
+				action: { type: ActionType.ChatToolCallStart, turnId: 'turn-1', toolCallId: 'tc-sub', toolName: 'task', displayName: 'Task', contributor: undefined, _meta: { toolKind: 'subagent', language: undefined } },
+			});
+			copilotAgent.fireProgress({
+				kind: 'action', resource: URI.parse(parentChat),
+				action: { type: ActionType.ChatToolCallReady, turnId: 'turn-1', toolCallId: 'tc-sub', invocationMessage: 'Delegating...', toolInput: undefined, confirmed: ToolCallConfirmationReason.NotNeeded },
+			});
+
+			const subagentUri = buildSubagentChatUri(session.toString(), 'tc-sub');
+			assert.strictEqual(service.stateManager.getSessionState(subagentUri), undefined, 'precondition: resource not registered yet');
+
+			// Subscribe before the resource exists — this must not reject.
+			const subscribePromise = service.subscribe(URI.parse(subagentUri), 'client-race');
+			let settled = false;
+			void subscribePromise.then(() => { settled = true; });
+			await timeout(0);
+			assert.strictEqual(settled, false, 'subscribe should still be pending while the resource is unregistered');
+
+			copilotAgent.fireProgress({ kind: 'subagent_started', chat: URI.parse(parentChat), toolCallId: 'tc-sub', agentName: 'explore', agentDisplayName: 'Explore', agentDescription: 'Explores' });
+
+			const snapshot = await subscribePromise;
+			assert.strictEqual(snapshot.resource, subagentUri);
+		});
+
+		test('subscribe to an announced subagent chat that never spawns eventually rejects instead of hanging', () => {
+			return runWithFakedTimers({ useFakeTimers: true }, async () => {
+				service.registerProvider(copilotAgent);
+				const session = await service.createSession({ provider: 'copilot' });
+				const parentChat = buildDefaultChatUri(session.toString());
+				startParentTurn(session, 'turn-1');
+
+				copilotAgent.fireProgress({
+					kind: 'action', resource: URI.parse(parentChat),
+					action: { type: ActionType.ChatToolCallStart, turnId: 'turn-1', toolCallId: 'tc-sub', toolName: 'task', displayName: 'Task', contributor: undefined, _meta: { toolKind: 'subagent', language: undefined } },
+				});
+				copilotAgent.fireProgress({
+					kind: 'action', resource: URI.parse(parentChat),
+					action: { type: ActionType.ChatToolCallReady, turnId: 'turn-1', toolCallId: 'tc-sub', invocationMessage: 'Delegating...', toolInput: undefined, confirmed: ToolCallConfirmationReason.NotNeeded },
+				});
+
+				const subagentUri = buildSubagentChatUri(session.toString(), 'tc-sub');
+
+				// The tool call is denied/cancelled before the SDK ever
+				// confirms subagent_started — the resource never registers.
+				const subscribePromise = service.subscribe(URI.parse(subagentUri), 'client-race');
+				await assert.rejects(subscribePromise, /Cannot subscribe to unknown resource/);
+			});
+		});
 	});
 
 	// ---- peer-chat catalog persistence (B2: orchestrator-owned) ---------
