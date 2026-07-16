@@ -141,9 +141,9 @@ function taskToSessionInfo(task: AgentTask): SessionInfo {
  * Parse `task.html_url` (e.g. `https://github.com/<owner>/<repo>/agents/tasks/<id>`) to
  * recover the repo identity. The Task API wire shape only carries `task.repository.id`, so
  * when the caller doesn't already know the repo (e.g. the global `listTasks` path) this is
- * how we keep `PullArtifactRef.repo.owner/name` populated for resolver fallbacks. Also
- * exported so the provider can derive `{owner, repo}` for the "Create pull request"
- * toolbar action on PR-less tasks.
+ * how we recover `{owner, name}` for {@link CloudSessionData.repo} and the resolver fallback.
+ * Also used by the provider to derive `{owner, repo}` for the "Create pull request" toolbar
+ * action on PR-less tasks.
  */
 export function parseRepoFromTaskUrl(htmlUrl: string | undefined): { owner: string; name: string } | undefined {
 	if (!htmlUrl) {
@@ -168,20 +168,12 @@ export function parseRepoFromTaskUrl(htmlUrl: string | undefined): { owner: stri
  *
  * Returns undefined for PR-less tasks (which are first-class in the Task API).
  */
-function taskToPullArtifactRef(
-	task: AgentTask,
-	repoIdentity: { owner: string; name: string } | undefined,
-): PullArtifactRef | undefined {
+function taskToPullArtifactRef(task: AgentTask): PullArtifactRef | undefined {
 	const pullArtifact = findPullArtifact(task);
 	if (!pullArtifact) {
 		return undefined;
 	}
-	const repo = repoIdentity ?? parseRepoFromTaskUrl(task.html_url);
 	return {
-		repo: {
-			owner: repo?.owner ?? '',
-			name: repo?.name ?? '',
-		},
 		globalId: pullArtifact.data.global_id,
 		databaseId: pullArtifact.data.id,
 		headRef: findBranchArtifact(task)?.data.head_ref,
@@ -283,7 +275,7 @@ export class TaskApiBackend implements TaskCloudAgentBackend {
 			taskUrl: task.html_url ?? '',
 			title: task.name ?? extractTitle(params.prompt, params.problemStatement) ?? params.title ?? 'Copilot task',
 			sessionId: task.id,
-			pullArtifact: taskToPullArtifactRef(task, { owner: params.owner, name: params.repo }),
+			pullArtifact: taskToPullArtifactRef(task),
 		};
 	}
 
@@ -333,8 +325,9 @@ export class TaskApiBackend implements TaskCloudAgentBackend {
 			.filter(({ task }) => !task.archived_at && isCloudCodingAgentTask(task))
 			.map(({ task, repo }): CloudSessionData => ({
 				latestSession: taskToSessionInfo(task),
-				pullArtifact: taskToPullArtifactRef(task, repo),
+				pullArtifact: taskToPullArtifactRef(task),
 				diffRefs: taskToDiffRefs(task, repo),
+				repo: repo ?? parseRepoFromTaskUrl(task.html_url),
 				taskState: task.state,
 			}));
 	}
@@ -359,7 +352,7 @@ export class TaskApiBackend implements TaskCloudAgentBackend {
 			return {
 				task,
 				turns: [],
-				pullArtifact: taskToPullArtifactRef(task, undefined),
+				pullArtifact: taskToPullArtifactRef(task),
 			};
 		} catch (e) {
 			this._logService.warn(`Failed to fetch task ${taskId}: ${e}`);
@@ -410,7 +403,7 @@ export class TaskApiBackend implements TaskCloudAgentBackend {
 					return {
 						task,
 						turns: [],
-						pullArtifact: taskToPullArtifactRef(task, undefined),
+						pullArtifact: taskToPullArtifactRef(task),
 					};
 				}
 			} catch (e) {
