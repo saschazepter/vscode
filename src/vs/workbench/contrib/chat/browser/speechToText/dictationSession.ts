@@ -106,10 +106,11 @@ export async function startDictation(service: IChatSpeechToTextService, editor: 
 	const disposables = new DisposableStore();
 	// The placeholder remains visible until transcript text is inserted.
 	const previousPlaceholder = editor.getOption(EditorOption.placeholder);
-	editor.updateOptions({ placeholder: localize('chatStt.listening', "Listening…") });
+	const listeningPlaceholder = localize('chatStt.listening', "Listening…");
+	editor.updateOptions({ placeholder: listeningPlaceholder });
 	disposables.add(toDisposable(() => {
-		if (!editor.getModel()) {
-			return; // editor was disposed; nothing to restore
+		if (!editor.getModel() || editor.getOption(EditorOption.placeholder) !== listeningPlaceholder) {
+			return;
 		}
 		editor.updateOptions({ placeholder: previousPlaceholder });
 	}));
