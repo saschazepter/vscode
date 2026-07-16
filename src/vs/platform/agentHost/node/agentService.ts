@@ -111,16 +111,7 @@ function omitHostOwnedSessionConfig<T>(config: Record<string, T>): Record<string
  */
 const RESOURCE_WATCH_GRACE_MS = 30_000;
 
-/**
- * Bound on how long {@link AgentService.subscribe} waits for a subagent chat
- * resource that a client was told about (via `_meta.subagentChatUri`) but
- * that has not been registered yet — see {@link AgentService._trackPendingSubagentChat}.
- * Comfortably longer than the sub-second registration lag typically observed
- * between a subagent-spawning tool call reaching the client and the agent
- * SDK confirming the spawn, while still bounding a subscribe that would
- * otherwise hang forever if the spawn never happens (e.g. the tool call is
- * denied or cancelled before the SDK confirms it).
- */
+/** Bound on how long {@link AgentService.subscribe} waits for a pending subagent chat to register before giving up. */
 const SUBAGENT_CHAT_PENDING_TIMEOUT_MS = 15_000;
 
 /**
@@ -288,24 +279,7 @@ export class AgentService extends Disposable implements IAgentService {
 	private readonly _restoreSessionInFlight = new Map<string, Promise<void>>();
 	private readonly _restoreSubagentInFlight = new Map<string, Promise<void>>();
 
-	/**
-	 * Tracks subagent chat resources that a client has been told about (via
-	 * `_meta.subagentChatUri` on the spawning tool call, see
-	 * {@link AgentSideEffects}) but that are not registered yet — the
-	 * underlying agent SDK confirms the spawn (`subagent_started`) and
-	 * {@link _onChatSpawned} calls `addChat` asynchronously, some time after
-	 * the tool call action reaches the client. Populated by
-	 * {@link _trackPendingSubagentChat}, resolved by {@link _onChatSpawned},
-	 * and consumed by {@link subscribe} so a subscribe that arrives in this
-	 * window waits for the resource instead of failing immediately with
-	 * "unknown resource". An entry that is not resolved within
-	 * {@link SUBAGENT_CHAT_PENDING_TIMEOUT_MS} — e.g. because the tool call
-	 * was denied or cancelled before the SDK ever confirmed the spawn — is
-	 * rejected and removed by its paired timer in
-	 * {@link _pendingSubagentChatTimeouts}, so a subscribe waiting on it
-	 * eventually surfaces the same "unknown resource" error it would have
-	 * gotten immediately today, rather than hanging forever.
-	 */
+	/** Subagent chats announced (via `_meta.subagentChatUri`) but not yet registered; resolved by {@link _onChatSpawned}, awaited by {@link subscribe}. */
 	private readonly _pendingSubagentChats = new Map<string /* subagentChatUri */, DeferredPromise<void>>();
 	private readonly _pendingSubagentChatTimeouts = this._register(new DisposableMap<string /* subagentChatUri */, IDisposable>());
 
@@ -1746,16 +1720,7 @@ export class AgentService extends Disposable implements IAgentService {
 			}
 			if (!snapshot) {
 				if (isSubagentChatUri(resource)) {
-					// A subagent chat URI's snapshot only ever materializes via
-					// `_onChatSpawned` (`addChat`), never via `restoreSession` (a
-					// plain session-URI-oriented restore) — falling through to
-					// that below would be a category error. Instead, the
-					// resource may simply be mid-registration: a client can
-					// already know this URI (via `_meta.subagentChatUri`,
-					// stamped as soon as the spawning tool call is recognized)
-					// before the agent SDK confirms the spawn and registers the
-					// chat. Wait for that registration instead of failing
-					// immediately — see `_trackPendingSubagentChat`.
+					// May be mid-registration; wait rather than fail immediately.
 					snapshot = await this._awaitPendingSubagentChat(resourceStr);
 				} else {
 					// Changeset URIs are routed through the coordinator (which
@@ -1802,14 +1767,7 @@ export class AgentService extends Disposable implements IAgentService {
 		}
 	}
 
-	/**
-	 * Waits for `subagentChatUri` to be registered if it is currently
-	 * tracked as pending (see {@link _pendingSubagentChats}), returning its
-	 * snapshot once available. Returns `undefined` immediately if the
-	 * resource isn't tracked as pending, or if the wait times out /
-	 * the pending entry is otherwise rejected — the caller treats that the
-	 * same as any other unknown resource.
-	 */
+	/** Waits for a pending subagent chat to register; returns `undefined` if not pending, timed out, or rejected. */
 	private async _awaitPendingSubagentChat(subagentChatUri: string): Promise<IStateSnapshot | undefined> {
 		const pending = this._pendingSubagentChats.get(subagentChatUri);
 		if (!pending) {
@@ -2683,16 +2641,7 @@ export class AgentService extends Disposable implements IAgentService {
 		}
 	}
 
-	/**
-	 * Tracks the pending-registration window for a subagent chat (see
-	 * {@link _pendingSubagentChats}): once an envelope reveals
-	 * `_meta.subagentChatUri` on a tool call action, that resource is marked
-	 * as expected soon, ahead of the `subagent_started` signal that actually
-	 * spawns it. Listens on {@link IAgentHostStateManager.onDidEmitEnvelope}
-	 * (rather than the raw {@link IAgent.onDidSessionProgress} signal) because
-	 * `subagentChatUri` is stamped onto the action by {@link AgentSideEffects}
-	 * as it dispatches — the raw provider signal never carries it.
-	 */
+	/** Marks a subagent chat as pending once its `_meta.subagentChatUri` appears on an emitted action. */
 	private _trackPendingSubagentChatFromEnvelope(envelope: ActionEnvelope): void {
 		const { action } = envelope;
 		if (action.type !== ActionType.ChatToolCallStart && action.type !== ActionType.ChatToolCallDelta && action.type !== ActionType.ChatToolCallReady) {
@@ -2704,12 +2653,6 @@ export class AgentService extends Disposable implements IAgentService {
 		}
 	}
 
-	/**
-	 * Registers `subagentChatUri` as "expected soon" (see
-	 * {@link _pendingSubagentChats}) so a {@link subscribe} that races its
-	 * registration waits instead of failing immediately. No-op if the
-	 * resource is already registered or already tracked as pending.
-	 */
 	private _trackPendingSubagentChat(subagentChatUri: string): void {
 		if (this._pendingSubagentChats.has(subagentChatUri) || this._stateManager.getSessionState(subagentChatUri)) {
 			return;
@@ -2722,14 +2665,6 @@ export class AgentService extends Disposable implements IAgentService {
 		}, SUBAGENT_CHAT_PENDING_TIMEOUT_MS));
 	}
 
-	/**
-	 * Resolves a pending subagent chat registration (see
-	 * {@link _pendingSubagentChats}), unblocking any {@link subscribe} calls
-	 * that were waiting for `resource` to be registered. No-op if `resource`
-	 * was never tracked as pending (e.g. the subagent chat's spawning tool
-	 * call predates `_meta.subagentChatUri`, or the subscribe raced ahead of
-	 * even the tool call action).
-	 */
 	private _resolvePendingSubagentChat(resource: string): void {
 		const deferred = this._pendingSubagentChats.get(resource);
 		if (!deferred) {

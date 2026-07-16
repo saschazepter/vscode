@@ -627,18 +627,8 @@ export class AgentSideEffects extends Disposable {
 
 		const sessionUri = isAhpChatChannel(sessionKey) ? parseRequiredSessionUriFromChatUri(sessionKey) : sessionKey;
 
-		// Stamp the deterministic subagent chat URI onto the tool call's
-		// `_meta` as soon as the provider adapter reveals `toolKind ===
-		// 'subagent'` — providers surface this at different points in the
-		// tool call's lifecycle (Copilot at `Start`, Claude at `Ready`), so
-		// all three actions that can carry `_meta` are checked here. Doing
-		// this once, centrally, gives clients an authoritative URI straight
-		// from the wire instead of every client having to duplicate (and
-		// risk drifting from) `buildSubagentChatUri`. The chat resource
-		// behind the URI is not guaranteed to be registered yet — it is
-		// created once the underlying agent SDK's own `subagent_started`
-		// signal arrives — so subscribers still need to tolerate a
-		// transient "unknown resource" error until then.
+		// Stamp the subagent chat URI onto the tool call as soon as toolKind
+		// is known, so clients get it from the wire instead of deriving it.
 		if (
 			(action.type === ActionType.ChatToolCallStart || action.type === ActionType.ChatToolCallDelta || action.type === ActionType.ChatToolCallReady)
 			&& readToolCallMeta(action).toolKind === 'subagent'

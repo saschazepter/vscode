@@ -5,13 +5,7 @@
 
 import type { Mutable } from '../../../../base/common/types.js';
 
-/**
- * Structural supertype of anything carrying a tool call's open `_meta` bag —
- * both the persisted tool call state and the wire actions that produce it
- * (`ChatToolCallStartAction`, `ChatToolCallDeltaAction`,
- * `ChatToolCallReadyAction`) satisfy this, so {@link readToolCallMeta} can
- * validate either.
- */
+/** Anything carrying a tool call's `_meta` bag (persisted state or wire actions). */
 interface IHasToolCallMeta {
 	readonly _meta?: Record<string, unknown>;
 }
@@ -36,18 +30,7 @@ export interface IToolCallMeta {
 	readonly subagentDescription?: string;
 	/** Agent name for a `subagent` tool call (e.g. "explore"). */
 	readonly subagentAgentName?: string;
-	/**
-	 * Chat URI of the subagent session this tool call spawns, stamped by the
-	 * host's side-effect layer as soon as `toolKind` is recognized as
-	 * `subagent` (see {@link buildSubagentChatUri}). Clients should prefer this
-	 * over deriving the URI themselves: the host is authoritative for the
-	 * naming scheme, and centralizing the computation here means clients never
-	 * have to duplicate — or risk drifting from — that logic. The chat resource
-	 * behind this URI is not guaranteed to be registered yet at the moment this
-	 * is set (it's created once the underlying agent SDK actually starts the
-	 * subagent turn); subscribers should tolerate a transient "unknown
-	 * resource" error until then.
-	 */
+	/** Chat URI of the subagent this tool call spawns, stamped by the host (see {@link buildSubagentChatUri}); the resource may not be registered yet. */
 	readonly subagentChatUri?: string;
 	/** Raw, pre-stringified tool arguments captured for display/debugging. */
 	readonly toolArguments?: unknown;

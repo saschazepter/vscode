@@ -3482,12 +3482,6 @@ suite('AgentService (node dispatcher)', () => {
 		});
 
 		test('subscribe to a subagent chat announced via _meta.subagentChatUri waits for the resource instead of failing immediately', async () => {
-			// Regression for microsoft/vscode#326051: the spawning tool call's
-			// ChatToolCallReady action (carrying _meta.subagentChatUri, see
-			// AgentSideEffects) can reach a client before the agent SDK
-			// confirms the spawn (subagent_started) and the resource is
-			// actually registered. A subscribe that races this window must
-			// wait for the registration rather than throwing immediately.
 			service.registerProvider(copilotAgent);
 			const session = await service.createSession({ provider: 'copilot' });
 			const parentChat = buildDefaultChatUri(session.toString());

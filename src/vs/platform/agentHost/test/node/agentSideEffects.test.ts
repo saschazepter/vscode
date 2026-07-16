@@ -3538,17 +3538,6 @@ suite('AgentSideEffects', () => {
 		});
 
 		test('stamps _meta.subagentChatUri onto a subagent-spawning tool call as soon as toolKind is known', () => {
-			// Regression for microsoft/vscode#326051: the client used to have
-			// to derive the subagent's chat URI itself (`buildSubagentChatUri`)
-			// as soon as it saw the spawning tool call, racing the host's own,
-			// separate creation of that chat resource (driven by
-			// `subagent_started` below, fired much later here). Stamping the
-			// same, deterministically-computed URI onto `_meta` here — before
-			// the resource is guaranteed to exist — means the client reads an
-			// authoritative value from the wire instead of recomputing it, but
-			// the underlying resource-registration race is unaffected by this
-			// alone (subscribers still need to tolerate the resource not being
-			// registered yet).
 			setupSession();
 			startTurn('turn-1');
 			disposables.add(sideEffects.registerProgressListener(agent));
@@ -3569,9 +3558,6 @@ suite('AgentSideEffects', () => {
 			);
 			assert.ok(toolCall?.kind === ResponsePartKind.ToolCall);
 			assert.strictEqual(readToolCallMeta(toolCall.toolCall).subagentChatUri, expectedUri);
-
-			// The subagent chat itself is not created until `subagent_started`
-			// arrives — the stamped URI intentionally precedes that.
 			assert.strictEqual(stateManager.getSessionState(expectedUri), undefined);
 		});
 
