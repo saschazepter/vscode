@@ -164,7 +164,7 @@ steps:
     displayName: Create node_modules archive
 
   - ${{ if ne(parameters.VSCODE_CIBUILD, true) }}:
-    - script: npx deemon --detach --wait -- node build/azure-pipelines/common/waitForArtifacts.ts $(ARTIFACT_PREFIX)vscode_cli_linux_$(VSCODE_ARCH)_cli
+    - script: npx deemon@1.13.7 --detach --wait -- node build/azure-pipelines/common/waitForArtifacts.ts $(ARTIFACT_PREFIX)vscode_cli_linux_$(VSCODE_ARCH)_cli
       env:
         SYSTEM_ACCESSTOKEN: $(System.AccessToken)
       displayName: Wait for CLI artifact (background)
@@ -176,7 +176,7 @@ steps:
   # in the background (overwrites repo-root ThirdPartyNotices.txt before packaging).
   # Publish builds only (CIBUILD=false) — CI test jobs never ship a notice.
   - ${{ if ne(parameters.VSCODE_CIBUILD, true) }}:
-    - script: npx deemon --detach --wait -- node build/azure-pipelines/common/downloadNotice.ts
+    - script: npx deemon@1.13.7 --detach --wait -- node build/azure-pipelines/common/downloadNotice.ts
       env:
         SYSTEM_ACCESSTOKEN: $(System.AccessToken)
         VSCODE_OVERWRITE_TPN: $(VSCODE_OVERWRITE_TPN)
@@ -189,7 +189,7 @@ steps:
       parameters:
         vscodePlatform: linux
 
-  - script: npx deemon --detach --wait -- node build/azure-pipelines/common/downloadCopilotVsix.ts
+  - script: npx deemon@1.13.7 --detach --wait -- node build/azure-pipelines/common/downloadCopilotVsix.ts
     env:
       SYSTEM_ACCESSTOKEN: $(System.AccessToken)
     displayName: Download Copilot VSIX (background)
@@ -218,7 +218,7 @@ steps:
       displayName: Generate policy definitions
       retryCountOnTaskFailure: 3
 
-  - script: npx deemon --attach -- node build/azure-pipelines/common/downloadCopilotVsix.ts
+  - script: npx deemon@1.13.7 --attach -- node build/azure-pipelines/common/downloadCopilotVsix.ts
     env:
       SYSTEM_ACCESSTOKEN: $(System.AccessToken)
     displayName: Download Copilot VSIX
@@ -226,7 +226,7 @@ steps:
   # Block on the CG NOTICE download and overwrite ThirdPartyNotices.txt
   # right before gulp packages it. Non-fatal: falls back to legacy on any problem.
   - ${{ if ne(parameters.VSCODE_CIBUILD, true) }}:
-    - script: npx deemon --attach -- node build/azure-pipelines/common/downloadNotice.ts
+    - script: npx deemon@1.13.7 --attach -- node build/azure-pipelines/common/downloadNotice.ts
       env:
         SYSTEM_ACCESSTOKEN: $(System.AccessToken)
         VSCODE_OVERWRITE_TPN: $(VSCODE_OVERWRITE_TPN)
@@ -247,7 +247,7 @@ steps:
     displayName: Build client
 
   - ${{ if ne(parameters.VSCODE_CIBUILD, true) }}:
-    - script: npx deemon --attach -- node build/azure-pipelines/common/waitForArtifacts.ts $(ARTIFACT_PREFIX)vscode_cli_linux_$(VSCODE_ARCH)_cli
+    - script: npx deemon@1.13.7 --attach -- node build/azure-pipelines/common/waitForArtifacts.ts $(ARTIFACT_PREFIX)vscode_cli_linux_$(VSCODE_ARCH)_cli
       env:
         SYSTEM_ACCESSTOKEN: $(System.AccessToken)
       displayName: Wait for CLI artifact
@@ -423,7 +423,7 @@ steps:
         echo "##vso[task.setvariable variable=EsrpCliDllPath]$Version/net6.0/esrpcli.dll"
       displayName: Find ESRP CLI
 
-    - script: npx deemon --detach --wait node build/azure-pipelines/linux/codesign.ts
+    - script: npx deemon@1.13.7 --detach --wait node build/azure-pipelines/linux/codesign.ts
       env:
         EsrpCliDllPath: $(EsrpCliDllPath)
         SYSTEM_ACCESSTOKEN: $(System.AccessToken)
@@ -437,7 +437,7 @@ steps:
         VSCODE_RUN_REMOTE_TESTS: ${{ parameters.VSCODE_RUN_REMOTE_TESTS }}
 
   - ${{ if ne(parameters.VSCODE_CIBUILD, true) }}:
-    - script: npx deemon --attach node build/azure-pipelines/linux/codesign.ts
+    - script: npx deemon@1.13.7 --attach node build/azure-pipelines/linux/codesign.ts
       condition: succeededOrFailed()
       displayName: "✍️ Post-job: Codesign deb & rpm"
 

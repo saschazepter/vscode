@@ -46,7 +46,7 @@ jobs:
           const pkg = require("./package.json");
           const EVENT_PREFIX = pkg.publisher + "." + pkg.name;
           const cp = require("child_process");
-          const output = cp.spawnSync("npx", ["@vscode/telemetry-extractor", "--eventPrefix", EVENT_PREFIX, "-s", ".", "-o", ".", "-f", "telemetry"], { env: process.env, cwd: process.cwd(), shell: true });
+          const output = cp.spawnSync("npx", ["@vscode/telemetry-extractor@1.20.4", "--eventPrefix", EVENT_PREFIX, "-s", ".", "-o", ".", "-f", "telemetry"], { env: process.env, cwd: process.cwd(), shell: true });
           if (output.error) {
             console.log("stderr", (output.stderr || "").toString());
             console.log("stdout", (output.stdout || "").toString());
@@ -80,7 +80,7 @@ jobs:
 
       - script: |
           set -e
-          npx vsce package -o copilot-chat.vsix --allow-package-secrets sendgrid
+          npx --package=@vscode/vsce@3.6.0 vsce package -o copilot-chat.vsix --allow-package-secrets sendgrid
           mkdir -p $(Build.ArtifactStagingDirectory)/copilot-vsix
           cp copilot-chat.vsix $(Build.ArtifactStagingDirectory)/copilot-vsix/
         workingDirectory: $(Build.SourcesDirectory)/extensions/copilot

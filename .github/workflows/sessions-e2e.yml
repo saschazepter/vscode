@@ -54,7 +54,7 @@ jobs:
         working-directory: src/vs/sessions/test/e2e
 
       - name: Install Playwright browsers
-        run: npx playwright install chromium
+        run: npx playwright@1.61.1 install chromium
 
       - name: Run Sessions E2E tests
         run: xvfb-run npm test

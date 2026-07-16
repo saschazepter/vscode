@@ -162,7 +162,7 @@ jobs:
           key: electron-${{ runner.os }}-${{ hashFiles('.nvmrc', 'package.json') }}
 
       - name: Install Playwright Chromium
-        run: npx playwright install chromium
+        run: npx playwright@1.61.1 install chromium
 
       - name: Cache Playwright
         uses: actions/cache/save@v5
@@ -270,7 +270,7 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('package.json') }}
 
       - name: Install Playwright Chromium
-        run: npx playwright install chromium
+        run: npx playwright@1.61.1 install chromium
 
       - name: Resolve scenario group
         id: scenarios
@@ -452,7 +452,7 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('package.json') }}
 
       - name: Install Playwright Chromium
-        run: npx playwright install chromium
+        run: npx playwright@1.61.1 install chromium
 
       - name: Run memory leak check
         id: leak

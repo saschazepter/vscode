@@ -72,18 +72,18 @@ jobs:
         run: cp node_modules/@vscode/codicons/dist/codicon.ttf src/vs/base/browser/ui/codicons/codicon/codicon.ttf
 
       - name: Install Playwright Chromium
-        run: npx playwright install chromium
+        run: npx playwright@1.61.1 install chromium
 
       - name: Install Playwright test dependencies
         run: npm ci
         working-directory: test/componentFixtures/playwright
 
       - name: Install Playwright Chromium (tests)
-        run: npx playwright install chromium
+        run: npx playwright@1.61.1 install chromium
         working-directory: test/componentFixtures/playwright
 
       - name: Run Playwright fixture tests
-        run: npx playwright test
+        run: npx playwright@1.61.1 test
         working-directory: test/componentFixtures/playwright
 
       - name: Upload Playwright test results

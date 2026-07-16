@@ -65,7 +65,7 @@ jobs:
         run: npm run transpile-client
 
       - name: Install Playwright Chromium
-        run: npx playwright install chromium
+        run: npx playwright@1.61.1 install chromium
 
       - name: Start serve-out
         # The scan attaches to an already-running serve (component-explorer-attach.json).

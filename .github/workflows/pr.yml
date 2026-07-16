@@ -228,12 +228,12 @@ jobs:
 
       - name: Ensure no duplicate cache keys
         working-directory: extensions/copilot
-        run: npx tsx test/base/cache-cli check
+        run: npx tsx@4.23.1 test/base/cache-cli check
 
       - name: Ensure no untrusted cache changes
         if: github.event_name == 'pull_request'
         working-directory: extensions/copilot
-        run: npx tsx build/pr-check-cache-files.ts
+        run: npx tsx@4.23.1 build/pr-check-cache-files.ts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPOSITORY: ${{ github.repository }}
@@ -256,7 +256,7 @@ jobs:
 
       - name: Validate telemetry events
         working-directory: extensions/copilot
-        run: npx --package=@vscode/telemetry-extractor --yes vscode-telemetry-extractor -s . > /dev/null
+        run: npx --package=@vscode/telemetry-extractor@1.20.4 --yes vscode-telemetry-extractor -s . > /dev/null
 
   copilot-linux-tests:
     name: Copilot - Test (Linux)
