@@ -14,6 +14,7 @@ import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contex
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
 import { IQuickInputService } from '../../../../../platform/quickinput/common/quickInput.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { spinningLoading } from '../../../../../platform/theme/common/iconRegistry.js';
@@ -117,7 +118,7 @@ class ToggleChatSpeechToTextAction extends Action2 {
 		// keybinding, e.g. the toolbar mic or the command palette): just start
 		// dictating and rely on the next invocation to stop.
 		const holdMode = mode === 'toggle' ? undefined : keybindingService.enableKeybindingHoldMode(ToggleChatSpeechToTextAction.ID);
-		await startDictation(speechService, widget.inputEditor, window);
+		await startDictation(speechService, widget.inputEditor, window, accessor.get(ILogService));
 		if (!holdMode) {
 			return;
 		}
@@ -206,7 +207,7 @@ class HoldToSpeechToTextAction extends Action2 {
 
 		const window = getWindow(widget.domNode) ?? getActiveWindow();
 		const heldFrom = Date.now();
-		await startDictation(speechService, widget.inputEditor, window);
+		await startDictation(speechService, widget.inputEditor, window, accessor.get(ILogService));
 
 		await holdMode;
 
