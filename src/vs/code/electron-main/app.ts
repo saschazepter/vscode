@@ -1832,10 +1832,11 @@ export class CodeApplication extends Disposable {
 		const startTime = Date.now();
 		try {
 			const config = await nativeHostMainService.readProxyConfigWithPackage(undefined);
+			const durationMs = Date.now() - startTime;
 			const pacScriptStats = config.pac ? getPACScriptStats(config.pac.content) : undefined;
 			telemetryService.publicLog2<OSProxyConfigEvent, OSProxyConfigClassification>('osProxyConfig', {
 				success: true,
-				durationMs: Date.now() - startTime,
+				durationMs,
 				platformKind: config.platform?.kind ?? 'none',
 				autoDetect: config.autoDetect,
 				hasConfiguredPac: !!config.pacUrl,
