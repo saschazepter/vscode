@@ -25,6 +25,7 @@ class LiveTranscriptInserter {
 	private _end: Position | undefined;
 	private _needsLeadingSpace = false;
 	private _shimmerDecorations: IEditorDecorationsCollection | undefined;
+	private _finalized = false;
 
 	constructor(private readonly _editor: ICodeEditor) { }
 
@@ -32,8 +33,19 @@ class LiveTranscriptInserter {
 	 * Render the cumulative transcript. While `interim` is true the text is not
 	 * yet finalized, so it is decorated with a shimmer animation; the final
 	 * update (`interim === false`) clears the shimmer, leaving solid text.
+	 *
+	 * Once a final update has been applied, later interim updates are ignored:
+	 * the transcription service can emit a trailing interim transcript as it
+	 * shuts down (after `stopAndTranscribe` resolves), which would otherwise
+	 * overwrite the final text and re-apply the shimmer.
 	 */
 	update(fullText: string, interim: boolean = true): void {
+		if (this._finalized && interim) {
+			return;
+		}
+		if (!interim) {
+			this._finalized = true;
+		}
 		const model = this._editor.getModel();
 		if (!model) {
 			return;
