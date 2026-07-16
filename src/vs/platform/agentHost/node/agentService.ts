@@ -279,9 +279,11 @@ export class AgentService extends Disposable implements IAgentService {
 	private readonly _restoreSessionInFlight = new Map<string, Promise<void>>();
 	private readonly _restoreSubagentInFlight = new Map<string, Promise<void>>();
 
-	/** Subagent chats announced (via `_meta.subagentChatUri`) but not yet registered; resolved by {@link _onChatSpawned}, awaited by {@link subscribe}. */
+	/** Subagent chats armed for a bounded wait (once execution is confirmed); resolved by {@link _onChatSpawned}, awaited by {@link subscribe}. */
 	private readonly _pendingSubagentChats = new Map<string /* subagentChatUri */, DeferredPromise<void>>();
 	private readonly _pendingSubagentChatTimeouts = this._register(new DisposableMap<string /* subagentChatUri */, IDisposable>());
+	/** Subagent chats announced via `_meta.subagentChatUri` but still awaiting confirmation, keyed by `${channel}:${toolCallId}`. */
+	private readonly _pendingSubagentToolCalls = new Map<string, string /* subagentChatUri */>();
 
 	/**
 	 * Pending {@link _runSessionGc} timers, keyed by session URI. A timer is
@@ -1767,17 +1769,13 @@ export class AgentService extends Disposable implements IAgentService {
 		}
 	}
 
-	/** Waits for a pending subagent chat to register; returns `undefined` if not pending, timed out, or rejected. */
+	/** Waits for an armed subagent chat to register (or its wait to time out); returns `undefined` if not armed or never registered. */
 	private async _awaitPendingSubagentChat(subagentChatUri: string): Promise<IStateSnapshot | undefined> {
 		const pending = this._pendingSubagentChats.get(subagentChatUri);
 		if (!pending) {
 			return undefined;
 		}
-		try {
-			await pending.p;
-		} catch {
-			return undefined;
-		}
+		await pending.p;
 		return this._stateManager.getSnapshot(subagentChatUri);
 	}
 
@@ -2641,19 +2639,53 @@ export class AgentService extends Disposable implements IAgentService {
 		}
 	}
 
-	/** Marks a subagent chat as pending once its `_meta.subagentChatUri` appears on an emitted action. */
+	/** Marks a subagent chat as pending once its confirmed tool call reaches (or is about to reach) `Running`. */
 	private _trackPendingSubagentChatFromEnvelope(envelope: ActionEnvelope): void {
-		const { action } = envelope;
-		if (action.type !== ActionType.ChatToolCallStart && action.type !== ActionType.ChatToolCallDelta && action.type !== ActionType.ChatToolCallReady) {
+		const { channel, action } = envelope;
+		if (action.type === ActionType.ChatToolCallStart || action.type === ActionType.ChatToolCallDelta || action.type === ActionType.ChatToolCallReady) {
+			const key = `${channel}:${action.toolCallId}`;
+			// Providers stamp `toolKind`/`subagentChatUri` on whichever action
+			// first reveals it (Copilot at Start, Claude at Ready) — later
+			// actions for the same tool call don't repeat it, so fall back to
+			// what we already recorded for this tool call.
+			const subagentChatUri = readToolCallMeta(action).subagentChatUri ?? this._pendingSubagentToolCalls.get(key);
+			if (subagentChatUri === undefined) {
+				return;
+			}
+			if (action.type === ActionType.ChatToolCallReady && action.confirmed) {
+				// Goes straight to Running — arm the bounded wait now.
+				this._pendingSubagentToolCalls.delete(key);
+				this._armPendingSubagentChat(subagentChatUri);
+				return;
+			}
+			// Still streaming or awaiting confirmation. Remember the URI so a
+			// later ChatToolCallConfirmed can arm the wait once (if ever)
+			// confirmed, without timing out while the user is still deciding.
+			this._pendingSubagentToolCalls.set(key, subagentChatUri);
 			return;
 		}
-		const subagentChatUri = readToolCallMeta(action).subagentChatUri;
-		if (subagentChatUri !== undefined) {
-			this._trackPendingSubagentChat(subagentChatUri);
+		if (action.type === ActionType.ChatToolCallConfirmed) {
+			const key = `${channel}:${action.toolCallId}`;
+			const subagentChatUri = this._pendingSubagentToolCalls.get(key);
+			if (subagentChatUri === undefined) {
+				return;
+			}
+			this._pendingSubagentToolCalls.delete(key);
+			if (action.approved) {
+				this._armPendingSubagentChat(subagentChatUri);
+			}
+			// Denied: the subagent will never spawn; nothing to resolve since
+			// the wait was never armed while awaiting confirmation.
+			return;
+		}
+		if (action.type === ActionType.ChatToolCallComplete) {
+			// Defensive cleanup: a tool call can complete without ever being
+			// confirmed (e.g. cancelled by other means) while still tracked.
+			this._pendingSubagentToolCalls.delete(`${channel}:${action.toolCallId}`);
 		}
 	}
 
-	private _trackPendingSubagentChat(subagentChatUri: string): void {
+	private _armPendingSubagentChat(subagentChatUri: string): void {
 		if (this._pendingSubagentChats.has(subagentChatUri) || this._stateManager.getSnapshot(subagentChatUri)) {
 			return;
 		}
@@ -2661,7 +2693,8 @@ export class AgentService extends Disposable implements IAgentService {
 		this._pendingSubagentChats.set(subagentChatUri, deferred);
 		this._pendingSubagentChatTimeouts.set(subagentChatUri, disposableTimeout(() => {
 			this._pendingSubagentChats.delete(subagentChatUri);
-			deferred.error(new Error(`Timed out waiting for subagent chat to be registered: ${subagentChatUri}`));
+			this._pendingSubagentChatTimeouts.deleteAndDispose(subagentChatUri);
+			deferred.complete();
 		}, SUBAGENT_CHAT_PENDING_TIMEOUT_MS));
 	}
 
