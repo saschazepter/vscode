@@ -1063,10 +1063,10 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 	}
 
 	/**
-	 * When the experimental `chat.editor.preferCopilotHarness` setting selects a
-	 * provider other than local and that contribution is registered, return a
-	 * new session reference for it instead of the built-in local provider.
-	 * Returns `undefined` to fall back to `startNewLocalSession`.
+	 * When the computed default session type is a provider other than local,
+	 * acquire a new session for it instead of the built-in local provider.
+	 * Returns `undefined` to fall back to `startNewLocalSession` (including when
+	 * acquisition of the non-local provider fails).
 	 */
 	private async acquireDefaultNewSession(token: CancellationToken): Promise<IChatModelReference | undefined> {
 		const workspace = this.workspaceContextService.getWorkspace();
