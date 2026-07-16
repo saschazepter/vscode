@@ -17,14 +17,14 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 		[PROMPT_TIMELINE_RAIL_SETTING]: {
 			type: 'boolean',
 			default: false,
-			description: localize('sessions.promptTimeline.rail', "Controls whether the prompt timeline rail is shown beside the chat transcript in the Agents window: a scrollbar that fans into prompt pills on scroll or hover, so you can scan and jump between the prompts you have sent."),
+			description: localize('sessions.promptTimeline.rail', "Controls whether the prompt timeline is shown next to the chat transcript in the Agents window."),
 			tags: ['experimental'],
 			experiment: { mode: 'startup' },
 		},
 		[PROMPT_TIMELINE_STICKY_HEADER_SETTING]: {
 			type: 'boolean',
 			default: false,
-			description: localize('sessions.promptTimeline.stickyHeader', "Controls whether a sticky header pins the current prompt to the top of the chat transcript in the Agents window while scrolling. Select the header to jump to another prompt."),
+			description: localize('sessions.promptTimeline.stickyHeader', "Controls whether the current prompt is pinned to the top of the chat transcript while scrolling in the Agents window."),
 			tags: ['experimental'],
 			experiment: { mode: 'startup' },
 		},
