@@ -1287,7 +1287,7 @@ suite('LocalAgentHostSessionsProvider', () => {
 		const session = provider.getSessions().find(session => session.title.get() === 'Model Catalog Session');
 		assert.ok(session);
 
-		assert.deepStrictEqual(provider.getModelCatalog(session.sessionId).models.map(model => model.identifier), ['matching']);
+		assert.deepStrictEqual(provider.getModelsSnapshot(session.sessionId).models.map(model => model.identifier), ['matching']);
 	});
 
 	test('setModel updates existing session model and lets draft debounce persist it', () => {

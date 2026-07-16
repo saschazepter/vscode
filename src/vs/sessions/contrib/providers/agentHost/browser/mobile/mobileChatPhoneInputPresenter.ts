@@ -16,7 +16,7 @@ import { IInstantiationService } from '../../../../../../platform/instantiation/
 import { IUriIdentityService } from '../../../../../../platform/uriIdentity/common/uriIdentity.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../../../workbench/common/contributions.js';
 import { IToggleChatModeArgs, ToggleAgentModeActionId } from '../../../../../../workbench/contrib/chat/browser/actions/chatExecuteActions.js';
-import { ChatPhoneInputSessionContextProvider, IChatPhoneInputPresenter, IChatPhoneInputSessionContext, IChatPhonePresenterImpl } from '../../../../../../workbench/contrib/chat/browser/widget/input/chatPhoneInputPresenter.js';
+import { ChatPhoneInputPresenterRequest, IChatPhoneInputPresenter, IChatPhoneInputSessionContext, IChatPhonePresenterImpl } from '../../../../../../workbench/contrib/chat/browser/widget/input/chatPhoneInputPresenter.js';
 import { IModePickerDelegate } from '../../../../../../workbench/contrib/chat/browser/widget/input/modePickerActionItem.js';
 import { IModelPickerDelegate } from '../../../../../../workbench/contrib/chat/browser/widget/input/modelPicker/modelPickerActionItem.js';
 import { getModelProviderIcon } from '../../../../../../workbench/contrib/chat/browser/widget/input/modelPicker/modelProviderIcons.js';
@@ -82,9 +82,7 @@ class MobileChatPhoneInputPresenter extends Disposable implements IChatPhonePres
 
 	async showCombinedModeAndModelSheet(
 		_target: HTMLElement,
-		modeDelegate: IModePickerDelegate | undefined,
-		modelDelegate: IModelPickerDelegate | undefined,
-		getSessionContext?: ChatPhoneInputSessionContextProvider,
+		request: ChatPhoneInputPresenterRequest,
 	): Promise<void> {
 		// Side table from opaque sheet-row id back to the action it
 		// represents. Mirrors {@link MobileChatInputConfigPicker} so
@@ -98,7 +96,7 @@ class MobileChatPhoneInputPresenter extends Disposable implements IChatPhonePres
 			return id;
 		};
 
-		const sessionContext = this._getSessionContext(getSessionContext);
+		const sessionContext = this._getSessionContext(request);
 		const target = createChatPhoneInputTarget(sessionContext, this._uriIdentityService);
 		const rawProvider = sessionContext ? this._sessionsProvidersService.getProvider(sessionContext.providerId) : undefined;
 		const agentHostProvider = rawProvider && isAgentHostProvider(rawProvider) ? rawProvider : undefined;
@@ -106,10 +104,10 @@ class MobileChatPhoneInputPresenter extends Disposable implements IChatPhonePres
 		if (sessionContext && agentHostProvider) {
 			sheetItems = this._buildAgentHostSheetItems(sessionContext, agentHostProvider, registerAction);
 		} else {
-			if (!modeDelegate || !modelDelegate) {
+			if (request.kind !== 'delegates') {
 				return;
 			}
-			sheetItems = this._buildDelegateSheetItems(modeDelegate, modelDelegate, registerAction);
+			sheetItems = this._buildDelegateSheetItems(request.modeDelegate, request.modelDelegate, registerAction);
 		}
 
 		if (sheetItems.length === 0) {
@@ -130,7 +128,7 @@ class MobileChatPhoneInputPresenter extends Disposable implements IChatPhonePres
 				onDidSelect: id => {
 					const action = idToAction.get(id);
 					if (action) {
-						this._performAction(action, target, modeDelegate, modelDelegate, getSessionContext);
+						this._performAction(action, target, request);
 					}
 				},
 			},
@@ -166,7 +164,7 @@ class MobileChatPhoneInputPresenter extends Disposable implements IChatPhonePres
 			sectionTitle: index === 0 ? localize('chatPhoneInput.modeSection', "Agent Mode") : undefined,
 		}));
 
-		const models = provider.getModelCatalog(session.sessionId).models;
+		const models = provider.getModelsSnapshot(session.sessionId).models;
 		const currentModelId = session.modelId;
 		models.forEach((model, index) => items.push({
 			id: registerAction({ kind: 'agentHostModel', model }),
@@ -221,11 +219,9 @@ class MobileChatPhoneInputPresenter extends Disposable implements IChatPhonePres
 	private _performAction(
 		action: ChatPhonePickerAction,
 		target: IChatPhoneInputTarget | undefined,
-		modeDelegate: IModePickerDelegate | undefined,
-		modelDelegate: IModelPickerDelegate | undefined,
-		getSessionContext: ChatPhoneInputSessionContextProvider | undefined,
+		request: ChatPhoneInputPresenterRequest,
 	): void {
-		const session = this._getSessionContext(getSessionContext);
+		const session = this._getSessionContext(request);
 		if (!matchesChatPhoneInputTarget(target, session, this._uriIdentityService)) {
 			return;
 		}
@@ -234,13 +230,17 @@ class MobileChatPhoneInputPresenter extends Disposable implements IChatPhonePres
 
 		switch (action.kind) {
 			case 'mode':
-				this._commandService.executeCommand(
-					ToggleAgentModeActionId,
-					{ modeId: action.mode.id, sessionResource: modeDelegate?.sessionResource() } satisfies IToggleChatModeArgs,
-				).catch(() => { });
+				if (request.kind === 'delegates') {
+					this._commandService.executeCommand(
+						ToggleAgentModeActionId,
+						{ modeId: action.mode.id, sessionResource: request.modeDelegate.sessionResource() } satisfies IToggleChatModeArgs,
+					).catch(() => { });
+				}
 				break;
 			case 'model':
-				modelDelegate?.setModel(action.model);
+				if (request.kind === 'delegates') {
+					request.modelDelegate.setModel(action.model);
+				}
 				break;
 			case 'agentHostMode':
 				if (session && agentHostProvider) {
@@ -258,9 +258,9 @@ class MobileChatPhoneInputPresenter extends Disposable implements IChatPhonePres
 		}
 	}
 
-	private _getSessionContext(getSessionContext: ChatPhoneInputSessionContextProvider | undefined): IChatPhoneInputSessionContext | undefined {
-		return getSessionContext
-			? getSessionContext()
+	private _getSessionContext(request: ChatPhoneInputPresenterRequest): IChatPhoneInputSessionContext | undefined {
+		return request.kind === 'session'
+			? request.getSessionContext()
 			: createChatPhoneInputSessionContext(this._sessionsService.activeSession.get());
 	}
 }

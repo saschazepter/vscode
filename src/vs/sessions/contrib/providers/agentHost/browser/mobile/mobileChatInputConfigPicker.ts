@@ -49,7 +49,7 @@ interface IMobileConfigContext {
 
 /**
  * Phone-only chat input config picker that combines the Mode and Model
- * pickers into a single chip trigger that opens a unified bottom sheet.
+ * pickers into one compact button that opens a unified bottom sheet.
  *
  * Desktop renders Mode and Model as two separate pickers in the input
  * toolbar (see {@link AgentHostModePicker} and the sessions-core model
@@ -60,7 +60,7 @@ interface IMobileConfigContext {
  *
  * The trigger label shows the current model name (e.g. "Auto") so the
  * user immediately sees the most relevant configuration; the mode is
- * surfaced as the chip's leading icon when one is selected. Tapping
+ * surfaced as the button's leading icon when one is selected. Tapping
  * opens a sheet with two sections: Agent Mode (Interactive / Plan /
  * Autopilot when applicable) and Model (the model list filtered by the
  * active session's resource scheme).
@@ -109,7 +109,7 @@ class MobileChatInputConfigPicker extends Disposable {
 
 	/**
 	 * Subscribe to each agent-host provider's `onDidChangeSessionConfig`
-	 * so the chip refreshes when the session's mode is mutated outside
+	 * so the button refreshes when the session's mode is mutated outside
 	 * the sheet (e.g. by a setting reload, schema re-resolve, or
 	 * another picker).
 	 */
@@ -196,7 +196,7 @@ class MobileChatInputConfigPicker extends Disposable {
 		}
 
 		const ctx = this._getContext();
-		// Hide the chip when there's nothing to pick (no mode AND no
+		// Hide the button when there's nothing to pick (no mode AND no
 		// models). In that state the toolbar is more compact rather than
 		// showing a no-op trigger. Also collapse the wrapping
 		// `.action-item` that `MenuWorkbenchToolBar` created — hiding
@@ -221,7 +221,7 @@ class MobileChatInputConfigPicker extends Disposable {
 
 		// Label: the current model name (or "Auto" placeholder when no
 		// model is available). Mode is surfaced via the icon, not
-		// duplicated in the label, to keep the chip compact.
+		// duplicated in the label, to keep the button compact.
 		const currentModel = ctx.currentModelId
 			? ctx.modelItems.find(m => m.identifier === ctx.currentModelId)
 			: undefined;
@@ -250,7 +250,7 @@ class MobileChatInputConfigPicker extends Disposable {
 		);
 
 		// Sheet's mode row writes through `setSessionConfigValue`, so
-		// disable the chip while a resolve is in flight.
+		// disable the button while a resolve is in flight.
 		const isResolving = ctx.provider.isSessionConfigResolving(ctx.session.sessionId).get();
 		this._slotElement.classList.toggle('disabled', isResolving);
 		this._triggerElement.setAttribute('aria-disabled', isResolving ? 'true' : 'false');
@@ -265,14 +265,14 @@ class MobileChatInputConfigPicker extends Disposable {
 			return;
 		}
 		// Sheet's mode row writes through `setSessionConfigValue`; the
-		// chip retains its tap target while visually disabled, so
+		// button retains its tap target while visually disabled, so
 		// guard explicitly.
 		const ctx = this._getContext();
 		if (ctx && ctx.provider.isSessionConfigResolving(ctx.session.sessionId).get()) {
 			return;
 		}
 		// Delegate sheet construction to the shared phone presenter so
-		// the new-session chip and the opened-chat chip render the exact
+		// the new-session and opened-chat buttons render the exact
 		// same Mode + Model rows. The presenter's agent-host branch
 		// reads the active session's provider-owned config and models.
 		const trigger = this._triggerElement;
@@ -284,12 +284,10 @@ class MobileChatInputConfigPicker extends Disposable {
 		const beforeModel = beforeModelId ? beforeCtx?.modelItems.find(m => m.identifier === beforeModelId) : undefined;
 		trigger.setAttribute('aria-expanded', 'true');
 		try {
-			await this._phonePresenter.showCombinedModeAndModelSheet(
-				trigger,
-				undefined,
-				undefined,
-				() => createChatPhoneInputSessionContext(this._session.get()),
-			);
+			await this._phonePresenter.showCombinedModeAndModelSheet(trigger, {
+				kind: 'session',
+				getSessionContext: () => createChatPhoneInputSessionContext(this._session.get()),
+			});
 			const afterCtx = this._getContext();
 			if (beforeCtx && afterCtx && matchesChatPhoneInputTarget(target, createChatPhoneInputSessionContext(afterCtx.session), this._uriIdentityService)) {
 				if (beforeCtx.modeItems.length > 0) {
@@ -329,7 +327,7 @@ class MobileChatInputConfigPicker extends Disposable {
 /**
  * Action wrapper for the mobile chat-input config picker. Has no f1
  * surface and is gated on phone layout + an active agent-host session.
- * Order matches the existing desktop mode picker (0) so the chip lands
+ * Order matches the existing desktop mode picker (0) so the button lands
  * in the same toolbar slot.
  */
 registerAction2(class extends Action2 {

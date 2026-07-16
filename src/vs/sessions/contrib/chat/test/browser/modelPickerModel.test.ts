@@ -69,7 +69,7 @@ interface ITestProvider extends ISessionsProvider {
 	readonly modelChanges: Emitter<void>;
 	readonly writes: string[];
 	getModelsCalls: number;
-	catalogResolved: boolean;
+	modelsResolved: boolean;
 	dispose(): void;
 }
 
@@ -81,12 +81,12 @@ function createProvider(id: string, onSetModel?: (modelIdentifier: string) => vo
 		modelChanges,
 		writes: [],
 		getModelsCalls: 0,
-		catalogResolved: true,
+		modelsResolved: true,
 		dispose: () => modelChanges.dispose(),
 		onDidChangeModels: modelChanges.event,
-		getModelCatalog() {
+		getModelsSnapshot() {
 			provider.getModelsCalls++;
-			return { models: provider.models, resolved: provider.catalogResolved };
+			return { models: provider.models, isResolved: provider.modelsResolved };
 		},
 		getModelPickerOptions(): ISessionModelPickerOptions {
 			return {
@@ -198,7 +198,7 @@ suite('SessionModelSelectionModel', () => {
 		});
 	});
 
-	test('validates manual selection against a fresh provider catalog', () => {
+	test('validates manual selection against a fresh models snapshot', () => {
 		const testSession = createSession('provider', SessionStatus.Completed, first.identifier);
 		const provider = disposables.add(createProvider('provider'));
 		const storage = disposables.add(new InMemoryStorageService());
@@ -266,11 +266,11 @@ suite('SessionModelSelectionModel', () => {
 		});
 	});
 
-	test('waits for an arbitrary synthetic catalog before repairing a removed model', () => {
+	test('waits for arbitrary synthetic models to resolve before repairing a removed model', () => {
 		const removedModelId = 'removed-cloud-model';
 		const testSession = createSession('provider', SessionStatus.Completed, removedModelId);
 		const provider = disposables.add(createProvider('provider', identifier => testSession.modelId.set(identifier, undefined)));
-		provider.catalogResolved = false;
+		provider.modelsResolved = false;
 		const storage = disposables.add(new InMemoryStorageService());
 		storage.store(modelPickerStorageKey('provider', 'type'), second.identifier, StorageScope.PROFILE, StorageTarget.MACHINE);
 		const selection = disposables.add(new SessionModelSelectionModel(
@@ -280,7 +280,7 @@ suite('SessionModelSelectionModel', () => {
 			createConfigurationService(),
 		));
 		const beforeResolve = { current: selection.state.get().currentModel?.identifier, writes: [...provider.writes] };
-		provider.catalogResolved = true;
+		provider.modelsResolved = true;
 		provider.modelChanges.fire();
 
 		assert.deepStrictEqual({

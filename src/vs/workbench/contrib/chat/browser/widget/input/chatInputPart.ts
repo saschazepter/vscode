@@ -1200,7 +1200,11 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	private _showCombinedPhonePickerSheet(): void {
 		const target = this.inputActionsToolbar.getElement();
 		this.chatPhoneInputPresenter
-			.showCombinedModeAndModelSheet(target, this._createModePickerDelegate(), this._createModelPickerDelegate())
+			.showCombinedModeAndModelSheet(target, {
+				kind: 'delegates',
+				modeDelegate: this._createModePickerDelegate(),
+				modelDelegate: this._createModelPickerDelegate(),
+			})
 			.catch(err => this.logService.error('[ChatInputPart] phone picker sheet failed', err));
 	}
 

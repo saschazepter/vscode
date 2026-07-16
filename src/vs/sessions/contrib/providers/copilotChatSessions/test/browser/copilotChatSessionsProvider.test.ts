@@ -673,26 +673,26 @@ suite('CopilotChatSessionsProvider', () => {
 	// Note: createNewSession tests are limited because CopilotCLISession
 	// requires IGitService and creates disposables that are hard to clean
 	// up in isolation. Full integration tests should cover session creation.
-	test('cloud catalog resolves arbitrary restored model ids with option groups', () => {
-		const catalogState: { optionGroups: IChatSessionProviderOptionGroup[] | undefined } = { optionGroups: undefined };
-		const provider = createProvider(disposables, model, { getOptionGroups: () => catalogState.optionGroups });
+	test('cloud models resolve arbitrary restored ids with option groups', () => {
+		const modelsState: { optionGroups: IChatSessionProviderOptionGroup[] | undefined } = { optionGroups: undefined };
+		const provider = createProvider(disposables, model, { getOptionGroups: () => modelsState.optionGroups });
 		const workspace = URI.from({ scheme: GITHUB_REMOTE_FILE_SCHEME, path: '/owner/repository' });
 		const session = provider.createNewSession(workspace, CopilotCloudSessionType.id);
-		const beforeResolve = provider.getModelCatalog(session.sessionId, 'removed-cloud-model');
+		const beforeResolve = provider.getModelsSnapshot(session.sessionId, 'removed-cloud-model');
 
-		catalogState.optionGroups = [{
+		modelsState.optionGroups = [{
 			id: 'models',
 			name: 'Models',
 			items: [{ id: 'synthetic-cloud-model', name: 'Synthetic Cloud Model' }],
 		}];
-		const afterResolve = provider.getModelCatalog(session.sessionId, 'removed-cloud-model');
+		const afterResolve = provider.getModelsSnapshot(session.sessionId, 'removed-cloud-model');
 
 		assert.deepStrictEqual({
-			beforeResolve: { models: beforeResolve.models.map(model => model.identifier), resolved: beforeResolve.resolved },
-			afterResolve: { models: afterResolve.models.map(model => model.identifier), resolved: afterResolve.resolved },
+			beforeResolve: { models: beforeResolve.models.map(model => model.identifier), isResolved: beforeResolve.isResolved },
+			afterResolve: { models: afterResolve.models.map(model => model.identifier), isResolved: afterResolve.isResolved },
 		}, {
-			beforeResolve: { models: [], resolved: false },
-			afterResolve: { models: ['synthetic-cloud-model'], resolved: true },
+			beforeResolve: { models: [], isResolved: false },
+			afterResolve: { models: ['synthetic-cloud-model'], isResolved: true },
 		});
 	});
 

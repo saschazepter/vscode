@@ -55,11 +55,11 @@ export function persistSessionModelSelection(
 
 export function selectAvailableSessionModel(
 	session: ISessionModelSelectionTarget,
-	provider: Pick<ISessionsProvider, 'getModelCatalog' | 'setModel'>,
+	provider: Pick<ISessionsProvider, 'getModelsSnapshot' | 'setModel'>,
 	storageService: Pick<IStorageService, 'store'>,
 	modelIdentifier: string,
 ): ILanguageModelChatMetadataAndIdentifier | undefined {
-	const model = provider.getModelCatalog(session.sessionId).models.find(model => model.identifier === modelIdentifier);
+	const model = provider.getModelsSnapshot(session.sessionId).models.find(model => model.identifier === modelIdentifier);
 	if (!model) {
 		return undefined;
 	}
@@ -96,11 +96,11 @@ export type IModelSelectionSessionContext =
 		readonly key: string;
 		readonly chatKey: string | undefined;
 		readonly modelId: string | undefined;
-		readonly modelCatalogResolved: boolean;
+		readonly modelsResolved: boolean;
 	};
 
-export interface IModelSelectionCatalogContext {
-	readonly models: readonly ILanguageModelChatMetadataAndIdentifier[];
+export interface IModelSelectionModelsContext {
+	readonly available: readonly ILanguageModelChatMetadataAndIdentifier[];
 	readonly configuredModel: string | undefined;
 	readonly rememberedModelId: string | undefined;
 }
@@ -113,7 +113,7 @@ export interface IModelSelectionMemory {
 
 export interface IModelSelectionTransitionInput {
 	readonly session: IModelSelectionSessionContext;
-	readonly catalog: IModelSelectionCatalogContext;
+	readonly models: IModelSelectionModelsContext;
 	readonly previous: IModelSelectionMemory;
 }
 
@@ -125,13 +125,13 @@ export interface IModelSelectionTransitionResult {
 }
 
 export function transitionModelSelection(input: IModelSelectionTransitionInput): IModelSelectionTransitionResult {
-	const { session, catalog, previous } = input;
+	const { session, models, previous } = input;
 	const sessionKey = session.kind === 'none' ? undefined : session.key;
 	const chatKey = session.kind === 'none' ? undefined : session.chatKey;
 	const sessionModelId = session.kind === 'none' ? undefined : session.modelId;
 	const sessionChanged = sessionKey !== previous.sessionKey;
 	const currentModel = sessionChanged ? undefined : previous.currentModel;
-	if (catalog.models.length === 0) {
+	if (models.available.length === 0) {
 		return {
 			currentModel: undefined,
 			effect: currentModel ? { kind: 'clear', reason: ModelSelectionReason.NoModels } : { kind: 'none' },
@@ -141,12 +141,12 @@ export function transitionModelSelection(input: IModelSelectionTransitionInput):
 	}
 
 	const sessionModel = sessionModelId
-		? catalog.models.find(model => model.identifier === sessionModelId)
+		? models.available.find(model => model.identifier === sessionModelId)
 		: undefined;
-	const fallback = resolveFallbackModel(catalog.models, catalog.rememberedModelId);
+	const fallback = resolveFallbackModel(models.available, models.rememberedModelId);
 
 	if (session.kind === 'existing') {
-		if (!sessionModelId || sessionModel || !session.modelCatalogResolved) {
+		if (!sessionModelId || sessionModel || !session.modelsResolved) {
 			return {
 				currentModel: sessionModel,
 				effect: !sessionModel && currentModel
@@ -160,7 +160,7 @@ export function transitionModelSelection(input: IModelSelectionTransitionInput):
 		return applyResult(sessionKey, chatKey, fallback, ModelSelectionReason.RemovedModelFallback);
 	}
 
-	const configured = resolveConfiguredModel(catalog.configuredModel, [...catalog.models]);
+	const configured = resolveConfiguredModel(models.configuredModel, [...models.available]);
 	if (configured && session.kind !== 'none' && chatKey !== previous.lastPushedChatKey) {
 		return applyResult(sessionKey, chatKey, configured, ModelSelectionReason.ConfiguredDefault);
 	}
@@ -177,13 +177,13 @@ export function transitionModelSelection(input: IModelSelectionTransitionInput):
 		const model = sessionModel ?? fallback;
 		const reason = sessionModel
 			? ModelSelectionReason.SessionRestore
-			: model.identifier === catalog.rememberedModelId
+			: model.identifier === models.rememberedModelId
 				? ModelSelectionReason.Remembered
 				: ModelSelectionReason.FirstAvailable;
 		return applyResult(sessionKey, chatKey, model, reason);
 	}
 
-	if (session.kind === 'untitled' && chatKey !== previous.lastPushedChatKey && catalog.models.some(model => model.identifier === currentModel.identifier)) {
+	if (session.kind === 'untitled' && chatKey !== previous.lastPushedChatKey && models.available.some(model => model.identifier === currentModel.identifier)) {
 		return applyResult(sessionKey, chatKey, currentModel, ModelSelectionReason.NewChatRepush);
 	}
 

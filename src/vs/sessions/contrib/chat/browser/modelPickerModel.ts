@@ -78,7 +78,7 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 			return false;
 		}
 
-		const models = provider.getModelCatalog(session.sessionId).models;
+		const models = provider.getModelsSnapshot(session.sessionId).models;
 		const model = models.find(model => model.identifier === modelIdentifier);
 		if (!model) {
 			return false;
@@ -102,8 +102,8 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 		this._setProvider(provider);
 		const sessionKey = session ? this._sessionKey(session) : undefined;
 		const sessionModelId = session?.modelId.get();
-		const catalog = session && provider ? provider.getModelCatalog(session.sessionId, sessionModelId) : { models: [], resolved: false };
-		const models = catalog.models;
+		const snapshot = session && provider ? provider.getModelsSnapshot(session.sessionId, sessionModelId) : { models: [], isResolved: false };
+		const models = snapshot.models;
 		const options = normalizeModelPickerOptions(session && provider ? provider.getModelPickerOptions(session.sessionId) : undefined);
 		const rememberedModelId = session
 			? this._storageService.get(modelPickerStorageKey(session.providerId, session.sessionType), StorageScope.PROFILE)
@@ -114,10 +114,10 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 				key: sessionKey!,
 				chatKey: session.activeChat.get().resource.toString(),
 				modelId: sessionModelId,
-				modelCatalogResolved: !!sessionModelId && catalog.resolved,
+				modelsResolved: !!sessionModelId && snapshot.isResolved,
 			} : { kind: 'none' },
-			catalog: {
-				models,
+			models: {
+				available: models,
 				configuredModel: this._configurationService.getValue<string>(ChatConfiguration.DefaultModel),
 				rememberedModelId,
 			},

@@ -27,7 +27,16 @@ export interface IChatPhoneInputSessionContext {
 	readonly modelId: string | undefined;
 }
 
-export type ChatPhoneInputSessionContextProvider = () => IChatPhoneInputSessionContext | undefined;
+export type ChatPhoneInputPresenterRequest =
+	| {
+		readonly kind: 'delegates';
+		readonly modeDelegate: IModePickerDelegate;
+		readonly modelDelegate: IModelPickerDelegate;
+	}
+	| {
+		readonly kind: 'session';
+		readonly getSessionContext: () => IChatPhoneInputSessionContext | undefined;
+	};
 
 /**
  * Implementation of the phone-only chat-input picker presenter, registered
@@ -47,17 +56,12 @@ export interface IChatPhonePresenterImpl {
 	 * Show a unified bottom sheet listing both Mode and Model rows for the
 	 * given chat input pickers. Resolves once the user dismisses the sheet.
 	 *
-	 * `modeDelegate` / `modelDelegate` are optional: callers without
-	 * access to a workbench `ChatInputPart` (e.g. the agents-window
-	 * agent-host mode pill, which does not own the chat input) can pass
-	 * `undefined` and the implementation will fall back to its
-	 * agent-host data path.
+	 * The request identifies whether state comes from workbench picker delegates
+	 * or from an input-scoped Sessions context.
 	 */
 	showCombinedModeAndModelSheet(
 		target: HTMLElement,
-		modeDelegate: IModePickerDelegate | undefined,
-		modelDelegate: IModelPickerDelegate | undefined,
-		getSessionContext?: ChatPhoneInputSessionContextProvider,
+		request: ChatPhoneInputPresenterRequest,
 	): Promise<void>;
 }
 
@@ -89,9 +93,7 @@ export interface IChatPhoneInputPresenter {
 	 */
 	showCombinedModeAndModelSheet(
 		target: HTMLElement,
-		modeDelegate: IModePickerDelegate | undefined,
-		modelDelegate: IModelPickerDelegate | undefined,
-		getSessionContext?: ChatPhoneInputSessionContextProvider,
+		request: ChatPhoneInputPresenterRequest,
 	): Promise<void>;
 
 	/**
@@ -115,12 +117,10 @@ class ChatPhoneInputPresenterService extends Disposable implements IChatPhoneInp
 
 	showCombinedModeAndModelSheet(
 		target: HTMLElement,
-		modeDelegate: IModePickerDelegate | undefined,
-		modelDelegate: IModelPickerDelegate | undefined,
-		getSessionContext?: ChatPhoneInputSessionContextProvider,
+		request: ChatPhoneInputPresenterRequest,
 	): Promise<void> {
 		const impl = this._impl.get();
-		return impl ? impl.showCombinedModeAndModelSheet(target, modeDelegate, modelDelegate, getSessionContext) : Promise.resolve();
+		return impl ? impl.showCombinedModeAndModelSheet(target, request) : Promise.resolve();
 	}
 
 	setImpl(impl: IChatPhonePresenterImpl): IDisposable {
@@ -137,11 +137,11 @@ registerSingleton(IChatPhoneInputPresenter, ChatPhoneInputPresenterService, Inst
 
 /**
  * Phone-only action view item used in place of the desktop Model and Mode
- * pickers. Renders a single chip whose label shows the current model name
+ * pickers. Renders one compact button whose label shows the current model name
  * with the current mode's icon as a leading marker; tapping it opens the
  * unified bottom sheet through the {@link IChatPhoneInputPresenter}.
  *
- * Visually mirrors the chip used in the empty new-chat input (see
+ * Visually mirrors the button used in the empty new-chat input (see
  * `MobileChatInputConfigPicker` in `vs/sessions`) so the two chat-input
  * surfaces present a consistent mobile experience.
  */
@@ -186,7 +186,7 @@ export class MobileChatInputCombinedPickerActionItem extends BaseActionViewItem 
 			}
 		}));
 
-		// Reactively re-render the chip when the active mode (label/icon)
+		// Reactively re-render the button when the active mode (label/icon)
 		// or the selected model changes.
 		this._renderDisposables.add(autorun(reader => {
 			const currentMode = this._modeDelegate.currentMode.read(reader);
@@ -242,7 +242,11 @@ export class MobileChatInputCombinedPickerActionItem extends BaseActionViewItem 
 		}
 		trigger.setAttribute('aria-expanded', 'true');
 		try {
-			await this._presenter.showCombinedModeAndModelSheet(trigger, this._modeDelegate, this._modelDelegate);
+			await this._presenter.showCombinedModeAndModelSheet(trigger, {
+				kind: 'delegates',
+				modeDelegate: this._modeDelegate,
+				modelDelegate: this._modelDelegate,
+			});
 		} finally {
 			trigger.setAttribute('aria-expanded', 'false');
 			trigger.focus();

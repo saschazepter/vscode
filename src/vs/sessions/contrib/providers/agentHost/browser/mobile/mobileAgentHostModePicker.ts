@@ -16,7 +16,7 @@ import { createChatPhoneInputSessionContext } from './mobileChatPhoneInputTarget
 /**
  * Phone-aware variant of {@link AgentHostModePicker}. On phone-layout
  * viewports the desktop action-widget popover is replaced with the same
- * combined Mode + Model bottom sheet used by the workbench chip and the
+ * combined Mode + Model bottom sheet used by the workbench picker button and the
  * empty new-chat picker (see {@link IChatPhoneInputPresenter}). On
  * desktop the inherited `_showPicker` falls through to the base
  * implementation, so this class is safe to keep through viewport-class
@@ -45,15 +45,10 @@ export class MobileAgentHostModePicker extends AgentHostModePicker {
 			return false;
 		}
 		if (this._phonePresenter.enabled.get()) {
-			// The presenter's agent-host branch reads mode + model
-			// directly from the active session's provider, so we don't
-			// need to pass chat-input delegates here.
-			this._phonePresenter.showCombinedModeAndModelSheet(
-				anchor,
-				undefined,
-				undefined,
-				() => createChatPhoneInputSessionContext(this._session.get()),
-			)
+			this._phonePresenter.showCombinedModeAndModelSheet(anchor, {
+				kind: 'session',
+				getSessionContext: () => createChatPhoneInputSessionContext(this._session.get()),
+			})
 				.finally(() => {
 					anchor.focus();
 					onHide?.();

@@ -57,10 +57,10 @@ export interface ISessionModelPickerOptions {
 	readonly showAutoModel?: boolean;
 }
 
-export interface ISessionModelCatalog {
+export interface ISessionModelsSnapshot {
 	readonly models: readonly ILanguageModelChatMetadataAndIdentifier[];
 	/** Whether absence of the requested restored model is conclusive. */
-	readonly resolved: boolean;
+	readonly isResolved: boolean;
 }
 
 /**
@@ -227,7 +227,7 @@ export interface ISessionsProvider {
 	 * Get selectable models and whether absence of `restoredModelId` is conclusive.
 	 * Callers wait for {@link onDidChangeModels} before repairing an unresolved selection.
 	 */
-	getModelCatalog(sessionId: string, restoredModelId?: string): ISessionModelCatalog;
+	getModelsSnapshot(sessionId: string, restoredModelId?: string): ISessionModelsSnapshot;
 
 	/**
 	 * Get the presentation options for the sessions-core model picker for the
@@ -239,7 +239,7 @@ export interface ISessionsProvider {
 	getModelPickerOptions(sessionId: string): ISessionModelPickerOptions;
 
 	/**
-	 * Event that fires when the catalog returned by {@link getModelCatalog}
+	 * Event that fires when the snapshot returned by {@link getModelsSnapshot}
 	 * may have changed (e.g. language models finished loading, or the backend
 	 * advertised a new option group). The core model picker re-reads the model
 	 * list when this fires. Has no payload — consumers re-query per session.

@@ -47,7 +47,7 @@ import { agentHostSessionWorkspaceKey } from '../../../../common/agentHostSessio
 import { isSessionConfigComplete } from '../../../../common/sessionConfig.js';
 import { ChatInteractivity, ChatOriginKind, DEFAULT_CHAT_CAPABILITIES, effectiveChatInteractivity, IChat, IChatCapabilities, IGitHubInfo, ISession, ISessionAgentRef, ISessionCapabilities, ISessionChangeset, ISessionChangesSummary, ISessionFile, ISessionFileChange, ISessionType, ISessionWorkspace, ISessionWorkspaceBrowseAction, sessionFileChangesEqual, SessionStatus, toSessionId } from '../../../../services/sessions/common/session.js';
 import { ISessionsService } from '../../../../services/sessions/browser/sessionsService.js';
-import { IDeleteChatOptions, ISendRequestOptions, ISessionChangeEvent, ISessionModelCatalog, ISessionModelPickerOptions } from '../../../../services/sessions/common/sessionsProvider.js';
+import { IDeleteChatOptions, ISendRequestOptions, ISessionChangeEvent, ISessionModelPickerOptions, ISessionModelsSnapshot } from '../../../../services/sessions/common/sessionsProvider.js';
 import { IGitHubService } from '../../../github/browser/githubService.js';
 import { computeLivePullRequestIcon } from '../../../github/browser/pullRequestIconStatus.js';
 import { computePullRequestIcon, GitHubPullRequestState } from '../../../github/common/types.js';
@@ -2834,13 +2834,13 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		return Event.signal(this._languageModelsService.onDidChangeLanguageModels);
 	}
 
-	getModelCatalog(sessionId: string, _restoredModelId?: string): ISessionModelCatalog {
+	getModelsSnapshot(sessionId: string, _restoredModelId?: string): ISessionModelsSnapshot {
 		// Agent-host models are registered against the session's resource
 		// scheme (the per-host/per-agent `targetChatSessionType`). Resolve the
 		// scheme from the session and return the matching language models.
 		const resourceScheme = this._resolveSessionResourceScheme(sessionId);
 		if (!resourceScheme) {
-			return { models: [], resolved: false };
+			return { models: [], isResolved: false };
 		}
 		const models = this._languageModelsService.getLanguageModelIds()
 			.map((id): ILanguageModelChatMetadataAndIdentifier | undefined => {
@@ -2848,7 +2848,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 				return metadata && metadata.targetChatSessionType === resourceScheme ? { identifier: id, metadata } : undefined;
 			})
 			.filter((m): m is ILanguageModelChatMetadataAndIdentifier => !!m);
-		return { models, resolved: this._languageModelsService.hasResolvedVendor(resourceScheme) };
+		return { models, isResolved: this._languageModelsService.hasResolvedVendor(resourceScheme) };
 	}
 
 	getModelPickerOptions(sessionId: string): ISessionModelPickerOptions {
