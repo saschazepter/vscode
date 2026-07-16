@@ -3497,7 +3497,7 @@ suite('AgentService (node dispatcher)', () => {
 			});
 
 			const subagentUri = buildSubagentChatUri(session.toString(), 'tc-sub');
-			assert.strictEqual(service.stateManager.getSessionState(subagentUri), undefined, 'precondition: resource not registered yet');
+			assert.strictEqual(service.stateManager.getSnapshot(subagentUri), undefined, 'precondition: resource not registered yet');
 
 			// Subscribe before the resource exists — this must not reject.
 			const subscribePromise = service.subscribe(URI.parse(subagentUri), 'client-race');

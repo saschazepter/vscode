@@ -2654,7 +2654,7 @@ export class AgentService extends Disposable implements IAgentService {
 	}
 
 	private _trackPendingSubagentChat(subagentChatUri: string): void {
-		if (this._pendingSubagentChats.has(subagentChatUri) || this._stateManager.getSessionState(subagentChatUri)) {
+		if (this._pendingSubagentChats.has(subagentChatUri) || this._stateManager.getSnapshot(subagentChatUri)) {
 			return;
 		}
 		const deferred = new DeferredPromise<void>();
