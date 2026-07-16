@@ -292,61 +292,67 @@
 /*
  * A vertical grid sash (between the editor and a side/auxiliary bar) spans the full
  * height of the content region, but the floating cards it divides are inset from the
- * region's bottom by the inter-card gap (the trailing card margin,
- * `--vscode-spacing-size20`). Left unadjusted, the hover highlight (`:before`)
- * overshoots below the two cards into that gap — the reported "sash extends past the
- * panels". Inset the highlight's bottom to line it up with the card edges. The cards
- * are flush with the title bar at the top (no top margin), so the highlight keeps
- * `top: 0`. Only the highlight is inset; the sash hit region is unchanged.
+ * region by the card margins. Left unadjusted, the hover highlight (`:before`)
+ * overshoots into those gaps — the reported "sash extends past the panels". Anchor the
+ * highlight with `top`/`bottom` (rather than `height`) so the two insets compose
+ * independently across layouts. The base leaves the cards flush with the title bar
+ * (`top: 0`) and insets the bottom by the 2px trailing card margin
+ * (`--vscode-spacing-size20`). Only the highlight is inset; the sash hit region is
+ * unchanged. In non-justify alignments a full-height side bar (spanning both the panel
+ * and editor rows) keeps its own margins, so its highlight may sit up to a card margin
+ * short on the abutting edge — an accepted minor cosmetic gap.
  */
 .monaco-workbench.floating-panels .monaco-sash.vertical:not(.part .monaco-sash)::before {
 	top: 0;
-	height: calc(100% - var(--vscode-spacing-size20));
+	bottom: var(--vscode-spacing-size20);
+	height: auto;
+}
+
+/*
+ * Panel docked at the top: the editor and its sibling side/aux bars take a top margin
+ * (`--vscode-spacing-size40`); inset the highlight's top to match so it does not
+ * overshoot above the cards into that gap.
+ */
+.monaco-workbench.floating-panels.panel-position-top:not(.nopanel) .monaco-sash.vertical:not(.part .monaco-sash)::before {
+	top: var(--vscode-spacing-size40);
 }
 
 /*
  * When the status bar is hidden the cards sit against the window bottom edge and take
  * the doubled outer gutter (`--vscode-spacing-size40` * 2) instead of the 2px inter-card
- * gap. Match that larger bottom inset so the highlight still lines up with the card
- * edges. Excluded when a bottom panel is present, since then the side/aux bars abut the
- * panel card and keep the normal 2px trailing margin.
+ * gap. Match that larger bottom inset. Excluded when a bottom panel is present, since
+ * then the side/aux bars abut the panel card and keep the normal 2px trailing margin.
  */
 .monaco-workbench.floating-panels.nostatusbar:not(.panel-position-bottom) .monaco-sash.vertical:not(.part .monaco-sash)::before {
-	height: calc(100% - var(--vscode-spacing-size40) * 2);
+	bottom: calc(var(--vscode-spacing-size40) * 2);
 }
 
 /*
  * A horizontal grid sash (the resize handle between the editor and a top/bottom panel)
- * draws its hover highlight full-width (`:before { width: 100% }`), but the panel card it
- * divides is inset from the column's side edges by the floating card margins — so the
- * line overshoots both ends. Inset the highlight's `left`/`width` to match the panel
- * card's leading (`--vscode-spacing-size40`) and trailing (`--vscode-spacing-size20`)
- * margins so it lines up with the cards. Either margin doubles to the outer gutter
- * (`--vscode-spacing-size40` * 2) when the panel is the outermost card on that window
- * edge; mirror that with `:has()` on the panel's outer-edge classes so the highlight
- * tracks the same margins the card uses, per layout. Ordered by `:has()` count so the
- * more specific outer-edge rules win for the edges they own.
+ * draws its hover highlight full-width, but the panel card it divides is inset from the
+ * column's side edges by the floating card margins — so the line overshoots both ends.
+ * Anchor the highlight with `left`/`right` (rather than `width`) so each side composes
+ * independently: the base uses the panel card's leading (`--vscode-spacing-size40`) and
+ * trailing (`--vscode-spacing-size20`) margins. Either margin doubles to the outer
+ * gutter (`--vscode-spacing-size40` * 2) when the panel is the outermost card on that
+ * window edge; mirror that with `:has()` on the panel's outer-edge classes so the
+ * highlight tracks the same margins the card uses, per layout. Both-edges is handled
+ * automatically since the two `:has()` rules touch independent properties.
  */
 .monaco-workbench.floating-panels:not(.nopanel) .monaco-sash.horizontal:not(.part .monaco-sash)::before {
 	left: var(--vscode-spacing-size40);
-	width: calc(100% - var(--vscode-spacing-size40) - var(--vscode-spacing-size20));
+	right: var(--vscode-spacing-size20);
+	width: auto;
 }
 
 /* Panel owns the left window edge → its leading gutter doubles; match it. */
 .monaco-workbench.floating-panels:not(.nopanel):has(.part.panel.floating-part-outer-left) .monaco-sash.horizontal:not(.part .monaco-sash)::before {
 	left: calc(var(--vscode-spacing-size40) * 2);
-	width: calc(100% - var(--vscode-spacing-size40) * 2 - var(--vscode-spacing-size20));
 }
 
 /* Panel owns the right window edge → its trailing gutter doubles; match it. */
 .monaco-workbench.floating-panels:not(.nopanel):has(.part.panel.floating-part-outer-right) .monaco-sash.horizontal:not(.part .monaco-sash)::before {
-	width: calc(100% - var(--vscode-spacing-size40) - var(--vscode-spacing-size40) * 2);
-}
-
-/* Panel owns both window edges (e.g. a full-width bottom panel with no side bars). */
-.monaco-workbench.floating-panels:not(.nopanel):has(.part.panel.floating-part-outer-left):has(.part.panel.floating-part-outer-right) .monaco-sash.horizontal:not(.part .monaco-sash)::before {
-	left: calc(var(--vscode-spacing-size40) * 2);
-	width: calc(100% - var(--vscode-spacing-size40) * 2 - var(--vscode-spacing-size40) * 2);
+	right: calc(var(--vscode-spacing-size40) * 2);
 }
 
 /*
