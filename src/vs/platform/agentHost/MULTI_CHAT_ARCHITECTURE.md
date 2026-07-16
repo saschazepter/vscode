@@ -45,6 +45,25 @@
   or spawned by the harness (subagent tool call), it enters the catalog through
   exactly one path (`AgentHostStateManager.addChat`). See invariant I4 below.
 
+### Terminology convention: "session" is overloaded — read it by layer
+
+The word **session** means two different things depending on which side of the
+seam you are on. To avoid confusion, follow this convention:
+
+| Where | What `session` means | Notes |
+|-------|----------------------|-------|
+| AHP wire protocol (`common/state/protocol/`) and the orchestrator (`AgentService`, `AgentHostStateManager`) | The **AH session** — the protocol-visible grouping of a default chat plus its peer chats. | This is the vocabulary the generated protocol types pin (`SessionState`, `SessionSummary`, `sessionAdded`, ...); it is immutable and authoritative. |
+| Inside an agent harness (`node/claude`, `node/copilot`, `node/codex`) | The agent's **own SDK / provider session** — the provider's native concept (Codex calls it a *thread*). The agent has no notion of the AH grouping; it only ever deals in chats and its own SDK sessions. | Prefer the provider's native term where one exists (Codex "thread"); otherwise spell it out as "SDK session" / "provider session" in comments and local names wherever the two could be confused. |
+| The `IAgent` seam (`createSession` / `disposeSession` / `releaseSession`, `session: URI`) | A **shared identity**: the URI is AH-minted (`AgentSession.uri`), but by invariant I3 its raw id *is* the SDK session id, so both sides agree on identity without importing each other's concept. | These few methods legitimately keep the name `session`. Chat-addressed operations do **not** — they were renamed to conversation/chat (e.g. `getConversationMetadata`, `listConversations`, `chats.*`). |
+
+**Why we do not rename the agents' "SDK session" symbols:** the generated
+protocol fixes "Session" = AH session across hundreds of references we cannot
+change, and the `IAgent` seam genuinely passes AH session URIs. Renaming the
+provider-internal concept to `providerSession` would create a new inconsistency
+against the protocol rather than removing one. The durable fix is this
+convention plus the chat-addressed rename of the operational surface, not a
+symbol-level rename of "session".
+
 ---
 
 ## 2. Ownership and Layering
