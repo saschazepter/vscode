@@ -730,6 +730,13 @@ export interface IAgentConversationMetadata {
 	readonly isArchived?: boolean;
 	readonly changes?: ChangesSummary;
 	readonly changesets?: readonly Changeset[];
+	/**
+	 * The session-level `_meta` bag carried through verbatim. This is
+	 * intentionally the same {@link SessionMeta} alias used by
+	 * {@link IAgentSessionMetadata._meta} rather than a conversation-specific
+	 * type: `_meta` is the protocol's open property bag on `SessionState` /
+	 * `SessionSummary`, so it is session-generic by design.
+	 */
 	readonly _meta?: SessionMeta;
 }
 
