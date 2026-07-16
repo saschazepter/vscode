@@ -321,7 +321,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		// interim transcripts begin once the model finishes loading.
 		const status = await local.getModelStatus();
 		if (status.state !== LocalTranscriptionModelState.Ready && status.state !== LocalTranscriptionModelState.Error) {
-			this._trackModelPreparation(status);
+			this._trackModelPreparation();
 		}
 	}
 
@@ -338,21 +338,36 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	 * download finishes. Recording proceeds meanwhile and interim transcripts
 	 * begin once the model finishes loading.
 	 */
-	private _trackModelPreparation(initialStatus: ILocalTranscriptionModelStatus): void {
+	private _trackModelPreparation(): void {
 		this._setPreparingModel(true);
 		// Guarantee the download notification is dismissed no matter how the
 		// session ends (teardown, cancel, or the service being disposed).
 		this._localSessionDisposables.add(toDisposable(() => this._completeDownloadNotification()));
-		this._updateDownloadNotification(initialStatus);
-		this._localSessionDisposables.add(this._localTranscription.onDidChangeModelStatus(status => {
-			this._updateDownloadNotification(status);
-			if (status.state === LocalTranscriptionModelState.Ready) {
-				this._setPreparingModel(false);
-			} else if (status.state === LocalTranscriptionModelState.Error) {
-				this._setPreparingModel(false);
-				this._failSession('model', localize('chatStt.modelError', "On-device speech-to-text model failed to load: {0}", status.error ?? ''));
-			}
-		}));
+		// Register the status listener BEFORE snapshotting the current status. A
+		// Downloading→Ready/Error transition can land between the snapshot and the
+		// subscription; if it did, the completion event would be missed and the
+		// spinner and download notification would be stranded for the rest of the
+		// recording. Registering first, then re-querying, makes the handoff
+		// race-free — any transition is caught by the listener, and the snapshot
+		// settles the current state.
+		this._localSessionDisposables.add(this._localTranscription.onDidChangeModelStatus(status => this._handleModelStatus(status)));
+		this._localTranscription.getModelStatus().then(status => this._handleModelStatus(status), () => { /* errors also surface via onDidChangeModelStatus */ });
+	}
+
+	/**
+	 * Drive the spinner, download notification, and error handling from a model
+	 * status. Safe to call repeatedly and from both the status snapshot and the
+	 * change listener, since the notification and preparing-state updates are
+	 * idempotent.
+	 */
+	private _handleModelStatus(status: ILocalTranscriptionModelStatus): void {
+		this._updateDownloadNotification(status);
+		if (status.state === LocalTranscriptionModelState.Ready) {
+			this._setPreparingModel(false);
+		} else if (status.state === LocalTranscriptionModelState.Error) {
+			this._setPreparingModel(false);
+			this._failSession('model', localize('chatStt.modelError', "On-device speech-to-text model failed to load: {0}", status.error ?? ''));
+		}
 	}
 
 	/**
