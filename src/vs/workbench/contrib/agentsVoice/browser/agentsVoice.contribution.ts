@@ -182,9 +182,22 @@ registerAction2(class extends Action2 {
 		const voiceController = accessor.get(IVoiceSessionController);
 		const keybindingService = accessor.get(IKeybindingService);
 
+		// Capture hold-mode FIRST, synchronously, before any `await`. The
+		// keybinding service only reports a held chord while it is still
+		// dispatching this command; the moment `run()` first suspends on an
+		// await it clears `_currentlyDispatchingCommandId`, after which
+		// `enableKeybindingHoldMode` returns `undefined`. Calling it up-front is
+		// what makes press-and-hold work even on the very first (cold) press
+		// where we still have to connect. `undefined` here means the action was
+		// invoked without a held key (toolbar mic button / command palette).
+		const holdMode = keybindingService.enableKeybindingHoldMode('agentsVoice.startVoiceInChat');
+
 		// Ensure the session is connected before we start recording. The mic
 		// button's first press connects; a held keybinding also connects here so
-		// that press-and-hold works on the very first invocation.
+		// that press-and-hold works on the very first invocation. If the user
+		// releases the key while we're still connecting, `holdMode` resolves
+		// early and the awaited release below fires right after pttDown() — the
+		// controller then treats it as a quick tap (toggle on).
 		if (!voiceController.isConnected.get()) {
 			await voiceController.connect(mainWindow);
 		}
@@ -193,10 +206,9 @@ registerAction2(class extends Action2 {
 		// push-to-talk model: press => pttDown(), release => pttUp(). The
 		// controller itself decides tap-vs-hold based on how long the key was
 		// held (a quick tap enters toggle mode and keeps recording; a real hold
-		// records only while held). `enableKeybindingHoldMode` resolves when the
-		// triggering chord is released and — crucially — swallows OS key-repeat
-		// while held, so holding the shortcut no longer rapidly toggles.
-		const holdMode = keybindingService.enableKeybindingHoldMode('agentsVoice.startVoiceInChat');
+		// records only while held). `enableKeybindingHoldMode` also swallows OS
+		// key-repeat while held, so holding the shortcut no longer rapidly
+		// toggles.
 		voiceController.pttDown();
 		if (!holdMode) {
 			// Not invoked via a held keybinding (toolbar mic button or command
