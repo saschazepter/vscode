@@ -769,6 +769,29 @@ UI `'max'` is clamped to SDK `'xhigh'` at the seam. Effort levels
 above the model's `max_thinking_tokens` ceiling are clamped by the
 SDK; the host does not need to gate.
 
+**Config-state ownership and timing (settled 2026-07-16).** Runtime SDK config
+splits into two states with two owners:
+- **Desired** — owned by `ClaudeAgentSession` (`_provisionalModel` /
+  `_provisionalAgent`; `permissionMode` read live from `IAgentConfigurationService`).
+  The user's intent; survives a pipeline rebuild; seeds every freshly built `Query`.
+- **Applied** — owned by `ClaudeSdkPipeline` (`_applied{Model,Effort,PermissionMode}`),
+  purely to dedup runtime setter calls. Ephemeral: dies with the `WarmQuery`.
+
+There is deliberately **no host-side "staged" state**: the SDK's own deferral is
+the staging. Per-axis timing (SDK `applyFlagSettings` docs + Anthropic
+confirmation):
+
+| axis | SDK setter | when it takes effect | so the host may |
+|---|---|---|---|
+| `model` / `effortLevel` | `setModel` / `applyFlagSettings({ effortLevel })` | **next turn** (SDK docs) | push eagerly mid-turn; the in-flight turn is unaffected |
+| `permissionMode` | `setPermissionMode` | **immediately, mid-turn** (Anthropic-confirmed; drives the next tool's `canUseTool` this turn — issue #321691) | push on change |
+| `agent` | `applyFlagSettings({ agent })` | **next turn** (SDK docs; also swaps the agent's model override / hooks / system prompt) | **treat like `model`** — a live setter, no rebuild. The code's prior "no-op" finding is believed stale; **confirm empirically before deleting the rebuild path** (a silent no-op is worse than a restart) |
+
+**`permissions` ≠ `permissionMode`.** The SDK `applyFlagSettings` "applied on the
+next turn" list contains `permissions` (the tool allow/deny *rules* key), a
+different concept from the `permissionMode` *enum* set via `setPermissionMode`
+(immediate). Do not conflate them.
+
 ### M6 — Customizations cluster
 
 | IAgent surface | Direction | SDK primitive | Notes |
