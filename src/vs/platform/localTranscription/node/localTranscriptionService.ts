@@ -18,7 +18,7 @@ import { NemotronTranscriber } from './nemotronTranscriber.js';
 const SAMPLE_RATE = 16000;
 
 /** Default downloaded model. `base` balances quality and size (~faster than small). */
-const DEFAULT_MODEL = 'onnx-community/whisper-base';
+const DEFAULT_MODEL = 'onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4';
 
 /**
  * Precision of the ONNX weights downloaded and run on device. Whisper is an
