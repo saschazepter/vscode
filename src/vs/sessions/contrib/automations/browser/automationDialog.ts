@@ -221,7 +221,7 @@ export class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 				void this.reloadRepository(this.isolationModel.folderUri);
 			},
 			isolation: {
-				label: localize('automation.form.isolation.worktree', "Worktree"),
+				label: localize('automation.form.isolation.worktree', "New Worktree"),
 				ariaLabel: localize('automation.form.isolation.checkboxAriaLabel', "Worktree isolation"),
 				onToggle: checked => {
 					this.isolationModel.selectIsolationMode(checked ? 'worktree' : 'workspace');
