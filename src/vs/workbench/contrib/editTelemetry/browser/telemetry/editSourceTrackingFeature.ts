@@ -27,6 +27,8 @@ import { DataChannelForwardingTelemetryService } from '../../../../../platform/d
 import { EDIT_TELEMETRY_DETAILS_SETTING_ID, EDIT_TELEMETRY_SHOW_DECORATIONS, EDIT_TELEMETRY_SHOW_STATUS_BAR } from '../settings.js';
 import { VSCodeWorkspace } from '../helpers/vscodeObservableWorkspace.js';
 import { IExtensionService } from '../../../../services/extensions/common/extensions.js';
+import { AgentHostEditSourceTracking } from './agentHostEditSourceTracking.js';
+import { UnifiedEditSourceTracking } from './unifiedEditSourceTracking.js';
 
 export class EditTrackingFeature extends Disposable {
 
@@ -68,7 +70,9 @@ export class EditTrackingFeature extends Disposable {
 		const instantiationServiceWithInterceptedTelemetry = this._instantiationService.createChild(new ServiceCollection(
 			[ITelemetryService, this._instantiationService.createInstance(DataChannelForwardingTelemetryService)]
 		));
-		const impl = this._register(instantiationServiceWithInterceptedTelemetry.createInstance(EditSourceTrackingImpl, shouldSendDetails, this._annotatedDocuments));
+		const unifiedTracking = this._register(instantiationServiceWithInterceptedTelemetry.createInstance(UnifiedEditSourceTracking, this._workspace));
+		const impl = this._register(instantiationServiceWithInterceptedTelemetry.createInstance(EditSourceTrackingImpl, shouldSendDetails, this._annotatedDocuments, unifiedTracking));
+		this._register(instantiationServiceWithInterceptedTelemetry.createInstance(AgentHostEditSourceTracking, shouldSendDetails, unifiedTracking));
 
 		this._register(autorun((reader) => {
 			if (!this._editSourceTrackingShowDecorations.read(reader)) {

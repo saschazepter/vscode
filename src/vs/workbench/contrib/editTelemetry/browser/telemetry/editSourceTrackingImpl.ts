@@ -17,9 +17,9 @@ import { DocumentEditSourceTracker, TrackedEdit } from './editTracker.js';
 import { sumByCategory } from '../helpers/utils.js';
 import { IScmRepoAdapter, ScmAdapter } from './scmAdapter.js';
 import { IRandomService } from '../randomService.js';
-
-type EditTelemetryMode = 'longterm' | '10minFocusWindow' | '20minFocusWindow';
-type EditTelemetryTrigger = '10hours' | 'hashChange' | 'branchChange' | 'closed' | 'time';
+import { EditTelemetryMode, EditTelemetryTrigger, sendEditSourcesDetailsTelemetry } from './editSourceTelemetry.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
+import { UnifiedEditSourceTracking } from './unifiedEditSourceTracking.js';
 
 export type EditTelemetryCategory = 'nes' | 'inlineCompletionsCopilot' | 'inlineCompletionsNES' | 'inlineCompletionsOther' | 'otherAI' | 'user' | 'ide' | 'external' | 'unknown';
 
@@ -45,13 +45,20 @@ export class EditSourceTrackingImpl extends Disposable {
 	constructor(
 		private readonly _statsEnabled: IObservable<boolean>,
 		private readonly _annotatedDocuments: IAnnotatedDocuments,
+		private readonly _unifiedTracking: UnifiedEditSourceTracking | undefined,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 	) {
 		super();
 
 		const scmBridge = this._instantiationService.createInstance(ScmAdapter);
 		this._states = mapObservableArrayCached(this, this._annotatedDocuments.documents, (doc, store) => {
-			return [doc.document, store.add(this._instantiationService.createInstance(TrackedDocumentInfo, doc, scmBridge, this._statsEnabled))] as const;
+			return [doc.document, store.add(this._instantiationService.createInstance(
+				TrackedDocumentInfo,
+				doc,
+				scmBridge,
+				this._statsEnabled,
+				this._unifiedTracking,
+			))] as const;
 		});
 		this.docsState = this._states.map((entries) => new Map(entries));
 
@@ -70,14 +77,17 @@ class TrackedDocumentInfo extends Disposable {
 		private readonly _doc: AnnotatedDocument,
 		private readonly _scm: ScmAdapter,
 		private readonly _statsEnabled: IObservable<boolean>,
+		private readonly _unifiedTracking: UnifiedEditSourceTracking | undefined,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@IRandomService private readonly _randomService: IRandomService,
 		@IUserAttentionService private readonly _userAttentionService: IUserAttentionService,
+		@ILogService private readonly _logService: ILogService,
 	) {
 		super();
 
 		this._repo = derived(this, reader => this._scm.getRepo(_doc.document.uri, reader));
+		this._unifiedTracking?.retainLocalLongTermResource(this._doc.document.uri);
 
 		const docWithJustReason = createDocWithJustReason(_doc.documentWithAnnotations, this._store);
 
@@ -92,9 +102,11 @@ class TrackedDocumentInfo extends Disposable {
 			const startFocusTime = this._userAttentionService.totalFocusTimeMs;
 			const startTime = Date.now();
 			reader.store.add(toDisposable(() => {
+				const statsUuid = this._randomService.generateUuid();
+				this._flushLongTermDetails(longtermReason, statsUuid);
 				// send long term document telemetry
 				if (!t.isEmpty()) {
-					this.sendTelemetry('longterm', longtermReason, t, this._userAttentionService.totalFocusTimeMs - startFocusTime, Date.now() - startTime);
+					this.sendTelemetry('longterm', longtermReason, t, this._userAttentionService.totalFocusTimeMs - startFocusTime, Date.now() - startTime, statsUuid);
 				}
 				t.dispose();
 			}));
@@ -187,7 +199,29 @@ class TrackedDocumentInfo extends Disposable {
 
 	}
 
-	async sendTelemetry(mode: EditTelemetryMode, trigger: EditTelemetryTrigger, t: DocumentEditSourceTracker, focusTime: number, actualTime: number) {
+	private _flushLongTermDetails(trigger: EditTelemetryTrigger, statsUuid: string): void {
+		const unifiedTracking = this._unifiedTracking;
+		if (!unifiedTracking) {
+			return;
+		}
+		unifiedTracking.flushLongTermDetails(
+			this._doc.document.uri,
+			trigger,
+			this._doc.document.languageId.get(),
+			statsUuid,
+		).catch(error => {
+			this._logService.error(`[EditSourceTrackingImpl] Failed to flush unified long-term details: ${error}`);
+		});
+	}
+
+	async sendTelemetry(
+		mode: EditTelemetryMode,
+		trigger: EditTelemetryTrigger,
+		t: DocumentEditSourceTracker,
+		focusTime: number,
+		actualTime: number,
+		statsUuid = this._randomService.generateUuid(),
+	) {
 		const ranges = t.getTrackedRanges();
 		const keys = t.getAllKeys();
 		if (keys.length === 0) {
@@ -196,81 +230,41 @@ class TrackedDocumentInfo extends Disposable {
 
 		const data = this.getTelemetryData(ranges);
 
-		const statsUuid = this._randomService.generateUuid();
-
-		const sums = sumByCategory(ranges, r => r.range.length, r => r.sourceKey);
-		for (const key of keys) {
-			if (!sums[key]) {
-				sums[key] = 0;
+		if (mode !== 'longterm' || !this._unifiedTracking) {
+			const sums = sumByCategory(ranges, r => r.range.length, r => r.sourceKey);
+			for (const key of keys) {
+				if (!sums[key]) {
+					sums[key] = 0;
+				}
 			}
-		}
-		const entries = Object.entries(sums)
-			.filter((entry): entry is [string, number] => entry[1] !== undefined)
-			.sort(reverseOrder(compareBy(([, value]) => value, numberComparator)))
-			.slice(0, mode === 'longterm' ? 30 : 10);
+			const entries = Object.entries(sums)
+				.filter((entry): entry is [string, number] => entry[1] !== undefined)
+				.sort(reverseOrder(compareBy(([, value]) => value, numberComparator)))
+				.slice(0, mode === 'longterm' ? 30 : 10);
 
-		for (const [key, value] of entries) {
-			const repr = t.getRepresentative(key)!;
-			const deltaModifiedCount = t.getTotalInsertedCharactersCount(key);
+			for (const [key, value] of entries) {
+				const repr = t.getRepresentative(key)!;
+				const deltaModifiedCount = t.getTotalInsertedCharactersCount(key);
 
-			this._telemetryService.publicLog2<{
-				mode: EditTelemetryMode;
-				sourceKey: string;
-
-				sourceKeyCleaned: string;
-				extensionId: string | undefined;
-				extensionVersion: string | undefined;
-				modelId: string | undefined;
-
-				trigger: EditTelemetryTrigger;
-				languageId: string;
-				statsUuid: string;
-				conversationId: string | undefined;
-				requestId: string | undefined;
-				modifiedCount: number;
-				deltaModifiedCount: number;
-				totalModifiedCount: number;
-			}, {
-				owner: 'hediet';
-				comment: 'Provides detailed character count breakdown for individual edit sources (typing, paste, inline completions, NES, etc.) within a session. Reports the top 10-30 sources per session with granular metadata including extension IDs and model IDs for AI edits. Sessions are scoped to either 10-minute or 20-minute focus time windows for visible documents, or longer periods ending on branch changes, commits, or 10-hour intervals. Focus time is computed as the accumulated time where VS Code has focus and there was recent user activity (within the last minute). This event complements editSources.stats by providing source-specific details. @sentToGitHub';
-
-				mode: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'Describes the session mode. Is either \'longterm\', \'10minFocusWindow\', or \'20minFocusWindow\'.' };
-				sourceKey: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'A description of the source of the edit.' };
-
-				sourceKeyCleaned: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The source of the edit with some properties (such as extensionId, extensionVersion and modelId) removed.' };
-				extensionId: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The extension id.' };
-				extensionVersion: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The version of the extension.' };
-				modelId: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The LLM id.' };
-
-				languageId: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The language id of the document.' };
-				statsUuid: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'The unique identifier of the session for which stats are reported. The sourceKey is unique in this session.' };
-				conversationId: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The chat conversation identifier when the edit source comes from chat. Sourced from the chat edit session id.' };
-				requestId: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The chat request identifier when the edit source comes from chat.' };
-
-				trigger: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Indicates why the session ended.' };
-
-				modifiedCount: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'The number of characters inserted by the given edit source during the session that are still in the text document at the end of the session.'; isMeasurement: true };
-				deltaModifiedCount: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'The number of characters inserted by the given edit source during the session.'; isMeasurement: true };
-				totalModifiedCount: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'The number of characters inserted by any edit source during the session that are still in the text document at the end of the session.'; isMeasurement: true };
-
-			}>('editTelemetry.editSources.details', {
-				mode,
-				sourceKey: key,
-
-				sourceKeyCleaned: repr.toKey(1, { $extensionId: false, $extensionVersion: false, $modelId: false }),
-				extensionId: repr.props.$extensionId,
-				extensionVersion: repr.props.$extensionVersion,
-				modelId: repr.props.$modelId,
-
-				trigger,
-				languageId: this._doc.document.languageId.get(),
-				statsUuid: statsUuid,
-				conversationId: repr.props.$$sessionId,
-				requestId: repr.props.$$requestId,
-				modifiedCount: value,
-				deltaModifiedCount: deltaModifiedCount,
-				totalModifiedCount: data.totalModifiedCharactersInFinalState,
-			});
+				sendEditSourcesDetailsTelemetry(this._telemetryService, {
+					mode,
+					sourceKey: key,
+					sourceKeyCleaned: repr.toKey(1, { $extensionId: false, $extensionVersion: false, $modelId: false }),
+					extensionId: repr.props.$extensionId,
+					extensionVersion: repr.props.$extensionVersion,
+					modelId: repr.props.$modelId,
+					trigger,
+					languageId: this._doc.document.languageId.get(),
+					statsUuid,
+					conversationId: repr.props.$$sessionId,
+					requestId: repr.props.$$requestId,
+					origin: repr.props.$origin,
+					harness: repr.props.$harness,
+					modifiedCount: value,
+					deltaModifiedCount,
+					totalModifiedCount: data.totalModifiedCharactersInFinalState,
+				});
+			}
 		}
 
 
@@ -331,6 +325,11 @@ class TrackedDocumentInfo extends Disposable {
 			actualTime,
 			trigger,
 		});
+	}
+
+	override dispose(): void {
+		super.dispose();
+		this._unifiedTracking?.releaseLocalLongTermResource(this._doc.document.uri);
 	}
 
 	getTelemetryData(ranges: readonly TrackedEdit[]) {

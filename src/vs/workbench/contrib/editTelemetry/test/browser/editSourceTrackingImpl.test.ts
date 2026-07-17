@@ -208,7 +208,7 @@ function setup(visible: ISettableObservable<boolean> = observableValue('visible'
 
 	const workspace = new MutableObservableWorkspace();
 	const annotatedDocuments = disposables.add(new AnnotatedDocuments(workspace, instantiationService));
-	const impl = disposables.add(new EditSourceTrackingImpl(constObservable(true), annotatedDocuments, instantiationService));
+	const impl = disposables.add(new EditSourceTrackingImpl(constObservable(true), annotatedDocuments, undefined, instantiationService));
 	const document = disposables.add(workspace.createDocument({
 		uri: URI.file('C:\\repo\\file.ts'),
 		initialValue: 'hello',
