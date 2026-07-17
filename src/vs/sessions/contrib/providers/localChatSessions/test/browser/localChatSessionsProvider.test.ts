@@ -225,11 +225,13 @@ suite('LocalChatSessionsProvider', () => {
 			emptyByok: emptyByok.desiredModelResolution,
 			liveCopilot: liveCopilot.desiredModelResolution,
 			models: liveCopilot.models.map(model => model.identifier),
+			modelTarget: liveCopilot.modelTarget,
 		}, {
 			emptyCopilot: { kind: 'pending', identifier: 'copilot/remembered' },
 			emptyByok: { kind: 'unavailable', identifier: 'ollama/remembered' },
 			liveCopilot: { kind: 'unavailable', identifier: 'copilot/remembered' },
 			models: ['copilot/other'],
+			modelTarget: undefined,
 		});
 	});
 

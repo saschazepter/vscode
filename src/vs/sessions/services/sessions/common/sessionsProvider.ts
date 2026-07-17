@@ -61,6 +61,8 @@ export interface ISessionModelPickerOptions {
 export interface ISessionModelsSnapshot {
 	readonly models: readonly ILanguageModelChatMetadataAndIdentifier[];
 	readonly desiredModelResolution: ModelIdentifierResolution;
+	/** Concrete chat session type targeted by this model pool, or undefined for the shared pool. */
+	readonly modelTarget: string | undefined;
 }
 
 /**

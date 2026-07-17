@@ -688,11 +688,11 @@ suite('CopilotChatSessionsProvider', () => {
 		const afterResolve = provider.getModelsSnapshot(session.sessionId, 'removed-cloud-model');
 
 		assert.deepStrictEqual({
-			beforeResolve: { models: beforeResolve.models.map(model => model.identifier), desiredModelResolution: beforeResolve.desiredModelResolution },
-			afterResolve: { models: afterResolve.models.map(model => model.identifier), desiredModelResolution: afterResolve.desiredModelResolution },
+			beforeResolve: { models: beforeResolve.models.map(model => model.identifier), desiredModelResolution: beforeResolve.desiredModelResolution, modelTarget: beforeResolve.modelTarget },
+			afterResolve: { models: afterResolve.models.map(model => model.identifier), desiredModelResolution: afterResolve.desiredModelResolution, modelTarget: afterResolve.modelTarget },
 		}, {
-			beforeResolve: { models: [], desiredModelResolution: { kind: 'pending', identifier: 'removed-cloud-model' } },
-			afterResolve: { models: ['synthetic-cloud-model'], desiredModelResolution: { kind: 'unavailable', identifier: 'removed-cloud-model' } },
+			beforeResolve: { models: [], desiredModelResolution: { kind: 'pending', identifier: 'removed-cloud-model' }, modelTarget: AgentSessionProviders.Cloud },
+			afterResolve: { models: ['synthetic-cloud-model'], desiredModelResolution: { kind: 'unavailable', identifier: 'removed-cloud-model' }, modelTarget: AgentSessionProviders.Cloud },
 		});
 	});
 
@@ -724,11 +724,11 @@ suite('CopilotChatSessionsProvider', () => {
 		const live = provider.getModelsSnapshot(session.sessionId, 'copilot/remembered');
 
 		assert.deepStrictEqual({
-			empty: empty.desiredModelResolution,
-			live: live.desiredModelResolution,
+			empty: { resolution: empty.desiredModelResolution, modelTarget: empty.modelTarget },
+			live: { resolution: live.desiredModelResolution, modelTarget: live.modelTarget },
 		}, {
-			empty: { kind: 'pending', identifier: 'copilot/remembered' },
-			live: { kind: 'unavailable', identifier: 'copilot/remembered' },
+			empty: { resolution: { kind: 'pending', identifier: 'copilot/remembered' }, modelTarget: CopilotCLISessionType.id },
+			live: { resolution: { kind: 'unavailable', identifier: 'copilot/remembered' }, modelTarget: CopilotCLISessionType.id },
 		});
 	});
 

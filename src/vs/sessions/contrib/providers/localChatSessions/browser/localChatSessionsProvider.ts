@@ -762,6 +762,7 @@ export class LocalChatSessionsProvider extends Disposable implements ISessionsPr
 		return {
 			models,
 			desiredModelResolution: resolveModelIdentifierFromLanguageModels(models, desiredModelId, this.languageModelsService, allModels),
+			modelTarget: undefined,
 		};
 	}
 

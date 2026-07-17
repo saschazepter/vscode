@@ -89,6 +89,7 @@ import { ChatRequestVariableSet, getImageAttachmentLimit, IChatRequestVariableEn
 import { ChatMode, getModeNameForTelemetry, IChatMode, IChatModes, IChatModeService } from '../../../common/chatModes.js';
 import { IChatFollowup, IChatPlanReview, IChatQuestionCarousel, IChatToolInvocation } from '../../../common/chatService/chatService.js';
 import { IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, IChatSessionsService, isAgentHostTarget, isIChatSessionFileChange2, localChatSessionType, SessionType } from '../../../common/chatSessionsService.js';
+import { getSelectedModelIsDefaultStorageKey, getSelectedModelStorageKey, getStoredSelectedModel, storeSelectedModel } from '../../../common/chatSelectedModel.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, ChatPermissionLevel, isChatPermissionLevel } from '../../../common/constants.js';
 import { isAutoApprovePolicyRestricted, isAutoApproveValuePolicyRestricted } from '../../../common/agentHostConfigPolicy.js';
 import { IChatEditingSession, IModifiedFileEntry, ModifiedFileEntryState } from '../../../common/editing/chatEditingService.js';
@@ -217,7 +218,7 @@ export interface IChatInputPartOptions {
 	 * defaults to the picker's default (auto) regardless of which mode
 	 * the dialog opens with, and so the dialog never overwrites the
 	 * regular chat input's persisted model selection via the shared
-	 * APPLICATION-scope storage key.
+	 * profile-scoped storage key.
 	 *
 	 * User-initiated model picks (clicking the model picker, cycle
 	 * keybindings, etc.) are unaffected.
@@ -1009,19 +1010,16 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	}
 
 	private getSelectedModelStorageKey(): string {
-		const sessionType = this._currentSessionType;
-		if (sessionType && this.sessionTypeHasOwnModelPool(sessionType)) {
-			return `chat.currentLanguageModel.${this.location}.${sessionType}`;
-		}
-		return `chat.currentLanguageModel.${this.location}`;
+		return getSelectedModelStorageKey(this.location, this.getSelectedModelTarget());
 	}
 
 	private getSelectedModelIsDefaultStorageKey(): string {
+		return getSelectedModelIsDefaultStorageKey(this.location, this.getSelectedModelTarget());
+	}
+
+	private getSelectedModelTarget(): string | undefined {
 		const sessionType = this._currentSessionType;
-		if (sessionType && this.sessionTypeHasOwnModelPool(sessionType)) {
-			return `chat.currentLanguageModel.${this.location}.${sessionType}.isDefault`;
-		}
-		return `chat.currentLanguageModel.${this.location}.isDefault`;
+		return sessionType && this.sessionTypeHasOwnModelPool(sessionType) ? sessionType : undefined;
 	}
 
 	/**
@@ -1043,8 +1041,9 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 		const selectedModelStorageKey = this.getSelectedModelStorageKey();
 		const selectedModelIsDefaultStorageKey = this.getSelectedModelIsDefaultStorageKey();
-		const persistedSelection = this.storageService.get(selectedModelStorageKey, StorageScope.APPLICATION);
-		const persistedAsDefault = this.storageService.getBoolean(selectedModelIsDefaultStorageKey, StorageScope.APPLICATION, true);
+		const storedSelection = getStoredSelectedModel(this.storageService, this.location, this.getSelectedModelTarget());
+		const persistedSelection = storedSelection?.identifier;
+		const persistedAsDefault = storedSelection?.isDefault ?? true;
 		logChangesToStateModel(this._inputModel, `[INIT-SELECTED-MODEL] storageKey=${selectedModelStorageKey}, isDefaultKey=${selectedModelIsDefaultStorageKey}, persistedSelection=${persistedSelection}, persistedAsDefault=${persistedAsDefault}, currentSessionType=${this._currentSessionType}, getCurrentSessionType=${this.getCurrentSessionType()}, widgetSession=${this._currentSessionKey}, boundInputModelSession=${this._inputModelSessionResource?.toString()}, currentLanguageModel=${this._currentLanguageModel.get()?.identifier}`, this._inputModel?.state.get(), undefined, this.logService);
 
 		// A configured default model (e.g. set by enterprise policy via
@@ -1123,7 +1122,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	 *
 	 * `storeSelection` mirrors the same opt-out on {@link setChatMode}: when
 	 * `false`, the choice is applied to the input only and is NOT persisted
-	 * to the workbench-global "last used model" key. Surfaces that pre-seed
+	 * to the profile's "last used model" key. Surfaces that pre-seed
 	 * a model on behalf of the user (e.g. the automations dialog opening an
 	 * existing automation) pass `false` so they don't pollute the regular
 	 * chat input's persisted selection.
@@ -1831,14 +1830,16 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			this.layout(this.cachedWidth);
 		}
 
-		// Store as global user preference (session-specific state is in the model's inputModel).
+		// Store as a profile user preference (session-specific state is in the model's inputModel).
 		// `storeSelection: false` lets transient surfaces (e.g. the automations dialog applying an
 		// automation's saved model on open) apply the model to the input only, without overwriting
 		// the regular chat input's persisted selection. The session-switch guard is documented on
 		// `_modelSelectionSessionSwitch` / `shouldPersistModelSelection`.
 		if (shouldPersistModelSelection(storeSelection, !!this._modelSelectionSessionSwitch?.suppressPersistence)) {
-			this.storageService.store(this.getSelectedModelStorageKey(), model.identifier, StorageScope.APPLICATION, StorageTarget.USER);
-			this.storageService.store(this.getSelectedModelIsDefaultStorageKey(), !!model.metadata.isDefaultForLocation[this.location], StorageScope.APPLICATION, StorageTarget.USER);
+			storeSelectedModel(this.storageService, this.location, this.getSelectedModelTarget(), {
+				identifier: model.identifier,
+				isDefault: !!model.metadata.isDefaultForLocation[this.location],
+			});
 		}
 
 		// Sync to model

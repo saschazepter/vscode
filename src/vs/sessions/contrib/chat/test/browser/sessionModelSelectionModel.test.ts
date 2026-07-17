@@ -11,6 +11,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/tes
 import { IConfigurationChangeEvent, IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
 import { InMemoryStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
+import { getSelectedModelIsDefaultStorageKey, getSelectedModelStorageKey, storeSelectedModel } from '../../../../../workbench/contrib/chat/common/chatSelectedModel.js';
 import { ChatAgentLocation, ChatConfiguration } from '../../../../../workbench/contrib/chat/common/constants.js';
 import { ILanguageModelChatMetadataAndIdentifier } from '../../../../../workbench/contrib/chat/common/languageModels.js';
 import { resolveModelIdentifier } from '../../../../../workbench/contrib/chat/common/modelSelection.js';
@@ -18,7 +19,7 @@ import { ISessionsProvidersService } from '../../../../services/sessions/browser
 import { ISessionsProvider, ISessionModelPickerOptions } from '../../../../services/sessions/common/sessionsProvider.js';
 import { IChat, SessionStatus } from '../../../../services/sessions/common/session.js';
 import { IActiveSession } from '../../../../services/sessions/common/sessionsManagement.js';
-import { modelPickerStorageKey, SessionModelSelectionModel } from '../../browser/sessionModelSelectionModel.js';
+import { SessionModelSelectionModel } from '../../browser/sessionModelSelectionModel.js';
 
 function model(identifier: string): ILanguageModelChatMetadataAndIdentifier {
 	return {
@@ -39,6 +40,13 @@ function model(identifier: string): ILanguageModelChatMetadataAndIdentifier {
 
 const first = model('test/first');
 const second = model('test/second');
+const modelTarget = 'type';
+const selectedModelStorageKey = getSelectedModelStorageKey(ChatAgentLocation.Chat, modelTarget);
+const selectedModelIsDefaultStorageKey = getSelectedModelIsDefaultStorageKey(ChatAgentLocation.Chat, modelTarget);
+
+function legacyModelPickerStorageKey(providerId: string, sessionType: string): string {
+	return `sessions.modelPicker.${providerId}.${sessionType}.selectedModelId`;
+}
 const auto = {
 	...model('copilot/auto'),
 	metadata: {
@@ -97,7 +105,7 @@ function createProvider(id: string, onSetModel?: (modelIdentifier: string) => vo
 		getModelsSnapshot(_sessionId: string, desiredModelId?: string) {
 			provider.getModelsCalls++;
 			provider.desiredModelIds.push(desiredModelId);
-			return { models: provider.models, desiredModelResolution: resolveModelIdentifier(provider.models, desiredModelId, provider.modelsResolved) };
+			return { models: provider.models, desiredModelResolution: resolveModelIdentifier(provider.models, desiredModelId, provider.modelsResolved), modelTarget };
 		},
 		getModelPickerOptions(): ISessionModelPickerOptions {
 			return {
@@ -134,11 +142,11 @@ suite('SessionModelSelectionModel', () => {
 
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('seeds a draft from remembered state exactly once', () => {
+	test('migrates a legacy Sessions preference and seeds a draft exactly once', () => {
 		const testSession = createSession('provider', SessionStatus.Untitled);
 		const provider = disposables.add(createProvider('provider', identifier => testSession.modelId.set(identifier, undefined)));
 		const storage = disposables.add(new InMemoryStorageService());
-		storage.store(modelPickerStorageKey('provider', 'type'), second.identifier, StorageScope.PROFILE, StorageTarget.MACHINE);
+		storage.store(legacyModelPickerStorageKey('provider', 'type'), second.identifier, StorageScope.PROFILE, StorageTarget.MACHINE);
 		const selection = disposables.add(new SessionModelSelectionModel(
 			observableValue<IActiveSession | undefined>('session', testSession.session),
 			createProvidersService([provider]),
@@ -151,12 +159,18 @@ suite('SessionModelSelectionModel', () => {
 			models: selection.state.get().models.map(model => model.identifier),
 			showAutoModel: selection.state.get().options.showAutoModel,
 			hasSelectableModel: selection.state.get().hasSelectableModel,
+			stored: storage.get(selectedModelStorageKey, StorageScope.PROFILE),
+			storedAsDefault: storage.getBoolean(selectedModelIsDefaultStorageKey, StorageScope.PROFILE),
+			profileUserKeys: storage.keys(StorageScope.PROFILE, StorageTarget.USER).sort(),
 			writes: provider.writes,
 		}, {
 			current: second.identifier,
 			models: [first.identifier, second.identifier],
 			showAutoModel: true,
 			hasSelectableModel: true,
+			stored: second.identifier,
+			storedAsDefault: false,
+			profileUserKeys: [selectedModelStorageKey, selectedModelIsDefaultStorageKey].sort(),
 			writes: [second.identifier],
 		});
 	});
@@ -228,13 +242,17 @@ suite('SessionModelSelectionModel', () => {
 			selected,
 			rejected,
 			current: selection.state.get().currentModel?.identifier,
-			stored: storage.get(modelPickerStorageKey('provider', 'type'), StorageScope.PROFILE),
+			stored: storage.get(selectedModelStorageKey, StorageScope.PROFILE),
+			storedAsDefault: storage.getBoolean(selectedModelIsDefaultStorageKey, StorageScope.PROFILE),
+			profileUserKeys: storage.keys(StorageScope.PROFILE, StorageTarget.USER).sort(),
 			writes: provider.writes,
 		}, {
 			selected: true,
 			rejected: false,
 			current: second.identifier,
 			stored: second.identifier,
+			storedAsDefault: false,
+			profileUserKeys: [selectedModelStorageKey, selectedModelIsDefaultStorageKey].sort(),
 			writes: [second.identifier],
 		});
 	});
@@ -253,7 +271,7 @@ suite('SessionModelSelectionModel', () => {
 		assert.throws(() => selection.selectModel(second.identifier), /rejected/);
 		assert.deepStrictEqual({
 			current: selection.state.get().currentModel?.identifier,
-			stored: storage.get(modelPickerStorageKey('provider', 'type'), StorageScope.PROFILE),
+			stored: storage.get(selectedModelStorageKey, StorageScope.PROFILE),
 		}, {
 			current: first.identifier,
 			stored: undefined,
@@ -276,7 +294,7 @@ suite('SessionModelSelectionModel', () => {
 		assert.throws(() => selection.selectModel(second.identifier), /rejected/);
 		assert.deepStrictEqual({
 			current: selection.state.get().currentModel?.identifier,
-			stored: storage.get(modelPickerStorageKey('provider', 'type'), StorageScope.PROFILE),
+			stored: storage.get(selectedModelStorageKey, StorageScope.PROFILE),
 		}, {
 			current: undefined,
 			stored: undefined,
@@ -327,7 +345,7 @@ suite('SessionModelSelectionModel', () => {
 		const provider = disposables.add(createProvider('provider', identifier => testSession.modelId.set(identifier, undefined)));
 		provider.modelsResolved = false;
 		const storage = disposables.add(new InMemoryStorageService());
-		storage.store(modelPickerStorageKey('provider', 'type'), second.identifier, StorageScope.PROFILE, StorageTarget.MACHINE);
+		storeSelectedModel(storage, ChatAgentLocation.Chat, modelTarget, { identifier: second.identifier, isDefault: false });
 		const selection = disposables.add(new SessionModelSelectionModel(
 			observableValue<IActiveSession | undefined>('session', testSession.session),
 			createProvidersService([provider]),
@@ -353,7 +371,7 @@ suite('SessionModelSelectionModel', () => {
 		provider.models = [first];
 		provider.modelsResolved = false;
 		const storage = disposables.add(new InMemoryStorageService());
-		storage.store(modelPickerStorageKey('provider', 'type'), second.identifier, StorageScope.PROFILE, StorageTarget.MACHINE);
+		storeSelectedModel(storage, ChatAgentLocation.Chat, modelTarget, { identifier: second.identifier, isDefault: false });
 		const selection = disposables.add(new SessionModelSelectionModel(
 			observableValue<IActiveSession | undefined>('session', testSession.session),
 			createProvidersService([provider]),
@@ -363,7 +381,7 @@ suite('SessionModelSelectionModel', () => {
 		const beforeResolve = {
 			current: selection.state.get().currentModel?.identifier,
 			pending: selection.state.get().pendingSelection,
-			stored: storage.get(modelPickerStorageKey('provider', 'type'), StorageScope.PROFILE),
+			stored: storage.get(selectedModelStorageKey, StorageScope.PROFILE),
 			writes: [...provider.writes],
 			desiredModelIds: [...provider.desiredModelIds],
 		};
@@ -377,7 +395,7 @@ suite('SessionModelSelectionModel', () => {
 			afterResolve: {
 				current: selection.state.get().currentModel?.identifier,
 				pending: selection.state.get().pendingSelection,
-				stored: storage.get(modelPickerStorageKey('provider', 'type'), StorageScope.PROFILE),
+				stored: storage.get(selectedModelStorageKey, StorageScope.PROFILE),
 				writes: provider.writes,
 			},
 		}, {
@@ -386,7 +404,7 @@ suite('SessionModelSelectionModel', () => {
 				pending: { source: 'desired', reference: second.identifier },
 				stored: second.identifier,
 				writes: [],
-				desiredModelIds: [second.identifier],
+				desiredModelIds: [undefined, second.identifier],
 			},
 			afterResolve: {
 				current: second.identifier,
@@ -395,7 +413,7 @@ suite('SessionModelSelectionModel', () => {
 				writes: [second.identifier],
 			},
 		});
-		assert.ok(provider.desiredModelIds.every(identifier => identifier === second.identifier));
+		assert.deepStrictEqual(provider.desiredModelIds, [undefined, second.identifier, undefined, second.identifier, second.identifier]);
 	});
 
 	test('replaces but does not remember a provisional first model when the default arrives later', () => {
@@ -417,7 +435,7 @@ suite('SessionModelSelectionModel', () => {
 
 		assert.deepStrictEqual({
 			current: selection.state.get().currentModel?.identifier,
-			stored: storage.get(modelPickerStorageKey('provider', 'type'), StorageScope.PROFILE),
+			stored: storage.get(selectedModelStorageKey, StorageScope.PROFILE),
 			writes: provider.writes,
 		}, {
 			current: auto.identifier,
@@ -465,7 +483,7 @@ suite('SessionModelSelectionModel', () => {
 		provider.models = [first];
 		provider.modelsResolved = false;
 		const storage = disposables.add(new InMemoryStorageService());
-		storage.store(modelPickerStorageKey('provider', 'type'), second.identifier, StorageScope.PROFILE, StorageTarget.MACHINE);
+		storeSelectedModel(storage, ChatAgentLocation.Chat, modelTarget, { identifier: second.identifier, isDefault: false });
 		const selection = disposables.add(new SessionModelSelectionModel(
 			observableValue<IActiveSession | undefined>('session', testSession.session),
 			createProvidersService([provider]),
@@ -482,7 +500,7 @@ suite('SessionModelSelectionModel', () => {
 			selected,
 			current: selection.state.get().currentModel?.identifier,
 			pending: selection.state.get().pendingSelection,
-			stored: storage.get(modelPickerStorageKey('provider', 'type'), StorageScope.PROFILE),
+			stored: storage.get(selectedModelStorageKey, StorageScope.PROFILE),
 			writes: provider.writes,
 		}, {
 			selected: true,

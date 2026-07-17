@@ -7,7 +7,8 @@ import { Disposable, MutableDisposable } from '../../../../base/common/lifecycle
 import { autorun, IObservable, observableValue } from '../../../../base/common/observable.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
-import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
+import { IStorageService, StorageScope } from '../../../../platform/storage/common/storage.js';
+import { getStoredSelectedModel, storeSelectedModel } from '../../../../workbench/contrib/chat/common/chatSelectedModel.js';
 import { ChatAgentLocation, ChatConfiguration } from '../../../../workbench/contrib/chat/common/constants.js';
 import { ILanguageModelChatMetadataAndIdentifier } from '../../../../workbench/contrib/chat/common/languageModels.js';
 import { IPendingModelSelection, ModelSelectionApplyReason, ModelSelectionReason, transitionModelSelection } from '../../../../workbench/contrib/chat/common/modelSelection.js';
@@ -36,23 +37,22 @@ export function normalizeModelPickerOptions(options: ISessionModelPickerOptions 
 	};
 }
 
-export function modelPickerStorageKey(providerId: string, sessionType: string): string {
+function legacyModelPickerStorageKey(providerId: string, sessionType: string): string {
 	return `sessions.modelPicker.${providerId}.${sessionType}.selectedModelId`;
 }
 
 function persistSessionModelSelection(
 	session: Pick<IActiveSession, 'providerId' | 'sessionType' | 'sessionId'>,
 	provider: Pick<ISessionsProvider, 'setModel'>,
-	storageService: Pick<IStorageService, 'store'>,
+	storageService: IStorageService,
 	model: ILanguageModelChatMetadataAndIdentifier,
+	modelTarget: string | undefined,
 ): void {
 	provider.setModel(session.sessionId, model.identifier);
-	storageService.store(
-		modelPickerStorageKey(session.providerId, session.sessionType),
-		model.identifier,
-		StorageScope.PROFILE,
-		StorageTarget.MACHINE,
-	);
+	storeSelectedModel(storageService, ChatAgentLocation.Chat, modelTarget, {
+		identifier: model.identifier,
+		isDefault: !!model.metadata.isDefaultForLocation[ChatAgentLocation.Chat],
+	});
 }
 
 export function hasSelectableModel(
@@ -127,7 +127,8 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 			return false;
 		}
 
-		const models = provider.getModelsSnapshot(session.sessionId).models;
+		const snapshot = provider.getModelsSnapshot(session.sessionId);
+		const models = snapshot.models;
 		const model = models.find(model => model.identifier === modelIdentifier);
 		if (!model) {
 			return false;
@@ -149,7 +150,7 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 		this._lastPushedChatKey = session.activeChat.get().resource.toString();
 		this._currentReason = ModelSelectionReason.UserSelection;
 		try {
-			persistSessionModelSelection(session, provider, this._storageService, model);
+			persistSessionModelSelection(session, provider, this._storageService, model, snapshot.modelTarget);
 		} catch (error) {
 			this._previousSessionKey = previousSessionKey;
 			this._lastPushedChatKey = previousLastPushedChatKey;
@@ -172,14 +173,15 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 		const sessionKey = session ? this._sessionKey(session) : undefined;
 		const currentReason = sessionKey === this._previousSessionKey ? this._currentReason : undefined;
 		const sessionModelId = session?.modelId.get();
-		const rememberedModelId = session
-			? this._storageService.get(modelPickerStorageKey(session.providerId, session.sessionType), StorageScope.PROFILE)
-			: undefined;
+		const initialSnapshot = session && provider ? provider.getModelsSnapshot(session.sessionId, sessionModelId) : { models: [], desiredModelResolution: { kind: 'notRequested' } as const, modelTarget: undefined };
+		const rememberedModelId = session ? this._getRememberedModelId(session, initialSnapshot.modelTarget) : undefined;
 		// A provisional fallback keeps chasing the remembered model instead of its temporary provider model id.
 		const desiredModelIdentifier = session?.status.get() === SessionStatus.Untitled
 			? (currentReason === ModelSelectionReason.FirstAvailable ? rememberedModelId : (sessionModelId ?? rememberedModelId))
 			: sessionModelId;
-		const snapshot = session && provider ? provider.getModelsSnapshot(session.sessionId, desiredModelIdentifier) : { models: [], desiredModelResolution: { kind: 'notRequested' } as const };
+		const snapshot = session && provider && desiredModelIdentifier !== sessionModelId
+			? provider.getModelsSnapshot(session.sessionId, desiredModelIdentifier)
+			: initialSnapshot;
 		const models = snapshot.models;
 		const options = normalizeModelPickerOptions(session && provider ? provider.getModelPickerOptions(session.sessionId) : undefined);
 		const result = transitionModelSelection({
@@ -219,6 +221,19 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 		if (result.effect.kind === 'apply' && session && provider) {
 			provider.setModel(session.sessionId, result.effect.model.identifier);
 		}
+	}
+
+	private _getRememberedModelId(session: IActiveSession, modelTarget: string | undefined): string | undefined {
+		const storedSelection = getStoredSelectedModel(this._storageService, ChatAgentLocation.Chat, modelTarget);
+		if (storedSelection) {
+			return storedSelection.identifier;
+		}
+
+		const legacyIdentifier = this._storageService.get(legacyModelPickerStorageKey(session.providerId, session.sessionType), StorageScope.PROFILE);
+		if (legacyIdentifier) {
+			storeSelectedModel(this._storageService, ChatAgentLocation.Chat, modelTarget, { identifier: legacyIdentifier, isDefault: false });
+		}
+		return legacyIdentifier;
 	}
 
 	private _setProvider(provider: ISessionsProvider | undefined): void {

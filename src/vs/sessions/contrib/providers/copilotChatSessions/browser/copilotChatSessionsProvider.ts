@@ -1718,20 +1718,21 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			const { modelOption, isResolved } = session.getModelOptionsSnapshot();
 			const models = modelOption?.group.items.map((item): ILanguageModelChatMetadataAndIdentifier => this._toSyntheticModel(item)) ?? [];
 			// Cloud model readiness comes from the extension-host option group, not language-model vendors.
-			return { models, desiredModelResolution: resolveModelIdentifier(models, desiredModelId, isResolved) };
+			return { models, desiredModelResolution: resolveModelIdentifier(models, desiredModelId, isResolved), modelTarget: session.sessionType };
 		}
 
 		// CLI / Claude sessions: language models registered against the session's
 		// `targetChatSessionType`.
 		const sessionType = session?.sessionType;
 		if (!sessionType) {
-			return { models: [], desiredModelResolution: resolveModelIdentifier([], desiredModelId, false) };
+			return { models: [], desiredModelResolution: resolveModelIdentifier([], desiredModelId, false), modelTarget: undefined };
 		}
 		const allModels = getRegisteredLanguageModels(this.languageModelsService);
 		const models = allModels.filter(model => model.metadata.targetChatSessionType === sessionType);
 		return {
 			models,
 			desiredModelResolution: resolveModelIdentifierFromLanguageModels(models, desiredModelId, this.languageModelsService, allModels),
+			modelTarget: sessionType,
 		};
 	}
 

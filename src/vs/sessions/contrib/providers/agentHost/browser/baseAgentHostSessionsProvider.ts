@@ -2844,6 +2844,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 			return {
 				models: [],
 				desiredModelResolution: resolveModelIdentifier([], desiredModelId, false),
+				modelTarget: undefined,
 			};
 		}
 		const allModels = getRegisteredLanguageModels(this._languageModelsService);
@@ -2851,6 +2852,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		return {
 			models,
 			desiredModelResolution: resolveModelIdentifierFromLanguageModels(models, desiredModelId, this._languageModelsService, allModels),
+			modelTarget: resourceScheme,
 		};
 	}
 
