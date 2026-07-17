@@ -93,10 +93,11 @@ import { ChatAgentLocation, ChatConfiguration, ChatModeKind, ChatPermissionLevel
 import { isAutoApprovePolicyRestricted, isAutoApproveValuePolicyRestricted } from '../../../common/agentHostConfigPolicy.js';
 import { IChatEditingSession, IModifiedFileEntry, ModifiedFileEntryState } from '../../../common/editing/chatEditingService.js';
 import { ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../common/languageModels.js';
+import { InitialModelSelectionResult, ModelIdentifierResolution, ModelSelectionReason, resolveConfiguredModel, resolveInitialModelSelection, resolveModelIdentifierFromCatalog } from '../../../common/modelSelection.js';
 import { ChatModelConfigurationStore } from './chatModelConfigurationStore.js';
 import { deserializeUntitledInputAttachments, deserializeUntitledInputState, serializeUntitledInputAttachments, serializeUntitledInputState } from './chatInputStatePersistence.js';
 import { IChatModelInputState, IChatRequestModeInfo, IInputModel, logChangesToStateModel } from '../../../common/model/chatModel.js';
-import { filterModelsForSession, findBestMatchingModel, findDefaultModel, hasModelsTargetingSession, isModelHiddenInPicker, isModelValidForSession, mergeModelsWithCache, resolveConfiguredModel, resolveModelFromSyncState, shouldDropAgnosticDraftModel, shouldPersistModelSelection, shouldResetModelToDefault, shouldResetOnModelListChange, shouldRestoreLateArrivingModel, shouldRestorePersistedModel, shouldRestorePerTypeModelOnSessionSwitch, shouldSuppressModelPersistenceOnSessionSwitch, shouldWaitForSessionModel } from './chatModelSelectionLogic.js';
+import { filterModelsForSession, findBestMatchingModel, findDefaultModel, hasModelsTargetingSession, isModelHiddenInPicker, isModelValidForSession, mergeModelsWithCache, resolveModelFromSyncState, shouldDropAgnosticDraftModel, shouldPersistModelSelection, shouldResetModelToDefault, shouldResetOnModelListChange, shouldRestorePersistedModel, shouldRestorePerTypeModelOnSessionSwitch, shouldSuppressModelPersistenceOnSessionSwitch, shouldWaitForSessionModel } from './chatInputModelUtils.js';
 import { getChatSessionType, LocalChatSessionUri } from '../../../common/model/chatUri.js';
 import { IChatResponseViewModel, isResponseVM } from '../../../common/model/chatViewModel.js';
 import { IChatAgentService } from '../../../common/participants/chatAgents.js';
@@ -1048,51 +1049,51 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		// pending wait below), and reopened conversations re-apply their saved
 		// per-conversation model later via `_syncFromModel`.
 		const configuredValue = this.getConfiguredModelValue();
-		if (configuredValue) {
-			const configuredModel = resolveConfiguredModel(configuredValue, this.getModels());
-			if (configuredModel) {
-				this.setCurrentLanguageModel(configuredModel);
-				this.checkModelSupported();
-				return;
-			}
-			// The configured model is not contributed yet (e.g. the Copilot
-			// extension is still registering its models). Wait for it rather than
-			// falling back to the persisted selection, so the configured default
-			// still wins once the model list settles.
+
+		const resolveSelection = (): InitialModelSelectionResult => {
+			const models = this.getModels();
+			const configuredModel = resolveConfiguredModel(configuredValue, models);
+			const resolution = persistedSelection ? this.resolveModelIdentifier(persistedSelection) : { kind: 'notRequested' } as const;
+			const restore = persistedSelection ? shouldRestorePersistedModel(persistedSelection, persistedAsDefault, models, this.location) : undefined;
+			const desiredModelResolution = resolution.kind === 'available' && !restore?.shouldRestore
+				? { kind: 'unavailable', identifier: resolution.model.identifier } as const
+				: resolution;
+			return resolveInitialModelSelection({
+				configuredModelValue: configuredValue,
+				configuredModel,
+				desiredModelResolution,
+				desiredReason: ModelSelectionReason.Remembered,
+				fallbackModel: persistedSelection ? findDefaultModel(models, this.location) : undefined,
+				fallbackReason: ModelSelectionReason.FirstAvailable,
+			});
+		};
+		const selection = resolveSelection();
+		logChangesToStateModel(this._inputModel, `[INIT-SELECTED-MODEL] restore decision persistedSelection=${persistedSelection}, selection=${selection.kind}, resultModel=${selection.kind === 'apply' ? selection.model.identifier : undefined}, storageKey=${selectedModelStorageKey}, currentSessionType=${this._currentSessionType}, getCurrentSessionType=${this.getCurrentSessionType()}`, this._inputModel?.state.get(), undefined, this.logService);
+		if (selection.kind === 'apply') {
+			this.setCurrentLanguageModel(selection.model);
+			this.checkModelSupported();
+		} else if (selection.kind === 'pending') {
 			this._waitForPersistedLanguageModel.value = this.languageModelsService.onDidChangeLanguageModels(() => {
-				const lateModel = resolveConfiguredModel(configuredValue, this.getModels());
-				if (lateModel) {
+				const lateSelection = resolveSelection();
+				if (lateSelection.kind === 'apply') {
 					this._waitForPersistedLanguageModel.clear();
-					this.setCurrentLanguageModel(lateModel);
+					this.setCurrentLanguageModel(lateSelection.model);
 					this.checkModelSupported();
+				} else if (lateSelection.kind === 'none') {
+					this._waitForPersistedLanguageModel.clear();
 				}
 			});
-			return;
 		}
+	}
 
-		if (persistedSelection) {
-			const result = shouldRestorePersistedModel(persistedSelection, persistedAsDefault, this.getModels(), this.location);
-			logChangesToStateModel(this._inputModel, `[INIT-SELECTED-MODEL] restore decision persistedSelection=${persistedSelection}, shouldRestore=${result.shouldRestore}, resultModel=${result.model?.identifier}, storageKey=${selectedModelStorageKey}, currentSessionType=${this._currentSessionType}, getCurrentSessionType=${this.getCurrentSessionType()}`, this._inputModel?.state.get(), undefined, this.logService);
-			if (result.shouldRestore && result.model) {
-				this.setCurrentLanguageModel(result.model);
-				this.checkModelSupported();
-			} else if (!result.model) {
-				this._waitForPersistedLanguageModel.value = this.languageModelsService.onDidChangeLanguageModels(e => {
-					const persistedModel = this.languageModelsService.lookupLanguageModel(persistedSelection);
-					if (persistedModel) {
-						this._waitForPersistedLanguageModel.clear();
-
-						const lateModel = { metadata: persistedModel, identifier: persistedSelection };
-						if (shouldRestoreLateArrivingModel(persistedSelection, persistedAsDefault, lateModel, this.location)) {
-							this.setCurrentLanguageModel(lateModel);
-							this.checkModelSupported();
-						}
-					} else {
-						this.setCurrentLanguageModelToDefault();
-					}
-				});
-			}
-		}
+	private resolveModelIdentifier(identifier: string): ModelIdentifierResolution {
+		const liveVendors = new Set(this.languageModelsService.getLanguageModelIds()
+			.map(identifier => this.languageModelsService.lookupLanguageModel(identifier)?.vendor)
+			.filter((vendor): vendor is string => !!vendor));
+		return resolveModelIdentifierFromCatalog(this.getModels(), identifier, {
+			hasLiveModels: vendor => liveVendors.has(vendor),
+			hasResolved: vendor => this.languageModelsService.hasResolvedVendor(vendor),
+		});
 	}
 
 	/**
@@ -1212,8 +1213,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		return {
 			currentModel: this._currentLanguageModel,
 			setModel: (model: ILanguageModelChatMetadataAndIdentifier) => {
-				this._waitForPersistedLanguageModel.clear();
-				this._waitForSessionHistoryLanguageModel.clear();
 				this.setCurrentLanguageModel(model, true, !this.options.suppressModelPersistence);
 				this.renderAttachedContext();
 			},
@@ -1665,6 +1664,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 				const allModels = this.getAllMergedModels();
 				const sessionType = getChatSessionType(forSessionResource);
 				const currentLm = this._currentLanguageModel.get();
+				const modelResolution = this.resolveModelIdentifier(state.selectedModel.identifier);
 				const syncResult = resolveModelFromSyncState(state.selectedModel, currentLm, allModels, sessionType, {
 					location: this.location,
 					currentModeKind: this.currentModeKind,
@@ -1692,7 +1692,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 					const match = findBestMatchingModel(state.selectedModel, pool) ?? findBestMatchingModel(currentLm, pool);
 					if (match) {
 						this.setCurrentLanguageModel(match);
-					} else if (shouldWaitForSessionModel(state.selectedModel, sessionType, allModels)) {
+					} else if (modelResolution.kind === 'pending' && shouldWaitForSessionModel(state.selectedModel, sessionType, allModels)) {
 						// The session's remembered model belongs to this pool but has not been
 						// contributed yet (cold/partial pool at restore). Wait for it instead of
 						// persisting a transient pool default over it; while this wait is pending,
@@ -1754,11 +1754,20 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			if (this._inputModelSessionResource?.toString() !== forSessionResource.toString()) {
 				return;
 			}
-			const liveModel = this.getAllMergedModels().find(m => m.identifier === desiredModel.identifier);
-			if (liveModel) {
+			const resolution = this.resolveModelIdentifier(desiredModel.identifier);
+			if (resolution.kind === 'available') {
 				this._waitForPersistedLanguageModel.clear();
 				this.restoreModelConfiguration(desiredModel.identifier, modelConfiguration);
-				this.setCurrentLanguageModel(liveModel);
+				this.setCurrentLanguageModel(resolution.model);
+			} else if (resolution.kind === 'unavailable') {
+				this._waitForPersistedLanguageModel.clear();
+				const sessionType = getChatSessionType(forSessionResource);
+				const match = findBestMatchingModel(desiredModel, this.getModelsForSessionType(sessionType));
+				if (match) {
+					this.setCurrentLanguageModel(match);
+				} else {
+					this.setCurrentLanguageModelToDefault(sessionType);
+				}
 			}
 		});
 	}
@@ -1800,6 +1809,8 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 	public setCurrentLanguageModel(model: ILanguageModelChatMetadataAndIdentifier, isUserAction = false, storeSelection: boolean = true) {
 		if (isUserAction) {
+			this._waitForPersistedLanguageModel.clear();
+			this._waitForSessionHistoryLanguageModel.clear();
 			// An explicit user pick must survive subsequent automatic re-evaluations
 			// (model-list changes, late configured-default arrival) so the configured
 			// default does not clobber the in-conversation selection.

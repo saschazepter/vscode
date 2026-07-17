@@ -688,11 +688,11 @@ suite('CopilotChatSessionsProvider', () => {
 		const afterResolve = provider.getModelsSnapshot(session.sessionId, 'removed-cloud-model');
 
 		assert.deepStrictEqual({
-			beforeResolve: { models: beforeResolve.models.map(model => model.identifier), isResolved: beforeResolve.isResolved },
-			afterResolve: { models: afterResolve.models.map(model => model.identifier), isResolved: afterResolve.isResolved },
+			beforeResolve: { models: beforeResolve.models.map(model => model.identifier), desiredModelResolution: beforeResolve.desiredModelResolution },
+			afterResolve: { models: afterResolve.models.map(model => model.identifier), desiredModelResolution: afterResolve.desiredModelResolution },
 		}, {
-			beforeResolve: { models: [], isResolved: false },
-			afterResolve: { models: ['synthetic-cloud-model'], isResolved: true },
+			beforeResolve: { models: [], desiredModelResolution: { kind: 'pending', identifier: 'removed-cloud-model' } },
+			afterResolve: { models: ['synthetic-cloud-model'], desiredModelResolution: { kind: 'unavailable', identifier: 'removed-cloud-model' } },
 		});
 	});
 

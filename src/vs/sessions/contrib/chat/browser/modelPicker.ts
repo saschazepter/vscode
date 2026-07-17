@@ -19,7 +19,7 @@ import { Menus } from '../../../browser/menus.js';
 import { IsPhoneLayoutContext, SessionUsesCombinedConfigPickerContext } from '../../../common/contextkeys.js';
 import { ISessionContext } from '../../../services/sessions/browser/sessionContext.js';
 import { SessionStatus } from '../../../services/sessions/common/session.js';
-import { ISessionModelSelectionModel } from './modelPickerModel.js';
+import { ISessionModelSelectionModel } from './sessionModelSelectionModel.js';
 import { INewChatModelPickerService } from './newChatModelPicker.js';
 import { reportNewChatPickerClosed } from './newChatPickerTelemetry.js';
 

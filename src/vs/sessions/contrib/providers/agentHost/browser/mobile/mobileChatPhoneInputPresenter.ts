@@ -29,7 +29,7 @@ import { ISessionsProvidersService } from '../../../../../services/sessions/brow
 import { showMobilePickerSheet, IMobilePickerSheetItem } from '../../../../../browser/parts/mobile/mobilePickerSheet.js';
 import { getAgentHostModeIcon } from '../agentHostModeIcon.js';
 import { isWellKnownModeSchema, isWellKnownModeValue } from '../agentHostPermissionPickerDelegate.js';
-import { normalizeModelPickerOptions, selectAvailableSessionModel } from '../../../../chat/browser/modelPickerSelection.js';
+import { normalizeModelPickerOptions, selectAvailableSessionModel } from '../../../../chat/browser/sessionModelSelectionModel.js';
 import { createChatPhoneInputSessionContext, createChatPhoneInputTarget, IChatPhoneInputTarget, matchesChatPhoneInputTarget } from './mobileChatPhoneInputTarget.js';
 
 /**

@@ -28,6 +28,7 @@ import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../../../workbench/contrib/chat/common/languageModels.js';
+import { resolveModelIdentifierFromCatalog } from '../../../../../workbench/contrib/chat/common/modelSelection.js';
 import { ILanguageModelToolsService } from '../../../../../workbench/contrib/chat/common/tools/languageModelToolsService.js';
 import { createChangesets } from '../../copilotChatSessions/browser/copilotChatSessionsChangesets.js';
 import { IMarkdownString } from '../../../../../base/common/htmlContent.js';
@@ -756,15 +757,20 @@ export class LocalChatSessionsProvider extends Disposable implements ISessionsPr
 		// (those without a `targetChatSessionType`) that are user-selectable —
 		// no extension registers models specifically targeting the 'local'
 		// session type.
-		const models = this.languageModelsService.getLanguageModelIds()
+		const allModels = this.languageModelsService.getLanguageModelIds()
 			.map((id): ILanguageModelChatMetadataAndIdentifier | undefined => {
 				const metadata = this.languageModelsService.lookupLanguageModel(id);
-				return metadata && !metadata.targetChatSessionType && metadata.isUserSelectable ? { identifier: id, metadata } : undefined;
+				return metadata ? { identifier: id, metadata } : undefined;
 			})
 			.filter((m): m is ILanguageModelChatMetadataAndIdentifier => !!m);
-		const separator = restoredModelId?.search(/[/:]/) ?? -1;
-		const isResolved = separator === -1 || this.languageModelsService.hasResolvedVendor(restoredModelId!.substring(0, separator));
-		return { models, isResolved };
+		const models = allModels.filter(model => !model.metadata.targetChatSessionType && model.metadata.isUserSelectable);
+		return {
+			models,
+			desiredModelResolution: resolveModelIdentifierFromCatalog(models, restoredModelId, {
+				hasLiveModels: vendor => allModels.some(model => model.metadata.vendor === vendor),
+				hasResolved: vendor => this.languageModelsService.hasResolvedVendor(vendor),
+			}),
+		};
 	}
 
 	getModelPickerOptions(_sessionId: string): ISessionModelPickerOptions {

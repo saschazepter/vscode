@@ -34,6 +34,7 @@ import { ChatMode, IChatMode, IChatModeService, isBuiltinChatMode } from '../../
 import { CancellationToken, CancellationTokenSource } from '../../../../../base/common/cancellation.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../../../workbench/contrib/chat/common/languageModels.js';
+import { resolveModelIdentifier } from '../../../../../workbench/contrib/chat/common/modelSelection.js';
 import { IGitService, IGitRepository } from '../../../../../workbench/contrib/git/common/gitService.js';
 import { IContextKeyService, ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
@@ -1716,14 +1717,14 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			// picker widget can render them like regular language models.
 			const { modelOption, isResolved } = session.getModelOptionsSnapshot();
 			const models = modelOption?.group.items.map((item): ILanguageModelChatMetadataAndIdentifier => this._toSyntheticModel(item)) ?? [];
-			return { models, isResolved };
+			return { models, desiredModelResolution: resolveModelIdentifier(models, restoredModelId, isResolved) };
 		}
 
 		// CLI / Claude sessions: language models registered against the session's
 		// `targetChatSessionType`.
 		const sessionType = session?.sessionType;
 		if (!sessionType) {
-			return { models: [], isResolved: false };
+			return { models: [], desiredModelResolution: resolveModelIdentifier([], restoredModelId, false) };
 		}
 		const models = this.languageModelsService.getLanguageModelIds()
 			.map((id): ILanguageModelChatMetadataAndIdentifier | undefined => {
@@ -1732,8 +1733,8 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			})
 			.filter((m): m is ILanguageModelChatMetadataAndIdentifier => !!m);
 		const separator = restoredModelId?.search(/[/:]/) ?? -1;
-		const isResolved = separator === -1 || this.languageModelsService.hasResolvedVendor(restoredModelId!.substring(0, separator));
-		return { models, isResolved };
+		const isDesiredModelAbsenceConclusive = separator === -1 || this.languageModelsService.hasResolvedVendor(restoredModelId!.substring(0, separator));
+		return { models, desiredModelResolution: resolveModelIdentifier(models, restoredModelId, isDesiredModelAbsenceConclusive) };
 	}
 
 	getModelPickerOptions(sessionId: string): ISessionModelPickerOptions {
