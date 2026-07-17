@@ -22,7 +22,7 @@ Vocabulary follows two glossaries:
 | `03-rematerializer-and-duplication.md` | The rematerializer smell + `buildOptions`-twice duplication |
 | `04-responsibility-overlap.md` | Deletion test + depth; overlapping responsibilities; pass-throughs |
 | `00-SYNTHESIS.md` | Cross-cutting synthesis, visual aids, deepening candidates, self-critique |
-| `ROADMAP.md` | **Sequenced consolidation roadmap** — Tier 0 + C1–C8, dependency order, acceptance criteria |
+| `ROADMAP.md` | **Sequenced consolidation roadmap** — Tier 0 + C1–C9, dependency order, acceptance criteria |
 
 Start with **`ROADMAP.md`** for the actionable plan, or **`00-SYNTHESIS.md`** for
 the diagnosis and visual aids.

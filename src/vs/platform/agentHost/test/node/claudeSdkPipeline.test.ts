@@ -209,9 +209,7 @@ function createPipeline(
 	);
 	const inst: IInstantiationService = disposables.add(new InstantiationService(services));
 	const subagents = disposables.add(new SubagentRegistry());
-	// The pipeline requires its rematerializer at construction; tests that
-	// exercise rebind swap in their own via `setRematerializer`. The default
-	// throws so a rebind triggered without one fails loudly.
+	// Pipeline requires a rematerializer at construction; tests swap theirs via `setRematerializer` (default throws).
 	let rematerialize: IRematerializer = async () => {
 		throw new Error('test rematerializer not set via setRematerializer');
 	};

@@ -769,8 +769,12 @@ UI `'max'` is clamped to SDK `'xhigh'` at the seam. Effort levels
 above the model's `max_thinking_tokens` ceiling are clamped by the
 SDK; the host does not need to gate.
 
-**Config-state ownership and timing (settled 2026-07-16).** Runtime SDK config
-splits into two states with two owners:
+**Config-state ownership and timing (target — the C9 end-state; see ROADMAP).**
+Runtime SDK config splits into two states with two owners. **Interim (today):**
+`ClaudeSdkPipeline` also holds the *desired* values as `_currentModel` /
+`_currentEffort` / `_currentPermissionMode` and replays them onto a fresh `Query`
+on rebind — a duplicate of the session's desired state that C9 removes once the
+pipeline is immutable and seeded once per build. Target ownership:
 - **Desired** — owned by `ClaudeAgentSession` (`_provisionalModel` /
   `_provisionalAgent`; `permissionMode` read live from `IAgentConfigurationService`).
   The user's intent; survives a pipeline rebuild; seeds every freshly built `Query`.

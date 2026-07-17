@@ -97,14 +97,7 @@ function resolveCurrentPermissionMode(
 export class ClaudeAgentSession extends Disposable {
 
 	private _pipeline: ClaudeSdkPipeline | undefined;
-	/**
-	 * Session-lifetime SDK-start inputs captured at {@link materialize}: the
-	 * transport plus the permission / elicitation bridges and server-tool host
-	 * that stay constant for the session (unlike model / agent / diffs, which
-	 * {@link _startSdkQuery} re-reads live on every build). This is the explicit
-	 * replacement for the state the old rematerializer smuggled across the seam
-	 * via a closure. `undefined` until materialize.
-	 */
+	/** Session-lifetime SDK-start inputs captured at {@link materialize}; `undefined` until then. */
 	private _sdkStart: {
 		readonly transport: ClaudeTransport;
 		readonly canUseTool: NonNullable<Options['canUseTool']>;
@@ -536,14 +529,9 @@ export class ClaudeAgentSession extends Disposable {
 	}
 
 	/**
-	 * Turn this session's live state into a started SDK subprocess: read the
-	 * live permission mode, build the in-process MCP wiring and resolved agent,
-	 * project everything onto the SDK `Options`, and `startup()`. The single
-	 * source of truth for constructing a `WarmQuery`, called once by
-	 * {@link materialize} (fresh or resume) and again by {@link _rebuildSdkQuery}
-	 * on every yield-restart, so the two paths can never drift. Returns the
-	 * permission mode it built with so the caller reuses that exact value for
-	 * the config seed and overlay write.
+	 * Build the SDK `Options` from live session state and start the subprocess —
+	 * the single source of truth for creating a `WarmQuery` (materialize and every
+	 * rebuild). Returns the permission mode it built with.
 	 */
 	private async _startSdkQuery(isResume: boolean, abortController: AbortController): Promise<{ readonly warm: WarmQuery; readonly permissionMode: ClaudePermissionMode }> {
 		const start = this._sdkStart;
@@ -582,12 +570,8 @@ export class ClaudeAgentSession extends Disposable {
 	}
 
 	/**
-	 * The pipeline's rebuild hook (an {@link IRematerializer}), passed at
-	 * construction. Rebuilds a fresh `WarmQuery` in resume mode via
-	 * {@link _startSdkQuery} and clears the one-shot resume anchor on success.
-	 * On failure it re-marks the tool + customization diffs dirty so the next
-	 * `send()` retries the yield-restart rather than proceeding out of sync,
-	 * then rethrows for the pipeline's rebind gates to surface.
+	 * The pipeline's rebuild hook ({@link IRematerializer}), passed at construction.
+	 * On failure re-marks the tool / customization diffs dirty and rethrows.
 	 */
 	private async _rebuildSdkQuery(): Promise<{ readonly warm: WarmQuery; readonly abortController: AbortController }> {
 		const abortController = new AbortController();
