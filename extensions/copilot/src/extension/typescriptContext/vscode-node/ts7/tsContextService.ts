@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
+import * as inspector from 'inspector';
 
 import { API } from '@typescript/native/unstable/async';
 
@@ -110,7 +111,7 @@ export class TS7LanguageContextService extends TSLanguageContextService {
 		logService: ILogService
 	) {
 		super(telemetryService, logService, configurationService, experimentationService);
-		this.isDebugging = process.execArgv.some(arg => /^--(?:inspect|debug)(?:-brk)?(?:=\d+)?$/i.test(arg));
+		this.isDebugging = inspector?.url() !== undefined;
 	}
 
 	public override dispose(): void {
@@ -204,43 +205,47 @@ export class TS7LanguageContextService extends TSLanguageContextService {
 	}
 
 	private async computeContext(api: API<true>, document: vscode.TextDocument, position: vscode.Position, context: RequestContext, startTime: number, timeBudget: number, neighborFiles: readonly string[], clientSideRunnableResults: readonly protocol.CachedContextRunnableResult[] | undefined, token: vscode.CancellationToken): Promise<protocol.ComputeContextResponse.OK | undefined> {
-		const snapshot = await api.updateSnapshot();
 		try {
-			if (token.isCancellationRequested) {
-				return undefined;
-			}
-			const project = await snapshot.getDefaultProjectForFile({ uri: document.uri.toString() });
-			if (project === undefined) {
-				return undefined;
-			}
-			const sourceFile = await project.program.getSourceFile({ uri: document.uri.toString() });
-			if (sourceFile === undefined || sourceFile.text !== document.getText()) {
-				return undefined;
-			}
-			const cancellationToken = new CancellationTokenWithTimer(token, startTime, timeBudget);
-			const session = new ComputeContextSession(project, cancellationToken);
-			const cachedResults = clientSideRunnableResults ?? [];
-			const requestContext = new ServerRequestContext(session, neighborFiles, new Map(cachedResults.map(result => [result.id, result])), this.includeDocumentation);
-			const result = new ContextResult(
-				new CharacterBudget((context.tokenBudget ?? 7 * 1024) * 4),
-				new CharacterBudget(currentTokenBudget * 4),
-				requestContext,
-			);
-			const computeStart = Date.now();
+			const snapshot = await api.updateSnapshot({ openFiles: [ { uri: document.uri.toString() } ] });
 			try {
-				const offset = sourceFile.getPositionOfLineAndCharacter(position.line, position.character);
-				await computeServerContext(result, session, project, sourceFile, offset, cancellationToken);
-			} catch (error) {
-				if (!(error instanceof OperationCanceledException) && !(error instanceof TokenBudgetExhaustedError)) {
-					throw error;
+				if (token.isCancellationRequested) {
+					return undefined;
 				}
+				const project = await snapshot.getDefaultProjectForFile({ uri: document.uri.toString() });
+				if (project === undefined) {
+					return undefined;
+				}
+				const sourceFile = await project.program.getSourceFile({ uri: document.uri.toString() });
+				if (sourceFile === undefined || sourceFile.text !== document.getText()) {
+					return undefined;
+				}
+				const cancellationToken = new CancellationTokenWithTimer(token, startTime, timeBudget, this.isDebugging);
+				const session = new ComputeContextSession(project, cancellationToken);
+				const cachedResults = clientSideRunnableResults ?? [];
+				const requestContext = new ServerRequestContext(session, neighborFiles, new Map(cachedResults.map(result => [result.id, result])), this.includeDocumentation);
+				const result = new ContextResult(
+					new CharacterBudget((context.tokenBudget ?? 7 * 1024) * 4),
+					new CharacterBudget(currentTokenBudget * 4),
+					requestContext,
+				);
+				const computeStart = Date.now();
+				try {
+					const offset = sourceFile.getPositionOfLineAndCharacter(position.line, position.character);
+					await computeServerContext(result, session, project, sourceFile, offset, cancellationToken);
+				} catch (error) {
+					if (!(error instanceof OperationCanceledException) && !(error instanceof TokenBudgetExhaustedError)) {
+						throw error;
+					}
+				}
+				const endTime = Date.now();
+				result.addTimings(endTime - startTime, endTime - computeStart);
+				result.setTimedOut(cancellationToken.isTimedOut());
+				return result.toJson();
+			} finally {
+				await snapshot.dispose();
 			}
-			const endTime = Date.now();
-			result.addTimings(endTime - startTime, endTime - computeStart);
-			result.setTimedOut(cancellationToken.isTimedOut());
-			return result.toJson();
-		} finally {
-			await snapshot.dispose();
+		} catch (error) {
+			console.error(error, `Error computing context for document: ${document.uri.toString()} at position: ${position.line + 1}:${position.character + 1}`);
 		}
 	}
 

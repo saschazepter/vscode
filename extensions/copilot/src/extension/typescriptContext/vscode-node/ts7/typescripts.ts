@@ -33,9 +33,9 @@ export class CancellationTokenWithTimer {
 	private readonly cancellationToken: vscode.CancellationToken;
 	private readonly end: number;
 
-	constructor(cancellationToken: vscode.CancellationToken, startTime: number, budget: number) {
+	constructor(cancellationToken: vscode.CancellationToken, startTime: number, budget: number, isDebugging: boolean = false) {
 		this.cancellationToken = cancellationToken;
-		this.end = startTime + budget;
+		this.end = isDebugging ? Number.MAX_VALUE : startTime + budget;
 	}
 
 	public isCancellationRequested(): boolean {
