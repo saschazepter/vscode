@@ -225,8 +225,9 @@ registerWorkbenchContribution2(SessionsVoiceActiveSessionContribution.ID, Sessio
 
 /**
  * Keeps hands-free listening anchored to the dictation session.
- * If the active session changes while listening, stop so voice mode doesn't
- * keep recording against a newly focused session.
+ * If the active session changes while listening, stop following it: submit
+ * anything already dictated to the original session, or discard an empty turn,
+ * so voice mode doesn't keep recording against a newly focused session.
  */
 class SessionsVoiceListeningContribution extends Disposable implements IWorkbenchContribution {
 
@@ -243,6 +244,7 @@ class SessionsVoiceListeningContribution extends Disposable implements IWorkbenc
 			const connected = voiceSessionController.isConnected.read(reader);
 			const voiceState = voiceSessionController.voiceState.read(reader);
 			const targetSession = voiceSessionController.targetSession.read(reader);
+			const turns = voiceSessionController.transcriptTurns.read(reader);
 			const activeSession = sessionsService.activeSession.read(reader);
 			const currentSession = activeSession?.activeChat.read(reader)?.resource;
 
@@ -260,7 +262,17 @@ class SessionsVoiceListeningContribution extends Disposable implements IWorkbenc
 			if (!listeningSession) {
 				listeningSession = targetSession ?? currentSession;
 			} else if (!targetSession && currentSession && !isEqual(currentSession, listeningSession)) {
-				voiceSessionController.discardListening();
+				const dictationSession = listeningSession;
+				const activelyDictating = turns.some(t => t.speaker === 'user' && t.isPartial && t.text.trim().length > 0);
+				if (activelyDictating) {
+					// The user already spoke — submit their words to the session
+					// they were dictating into rather than losing them or
+					// misrouting to the newly focused session.
+					voiceSessionController.finishListeningAndSubmitTo(dictationSession);
+				} else {
+					// Nothing dictated yet — just stop, discarding the empty turn.
+					voiceSessionController.discardListening();
+				}
 				listeningSession = undefined;
 			}
 		}));

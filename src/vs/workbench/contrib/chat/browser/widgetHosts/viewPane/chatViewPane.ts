@@ -530,8 +530,9 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		// focused session when dictation began) and is only shown in that
 		// session's view. Switching focus to a different session hides the
 		// transcript here; switching to another existing session stops
-		// transcription so it isn't misrouted there, but an idle hands-free turn
-		// may follow an untitled "New Chat" session before any dictation starts.
+		// transcription so it isn't misrouted there. Anything already dictated is
+		// submitted to the original session; an idle hands-free turn may instead
+		// follow an untitled "New Chat" session before any dictation starts.
 		let listeningSession: URI | undefined;
 		let ownerSession: URI | undefined;
 		this._register(autorun(reader => {
@@ -557,11 +558,21 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 					listeningSession = targetSession ?? currentSession;
 					ownerSession = listeningSession;
 				} else if (!targetSession && currentSession && !isEqual(currentSession, listeningSession)) {
+					const dictationSession = listeningSession;
 					const activelyDictating = turns.some(t => t.speaker === 'user' && t.isPartial && t.text.trim().length > 0);
-					if (!activelyDictating && isUntitledChatSession(currentSession)) {
+					if (activelyDictating) {
+						// The user has already spoken — submit their words to the
+						// session they were dictating into rather than losing them
+						// or misrouting to the newly focused session.
+						this.voiceSessionController.finishListeningAndSubmitTo(dictationSession);
+						listeningSession = undefined;
+					} else if (isUntitledChatSession(currentSession)) {
+						// Idle hands-free listen following into a fresh New Chat.
 						listeningSession = currentSession;
 						ownerSession = currentSession;
 					} else {
+						// Idle listen and the user switched to another existing
+						// session before saying anything — nothing to submit.
 						this.voiceSessionController.discardListening();
 						listeningSession = undefined;
 					}
