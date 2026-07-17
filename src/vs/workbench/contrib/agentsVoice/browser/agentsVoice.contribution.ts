@@ -266,6 +266,11 @@ registerAction2(class extends Action2 {
 					ContextKeyExpr.equals('config.agents.voice.enabled', true),
 					ChatContextKeys.inChatInput,
 					AGENTS_VOICE_CONNECTED.isEqualTo(true),
+					// Don't disconnect voice while a request is running — pressing
+					// Escape there is meant to interrupt/cancel that request, not
+					// tear down the voice session (which is especially disruptive
+					// in hands-free mode where there is no reconnect button).
+					ChatContextKeys.hasActiveRequest.negate(),
 					EditorContextKeys.hoverVisible.toNegated(),
 					EditorContextKeys.hasNonEmptySelection.toNegated(),
 					EditorContextKeys.hasMultipleSelections.toNegated(),
