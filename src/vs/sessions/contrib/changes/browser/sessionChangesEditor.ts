@@ -6,7 +6,8 @@
 import './media/sessionChangesEditor.css';
 import { $, append, Dimension } from '../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
-import { DisposableStore, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { autorun, observableValue } from '../../../../base/common/observable.js';
 import { Range } from '../../../../editor/common/core/range.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IDiffEditor } from '../../../../editor/common/editorCommon.js';
@@ -47,6 +48,7 @@ import { MenuItemAction } from '../../../../platform/actions/common/actions.js';
 import { CheckboxActionViewItem } from '../../../../base/browser/ui/toggle/toggle.js';
 import { defaultCheckboxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { localize } from '../../../../nls.js';
+import { getChangesEditorFileStats } from './changesEditorLabels.js';
 
 const HEADER_HEIGHT = 35;
 
@@ -66,22 +68,12 @@ class SessionChangesUIElementFactory implements IWorkbenchUIElementFactory {
 
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IChangesViewService private readonly changesViewService: IChangesViewService,
 	) { }
 
 	createResourceLabel(element: HTMLElement): IResourceLabel {
 		const label = this.instantiationService.createInstance(ResourceLabel, element, {});
-		return {
-			setUri(uri, options = {}) {
-				if (!uri) {
-					label.element.clear();
-				} else {
-					label.element.setFile(uri, { strikethrough: options.strikethrough });
-				}
-			},
-			dispose() {
-				label.dispose();
-			}
-		};
+		return new SessionChangesResourceLabel(label, element, element.classList.contains('modified'), this.changesViewService);
 	}
 
 	createToolbarActionViewItem(action: IAction, options: IActionViewItemOptions): IActionViewItem | undefined {
@@ -89,6 +81,55 @@ class SessionChangesUIElementFactory implements IWorkbenchUIElementFactory {
 			return this.instantiationService.createInstance(ChangesetReviewActionViewItem, action, options);
 		}
 		return undefined;
+	}
+}
+
+class SessionChangesResourceLabel extends Disposable implements IResourceLabel {
+
+	private readonly resource = observableValue<URI | undefined>(this, undefined);
+
+	constructor(
+		private readonly label: ResourceLabel,
+		element: HTMLElement,
+		showDiffStats: boolean,
+		changesViewService: IChangesViewService,
+	) {
+		super();
+		this._register(label);
+
+		if (showDiffStats) {
+			const statsContainer = append(element, $('.session-changes-file-stats'));
+			const added = append(statsContainer, $('.working-set-lines-added'));
+			const removed = append(statsContainer, $('.working-set-lines-removed'));
+			added.setAttribute('aria-hidden', 'true');
+			removed.setAttribute('aria-hidden', 'true');
+
+			this._register(autorun(reader => {
+				const resource = this.resource.read(reader);
+				const stats = resource
+					? getChangesEditorFileStats(resource, changesViewService.activeSessionChangesObs.read(reader))
+					: undefined;
+				statsContainer.style.display = stats ? '' : 'none';
+				if (stats) {
+					added.textContent = `+${stats.insertions}`;
+					removed.textContent = `-${stats.deletions}`;
+					statsContainer.setAttribute('aria-label', localize('sessionChangesEditor.fileCounts', '{0} lines added, {1} lines removed', stats.insertions, stats.deletions));
+				} else {
+					added.textContent = '';
+					removed.textContent = '';
+					statsContainer.removeAttribute('aria-label');
+				}
+			}));
+		}
+	}
+
+	setUri(uri: URI | undefined, options: { strikethrough?: boolean } = {}): void {
+		if (!uri) {
+			this.label.element.clear();
+		} else {
+			this.label.element.setFile(uri, { strikethrough: options.strikethrough });
+		}
+		this.resource.set(uri, undefined);
 	}
 }
 
