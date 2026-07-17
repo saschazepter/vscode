@@ -19,7 +19,7 @@ import { CommandsRegistry, ICommandService } from '../../../../../platform/comma
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { IAuthenticationService } from '../../../../services/authentication/common/authentication.js';
 import { IVoiceTranscriptEntryMetadata, IVoiceTranscriptStore, IVoiceTranscriptTurn, VoiceTranscriptKind } from '../../../agentsVoice/common/voiceTranscriptStore.js';
-import { IVoiceClientService, IVoicePriorTimelineEntry, IVoiceSessionContext, IVoiceFeedbackPayload, IVoiceFeedbackTranscriptTurn, IVoiceNarrationAck, IVoiceNarrationSignal } from '../../common/voiceClient/voiceClientService.js';
+import { IVoiceClientService, IVoicePriorTimelineEntry, IVoiceSessionContext, IVoiceFeedbackPayload, IVoiceFeedbackTranscriptTurn, IVoiceTranscription, IVoiceTurnAutoEnded, IVoiceNarrationAck, IVoiceNarrationSignal } from '../../common/voiceClient/voiceClientService.js';
 import { IMicCaptureService, IPttDiagnostic } from './micCaptureService.js';
 import { ITtsPlaybackService } from './ttsPlaybackService.js';
 import { IVoiceToolDispatchService, VoiceToolDispatchService } from './voiceToolDispatchService.js';
@@ -101,6 +101,14 @@ export interface ITranscriptTurn {
 	readonly isPartial: boolean;
 }
 
+type TranscriptionTurnPhase = 'active' | 'pending' | 'final';
+
+interface ITranscriptionTurnState {
+	readonly turnId: string;
+	highestRevision: number | undefined;
+	phase: TranscriptionTurnPhase;
+}
+
 export interface IVoiceSessionController {
 	readonly _serviceBrand: undefined;
 
@@ -116,10 +124,10 @@ export interface IVoiceSessionController {
 	readonly targetSession: IObservable<URI | undefined>;
 
 	connect(window: Window & typeof globalThis): Promise<void>;
-	disconnect(): void;
+	disconnect(source?: 'explicit' | 'internal'): void;
 
-	pttDown(): void;
-	pttUp(): void;
+	pttDown(source?: 'explicit' | 'auto' | 'connect'): void;
+	pttUp(source?: 'explicit' | 'internal'): void;
 
 	/**
 	 * Stop the current recording / auto-listen loop without disconnecting.
@@ -129,7 +137,29 @@ export interface IVoiceSessionController {
 	 * stays connected so the user can resume via the Voice Mode button
 	 * without a new handshake. Use `disconnect()` to fully end the session.
 	 */
-	stopListening(): void;
+	stopListening(source?: 'explicit' | 'internal'): void;
+
+	/**
+	 * Stop the current recording WITHOUT finalizing the turn: any in-flight
+	 * push-to-talk press is aborted (no `ptt_end` is sent), so the backend
+	 * never finalizes the buffered speech into a `send_to_chat`. Use this on
+	 * focus changes so speech captured for one session can't be misrouted to a
+	 * newly focused session. Like {@link stopListening}, the WebSocket stays
+	 * connected and the auto-listen re-arm loop is suppressed until the user
+	 * talks again.
+	 */
+	discardListening(): void;
+
+	/**
+	 * Stop listening on a focus change while the user is actively dictating:
+	 * finalize the in-flight press (send `ptt_end`) but pin the resulting
+	 * submission to `session` — the session the user was dictating into — so
+	 * their words are not misrouted to the newly focused session. The WebSocket
+	 * stays connected and the auto-listen re-arm loop is suppressed until the
+	 * user talks again. Use {@link discardListening} instead when nothing has
+	 * been dictated yet.
+	 */
+	finishListeningAndSubmitTo(session: URI): void;
 
 	/**
 	 * Mark a session as having been cancelled by the user from VS Code UI. The
@@ -221,6 +251,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	private _pttHeld = false;
 	private _pttToggleMode = false;
 	/**
+	 * True from the backend's `speech_started` until the utterance is finalized
+	 * (final transcription / turn ended). Marks a genuinely in-progress user turn
+	 * even before any transcription text has arrived.
+	 */
+	private _userSpeechActive = false;
+	/**
 	 * True while a passive hands-free barge-in listen is streaming during the
 	 * assistant's playback (opened by `_startBargeInListen`). It is NOT toggle
 	 * mode — an explicit `pttDown()` promotes this stream into a user-driven
@@ -231,10 +267,23 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	/** When true, the auto-listen loop is suppressed (user pressed Stop
 	 *  Recording). Cleared on the next explicit `pttDown` or on connect. */
 	private _autoListenSuppressed = false;
+	/** Timestamp (ms) until which an incoming `send_to_chat` is dropped after a
+	 *  discarded turn, so buffered speech from a focus-change discard can't be
+	 *  misrouted to the newly focused session. Cleared on the next `pttDown`. */
+	private _suppressSendToChatUntil = 0;
+	/** One-shot session that the next finalized turn must be submitted to,
+	 *  regardless of which session is focused. Set when listening is stopped on
+	 *  a focus change while the user is actively dictating, so their words land
+	 *  in the session they were dictating into rather than the newly focused
+	 *  one. Consumed by the next `send_to_chat`; also cleared on `pttDown` and
+	 *  after {@link _PINNED_SUBMIT_EXPIRY_MS}. */
+	private _pinnedSubmitSession: URI | undefined;
+	private _pinnedSubmitTimer: ReturnType<typeof setTimeout> | undefined;
 	/** Armed on a fresh connect (hands-free); consumed on `session_init` to
 	 *  enter listening once the backend acks the session. */
 	private _enterListenOnSessionInit = false;
 	private _pttCurrentTurnId = '';
+	private _transcriptionTurnState: ITranscriptionTurnState | undefined;
 	private _window: (Window & typeof globalThis) | undefined;
 	private readonly _voiceEventDisposables = this._register(new DisposableStore());
 	private readonly _voiceAutorunDisposable = this._register(new MutableDisposable());
@@ -270,8 +319,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 */
 	private _awaitingReplyForSession: string | undefined;
 	private _awaitingReplyWatchdog: ReturnType<typeof setTimeout> | undefined;
-	/** Tracks whether the initial listen cue has been played after connecting. */
-	private _hasPlayedInitialListenCue = false;
 
 	// --- Audio FIFO queue ---
 	private readonly _audioQueue: { sessionId: string | undefined; responseId?: string; finalized: boolean; chunks: { audio: string; isFirstChunk: boolean; isFinal: boolean; transcript: string | undefined }[] }[] = [];
@@ -427,6 +474,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	// never produces a state change.
 	private readonly _userCancelledSessions = new Map<string, ReturnType<typeof setTimeout>>();
 	private static readonly _USER_CANCEL_SUPPRESS_MS = 10_000;
+	/** After a focus-change discard, drop a stray backend `send_to_chat` for
+	 *  this long so late-finalized buffered speech isn't misrouted. */
+	private static readonly _DISCARD_SEND_SUPPRESS_MS = 2_000;
+	/** How long a focus-change submit stays pinned to the original session
+	 *  while the backend finalizes the turn and emits `send_to_chat`, before the
+	 *  pin is cleared so it can't misroute a much later, unrelated turn. */
+	private static readonly _PINNED_SUBMIT_EXPIRY_MS = 15_000;
 
 	// Per-session watchdog timers that re-flush session_context shortly after
 	// a confirmation transition. This is a paranoid mitigation: if the
@@ -1360,7 +1414,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 						if (this._enterListenOnSessionInit && this._isConnected.get()) {
 							this.logService.trace('[voice] session_init not seen within 750ms; entering listening via fallback');
 							this._enterListenOnSessionInit = false;
-							this._enterAutoListen();
+							this._enterAutoListen('connect');
 						}
 					}, 750));
 				}
@@ -1406,15 +1460,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			}
 			if (this._enterListenOnSessionInit && !narrated) {
 				this._enterListenOnSessionInit = false;
-				this._enterAutoListen();
+				this._enterAutoListen('connect');
 			} else if (narrated) {
 				this._enterListenOnSessionInit = false;
 			}
 		}));
 
-		this._voiceEventDisposables.add(this.voiceClientService.onBargeIn(() => {
-			this._interruptAssistantPlayback();
-		}));
+		this._voiceEventDisposables.add(this.voiceClientService.onBargeIn(() => this._handleBargeIn()));
 
 		// NACK + client-revalidation protocol for client-driven narration.
 		this._voiceEventDisposables.add(this.voiceClientService.onNarrationAck(e => {
@@ -1431,6 +1483,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// (same flow as pttDown, but for server-VAD path).
 		this._voiceEventDisposables.add(this.voiceClientService.onSpeechStarted(() => {
 			this._clearAutoListenTimer();
+			this._userSpeechActive = true;
 			this.ttsPlaybackService.stopPlayback();
 			this._audioQueue.length = 0;
 			this._currentPlaybackSessionId = null;
@@ -1444,12 +1497,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// Treat it like a local ptt_end — stop capture, move to processing — but
 		// do NOT send our own ptt_end. Guard against double-ending: ignore if we
 		// already released locally, or if the id is for a different turn.
-		this._voiceEventDisposables.add(this.voiceClientService.onTurnAutoEnded(e => {
-			if (!this._pttHeld) { return; }
-			if (e.turnId && e.turnId !== this._pttCurrentTurnId) { return; }
-			this._pttToggleMode = false;
-			this._finishPtt('auto');
-		}));
+		this._voiceEventDisposables.add(this.voiceClientService.onTurnAutoEnded(e => this._handleTurnAutoEnded(e)));
 
 		// Transcription — mutate the current user turn at the tail of the buffer.
 		// We DO NOT send the transcript to chat here. The backend voice LLM
@@ -1458,24 +1506,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// (→ replies in speech, nothing sent to chat). Sending directly on
 		// transcription would bypass that routing decision and leak chit-chat
 		// utterances into the active chat session.
-		this._voiceEventDisposables.add(this.voiceClientService.onTranscription(e => {
-			// Track time-to-first-transcription for latency telemetry
-			if (!this._telemetryFirstTranscriptionMs && this._telemetryPttDownMs) {
-				this._telemetryFirstTranscriptionMs = Date.now();
-			}
-
-			const text = e.text;
-
-			this._updateUserTurn(text, e.committed ?? '', e.status === 'partial');
-			if (e.status !== 'partial') {
-				if (!this._pttHeld) {
-					this._voiceState.set('processing', undefined);
-					this._statusText.set('Processing...', undefined);
-				}
-				// Persist the user's final transcript (local-only, no backend coordination).
-				this._persistTurn('user', text);
-			}
-		}));
+		this._voiceEventDisposables.add(this.voiceClientService.onTranscription(e => this._handleTranscription(e)));
 
 		// Audio response → fade transcript, queue for sequential playback
 		this._voiceEventDisposables.add(this.voiceClientService.onAudioResponse(e => {
@@ -1590,6 +1621,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				'focus_session',
 			];
 			if (e.name === 'send_to_chat') {
+				// Drop a stray finalization from a turn we just discarded on a
+				// focus change, so buffered speech isn't misrouted to the newly
+				// focused session.
+				if (Date.now() < this._suppressSendToChatUntil) {
+					this.logService.trace('[voice] dropping send_to_chat: turn discarded on focus change');
+					this.voiceClientService.sendToolResult(e.callId, 'ok');
+					return;
+				}
 				const rawText = typeof e.args?.['text'] === 'string' ? (e.args['text'] as string) : '';
 				// Defensively strip a trailing stop phrase (e.g. "send it") that
 				// the backend should have removed but sometimes leaves in.
@@ -1714,8 +1753,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}, VoiceSessionController._CONNECT_TIMEOUT_MS);
 	}
 
-	disconnect(): void {
+	disconnect(source: 'explicit' | 'internal' = 'internal'): void {
 		this._connectAttemptGeneration++;
+		const shouldPlayStoppedSignal = source === 'explicit' && (this._isConnecting.get() || this._isConnected.get() || this._isReconnecting.get());
+		const shouldPlayRecordingStoppedSignal = source === 'explicit' && this._pttHeld;
 
 		// Telemetry: session ended
 		if (this._telemetrySessionStart) {
@@ -1737,7 +1778,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this.micCaptureService.stopCapture();
 		this.voiceClientService.disconnect();
 		this._pttHeld = false;
+		this._userSpeechActive = false;
 		this._pttToggleMode = false;
+		this._pttCurrentTurnId = '';
+		this._resetTranscriptionTurn();
 		this._bargeInListenActive = false;
 		this._isConnected.set(false, undefined);
 		this._voiceState.set('idle', undefined);
@@ -1747,7 +1791,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._clearAwaitingReply();
 		this._autoListenSuppressed = false;
 		this._enterListenOnSessionInit = false;
-		this._hasPlayedInitialListenCue = false;
 		this._replyPlayedSinceSend = false;
 		this._audioQueue.length = 0;
 		this._currentPlaybackSessionId = null;
@@ -1795,6 +1838,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._pendingPriorTimeline = [];
 		this._stopReplay();
 		this._sessionAudioCache.clear();
+		if (shouldPlayRecordingStoppedSignal) {
+			this._playRecordingStoppedSignal(true);
+		}
+		if (shouldPlayStoppedSignal) {
+			void this.accessibilitySignalService.playSignal(AccessibilitySignal.voiceModeStopped, {
+				source: 'voiceMode.disconnect',
+				userGesture: true,
+			});
+		}
 	}
 
 	/** DEV ONLY: Simulate a connected session with fake transcript for UI testing. */
@@ -1859,6 +1911,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this.ttsPlaybackService.closeContext();
 		this.micCaptureService.stopCapture();
 		this._pttHeld = false;
+		this._userSpeechActive = false;
 		this._pttToggleMode = false;
 		// No reconnect is coming and a later connect() does not reset narration
 		// bookkeeping, so clear the deferred/in-flight narration state and its
@@ -1900,14 +1953,97 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this.ttsPlaybackService.closeContext();
 		this._pttHeld = false;
 		this._pttToggleMode = false;
+		this._pttCurrentTurnId = '';
+		this._resetTranscriptionTurn();
 		this._isConnected.set(false, undefined);
 		this._isReconnecting.set(true, undefined);
 		this._voiceState.set('idle', undefined);
 		this._statusText.set('Reconnecting...', undefined);
 	}
 
-	pttDown(): void {
+	private _beginTranscriptionTurn(turnId: string): void {
+		this._transcriptionTurnState = {
+			turnId,
+			highestRevision: undefined,
+			phase: 'active',
+		};
+	}
+
+	private _markTranscriptionTurnPending(): void {
+		if (this._transcriptionTurnState?.turnId === this._pttCurrentTurnId && this._transcriptionTurnState.phase === 'active') {
+			this._transcriptionTurnState.phase = 'pending';
+		}
+	}
+
+	private _resetTranscriptionTurn(): void {
+		this._transcriptionTurnState = undefined;
+	}
+
+	private _handleTurnAutoEnded(event: IVoiceTurnAutoEnded): void {
+		if (!this._pttHeld) {
+			return;
+		}
+		if (event.turnId && event.turnId !== this._pttCurrentTurnId) {
+			return;
+		}
+		this._pttToggleMode = false;
+		this._finishPtt('auto');
+	}
+
+	private _handleBargeIn(): void {
+		this._resetTranscriptionTurn();
+		this._interruptAssistantPlayback();
+	}
+
+	private _handleTranscription(event: IVoiceTranscription): void {
+		const state = this._transcriptionTurnState;
+		if (event.turnId) {
+			if (!state || state.turnId !== event.turnId || state.phase === 'final') {
+				return;
+			}
+			if (event.revision !== undefined) {
+				if (state.highestRevision !== undefined && event.revision <= state.highestRevision) {
+					return;
+				}
+				state.highestRevision = event.revision;
+			}
+		}
+
+		if (!this._telemetryFirstTranscriptionMs && this._telemetryPttDownMs) {
+			this._telemetryFirstTranscriptionMs = Date.now();
+		}
+
+		const isPartial = event.status === 'partial';
+		// Live (word-by-word) transcripts are opt-in: when disabled, we don't
+		// render the interim streaming text as the user speaks and only act on
+		// the final transcript, so the user still sees what they said once the
+		// utterance settles.
+		if (isPartial && !this._isLiveTranscriptEnabled()) {
+			return;
+		}
+		this._updateUserTurn(event.text, event.committed ?? '', isPartial);
+		if (isPartial) {
+			return;
+		}
+
+		if (!this._pttHeld) {
+			this._voiceState.set('processing', undefined);
+			this._statusText.set('Processing...', undefined);
+		}
+		this._userSpeechActive = false;
+		this._persistTurn('user', event.text);
+		if (event.turnId && state) {
+			state.phase = 'final';
+		}
+	}
+
+	pttDown(source: 'explicit' | 'auto' | 'connect' = 'explicit'): void {
 		if (!this._isConnected.get()) { this.logService.trace('[voice] pttDown ignored: not connected'); return; }
+
+		// A fresh user press starts a new turn — no longer suppress send_to_chat
+		// from a previously discarded turn, nor pin it to a prior session.
+		this._suppressSendToChatUntil = 0;
+		this._setPinnedSubmitSession(undefined);
 
 		// Toggle mode: second tap finishes recording
 		if (this._pttToggleMode) {
@@ -1945,11 +2081,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this.ttsPlaybackService.stopPlayback();
 			this._voiceState.set('listening', undefined);
 			this._statusText.set('Listening...', undefined);
+			if (source !== 'auto') {
+				this._playListeningStartedSignal(source);
+			}
 			if (!this._pttMaxDurationTimer) {
 				this._pttMaxDurationTimer = setTimeout(() => {
 					if (this._pttHeld) {
 						this._statusText.set('Max duration reached', undefined);
-						this.pttUp();
+						this.pttUp('internal');
 					}
 				}, VoiceSessionController._PTT_MAX_DURATION_MS);
 			}
@@ -1961,6 +2100,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._autoListenSuppressed = false;
 		this._clearAutoListenTimer();
 		this._pttCurrentTurnId = generateUuid();
+		this._beginTranscriptionTurn(this._pttCurrentTurnId);
 		this._pttWaitingForPlayback = false;
 		this._telemetryPttDownMs = Date.now();
 		this._telemetryFirstTranscriptionMs = undefined;
@@ -2011,26 +2151,19 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this.ttsPlaybackService.stopPlayback();
 		this._voiceState.set('listening', undefined);
 		this._statusText.set('Listening...', undefined);
-		// Audible cue: for non-screen-reader users, only play on the first
-		// listen after connecting. For screen reader users, play every time.
-		if (this._isHandsFreeEnabled()) {
-			if (!this._hasPlayedInitialListenCue) {
-				this._hasPlayedInitialListenCue = true;
-				this.accessibilitySignalService.playSignal(AccessibilitySignal.voiceRecordingStarted);
-			} else if (this.accessibilityService.isScreenReaderOptimized()) {
-				this.accessibilitySignalService.playSignal(AccessibilitySignal.voiceRecordingStarted);
-			}
+		if (source !== 'auto') {
+			this._playListeningStartedSignal(source);
 		}
 
 		this._pttMaxDurationTimer = setTimeout(() => {
 			if (this._pttHeld) {
 				this._statusText.set('Max duration reached', undefined);
-				this.pttUp();
+				this.pttUp('internal');
 			}
 		}, VoiceSessionController._PTT_MAX_DURATION_MS);
 	}
 
-	pttUp(): void {
+	pttUp(source: 'explicit' | 'internal' = 'explicit'): void {
 		if (!this._pttHeld) { return; }
 
 		// Short tap: enter toggle mode — keep recording until next tap
@@ -2040,10 +2173,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return;
 		}
 
-		this._finishPtt();
+		this._finishPtt('local', source);
 	}
 
-	stopListening(): void {
+	stopListening(source: 'explicit' | 'internal' = 'explicit'): void {
 		// Stop the current recording / auto-listen loop WITHOUT tearing down
 		// the WebSocket. Any in-flight press is finished through the normal
 		// `ptt_end` path so the backend finalizes the turn; the auto-listen
@@ -2055,11 +2188,73 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._pttToggleMode = false;
 		this._clearAutoListenTimer();
 		if (this._pttHeld) {
-			this._finishPtt('local');
+			this._finishPtt('local', source);
 		} else {
 			this._voiceState.set('idle', undefined);
 			this._statusText.set('Tap to start', undefined);
 		}
+	}
+
+	discardListening(): void {
+		// Stop the current recording WITHOUT finalizing the turn. Any in-flight
+		// press is aborted (mic drops its buffer, NO `ptt_end` is sent) so the
+		// backend never turns the buffered speech into a `send_to_chat` — which
+		// would otherwise be routed to the now-focused session. Also drop a
+		// stray `send_to_chat` the backend may already have in flight (e.g. it
+		// auto-ended the turn via VAD before we discarded).
+		if (!this._isConnected.get()) { return; }
+		this._autoListenSuppressed = true;
+		this._pttToggleMode = false;
+		this._clearAutoListenTimer();
+		this._suppressSendToChatUntil = Date.now() + VoiceSessionController._DISCARD_SEND_SUPPRESS_MS;
+		if (this._pttHeld) {
+			this._finishPtt('discard');
+		} else {
+			this._voiceState.set('idle', undefined);
+			this._statusText.set('Tap to start', undefined);
+		}
+	}
+
+	finishListeningAndSubmitTo(session: URI): void {
+		// Stop listening on a focus change, but the user has already dictated —
+		// so finalize the turn (send `ptt_end`) and pin the resulting
+		// `send_to_chat` to `session` (the session they were dictating into) so
+		// their words aren't misrouted to the newly focused session.
+		if (!this._isConnected.get()) { return; }
+		this._autoListenSuppressed = true;
+		this._pttToggleMode = false;
+		this._clearAutoListenTimer();
+		this._setPinnedSubmitSession(session);
+		if (this._pttHeld) {
+			this._finishPtt('local', 'internal');
+		} else {
+			// The backend already auto-ended the turn (VAD) and a `send_to_chat`
+			// is in flight; the pin routes it. Reflect the pending submission.
+			this._voiceState.set('processing', undefined);
+			this._statusText.set('Processing...', undefined);
+		}
+	}
+
+	private _setPinnedSubmitSession(session: URI | undefined): void {
+		if (this._pinnedSubmitTimer) {
+			clearTimeout(this._pinnedSubmitTimer);
+			this._pinnedSubmitTimer = undefined;
+		}
+		this._pinnedSubmitSession = session;
+		if (session) {
+			this._pinnedSubmitTimer = setTimeout(() => {
+				this._pinnedSubmitTimer = undefined;
+				this._pinnedSubmitSession = undefined;
+			}, VoiceSessionController._PINNED_SUBMIT_EXPIRY_MS);
+		}
+	}
+
+	private _consumePinnedSubmitSession(): URI | undefined {
+		const pinned = this._pinnedSubmitSession;
+		if (pinned) {
+			this._setPinnedSubmitSession(undefined);
+		}
+		return pinned;
 	}
 
 	/**
@@ -2069,15 +2264,22 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * tap / keyword) — the mic drains its tail and the ``onPttEnd`` → ``ptt_end``
 	 * path fires. It is ``'auto'`` when the backend ended the turn itself
 	 * (``turn_auto_ended``): the mic is aborted with no drain and NO ``ptt_end``
-	 * is sent for the turn.
+	 * is sent for the turn. ``'immediate'`` is for a known-silent passive turn:
+	 * abort with no drain and send ``ptt_end`` synchronously so the backend
+	 * clears its ``user_is_speaking`` latch before the next frame. ``'discard'``
+	 * throws the press away on a focus change: like ``'auto'`` the mic is aborted
+	 * with NO ``ptt_end`` (so the backend never finalizes it into a
+	 * `send_to_chat`), but the state settles to ``idle`` rather than
+	 * ``processing`` since nothing is being sent.
 	 */
-	private _finishPtt(reason: 'local' | 'auto' = 'local'): void {
+	private _finishPtt(reason: 'local' | 'auto' | 'immediate' | 'discard' = 'local', source: 'explicit' | 'internal' = 'explicit'): void {
 		// End toggle (hands-free) mode on every turn-ending path — even when not held — so an out-of-band finish can't leave a stale toggle that self-kills the next auto-listen.
 		this._pttToggleMode = false;
 		this._bargeInListenActive = false;
 		if (!this._pttHeld) { return; }
 		this._clearAutoListenTimer();
 		this._pttHeld = false;
+		this._userSpeechActive = false;
 		// End toggle (hands-free) mode on every turn-ending path, so an out-of-band finish can't leave a stale toggle that self-kills the next auto-listen.
 		this._pttToggleMode = false;
 		this._telemetryPttUpMs = Date.now();
@@ -2092,16 +2294,36 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._replyPlayedSinceSend = false;
 		this._clearAwaitingReply();
 		this._suppressIncomingAudio = false;
-		if (reason === 'auto') {
-			// Backend already ended the turn — stop capturing without draining
-			// more audio and without emitting our own ptt_end.
+		this._markTranscriptionTurnPending();
+		if (reason === 'auto' || reason === 'discard') {
+			// Backend already ended the turn, or we're discarding it — stop
+			// capturing without draining more audio and without emitting our
+			// own ptt_end.
 			this.micCaptureService.abortPtt();
+		} else if (reason === 'immediate') {
+			// Silent passive turn: stop now (no drain) and send ptt_end synchronously so a following narration request isn't NACK'd `busy: user_speaking`.
+			this.micCaptureService.abortPtt();
+			this.voiceClientService.sendPttEnd();
 		} else {
 			this.micCaptureService.pttUp();
 		}
-		if (this.accessibilityService.isScreenReaderOptimized()) {
-			this.accessibilitySignalService.playSignal(AccessibilitySignal.voiceRecordingStopped);
+		if (reason === 'discard') {
+			// Nothing is being sent, so don't leave the UI stuck in 'Processing'.
+			this._voiceState.set('idle', undefined);
+			this._statusText.set('Tap to start', undefined);
 		}
+		if (reason === 'local' && source === 'explicit') {
+			this._playRecordingStoppedSignal(true);
+		} else if (this.accessibilityService.isScreenReaderOptimized()) {
+			this._playRecordingStoppedSignal(false);
+		}
+	}
+
+	private _playRecordingStoppedSignal(userGesture: boolean): void {
+		void this.accessibilitySignalService.playSignal(AccessibilitySignal.voiceRecordingStopped, {
+			source: userGesture ? 'voiceMode.explicitListeningStopped' : 'voiceMode.listeningStopped',
+			userGesture,
+		});
 	}
 
 	markUserCancelled(sessionId: string): void {
@@ -2143,6 +2365,13 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		return this.configurationService.getValue<boolean>('agents.voice.handsFree') === true;
 	}
 
+	private _isLiveTranscriptEnabled(): boolean {
+		// Default-off: live word-by-word transcripts are opt-in, so only an
+		// explicit `true` enables the interim rendering. An unresolved/undefined
+		// value resolves to the `liveTranscript` default (`false`).
+		return this.configurationService.getValue<boolean>('agents.voice.liveTranscript') === true;
+	}
+
 	/**
 	 * Strip a trailing stop phrase (e.g. "send it") from a transcript before it
 	 * is sent to chat. The backend is supposed to strip the matched phrase from
@@ -2180,7 +2409,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	/** Re-enter listening via synthetic short tap. */
-	private _enterAutoListen(): void {
+	private _enterAutoListen(source: 'auto' | 'connect' = 'auto'): void {
 		this._clearAutoListenTimer();
 		if (this._autoListenSuppressed || !this._isConnected.get() || this._pttHeld) {
 			this.logService.trace(`[voice] _enterAutoListen skipped: suppressed=${this._autoListenSuppressed} connected=${this._isConnected.get()} pttHeld=${this._pttHeld}`);
@@ -2192,8 +2421,23 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return;
 		}
 		this.logService.trace('[voice] _enterAutoListen entering listening');
-		this.pttDown();
-		this.pttUp();
+		this.pttDown(source);
+		this.pttUp('internal');
+	}
+
+	private _playListeningStartedSignal(source: 'explicit' | 'connect'): void {
+		if (source === 'connect') {
+			void this.accessibilitySignalService.playSignal(AccessibilitySignal.voiceModeStarted, {
+				source: 'voiceMode.connectListeningStarted',
+				userGesture: true,
+			});
+			return;
+		}
+
+		void this.accessibilitySignalService.playSignal(AccessibilitySignal.voiceRecordingStarted, {
+			source: 'voiceMode.explicitListeningStarted',
+			userGesture: true,
+		});
 	}
 
 	/**
@@ -2292,7 +2536,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * Otherwise sends to whatever is currently active via the view pane command.
 	 */
 	private async _sendTranscriptionToChat(text: string): Promise<void> {
-		const target = this._targetSession.get();
+		// A focus-change submit pins routing to the session the user was
+		// dictating into; it takes priority over the user-picked target and the
+		// currently focused session so their words land where they were aimed.
+		const target = this._consumePinnedSubmitSession() ?? this._targetSession.get();
 		if (target) {
 			// Check if target is the currently visible session
 			const currentSession = await this.commandService.executeCommand<string | undefined>('_chat.voice.getCurrentSession').catch(() => undefined);
@@ -2499,6 +2746,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 		const updated: ITranscriptTurn = { speaker: 'user', text, committed, isPartial };
 		this._transcriptTurns.set([...cur.slice(0, -1), updated], undefined);
+	}
+
+	/** Whether the user is mid-utterance: VAD speech is active, or the transcript tail is a non-empty partial user turn. */
+	private _isActivelyDictating(): boolean {
+		if (this._userSpeechActive) {
+			return true;
+		}
+		const turns = this._transcriptTurns.get();
+		const last = turns[turns.length - 1];
+		return !!last && last.speaker === 'user' && last.isPartial && last.text.trim().length > 0;
 	}
 
 	/**
@@ -3001,6 +3258,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			}
 		}
 		this.logService.trace(`[voice] narrate kind=${kind} id=${sessionId.slice(-32)}`);
+		// A silent hands-free auto-listen/barge-in turn keeps the backend's `user_is_speaking` latch set, which NACKs the narration request `busy: user_speaking`; end it first (real `ptt_end`) so the request is accepted. Skip while the user is genuinely mid-utterance (defer instead) or when the socket is closed (retry below).
+		const endPassiveTurnFirst = this._pttHeld && !this._isActivelyDictating() && this.voiceClientService.canRequestNarration;
+		if (endPassiveTurnFirst) {
+			this._prepareForPlayback(true);
+		}
 		const narrationId = this.voiceClientService.requestNarration(sessionId, kind, text, reuseId);
 		if (!narrationId) {
 			// Socket was closed, so nothing was sent: don't touch playback/listening
@@ -3010,12 +3272,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this._pendingNarrationRetries.set(sessionId, { kind, text });
 			return false;
 		}
-		// The narration audio is now inbound. Get out of listening/auto-listen so
-		// the echoed audio isn't suppressed (or captured as the user's own turn)
-		// while PTT/mic capture is active. Done here so EVERY narration path
-		// (live, on-focus, on-reconnect retry) is prepared, not just focus - but
-		// only once a request is actually in flight.
-		this._prepareForPlayback();
+		if (!endPassiveTurnFirst) {
+			// Narration audio is inbound: leave listening/auto-listen so the echoed audio isn't suppressed or captured as the user's turn.
+			this._prepareForPlayback();
+		}
 		this._pendingNarrationRetries.delete(sessionId);
 		// This newer request supersedes any older busy/interrupted entry deferred
 		// for this session (latest-wins per session). Without this, a later
@@ -3638,11 +3898,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * controller can sit in listening and the echoed audio is dropped, leaving the
 	 * user staring at a focused session that never speaks.
 	 */
-	private _prepareForPlayback(): void {
+	private _prepareForPlayback(endOpenTurn = false): void {
 		this._clearAutoListenTimer();
 		this._autoListenSuppressed = false;
 		if (this._pttHeld) {
-			this._finishPtt('auto');
+			// `endOpenTurn` sends a real `ptt_end` so the backend clears its
+			// `user_is_speaking` latch (via the purpose-built 'immediate' reason:
+			// abort the mic with no drain and send `ptt_end` synchronously) vs. a
+			// local-only abort ('auto'). 'internal' marks this as a non-user-gesture
+			// stop so it doesn't emit the explicit listening-stopped signal.
+			this._finishPtt(endOpenTurn ? 'immediate' : 'auto', 'internal');
 		}
 		this._pttToggleMode = false;
 		this._pttHeld = false;
