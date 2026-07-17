@@ -145,7 +145,6 @@ suite('SessionCustomizationDiscovery', () => {
 
 		assert.deepStrictEqual(hookDirectories, [
 			{ uri: '/home/.copilot/hooks', children: [] },
-			{ uri: '/workspace/.claude', children: [] },
 			{ uri: '/workspace/.github/copilot', children: ['/workspace/.github/copilot/settings.json'] },
 			{ uri: '/workspace/.github/hooks', children: ['/workspace/.github/hooks/pre-tool.json'] },
 		]);
@@ -196,6 +195,51 @@ suite('SessionCustomizationDiscovery', () => {
 		assert.deepStrictEqual(rules, [
 			{ uri: '/workspace/.github/instructions/rule.instructions.md', alwaysApply: false },
 			{ uri: '/workspace/AGENTS.md', alwaysApply: true },
+		]);
+	});
+
+	test('drops missing agent instruction files and empty agent instruction directories', async () => {
+		await seed('/workspace/.github/instructions/rule.instructions.md', 'scoped instruction');
+
+		const discovery = disposables.add(instantiationService.createInstance(SessionCustomizationDiscovery, workspace, userHome, inMemoryPathToUri));
+		const client = {
+			rpc: {
+				agents: {
+					getDiscoveryPaths: async () => ({ paths: [] }),
+					discover: async () => ({ agents: [] }),
+				},
+				instructions: {
+					getDiscoveryPaths: async () => ({
+						paths: [
+							{ path: '/workspace/.github/instructions', kind: 'directory' },
+							{ path: '/workspace/AGENTS.md', kind: 'file' },
+						],
+					}),
+					discover: async () => ({
+						sources: [
+							{ id: 'agentInstruction', label: 'AGENTS.md', sourcePath: '/workspace/AGENTS.md', applyTo: [], type: 'repo' },
+							{ id: 'scopedInstruction', label: 'Rule', sourcePath: '/workspace/.github/instructions/rule.instructions.md', applyTo: ['src/**'], type: 'child-instructions' },
+						],
+					}),
+				},
+				skills: {
+					getDiscoveryPaths: async () => ({ paths: [] }),
+					discover: async () => ({ skills: [] }),
+				},
+			},
+		} as unknown as CopilotClient;
+
+		const customizations = await discovery.discover(client, CancellationToken.None);
+		const ruleDirectories = customizations
+			.filter(customization => customization.contents === 'rule')
+			.map(customization => ({
+				uri: URI.parse(customization.uri).path,
+				children: (customization.children ?? []).map(child => URI.parse(child.uri).path).sort(),
+			}))
+			.sort((a, b) => a.uri.localeCompare(b.uri));
+
+		assert.deepStrictEqual(ruleDirectories, [
+			{ uri: '/workspace/.github/instructions', children: ['/workspace/.github/instructions/rule.instructions.md'] },
 		]);
 	});
 
@@ -260,7 +304,6 @@ suite('SessionCustomizationDiscovery', () => {
 			{ contents: 'rule', uri: '/home', writable: false, children: ['/home/.copilot/copilot-instructions.md'] },
 			{ contents: 'hook', uri: '/home/.copilot/hooks', writable: true, children: [] },
 			{ contents: 'rule', uri: '/workspace', writable: false, children: ['/workspace/.github/copilot-instructions.md', '/workspace/AGENTS.md'] },
-			{ contents: 'hook', uri: '/workspace/.claude', writable: true, children: [] },
 			{ contents: 'agent', uri: '/workspace/.github/agents', writable: true, children: ['/workspace/.github/agents/foo.agent.md'] },
 			{ contents: 'hook', uri: '/workspace/.github/copilot', writable: true, children: ['/workspace/.github/copilot/settings.json'] },
 			{ contents: 'hook', uri: '/workspace/.github/hooks', writable: true, children: ['/workspace/.github/hooks/pre-tool.json'] },

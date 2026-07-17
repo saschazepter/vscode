@@ -506,10 +506,10 @@ export class SessionCustomizationDiscovery extends Disposable {
 			]);
 			throwIfCancelled(token);
 			const result: DirectoryCustomization[] = [];
-			this.toDirectoryCustomizations(CustomizationType.Agent, agents, this._discoveredDirectories, result);
-			this.toDirectoryCustomizations(CustomizationType.Rule, rules, this._discoveredDirectories, result);
-			this.toDirectoryCustomizations(CustomizationType.Skill, skills, this._discoveredDirectories, result);
-			this.toDirectoryCustomizations(CustomizationType.Hook, hooks, this._discoveredDirectories, result);
+			await this.toDirectoryCustomizations(CustomizationType.Agent, agents, this._discoveredDirectories, result);
+			await this.toDirectoryCustomizations(CustomizationType.Rule, rules, this._discoveredDirectories, result);
+			await this.toDirectoryCustomizations(CustomizationType.Skill, skills, this._discoveredDirectories, result);
+			await this.toDirectoryCustomizations(CustomizationType.Hook, hooks, this._discoveredDirectories, result);
 			const sortedResult = result.sort(compareDirectoryCustomization);
 			await this.writeCustomizationDiscoveryDebugLog({
 				method: 'discover',
@@ -688,11 +688,13 @@ export class SessionCustomizationDiscovery extends Disposable {
 					}
 				}
 			}
-			result.push({ uri: rootUri, type: DiscoveredType.Hook, files: files.sort(compareDiscoveredFile), name: basename(rootUri.path), writable: true });
+			if (files.length > 0) {
+				result.push({ uri: rootUri, type: DiscoveredType.Hook, files: files.sort(compareDiscoveredFile), name: basename(rootUri.path), writable: true });
+			}
 		}
 	}
 
-	private toDirectoryCustomizations(type: ChildCustomizationType, customizations: readonly ChildCustomization[], allDiscoveredDirectories: readonly IDiscoveredDirectory[], result: DirectoryCustomization[]): void {
+	private async toDirectoryCustomizations(type: ChildCustomizationType, customizations: readonly ChildCustomization[], allDiscoveredDirectories: readonly IDiscoveredDirectory[], result: DirectoryCustomization[]): Promise<void> {
 		const discoveredDirectories = allDiscoveredDirectories.filter(d => {
 			if (type === CustomizationType.Agent) {
 				return d.type === DiscoveredType.Agent;
@@ -717,6 +719,23 @@ export class SessionCustomizationDiscovery extends Disposable {
 				children: []
 			});
 		}
+
+		const fixedHookDirectoryUris = type === CustomizationType.Hook
+			? new ResourceSet([
+				...fixedDiscoveryFiles.workspace
+					.filter(root => root.type === DiscoveredType.Hook)
+					.map(root => joinPath(this._workingDirectory, ...root.path)),
+				...fixedDiscoveryFiles.user
+					.filter(root => root.type === DiscoveredType.Hook)
+					.map(root => joinPath(this._userHome, ...root.path)),
+			])
+			: undefined;
+
+		const agentInstructionDirectoryUris = new ResourceSet(
+			outputDirectories
+				.filter(directory => directory.type === DiscoveredType.AgentInstruction)
+				.map(directory => directory.uri)
+		);
 
 		for (const customization of customizations) {
 			if (customization.type !== type) {
@@ -754,6 +773,30 @@ export class SessionCustomizationDiscovery extends Disposable {
 		}
 
 		for (const { uri, name, writable, children } of byParent.values()) {
+			if (type === CustomizationType.Hook && fixedHookDirectoryUris?.has(uri) && children.length === 0) {
+				continue;
+			}
+
+			if (type === CustomizationType.Rule && agentInstructionDirectoryUris.has(uri)) {
+				const existingChildren: ChildCustomization[] = [];
+				for (const child of children) {
+					const childUri = URI.parse(child.uri);
+					try {
+						const stat = await this._fileService.resolve(childUri, { resolveMetadata: true });
+						if (stat.isFile) {
+							existingChildren.push(child);
+						}
+					} catch {
+						// Ignore missing agent-instruction files; they should not surface.
+					}
+				}
+				if (existingChildren.length === 0) {
+					continue;
+				}
+				children.length = 0;
+				children.push(...existingChildren);
+			}
+
 			children.sort((a, b) => compareStrings(a.uri, b.uri));
 			result.push({
 				type: CustomizationType.Directory,
