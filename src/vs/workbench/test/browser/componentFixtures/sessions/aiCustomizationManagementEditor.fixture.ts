@@ -1028,6 +1028,9 @@ async function renderMcpBrowseMode(ctx: ComponentFixtureContext): Promise<void> 
 				override registerExternalHarness() { return { dispose() { } }; }
 			}());
 			reg.defineInstance(IAgentHostCustomizationService, createMockAgentHostCustomizationService());
+			reg.defineInstance(IOutputService, new class extends mock<IOutputService>() {
+				override async showChannel() { }
+			}());
 		},
 	});
 

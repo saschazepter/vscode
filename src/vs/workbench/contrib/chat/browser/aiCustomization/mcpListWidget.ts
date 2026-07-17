@@ -310,16 +310,14 @@ class McpServerItemRenderer implements IListRenderer<IMcpServerItemEntry | IMcpS
 			}));
 			signInButton.label = localize('signIn', "Sign In");
 			signInButton.element.classList.add('mcp-server-sign-in');
-			templateData.actionDisposables.add(DOM.addDisposableListener(signInButton.element, DOM.EventType.MOUSE_DOWN, event => DOM.EventHelper.stop(event, true)));
-			templateData.actionDisposables.add(signInButton.onDidClick(async event => {
-				DOM.EventHelper.stop(event, true);
+			registerMcpInlineButtonAction(templateData.actionDisposables, signInButton, async () => {
 				signInButton.enabled = false;
 				try {
-					await this.agentHostCustomizationService.authenticateMcpServer(this.customizationHarnessService.activeSessionResource.get(), activeSessionServer.id);
+					await authenticateMcpServer(this.agentHostCustomizationService, this.customizationHarnessService.activeSessionResource.get(), activeSessionServer.id);
 				} finally {
 					signInButton.enabled = true;
 				}
-			}));
+			});
 		}
 
 		if (!presentation.icon) {
@@ -327,7 +325,7 @@ class McpServerItemRenderer implements IListRenderer<IMcpServerItemEntry | IMcpS
 		}
 
 		const showOutput = state === McpServerStatus.Error || state === McpConnectionState.Kind.Error
-			? this.getShowOutputHandler(element)
+			? getMcpServerOutputHandler(this.outputService, element.type === 'session-server-item' ? undefined : element.localServer, activeSessionServer)
 			: undefined;
 		if (showOutput) {
 			const showOutputLabel = localize('showMcpServerOutput', "Show output for {0}", label);
@@ -337,11 +335,9 @@ class McpServerItemRenderer implements IListRenderer<IMcpServerItemEntry | IMcpS
 			}));
 			statusButton.icon = presentation.icon;
 			statusButton.element.classList.add('mcp-server-status', 'mcp-server-status-action', presentation.className);
-			templateData.actionDisposables.add(DOM.addDisposableListener(statusButton.element, DOM.EventType.MOUSE_DOWN, event => DOM.EventHelper.stop(event, true)));
-			templateData.actionDisposables.add(statusButton.onDidClick(event => {
-				DOM.EventHelper.stop(event, true);
+			registerMcpInlineButtonAction(templateData.actionDisposables, statusButton, () => {
 				showOutput();
-			}));
+			});
 			return;
 		}
 
@@ -351,25 +347,38 @@ class McpServerItemRenderer implements IListRenderer<IMcpServerItemEntry | IMcpS
 		templateData.actionDisposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), statusElement, presentation.label));
 	}
 
-	private getShowOutputHandler(element: IMcpServerItemEntry | IMcpSessionServerItemEntry | IMcpBuiltinItemEntry): (() => void) | undefined {
-		const activeSessionServer = getActiveSessionServer(element);
-		const outputChannelId = activeSessionServer?.logOutputChannelId;
-		if (outputChannelId) {
-			return () => {
-				void this.outputService.showChannel(outputChannelId);
-			};
-		}
-		const localServer = element.type !== 'session-server-item' ? element.localServer : undefined;
-		if (localServer) {
-			return () => localServer.showOutput();
-		}
-		return undefined;
-	}
-
 	disposeTemplate(templateData: IMcpServerItemTemplateData): void {
 		templateData.elementDisposables.dispose();
 		templateData.actionDisposables.dispose();
 	}
+}
+
+/** Registers an inline MCP button without allowing its pointer or click events to open the containing list row. */
+export function registerMcpInlineButtonAction(store: Pick<DisposableStore, 'add'>, button: Button, action: () => void | Promise<void>): void {
+	store.add(DOM.addDisposableGenericMouseDownListener(button.element, event => DOM.EventHelper.stop(event, true)));
+	store.add(button.onDidClick(event => {
+		DOM.EventHelper.stop(event, true);
+		void action();
+	}));
+}
+
+/** Runs authentication for one active-session MCP server. */
+export function authenticateMcpServer(agentHostCustomizationService: IAgentHostCustomizationService, sessionResource: URI, serverId: string): Promise<boolean> {
+	return agentHostCustomizationService.authenticateMcpServer(sessionResource, serverId);
+}
+
+/** Resolves the output action for an MCP server, preferring its active agent-host output. */
+export function getMcpServerOutputHandler(outputService: Pick<IOutputService, 'showChannel'>, localServer: Pick<IMcpServer, 'showOutput'> | undefined, activeSessionServer: AgentHostMcpServer | undefined): (() => void) | undefined {
+	const outputChannelId = activeSessionServer?.logOutputChannelId;
+	if (outputChannelId) {
+		return () => {
+			void outputService.showChannel(outputChannelId);
+		};
+	}
+	if (localServer) {
+		return () => localServer.showOutput();
+	}
+	return undefined;
 }
 
 interface IMcpStatusPresentation {
