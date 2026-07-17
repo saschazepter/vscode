@@ -69,10 +69,12 @@ export interface ILocalTranscriptionProxyConfig {
 }
 
 /**
- * On-device speech-to-text using a downloaded NeMo RNN-T model (Nemotron, run
- * directly on onnxruntime-node). Runs in a utility process. A single
- * transcription session is active at a time (dictation is a singleton in the
- * renderer).
+ * On-device speech-to-text using a downloaded model. Two model families are
+ * supported: Whisper (encoder-decoder, run via transformers.js on
+ * onnxruntime-node) and Nemotron (NeMo RNN-T, run directly on onnxruntime-node);
+ * the model is chosen by the `chat.speechToText.model` setting. Runs in a
+ * utility process. A single transcription session is active at a time (dictation
+ * is a singleton in the renderer).
  *
  * The renderer streams PCM16 mono 16 kHz audio via `pushAudio`; the service
  * emits interim transcripts on `onDidTranscribe` and a final one after `stop`.
@@ -99,12 +101,13 @@ export interface ILocalTranscriptionService {
 
 	/**
 	 * Ensure the model is downloaded/loaded (idempotent) and begin a new
-	 * transcription session. `cacheDir` is where model files are stored. The
-	 * single supported Nemotron model is fixed; there is no model or language
-	 * selection. `proxy` carries the renderer's `http.*` settings so a first-use
-	 * download can traverse a corporate proxy.
+	 * transcription session. `cacheDir` is where model files are stored. `model`
+	 * selects the on-device model (Whisper or Nemotron); when omitted the
+	 * service default is used. `language` optionally hints the spoken language
+	 * (Whisper only; Nemotron auto-detects). `proxy` carries the renderer's
+	 * `http.*` settings so a first-use download can traverse a corporate proxy.
 	 */
-	start(options: { readonly cacheDir: string; readonly proxy?: ILocalTranscriptionProxyConfig }): Promise<void>;
+	start(options: { readonly cacheDir: string; readonly model?: string; readonly language?: string; readonly proxy?: ILocalTranscriptionProxyConfig }): Promise<void>;
 
 	/** Append captured audio (raw little-endian PCM16 mono 16 kHz). */
 	pushAudio(chunk: VSBuffer): Promise<void>;

@@ -132,6 +132,17 @@ export class NemotronTranscriber {
 	}
 
 	/**
+	 * Whether `model` selects the Nemotron RNN-T transducer (rather than a
+	 * Whisper export). The service uses this to dispatch to this transcriber
+	 * instead of the transformers.js pipeline. Matches the `nemotron` model
+	 * family by id so future Nemotron revisions/quantizations are also routed
+	 * here without another allowlist entry.
+	 */
+	static isNemotronModel(model: string): boolean {
+		return /nemotron/i.test(model);
+	}
+
+	/**
 	 * Release the native ONNX sessions and drop references to them. Safe to call
 	 * more than once. Invoke when replacing/reloading the model or disposing the
 	 * owning service so the ~800MB of native allocations do not stay resident

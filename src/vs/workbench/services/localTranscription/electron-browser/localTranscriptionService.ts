@@ -31,7 +31,7 @@ function isOnDeviceTranscriptionSupported(): boolean {
 
 /**
  * Renderer-side proxy for the on-device transcription service, which runs in a
- * utility process (heavy: native onnxruntime-node). The
+ * utility process (heavy: transformers.js + native onnxruntime-node). The
  * worker is spun up lazily on first use and torn down with the window.
  */
 export class LocalTranscriptionService {
@@ -73,7 +73,7 @@ export class LocalTranscriptionService {
 	get onDidTranscribe() { return this._getProxy().onDidTranscribe; }
 
 	getModelStatus() { return this._getProxy().getModelStatus(); }
-	start(options: { cacheDir: string }) { return this._getProxy().start({ cacheDir: options.cacheDir, proxy: this._readProxyConfig() }); }
+	start(options: { cacheDir: string; model?: string; language?: string }) { return this._getProxy().start({ cacheDir: options.cacheDir, model: options.model, language: options.language, proxy: this._readProxyConfig() }); }
 	pushAudio(chunk: Parameters<ILocalTranscriptionService['pushAudio']>[0]) { return this._getProxy().pushAudio(chunk); }
 	stop() { return this._getProxy().stop(); }
 	cancel() { return this._getProxy().cancel(); }
