@@ -3169,15 +3169,17 @@ suite('ClaudeAgent', () => {
 		// fallback `'default'` won, and a plan-mode session silently
 		// downgraded to default mode mid-chat.
 		//
-		// The fix: only forward `setPermissionMode` when the live config
-		// actually carries a value, leaving the session's seeded
-		// bijective state (seeded into the pipeline at materialize time)
-		// authoritative otherwise.
+		// The C9 mechanism: the pipeline is seeded at materialize with the
+		// resolved permissionMode ('plan') as its applied-config baseline, and
+		// `setPermissionMode` dedups against it. Turn 2 reuses the live pipeline,
+		// resolves 'plan' again, matches the seed, and issues NO runtime call —
+		// the seeded mode stays authoritative and 'default' is never pushed.
 		//
 		// Setup: stage the per-session DB with `claude.permissionMode='plan'`,
-		// then run two turns. Turn 1 picks up the mode via
-		// `Options.permissionMode` at materialize. Turn 2 must NOT
-		// record an extra `setPermissionMode` call.
+		// then run two turns on ONE subprocess (park at the turn boundary so the
+		// pipeline stays live for turn 2). Turn 1 picks up the mode via
+		// `Options.permissionMode` at materialize; turn 2 records no
+		// `setPermissionMode` call.
 		const sessionId = 'cross-window-mode-session';
 		const sessionUri = AgentSession.uri('claude', sessionId);
 
@@ -3194,19 +3196,28 @@ suite('ClaudeAgent', () => {
 			createdAt: 4900,
 			cwd: URI.file('/work').fsPath,
 		}];
+		// Park the consumer loop at the turn boundary so the pipeline stays live
+		// across both turns on a single subprocess (production reuse).
+		const advance = new DeferredPromise<void>();
+		sdk.queryAdvance = async (i: number) => { if (i === 2) { await advance.p; } };
 		sdk.nextQueryMessages = [makeSystemInitMessage(sessionId), makeResultSuccess(sessionId)];
 		await agent.chats.sendMessage(defaultChatUri(sessionUri), 'turn-1', undefined, undefined, 't1');
 
-		sdk.nextQueryMessages = [makeResultSuccess(sessionId)];
-		await agent.chats.sendMessage(defaultChatUri(sessionUri), 'turn-2', undefined, undefined, 't2');
+		// Turn 2 reuses the live pipeline; its result drains at the parked boundary.
+		sdk.nextQueryMessages.push(makeResultSuccess(sessionId));
+		const turn2 = agent.chats.sendMessage(defaultChatUri(sessionUri), 'turn-2', undefined, undefined, 't2');
+		advance.complete();
+		await turn2;
 
 		const fakeQuery = sdk.warmQueries.at(-1)?.produced;
 		assert.deepStrictEqual({
+			startupCount: sdk.startupCallCount,
 			optionsPermissionMode: sdk.capturedStartupOptions[0]?.permissionMode,
 			recordedModes: fakeQuery?.recordedPermissionModes ?? [],
 		}, {
+			startupCount: 1,
 			optionsPermissionMode: 'plan',
-			recordedModes: ['plan'],
+			recordedModes: [],
 		});
 	});
 
@@ -5811,7 +5822,7 @@ suite('ClaudeAgent (Phase 9 — runtime mutation surface)', () => {
 		assert.strictEqual(resumeOpts.resume, sid);
 	});
 
-	test('rebind re-applies bijective state (model + effort) on the new Query', async () => {
+	test('rebuild carries bijective state (model + effort) into the new Query via Options', async () => {
 		const { ctx, sessionUri, sessionId, query: firstQuery, advance } = await materialize();
 
 		// Hot-swap model + effort on the live query so the bijective
@@ -5823,18 +5834,19 @@ suite('ClaudeAgent (Phase 9 — runtime mutation surface)', () => {
 		await p2;
 		assert.deepStrictEqual({ models: firstQuery.recordedModels, efforts: firstQuery.recordedFlagSettings.map(s => s.effortLevel) }, { models: ['claude-sonnet-4-6'], efforts: ['high'] });
 
-		// Now abort and resend; the rebound query MUST receive the same
-		// model + effort via the rebind's re-apply pass.
+		// Now abort and resend; the rebuilt query MUST carry the same model +
+		// effort — under C9 delivered via the rebuild's `Options` (baked from the
+		// provisional model), NOT a runtime `setModel`/`applyFlagSettings` replay.
 		await ctx.agent.chats.abort(defaultChatUri(sessionUri));
 		ctx.sdk.queryAdvance = undefined;
 		ctx.sdk.nextQueryMessages = [makeSystemInitMessage(sessionId), makeResultSuccess(sessionId)];
 		await ctx.agent.chats.sendMessage(defaultChatUri(sessionUri), 'after-abort', undefined, undefined, 'turn-3');
 
-		const reboundQuery = ctx.sdk.warmQueries[1].produced!;
+		const rebuildOpts = ctx.sdk.capturedStartupOptions[1];
 		assert.deepStrictEqual({
-			models: reboundQuery.recordedModels,
-			efforts: reboundQuery.recordedFlagSettings.map(s => s.effortLevel),
-		}, { models: ['claude-sonnet-4-6'], efforts: ['high'] });
+			model: rebuildOpts.model,
+			effort: rebuildOpts.effort,
+		}, { model: 'claude-sonnet-4-6', effort: 'high' });
 	});
 
 	test('intermediate result during steering does NOT complete the in-flight sendMessage or fire ChatTurnComplete', async () => {
@@ -6415,6 +6427,12 @@ suite('ClaudeAgent — Phase 11 customizations', () => {
 
 		// A successful snapshot: one SDK-only command, no agents/MCP. (No disk
 		// skills exist under /work, so the command becomes a built-in.)
+		// Park the consumer loop at the turn boundary (index 2) so the pipeline
+		// stays live for the post-turn snapshot — the real SDK iterable parks
+		// between turns; the fake would otherwise end the stream and mark the
+		// pipeline dead, collapsing the snapshot to the disk-only fallback.
+		const advance = new DeferredPromise<void>();
+		sdk.queryAdvance = async (i: number) => { if (i === 2) { await advance.p; } };
 		sdk.supportedCommandsResult = [{ name: 'sdkcmd', description: 'Provided by the runtime.', argumentHint: '' }];
 		sdk.supportedAgentsResult = [];
 		sdk.mcpServerStatusResult = [];
@@ -6437,6 +6455,7 @@ suite('ClaudeAgent — Phase 11 customizations', () => {
 			{ count: container.children?.length, name: child.name, description: child.description },
 			{ count: 1, name: 'sdkcmd', description: 'Provided by the runtime.' }
 		);
+		advance.complete();
 	});
 
 	test('getSessionCustomizations surfaces a native plugin captured from the live SDK init.plugins (path filter)', async () => {
