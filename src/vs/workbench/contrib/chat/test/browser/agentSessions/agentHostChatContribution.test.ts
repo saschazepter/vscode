@@ -4486,7 +4486,7 @@ suite('AgentHostChatContribution', () => {
 				type: 'chat/toolCallComplete', session, turnId, toolCallId: 'tc-term-confirm',
 				result: { success: true, pastTenseMessage: 'Ran command', content: [{ type: 'text', text: 'done\n' }] },
 			} as ChatAction);
-			fire({ type: 'chat/turnComplete', session, turnId } as ChatAction);
+			fire({ type: 'chat/turnComplete', endedAt: '2025-01-01T00:00:00.000Z', session, turnId } as ChatAction);
 			await turnPromise;
 
 			// Still exactly one card across the whole turn.
