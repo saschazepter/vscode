@@ -651,8 +651,6 @@ export class CopilotAgentSession extends Disposable {
 	private readonly _toolSearchActive: boolean;
 	/** Deferred promises for pending client tool calls, keyed by toolCallId. */
 	private readonly _pendingClientToolCalls = new PendingRequestRegistry<ToolResultObject>();
-	/** Tool-start barrier for tool-search handlers that may race the SDK start event. */
-	private readonly _pendingClientToolStarts = new PendingRequestRegistry<boolean>();
 	/** Pending SDK MCP auth handler promises, keyed by SDK auth request id. */
 	private readonly _pendingMcpAuthRequests = new Map<string, IPendingMcpAuthRequest>();
 	/** `pending-edit-content:` URIs written during permission requests, keyed
@@ -816,7 +814,6 @@ export class CopilotAgentSession extends Disposable {
 			}));
 		}
 		this._register(toDisposable(() => this._cancelPendingClientToolCalls()));
-		this._register(toDisposable(() => this._pendingClientToolStarts.denyAll(false)));
 		this._register(toDisposable(() => {
 			for (const pending of this._pendingAutoApprovals.values()) {
 				pending.complete(undefined);
@@ -1102,15 +1099,6 @@ export class CopilotAgentSession extends Disposable {
 					skipPermission: true,
 					handler: async (_args: Record<string, unknown>, invocation) => {
 						try {
-							const started = await raceTimeout(
-								this._pendingClientToolStarts.register(invocation.toolCallId),
-								5_000,
-								() => this._pendingClientToolStarts.respond(invocation.toolCallId, false),
-							);
-							if (started !== true) {
-								return this._toolSearchFailure('Timed out waiting for the tool-search call to start.');
-							}
-
 							const candidates = this._toToolSearchCandidates(invocation.availableTools);
 							const clientResult = await raceTimeout(
 								this._pendingClientToolCalls.registerAndFire(invocation.toolCallId, () => this._emitToolSearchReady(invocation.toolCallId, candidates)),
@@ -3323,9 +3311,6 @@ export class CopilotAgentSession extends Disposable {
 				contributor,
 				_meta: toToolCallMeta(meta),
 			}, parentToolCallId);
-			if (e.data.toolName === RUNTIME_TOOL_SEARCH_TOOL_NAME && clientToolName === CLIENT_TOOL_SEARCH_REFERENCE_NAME) {
-				this._pendingClientToolStarts.respondOrBuffer(e.data.toolCallId, true);
-			}
 
 			// No client is connected to run this client tool. Fail it
 			// immediately instead of leaving it pending until the
