@@ -43,12 +43,11 @@ registerAction2(class extends Action2 {
 			id: 'sessions.defaultCopilot.branchPicker',
 			title: localize2('branchPicker', "Branch"),
 			f1: false,
-			precondition: SessionHasGitRepositoryContext,
 			menu: [{
 				id: Menus.NewSessionRepositoryConfig,
 				group: 'navigation',
 				order: 2,
-				when: ContextKeyExpr.and(IsNewChatSessionContext, IsActiveSessionCopilotChatCLI),
+				when: ContextKeyExpr.and(IsNewChatSessionContext, IsActiveSessionCopilotChatCLI, SessionHasGitRepositoryContext),
 			}],
 		});
 	}
@@ -239,7 +238,12 @@ class CopilotActiveSessionContribution extends Disposable implements IWorkbenchC
 				const provider = sessionsProvidersService.getProvider(session.providerId);
 				const providerSession = provider instanceof CopilotChatSessionsProvider ? provider.getSession(session.sessionId) : undefined;
 				const isLoading = providerSession?.loading.read(reader);
-				hasRepositoryKey.set(!isLoading && !!providerSession?.gitRepository);
+				const gitRepository = providerSession?.gitRepository;
+				// An empty repository (no HEAD commit) cannot run worktree
+				// isolation, so treat it as having no usable git repository —
+				// mirrors CopilotCLISession's own worktree gating.
+				const hasHeadCommit = !!gitRepository?.state.read(reader).HEAD?.commit;
+				hasRepositoryKey.set(!isLoading && !!gitRepository && hasHeadCommit);
 			} else if (session?.providerId === LOCAL_AGENT_HOST_PROVIDER_ID) {
 				const provider = sessionsProvidersService.getProvider(session.providerId);
 				const providerSession = provider instanceof BaseAgentHostSessionsProvider

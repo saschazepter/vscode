@@ -275,7 +275,7 @@ registerAction2(class extends Action2 {
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const voiceController = accessor.get(IVoiceSessionController);
-		voiceController.disconnect();
+		voiceController.disconnect('explicit');
 	}
 });
 
@@ -516,6 +516,12 @@ configurationRegistry.registerConfiguration({
 		'agents.voice.showTranscript': {
 			type: 'boolean',
 			markdownDescription: nls.localize('agents.voice.showTranscript', "Show the voice transcript overlay in the chat input area while voice mode is active. Enable this to read responses as text when `#agents.voice.speakResponses#` is disabled."),
+			default: false,
+			scope: ConfigurationScope.APPLICATION,
+		},
+		'agents.voice.liveTranscript': {
+			type: 'boolean',
+			markdownDescription: nls.localize('agents.voice.liveTranscript', "Show your speech as a live, word-by-word transcript while you are speaking. When disabled, your transcript appears only once you finish speaking. Requires `#agents.voice.showTranscript#` to be enabled to be visible."),
 			default: false,
 			scope: ConfigurationScope.APPLICATION,
 		},
