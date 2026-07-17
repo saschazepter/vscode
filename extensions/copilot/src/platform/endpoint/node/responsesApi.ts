@@ -379,20 +379,7 @@ function rawMessagesToResponseAPI(modelId: string, messages: readonly Raw.ChatMe
 		switch (message.role) {
 			case Raw.ChatRole.Assistant:
 				if (message.content.length) {
-					input.push(...extractCompactionData(message.content));
-					input.push(...extractThinkingData(message.content));
-					const asstContent = message.content.map(rawContentToResponsesAssistantContent).filter(isDefined);
-					if (asstContent.length) {
-						const assistantMessage: ResponseInputAssistantMessageWithPhase = {
-							role: 'assistant',
-							content: asstContent,
-							type: 'message',
-							phase: extractPhaseData(message.content),
-						};
-						// The Responses API expects previous assistant message content as output_text/refusal,
-						// but the SDK's ResponseOutputMessage type requires response-only id/status fields.
-						input.push(assistantMessage as OpenAI.Responses.ResponseInputItem);
-					}
+					input.push(...extractAssistantResponseItems(message.content));
 				}
 				if (message.toolCalls) {
 					for (const toolCall of message.toolCalls) {
@@ -642,22 +629,64 @@ function isResponsesReasoningId(id: string | undefined): boolean {
 	return typeof id === 'string' && id.startsWith('rs');
 }
 
-function extractThinkingData(content: Raw.ChatCompletionContentPart[]): OpenAI.Responses.ResponseReasoningItem[] {
-	return coalesce(content.map(part => {
-		if (part.type === Raw.ChatCompletionContentPartKind.Opaque) {
-			const thinkingData = rawPartAsThinkingData(part);
-			// Only round-trip genuine Responses API reasoning items. A foreign id (or a thinking
-			// block with no encrypted payload) would otherwise 400 the whole request.
-			if (thinkingData && thinkingData.encrypted && isResponsesReasoningId(thinkingData.id)) {
-				return {
-					type: 'reasoning',
-					id: thinkingData.id,
-					summary: [],
-					encrypted_content: thinkingData.encrypted,
-				} satisfies OpenAI.Responses.ResponseReasoningItem;
-			}
+function extractAssistantResponseItems(content: Raw.ChatCompletionContentPart[]): OpenAI.Responses.ResponseInputItem[] {
+	const input: OpenAI.Responses.ResponseInputItem[] = [];
+	const phase = extractPhaseData(content);
+	let assistantContent: ResponseInputAssistantTextContentPart[] = [];
+
+	const flushAssistantContent = () => {
+		if (!assistantContent.length) {
+			return;
 		}
-	}));
+		const assistantMessage: ResponseInputAssistantMessageWithPhase = {
+			role: 'assistant',
+			content: assistantContent,
+			type: 'message',
+			phase,
+		};
+		// The Responses API expects previous assistant message content as output_text/refusal,
+		// but the SDK's ResponseOutputMessage type requires response-only id/status fields.
+		input.push(assistantMessage as OpenAI.Responses.ResponseInputItem);
+		assistantContent = [];
+	};
+
+	for (const part of content) {
+		const assistantPart = rawContentToResponsesAssistantContent(part);
+		if (assistantPart) {
+			assistantContent.push(assistantPart);
+			continue;
+		}
+		if (part.type !== Raw.ChatCompletionContentPartKind.Opaque) {
+			continue;
+		}
+
+		const compaction = rawPartAsCompactionData(part);
+		if (compaction) {
+			flushAssistantContent();
+			input.push({
+				type: openAIContextManagementCompactionType,
+				id: compaction.id,
+				encrypted_content: compaction.encrypted_content,
+			} as unknown as OpenAI.Responses.ResponseInputItem);
+			continue;
+		}
+
+		const thinkingData = rawPartAsThinkingData(part);
+		// Only round-trip genuine Responses API reasoning items. A foreign id (or a thinking
+		// block with no encrypted payload) would otherwise 400 the whole request.
+		if (thinkingData?.encrypted && isResponsesReasoningId(thinkingData.id)) {
+			flushAssistantContent();
+			input.push({
+				type: 'reasoning',
+				id: thinkingData.id,
+				summary: [],
+				encrypted_content: thinkingData.encrypted,
+			} satisfies OpenAI.Responses.ResponseReasoningItem);
+		}
+	}
+
+	flushAssistantContent();
+	return input;
 }
 
 function extractPhaseData(content: Raw.ChatCompletionContentPart[]): string | undefined {
@@ -670,25 +699,6 @@ function extractPhaseData(content: Raw.ChatCompletionContentPart[]): string | un
 		}
 	}
 	return undefined;
-}
-
-/**
- * Extracts compaction data from opaque content parts and converts them to
- * Responses API input items for round-tripping.
- */
-function extractCompactionData(content: Raw.ChatCompletionContentPart[]): OpenAI.Responses.ResponseInputItem[] {
-	return coalesce(content.map(part => {
-		if (part.type === Raw.ChatCompletionContentPartKind.Opaque) {
-			const compaction = rawPartAsCompactionData(part);
-			if (compaction) {
-				return {
-					type: openAIContextManagementCompactionType,
-					id: compaction.id,
-					encrypted_content: compaction.encrypted_content,
-				} as unknown as OpenAI.Responses.ResponseInputItem;
-			}
-		}
-	}));
 }
 
 /**
@@ -1273,12 +1283,14 @@ export class OpenAIResponsesProcessor {
 								undefined :
 								chunk.item.summary.map(s => s.text),
 							encrypted: chunk.item.encrypted_content,
+							outputIndex: chunk.output_index,
 						} : undefined
 					});
 				} else if (chunk.item.type === 'message') {
 					onProgress({
 						text: '',
-						phase: (chunk.item as ResponseOutputItemWithPhase).phase
+						phase: (chunk.item as ResponseOutputItemWithPhase).phase,
+						responseOutputIndex: chunk.output_index,
 					});
 				}
 				return;

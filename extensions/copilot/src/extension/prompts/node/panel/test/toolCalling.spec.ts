@@ -3,11 +3,13 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { Raw } from '@vscode/prompt-tsx';
 import { describe, expect, test } from 'vitest';
 import type * as vscode from 'vscode';
 import { IChatHookService, type IPreToolUseHookResult } from '../../../../../platform/chat/common/chatHookService';
 import { ConfigKey, IConfigurationService } from '../../../../../platform/configuration/common/configurationService';
 import { IEndpointProvider } from '../../../../../platform/endpoint/common/endpointProvider';
+import { rawPartAsThinkingData } from '../../../../../platform/endpoint/common/thinkingDataContainer';
 import type { IChatEndpoint } from '../../../../../platform/networking/common/networking';
 import { DeferredPromise } from '../../../../../util/vs/base/common/async';
 import { CancellationToken } from '../../../../../util/vs/base/common/cancellation';
@@ -222,6 +224,57 @@ class ParallelAwareToolsService implements IToolsService {
 }
 
 describe('ChatToolCalls (toolCalling.tsx)', () => {
+	test('preserves commentary before reasoning from Responses API output order', async () => {
+		const testingServiceCollection = createExtensionUnitTestingServices();
+		const accessor = testingServiceCollection.createTestingAccessor();
+		const instantiationService = accessor.get(IInstantiationService);
+		const endpointProvider = accessor.get(IEndpointProvider);
+		const endpoint = await endpointProvider.getChatEndpoint('copilot-utility');
+		const round: IToolCallRound = {
+			id: 'round-1',
+			modelId: endpoint.model,
+			response: 'commentary',
+			responseOutputIndex: 0,
+			thinking: {
+				id: 'rs_after_commentary',
+				text: '',
+				encrypted: 'enc_reasoning',
+				outputIndex: 1,
+			},
+			toolInputRetry: 0,
+			toolCalls: [],
+		};
+		const promptContext: IBuildPromptContext = {
+			query: 'test',
+			history: [],
+			chatVariables: new ChatVariablesCollection(),
+			conversation: { sessionId: 'session-order' } as unknown as Conversation,
+			request: {} as vscode.ChatRequest,
+			tools: {
+				toolReferences: [],
+				toolInvocationToken: {} as vscode.ChatParticipantToolToken,
+				availableTools: [],
+			},
+		};
+
+		const { messages } = await renderPromptElement(instantiationService, endpoint, ChatToolCalls, {
+			promptContext,
+			toolCallRounds: [round],
+			toolCallResults: undefined,
+		});
+		const assistantMessage = messages.find(message => message.role === Raw.ChatRole.Assistant);
+
+		expect(assistantMessage?.content.map(part => {
+			if (part.type === Raw.ChatCompletionContentPartKind.Text) {
+				return 'message';
+			}
+			if (part.type === Raw.ChatCompletionContentPartKind.Opaque && rawPartAsThinkingData(part)) {
+				return 'reasoning';
+			}
+			return 'other';
+		})).toEqual(['message', 'reasoning']);
+	});
+
 	test('starts multiple sub-agent tool calls in parallel', async () => {
 		const toolName = ToolName.CoreRunSubagent;
 		const firstCallId = 'subagent-call-1';

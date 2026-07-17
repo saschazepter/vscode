@@ -53,6 +53,8 @@ export interface IToolCallRound {
 	phase?: string;
 	/** The model ID. */
 	modelId?: string;
+	/** The first Responses API output index represented by `response`. */
+	responseOutputIndex?: number;
 }
 
 export interface InternalToolReference extends vscode.ChatLanguageModelToolReference {

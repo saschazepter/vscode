@@ -392,6 +392,48 @@ describe('createResponsesRequestBody', () => {
 		services.dispose();
 	});
 
+	it('preserves commentary before reasoning in stateless request history', () => {
+		const services = createPlatformServices();
+		const accessor = services.createTestingAccessor();
+		const instantiationService = accessor.get(IInstantiationService);
+		const messages: Raw.ChatMessage[] = [{
+			role: Raw.ChatRole.Assistant,
+			content: [
+				{ type: Raw.ChatCompletionContentPartKind.Text, text: 'commentary' },
+				{
+					type: Raw.ChatCompletionContentPartKind.Opaque,
+					value: {
+						type: CustomDataPartMimeTypes.ThinkingData,
+						thinking: { id: 'rs_after_commentary', text: '', encrypted: 'enc_reasoning' },
+					},
+				},
+			],
+			toolCalls: [{
+				id: 'call_after_reasoning',
+				type: 'function',
+				function: { name: 'grep_search', arguments: '{}' },
+			}],
+		}];
+
+		const body = instantiationService.invokeFunction(servicesAccessor => createResponsesRequestBody(servicesAccessor, createRequestOptions(messages, false), testEndpoint.model, testEndpoint));
+
+		expect(body.input?.map(item => item.type)).toEqual(['message', 'reasoning', 'function_call']);
+		expect(body.input?.[0]).toMatchObject({
+			type: 'message',
+			role: 'assistant',
+			content: [{ type: 'output_text', text: 'commentary' }],
+		});
+		expect(body.input?.[1]).toEqual({
+			type: 'reasoning',
+			id: 'rs_after_commentary',
+			summary: [],
+			encrypted_content: 'enc_reasoning',
+		});
+
+		accessor.dispose();
+		services.dispose();
+	});
+
 	it('drops foreign thinking (Messages API "thinking_N" id) so it cannot 400 the Responses request', () => {
 		// Reproduces "400 invalid_request_body: Invalid 'input[N].id': 'thinking_0'. Expected an
 		// ID that begins with 'rs'." Anthropic Messages-API thinking leaks into a Responses
@@ -1726,6 +1768,7 @@ describe('phase commentary followed by phase final_answer', () => {
 		const telemetryService = new SpyingTelemetryService();
 		const accumulatedTexts: string[] = [];
 		const phases: string[] = [];
+		const responseOutputIndices: number[] = [];
 
 		const commentaryText = 'Responding directly in commentary as requested. My name is GitHub Copilot.';
 		const finalText = 'My name is GitHub Copilot.';
@@ -1799,6 +1842,9 @@ describe('phase commentary followed by phase final_answer', () => {
 				if (delta.phase) {
 					phases.push(delta.phase);
 				}
+				if (delta.responseOutputIndex !== undefined) {
+					responseOutputIndices.push(delta.responseOutputIndex);
+				}
 				return undefined;
 			},
 			telemetryData,
@@ -1809,6 +1855,7 @@ describe('phase commentary followed by phase final_answer', () => {
 		}
 
 		expect(phases).toEqual(['commentary', 'final_answer']);
+		expect(responseOutputIndices).toEqual([0, 1]);
 
 		// The accumulated text must separate commentary and final_answer text
 		const finalAccumulatedText = accumulatedTexts[accumulatedTexts.length - 1];

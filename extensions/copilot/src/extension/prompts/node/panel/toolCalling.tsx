@@ -139,13 +139,18 @@ export class ChatToolCalls extends PromptElement<ChatToolCallsProps, void> {
 		const thinking = includeThinking && round.thinking && <ThinkingDataContainer thinking={round.thinking} />;
 		const phase = (round.phase && roundModelId === this.promptEndpoint.model) ? <PhaseDataContainer phase={round.phase} /> : undefined;
 		const compaction = round.compaction && <CompactionDataContainer compaction={round.compaction} />;
+		const responsePrecedesThinking = round.responseOutputIndex !== undefined
+			&& round.thinking?.outputIndex !== undefined
+			&& round.responseOutputIndex < round.thinking.outputIndex;
 		children.push(
 			<AssistantMessage toolCalls={assistantToolCalls}>
 				{statefulMarker}
+				{responsePrecedesThinking ? phase : undefined}
+				{responsePrecedesThinking ? round.response : undefined}
 				{thinking}
-				{phase}
+				{responsePrecedesThinking ? undefined : phase}
 				{compaction}
-				{round.response}
+				{responsePrecedesThinking ? undefined : round.response}
 			</AssistantMessage>);
 
 		// Tool call elements should be rendered with the later elements first, allowed to grow to fill the available space
