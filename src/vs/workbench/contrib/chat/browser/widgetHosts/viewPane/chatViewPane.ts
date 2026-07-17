@@ -562,7 +562,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 						listeningSession = currentSession;
 						ownerSession = currentSession;
 					} else {
-						this.voiceSessionController.stopListening();
+						this.voiceSessionController.discardListening();
 						listeningSession = undefined;
 					}
 				}

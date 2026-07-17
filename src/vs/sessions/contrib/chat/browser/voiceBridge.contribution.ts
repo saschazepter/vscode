@@ -260,7 +260,7 @@ class SessionsVoiceListeningContribution extends Disposable implements IWorkbenc
 			if (!listeningSession) {
 				listeningSession = targetSession ?? currentSession;
 			} else if (!targetSession && currentSession && !isEqual(currentSession, listeningSession)) {
-				voiceSessionController.stopListening();
+				voiceSessionController.discardListening();
 				listeningSession = undefined;
 			}
 		}));
