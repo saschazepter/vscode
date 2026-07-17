@@ -386,6 +386,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	/** Sessions currently showing a pending-response indicator because they are
 	 *  awaiting confirmation while unfocused (client-driven, no audio needed). */
 	private readonly _confirmationPendingSessions = new Set<string>();
+	/** Narration ids of confirmation prompts whose confirmation was resolved
+	 *  (e.g. the user pressed Allow) before the narration finished. Any
+	 *  `audio_response` chunks echoing one of these ids are dropped so a
+	 *  just-answered approval is never read aloud. Bounded, and an id is
+	 *  removed once its final chunk arrives. */
+	private readonly _cancelledConfirmationNarrationIds = new Set<string>();
 	/** Sessions showing a pending-response indicator because a reply COMPLETED
 	 *  while they were unfocused (client-driven, mirrors the confirmation
 	 *  indicator). Maps to the response summary to narrate when the session is
@@ -1222,6 +1228,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 							// identical text - is narrated afresh on focus.
 							if (currentState !== 'waiting_for_confirmation') {
 								this._narratedConfirmation.delete(this._sessionKey(sessionId));
+								// The confirmation was just answered (Allow/Deny/auto):
+								// stop reading the now-stale approval request aloud.
+								if (prev?.state === 'waiting_for_confirmation') {
+									this._stopConfirmationNarration(sessionId);
+								}
 							}
 						}
 
@@ -1300,6 +1311,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 								// marker once this session is no longer awaiting confirmation.
 								if (currentState !== 'waiting_for_confirmation') {
 									this._narratedConfirmation.delete(this._sessionKey(sessionId));
+									// The confirmation was just answered: stop reading the
+									// now-stale approval request aloud.
+									if (prev?.state === 'waiting_for_confirmation') {
+										this._stopConfirmationNarration(sessionId);
+									}
 								}
 							}
 							if (currentState === 'waiting_for_confirmation') {
@@ -1547,6 +1563,17 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			// (otherwise it is stranded and never read). Untagged / non-agent-host
 			// ids pass through unchanged.
 			const codingSessionId = this._canonicalSessionId(e.codingSessionId);
+			// A confirmation was resolved (e.g. the user pressed Allow) while its
+			// narration was still being requested/streamed: drop the now-stale
+			// approval narration so it isn't read aloud after the fact. Matched
+			// by narration id, so the agent's real reply (a different id) is
+			// unaffected. Clear the id once its final chunk has passed.
+			if (e.responseId !== undefined && this._cancelledConfirmationNarrationIds.has(e.responseId)) {
+				if (e.isFinal) {
+					this._cancelledConfirmationNarrationIds.delete(e.responseId);
+				}
+				return;
+			}
 			if (e.audio) {
 				this._markSolicitedNarrationAudioStarted(e.responseId);
 			}
@@ -1826,6 +1853,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._recentlyReadResponse.clear();
 		this._droppingRenarration.clear();
 		this._solicitedNarrationIds.clear();
+		this._cancelledConfirmationNarrationIds.clear();
 		this._lastHeardTranscriptById.clear();
 		this._awaitingReplyForSession = undefined;
 		this._prevSessionStates.clear();
@@ -1930,6 +1958,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 		this._pendingSolicitedNarrations.clear();
 		this._solicitedNarrationIds.clear();
+		this._cancelledConfirmationNarrationIds.clear();
 		this._pendingNarrationRetries.clear();
 		this._deferredNarrations.clear();
 		this._narratedConfirmation.clear();
@@ -4003,6 +4032,59 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		// (e.g. nothing was playing), so a later stray stop can't consume a stale id.
 		this._currentPlaybackResponseId = undefined;
 		this.voicePlaybackService.notifyPlaybackEnd(undefined);
+	}
+
+	/**
+	 * Stop reading a confirmation/approval request aloud once it has been
+	 * resolved (e.g. the user pressed the Allow button before the narration
+	 * finished). Cancels the session's in-flight confirmation narration(s):
+	 * drops their queued audio, remembers their ids so trailing / not-yet
+	 * arrived chunks are swallowed in the `audio_response` handler, and cuts
+	 * off playback if one of them is what is currently speaking. The agent's
+	 * subsequent real reply uses a different narration id and is unaffected.
+	 */
+	private _stopConfirmationNarration(sessionId: string): void {
+		const sessionKey = this._sessionKey(sessionId);
+		// Collect the narration ids of this session's confirmation narrations
+		// that are still in flight (requested/queued/playing but not finished).
+		const cancelledIds = new Set<string>();
+		for (const [narrationId, pending] of this._pendingSolicitedNarrations) {
+			if (pending.kind === 'confirmation' && this._sessionKey(pending.sessionId) === sessionKey) {
+				cancelledIds.add(narrationId);
+				this._clearPendingSolicitedNarration(narrationId, pending);
+			}
+		}
+		if (cancelledIds.size === 0) {
+			return;
+		}
+		// Drop any not-yet-played chunks of those narrations from the queue.
+		for (let i = this._audioQueue.length - 1; i >= 0; i--) {
+			const responseId = this._audioQueue[i].responseId;
+			if (responseId !== undefined && cancelledIds.has(responseId)) {
+				this._audioQueue.splice(i, 1);
+			}
+		}
+		// Remember the ids so trailing chunks (or a narration whose audio has
+		// not started arriving yet) are swallowed in the audio_response handler.
+		// Bound the set so ids that never yield audio can't leak across a long
+		// session.
+		for (const id of cancelledIds) {
+			if (this._cancelledConfirmationNarrationIds.size >= 64) {
+				const oldest = this._cancelledConfirmationNarrationIds.values().next().value;
+				if (oldest !== undefined) {
+					this._cancelledConfirmationNarrationIds.delete(oldest);
+				}
+			}
+			this._cancelledConfirmationNarrationIds.add(id);
+		}
+		// If one of the cancelled narrations is what's currently playing, cut it
+		// off. Mark it interrupted first so onPlaybackStopped doesn't treat it as
+		// "heard"; that handler then resets the slot, drains the queue and
+		// restores idle / hands-free listening.
+		if (this._currentPlaybackResponseId !== undefined && cancelledIds.has(this._currentPlaybackResponseId)) {
+			this._telemetryTtsInterrupted = true;
+			this.ttsPlaybackService.stopPlayback();
+		}
 	}
 
 	private _enqueueAudio(sessionId: string | undefined, audio: string, isFirstChunk: boolean, isFinal: boolean, transcript: string | undefined, responseId?: string): void {
