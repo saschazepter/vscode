@@ -27,7 +27,6 @@ import { IScmRepoAdapter, ScmAdapter } from './scmAdapter.js';
 import { UnifiedEditSourceTracking } from './unifiedEditSourceTracking.js';
 
 const MAX_TRACKED_FILE_SIZE = 5 * 1024 * 1024;
-const UNIFIED_TRACKING_SCOPE = 'unified';
 
 type GetRepo = (resource: URI, reader: IReader) => IScmRepoAdapter | undefined;
 
@@ -224,7 +223,6 @@ export class AgentHostEditSourceTracking extends Disposable {
 			codeBlockSuggestionId: undefined,
 			harness,
 			origin: 'agentHost',
-			trackingScope: UNIFIED_TRACKING_SCOPE,
 		});
 		const beforeResource = normalized.beforeUri ? toAgentHostUri(normalized.beforeUri, connectionAuthority) : undefined;
 		this._unifiedTracking.applyAgentEdit({

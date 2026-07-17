@@ -58,7 +58,6 @@ suite('Unified Edit Source Tracking', () => {
 				statsUuid: event.statsUuid,
 				origin: event.origin,
 				harness: event.harness,
-				trackingScope: event.trackingScope,
 				modifiedCount: event.modifiedCount,
 				deltaModifiedCount: event.deltaModifiedCount,
 				totalModifiedCount: event.totalModifiedCount,
@@ -68,8 +67,8 @@ suite('Unified Edit Source Tracking', () => {
 				totalModifiedCount: 2,
 				rows: [
 					{
-						sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost-$trackingScope:unified',
-						cleanedSourceKey: 'source:Chat.applyEdits-$harness:copilotcli-$origin:agentHost-$trackingScope:unified',
+						sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost',
+						cleanedSourceKey: 'source:Chat.applyEdits-$harness:copilotcli-$origin:agentHost',
 						extensionId: undefined,
 						extensionVersion: undefined,
 						modelId: 'model',
@@ -77,7 +76,6 @@ suite('Unified Edit Source Tracking', () => {
 						requestId: 'request',
 						origin: 'agentHost',
 						harness: 'copilotcli',
-						trackingScope: 'unified',
 						modifiedCount: 1,
 						deltaModifiedCount: 1,
 					},
@@ -91,7 +89,6 @@ suite('Unified Edit Source Tracking', () => {
 						requestId: undefined,
 						origin: undefined,
 						harness: undefined,
-						trackingScope: undefined,
 						modifiedCount: 1,
 						deltaModifiedCount: 1,
 					},
@@ -100,13 +97,12 @@ suite('Unified Edit Source Tracking', () => {
 			second: undefined,
 			events: [
 				{
-					sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost-$trackingScope:unified',
+					sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost',
 					trigger: 'hashChange',
 					languageId: 'typescript',
 					statsUuid: 'stats-1',
 					origin: 'agentHost',
 					harness: 'copilotcli',
-					trackingScope: 'unified',
 					modifiedCount: 1,
 					deltaModifiedCount: 1,
 					totalModifiedCount: 2,
@@ -118,7 +114,6 @@ suite('Unified Edit Source Tracking', () => {
 					statsUuid: 'stats-1',
 					origin: undefined,
 					harness: undefined,
-					trackingScope: undefined,
 					modifiedCount: 1,
 					deltaModifiedCount: 1,
 					totalModifiedCount: 2,
@@ -151,7 +146,7 @@ suite('Unified Edit Source Tracking', () => {
 			deltaModifiedCount: agentEvent.deltaModifiedCount,
 			totalModifiedCount: agentEvent.totalModifiedCount,
 		}, {
-			sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost-$trackingScope:unified',
+			sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost',
 			modifiedCount: 7,
 			deltaModifiedCount: 14,
 			totalModifiedCount: 7,
@@ -186,7 +181,7 @@ suite('Unified Edit Source Tracking', () => {
 		}, {
 			pending: undefined,
 			attributed: [{
-				sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost-$trackingScope:unified',
+				sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost',
 				modifiedCount: 5,
 			}],
 			eventCount: 1,
@@ -319,7 +314,6 @@ function agentSource(): TextModelEditSource {
 		codeBlockSuggestionId: undefined,
 		harness: 'copilotcli',
 		origin: 'agentHost',
-		trackingScope: 'unified',
 	});
 }
 

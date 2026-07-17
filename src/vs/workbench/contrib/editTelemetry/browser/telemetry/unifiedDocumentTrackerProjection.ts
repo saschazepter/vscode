@@ -27,7 +27,6 @@ export interface IEditTrackerSourceSnapshot {
 	readonly requestId: string | undefined;
 	readonly origin: string | undefined;
 	readonly harness: string | undefined;
-	readonly trackingScope: string | undefined;
 	readonly insertedCount: number;
 	readonly retainedCount: number;
 }
@@ -47,11 +46,6 @@ export interface IEditTrackerSnapshot {
 	readonly ranges: readonly IEditTrackerRangeSnapshot[];
 }
 
-export interface IEditTrackerShadowComparison {
-	readonly equal: boolean;
-	readonly differences: readonly string[];
-}
-
 export interface IEditSourceDetailsRowSnapshot {
 	readonly sourceKey: string;
 	readonly cleanedSourceKey: string;
@@ -62,7 +56,6 @@ export interface IEditSourceDetailsRowSnapshot {
 	readonly requestId: string | undefined;
 	readonly origin: string | undefined;
 	readonly harness: string | undefined;
-	readonly trackingScope: string | undefined;
 	readonly modifiedCount: number;
 	readonly deltaModifiedCount: number;
 }
@@ -72,7 +65,6 @@ export interface IEditSourceDetailsSnapshot {
 	readonly rows: readonly IEditSourceDetailsRowSnapshot[];
 }
 
-export type EditTrackerSourceSnapshotFilter = (source: IEditTrackerSourceSnapshot) => boolean;
 export type EditSourceDetailsOrder = 'tracker' | 'retained';
 
 /**
@@ -148,7 +140,6 @@ export function snapshotDocumentEditSourceTracker(
 			requestId: representative?.props.$$requestId,
 			origin: representative?.props.$origin,
 			harness: representative?.props.$harness,
-			trackingScope: representative?.props.$trackingScope,
 			insertedCount: tracker.getTotalInsertedCharactersCount(sourceKey),
 			retainedCount: retainedByKey.get(sourceKey) ?? 0,
 		};
@@ -164,40 +155,19 @@ export function snapshotDocumentEditSourceTracker(
 	};
 }
 
-export function filterEditTrackerSnapshot(
-	snapshot: IEditTrackerSnapshot,
-	filter: EditTrackerSourceSnapshotFilter,
-): IEditTrackerSnapshot {
-	const sources = snapshot.sources
-		.filter(filter)
-		.sort((left, right) => left.sourceIndex - right.sourceIndex)
-		.map((source, sourceIndex) => ({ ...source, sourceIndex }))
-		.sort((left, right) => left.sourceKey.localeCompare(right.sourceKey));
-	const sourceKeys = new Set(sources.map(source => source.sourceKey));
-	const ranges = snapshot.ranges.filter(range => sourceKeys.has(range.sourceKey));
-	return {
-		...snapshot,
-		totalRetainedCount: ranges.reduce((sum, range) => sum + range.endExclusive - range.start, 0),
-		sources,
-		ranges,
-	};
-}
-
 export function snapshotEditSourceDetails(
 	snapshot: IEditTrackerSnapshot,
-	filter: EditTrackerSourceSnapshotFilter = () => true,
 	limit = 30,
 	order: EditSourceDetailsOrder = 'tracker',
 ): IEditSourceDetailsSnapshot {
-	const filteredSources = snapshot.sources.filter(filter);
 	const getOrder = (source: IEditTrackerSourceSnapshot) => order === 'retained'
 		? source.retainedIndex ?? snapshot.ranges.length + source.sourceIndex
 		: source.sourceIndex;
-	const sources = filteredSources
-		.sort((left, right) => right.retainedCount - left.retainedCount || getOrder(left) - getOrder(right))
+	const sources = snapshot.sources
+		.toSorted((left, right) => right.retainedCount - left.retainedCount || getOrder(left) - getOrder(right))
 		.slice(0, limit);
 	return {
-		totalModifiedCount: filteredSources.reduce((sum, source) => sum + source.retainedCount, 0),
+		totalModifiedCount: snapshot.sources.reduce((sum, source) => sum + source.retainedCount, 0),
 		rows: sources.map(source => ({
 			sourceKey: source.sourceKey,
 			cleanedSourceKey: source.cleanedSourceKey,
@@ -208,52 +178,10 @@ export function snapshotEditSourceDetails(
 			requestId: source.requestId,
 			origin: source.origin,
 			harness: source.harness,
-			trackingScope: source.trackingScope,
 			modifiedCount: source.retainedCount,
 			deltaModifiedCount: source.insertedCount,
 		})),
 	};
-}
-
-export function compareEditTrackerSnapshots(
-	reference: IEditTrackerSnapshot,
-	candidate: IEditTrackerSnapshot,
-): IEditTrackerShadowComparison {
-	const differences: string[] = [];
-	compareField('content', reference.content, candidate.content, differences);
-	compareField('targetContent', reference.targetContent, candidate.targetContent, differences);
-	compareField('hasPendingReload', reference.hasPendingReload, candidate.hasPendingReload, differences);
-	compareField('totalRetainedCount', reference.totalRetainedCount, candidate.totalRetainedCount, differences);
-	compareField('sources', reference.sources, candidate.sources, differences);
-	compareField('ranges', reference.ranges, candidate.ranges, differences);
-	return { equal: differences.length === 0, differences };
-}
-
-export function compareEditSourceDetailsSnapshots(
-	reference: IEditSourceDetailsSnapshot,
-	candidate: IEditSourceDetailsSnapshot,
-): IEditTrackerShadowComparison {
-	const differences: string[] = [];
-	compareField('totalModifiedCount', reference.totalModifiedCount, candidate.totalModifiedCount, differences);
-	compareField(
-		'rows',
-		reference.rows.toSorted((left, right) => left.sourceKey.localeCompare(right.sourceKey)),
-		candidate.rows.toSorted((left, right) => left.sourceKey.localeCompare(right.sourceKey)),
-		differences,
-	);
-	return { equal: differences.length === 0, differences };
-}
-
-export function getEditTrackerComparisonDifferenceFields(comparison: IEditTrackerShadowComparison): readonly string[] {
-	return comparison.differences.map(difference => difference.substring(0, difference.indexOf(':')));
-}
-
-function compareField(field: string, reference: unknown, candidate: unknown, differences: string[]): void {
-	const referenceValue = JSON.stringify(reference);
-	const candidateValue = JSON.stringify(candidate);
-	if (referenceValue !== candidateValue) {
-		differences.push(`${field}: expected ${referenceValue}, got ${candidateValue}`);
-	}
 }
 
 class ProjectionDocument extends Disposable implements IDocumentWithAnnotatedEdits<EditKeySourceData> {

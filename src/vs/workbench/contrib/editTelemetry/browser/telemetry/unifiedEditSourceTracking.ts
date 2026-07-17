@@ -196,7 +196,7 @@ export class UnifiedEditSourceTracking extends Disposable {
 			windowSnapshot,
 			(before, after) => this._diffService.computeDiff(before, after),
 		);
-		const details = snapshotEditSourceDetails(trackerSnapshot, undefined, 30, 'retained');
+		const details = snapshotEditSourceDetails(trackerSnapshot, 30, 'retained');
 		if (details.rows.length > 0) {
 			for (const row of details.rows) {
 				sendEditSourcesDetailsTelemetry(this._telemetryService, {
@@ -213,7 +213,6 @@ export class UnifiedEditSourceTracking extends Disposable {
 					requestId: row.requestId,
 					origin: row.origin,
 					harness: row.harness,
-					trackingScope: row.trackingScope,
 					modifiedCount: row.modifiedCount,
 					deltaModifiedCount: row.deltaModifiedCount,
 					totalModifiedCount: details.totalModifiedCount,

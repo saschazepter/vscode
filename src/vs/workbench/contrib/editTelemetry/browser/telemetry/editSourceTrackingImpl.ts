@@ -260,7 +260,6 @@ class TrackedDocumentInfo extends Disposable {
 					requestId: repr.props.$$requestId,
 					origin: repr.props.$origin,
 					harness: repr.props.$harness,
-					trackingScope: repr.props.$trackingScope,
 					modifiedCount: value,
 					deltaModifiedCount,
 					totalModifiedCount: data.totalModifiedCharactersInFinalState,

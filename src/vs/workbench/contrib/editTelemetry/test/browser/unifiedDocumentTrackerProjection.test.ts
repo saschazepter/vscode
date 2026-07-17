@@ -15,12 +15,9 @@ import { EditKeySourceData, EditSourceData, IDocumentWithAnnotatedEdits } from '
 import { UnifiedDocumentReconciler } from '../../browser/helpers/unifiedDocumentReconciler.js';
 import { DocumentEditSourceTracker } from '../../browser/telemetry/editTracker.js';
 import {
-	compareEditTrackerSnapshots,
-	filterEditTrackerSnapshot,
 	IEditTrackerSnapshot,
 	projectUnifiedDocumentTracker,
 	snapshotDocumentEditSourceTracker,
-	snapshotEditSourceDetails,
 } from '../../browser/telemetry/unifiedDocumentTrackerProjection.js';
 
 suite('Unified Document Tracker Projection', () => {
@@ -60,7 +57,7 @@ suite('Unified Document Tracker Projection', () => {
 			{ before: 'ab', after: 'abU', source: user },
 		]);
 
-		assert.deepStrictEqual(compareEditTrackerSnapshots(reference, candidate), { equal: true, differences: [] });
+		assert.deepStrictEqual(candidate, reference);
 	});
 
 	test('projects reload-first attribution only after Agent Host claims it', async () => {
@@ -115,7 +112,7 @@ suite('Unified Document Tracker Projection', () => {
 					targetContent: 'after',
 					hasPendingReload: false,
 					sources: [{
-						sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost-$trackingScope:unified',
+						sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost',
 						insertedCount: 5,
 						retainedCount: 5,
 					}],
@@ -124,68 +121,6 @@ suite('Unified Document Tracker Projection', () => {
 		);
 	});
 
-	test('reports field-level shadow differences', () => {
-		const reference = emptySnapshot('reference');
-		const candidate = { ...emptySnapshot('candidate'), totalRetainedCount: 1 };
-
-		assert.deepStrictEqual(compareEditTrackerSnapshots(reference, candidate), {
-			equal: false,
-			differences: [
-				'content: expected "reference", got "candidate"',
-				'targetContent: expected "reference", got "candidate"',
-				'totalRetainedCount: expected 0, got 1',
-			],
-		});
-	});
-
-	test('projects details payload fields for a filtered source scope', async () => {
-		const initialContent = '';
-		const agent = agentSource();
-		const reconciler = new UnifiedDocumentReconciler<TextModelEditSource>(initialContent, EditSources.reloadFromDisk());
-		reconciler.modelConnected({ content: '', dirty: false });
-		reconciler.modelEdit({
-			before: '',
-			after: 'user',
-			source: EditSources.cursor({ kind: 'type' }),
-			kind: 'model',
-			dirty: true,
-		});
-		reconciler.diskSnapshot('user');
-		reconciler.agentTransition({
-			before: 'user',
-			after: 'useragent',
-			source: agent,
-			correlation: 'tool-1',
-			kind: 'edit',
-		});
-
-		const projected = await projectUnifiedDocumentTracker(reconciler.getSnapshot(), computeDiff);
-		const filtered = filterEditTrackerSnapshot(projected, source => source.trackingScope === 'unified');
-
-		assert.deepStrictEqual({
-			sourceIndex: filtered.sources[0]?.sourceIndex,
-			details: snapshotEditSourceDetails(filtered),
-		}, {
-			sourceIndex: 0,
-			details: {
-				totalModifiedCount: 9,
-				rows: [{
-					sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost-$trackingScope:unified',
-					cleanedSourceKey: 'source:Chat.applyEdits-$harness:copilotcli-$origin:agentHost-$trackingScope:unified',
-					extensionId: undefined,
-					extensionVersion: undefined,
-					modelId: 'model',
-					conversationId: 'session',
-					requestId: 'request',
-					origin: 'agentHost',
-					harness: 'copilotcli',
-					trackingScope: 'unified',
-					modifiedCount: 9,
-					deltaModifiedCount: 9,
-				}],
-			},
-		});
-	});
 });
 
 async function createReferenceSnapshot(
@@ -224,19 +159,7 @@ function agentSource(): TextModelEditSource {
 		codeBlockSuggestionId: undefined,
 		harness: 'copilotcli',
 		origin: 'agentHost',
-		trackingScope: 'unified',
 	});
-}
-
-function emptySnapshot(content: string): IEditTrackerSnapshot {
-	return {
-		content,
-		targetContent: content,
-		hasPendingReload: false,
-		totalRetainedCount: 0,
-		sources: [],
-		ranges: [],
-	};
 }
 
 class ReferenceDocument extends Disposable implements IDocumentWithAnnotatedEdits<EditKeySourceData> {

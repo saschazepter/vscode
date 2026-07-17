@@ -23,7 +23,6 @@ export interface IEditSourcesDetailsTelemetryData {
 	requestId: string | undefined;
 	origin: string | undefined;
 	harness: string | undefined;
-	trackingScope: string | undefined;
 	modifiedCount: number;
 	deltaModifiedCount: number;
 	totalModifiedCount: number;
@@ -44,7 +43,6 @@ type EditSourcesDetailsTelemetryClassification = {
 	requestId: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The chat request identifier when the edit source comes from chat.' };
 	origin: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The system that observed and attributed the edit.' };
 	harness: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The agent harness that produced the edit.' };
-	trackingScope: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'The set of edit sources represented by the row.' };
 	trigger: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Indicates why the session ended.' };
 	modifiedCount: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'The number of characters inserted by the given edit source during the session that are still in the text document at the end of the session.'; isMeasurement: true };
 	deltaModifiedCount: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'The number of characters inserted by the given edit source during the session.'; isMeasurement: true };
