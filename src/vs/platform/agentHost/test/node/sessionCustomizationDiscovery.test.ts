@@ -151,6 +151,54 @@ suite('SessionCustomizationDiscovery', () => {
 		]);
 	});
 
+	test('marks agent instruction rule sources as always apply', async () => {
+		await seed('/workspace/AGENTS.md', 'workspace agents instructions');
+		await seed('/workspace/.github/instructions/rule.instructions.md', 'scoped instruction');
+
+		const discovery = disposables.add(instantiationService.createInstance(SessionCustomizationDiscovery, workspace, userHome, inMemoryPathToUri));
+		const client = {
+			rpc: {
+				agents: {
+					getDiscoveryPaths: async () => ({ paths: [] }),
+					discover: async () => ({ agents: [] }),
+				},
+				instructions: {
+					getDiscoveryPaths: async () => ({
+						paths: [
+							{ path: '/workspace/.github/instructions', kind: 'directory' },
+							{ path: '/workspace/AGENTS.md', kind: 'file' },
+						],
+					}),
+					discover: async () => ({
+						sources: [
+							{ id: 'agentInstruction', label: 'AGENTS.md', sourcePath: '/workspace/AGENTS.md', applyTo: [], type: 'repo' },
+							{ id: 'scopedInstruction', label: 'Rule', sourcePath: '/workspace/.github/instructions/rule.instructions.md', applyTo: ['src/**'], type: 'child-instructions' },
+						],
+					}),
+				},
+				skills: {
+					getDiscoveryPaths: async () => ({ paths: [] }),
+					discover: async () => ({ skills: [] }),
+				},
+			},
+		} as unknown as CopilotClient;
+
+		const customizations = await discovery.discover(client, CancellationToken.None);
+		const rules = customizations
+			.filter(customization => customization.contents === 'rule')
+			.flatMap(customization => customization.children ?? [])
+			.map(child => ({
+				uri: URI.parse(child.uri).path,
+				alwaysApply: child.type === 'rule' ? child.alwaysApply : undefined,
+			}))
+			.sort((a, b) => a.uri.localeCompare(b.uri));
+
+		assert.deepStrictEqual(rules, [
+			{ uri: '/workspace/.github/instructions/rule.instructions.md', alwaysApply: false },
+			{ uri: '/workspace/AGENTS.md', alwaysApply: true },
+		]);
+	});
+
 	test('discover returns working-directory agents, skills, instructions, hooks, and agent instructions', async () => {
 		await seed('/workspace/.github/agents/foo.agent.md', 'agent body');
 		await seed('/workspace/.github/skills/bar/SKILL.md', 'skill body');
