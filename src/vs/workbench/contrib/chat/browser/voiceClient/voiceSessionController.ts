@@ -1271,6 +1271,16 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 								this._sessionsAwaitingResponseSummary.add(sessionId);
 							}
 
+							// Leaving waiting_for_confirmation for an unloaded remote
+							// session: stop the now-stale approval narration and release
+							// the per-occurrence marker HERE, before the idle branch's
+							// early-exit `continue`s below, which would otherwise skip it
+							// and let the resolved approval keep playing.
+							if (prev?.state === 'waiting_for_confirmation' && currentState !== 'waiting_for_confirmation' && currentState !== 'unknown') {
+								this._narratedConfirmation.delete(this._sessionKey(sessionId));
+								this._stopConfirmationNarration(sessionId);
+							}
+
 							// Remote/Copilot sessions don't keep their model resident, so a
 							// coarse ``idle`` transition would carry no last_response_summary
 							// and the backend would narrate an empty completion. If we
@@ -1311,11 +1321,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 								// marker once this session is no longer awaiting confirmation.
 								if (currentState !== 'waiting_for_confirmation') {
 									this._narratedConfirmation.delete(this._sessionKey(sessionId));
-									// The confirmation was just answered: stop reading the
-									// now-stale approval request aloud.
-									if (prev?.state === 'waiting_for_confirmation') {
-										this._stopConfirmationNarration(sessionId);
-									}
+									// The waiting→non-waiting confirmation stop already ran
+									// above (before the idle early-exits), so it isn't
+									// repeated here.
 								}
 							}
 							if (currentState === 'waiting_for_confirmation') {
@@ -4076,6 +4084,29 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				}
 			}
 			this._cancelledConfirmationNarrationIds.add(id);
+		}
+		// A confirmation narration may already have been buffered for an
+		// unfocused session (in _deferredResponses); the queue splice above and
+		// the audio_response drop only guard the LIVE queue, so purge those
+		// deferred buffers too or the resolved approval replays on next focus.
+		for (const [key, responses] of this._deferredResponses) {
+			const kept = responses.filter(r => r.responseId === undefined || !cancelledIds.has(r.responseId));
+			if (kept.length === responses.length) {
+				continue;
+			}
+			if (kept.length === 0) {
+				this._deferredResponses.delete(key);
+			} else {
+				this._deferredResponses.set(key, kept);
+			}
+			// The buffered confirmation may have been the indicator's only owner.
+			this._maybeHideIndicator(key);
+		}
+		// Retire the per-response route for each cancelled id: the audio_response
+		// handler returns early for these (before its normal end-of-stream
+		// cleanup), so their _responseRoutes entries would otherwise leak.
+		for (const id of cancelledIds) {
+			this._responseRoutes.delete(id);
 		}
 		// If one of the cancelled narrations is what's currently playing, cut it
 		// off. Mark it interrupted first so onPlaybackStopped doesn't treat it as

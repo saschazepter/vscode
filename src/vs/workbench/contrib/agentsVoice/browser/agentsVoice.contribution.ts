@@ -284,6 +284,43 @@ registerAction2(class extends Action2 {
 	}
 });
 
+// --- Cancel Active Request via Escape (while voice-connected in the chat input) ---
+//
+// The Disconnect-on-Escape action above deliberately does NOTHING while a
+// request is running (its `when` negates hasActiveRequest) so it doesn't tear
+// down the voice session mid-turn. But the built-in Cancel action is bound to
+// Cmd/Ctrl+Escape (Alt+Backspace on Windows), so plain Escape would otherwise
+// be a no-op there. Restore the expected behavior: plain Escape cancels the
+// in-flight request while leaving the idle-only disconnect intact.
+
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'agentsVoice.cancelActiveRequest',
+			title: nls.localize2('agentsVoice.cancelActiveRequest', "Voice Mode: Cancel Request"),
+			f1: false,
+			keybinding: {
+				weight: KeybindingWeight.EditorContrib - 5,
+				primary: KeyCode.Escape,
+				when: ContextKeyExpr.and(
+					ContextKeyExpr.equals('config.agents.voice.enabled', true),
+					ChatContextKeys.inChatInput,
+					AGENTS_VOICE_CONNECTED.isEqualTo(true),
+					// Mirror the disconnect binding's editor negations so Escape
+					// still dismisses IntelliSense/hover and clears selections first.
+					ChatContextKeys.hasActiveRequest,
+					EditorContextKeys.hoverVisible.toNegated(),
+					EditorContextKeys.hasNonEmptySelection.toNegated(),
+					EditorContextKeys.hasMultipleSelections.toNegated(),
+				),
+			},
+		});
+	}
+	async run(accessor: ServicesAccessor): Promise<void> {
+		await accessor.get(ICommandService).executeCommand('workbench.action.chat.cancel');
+	}
+});
+
 // --- Open Voice Mode Settings (gear button, shown left of Disconnect when connected) ---
 
 registerAction2(class extends Action2 {

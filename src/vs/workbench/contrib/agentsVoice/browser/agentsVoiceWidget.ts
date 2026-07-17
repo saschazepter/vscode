@@ -419,11 +419,26 @@ export class AgentsVoiceWidget extends Disposable {
 			// phase) and snapshot it once recording begins (see the autorun
 			// on the `listening` state below).
 			let pttKeyCode: string | undefined;
-			let lastKeyDownCode: string | undefined;
-			const onDocKeydown = (e: KeyboardEvent) => { lastKeyDownCode = e.code; };
+			let heldKeyCode: string | undefined;
+			// True when a key was pressed and released again BEFORE recording
+			// actually began (e.g. the user tapped the PTT key during the async
+			// connect() that precedes the first pttDown()). Without this the
+			// release is lost - listening starts with no key to watch for and
+			// never stops. Reset whenever we return to a non-listening state.
+			let releasedBeforeListening = false;
+			const onDocKeydown = (e: KeyboardEvent) => { heldKeyCode = e.code; releasedBeforeListening = false; };
 			// Clear the tracked key once it is released so a stale code is
-			// never mistaken for a held PTT key (e.g. mouse-initiated PTT).
-			const onDocKeyup = (e: KeyboardEvent) => { if (e.code === lastKeyDownCode) { lastKeyDownCode = undefined; } };
+			// never mistaken for a held PTT key (e.g. mouse-initiated PTT). If
+			// recording hasn't begun yet, remember that the key was released so
+			// the listening transition below can stop immediately.
+			const onDocKeyup = (e: KeyboardEvent) => {
+				if (e.code === heldKeyCode) {
+					heldKeyCode = undefined;
+					if (pttKeyCode === undefined) {
+						releasedBeforeListening = true;
+					}
+				}
+			};
 			win.document.addEventListener('keydown', onDocKeydown, true);
 			win.document.addEventListener('keyup', onDocKeyup, true);
 			this._register(toDisposable(() => {
@@ -451,13 +466,24 @@ export class AgentsVoiceWidget extends Disposable {
 			// `pttDown()` directly (bypassing `callbacks.pttDown`), so hook the
 			// resulting `listening` state transition to capture the key rather
 			// than the callback. Only snapshot when a key is physically held
-			// (keyboard PTT); mouse/pointer PTT leaves `lastKeyDownCode`
-			// undefined and releases via `pointerup`.
+			// (keyboard PTT); mouse/pointer PTT leaves `heldKeyCode` undefined
+			// and releases via `pointerup`.
 			let wasListening = false;
 			this._register(autorun(reader => {
 				const listening = this._voiceState.read(reader) === 'listening';
-				if (listening && !wasListening && pttKeyCode === undefined && lastKeyDownCode !== undefined) {
-					pttKeyCode = lastKeyDownCode;
+				if (listening && !wasListening && pttKeyCode === undefined) {
+					if (heldKeyCode !== undefined) {
+						pttKeyCode = heldKeyCode;
+					} else if (releasedBeforeListening) {
+						// The PTT key was already released while we were still
+						// connecting - stop recording right away instead of
+						// getting stuck listening with no key to release.
+						releasedBeforeListening = false;
+						this.callbacks.pttUp();
+					}
+				}
+				if (!listening) {
+					releasedBeforeListening = false;
 				}
 				wasListening = listening;
 			}));
