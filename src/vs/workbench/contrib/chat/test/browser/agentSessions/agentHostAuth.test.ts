@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { Event } from '../../../../../../base/common/event.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { type ProtectedResourceMetadata } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { type AgentInfo } from '../../../../../../platform/agentHost/common/state/sessionState.js';
@@ -13,7 +14,8 @@ import { ILogService, NullLogService } from '../../../../../../platform/log/comm
 import { IAuthenticationMcpAccessService } from '../../../../../services/authentication/browser/authenticationMcpAccessService.js';
 import { IAuthenticationMcpService } from '../../../../../services/authentication/browser/authenticationMcpService.js';
 import { IAuthenticationMcpUsageService } from '../../../../../services/authentication/browser/authenticationMcpUsageService.js';
-import { IAuthenticationService } from '../../../../../services/authentication/common/authentication.js';
+import { IAuthenticationService, type IAuthenticationProvider } from '../../../../../services/authentication/common/authentication.js';
+import { IDynamicAuthenticationProviderStorageService } from '../../../../../services/authentication/common/dynamicAuthenticationProviderStorage.js';
 import { authenticateProtectedResources, resolveAuthenticationInteractively, resolveTokenForResource, AgentHostAuthTokenCache, agentHostMcpServerId, resolveMcpServerAuthentication } from '../../../browser/agentSessions/agentHost/agentHostAuth.js';
 
 function createMockAuthService(overrides: {
@@ -21,12 +23,18 @@ function createMockAuthService(overrides: {
 	getSessions?: (providerId: string, scopes: string[] | undefined, options: any, activate: boolean) => Promise<readonly { scopes: string[]; accessToken: string }[]>;
 	createSession?: (providerId: string, scopes: string[], options: any) => Promise<{ accessToken: string }>;
 	createDynamicAuthenticationProvider?: (...args: Parameters<IAuthenticationService['createDynamicAuthenticationProvider']>) => Promise<{ readonly id: string } | undefined>;
+	getProvider?: IAuthenticationService['getProvider'];
+	isDynamicAuthenticationProvider?: (providerId: string) => boolean;
+	unregisterAuthenticationProvider?: (providerId: string) => void;
 }): IAuthenticationService {
 	return {
 		getOrActivateProviderIdForServer: overrides.getOrActivateProviderIdForServer ?? (() => Promise.resolve(undefined)),
 		getSessions: overrides.getSessions ?? (() => Promise.resolve([])),
 		createSession: overrides.createSession ?? (() => Promise.reject(new Error('Unexpected createSession call'))),
 		createDynamicAuthenticationProvider: overrides.createDynamicAuthenticationProvider ?? (() => Promise.resolve(undefined)),
+		getProvider: overrides.getProvider ?? (() => { throw new Error('Unexpected getProvider call'); }),
+		isDynamicAuthenticationProvider: overrides.isDynamicAuthenticationProvider ?? (() => false),
+		unregisterAuthenticationProvider: overrides.unregisterAuthenticationProvider ?? (() => { }),
 	} as unknown as IAuthenticationService;
 }
 
@@ -354,14 +362,43 @@ suite('resolveMcpServerAuthentication', () => {
 	});
 
 	test('uses configured public and confidential clients when creating a dynamic provider', async () => {
+		const dynamicProviderId = 'https://mcp.slack.com/ https://mcp.slack.com';
 		const providerCreations: { authorizationServer: string; resource: string | undefined; clientId: string | undefined; clientSecret: string | undefined }[] = [];
+		const sessionRequests: { clientId: string | undefined; clientSecret: string | undefined }[] = [];
+		const sessionCreations: { clientId: string | undefined; clientSecret: string | undefined }[] = [];
 		const authenticateRequests: { resource: string; scopes?: readonly string[]; token: string }[] = [];
+		const removedProviders: string[] = [];
+		let registeredClient: { clientId?: string; clientSecret?: string } | undefined;
+		let getSessionsCall = 0;
+		const provider: IAuthenticationProvider = {
+			id: dynamicProviderId,
+			label: 'Slack',
+			supportsMultipleAccounts: false,
+			onDidChangeSessions: Event.None,
+			getSessions: () => Promise.reject(new Error('Unexpected provider getSessions call')),
+			createSession: () => Promise.reject(new Error('Unexpected provider createSession call')),
+			removeSession: () => Promise.reject(new Error('Unexpected provider removeSession call')),
+		};
 		const authService = createMockAuthService({
-			getSessions: () => Promise.resolve([{
-				scopes: ['search:read.public'],
-				accessToken: 'slack-token',
-				account: { id: 'account-id', label: 'Slack Account' },
-			}]),
+			getOrActivateProviderIdForServer: () => Promise.reject(new Error('Configured clients must not use a built-in provider')),
+			getSessions: (_providerId, _scopes, options) => {
+				sessionRequests.push({ clientId: options.clientId, clientSecret: options.clientSecret });
+				getSessionsCall++;
+				return Promise.resolve(getSessionsCall === 1 ? [{
+					scopes: ['search:read.public'],
+					accessToken: 'public-token',
+					account: { id: 'account-id', label: 'Slack Account' },
+				}] : []);
+			},
+			createSession: (_providerId, _scopes, options) => {
+				sessionCreations.push({ clientId: options.clientId, clientSecret: options.clientSecret });
+				return Promise.resolve({
+					id: 'confidential-session',
+					accessToken: 'confidential-token',
+					account: { id: 'account-id', label: 'Slack Account' },
+					scopes: ['search:read.public'],
+				});
+			},
 			createDynamicAuthenticationProvider: async (authorizationServer, _metadata, resource, clientId, clientSecret) => {
 				providerCreations.push({
 					authorizationServer: authorizationServer.toString(true),
@@ -369,19 +406,34 @@ suite('resolveMcpServerAuthentication', () => {
 					clientId,
 					clientSecret,
 				});
-				return { id: 'dynamic-provider' };
+				registeredClient = { clientId, clientSecret };
+				return { id: dynamicProviderId };
+			},
+			getProvider: () => provider,
+			isDynamicAuthenticationProvider: providerId => providerId === dynamicProviderId && registeredClient !== undefined,
+			unregisterAuthenticationProvider: providerId => {
+				removedProviders.push(providerId);
+				registeredClient = undefined;
 			},
 		});
 		const instantiationService = disposables.add(new TestInstantiationService());
 		instantiationService.stub(IAuthenticationService, authService);
 		instantiationService.stub(IAuthenticationMcpAccessService, {
 			isAccessAllowedForUrl: () => true,
+			updateAllowedMcpServers: () => { },
 		});
 		instantiationService.stub(IAuthenticationMcpService, {
 			getAccountPreference: () => 'Slack Account',
+			updateAccountPreference: () => { },
 		});
 		instantiationService.stub(IAuthenticationMcpUsageService, {
 			addAccountUsage: () => { },
+		});
+		instantiationService.stub(IDynamicAuthenticationProviderStorageService, {
+			getClientRegistration: () => Promise.resolve(registeredClient),
+			removeDynamicProvider: async providerId => {
+				removedProviders.push(providerId);
+			},
 		});
 		instantiationService.stub(ILogService, new NullLogService());
 
@@ -419,7 +471,10 @@ suite('resolveMcpServerAuthentication', () => {
 		assert.deepStrictEqual({
 			results,
 			providerCreations,
+			sessionRequests,
+			sessionCreations,
 			authenticateRequests,
+			removedProviders,
 		}, {
 			results: [true, true],
 			providerCreations: [
@@ -436,18 +491,26 @@ suite('resolveMcpServerAuthentication', () => {
 					clientSecret: 'confidential-client-secret',
 				},
 			],
+			sessionRequests: [
+				{ clientId: 'public-client-id', clientSecret: undefined },
+				{ clientId: 'confidential-client-id', clientSecret: 'confidential-client-secret' },
+			],
+			sessionCreations: [
+				{ clientId: 'confidential-client-id', clientSecret: 'confidential-client-secret' },
+			],
 			authenticateRequests: [
 				{
 					resource: 'https://mcp.slack.com',
 					scopes: ['search:read.public'],
-					token: 'slack-token',
+					token: 'public-token',
 				},
 				{
 					resource: 'https://mcp.slack.com',
 					scopes: ['search:read.public'],
-					token: 'slack-token',
+					token: 'confidential-token',
 				},
 			],
+			removedProviders: [dynamicProviderId, dynamicProviderId],
 		});
 	});
 });

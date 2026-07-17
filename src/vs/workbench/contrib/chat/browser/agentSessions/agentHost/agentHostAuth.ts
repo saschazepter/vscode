@@ -13,7 +13,8 @@ import { ILogService } from '../../../../../../platform/log/common/log.js';
 import { IAuthenticationMcpAccessService } from '../../../../../services/authentication/browser/authenticationMcpAccessService.js';
 import { IAuthenticationMcpService } from '../../../../../services/authentication/browser/authenticationMcpService.js';
 import { IAuthenticationMcpUsageService } from '../../../../../services/authentication/browser/authenticationMcpUsageService.js';
-import { AuthenticationSession, IAuthenticationService } from '../../../../../services/authentication/common/authentication.js';
+import { AuthenticationSession, getDynamicAuthenticationProviderId, IAuthenticationService } from '../../../../../services/authentication/common/authentication.js';
+import { IDynamicAuthenticationProviderStorageService } from '../../../../../services/authentication/common/dynamicAuthenticationProviderStorage.js';
 
 /**
  * Stable identity for an agent-host MCP server, used as the key for
@@ -275,6 +276,9 @@ export async function resolveMcpServerAuthentication(
 	const authenticationMcpService = accessor.get(IAuthenticationMcpService);
 	const authenticationMcpUsageService = accessor.get(IAuthenticationMcpUsageService);
 	const logService = accessor.get(ILogService);
+	const dynamicAuthenticationProviderStorageService = options.oauthClient
+		? accessor.get(IDynamicAuthenticationProviderStorageService)
+		: undefined;
 	const agentHostMeta = options.agentHost
 		? { authority: options.agentHost.authority, label: accessor.get(ILabelService).getHostLabel(options.agentHost.scheme, options.agentHost.authority) }
 		: undefined;
@@ -289,6 +293,7 @@ export async function resolveMcpServerAuthentication(
 			protectedResource,
 			options.oauthClient,
 			authenticationService,
+			dynamicAuthenticationProviderStorageService,
 			logService,
 			options.logPrefix,
 			options.allowInteraction,
@@ -298,7 +303,14 @@ export async function resolveMcpServerAuthentication(
 			continue;
 		}
 
-		const sessions = await authenticationService.getSessions(providerId, [...scopes], { authorizationServer: authorizationServerUri, resource: protectedResource.resource }, true);
+		const oauthClientOptions = options.oauthClient
+			? { clientId: options.oauthClient.clientId, clientSecret: options.oauthClient.clientSecret }
+			: {};
+		const sessions = await authenticationService.getSessions(providerId, [...scopes], {
+			authorizationServer: authorizationServerUri,
+			resource: protectedResource.resource,
+			...oauthClientOptions,
+		}, true);
 		const allowedSession = getAllowedMcpSession(providerId, sessions, authenticationMcpAccessService, authenticationMcpService, options);
 		if (allowedSession) {
 			await authenticateMcpSession(providerId, allowedSession, scopes, authenticationMcpAccessService, authenticationMcpService, authenticationMcpUsageService, logService, options, false, agentHostMeta);
@@ -318,6 +330,7 @@ export async function resolveMcpServerAuthentication(
 				activateImmediate: true,
 				authorizationServer: authorizationServerUri,
 				resource: protectedResource.resource,
+				...oauthClientOptions,
 			});
 		await authenticateMcpSession(providerId, session, scopes, authenticationMcpAccessService, authenticationMcpService, authenticationMcpUsageService, logService, options, true, agentHostMeta);
 		return true;
@@ -334,15 +347,36 @@ async function getOrCreateProviderForMcpResource(
 	protectedResource: ProtectedResourceMetadata,
 	oauthClient: McpOAuthClient | undefined,
 	authenticationService: IAuthenticationService,
+	dynamicAuthenticationProviderStorageService: IDynamicAuthenticationProviderStorageService | undefined,
 	logService: ILogService,
 	logPrefix: string,
 	allowCreation: boolean,
 	authorizationServerMetadataFetcher: typeof fetchAuthorizationServerMetadata,
 ): Promise<string | undefined> {
 	const resourceUri = URI.parse(protectedResource.resource);
-	const existing = await authenticationService.getOrActivateProviderIdForServer(authorizationServer, resourceUri);
-	if (existing || !allowCreation) {
-		return existing;
+	if (oauthClient) {
+		if (!dynamicAuthenticationProviderStorageService) {
+			throw new Error('Dynamic authentication provider storage is required for a configured OAuth client.');
+		}
+		const dynamicProviderId = getDynamicAuthenticationProviderId(authorizationServer, protectedResource);
+		if (authenticationService.isDynamicAuthenticationProvider(dynamicProviderId)) {
+			const registered = await dynamicAuthenticationProviderStorageService.getClientRegistration(dynamicProviderId);
+			if (registered?.clientId === oauthClient.clientId && registered.clientSecret === oauthClient.clientSecret) {
+				return dynamicProviderId;
+			}
+			if (!allowCreation) {
+				return undefined;
+			}
+			authenticationService.unregisterAuthenticationProvider(dynamicProviderId);
+			await dynamicAuthenticationProviderStorageService.removeDynamicProvider(dynamicProviderId);
+		} else if (!allowCreation) {
+			return undefined;
+		}
+	} else {
+		const existing = await authenticationService.getOrActivateProviderIdForServer(authorizationServer, resourceUri);
+		if (existing || !allowCreation) {
+			return existing;
+		}
 	}
 
 	try {
