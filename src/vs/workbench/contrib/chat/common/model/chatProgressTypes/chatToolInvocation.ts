@@ -275,21 +275,7 @@ export class ChatToolInvocation implements IChatToolInvocation {
 		}
 	}
 
-	/**
-	 * Re-arm confirmation on an invocation that is already past streaming.
-	 *
-	 * A backend may bounce a tool that was optimistically marked running back
-	 * into needing confirmation — for example the Copilot SDK emits a
-	 * `confirmed: not-needed` ready in `onToolStart` (moving the tool to
-	 * executing) and only fires its permission callback ~1s later. This moves
-	 * the *same* invocation back to {@link IChatToolInvocation.StateKind.WaitingForConfirmation}
-	 * so a single card represents the whole lifecycle instead of settling the
-	 * running card and emitting a second confirmation card.
-	 *
-	 * From the streaming state it delegates to {@link transitionFromStreaming}.
-	 * No-ops if the invocation is already complete, already waiting for
-	 * confirmation, or the prepared invocation carries no confirmation title.
-	 */
+	/** Moves an active invocation into confirmation while preserving the same tool card. */
 	public requestConfirmation(preparedInvocation: IPreparedToolInvocation): void {
 		const currentType = this._state.get().type;
 		if (currentType === IChatToolInvocation.StateKind.Streaming) {

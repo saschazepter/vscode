@@ -1124,11 +1124,14 @@ export function activeTurnToProgress(sessionResource: URI, activeTurn: ActiveTur
 				break;
 			case ResponsePartKind.ToolCall: {
 				const tc = rp.toolCall;
+				const isOtherClientToolCall = tc.contributor?.kind === ToolCallContributorKind.Client
+					&& toolInvocationOptions
+					&& tc.contributor.clientId !== toolInvocationOptions.currentClientId;
 				if (tc.status === ToolCallStatus.Completed || tc.status === ToolCallStatus.Cancelled) {
 					parts.push(completedToolCallToSerialized(tc as ICompletedToolCall, undefined, sessionResource, connectionAuthority));
-				} else if (tc.status === ToolCallStatus.Streaming) {
+				} else if (tc.status === ToolCallStatus.Streaming && !isOtherClientToolCall) {
 					parts.push(toolCallStateToStreamingInvocation(tc, undefined));
-				} else if (tc.status === ToolCallStatus.Running || tc.status === ToolCallStatus.AuthRequired || tc.status === ToolCallStatus.PendingConfirmation) {
+				} else if (tc.status === ToolCallStatus.Running || tc.status === ToolCallStatus.AuthRequired || tc.status === ToolCallStatus.Streaming || tc.status === ToolCallStatus.PendingConfirmation) {
 					parts.push(toolCallStateToInvocation(tc, undefined, sessionResource, connectionAuthority, mcpServerAuthority, toolInvocationOptions));
 				}
 				break;

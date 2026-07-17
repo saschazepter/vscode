@@ -27,8 +27,8 @@ import { AgentFeedbackAttachmentDisplayKind, AgentFeedbackAttachmentMetadataKey 
 import { BrowserViewAttachmentDisplayKind, BrowserViewAttachmentMetadataKey } from '../../../../../../platform/agentHost/common/meta/browserViewAttachments.js';
 import { ActionType, isSessionAction, isChatAction, type ActionEnvelope, type IRootConfigChangedAction, type SessionAction, type ChatAction as AgentHostChatAction, type TerminalAction, type INotification, type IToolCallConfirmedAction, type ITurnStartedAction, type ClientAnnotationsAction } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
 import type { IStateSnapshot } from '../../../../../../platform/agentHost/common/state/sessionProtocol.js';
-import { CustomizationType, McpAuthRequiredReason, McpServerStatus, type ClientPluginCustomization, type ToolDefinition } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
-import { ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, SessionLifecycle, SessionStatus, TurnState, ToolCallStatus, ToolCallConfirmationReason, ToolCallContributorKind, createSessionState, createChatState, createDefaultChatSummary, buildChatUri, buildDefaultChatUri, parseDefaultChatUri, isAhpChatChannel, createActiveTurn, isAhpRootChannel, PolicyState, ResponsePartKind, ROOT_STATE_URI, StateComponents, buildSubagentChatUri, ToolResultContentType, MessageAttachmentKind, MessageKind, type SessionState, type SessionSummary, type ChatState, type ISessionWithDefaultChat, RootState, type ToolCallState, type AgentInfo } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { ConfirmationOptionKind, CustomizationType, McpAuthRequiredReason, McpServerStatus, type ClientPluginCustomization, type ToolDefinition } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
+import { ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, SessionLifecycle, SessionStatus, TurnState, ToolCallStatus, ToolCallConfirmationReason, ToolCallContributorKind, ToolCallRiskAssessmentKind, ToolCallRiskAssessmentStatus, createSessionState, createChatState, createDefaultChatSummary, buildChatUri, buildDefaultChatUri, parseDefaultChatUri, isAhpChatChannel, createActiveTurn, isAhpRootChannel, PolicyState, ResponsePartKind, ROOT_STATE_URI, StateComponents, buildSubagentChatUri, ToolResultContentType, MessageAttachmentKind, MessageKind, type SessionState, type SessionSummary, type ChatState, type ISessionWithDefaultChat, RootState, type ToolCallState, type AgentInfo } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { CompletionItemKind as AhpCompletionItemKind, type CompletionsParams, type CompletionsResult } from '../../../../../../platform/agentHost/common/state/protocol/commands.js';
 import { sessionReducer, chatReducer } from '../../../../../../platform/agentHost/common/state/sessionReducers.js';
 import { IDefaultAccountService } from '../../../../../../platform/defaultAccount/common/defaultAccount.js';
@@ -4510,6 +4510,65 @@ suite('AgentHostChatContribution', () => {
 
 			IChatToolInvocation.confirmWith(permInvocation, { type: ToolConfirmKind.UserAction });
 			await timeout(10);
+			fire({ type: 'chat/turnComplete', endedAt: '2025-01-01T00:00:00.000Z', session, turnId } as ChatAction);
+			await turnPromise;
+		}));
+
+		test('pending confirmation refreshes risk assessment and options', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const { sessionHandler, agentHostService, chatAgentService } = createContribution(disposables);
+			const { turnPromise, collected, session, turnId, fire } = await startTurn(sessionHandler, agentHostService, chatAgentService, disposables);
+
+			fire({ type: 'chat/toolCallStart', session, turnId, toolCallId: 'tc-risk', toolName: 'read_file', displayName: 'Read File' } as ChatAction);
+			fire({
+				type: 'chat/toolCallReady',
+				session,
+				turnId,
+				toolCallId: 'tc-risk',
+				invocationMessage: 'Read file?',
+				confirmationTitle: 'Read file',
+				toolInput: '/foo.ts',
+				riskAssessment: { kind: ToolCallRiskAssessmentKind.Judge, status: ToolCallRiskAssessmentStatus.Loading },
+				options: [{ id: 'allow-once', label: 'Allow Once', kind: ConfirmationOptionKind.Approve }],
+			} as ChatAction);
+			await timeout(10);
+
+			const invocation = collected.flat().find(p => p.kind === 'toolInvocation') as ChatToolInvocation;
+			assert.deepStrictEqual(invocation.confirmationMessages, {
+				title: 'Read file',
+				message: 'Read file?',
+				approvalReason: { status: 'loading' },
+				customOptions: [{ id: 'allow-once', label: 'Allow Once', kind: ConfirmationOptionKind.Approve }],
+			});
+
+			fire({
+				type: 'chat/toolCallReady',
+				session,
+				turnId,
+				toolCallId: 'tc-risk',
+				invocationMessage: 'Read file?',
+				riskAssessment: {
+					kind: ToolCallRiskAssessmentKind.Judge,
+					status: ToolCallRiskAssessmentStatus.Complete,
+					reason: 'This reads a sensitive file.',
+					safety: 0.2,
+				},
+				options: [{ id: 'allow-session', label: 'Allow in Session', kind: ConfirmationOptionKind.Approve }],
+			} as ChatAction);
+			await timeout(10);
+
+			assert.deepStrictEqual(invocation.confirmationMessages, {
+				title: 'Read file',
+				message: 'Read file?',
+				approvalReason: { status: 'complete', explanation: 'This reads a sensitive file.', safety: 0.2 },
+				customOptions: [{ id: 'allow-session', label: 'Allow in Session', kind: ConfirmationOptionKind.Approve }],
+			});
+
+			IChatToolInvocation.confirmWith(invocation, { type: ToolConfirmKind.UserAction, selectedButton: 'allow-session' });
+			await timeout(10);
+			const confirmation = agentHostService.dispatchedActions.find(a =>
+				a.action.type === 'chat/toolCallConfirmed' && (a.action as IToolCallConfirmedAction).toolCallId === 'tc-risk');
+			assert.strictEqual((confirmation?.action as IToolCallConfirmedAction).selectedOptionId, 'allow-session');
+
 			fire({ type: 'chat/turnComplete', endedAt: '2025-01-01T00:00:00.000Z', session, turnId } as ChatAction);
 			await turnPromise;
 		}));

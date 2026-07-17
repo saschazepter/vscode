@@ -1695,6 +1695,31 @@ suite('stateToProgressAdapter', () => {
 			});
 		});
 
+		test('hydrates another client streaming tool with its cancel affordance', () => {
+			const toolCall: ToolCallResponsePart['toolCall'] = {
+				toolCallId: 'tc-other-client-streaming',
+				toolName: 'run_task',
+				displayName: 'Run Task',
+				status: ToolCallStatus.Streaming,
+				contributor: { kind: ToolCallContributorKind.Client, clientId: 'owner-client' },
+			};
+			const result = activeTurnToProgress(URI.file('/'), createActiveTurnState([
+				{ kind: ResponsePartKind.ToolCall, toolCall },
+			]), undefined, {
+				currentClientId: 'viewer-client',
+				cancelOtherClientToolCall: () => { },
+			});
+			const invocation = result[0] as IChatToolInvocation;
+
+			assert.deepStrictEqual({
+				state: invocation.state.get().type,
+				hasOtherClientData: !!invocation.otherClientToolCall,
+			}, {
+				state: IChatToolInvocation.StateKind.Executing,
+				hasOtherClientData: true,
+			});
+		});
+
 		test('creates confirmation invocations for pending tool confirmations', () => {
 			const result = activeTurnToProgress(URI.file('/'), createActiveTurnState([
 				{
