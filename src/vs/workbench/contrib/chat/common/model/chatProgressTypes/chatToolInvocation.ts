@@ -135,25 +135,33 @@ export class ChatToolInvocation implements IChatToolInvocation {
 				type: IChatToolInvocation.StateKind.WaitingForConfirmation,
 				parameters: this.parameters,
 				confirmationMessages: this.confirmationMessages,
-				confirm: reason => {
-					if (reason.type === ToolConfirmKind.Denied || reason.type === ToolConfirmKind.Skipped) {
-						this._state.set({
-							type: IChatToolInvocation.StateKind.Cancelled,
-							reason: reason.type,
-							parameters: this.parameters,
-							confirmationMessages: this.confirmationMessages,
-						}, undefined);
-					} else {
-						this._state.set({
-							type: IChatToolInvocation.StateKind.Executing,
-							confirmed: reason,
-							progress: this._progress,
-							parameters: this.parameters,
-							confirmationMessages: this.confirmationMessages,
-						}, undefined);
-					}
-				}
+				confirm: reason => this._confirm(reason),
 			});
+		}
+	}
+
+	/**
+	 * Shared confirmation handler used by every `WaitingForConfirmation` state
+	 * this invocation can enter (initial construction, transition out of
+	 * streaming, and re-arming via {@link requestConfirmation}). Denials/skips
+	 * cancel; anything else moves to executing.
+	 */
+	private _confirm(reason: ConfirmedReason): void {
+		if (reason.type === ToolConfirmKind.Denied || reason.type === ToolConfirmKind.Skipped) {
+			this._state.set({
+				type: IChatToolInvocation.StateKind.Cancelled,
+				reason: reason.type,
+				parameters: this.parameters,
+				confirmationMessages: this.confirmationMessages,
+			}, undefined);
+		} else {
+			this._state.set({
+				type: IChatToolInvocation.StateKind.Executing,
+				confirmed: reason,
+				progress: this._progress,
+				parameters: this.parameters,
+				confirmationMessages: this.confirmationMessages,
+			}, undefined);
 		}
 	}
 
@@ -246,28 +254,9 @@ export class ChatToolInvocation implements IChatToolInvocation {
 			this.toolSpecificData = preparedInvocation.toolSpecificData;
 		}
 
-		const confirm = (reason: ConfirmedReason) => {
-			if (reason.type === ToolConfirmKind.Denied || reason.type === ToolConfirmKind.Skipped) {
-				this._state.set({
-					type: IChatToolInvocation.StateKind.Cancelled,
-					reason: reason.type,
-					parameters: this.parameters,
-					confirmationMessages: this.confirmationMessages,
-				}, undefined);
-			} else {
-				this._state.set({
-					type: IChatToolInvocation.StateKind.Executing,
-					confirmed: reason,
-					progress: this._progress,
-					parameters: this.parameters,
-					confirmationMessages: this.confirmationMessages,
-				}, undefined);
-			}
-		};
-
 		// Transition to the appropriate state
 		if (autoConfirmed) {
-			confirm(autoConfirmed);
+			this._confirm(autoConfirmed);
 		} else if (!this.confirmationMessages?.title) {
 			this._state.set({
 				type: IChatToolInvocation.StateKind.Executing,
@@ -281,9 +270,56 @@ export class ChatToolInvocation implements IChatToolInvocation {
 				type: IChatToolInvocation.StateKind.WaitingForConfirmation,
 				parameters: this.parameters,
 				confirmationMessages: this.confirmationMessages,
-				confirm,
+				confirm: reason => this._confirm(reason),
 			}, undefined);
 		}
+	}
+
+	/**
+	 * Re-arm confirmation on an invocation that is already past streaming.
+	 *
+	 * A backend may bounce a tool that was optimistically marked running back
+	 * into needing confirmation — for example the Copilot SDK emits a
+	 * `confirmed: not-needed` ready in `onToolStart` (moving the tool to
+	 * executing) and only fires its permission callback ~1s later. This moves
+	 * the *same* invocation back to {@link IChatToolInvocation.StateKind.WaitingForConfirmation}
+	 * so a single card represents the whole lifecycle instead of settling the
+	 * running card and emitting a second confirmation card.
+	 *
+	 * From the streaming state it delegates to {@link transitionFromStreaming}.
+	 * No-ops if the invocation is already complete, already waiting for
+	 * confirmation, or the prepared invocation carries no confirmation title.
+	 */
+	public requestConfirmation(preparedInvocation: IPreparedToolInvocation): void {
+		const currentType = this._state.get().type;
+		if (currentType === IChatToolInvocation.StateKind.Streaming) {
+			this.transitionFromStreaming(preparedInvocation, this.parameters, undefined);
+			return;
+		}
+		if (currentType === IChatToolInvocation.StateKind.Completed
+			|| currentType === IChatToolInvocation.StateKind.Cancelled
+			|| currentType === IChatToolInvocation.StateKind.WaitingForConfirmation) {
+			return;
+		}
+
+		if (preparedInvocation.invocationMessage) {
+			this.invocationMessage = preparedInvocation.invocationMessage;
+		}
+		this.pastTenseMessage = preparedInvocation.pastTenseMessage;
+		this.confirmationMessages = preparedInvocation.confirmationMessages;
+		this.presentation = preparedInvocation.presentation;
+		this.toolSpecificData = preparedInvocation.toolSpecificData;
+
+		if (!this.confirmationMessages?.title) {
+			return; // nothing to confirm
+		}
+
+		this._state.set({
+			type: IChatToolInvocation.StateKind.WaitingForConfirmation,
+			parameters: this.parameters,
+			confirmationMessages: this.confirmationMessages,
+			confirm: reason => this._confirm(reason),
+		}, undefined);
 	}
 
 	private _setCompleted(result: IToolResult | undefined, postConfirmed?: ConfirmedReason | undefined) {
