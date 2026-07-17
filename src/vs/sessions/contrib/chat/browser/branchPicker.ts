@@ -185,7 +185,7 @@ export class BranchPicker extends Disposable {
 		this._renderDisposables.clear();
 
 		const renderTarget = this._options.isolation
-			? dom.append(container, dom.$('.sessions-chat-branch-picker-group'))
+			? dom.append(container, dom.$('span.sessions-chat-branch-picker-group'))
 			: container;
 		if (renderTarget !== container) {
 			this._renderDisposables.add({ dispose: () => renderTarget.remove() });
