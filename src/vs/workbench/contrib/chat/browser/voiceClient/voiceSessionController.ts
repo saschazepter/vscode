@@ -110,7 +110,7 @@ export interface IVoiceSessionController {
 	connect(window: Window & typeof globalThis): Promise<void>;
 	disconnect(): void;
 
-	pttDown(): void;
+	pttDown(source?: 'explicit' | 'auto' | 'connect'): void;
 	pttUp(): void;
 
 	/**
@@ -262,8 +262,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 */
 	private _awaitingReplyForSession: string | undefined;
 	private _awaitingReplyWatchdog: ReturnType<typeof setTimeout> | undefined;
-	/** Tracks whether the initial listen cue has been played after connecting. */
-	private _hasPlayedInitialListenCue = false;
 
 	// --- Audio FIFO queue ---
 	private readonly _audioQueue: { sessionId: string | undefined; responseId?: string; finalized: boolean; chunks: { audio: string; isFirstChunk: boolean; isFinal: boolean; transcript: string | undefined }[] }[] = [];
@@ -1353,7 +1351,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 						if (this._enterListenOnSessionInit && this._isConnected.get()) {
 							this.logService.trace('[voice] session_init not seen within 750ms; entering listening via fallback');
 							this._enterListenOnSessionInit = false;
-							this._enterAutoListen();
+							this._enterAutoListen('connect');
 						}
 					}, 750));
 				}
@@ -1399,7 +1397,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			}
 			if (this._enterListenOnSessionInit && !narrated) {
 				this._enterListenOnSessionInit = false;
-				this._enterAutoListen();
+				this._enterAutoListen('connect');
 			} else if (narrated) {
 				this._enterListenOnSessionInit = false;
 			}
@@ -1737,7 +1735,6 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._clearAwaitingReply();
 		this._autoListenSuppressed = false;
 		this._enterListenOnSessionInit = false;
-		this._hasPlayedInitialListenCue = false;
 		this._replyPlayedSinceSend = false;
 		this._audioQueue.length = 0;
 		this._currentPlaybackSessionId = null;
@@ -1892,7 +1889,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._statusText.set('Reconnecting...', undefined);
 	}
 
-	pttDown(): void {
+	pttDown(source: 'explicit' | 'auto' | 'connect' = 'explicit'): void {
 		if (!this._isConnected.get()) { this.logService.trace('[voice] pttDown ignored: not connected'); return; }
 
 		// Toggle mode: second tap finishes recording
@@ -1931,6 +1928,9 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this.ttsPlaybackService.stopPlayback();
 			this._voiceState.set('listening', undefined);
 			this._statusText.set('Listening...', undefined);
+			if (source !== 'auto') {
+				this._playListeningStartedSignal(source);
+			}
 			if (!this._pttMaxDurationTimer) {
 				this._pttMaxDurationTimer = setTimeout(() => {
 					if (this._pttHeld) {
@@ -1997,15 +1997,8 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this.ttsPlaybackService.stopPlayback();
 		this._voiceState.set('listening', undefined);
 		this._statusText.set('Listening...', undefined);
-		// Audible cue: for non-screen-reader users, only play on the first
-		// listen after connecting. For screen reader users, play every time.
-		if (this._isHandsFreeEnabled()) {
-			if (!this._hasPlayedInitialListenCue) {
-				this._hasPlayedInitialListenCue = true;
-				this.accessibilitySignalService.playSignal(AccessibilitySignal.voiceRecordingStarted);
-			} else if (this.accessibilityService.isScreenReaderOptimized()) {
-				this.accessibilitySignalService.playSignal(AccessibilitySignal.voiceRecordingStarted);
-			}
+		if (source !== 'auto') {
+			this._playListeningStartedSignal(source);
 		}
 
 		this._pttMaxDurationTimer = setTimeout(() => {
@@ -2166,7 +2159,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	/** Re-enter listening via synthetic short tap. */
-	private _enterAutoListen(): void {
+	private _enterAutoListen(source: 'auto' | 'connect' = 'auto'): void {
 		this._clearAutoListenTimer();
 		if (this._autoListenSuppressed || !this._isConnected.get() || this._pttHeld) {
 			this.logService.trace(`[voice] _enterAutoListen skipped: suppressed=${this._autoListenSuppressed} connected=${this._isConnected.get()} pttHeld=${this._pttHeld}`);
@@ -2178,8 +2171,15 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return;
 		}
 		this.logService.trace('[voice] _enterAutoListen entering listening');
-		this.pttDown();
+		this.pttDown(source);
 		this.pttUp();
+	}
+
+	private _playListeningStartedSignal(source: 'explicit' | 'connect'): void {
+		void this.accessibilitySignalService.playSignal(AccessibilitySignal.voiceRecordingStarted, {
+			source: source === 'connect' ? 'voiceMode.connectListeningStarted' : 'voiceMode.explicitListeningStarted',
+			userGesture: true,
+		});
 	}
 
 	/**
