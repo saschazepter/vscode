@@ -3171,7 +3171,7 @@ suite('ClaudeAgent', () => {
 		//
 		// The fix: only forward `setPermissionMode` when the live config
 		// actually carries a value, leaving the session's seeded
-		// bijective state (set via `seedBijectiveState` at resume time)
+		// bijective state (seeded into the pipeline at materialize time)
 		// authoritative otherwise.
 		//
 		// Setup: stage the per-session DB with `claude.permissionMode='plan'`,

@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { McpSdkServerConfigWithInstance, OnElicitation, Options, PermissionMode, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { McpSdkServerConfigWithInstance, OnElicitation, Options, PermissionMode, SDKUserMessage, WarmQuery } from '@anthropic-ai/claude-agent-sdk';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { CancellationError } from '../../../../base/common/errors.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
@@ -17,7 +17,7 @@ import { ILogService } from '../../../log/common/log.js';
 import { IAgentConfigurationService } from '../agentConfigurationService.js';
 import { ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { ClaudePermissionMode } from '../../common/claudeSessionConfigKeys.js';
-import { ClaudeRuntimeEffortLevel, toRuntimeEffortLevel, resolveClaudeEffort } from '../../common/claudeModelConfig.js';
+import { toRuntimeEffortLevel, resolveClaudeEffort } from '../../common/claudeModelConfig.js';
 import { AgentSignal, IAgentSessionProjectInfo } from '../../common/agentService.js';
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
 import { PendingRequestRegistry } from '../../common/pendingRequestRegistry.js';
@@ -43,12 +43,9 @@ import { scanClaudeNativePlugins } from './customizations/scan/claudeNativePlugi
 import { scanClaudeRules } from './customizations/scan/claudeRuleScan.js';
 import { resolvePromptToContentBlocks } from './claudePromptResolver.js';
 import type { ClaudeTransport } from './claudeProxyService.js';
-import { ClaudeSdkPipeline, IRematerializer, type ISdkResolvedCustomizations } from './claudeSdkPipeline.js';
+import { ClaudeSdkPipeline, type IRematerializer, type ISdkResolvedCustomizations } from './claudeSdkPipeline.js';
 import { SubagentRegistry } from './claudeSubagentRegistry.js';
 import { ClaudePermissionKind } from './claudeToolDisplay.js';
-
-// Re-export for callers that import IRematerializer from the session.
-export type { IRematerializer } from './claudeSdkPipeline.js';
 
 /**
  * Inputs to {@link ClaudeAgentSession.materialize}. Carries the
@@ -100,6 +97,20 @@ function resolveCurrentPermissionMode(
 export class ClaudeAgentSession extends Disposable {
 
 	private _pipeline: ClaudeSdkPipeline | undefined;
+	/**
+	 * Session-lifetime SDK-start inputs captured at {@link materialize}: the
+	 * transport plus the permission / elicitation bridges and server-tool host
+	 * that stay constant for the session (unlike model / agent / diffs, which
+	 * {@link _startSdkQuery} re-reads live on every build). This is the explicit
+	 * replacement for the state the old rematerializer smuggled across the seam
+	 * via a closure. `undefined` until materialize.
+	 */
+	private _sdkStart: {
+		readonly transport: ClaudeTransport;
+		readonly canUseTool: NonNullable<Options['canUseTool']>;
+		readonly onElicitation: OnElicitation;
+		readonly serverToolHost: IAgentServerToolHost | undefined;
+	} | undefined;
 	private readonly _chatChannelUri: URI;
 
 	/**
@@ -435,34 +446,14 @@ export class ClaudeAgentSession extends Disposable {
 			throw new Error(`Cannot materialize Claude session ${this.sessionId}: workingDirectory is required`);
 		}
 		this._transportKind = ctx.transport.kind;
+		this._sdkStart = {
+			transport: ctx.transport,
+			canUseTool: ctx.canUseTool,
+			onElicitation: ctx.onElicitation,
+			serverToolHost: ctx.serverToolHost,
+		};
 
-		const permissionMode = readClaudePermissionMode(this._configurationService, this._storageUri) ?? this._permissionModeFallback;
-		const { mcpServers, allowedTools } = await this._buildStartupToolWiring(ctx.serverToolHost);
-		const agentName = await resolveClaudeAgentName(this._provisionalAgent, this._fileService, this._logService, this.sessionId);
-
-		const options = await buildOptions(
-			{
-				sessionId: this.sessionId,
-				workingDirectory: this.workingDirectory,
-				model: this._provisionalModel,
-				abortController: this.abortController,
-				permissionMode,
-				canUseTool: ctx.canUseTool,
-				onElicitation: ctx.onElicitation,
-				isResume: ctx.isResume,
-				resumeSessionAt: this._pendingResumeSessionAt,
-				mcpServers,
-				allowedTools,
-				plugins: this.clientCustomizationsDiff.consume(),
-				agent: agentName,
-			},
-			ctx.transport,
-			data => this._logService.error(`[Claude SDK stderr] ${data}`),
-		);
-
-		this._logService.info(`[Claude] session ${this.sessionId}: enableFileCheckpointing=${options.enableFileCheckpointing} isResume=${ctx.isResume}`);
-
-		const warm = await this._sdkService.startup({ options });
+		const { warm, permissionMode } = await this._startSdkQuery(ctx.isResume, this.abortController);
 
 		if (this.abortController.signal.aborted) {
 			await warm[Symbol.asyncDispose]();
@@ -482,6 +473,7 @@ export class ClaudeAgentSession extends Disposable {
 				dbRef,
 				this.subagents,
 				(toolName: string) => this.toolDiff.model.ownerOf(toolName),
+				() => this._rebuildSdkQuery(),
 			));
 		} catch (err) {
 			dbRef.dispose();
@@ -531,46 +523,6 @@ export class ClaudeAgentSession extends Disposable {
 			throw new CancellationError();
 		}
 
-		pipeline.attachRematerializer(async (_reason) => {
-			const liveMode = readClaudePermissionMode(this._configurationService, this._storageUri) ?? this._permissionModeFallback;
-			try {
-				const { mcpServers: rebuildMcp, allowedTools: rebuildAllowedTools } = await this._buildStartupToolWiring(ctx.serverToolHost);
-				const rebuildAgentName = await resolveClaudeAgentName(this._provisionalAgent, this._fileService, this._logService, this.sessionId);
-				const rebuildAbort = new AbortController();
-				const rebuildOptions = await buildOptions(
-					{
-						sessionId: this.sessionId,
-						workingDirectory: this.workingDirectory!,
-						model: this._provisionalModel,
-						abortController: rebuildAbort,
-						permissionMode: liveMode,
-						canUseTool: ctx.canUseTool,
-						onElicitation: ctx.onElicitation,
-						isResume: true,
-						resumeSessionAt: this._pendingResumeSessionAt,
-						mcpServers: rebuildMcp,
-						allowedTools: rebuildAllowedTools,
-						plugins: this.clientCustomizationsDiff.consume(),
-						agent: rebuildAgentName,
-					},
-					ctx.transport,
-					data => this._logService.error(`[Claude SDK stderr] ${data}`),
-				);
-				this._logService.info(`[Claude] session ${this.sessionId}: resume rebuild agent=${rebuildOptions.agent ?? '(none)'}`);
-				const rebuildWarm = await this._sdkService.startup({ options: rebuildOptions });
-				// Rebuild succeeded with the anchor applied — clear it so it
-				// isn't re-applied. A throw above keeps it staged (handled in the
-				// catch alongside the tool/customization diffs) so the next send
-				// retries the truncation instead of dropping the restore.
-				this._pendingResumeSessionAt = undefined;
-				return { warm: rebuildWarm, abortController: rebuildAbort };
-			} catch (err) {
-				this.toolDiff.markDirty();
-				this.clientCustomizationsDiff.markDirty();
-				throw err;
-			}
-		});
-
 		// Advertise the agent host's server tools on this session so the client
 		// sees them as server-provided. Execution happens in-process via the
 		// server-tool MCP server built in `_buildStartupToolWiring`.
@@ -581,6 +533,73 @@ export class ClaudeAgentSession extends Disposable {
 		// client-pushed slice; firing here prompts the workbench to refetch
 		// and pick up the bundled `Discovered in Claude` entry.
 		this._onDidCustomizationsChange.fire();
+	}
+
+	/**
+	 * Turn this session's live state into a started SDK subprocess: read the
+	 * live permission mode, build the in-process MCP wiring and resolved agent,
+	 * project everything onto the SDK `Options`, and `startup()`. The single
+	 * source of truth for constructing a `WarmQuery`, called once by
+	 * {@link materialize} (fresh or resume) and again by {@link _rebuildSdkQuery}
+	 * on every yield-restart, so the two paths can never drift. Returns the
+	 * permission mode it built with so the caller reuses that exact value for
+	 * the config seed and overlay write.
+	 */
+	private async _startSdkQuery(isResume: boolean, abortController: AbortController): Promise<{ readonly warm: WarmQuery; readonly permissionMode: ClaudePermissionMode }> {
+		const start = this._sdkStart;
+		if (!start) {
+			throw new Error(`Cannot start SDK for session ${this.sessionId}: materialize context missing`);
+		}
+		const workingDirectory = this.workingDirectory;
+		if (!workingDirectory) {
+			throw new Error(`Cannot start SDK for session ${this.sessionId}: workingDirectory is required`);
+		}
+		const permissionMode = resolveCurrentPermissionMode(this._configurationService, this._storageUri, this._permissionModeFallback);
+		const { mcpServers, allowedTools } = await this._buildStartupToolWiring(start.serverToolHost);
+		const agentName = await resolveClaudeAgentName(this._provisionalAgent, this._fileService, this._logService, this.sessionId);
+		const options = await buildOptions(
+			{
+				sessionId: this.sessionId,
+				workingDirectory,
+				model: this._provisionalModel,
+				abortController,
+				permissionMode,
+				canUseTool: start.canUseTool,
+				onElicitation: start.onElicitation,
+				isResume,
+				resumeSessionAt: this._pendingResumeSessionAt,
+				mcpServers,
+				allowedTools,
+				plugins: this.clientCustomizationsDiff.consume(),
+				agent: agentName,
+			},
+			start.transport,
+			data => this._logService.error(`[Claude SDK stderr] ${data}`),
+		);
+		this._logService.info(`[Claude] session ${this.sessionId}: startup isResume=${isResume} agent=${options.agent ?? '(none)'}`);
+		const warm = await this._sdkService.startup({ options });
+		return { warm, permissionMode };
+	}
+
+	/**
+	 * The pipeline's rebuild hook (an {@link IRematerializer}), passed at
+	 * construction. Rebuilds a fresh `WarmQuery` in resume mode via
+	 * {@link _startSdkQuery} and clears the one-shot resume anchor on success.
+	 * On failure it re-marks the tool + customization diffs dirty so the next
+	 * `send()` retries the yield-restart rather than proceeding out of sync,
+	 * then rethrows for the pipeline's rebind gates to surface.
+	 */
+	private async _rebuildSdkQuery(): Promise<{ readonly warm: WarmQuery; readonly abortController: AbortController }> {
+		const abortController = new AbortController();
+		try {
+			const { warm } = await this._startSdkQuery(true, abortController);
+			this._pendingResumeSessionAt = undefined;
+			return { warm, abortController };
+		} catch (err) {
+			this.toolDiff.markDirty();
+			this.clientCustomizationsDiff.markDirty();
+			throw err;
+		}
 	}
 
 	/**
@@ -653,20 +672,6 @@ export class ClaudeAgentSession extends Disposable {
 	 */
 	async shutdownLiveQuery(): Promise<void> {
 		await this._pipeline?.shutdownAndWait();
-	}
-
-	/**
-	 * Seed the pipeline's current + applied config cache from
-	 * materialize-time `Options`. The SDK already starts with these
-	 * values, so the cache prevents a redundant first `setModel` /
-	 * `applyFlagSettings` call.
-	 */
-	seedBijectiveState(state: { model?: string; effort?: ClaudeRuntimeEffortLevel; permissionMode?: PermissionMode }): void {
-		this._requirePipeline().seedCurrentConfig(state.model, state.effort, state.permissionMode);
-	}
-
-	attachRematerializer(rematerializer: IRematerializer): void {
-		this._requirePipeline().attachRematerializer(rematerializer);
 	}
 
 	/**
@@ -926,16 +931,6 @@ export class ClaudeAgentSession extends Disposable {
 	completeClientToolCall(toolCallId: string, result: ToolCallResult): boolean {
 		const converted = convertToolCallResult(result, toolCallId);
 		return this._pendingClientToolCalls.respond(toolCallId, converted);
-	}
-
-	/**
-	 * Drive a yield-restart so the SDK picks up the new client-tool set
-	 * on its next user request. Public entry point for callers that need
-	 * to force a tool-only rebind; internal pre-flight goes through
-	 * {@link _rebindForSyncedState}.
-	 */
-	async rebindForClientTools(): Promise<void> {
-		await this._rebindForSyncedState();
 	}
 
 	// #endregion

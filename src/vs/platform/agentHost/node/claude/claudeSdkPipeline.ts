@@ -21,7 +21,7 @@ import { ClaudeSdkMessageRouter } from './claudeSdkMessageRouter.js';
 import type { SubagentRegistry } from './claudeSubagentRegistry.js';
 
 /**
- * Callback the agent supplies via {@link ClaudeSdkPipeline.attachRematerializer}
+ * Callback the agent supplies to the {@link ClaudeSdkPipeline} constructor
  * so the pipeline can rebuild its underlying {@link WarmQuery} /
  * {@link AbortController} on abort or crash recovery without depending on
  * the materializer service directly. The callback MUST start the SDK in
@@ -85,18 +85,6 @@ export interface ISdkResolvedCustomizations {
 }
 
 export class ClaudeSdkPipeline extends Disposable {
-	/**
-	 * Phase 11 — hot-swap the SDK's plugin set in place via
-	 * `Query.reloadPlugins()`. Commands / agents / mcpServers added or
-	 * removed by the new plugin set become visible to the SDK
-	 * immediately, without a session restart. Throws if the query is
-	 * not yet bound (session not materialized).
-	 */
-	async reloadPlugins(): Promise<void> {
-		const query = await this._ensureQueryBound();
-		await query.reloadPlugins();
-	}
-
 	/**
 	 * Phase 11 — snapshot the SDK's currently-resolved customization
 	 * surface (slash commands / skills, subagents, MCP servers). This
@@ -200,7 +188,7 @@ export class ClaudeSdkPipeline extends Disposable {
 	private _currentEffort: ClaudeRuntimeEffortLevel | undefined;
 	private _currentPermissionMode: PermissionMode | undefined;
 
-	private _rematerializer: IRematerializer | undefined;
+	private readonly _rematerializer: IRematerializer;
 
 	/** Set when the consumer loop ends in error (cancellation OR crash). Read by {@link send} to trigger rebind. */
 	private _needsRebind = false;
@@ -231,12 +219,14 @@ export class ClaudeSdkPipeline extends Disposable {
 		abortController: AbortController,
 		dbRef: IReference<ISessionDatabase>,
 		subagents: SubagentRegistry,
-		clientToolOwner: ((toolName: string) => string | undefined) | undefined = undefined,
+		clientToolOwner: ((toolName: string) => string | undefined) | undefined,
+		rematerialize: IRematerializer,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@ILogService private readonly _logService: ILogService,
 	) {
 		super();
 		this._warm = warm;
+		this._rematerializer = rematerialize;
 		this._abortController = abortController;
 		this._wireAbortHandler(abortController);
 		this._queue = this._register(instantiationService.createInstance(
@@ -297,25 +287,12 @@ export class ClaudeSdkPipeline extends Disposable {
 
 	/**
 	 * Phase 10 \u2014 narrow public wrapper around the internal
-	 * {@link _rebindQuery} so {@link ClaudeAgentSession.rebindForClientTools}
+	 * {@link _rebindQuery} so the session's synced-state rebind
 	 * can drive a yield-restart without exposing the private rebind
 	 * machinery to every collaborator.
 	 */
 	rebindForRestart(): Promise<void> {
 		return this._rebindQuery('restart');
-	}
-
-	/**
-	 * Phase 10 — update the resolver the stream mapper uses to stamp the
-	 * owning workbench `clientId` onto subsequent `ChatToolCallStart` events.
-	 */
-	setClientToolOwner(clientToolOwner: ((toolName: string) => string | undefined) | undefined): void {
-		this._router.setClientToolOwner(clientToolOwner);
-	}
-
-	/** Attach the rematerializer hook for abort / crash recovery. Optional — tests that exercise only the dispose path skip this. */
-	attachRematerializer(rematerializer: IRematerializer): void {
-		this._rematerializer = rematerializer;
 	}
 
 	/**
@@ -548,9 +525,6 @@ export class ClaudeSdkPipeline extends Disposable {
 	 * effort / permission mode to the fresh Query.
 	 */
 	private async _rebindQuery(reason: 'restart' | 'recover'): Promise<void> {
-		if (!this._rematerializer) {
-			throw new Error(`ClaudeSdkPipeline.rebind: no rematerializer attached (reason=${reason})`);
-		}
 		const oldWarm = this._warm;
 		// Install a placeholder controller BEFORE awaiting the
 		// rematerializer so a concurrent {@link abort} has a live target

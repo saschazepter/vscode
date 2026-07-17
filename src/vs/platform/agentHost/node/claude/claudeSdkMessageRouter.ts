@@ -36,7 +36,7 @@ export class ClaudeSdkMessageRouter extends Disposable {
 	private readonly _editObserver: ClaudeFileEditObserver;
 	private readonly _mapperState = new ClaudeMapperState();
 
-	private _clientToolOwner: ((toolName: string) => string | undefined) | undefined;
+	private readonly _clientToolOwner: ((toolName: string) => string | undefined) | undefined;
 
 	constructor(
 		sessionUri: URI,
@@ -52,10 +52,6 @@ export class ClaudeSdkMessageRouter extends Disposable {
 		this._editObserver = this._register(
 			instantiationService.createInstance(ClaudeFileEditObserver, sessionUri.toString(), dbRef),
 		);
-	}
-
-	setClientToolOwner(clientToolOwner: ((toolName: string) => string | undefined) | undefined): void {
-		this._clientToolOwner = clientToolOwner;
 	}
 
 	async handle(message: SDKMessage, turnId: string | undefined, turnDuration?: number): Promise<void> {

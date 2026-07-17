@@ -185,6 +185,8 @@ interface IPipelineHarness {
 	readonly pipeline: ClaudeSdkPipeline;
 	readonly warm: FakeWarmQuery;
 	readonly controller: AbortController;
+	/** Swap the rematerializer the pipeline was constructed with (test-only seam). */
+	setRematerializer(rematerialize: IRematerializer): void;
 }
 
 function createPipeline(
@@ -207,6 +209,12 @@ function createPipeline(
 	);
 	const inst: IInstantiationService = disposables.add(new InstantiationService(services));
 	const subagents = disposables.add(new SubagentRegistry());
+	// The pipeline requires its rematerializer at construction; tests that
+	// exercise rebind swap in their own via `setRematerializer`. The default
+	// throws so a rebind triggered without one fails loudly.
+	let rematerialize: IRematerializer = async () => {
+		throw new Error('test rematerializer not set via setRematerializer');
+	};
 	const pipeline = disposables.add(inst.createInstance(
 		ClaudeSdkPipeline,
 		'sess-1',
@@ -217,8 +225,9 @@ function createPipeline(
 		dbRef,
 		subagents,
 		undefined,
+		(reason: 'restart' | 'recover') => rematerialize(reason),
 	));
-	return { pipeline, warm, controller };
+	return { pipeline, warm, controller, setRematerializer: r => { rematerialize = r; } };
 }
 
 function makePrompt(uuid: string, text: string = uuid): SDKUserMessage {
@@ -252,53 +261,6 @@ suite('ClaudeSdkPipeline', () => {
 
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
 
-	suite('reloadPlugins', () => {
-
-		test('forwards to the SDK Query', async () => {
-			let reloadCallCount = 0;
-			class WarmWithReload extends FakeWarmQuery {
-				override query(_prompt: string | AsyncIterable<SDKUserMessage>): Query {
-					this.queryCallCount++;
-					const q = new ImmediatelyDoneQuery();
-					(q as unknown as { reloadPlugins: () => Promise<{ commands: { name: string }[] }> }).reloadPlugins =
-						async () => { reloadCallCount++; return { commands: [] }; };
-					return q;
-				}
-			}
-			const controller = new AbortController();
-			const warm = new WarmWithReload();
-			const fileService = disposables.add(new FileService(new NullLogService()));
-			const fs = disposables.add(new InMemoryFileSystemProvider());
-			disposables.add(fileService.registerProvider('file', fs));
-			const db = new TestSessionDatabase();
-			const dbRef: IReference<ISessionDatabase> = { object: db, dispose: () => { } };
-			const services = new ServiceCollection(
-				[ILogService, new NullLogService()],
-				[IFileService, fileService],
-				[IDiffComputeService, createZeroDiffComputeService()],
-			);
-			const inst: IInstantiationService = disposables.add(new InstantiationService(services));
-			const subagents = disposables.add(new SubagentRegistry());
-			const pipeline = disposables.add(inst.createInstance(
-				ClaudeSdkPipeline,
-				'sess-2',
-				URI.parse('claude:/sess-2'),
-				URI.parse(buildDefaultChatUri('claude:/sess-2')),
-				warm,
-				controller,
-				dbRef,
-				subagents,
-				undefined,
-			));
-			// Bind the query by issuing a send (iterator closes immediately).
-			pipeline.send(makePrompt('p1'), 'turn-A').catch(() => { /* expected */ });
-			await Promise.resolve();
-
-			await pipeline.reloadPlugins();
-			assert.strictEqual(reloadCallCount, 1);
-		});
-	});
-
 	suite('initial state', () => {
 
 		test('isResumed starts false and isAborted starts false', () => {
@@ -323,24 +285,12 @@ suite('ClaudeSdkPipeline', () => {
 			pipeline.abort();
 			assert.strictEqual(controller.signal.aborted, true);
 		});
-
-		test('send after abort with no rematerializer attached throws a clear error (not a silent hang)', async () => {
-			const { pipeline } = createPipeline(disposables);
-			pipeline.abort();
-			await pipeline.send(makePrompt('p1'), 'turn-A').then(
-				() => assert.fail('expected rejection'),
-				err => {
-					// _rebindQuery throws synchronously when no rematerializer is attached
-					assert.match(String(err), /no rematerializer attached/);
-				},
-			);
-		});
 	});
 
 	suite('rematerializer wiring', () => {
 
 		test('after abort, send invokes the attached rematerializer in "recover" mode and clears the rebind flag', async () => {
-			const { pipeline } = createPipeline(disposables);
+			const { pipeline, setRematerializer } = createPipeline(disposables);
 			const reasons: Array<'restart' | 'recover'> = [];
 			const built: { warm: FakeWarmQuery; controller: AbortController }[] = [];
 			const rematerializer: IRematerializer = async (reason) => {
@@ -350,7 +300,7 @@ suite('ClaudeSdkPipeline', () => {
 				built.push({ warm, controller: ctl });
 				return { warm, abortController: ctl };
 			};
-			pipeline.attachRematerializer(rematerializer);
+			setRematerializer(rematerializer);
 
 			pipeline.abort();
 			// Don't await — the consumer loop on the rebound query will end
@@ -369,10 +319,10 @@ suite('ClaudeSdkPipeline', () => {
 		});
 
 		test('rematerializer rejection propagates from send', async () => {
-			const { pipeline } = createPipeline(disposables);
+			const { pipeline, setRematerializer } = createPipeline(disposables);
 			const rebuildErr = new Error('rematerialize failed');
 			let calls = 0;
-			pipeline.attachRematerializer(async () => {
+			setRematerializer(async () => {
 				calls++;
 				throw rebuildErr;
 			});
@@ -386,10 +336,10 @@ suite('ClaudeSdkPipeline', () => {
 		});
 
 		test('abort issued while the rematerializer is still resolving cancels the freshly-built controller (rebind-window race)', async () => {
-			const { pipeline } = createPipeline(disposables);
+			const { pipeline, setRematerializer } = createPipeline(disposables);
 			const releaseRebuild = new DeferredPromise<{ warm: FakeWarmQuery; controller: AbortController }>();
 			const built: { warm: FakeWarmQuery; controller: AbortController }[] = [];
-			pipeline.attachRematerializer(async () => {
+			setRematerializer(async () => {
 				const pair = await releaseRebuild.p;
 				built.push(pair);
 				return { warm: pair.warm, abortController: pair.controller };
@@ -428,7 +378,7 @@ suite('ClaudeSdkPipeline', () => {
 			// nothing would ever read the new query and `send` would hang
 			// ("Restore Checkpoint then send" never responds).
 			const warm1 = new ControllableWarmQuery();
-			const { pipeline } = createPipeline(disposables, warm1);
+			const { pipeline, setRematerializer } = createPipeline(disposables, warm1);
 
 			// Bind Q1 and start the consumer loop draining it. No result is
 			// pushed, so this send never resolves — we only need the live loop.
@@ -439,7 +389,7 @@ suite('ClaudeSdkPipeline', () => {
 
 			// Rebind to a fresh warm/Q2 while Q1's loop is still parked.
 			const warm2 = new ControllableWarmQuery();
-			pipeline.attachRematerializer(async () => ({ warm: warm2, abortController: new AbortController() }));
+			setRematerializer(async () => ({ warm: warm2, abortController: new AbortController() }));
 			await pipeline.rebindForRestart();
 			const q2 = warm2.queries[0];
 			assert.strictEqual(q2.nextCallCount, 0, 'new query not drained yet — the old loop is still running');
@@ -476,15 +426,15 @@ suite('ClaudeSdkPipeline', () => {
 		// Bind a live Query (send() lazily binds it) seeded as if the session
 		// materialized on an effort-capable model. Returns the recorder so each
 		// test asserts the exact applyFlagSettings payloads pushed afterwards.
-		async function seededHighThenBind(disposables: Pick<DisposableStore, 'add'>): Promise<{ pipeline: ClaudeSdkPipeline; warm: RecordingWarmQuery }> {
+		async function seededHighThenBind(disposables: Pick<DisposableStore, 'add'>): Promise<{ pipeline: ClaudeSdkPipeline; warm: RecordingWarmQuery; setRematerializer(rematerialize: IRematerializer): void }> {
 			let warm!: RecordingWarmQuery;
-			const { pipeline } = createPipeline(disposables, signal => (warm = new RecordingWarmQuery(signal)));
+			const { pipeline, setRematerializer } = createPipeline(disposables, signal => (warm = new RecordingWarmQuery(signal)));
 			pipeline.seedCurrentConfig('claude-opus-4-7', 'high', 'default');
 			pipeline.send(makePrompt('p1'), 'turn-A').catch(() => { /* stream ends without result */ });
 			await flushMicrotasks();
 			assert.strictEqual(warm.queryCallCount, 1, 'query should be bound after send');
 			warm.flagSettings.length = 0; // drop any replay from bind; isolate the switch
-			return { pipeline, warm };
+			return { pipeline, warm, setRematerializer };
 		}
 
 		test('switching to a model with no effort clears the stale effort via applyFlagSettings({ effortLevel: null })', async () => {
@@ -525,14 +475,14 @@ suite('ClaudeSdkPipeline', () => {
 			// health signal. setEffort must NOT steer that dead query — it should
 			// buffer the value and let `_replayCurrentConfig` push it onto the
 			// freshly-bound query after the rebind.
-			const { pipeline, warm } = await seededHighThenBind(disposables);
+			const { pipeline, warm, setRematerializer } = await seededHighThenBind(disposables);
 			pipeline.abort();
 			warm.flagSettings.length = 0; // isolate: ignore anything from the dead query
 			await pipeline.setEffort('low');
 			assert.deepStrictEqual(warm.flagSettings, [], 'effort must not be pushed while needsRebind');
 
 			let warm2!: RecordingWarmQuery;
-			pipeline.attachRematerializer(async () => {
+			setRematerializer(async () => {
 				const ctl = new AbortController();
 				warm2 = new RecordingWarmQuery(ctl.signal);
 				return { warm: warm2, abortController: ctl };
@@ -564,8 +514,8 @@ suite('ClaudeSdkPipeline', () => {
 	suite('CancellationError plumbing', () => {
 
 		test('abort + send rejects with a CancellationError-shaped error after the rematerializer runs (when rematerializer rejects with one)', async () => {
-			const { pipeline } = createPipeline(disposables);
-			pipeline.attachRematerializer(async () => {
+			const { pipeline, setRematerializer } = createPipeline(disposables);
+			setRematerializer(async () => {
 				const err = new Error('Canceled');
 				err.name = 'Canceled';
 				throw err;
