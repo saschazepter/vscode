@@ -173,4 +173,53 @@ suite('VoiceSessionController', () => {
 
 		assert.strictEqual(pendingSolicitedNarrations.size, 0);
 	});
+
+	test('does not restore state while another solicited narration is still awaiting audio', () => {
+		const voiceClientService = new TestVoiceClientService();
+		const controller = createController(voiceClientService);
+		const narrate = Reflect.get(controller, '_narrate') as (sessionId: string, kind: 'response' | 'confirmation', text: string) => boolean;
+		const pendingSolicitedNarrations = Reflect.get(controller, '_pendingSolicitedNarrations') as Map<string, unknown>;
+
+		// First narration armed at t=0 (audio-start watchdog fires at t=30s).
+		assert.strictEqual(narrate.call(controller, 'agent-host-copilot:/session-a', 'response', 'First'), true);
+		// Second narration armed at t=15s (its watchdog fires at t=45s).
+		clock.tick(15_000);
+		assert.strictEqual(narrate.call(controller, 'agent-host-copilot:/session-b', 'response', 'Second'), true);
+		assert.strictEqual(pendingSolicitedNarrations.size, 2);
+
+		// First watchdog fires: the second narration is still awaiting audio, so
+		// state must NOT be restored yet — its own watchdog owns that.
+		clock.tick(15_000);
+		assert.strictEqual(pendingSolicitedNarrations.size, 1);
+		assert.strictEqual(controller.statusText.get(), 'Tap to start');
+
+		// Second (last outstanding) watchdog fires: now state is restored.
+		clock.tick(15_000);
+		assert.strictEqual(pendingSolicitedNarrations.size, 0);
+		assert.strictEqual(controller.voiceState.get(), 'idle');
+		assert.strictEqual(controller.statusText.get(), 'Hold to speak...');
+	});
+
+	test('does not restore state while a direct reply is still awaited', () => {
+		const voiceClientService = new TestVoiceClientService();
+		const controller = createController(voiceClientService);
+		const narrate = Reflect.get(controller, '_narrate') as (sessionId: string, kind: 'response' | 'confirmation', text: string) => boolean;
+		const setAwaitingReply = Reflect.get(controller, '_setAwaitingReply') as () => void;
+		const pendingSolicitedNarrations = Reflect.get(controller, '_pendingSolicitedNarrations') as Map<string, unknown>;
+
+		// Narration armed at t=0 (audio-start watchdog fires at t=30s).
+		assert.strictEqual(narrate.call(controller, 'agent-host-copilot:/session-c', 'response', 'Done'), true);
+		// A direct reply becomes awaited at t=1s (its own watchdog fires at t=31s,
+		// after the narration's), so `_awaitingReplyAudio` is still set when the
+		// narration times out.
+		clock.tick(1_000);
+		setAwaitingReply.call(controller);
+
+		clock.tick(29_000);
+
+		// The narration's audio-start watchdog fired, but a direct reply is still
+		// expected, so it must not clobber that reply's state.
+		assert.strictEqual(pendingSolicitedNarrations.size, 0);
+		assert.strictEqual(controller.statusText.get(), 'Tap to start');
+	});
 });

@@ -3082,8 +3082,28 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 		this._pendingSolicitedNarrations.delete(narrationId);
 		this._solicitedNarrationIds.delete(narrationId);
+		// Only restore state when this was the last thing we were waiting on. If a
+		// direct chat reply is still expected (`_awaitingReplyAudio`) or another
+		// solicited narration is still waiting for its audio to start, restoring
+		// idle / re-entering the hands-free mic here could suppress that other
+		// response's audio. Leave restoration to whichever watchdog fires last.
+		if (this._awaitingReplyAudio || this._hasNarrationAwaitingAudio()) {
+			this.logService.trace(`[voice] solicited narration ${narrationId.slice(0, 8)} timed out waiting for audio start; another response still expected, deferring state restore`);
+			return;
+		}
 		this.logService.trace(`[voice] solicited narration ${narrationId.slice(0, 8)} timed out waiting for audio start; restoring idle state`);
 		this._restoreVoiceStateAfterNarrationTimeout();
+	}
+
+	/** True while any tracked solicited narration is still waiting for its audio
+	 *  to start (i.e. a no-audio watchdog is still outstanding). */
+	private _hasNarrationAwaitingAudio(): boolean {
+		for (const pending of this._pendingSolicitedNarrations.values()) {
+			if (!pending.hasReceivedAudio) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private _clearPendingSolicitedNarration(narrationId: string, pending: IPendingSolicitedNarration): void {
