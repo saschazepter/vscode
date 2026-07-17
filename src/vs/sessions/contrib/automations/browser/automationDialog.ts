@@ -232,7 +232,6 @@ export class AutomationIsolationGroupActionViewItem extends BaseActionViewItem {
 	}
 
 	override render(container: HTMLElement): void {
-		super.render(container);
 		this.renderDisposables.clear();
 		this.branchRepoDisposable.clear();
 		this.cancelBranchRequest();
