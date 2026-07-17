@@ -16,6 +16,6 @@ jobs:
           node-version: 'lts/*'
 
       - name: 'Run vscode-telemetry-extractor'
-        run: 'npx --package=@vscode/telemetry-extractor@1.20.4 --yes vscode-telemetry-extractor -s .'
+        run: 'npx --package=@vscode/telemetry-extractor@1.14.0 --yes vscode-telemetry-extractor -s .'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
