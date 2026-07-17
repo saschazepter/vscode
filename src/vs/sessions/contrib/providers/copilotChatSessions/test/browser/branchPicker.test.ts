@@ -134,7 +134,7 @@ suite('Copilot BranchPicker', () => {
 		const { container, actionWidgetService, branch } = createPicker({
 			branches: ['feature/shared', 'main'],
 		});
-		const trigger = container.querySelector<HTMLElement>('.automation-form-branch-picker-slot .action-label, .sessions-chat-picker-slot .action-label');
+		const trigger = container.querySelector<HTMLElement>('a.action-label');
 		assert.ok(trigger);
 
 		trigger.click();
