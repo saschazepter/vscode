@@ -8,7 +8,7 @@ import { renderIcon } from '../../../../base/browser/ui/iconLabel/iconLabels.js'
 import { Checkbox } from '../../../../base/browser/ui/toggle/toggle.js';
 import { Gesture, EventType as TouchEventType } from '../../../../base/browser/touch.js';
 import { Codicon } from '../../../../base/common/codicons.js';
-import { Disposable, DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { IActionWidgetService } from '../../../../platform/actionWidget/browser/actionWidget.js';
 import { ActionListItemKind, IActionListDelegate, IActionListItem } from '../../../../platform/actionWidget/browser/actionList.js';
@@ -43,6 +43,7 @@ export interface IBranchPickerIsolationOptions {
 	readonly ariaLabel: string;
 	readonly onToggle: (checked: boolean) => void;
 	readonly slotClassName?: string;
+	readonly markTarget?: (element: HTMLElement) => IDisposable;
 }
 
 /**
@@ -119,6 +120,9 @@ export class BranchPicker extends Disposable {
 		}
 		this._isolationSlot = slot;
 		this._renderDisposables.add(toDisposable(() => slot.remove()));
+		if (isolation.markTarget) {
+			this._renderDisposables.add(isolation.markTarget(slot));
+		}
 
 		const row = dom.append(slot, dom.$('.action-label'));
 		row.setAttribute('aria-label', isolation.ariaLabel);

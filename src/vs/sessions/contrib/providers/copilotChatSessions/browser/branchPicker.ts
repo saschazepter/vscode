@@ -10,6 +10,7 @@ import { IConfigurationService } from '../../../../../platform/configuration/com
 import { IContextKey, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
+import { markOnboardingTarget } from '../../../../../workbench/contrib/onboarding/browser/spotlight/onboardingTarget.js';
 import { reportNewChatPickerClosed } from '../../../chat/browser/newChatPickerTelemetry.js';
 import { BranchPicker as SharedBranchPicker } from '../../../chat/browser/branchPicker.js';
 import { SessionIsolationPickerVisibleContext } from '../../../../common/contextkeys.js';
@@ -72,6 +73,7 @@ export class BranchPicker extends Disposable {
 				label: localize('isolationMode.worktree', "New Worktree"),
 				ariaLabel: localize('isolationPicker.checkboxAriaLabel', "Worktree isolation"),
 				onToggle: checked => this._applyIsolationToggle(checked),
+				markTarget: element => markOnboardingTarget(element, 'sessions.newSession.isolation'),
 			},
 		}));
 
