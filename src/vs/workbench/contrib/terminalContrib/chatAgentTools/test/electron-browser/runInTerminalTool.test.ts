@@ -548,7 +548,7 @@ suite('RunInTerminalTool', () => {
 			const prepared = await executeToolTest({ command: 'echo hello' });
 			const result = await invokeToolTest({ command: 'echo hello' });
 
-			strictEqual(prepared?.confirmationMessages, undefined);
+			strictEqual(prepared?.confirmationMessages?.customOptions, undefined);
 			ok((result.content[0] as { value?: string }).value?.includes('system package manager'));
 			strictEqual(createTerminalCallCount, 0);
 		});
