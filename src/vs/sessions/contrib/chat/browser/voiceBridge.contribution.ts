@@ -264,7 +264,7 @@ class SessionsVoiceListeningContribution extends Disposable implements IWorkbenc
 				// Stop only mid-dictation; otherwise follow the new session.
 				const activelyDictating = turns.some(t => t.speaker === 'user' && t.isPartial && t.text.trim().length > 0);
 				if (activelyDictating) {
-					voiceSessionController.stopListening();
+					voiceSessionController.stopListening('internal');
 					listeningSession = undefined;
 				} else {
 					listeningSession = currentSession;

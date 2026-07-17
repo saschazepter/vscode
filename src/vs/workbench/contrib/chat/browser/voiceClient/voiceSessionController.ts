@@ -111,7 +111,7 @@ export interface IVoiceSessionController {
 	disconnect(source?: 'explicit' | 'internal'): void;
 
 	pttDown(source?: 'explicit' | 'auto' | 'connect'): void;
-	pttUp(): void;
+	pttUp(source?: 'explicit' | 'internal'): void;
 
 	/**
 	 * Stop the current recording / auto-listen loop without disconnecting.
@@ -121,7 +121,7 @@ export interface IVoiceSessionController {
 	 * stays connected so the user can resume via the Voice Mode button
 	 * without a new handshake. Use `disconnect()` to fully end the session.
 	 */
-	stopListening(): void;
+	stopListening(source?: 'explicit' | 'internal'): void;
 
 	/**
 	 * Mark a session as having been cancelled by the user from VS Code UI. The
@@ -1946,7 +1946,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 				this._pttMaxDurationTimer = setTimeout(() => {
 					if (this._pttHeld) {
 						this._statusText.set('Max duration reached', undefined);
-						this.pttUp();
+						this.pttUp('internal');
 					}
 				}, VoiceSessionController._PTT_MAX_DURATION_MS);
 			}
@@ -2015,12 +2015,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._pttMaxDurationTimer = setTimeout(() => {
 			if (this._pttHeld) {
 				this._statusText.set('Max duration reached', undefined);
-				this.pttUp();
+				this.pttUp('internal');
 			}
 		}, VoiceSessionController._PTT_MAX_DURATION_MS);
 	}
 
-	pttUp(): void {
+	pttUp(source: 'explicit' | 'internal' = 'explicit'): void {
 		if (!this._pttHeld) { return; }
 
 		// Short tap: enter toggle mode — keep recording until next tap
@@ -2030,10 +2030,10 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			return;
 		}
 
-		this._finishPtt();
+		this._finishPtt('local', source);
 	}
 
-	stopListening(): void {
+	stopListening(source: 'explicit' | 'internal' = 'explicit'): void {
 		// Stop the current recording / auto-listen loop WITHOUT tearing down
 		// the WebSocket. Any in-flight press is finished through the normal
 		// `ptt_end` path so the backend finalizes the turn; the auto-listen
@@ -2045,7 +2045,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._pttToggleMode = false;
 		this._clearAutoListenTimer();
 		if (this._pttHeld) {
-			this._finishPtt('local');
+			this._finishPtt('local', source);
 		} else {
 			this._voiceState.set('idle', undefined);
 			this._statusText.set('Tap to start', undefined);
@@ -2061,7 +2061,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * (``turn_auto_ended``): the mic is aborted with no drain and NO ``ptt_end``
 	 * is sent for the turn.
 	 */
-	private _finishPtt(reason: 'local' | 'auto' = 'local'): void {
+	private _finishPtt(reason: 'local' | 'auto' = 'local', source: 'explicit' | 'internal' = 'explicit'): void {
 		// End toggle (hands-free) mode on every turn-ending path — even when not held — so an out-of-band finish can't leave a stale toggle that self-kills the next auto-listen.
 		this._pttToggleMode = false;
 		this._bargeInListenActive = false;
@@ -2089,7 +2089,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		} else {
 			this.micCaptureService.pttUp();
 		}
-		if (reason === 'local') {
+		if (reason === 'local' && source === 'explicit') {
 			this._playRecordingStoppedSignal(true);
 		} else if (this.accessibilityService.isScreenReaderOptimized()) {
 			this._playRecordingStoppedSignal(false);
@@ -2192,7 +2192,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		}
 		this.logService.trace('[voice] _enterAutoListen entering listening');
 		this.pttDown(source);
-		this.pttUp();
+		this.pttUp('internal');
 	}
 
 	private _playListeningStartedSignal(source: 'explicit' | 'connect'): void {

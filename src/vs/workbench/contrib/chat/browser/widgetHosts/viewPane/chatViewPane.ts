@@ -563,7 +563,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 					// hands-free), keep listening and just follow the new session.
 					const activelyDictating = turns.some(t => t.speaker === 'user' && t.isPartial && t.text.trim().length > 0);
 					if (activelyDictating) {
-						this.voiceSessionController.stopListening();
+						this.voiceSessionController.stopListening('internal');
 						listeningSession = undefined;
 					} else {
 						listeningSession = currentSession;
