@@ -12,15 +12,14 @@ import { ITelemetryService } from '../../../../../platform/telemetry/common/tele
 import { IUserAttentionService } from '../../../../services/userAttention/common/userAttentionService.js';
 import { AnnotatedDocument, IAnnotatedDocuments } from '../helpers/annotatedDocuments.js';
 import { CreateSuggestionIdForChatOrInlineChatCaller, EditTelemetryReportEditArcForChatOrInlineChatSender, EditTelemetryReportInlineEditArcSender } from './arcTelemetrySender.js';
-import { createDocWithJustReason, DiffService, EditSource } from '../helpers/documentWithAnnotatedEdits.js';
+import { createDocWithJustReason, EditSource } from '../helpers/documentWithAnnotatedEdits.js';
 import { DocumentEditSourceTracker, TrackedEdit } from './editTracker.js';
 import { sumByCategory } from '../helpers/utils.js';
 import { IScmRepoAdapter, ScmAdapter } from './scmAdapter.js';
 import { IRandomService } from '../randomService.js';
 import { EditTelemetryMode, EditTelemetryTrigger, sendEditSourcesDetailsTelemetry } from './editSourceTelemetry.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
-import { UnifiedEditTrackerShadowTracking } from './unifiedEditTrackerShadowTracking.js';
-import { getEditTrackerComparisonDifferenceFields, snapshotDocumentEditSourceTracker, UnifiedDocumentComputeDiff } from './unifiedDocumentTrackerProjection.js';
+import { UnifiedEditSourceTracking } from './unifiedEditSourceTracking.js';
 
 export type EditTelemetryCategory = 'nes' | 'inlineCompletionsCopilot' | 'inlineCompletionsNES' | 'inlineCompletionsOther' | 'otherAI' | 'user' | 'ide' | 'external' | 'unknown';
 
@@ -46,21 +45,19 @@ export class EditSourceTrackingImpl extends Disposable {
 	constructor(
 		private readonly _statsEnabled: IObservable<boolean>,
 		private readonly _annotatedDocuments: IAnnotatedDocuments,
-		private readonly _shadowTracking: UnifiedEditTrackerShadowTracking | undefined,
+		private readonly _unifiedTracking: UnifiedEditSourceTracking | undefined,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 	) {
 		super();
 
 		const scmBridge = this._instantiationService.createInstance(ScmAdapter);
-		const diffService = this._instantiationService.createInstance(DiffService);
 		this._states = mapObservableArrayCached(this, this._annotatedDocuments.documents, (doc, store) => {
 			return [doc.document, store.add(this._instantiationService.createInstance(
 				TrackedDocumentInfo,
 				doc,
 				scmBridge,
 				this._statsEnabled,
-				this._shadowTracking,
-				(original, modified) => diffService.computeDiff(original, modified),
+				this._unifiedTracking,
 			))] as const;
 		});
 		this.docsState = this._states.map((entries) => new Map(entries));
@@ -80,8 +77,7 @@ class TrackedDocumentInfo extends Disposable {
 		private readonly _doc: AnnotatedDocument,
 		private readonly _scm: ScmAdapter,
 		private readonly _statsEnabled: IObservable<boolean>,
-		private readonly _shadowTracking: UnifiedEditTrackerShadowTracking | undefined,
-		private readonly _computeDiff: UnifiedDocumentComputeDiff,
+		private readonly _unifiedTracking: UnifiedEditSourceTracking | undefined,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@IRandomService private readonly _randomService: IRandomService,
@@ -91,6 +87,7 @@ class TrackedDocumentInfo extends Disposable {
 		super();
 
 		this._repo = derived(this, reader => this._scm.getRepo(_doc.document.uri, reader));
+		this._unifiedTracking?.retainLocalLongTermResource(this._doc.document.uri);
 
 		const docWithJustReason = createDocWithJustReason(_doc.documentWithAnnotations, this._store);
 
@@ -101,15 +98,15 @@ class TrackedDocumentInfo extends Disposable {
 			if (!this._statsEnabled.read(reader)) { return undefined; }
 			longtermResetSignal.read(reader);
 
-			this._shadowTracking?.startComparison('local', this._doc.document.uri);
 			const t = reader.store.add(new DocumentEditSourceTracker(docWithJustReason, undefined));
 			const startFocusTime = this._userAttentionService.totalFocusTimeMs;
 			const startTime = Date.now();
 			reader.store.add(toDisposable(() => {
-				this._compareLongTermShadow(t);
+				const statsUuid = this._randomService.generateUuid();
+				this._flushLongTermDetails(longtermReason, statsUuid);
 				// send long term document telemetry
 				if (!t.isEmpty()) {
-					this.sendTelemetry('longterm', longtermReason, t, this._userAttentionService.totalFocusTimeMs - startFocusTime, Date.now() - startTime);
+					this.sendTelemetry('longterm', longtermReason, t, this._userAttentionService.totalFocusTimeMs - startFocusTime, Date.now() - startTime, statsUuid);
 				}
 				t.dispose();
 			}));
@@ -202,34 +199,29 @@ class TrackedDocumentInfo extends Disposable {
 
 	}
 
-	private _compareLongTermShadow(tracker: DocumentEditSourceTracker): void {
-		const shadowTracking = this._shadowTracking;
-		if (!shadowTracking) {
+	private _flushLongTermDetails(trigger: EditTelemetryTrigger, statsUuid: string): void {
+		const unifiedTracking = this._unifiedTracking;
+		if (!unifiedTracking) {
 			return;
 		}
-		const reference = snapshotDocumentEditSourceTracker(tracker, this._doc.document.value.get().value);
-		shadowTracking.compareAndCheckpoint(
-			'local',
+		unifiedTracking.flushLongTermDetails(
 			this._doc.document.uri,
-			reference,
-			this._computeDiff,
-			{ skipAgentHostTransitions: true, detailsOrder: 'retained' },
-		).then(result => {
-			if (!result) {
-				return;
-			}
-			const detailsFields = getEditTrackerComparisonDifferenceFields(result.detailsComparison);
-			if (detailsFields.length === 0) {
-				this._logService.trace('[EditSourceTrackingImpl] Unified long-term details shadow comparison matched');
-			} else {
-				this._logService.trace(`[EditSourceTrackingImpl] Unified long-term details shadow comparison differed: ${detailsFields.join(',')}`);
-			}
-		}, () => {
-			this._logService.error('[EditSourceTrackingImpl] Unified long-term details shadow comparison failed');
+			trigger,
+			this._doc.document.languageId.get(),
+			statsUuid,
+		).catch(error => {
+			this._logService.error(`[EditSourceTrackingImpl] Failed to flush unified long-term details: ${error}`);
 		});
 	}
 
-	async sendTelemetry(mode: EditTelemetryMode, trigger: EditTelemetryTrigger, t: DocumentEditSourceTracker, focusTime: number, actualTime: number) {
+	async sendTelemetry(
+		mode: EditTelemetryMode,
+		trigger: EditTelemetryTrigger,
+		t: DocumentEditSourceTracker,
+		focusTime: number,
+		actualTime: number,
+		statsUuid = this._randomService.generateUuid(),
+	) {
 		const ranges = t.getTrackedRanges();
 		const keys = t.getAllKeys();
 		if (keys.length === 0) {
@@ -238,42 +230,42 @@ class TrackedDocumentInfo extends Disposable {
 
 		const data = this.getTelemetryData(ranges);
 
-		const statsUuid = this._randomService.generateUuid();
-
-		const sums = sumByCategory(ranges, r => r.range.length, r => r.sourceKey);
-		for (const key of keys) {
-			if (!sums[key]) {
-				sums[key] = 0;
+		if (mode !== 'longterm' || !this._unifiedTracking) {
+			const sums = sumByCategory(ranges, r => r.range.length, r => r.sourceKey);
+			for (const key of keys) {
+				if (!sums[key]) {
+					sums[key] = 0;
+				}
 			}
-		}
-		const entries = Object.entries(sums)
-			.filter((entry): entry is [string, number] => entry[1] !== undefined)
-			.sort(reverseOrder(compareBy(([, value]) => value, numberComparator)))
-			.slice(0, mode === 'longterm' ? 30 : 10);
+			const entries = Object.entries(sums)
+				.filter((entry): entry is [string, number] => entry[1] !== undefined)
+				.sort(reverseOrder(compareBy(([, value]) => value, numberComparator)))
+				.slice(0, mode === 'longterm' ? 30 : 10);
 
-		for (const [key, value] of entries) {
-			const repr = t.getRepresentative(key)!;
-			const deltaModifiedCount = t.getTotalInsertedCharactersCount(key);
+			for (const [key, value] of entries) {
+				const repr = t.getRepresentative(key)!;
+				const deltaModifiedCount = t.getTotalInsertedCharactersCount(key);
 
-			sendEditSourcesDetailsTelemetry(this._telemetryService, {
-				mode,
-				sourceKey: key,
-				sourceKeyCleaned: repr.toKey(1, { $extensionId: false, $extensionVersion: false, $modelId: false }),
-				extensionId: repr.props.$extensionId,
-				extensionVersion: repr.props.$extensionVersion,
-				modelId: repr.props.$modelId,
-				trigger,
-				languageId: this._doc.document.languageId.get(),
-				statsUuid: statsUuid,
-				conversationId: repr.props.$$sessionId,
-				requestId: repr.props.$$requestId,
-				origin: repr.props.$origin,
-				harness: repr.props.$harness,
-				trackingScope: repr.props.$trackingScope,
-				modifiedCount: value,
-				deltaModifiedCount: deltaModifiedCount,
-				totalModifiedCount: data.totalModifiedCharactersInFinalState,
-			});
+				sendEditSourcesDetailsTelemetry(this._telemetryService, {
+					mode,
+					sourceKey: key,
+					sourceKeyCleaned: repr.toKey(1, { $extensionId: false, $extensionVersion: false, $modelId: false }),
+					extensionId: repr.props.$extensionId,
+					extensionVersion: repr.props.$extensionVersion,
+					modelId: repr.props.$modelId,
+					trigger,
+					languageId: this._doc.document.languageId.get(),
+					statsUuid,
+					conversationId: repr.props.$$sessionId,
+					requestId: repr.props.$$requestId,
+					origin: repr.props.$origin,
+					harness: repr.props.$harness,
+					trackingScope: repr.props.$trackingScope,
+					modifiedCount: value,
+					deltaModifiedCount,
+					totalModifiedCount: data.totalModifiedCharactersInFinalState,
+				});
+			}
 		}
 
 
@@ -334,6 +326,11 @@ class TrackedDocumentInfo extends Disposable {
 			actualTime,
 			trigger,
 		});
+	}
+
+	override dispose(): void {
+		super.dispose();
+		this._unifiedTracking?.releaseLocalLongTermResource(this._doc.document.uri);
 	}
 
 	getTelemetryData(ranges: readonly TrackedEdit[]) {

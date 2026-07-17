@@ -115,7 +115,7 @@ suite('Unified Document Tracker Projection', () => {
 					targetContent: 'after',
 					hasPendingReload: false,
 					sources: [{
-						sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost-$trackingScope:agentHostAIOnly',
+						sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost-$trackingScope:unified',
 						insertedCount: 5,
 						retainedCount: 5,
 					}],
@@ -160,7 +160,7 @@ suite('Unified Document Tracker Projection', () => {
 		});
 
 		const projected = await projectUnifiedDocumentTracker(reconciler.getSnapshot(), computeDiff);
-		const filtered = filterEditTrackerSnapshot(projected, source => source.trackingScope === 'agentHostAIOnly');
+		const filtered = filterEditTrackerSnapshot(projected, source => source.trackingScope === 'unified');
 
 		assert.deepStrictEqual({
 			sourceIndex: filtered.sources[0]?.sourceIndex,
@@ -170,8 +170,8 @@ suite('Unified Document Tracker Projection', () => {
 			details: {
 				totalModifiedCount: 9,
 				rows: [{
-					sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost-$trackingScope:agentHostAIOnly',
-					cleanedSourceKey: 'source:Chat.applyEdits-$harness:copilotcli-$origin:agentHost-$trackingScope:agentHostAIOnly',
+					sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost-$trackingScope:unified',
+					cleanedSourceKey: 'source:Chat.applyEdits-$harness:copilotcli-$origin:agentHost-$trackingScope:unified',
 					extensionId: undefined,
 					extensionVersion: undefined,
 					modelId: 'model',
@@ -179,7 +179,7 @@ suite('Unified Document Tracker Projection', () => {
 					requestId: 'request',
 					origin: 'agentHost',
 					harness: 'copilotcli',
-					trackingScope: 'agentHostAIOnly',
+					trackingScope: 'unified',
 					modifiedCount: 9,
 					deltaModifiedCount: 9,
 				}],
@@ -224,7 +224,7 @@ function agentSource(): TextModelEditSource {
 		codeBlockSuggestionId: undefined,
 		harness: 'copilotcli',
 		origin: 'agentHost',
-		trackingScope: 'agentHostAIOnly',
+		trackingScope: 'unified',
 	});
 }
 

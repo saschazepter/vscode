@@ -28,9 +28,7 @@ import { EDIT_TELEMETRY_DETAILS_SETTING_ID, EDIT_TELEMETRY_SHOW_DECORATIONS, EDI
 import { VSCodeWorkspace } from '../helpers/vscodeObservableWorkspace.js';
 import { IExtensionService } from '../../../../services/extensions/common/extensions.js';
 import { AgentHostEditSourceTracking } from './agentHostEditSourceTracking.js';
-import { ITextFileService } from '../../../../services/textfile/common/textfiles.js';
-import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentity.js';
-import { UnifiedEditTrackerShadowTracking } from './unifiedEditTrackerShadowTracking.js';
+import { UnifiedEditSourceTracking } from './unifiedEditSourceTracking.js';
 
 export class EditTrackingFeature extends Disposable {
 
@@ -48,8 +46,6 @@ export class EditTrackingFeature extends Disposable {
 
 		@IEditorService private readonly _editorService: IEditorService,
 		@IExtensionService private readonly _extensionService: IExtensionService,
-		@ITextFileService private readonly _textFileService: ITextFileService,
-		@IUriIdentityService private readonly _uriIdentityService: IUriIdentityService,
 	) {
 		super();
 
@@ -74,13 +70,9 @@ export class EditTrackingFeature extends Disposable {
 		const instantiationServiceWithInterceptedTelemetry = this._instantiationService.createChild(new ServiceCollection(
 			[ITelemetryService, this._instantiationService.createInstance(DataChannelForwardingTelemetryService)]
 		));
-		const unifiedShadowTracking = this._register(new UnifiedEditTrackerShadowTracking(this._workspace, {
-			isDirty: resource => this._textFileService.isDirty(resource),
-			canonicalize: resource => this._uriIdentityService.asCanonicalUri(resource),
-			getComparisonKey: resource => this._uriIdentityService.extUri.getComparisonKey(resource),
-		}));
-		const impl = this._register(instantiationServiceWithInterceptedTelemetry.createInstance(EditSourceTrackingImpl, shouldSendDetails, this._annotatedDocuments, unifiedShadowTracking));
-		this._register(instantiationServiceWithInterceptedTelemetry.createInstance(AgentHostEditSourceTracking, shouldSendDetails, unifiedShadowTracking));
+		const unifiedTracking = this._register(instantiationServiceWithInterceptedTelemetry.createInstance(UnifiedEditSourceTracking, this._workspace));
+		const impl = this._register(instantiationServiceWithInterceptedTelemetry.createInstance(EditSourceTrackingImpl, shouldSendDetails, this._annotatedDocuments, unifiedTracking));
+		this._register(instantiationServiceWithInterceptedTelemetry.createInstance(AgentHostEditSourceTracking, shouldSendDetails, unifiedTracking));
 
 		this._register(autorun((reader) => {
 			if (!this._editSourceTrackingShowDecorations.read(reader)) {

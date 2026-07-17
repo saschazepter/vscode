@@ -98,6 +98,7 @@ export async function projectUnifiedDocumentTracker(
 			content = transition.after;
 		}
 		await tracker.waitForQueue();
+		tracker.applyPendingExternalEdits();
 
 		if (snapshot.pendingReload) {
 			if (snapshot.pendingReload.before !== content || snapshot.pendingReload.after !== snapshot.content) {
@@ -210,7 +211,7 @@ export function snapshotEditSourceDetails(
 			trackingScope: source.trackingScope,
 			modifiedCount: source.retainedCount,
 			deltaModifiedCount: source.insertedCount,
-		})).sort((left, right) => left.sourceKey.localeCompare(right.sourceKey)),
+		})),
 	};
 }
 
@@ -234,7 +235,12 @@ export function compareEditSourceDetailsSnapshots(
 ): IEditTrackerShadowComparison {
 	const differences: string[] = [];
 	compareField('totalModifiedCount', reference.totalModifiedCount, candidate.totalModifiedCount, differences);
-	compareField('rows', reference.rows, candidate.rows, differences);
+	compareField(
+		'rows',
+		reference.rows.toSorted((left, right) => left.sourceKey.localeCompare(right.sourceKey)),
+		candidate.rows.toSorted((left, right) => left.sourceKey.localeCompare(right.sourceKey)),
+		differences,
+	);
 	return { equal: differences.length === 0, differences };
 }
 

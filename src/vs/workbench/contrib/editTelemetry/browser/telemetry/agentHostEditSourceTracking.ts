@@ -6,14 +6,11 @@
 import { IntervalTimer } from '../../../../../base/common/async.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../../base/common/lifecycle.js';
 import { extname } from '../../../../../base/common/path.js';
-import { autorun, derived, IObservable, IObservableWithChange, IReader, ISettableObservable, observableValue, runOnChange } from '../../../../../base/common/observable.js';
+import { autorun, derived, IObservable, IReader, ISettableObservable, observableValue, runOnChange } from '../../../../../base/common/observable.js';
 import { URI } from '../../../../../base/common/uri.js';
-import { AnnotatedStringEdit, StringEdit } from '../../../../../editor/common/core/edits/stringEdit.js';
-import { StringText } from '../../../../../editor/common/core/text/abstractText.js';
 import { ILanguageService } from '../../../../../editor/common/languages/language.js';
-import { IEditorWorkerService } from '../../../../../editor/common/services/editorWorker.js';
 import { IModelService } from '../../../../../editor/common/services/model.js';
-import { EditSources, TextModelEditSource } from '../../../../../editor/common/textModelEditSource.js';
+import { EditSources } from '../../../../../editor/common/textModelEditSource.js';
 import { AgentSession } from '../../../../../platform/agentHost/common/agentService.js';
 import { IAgentHostConnectionsService } from '../../../../../platform/agentHost/common/agentHostConnectionsService.js';
 import { normalizeFileEdit } from '../../../../../platform/agentHost/common/fileEditDiff.js';
@@ -22,72 +19,22 @@ import { ActionType } from '../../../../../platform/agentHost/common/state/proto
 import { isAhpChatChannel, parseRequiredSessionUriFromChatUri, ToolResultContentType, type ToolResultFileEditContent } from '../../../../../platform/agentHost/common/state/sessionState.js';
 import { FileOperationResult, IFileService, toFileOperationResult } from '../../../../../platform/files/common/files.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
-import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentity.js';
 import { ISCMService } from '../../../scm/common/scm.js';
 import { ITextFileService } from '../../../../services/textfile/common/textfiles.js';
-import { DiffService, EditKeySourceData, EditSourceData, IDocumentWithAnnotatedEdits } from '../helpers/documentWithAnnotatedEdits.js';
-import { IRandomService } from '../randomService.js';
-import { DocumentEditSourceTracker } from './editTracker.js';
-import { EditTelemetryTrigger, IEditSourcesDetailsTelemetryData, sendEditSourcesDetailsTelemetry } from './editSourceTelemetry.js';
+import { EditTelemetryTrigger } from './editSourceTelemetry.js';
 import { IScmRepoAdapter, ScmAdapter } from './scmAdapter.js';
-import { UnifiedEditTrackerShadowTracking } from './unifiedEditTrackerShadowTracking.js';
-import { getEditTrackerComparisonDifferenceFields, IEditTrackerSnapshot, snapshotDocumentEditSourceTracker } from './unifiedDocumentTrackerProjection.js';
+import { UnifiedEditSourceTracking } from './unifiedEditSourceTracking.js';
 
 const MAX_TRACKED_FILE_SIZE = 5 * 1024 * 1024;
-const AGENT_HOST_TRACKING_SCOPE = 'agentHostAIOnly';
+const UNIFIED_TRACKING_SCOPE = 'unified';
 
-type ComputeDiff = (original: string, modified: string) => Promise<StringEdit>;
 type GetRepo = (resource: URI, reader: IReader) => IScmRepoAdapter | undefined;
-type SendDetails = (data: IEditSourcesDetailsTelemetryData, forwardToGitHub: boolean) => void;
-
-/**
- * An in-memory document stream containing only Agent Host edits and reconciliation edits.
- */
-class AgentHostSyntheticDocument extends Disposable implements IDocumentWithAnnotatedEdits<EditKeySourceData> {
-	private readonly _value: ISettableObservable<StringText, { edit: AnnotatedStringEdit<EditKeySourceData> }>;
-	readonly value: IObservableWithChange<StringText, { edit: AnnotatedStringEdit<EditKeySourceData> }>;
-
-	constructor(initialText: string) {
-		super();
-		this.value = this._value = observableValue(this, new StringText(initialText));
-	}
-
-	get text(): string {
-		return this._value.get().value;
-	}
-
-	async applyTransition(beforeText: string, afterText: string, source: TextModelEditSource, computeDiff: ComputeDiff): Promise<void> {
-		if (this.text !== beforeText) {
-			await this._apply(this.text, beforeText, EditSources.reloadFromDisk(), computeDiff);
-		}
-		await this._apply(beforeText, afterText, source, computeDiff);
-	}
-
-	async reconcile(text: string, computeDiff: ComputeDiff): Promise<void> {
-		await this._apply(this.text, text, EditSources.reloadFromDisk(), computeDiff);
-	}
-
-	private async _apply(beforeText: string, afterText: string, source: TextModelEditSource, computeDiff: ComputeDiff): Promise<void> {
-		if (beforeText === afterText) {
-			return;
-		}
-		const data = new EditSourceData(source).toEditSourceData();
-		const edit = (await computeDiff(beforeText, afterText)).mapData(() => data);
-		this._value.set(new StringText(afterText), undefined, { edit });
-	}
-
-	waitForQueue(): Promise<void> {
-		return Promise.resolve();
-	}
-}
 
 /**
  * Tracks long-term Agent Host AI attribution for one file.
  */
 export class AgentHostTrackedFile extends Disposable {
-	private readonly _document: AgentHostSyntheticDocument;
-	private readonly _tracker = this._register(new MutableDisposable<DocumentEditSourceTracker>());
 	private readonly _resource: ISettableObservable<URI>;
 	private readonly _repo;
 	private _languageId = 'plaintext';
@@ -96,20 +43,14 @@ export class AgentHostTrackedFile extends Disposable {
 
 	constructor(
 		resource: URI,
-		initialText: string,
 		private readonly _readCurrentText: (resource: URI) => Promise<string | undefined>,
-		private readonly _computeDiff: ComputeDiff,
 		getRepo: GetRepo,
-		private readonly _generateUuid: () => string,
-		private readonly _sendDetails: SendDetails,
 		private readonly _logService: ILogService,
 		private readonly _onDidExpire: () => void,
-		private readonly _onDidFlush?: (resource: URI, content: string, reference: IEditTrackerSnapshot) => void,
+		private readonly _onDidFlush: (resource: URI, content: string, languageId: string, trigger: EditTelemetryTrigger) => void,
 	) {
 		super();
 		this._resource = observableValue(this, resource);
-		this._document = this._register(new AgentHostSyntheticDocument(initialText));
-		this._tracker.value = new DocumentEditSourceTracker(this._document, undefined);
 		this._repo = derived(this, reader => getRepo(this._resource.read(reader), reader));
 
 		this._register(autorun(reader => {
@@ -132,15 +73,12 @@ export class AgentHostTrackedFile extends Disposable {
 		this._resource.set(resource, undefined);
 	}
 
-	applyEdit(beforeText: string, afterText: string, source: TextModelEditSource, languageId: string): Promise<void> {
+	applyEdit(languageId: string): Promise<void> {
 		return this._enqueue(async () => {
 			if (this._isDisposed) {
 				return;
 			}
-			await this._document.applyTransition(beforeText, afterText, source, this._computeDiff);
-			if (!this._isDisposed) {
-				this._languageId = languageId;
-			}
+			this._languageId = languageId;
 		});
 	}
 
@@ -153,55 +91,8 @@ export class AgentHostTrackedFile extends Disposable {
 			if (currentText === undefined || this._isDisposed) {
 				return;
 			}
-
-			await this._document.reconcile(currentText, this._computeDiff);
-			const tracker = this._tracker.value;
-			if (!tracker) {
-				return;
-			}
-			tracker.applyPendingExternalEdits();
-			const reference = snapshotDocumentEditSourceTracker(tracker, currentText);
-			this._sendTelemetry(trigger, tracker);
-			this._tracker.value = new DocumentEditSourceTracker(this._document, undefined);
-			this._onDidFlush?.(this.resource, currentText, reference);
+			this._onDidFlush(this.resource, currentText, this._languageId, trigger);
 		});
-	}
-
-	private _sendTelemetry(trigger: EditTelemetryTrigger, tracker: DocumentEditSourceTracker): void {
-		const retainedByKey = new Map<string, number>();
-		let totalModifiedCount = 0;
-		for (const range of tracker.getTrackedRanges()) {
-			if (range.sourceRepresentative.props.$trackingScope !== AGENT_HOST_TRACKING_SCOPE) {
-				continue;
-			}
-			totalModifiedCount += range.range.length;
-			retainedByKey.set(range.sourceKey, (retainedByKey.get(range.sourceKey) ?? 0) + range.range.length);
-		}
-
-		const entries = tracker.getAllKeys()
-			.map(key => ({ key, representative: tracker.getRepresentative(key), modifiedCount: retainedByKey.get(key) ?? 0 }))
-			.filter(entry => entry.representative?.props.$trackingScope === AGENT_HOST_TRACKING_SCOPE)
-			.sort((a, b) => b.modifiedCount - a.modifiedCount)
-			.slice(0, 30);
-		if (entries.length === 0) {
-			return;
-		}
-
-		const statsUuid = this._generateUuid();
-		for (const entry of entries) {
-			const representative = entry.representative!;
-			sendEditSourcesDetailsTelemetryData(
-				this._sendDetails,
-				representative,
-				entry.key,
-				entry.modifiedCount,
-				tracker.getTotalInsertedCharactersCount(entry.key),
-				totalModifiedCount,
-				this._languageId,
-				statsUuid,
-				trigger,
-			);
-		}
 	}
 
 	private _enqueue(operation: () => Promise<void>): Promise<void> {
@@ -226,67 +117,29 @@ export class AgentHostTrackedFile extends Disposable {
 	}
 }
 
-function sendEditSourcesDetailsTelemetryData(
-	sendDetails: SendDetails,
-	representative: TextModelEditSource,
-	sourceKey: string,
-	modifiedCount: number,
-	deltaModifiedCount: number,
-	totalModifiedCount: number,
-	languageId: string,
-	statsUuid: string,
-	trigger: EditTelemetryTrigger,
-): void {
-	const harness = representative.props.$harness;
-	sendDetails({
-		mode: 'longterm',
-		sourceKey,
-		sourceKeyCleaned: representative.toKey(1, { $extensionId: false, $extensionVersion: false, $modelId: false }),
-		extensionId: representative.props.$extensionId,
-		extensionVersion: representative.props.$extensionVersion,
-		modelId: representative.props.$modelId,
-		trigger,
-		languageId,
-		statsUuid,
-		conversationId: representative.props.$$sessionId,
-		requestId: representative.props.$$requestId,
-		origin: representative.props.$origin,
-		harness,
-		trackingScope: representative.props.$trackingScope,
-		modifiedCount,
-		deltaModifiedCount,
-		totalModifiedCount,
-	}, harness === 'copilotcli');
-}
-
 /**
  * Converts Agent Host file-edit actions into workbench edit-source telemetry.
  */
 export class AgentHostEditSourceTracking extends Disposable {
 	private readonly _connectionListeners = this._register(new MutableDisposable<DisposableStore>());
 	private readonly _trackedFiles = new Map<string, AgentHostTrackedFile>();
-	private readonly _diffService: DiffService;
 	private readonly _scmAdapter: ScmAdapter;
 	private _operationQueue: Promise<void> = Promise.resolve();
 	private _isDisposed = false;
 
 	constructor(
 		private readonly _detailsEnabled: IObservable<boolean>,
-		private readonly _shadowTracking: UnifiedEditTrackerShadowTracking | undefined,
+		private readonly _unifiedTracking: UnifiedEditSourceTracking,
 		@IAgentHostConnectionsService private readonly _connectionsService: IAgentHostConnectionsService,
 		@IFileService private readonly _fileService: IFileService,
-		@IEditorWorkerService editorWorkerService: IEditorWorkerService,
 		@IModelService private readonly _modelService: IModelService,
 		@ILanguageService private readonly _languageService: ILanguageService,
 		@ITextFileService private readonly _textFileService: ITextFileService,
 		@ISCMService scmService: ISCMService,
 		@IUriIdentityService private readonly _uriIdentityService: IUriIdentityService,
-		@IRandomService private readonly _randomService: IRandomService,
-		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@ILogService private readonly _logService: ILogService,
 	) {
 		super();
-		this._diffService = new DiffService(editorWorkerService);
 		this._scmAdapter = new ScmAdapter(scmService);
 		this._syncConnectionListeners();
 		this._register(this._connectionsService.onDidChangeConnections(() => this._syncConnectionListeners()));
@@ -351,10 +204,6 @@ export class AgentHostEditSourceTracking extends Disposable {
 			.filter(resource => resource !== undefined)
 			.map(resource => toAgentHostUri(resource, connectionAuthority));
 		const dirtyResource = editedResources.find(resource => isDirtyOpenTextModel(resource, this._modelService, this._textFileService));
-		if (dirtyResource && !this._shadowTracking) {
-			this._logService.trace(`[AgentHostEditSourceTracking] Skipping attribution for dirty open file ${dirtyResource.toString()}`);
-			return;
-		}
 
 		const beforeText = normalized.beforeContentUri ? await this._readSnapshot(normalized.beforeContentUri, connectionAuthority) : '';
 		const afterText = normalized.afterContentUri ? await this._readSnapshot(normalized.afterContentUri, connectionAuthority) : '';
@@ -375,10 +224,10 @@ export class AgentHostEditSourceTracking extends Disposable {
 			codeBlockSuggestionId: undefined,
 			harness,
 			origin: 'agentHost',
-			trackingScope: AGENT_HOST_TRACKING_SCOPE,
+			trackingScope: UNIFIED_TRACKING_SCOPE,
 		});
 		const beforeResource = normalized.beforeUri ? toAgentHostUri(normalized.beforeUri, connectionAuthority) : undefined;
-		this._shadowTracking?.applyAgentEdit({
+		this._unifiedTracking.applyAgentEdit({
 			resource,
 			previousResource: beforeResource,
 			before: beforeText,
@@ -406,49 +255,27 @@ export class AgentHostEditSourceTracking extends Disposable {
 		if (!trackedFile) {
 			const createdTrackedFile = new AgentHostTrackedFile(
 				resource,
-				beforeText,
 				currentResource => this._readCurrentText(currentResource),
-				(original, modified) => this._diffService.computeDiff(original, modified),
 				(repoResource, reader) => this._scmAdapter.getRepo(repoResource, reader),
-				() => this._randomService.generateUuid(),
-				(data, forwardToGitHub) => sendEditSourcesDetailsTelemetry(this._telemetryService, data, forwardToGitHub),
 				this._logService,
 				() => this._removeTrackedFile(createdTrackedFile),
-				(currentResource, content, reference) => this._compareAgentHostShadow(currentResource, content, reference),
+				(currentResource, content, currentLanguageId, trigger) => this._flushAgentHostResource(currentResource, content, currentLanguageId, trigger),
 			);
 			trackedFile = createdTrackedFile;
 			this._trackedFiles.set(resourceKey, trackedFile);
 		}
-		this._shadowTracking?.retainAgentResource(resource);
+		this._unifiedTracking.retainAgentResource(resource);
 
-		await trackedFile.applyEdit(beforeText, afterText, source, languageId);
+		await trackedFile.applyEdit(languageId);
 	}
 
-	private _compareAgentHostShadow(resource: URI, content: string, reference: IEditTrackerSnapshot): void {
-		const shadowTracking = this._shadowTracking;
-		if (!shadowTracking) {
+	private _flushAgentHostResource(resource: URI, content: string, languageId: string, trigger: EditTelemetryTrigger): void {
+		this._unifiedTracking.applyDiskSnapshot(resource, content);
+		if (this._unifiedTracking.hasLocalLongTermResource(resource)) {
 			return;
 		}
-		shadowTracking.applyDiskSnapshot(resource, content);
-		shadowTracking.compareAndCheckpoint(
-			'agentHost',
-			resource,
-			reference,
-			(original, modified) => this._diffService.computeDiff(original, modified),
-			{ sourceFilter: source => source.trackingScope === AGENT_HOST_TRACKING_SCOPE },
-		).then(result => {
-			if (!result) {
-				return;
-			}
-			const trackerFields = getEditTrackerComparisonDifferenceFields(result.trackerComparison);
-			const detailsFields = getEditTrackerComparisonDifferenceFields(result.detailsComparison);
-			if (trackerFields.length === 0 && detailsFields.length === 0) {
-				this._logService.trace('[AgentHostEditSourceTracking] Unified shadow comparison matched');
-			} else {
-				this._logService.trace(`[AgentHostEditSourceTracking] Unified shadow comparison differed: tracker=${trackerFields.join(',')}; details=${detailsFields.join(',')}`);
-			}
-		}, () => {
-			this._logService.error('[AgentHostEditSourceTracking] Unified shadow comparison failed');
+		this._unifiedTracking.flushLongTermDetails(resource, trigger, languageId).catch(error => {
+			this._logService.error(`[AgentHostEditSourceTracking] Failed to flush unified long-term details: ${error}`);
 		});
 	}
 
@@ -492,7 +319,7 @@ export class AgentHostEditSourceTracking extends Disposable {
 		for (const [key, value] of this._trackedFiles) {
 			if (value === trackedFile) {
 				this._trackedFiles.delete(key);
-				this._shadowTracking?.releaseAgentResource(trackedFile.resource);
+				this._unifiedTracking.releaseAgentResource(trackedFile.resource);
 				trackedFile.dispose();
 				return;
 			}
@@ -501,7 +328,7 @@ export class AgentHostEditSourceTracking extends Disposable {
 
 	private _clearTrackedFiles(): void {
 		for (const trackedFile of this._trackedFiles.values()) {
-			this._shadowTracking?.releaseAgentResource(trackedFile.resource);
+			this._unifiedTracking.releaseAgentResource(trackedFile.resource);
 			trackedFile.dispose();
 		}
 		this._trackedFiles.clear();

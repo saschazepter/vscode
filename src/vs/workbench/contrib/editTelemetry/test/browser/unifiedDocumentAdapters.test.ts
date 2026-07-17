@@ -204,6 +204,6 @@ function agentSource(): TextModelEditSource {
 		codeBlockSuggestionId: undefined,
 		harness: 'copilotcli',
 		origin: 'agentHost',
-		trackingScope: 'agentHostAIOnly',
+		trackingScope: 'unified',
 	});
 }
