@@ -31,16 +31,17 @@ function init() {
 	// #######################################################################
 
 	// Ctrl/Cmd keybindings that correspond to native editing shortcuts and should be handled by the browser / OS and not forwarded to the workbench.
+	// Uses event.code values (physical key position, layout-independent) so that shortcuts like Ctrl+C work regardless of the active keyboard layout.
 	const nativeCtrlCmdKeybindings = {
 		mac: {
-			always: new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'backspace', 'delete']),
-			noShift: new Set(['a', 'c', 'v', 'x', 'z']),
-			withShift: new Set(['v', 'z']),
+			always: new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Backspace', 'Delete']),
+			noShift: new Set(['KeyA', 'KeyC', 'KeyV', 'KeyX', 'KeyZ']),
+			withShift: new Set(['KeyV', 'KeyZ']),
 		},
 		nonMac: {
-			always: new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'home', 'end', 'backspace', 'delete']),
-			noShift: new Set(['a', 'c', 'v', 'x', 'z', 'y']),
-			withShift: new Set(['v', 'z']),
+			always: new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Backspace', 'Delete']),
+			noShift: new Set(['KeyA', 'KeyC', 'KeyV', 'KeyX', 'KeyZ', 'KeyY']),
+			withShift: new Set(['KeyV', 'KeyZ']),
 		}
 	};
 
@@ -89,17 +90,16 @@ function init() {
 		// Allow native shortcuts to be handled by the browser
 		const ctrlCmd = isMac ? event.metaKey : event.ctrlKey;
 		if (ctrlCmd && !event.altKey) {
-			const key = event.key.toLowerCase();
 			const keySetsToCheck = [
 				nativeCtrlCmdKeybindings[isMac ? 'mac' : 'nonMac'].always,
 				nativeCtrlCmdKeybindings[isMac ? 'mac' : 'nonMac'][event.shiftKey ? 'withShift' : 'noShift'],
 			];
-			if (keySetsToCheck.some(set => set.has(key))) {
+			if (keySetsToCheck.some(set => set.has(event.code))) {
 				return;
 			}
 
 			// Emoji picker on Mac
-			if (isMac && event.ctrlKey && !event.shiftKey && key === ' ') {
+			if (isMac && event.ctrlKey && !event.shiftKey && event.code === 'Space') {
 				return;
 			}
 		}
