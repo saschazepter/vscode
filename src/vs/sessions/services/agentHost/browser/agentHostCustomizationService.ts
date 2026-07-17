@@ -70,7 +70,6 @@ export class AgentHostCustomizationService extends AbstractAgentHostCustomizatio
 		return {
 			customizations: provider.getCustomizations(session.sessionId),
 			workingDirectory: provider.getWorkingDirectory(session.sessionId),
-			logOutputChannelId: servers[0]?.logOutputChannelId,
 			rootConfig: provider.getRootConfig(),
 			authenticate: request => provider.authenticate(request),
 			setCustomizationEnabled: (rawId, enabled) => {

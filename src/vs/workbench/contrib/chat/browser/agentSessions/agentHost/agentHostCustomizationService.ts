@@ -5,30 +5,30 @@
 
 import { URI } from '../../../../../../base/common/uri.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
-import { Disposable, DisposableResourceMap, IDisposable } from '../../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableResourceMap, IDisposable, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { NKeyMap } from '../../../../../../base/common/map.js';
 import { IReader } from '../../../../../../base/common/observable.js';
 import { AgentHostMcpServers, AgentHostMcpServersConfigKey } from '../../../../../../platform/agentHost/common/agentHostSchema.js';
-import { AgentSession, IAgentConnection } from '../../../../../../platform/agentHost/common/agentService.js';
-import { isRemoteAgentHostSessionType, remoteAgentHostSessionTypeId } from '../../../../../../platform/agentHost/common/agentHostSessionType.js';
-import { AGENT_HOST_LOG_OUTPUT_CHANNEL_ID, remoteAgentHostLogOutputChannelId } from '../../../../../../platform/agentHost/common/remoteAgentHostService.js';
-import { IAgentHostConnectionsService, IAgentHostSessionResolution, LOCAL_AGENT_HOST_SCHEME_PREFIX } from '../../../../../../platform/agentHost/common/agentHostConnectionsService.js';
+import { IAgentConnection } from '../../../../../../platform/agentHost/common/agentService.js';
+import { IAgentHostConnectionsService, IAgentHostSessionResolution } from '../../../../../../platform/agentHost/common/agentHostConnectionsService.js';
 import { getEffectiveAgents } from '../../../../../../platform/agentHost/common/customAgents.js';
 import { type IAgentSubscription } from '../../../../../../platform/agentHost/common/state/agentSubscription.js';
 import { ActionType } from '../../../../../../platform/agentHost/common/state/protocol/actions.js';
-import { CustomizationType, McpServerCustomization, McpServerStatus, type Customization, type RootConfigState, type SessionState } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
+import { CustomizationType, McpServerCustomization, McpServerStatus, type Customization, type McpServerState, type RootConfigState, type SessionState } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { AgentCustomization, ROOT_STATE_URI, StateComponents } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { InstantiationType, registerSingleton } from '../../../../../../platform/instantiation/common/extensions.js';
 import { createDecorator, IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IMcpServerConfiguration } from '../../../../../../platform/mcp/common/mcpPlatformTypes.js';
-import { ILogService } from '../../../../../../platform/log/common/log.js';
+import { ILogger, ILoggerService, ILogService } from '../../../../../../platform/log/common/log.js';
 import { IStorageService } from '../../../../../../platform/storage/common/storage.js';
 import { ContributionEnablementState, EnablementModel, isContributionEnabled } from '../../../common/enablement.js';
+import { localize } from '../../../../../../nls.js';
 import { IChatService } from '../../../common/chatService/chatService.js';
 import { isUntitledChatSession } from '../../../common/model/chatUri.js';
 import { IAgentHostUntitledProvisionalSessionService } from './agentHostUntitledProvisionalSessionService.js';
 import { IAgentHostMcpServer } from '../../../../../../sessions/common/agentHostSessionsProvider.js';
 import { resolveMcpServerAuthentication, agentHostMcpServerId } from './agentHostAuth.js';
+import { IOutputService } from '../../../../../services/output/common/output.js';
 
 const MCP_SERVER_ENABLEMENT_STORAGE_KEY = 'chat.agentHost.mcpServerEnablement';
 
@@ -55,9 +55,8 @@ export interface IAgentHostCustomizationService {
 	 * Returns the MCP servers exposed by an agent-host session. Each entry
 	 * carries the current status, a {@link IAgentHostMcpServer.setEnabled}
 	 * method that dispatches the protocol-level toggle on behalf of the
-	 * caller, lifecycle actions, and the
-	 * {@link IAgentHostMcpServer.logOutputChannelId} of the host backing the
-	 * session. Returns an empty array for sessions not
+	 * caller, and lifecycle actions. Per-server diagnostics are revealed via
+	 * {@link showMcpServerLog}. Returns an empty array for sessions not
 	 * backed by an agent host, or that don't expose any MCP servers.
 	 */
 	getMcpServers(sessionResource: URI): readonly IAgentHostMcpServer[];
@@ -85,6 +84,16 @@ export interface IAgentHostCustomizationService {
 
 	/** Applies durable MCP preferences that changed since this session's previous turn. */
 	prepareMcpServersForTurn(sessionResource: URI): void;
+
+	/**
+	 * Reveals the per-server MCP diagnostics Output channel for the server
+	 * `serverId` in the agent-host session `sessionResource`, making its hidden
+	 * logger visible first. The channel is an internal detail of this service --
+	 * callers identify the server the same way they do for
+	 * {@link authenticateMcpServer}. No-op when the session/server cannot be
+	 * resolved.
+	 */
+	showMcpServerLog(sessionResource: URI, serverId: string): void;
 }
 
 export class NullAgentHostCustomizationService implements IAgentHostCustomizationService {
@@ -118,12 +127,14 @@ export class NullAgentHostCustomizationService implements IAgentHostCustomizatio
 	prepareMcpServersForTurn(_sessionResource: URI): void {
 		// no-op
 	}
+	showMcpServerLog(_sessionResource: URI, _serverId: string): void {
+		// no-op
+	}
 }
 
 export interface IAgentHostCustomizationTarget {
 	readonly customizations: readonly Customization[];
 	readonly workingDirectory?: string;
-	readonly logOutputChannelId?: string;
 	readonly rootConfig?: RootConfigState;
 	authenticate(request: { resource: string; scopes?: readonly string[]; token: string }): Promise<unknown>;
 	setCustomizationEnabled(rawId: string, enabled: boolean): void;
@@ -142,6 +153,7 @@ export abstract class AbstractAgentHostCustomizationService extends Disposable i
 
 	private readonly _mcpEnablementModel: EnablementModel;
 	private readonly _mcpServerTracking = new NKeyMap<IMcpServerTrackingEntry, [string, string]>();
+	private readonly _mcpLogRegistry: AgentHostMcpServerLogRegistry;
 
 	protected constructor(
 		protected readonly _instantiationService: IInstantiationService,
@@ -150,6 +162,7 @@ export abstract class AbstractAgentHostCustomizationService extends Disposable i
 	) {
 		super();
 		this._mcpEnablementModel = this._register(new EnablementModel(MCP_SERVER_ENABLEMENT_STORAGE_KEY, storageService));
+		this._mcpLogRegistry = this._register(this._instantiationService.createInstance(AgentHostMcpServerLogRegistry));
 	}
 
 	protected abstract _resolveTarget(sessionResource: URI): IAgentHostCustomizationTarget | undefined;
@@ -171,18 +184,41 @@ export abstract class AbstractAgentHostCustomizationService extends Disposable i
 		if (!target) {
 			return [];
 		}
-		const servers = this._flattenMcpServers(target.customizations);
-		return servers.map((c): IAgentHostMcpServer => ({
-			id: this._scopedMcpServerId(sessionResource, c.id),
-			name: c.name,
-			enabled: c.enabled,
-			status: c.state.kind,
-			state: c.state,
-			logOutputChannelId: target.logOutputChannelId,
-			setEnabled: (enabled: boolean) => target.setCustomizationEnabled(c.id, enabled),
-			start: () => target.startMcpServer(c.id),
-			stop: () => target.stopMcpServer(c.id),
-		}));
+		return this._flattenMcpServers(target.customizations)
+			.map((c): IAgentHostMcpServer => {
+				const id = this._scopedMcpServerId(sessionResource, c.id);
+				// Record into the per-server diagnostics channel on every
+				// projection (which fires on each state change the UI observes)
+				// so the channel captures the observable transition history. The
+				// channel id itself stays internal -- reveal it via
+				// {@link showMcpServerLog}.
+				this._mcpLogRegistry.record({ id, name: c.name, enabled: c.enabled, state: c.state });
+				return {
+					id,
+					name: c.name,
+					enabled: c.enabled,
+					status: c.state.kind,
+					state: c.state,
+					setEnabled: (enabled: boolean) => target.setCustomizationEnabled(c.id, enabled),
+					start: () => target.startMcpServer(c.id),
+					stop: () => target.stopMcpServer(c.id),
+				};
+			});
+	}
+
+	showMcpServerLog(sessionResource: URI, serverId: string): void {
+		const target = this._resolveTarget(sessionResource);
+		if (!target) {
+			return;
+		}
+		const server = this._flattenMcpServers(target.customizations).find(c => this._scopedMcpServerId(sessionResource, c.id) === serverId);
+		if (!server) {
+			return;
+		}
+		// Record (idempotent -- dedup'd by state signature) so the channel exists
+		// even if `getMcpServers` was never called for this session, then reveal it.
+		const channelId = this._mcpLogRegistry.record({ id: serverId, name: server.name, enabled: server.enabled, state: server.state });
+		this._mcpLogRegistry.show(channelId);
 	}
 
 	addMcpServer(sessionResource: URI, name: string, config: IMcpServerConfiguration): void {
@@ -380,7 +416,6 @@ class WorkbenchAgentHostCustomizationService extends AbstractAgentHostCustomizat
 		return {
 			customizations: sessionState?.customizations ?? [],
 			workingDirectory: sessionState?.workingDirectory,
-			logOutputChannelId: this._resolveLogOutputChannelId(sessionResource, target.backendSession),
 			rootConfig: rootState && !(rootState instanceof Error) ? rootState.config : undefined,
 			authenticate: request => target.connection.authenticate(request),
 			setCustomizationEnabled: (rawId, enabled) => {
@@ -411,24 +446,6 @@ class WorkbenchAgentHostCustomizationService extends AbstractAgentHostCustomizat
 				});
 			}
 		};
-	}
-
-	private _resolveLogOutputChannelId(sessionResource: URI, backendSession: URI): string | undefined {
-		if (sessionResource.scheme.startsWith(LOCAL_AGENT_HOST_SCHEME_PREFIX)) {
-			return AGENT_HOST_LOG_OUTPUT_CHANNEL_ID;
-		}
-
-		if (isRemoteAgentHostSessionType(sessionResource.scheme)) {
-			const backendProvider = AgentSession.provider(backendSession);
-			// The facade descriptor already exposes the sanitized authority, so
-			// we match the session scheme against `remote-<authority>-<provider>`.
-			const info = backendProvider
-				? this._connectionsService.connections.find(c => !c.isAmbient && c.address !== undefined && sessionResource.scheme === remoteAgentHostSessionTypeId(c.authority, backendProvider))
-				: undefined;
-			return info?.address ? remoteAgentHostLogOutputChannelId(info.address) : undefined;
-		}
-
-		return undefined;
 	}
 
 	private _readSessionState(sessionResource: URI): SessionState | undefined {
@@ -483,3 +500,98 @@ class WorkbenchAgentHostCustomizationService extends AbstractAgentHostCustomizat
 }
 
 registerSingleton(IAgentHostCustomizationService, WorkbenchAgentHostCustomizationService, InstantiationType.Delayed);
+
+/**
+ * Owns one hidden Output channel per agent-host MCP server (keyed by the
+ * scoped server id, so same-named servers in different sessions stay
+ * separate). {@link record} appends a line whenever a server's observable
+ * state changes — its lifecycle kind, error, or enablement — so opening the
+ * channel shows the server's history including any failure detail. {@link show}
+ * reveals the (otherwise hidden) channel.
+ */
+class AgentHostMcpServerLogRegistry extends Disposable {
+
+	private readonly _entries = new Map<string, { readonly logger: ILogger; lastSignature: string | undefined }>();
+
+	constructor(
+		@ILoggerService private readonly _loggerService: ILoggerService,
+		@IOutputService private readonly _outputService: IOutputService,
+	) {
+		super();
+	}
+
+	/**
+	 * Ensures a hidden diagnostics channel exists for the MCP server and
+	 * records a line whenever its state changes (including the first observed
+	 * state). Returns the stable channel id for the service to reveal via
+	 * {@link show} — the id is not exposed outside the service.
+	 */
+	record(server: { readonly id: string; readonly name: string; readonly enabled: boolean; readonly state: McpServerState }): string {
+		const channelId = channelIdForMcpServer(server.id);
+		let entry = this._entries.get(channelId);
+		if (!entry) {
+			const logger = this._register(this._loggerService.createLogger(channelId, {
+				hidden: true,
+				name: localize('agentHost.mcpServer.outputChannel', "MCP: {0}", server.name),
+			}));
+			// Mirror the workbench MCP server pattern: a logger disposed but not
+			// deregistered is reused as a no-op instance, so deregister on dispose.
+			this._register(toDisposable(() => this._loggerService.deregisterLogger(channelId)));
+			entry = { logger, lastSignature: undefined };
+			this._entries.set(channelId, entry);
+		}
+
+		const { signature, message, isError } = describeMcpServerState(server.name, server.enabled, server.state);
+		if (entry.lastSignature !== signature) {
+			entry.lastSignature = signature;
+			if (isError) {
+				entry.logger.error(message);
+			} else {
+				entry.logger.info(message);
+			}
+		}
+		return channelId;
+	}
+
+	/** Reveals the diagnostics channel `channelId`, making its hidden logger visible. */
+	show(channelId: string): void {
+		if (!this._entries.has(channelId)) {
+			return;
+		}
+		this._loggerService.setVisibility(channelId, true);
+		void this._outputService.showChannel(channelId);
+	}
+}
+
+/**
+ * Stable, filesystem-safe Output/logger id for the MCP server whose scoped id
+ * is `serverId`. Reserved logger-id characters are replaced (rather than
+ * stripped, which the logger service would otherwise do and could collide two
+ * distinct ids) so each server keeps a distinct channel.
+ */
+function channelIdForMcpServer(serverId: string): string {
+	return `agentHostMcpServer.${serverId.replace(/[\\/:*?"<>|]/g, '-')}`;
+}
+
+/**
+ * Renders an MCP server's current state into a diagnostics log line, a change
+ * signature (used to suppress duplicate records), and whether it is an error.
+ */
+function describeMcpServerState(name: string, enabled: boolean, state: McpServerState): { signature: string; message: string; isError: boolean } {
+	if (!enabled) {
+		return { signature: 'disabled', message: localize('agentHost.mcpServer.disabled', "Server '{0}' is disabled", name), isError: false };
+	}
+	switch (state.kind) {
+		case McpServerStatus.Ready:
+			return { signature: 'ready', message: localize('agentHost.mcpServer.ready', "Server '{0}' is running", name), isError: false };
+		case McpServerStatus.Starting:
+			return { signature: 'starting', message: localize('agentHost.mcpServer.starting', "Server '{0}' is starting", name), isError: false };
+		case McpServerStatus.AuthRequired:
+			return { signature: `authRequired:${state.resource.resource}`, message: localize('agentHost.mcpServer.authRequired', "Server '{0}' requires authentication ({1})", name, state.resource.resource), isError: false };
+		case McpServerStatus.Error:
+			return { signature: `error:${state.error.errorType}:${state.error.message}`, message: localize('agentHost.mcpServer.error', "Server '{0}' failed: {1}", name, state.error.message), isError: true };
+		case McpServerStatus.Stopped:
+		default:
+			return { signature: 'stopped', message: localize('agentHost.mcpServer.stopped', "Server '{0}' is stopped", name), isError: false };
+	}
+}
