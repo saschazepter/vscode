@@ -18,6 +18,7 @@
 .sessions-chat-branch-picker-group {
 	display: inline-flex;
 	align-items: center;
+	user-select: none;
 }
 
 .sessions-chat-picker-slot.sessions-chat-isolation-checkbox .action-label {
