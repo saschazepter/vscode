@@ -6,8 +6,8 @@ format = 'ULMO'
 badge_icon = {{BADGE_ICON}}
 background = {{BACKGROUND}}
 
-# Volume size — computed dynamically by create-dmg.ts (app size + 20% headroom)
-size = {{SIZE}}
+# Volume size
+size = '1200m'
 shrink = False
 
 # Files and symlinks
