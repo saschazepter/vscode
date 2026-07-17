@@ -39,7 +39,7 @@ function calculatePackageDeps(binaryPath: string, arch: DebianArchString, chromi
 	if (result.status !== 0) {
 		throw new Error('Cannot retrieve dpkg-shlibdeps. Stderr:\n' + result.stderr);
 	}
-	const cmd = [dpkgShlibdepsScriptLocation, '--ignore-weak-undefined'];
+	const cmd = [dpkgShlibdepsScriptLocation, '--ignore-weak-undefined', '--ignore-missing-info'];
 	switch (arch) {
 		case 'amd64':
 			cmd.push(`-l${chromiumSysroot}/usr/lib/x86_64-linux-gnu`,
