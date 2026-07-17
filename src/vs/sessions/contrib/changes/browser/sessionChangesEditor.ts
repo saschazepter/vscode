@@ -7,7 +7,7 @@ import './media/sessionChangesEditor.css';
 import { $, append, Dimension } from '../../../../base/browser/dom.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Disposable, DisposableStore, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
-import { autorun, observableValue } from '../../../../base/common/observable.js';
+import { autorun, derivedObservableWithCache, IObservable, observableValue } from '../../../../base/common/observable.js';
 import { Range } from '../../../../editor/common/core/range.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IDiffEditor } from '../../../../editor/common/editorCommon.js';
@@ -33,13 +33,15 @@ import { MultiDiffEditorViewModel } from '../../../../editor/browser/widget/mult
 import { IMultiDiffEditorOptions, IMultiDiffEditorViewState } from '../../../../editor/browser/widget/multiDiffEditor/multiDiffEditorWidgetImpl.js';
 import { IDiffEditorOptions } from '../../../../editor/common/config/editorOptions.js';
 import { ITextResourceConfigurationService } from '../../../../editor/common/services/textResourceConfiguration.js';
-import { IResourceLabel, IWorkbenchUIElementFactory } from '../../../../editor/browser/widget/multiDiffEditor/workbenchUIElementFactory.js';
+import { IResourceLabel, IWorkbenchUIElementFactory, MultiDiffEditorItemLabelKind } from '../../../../editor/browser/widget/multiDiffEditor/workbenchUIElementFactory.js';
 import { Menus } from '../../../browser/menus.js';
 import { IAgentWorkbenchLayoutService } from '../../../browser/workbench.js';
 import { ActiveSessionContextKeys } from '../common/changes.js';
 import { IChangesViewService } from '../common/changesViewService.js';
 import { ChangesActionsBar, ChangesActionsBarActionViewItem, CHANGES_HEADER_ACTIONS_ID } from './changesView.js';
 import { SessionChangesEditorInput } from './sessionChangesEditorInput.js';
+import { ISessionChangesService } from './sessionChangesService.js';
+import { ISessionFileChange } from '../../../services/sessions/common/session.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { IAction } from '../../../../base/common/actions.js';
 import { IActionViewItemOptions, IBaseActionViewItemOptions } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
@@ -67,13 +69,14 @@ class SessionChangesUIElementFactory implements IWorkbenchUIElementFactory {
 	readonly headerClickToCollapse = true;
 
 	constructor(
+		private readonly changesObs: IObservable<readonly ISessionFileChange[]>,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@IChangesViewService private readonly changesViewService: IChangesViewService,
 	) { }
 
-	createResourceLabel(element: HTMLElement): IResourceLabel {
+	createResourceLabel(element: HTMLElement, kind: MultiDiffEditorItemLabelKind): IResourceLabel {
 		const label = this.instantiationService.createInstance(ResourceLabel, element, {});
-		return new SessionChangesResourceLabel(label, element, element.classList.contains('modified'), this.changesViewService);
+		const showDiffStats = kind === MultiDiffEditorItemLabelKind.Primary;
+		return new SessionChangesResourceLabel(label, element, showDiffStats, this.changesObs);
 	}
 
 	createToolbarActionViewItem(action: IAction, options: IActionViewItemOptions): IActionViewItem | undefined {
@@ -92,7 +95,7 @@ class SessionChangesResourceLabel extends Disposable implements IResourceLabel {
 		private readonly label: ResourceLabel,
 		element: HTMLElement,
 		showDiffStats: boolean,
-		changesViewService: IChangesViewService,
+		changesObs: IObservable<readonly ISessionFileChange[]>,
 	) {
 		super();
 		this._register(label);
@@ -107,7 +110,7 @@ class SessionChangesResourceLabel extends Disposable implements IResourceLabel {
 			this._register(autorun(reader => {
 				const resource = this.resource.read(reader);
 				const stats = resource
-					? getChangesEditorFileStats(resource, changesViewService.activeSessionChangesObs.read(reader))
+					? getChangesEditorFileStats(resource, changesObs.read(reader))
 					: undefined;
 				statsContainer.style.display = stats ? '' : 'none';
 				if (stats) {
@@ -149,6 +152,22 @@ export class SessionChangesEditor extends AbstractEditorWithViewState<IMultiDiff
 	private _singlePane = false;
 	private _scopedInstantiationService: IInstantiationService | undefined;
 
+	/** Session whose changes this editor is currently showing (from its input). */
+	private readonly _inputSessionResource = observableValue<URI | undefined>(this, undefined);
+
+	/**
+	 * Changes for this editor's own session, scoped so a stale row does not pick
+	 * up the counts of a different (globally active) session during a switch.
+	 */
+	private readonly _scopedChangesObs = derivedObservableWithCache<readonly ISessionFileChange[]>(this, (reader, lastValue) => {
+		const editorSession = this._inputSessionResource.read(reader);
+		const activeSession = this.changesViewService.activeSessionResourceObs.read(reader);
+		if (!editorSession || !activeSession || !isEqual(editorSession, activeSession)) {
+			return lastValue ?? [];
+		}
+		return this.changesViewService.activeSessionChangesObs.read(reader);
+	});
+
 	/** Deferred focus request awaiting the active diff editor to be rendered. */
 	private readonly _pendingFocus = this._register(new MutableDisposable());
 
@@ -165,6 +184,7 @@ export class SessionChangesEditor extends AbstractEditorWithViewState<IMultiDiff
 		@IChangesViewService private readonly changesViewService: IChangesViewService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IAgentWorkbenchLayoutService private readonly layoutService: IAgentWorkbenchLayoutService,
+		@ISessionChangesService private readonly sessionChangesService: ISessionChangesService,
 	) {
 		super(
 			SessionChangesEditor.ID,
@@ -214,7 +234,7 @@ export class SessionChangesEditor extends AbstractEditorWithViewState<IMultiDiff
 		this.widget = this._register(paneInstantiationService.createInstance(
 			MultiDiffEditorWidget,
 			this.bodyContainer,
-			paneInstantiationService.createInstance(SessionChangesUIElementFactory),
+			paneInstantiationService.createInstance(SessionChangesUIElementFactory, this._scopedChangesObs),
 			CHANGES_DIFF_EDITOR_OPTIONS,
 		));
 		this._applyRenderSideBySide();
@@ -279,6 +299,7 @@ export class SessionChangesEditor extends AbstractEditorWithViewState<IMultiDiff
 
 	override async setInput(input: SessionChangesEditorInput, options: IMultiDiffEditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {
 		await super.setInput(input, options, context, token);
+		this._inputSessionResource.set(this.sessionChangesService.getSessionResource(input.multiDiffSource), undefined);
 		const viewModel = await input.getViewModel();
 		if (token.isCancellationRequested) {
 			return;
