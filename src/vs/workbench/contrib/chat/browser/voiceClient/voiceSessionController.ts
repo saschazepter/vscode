@@ -2516,6 +2516,20 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	}
 
 	/**
+	 * True when the user is mid-utterance: the tail of the transcript is a
+	 * still-open (partial) user turn with non-empty recognized text. Used to
+	 * decide whether a client-driven narration may force-end the current
+	 * hands-free listen turn (safe when silent) or must defer to the
+	 * busy/`narration_unblocked` path (when the user is actually speaking, so we
+	 * don't cut off their words).
+	 */
+	private _isActivelyDictating(): boolean {
+		const turns = this._transcriptTurns.get();
+		const last = turns[turns.length - 1];
+		return !!last && last.speaker === 'user' && last.isPartial && last.text.trim().length > 0;
+	}
+
+	/**
 	 * Update the assistant turn at the tail of the buffer with `text`.
 	 *
 	 * The streaming TTS pipeline pushes a monotonically-growing transcript
@@ -3015,6 +3029,24 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			}
 		}
 		this.logService.trace(`[voice] narrate kind=${kind} id=${sessionId.slice(-32)}`);
+		// A hands-free auto-listen / barge-in turn keeps the backend's
+		// `user_is_speaking` latch set - it latches on `ptt_start` and is only
+		// cleared by a real `ptt_end` (see `_startBargeInListen`, `_finishPtt`).
+		// Requesting a narration while that latch is set gets NACK'd
+		// `busy: user_speaking` and deferred until a `narration_unblocked` that
+		// never arrives for a SILENT passive turn - so the confirmation/response
+		// is stranded and never spoken. When the user is NOT actively dictating,
+		// end the open turn with a genuine `ptt_end` (WS preserves order, so it
+		// reaches the backend before the request) so the latch clears and the
+		// narration is accepted immediately. Guard on `canRequestNarration` so a
+		// closed-socket path still queues a retry below without tearing down a
+		// freshly-entered listen on connect. When the user IS mid-utterance, leave
+		// the turn open and let the busy/defer + `narration_unblocked` path narrate
+		// once they finish, rather than cutting off their speech.
+		const endPassiveTurnFirst = this._pttHeld && !this._isActivelyDictating() && this.voiceClientService.canRequestNarration;
+		if (endPassiveTurnFirst) {
+			this._prepareForPlayback(true);
+		}
 		const narrationId = this.voiceClientService.requestNarration(sessionId, kind, text, reuseId);
 		if (!narrationId) {
 			// Socket was closed, so nothing was sent: don't touch playback/listening
@@ -3024,12 +3056,12 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 			this._pendingNarrationRetries.set(sessionId, { kind, text });
 			return false;
 		}
-		// The narration audio is now inbound. Get out of listening/auto-listen so
-		// the echoed audio isn't suppressed (or captured as the user's own turn)
-		// while PTT/mic capture is active. Done here so EVERY narration path
-		// (live, on-focus, on-reconnect retry) is prepared, not just focus - but
-		// only once a request is actually in flight.
-		this._prepareForPlayback();
+		if (!endPassiveTurnFirst) {
+			// Not already prepared above. The narration audio is now inbound: get
+			// out of listening/auto-listen so the echoed audio isn't suppressed (or
+			// captured as the user's own turn) while PTT/mic capture is active.
+			this._prepareForPlayback();
+		}
 		this._pendingNarrationRetries.delete(sessionId);
 		// This newer request supersedes any older busy/interrupted entry deferred
 		// for this session (latest-wins per session). Without this, a later
@@ -3587,11 +3619,17 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 * controller can sit in listening and the echoed audio is dropped, leaving the
 	 * user staring at a focused session that never speaks.
 	 */
-	private _prepareForPlayback(): void {
+	private _prepareForPlayback(endOpenTurn = false): void {
 		this._clearAutoListenTimer();
 		this._autoListenSuppressed = false;
 		if (this._pttHeld) {
-			this._finishPtt('auto');
+			// 'auto' aborts the mic locally and sends NO `ptt_end` (used when the
+			// backend already ended the turn, so the audio can just play). When the
+			// caller needs the backend to learn the turn ended - e.g. a client-driven
+			// narration whose request would otherwise be NACK'd `busy: user_speaking`
+			// because the latch is still set - pass `endOpenTurn` to finish with a
+			// genuine `ptt_end` ('local') instead.
+			this._finishPtt(endOpenTurn ? 'local' : 'auto', 'internal');
 		}
 		this._pttToggleMode = false;
 		this._pttHeld = false;
