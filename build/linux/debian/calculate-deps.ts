@@ -61,6 +61,7 @@ function calculatePackageDeps(binaryPath: string, arch: DebianArchString, chromi
 			break;
 	}
 	cmd.push(`-l${chromiumSysroot}/usr/lib`);
+	cmd.push(`-l${path.dirname(binaryPath)}`);
 	cmd.push(`-L${vscodeSysroot}/debian/libxkbfile1/DEBIAN/shlibs`);
 	cmd.push('-O', '-e', path.resolve(binaryPath));
 
