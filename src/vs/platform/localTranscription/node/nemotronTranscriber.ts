@@ -4,7 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as fs from 'fs';
-import { join } from '../../../base/common/path.js';
+import { dirname, join } from '../../../base/common/path.js';
+import { generateUuid } from '../../../base/common/uuid.js';
+import { getProxyAgent, type Agent } from '../../request/node/proxy.js';
+import { ILocalTranscriptionProxyConfig } from '../common/localTranscription.js';
 
 /**
  * On-device transcriber for NVIDIA's `nemotron-3.5-asr-streaming-0.6b` ONNX
@@ -50,6 +53,21 @@ const MODEL_FILES = [
 ];
 
 /**
+ * The single Hugging Face model repository this transcriber knows how to run.
+ * There is no model selection: the tensor shapes, cache sizes, and vocabulary
+ * ids below are hard-coded for this specific export.
+ */
+const MODEL_ID = 'onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4';
+
+/**
+ * Socket inactivity timeout (ms) for each model-download request. A stalled
+ * connection (no bytes for this long) is aborted so `prepare()` rejects instead
+ * of hanging forever — which would also wedge a later `stop()` awaiting the
+ * load. Generous, since the payload is large and links can be slow.
+ */
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+
+/**
  * Pinned Hugging Face commit the hard-coded tensor shapes, cache sizes, and
  * vocabulary ids below were validated against. Downloads resolve this exact
  * revision (not the mutable `main` branch) and it is part of the on-disk cache
@@ -59,9 +77,8 @@ const MODEL_FILES = [
 const MODEL_REVISION = '8364d9e2dd9da23789b480bdbba9e423717e42ee';
 
 /**
- * onnxruntime-node is a heavy native addon (also pulled in by transformers.js);
- * import it lazily and keep its types loose so the platform layer doesn't take
- * a hard build-time dependency on it.
+ * onnxruntime-node is a heavy native addon; import it lazily and keep its types
+ * loose so the platform layer doesn't take a hard build-time dependency on it.
  */
 type OrtModule = typeof import('onnxruntime-node');
 type OrtSession = import('onnxruntime-node').InferenceSession;
@@ -73,11 +90,6 @@ export interface INemotronProgress {
 }
 
 export class NemotronTranscriber {
-
-	/** Model ids this transcriber knows how to run (vs. Whisper). */
-	static isNemotronModel(model: string): boolean {
-		return /nemotron/i.test(model);
-	}
 
 	private _ort: OrtModule | undefined;
 	private _enc: OrtSession | undefined;
@@ -134,12 +146,14 @@ export class NemotronTranscriber {
 	/**
 	 * Download (if needed) and load the model. `cacheDir` is the shared model
 	 * cache; files are placed in a per-model subfolder guarded by a `.complete`
-	 * sentinel so a half-finished download is never reused.
+	 * sentinel so a half-finished download is never reused. `proxy` carries the
+	 * renderer's `http.*` settings so a first-use download can traverse a
+	 * corporate proxy / honour strict-SSL.
 	 */
-	async prepare(cacheDir: string, model: string, onProgress: INemotronProgress): Promise<void> {
-		const sanitized = `${model}@${MODEL_REVISION}`.replace(/[^a-zA-Z0-9._-]/g, '_');
+	async prepare(cacheDir: string, proxy: ILocalTranscriptionProxyConfig | undefined, onProgress: INemotronProgress): Promise<void> {
+		const sanitized = `${MODEL_ID}@${MODEL_REVISION}`.replace(/[^a-zA-Z0-9._-]/g, '_');
 		const modelDir = join(cacheDir, 'nemotron', sanitized);
-		await this._ensureDownloaded(modelDir, model, onProgress);
+		await this._ensureDownloaded(modelDir, proxy, onProgress);
 
 		onProgress({ downloaded: true });
 		const ort = await this._loadOrt();
@@ -240,33 +254,76 @@ export class NemotronTranscriber {
 		return this._ort;
 	}
 
-	private async _ensureDownloaded(modelDir: string, model: string, onProgress: INemotronProgress): Promise<void> {
+	private async _ensureDownloaded(modelDir: string, proxy: ILocalTranscriptionProxyConfig | undefined, onProgress: INemotronProgress): Promise<void> {
 		const sentinel = join(modelDir, '.complete');
 		if (fs.existsSync(sentinel)) {
 			return;
 		}
-		await fs.promises.mkdir(modelDir, { recursive: true });
+
+		const base = `https://huggingface.co/${MODEL_ID}/resolve/${MODEL_REVISION}`;
+		// Route the download through the same proxy machinery `RequestService`
+		// uses (`@vscode/proxy-agent`), so corporate proxies and strict-SSL are
+		// honoured even though this utility process has no `IRequestService`.
+		const agent = await getProxyAgent(base, process.env, { proxyUrl: proxy?.url, strictSSL: proxy?.strictSSL });
+		const request: IDownloadRequestOptions = { agent, strictSSL: proxy?.strictSSL, authorization: proxy?.authorization };
 
 		// Determine total bytes up front so progress can be reported as a single
 		// 0..1 value across all files (the .data blobs dominate).
-		const base = `https://huggingface.co/${model}/resolve/${MODEL_REVISION}`;
 		const sizes: number[] = [];
 		for (const file of MODEL_FILES) {
-			sizes.push(await headContentLength(`${base}/${file}`));
+			sizes.push(await headContentLength(`${base}/${file}`, request));
 		}
 		const total = sizes.reduce((a, b) => a + b, 0) || 1;
 
-		let done = 0;
-		for (let i = 0; i < MODEL_FILES.length; i++) {
-			const file = MODEL_FILES[i];
-			const dest = join(modelDir, file);
-			const doneBefore = done;
-			await downloadFile(`${base}/${file}`, dest, received => {
-				onProgress({ downloaded: false, progress: Math.min(1, (doneBefore + received) / total) });
-			});
-			done += sizes[i];
+		// The model cache is shared across windows, but each window runs its own
+		// transcription worker. Download into a per-process staging directory and
+		// atomically promote it, so two concurrent first-use sessions never write
+		// the same files or race the `.complete` sentinel.
+		const staging = `${modelDir}.tmp.${process.pid}.${generateUuid().slice(0, 8)}`;
+		await fs.promises.rm(staging, { recursive: true, force: true });
+		await fs.promises.mkdir(staging, { recursive: true });
+		try {
+			let done = 0;
+			for (let i = 0; i < MODEL_FILES.length; i++) {
+				const file = MODEL_FILES[i];
+				const doneBefore = done;
+				await downloadFile(`${base}/${file}`, join(staging, file), request, received => {
+					onProgress({ downloaded: false, progress: Math.min(1, (doneBefore + received) / total) });
+				});
+				done += sizes[i];
+			}
+			await fs.promises.writeFile(join(staging, '.complete'), '');
+			await this._promoteStaging(staging, modelDir, sentinel);
+		} finally {
+			// Best-effort: drop the staging dir if it still exists (a failed
+			// download, or the losing side of a concurrent promotion).
+			await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => { /* ignore */ });
 		}
-		await fs.promises.writeFile(sentinel, '');
+	}
+
+	/**
+	 * Atomically publish a fully-downloaded staging directory as `modelDir`. If a
+	 * concurrent window won the race and already published a complete model,
+	 * treat ourselves as the loser and keep theirs; if only a stale partial dir
+	 * (no sentinel) is in the way, replace it.
+	 */
+	private async _promoteStaging(staging: string, modelDir: string, sentinel: string): Promise<void> {
+		await fs.promises.mkdir(dirname(modelDir), { recursive: true });
+		try {
+			await fs.promises.rename(staging, modelDir);
+			return;
+		} catch (err) {
+			if (fs.existsSync(sentinel)) {
+				return; // another window published a complete model first
+			}
+			const code = (err as NodeJS.ErrnoException).code;
+			if (code === 'ENOTEMPTY' || code === 'EEXIST' || code === 'EPERM' || code === 'EACCES') {
+				await fs.promises.rm(modelDir, { recursive: true, force: true });
+				await fs.promises.rename(staging, modelDir);
+				return;
+			}
+			throw err;
+		}
 	}
 
 	// ---------- streaming NeMo log-mel features ----------
@@ -544,14 +601,38 @@ function melToHz(mel: number): number {
 	return mel < minLogMel ? mel * fSp : minLogHz * Math.exp(logStep * (mel - minLogMel));
 }
 
+/** Per-request proxy/TLS options applied to each model-download request. */
+interface IDownloadRequestOptions {
+	/** Proxy agent from `getProxyAgent`, or `null`/`undefined` for a direct connection. */
+	readonly agent?: Agent;
+	/** When `false`, disables certificate validation; strict (secure) by default. */
+	readonly strictSSL?: boolean;
+	/** `Proxy-Authorization` header value, when configured. */
+	readonly authorization?: string;
+}
+
+/**
+ * Build the Node `https.request` options (agent, TLS, proxy auth) shared by the
+ * HEAD and GET helpers below.
+ */
+function toHttpsOptions(options: IDownloadRequestOptions, method: 'HEAD' | 'GET'): import('https').RequestOptions {
+	return {
+		method,
+		agent: options.agent ?? undefined,
+		// Secure by default: only skip verification when strict-SSL is explicitly false.
+		rejectUnauthorized: options.strictSSL !== false,
+		headers: options.authorization ? { 'Proxy-Authorization': options.authorization } : undefined,
+	};
+}
+
 /** Resolve the final content-length of a URL (following redirects). */
-async function headContentLength(url: string): Promise<number> {
+async function headContentLength(url: string, options: IDownloadRequestOptions): Promise<number> {
 	const https = await import('https');
 	return new Promise<number>((resolve, reject) => {
-		const req = https.request(url, { method: 'HEAD' }, res => {
+		const req = https.request(url, toHttpsOptions(options, 'HEAD'), res => {
 			if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
 				res.resume();
-				headContentLength(new URL(res.headers.location, url).toString()).then(resolve, reject);
+				headContentLength(new URL(res.headers.location, url).toString(), options).then(resolve, reject);
 				return;
 			}
 			if (!res.statusCode || res.statusCode >= 400) {
@@ -562,19 +643,21 @@ async function headContentLength(url: string): Promise<number> {
 			resolve(Number(res.headers['content-length']) || 0);
 			res.resume();
 		});
+		// Abort a stalled connection so prepare() cannot hang forever.
+		req.setTimeout(DOWNLOAD_TIMEOUT_MS, () => req.destroy(new Error(`HEAD ${url} timed out after ${DOWNLOAD_TIMEOUT_MS}ms`)));
 		req.on('error', reject);
 		req.end();
 	});
 }
 
 /** Stream a URL to `dest` (following redirects), reporting received bytes. */
-async function downloadFile(url: string, dest: string, onBytes: (received: number) => void): Promise<void> {
+async function downloadFile(url: string, dest: string, options: IDownloadRequestOptions, onBytes: (received: number) => void): Promise<void> {
 	const https = await import('https');
 	return new Promise<void>((resolve, reject) => {
-		https.get(url, res => {
+		const req = https.request(url, toHttpsOptions(options, 'GET'), res => {
 			if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
 				res.resume();
-				downloadFile(new URL(res.headers.location, url).toString(), dest, onBytes).then(resolve, reject);
+				downloadFile(new URL(res.headers.location, url).toString(), dest, options, onBytes).then(resolve, reject);
 				return;
 			}
 			if (!res.statusCode || res.statusCode >= 400) {
@@ -582,9 +665,20 @@ async function downloadFile(url: string, dest: string, onBytes: (received: numbe
 				reject(new Error(`GET ${url} failed: ${res.statusCode}`));
 				return;
 			}
-			const tmp = `${dest}.tmp`;
-			const out = fs.createWriteStream(tmp);
+			const out = fs.createWriteStream(dest);
 			let received = 0;
+			let settled = false;
+			const fail = (err: Error) => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				req.destroy();
+				res.destroy();
+				out.destroy();
+				// Drop the partial file so a retry starts clean.
+				fs.promises.rm(dest, { force: true }).catch(() => { /* ignore */ }).finally(() => reject(err));
+			};
 			res.on('data', chunk => {
 				received += chunk.length;
 				onBytes(received);
@@ -592,13 +686,20 @@ async function downloadFile(url: string, dest: string, onBytes: (received: numbe
 			res.pipe(out);
 			out.on('finish', () => out.close(err => {
 				if (err) {
-					reject(err);
+					fail(err);
 					return;
 				}
-				fs.rename(tmp, dest, renameErr => renameErr ? reject(renameErr) : resolve());
+				if (!settled) {
+					settled = true;
+					resolve();
+				}
 			}));
-			out.on('error', reject);
-			res.on('error', reject);
-		}).on('error', reject);
+			out.on('error', fail);
+			res.on('error', fail);
+		});
+		// Abort a stalled connection/transfer so prepare() cannot hang forever.
+		req.setTimeout(DOWNLOAD_TIMEOUT_MS, () => req.destroy(new Error(`GET ${url} timed out after ${DOWNLOAD_TIMEOUT_MS}ms`)));
+		req.on('error', reject);
+		req.end();
 	});
 }

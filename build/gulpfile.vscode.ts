@@ -235,7 +235,7 @@ function computeChecksum(filename: string): string {
 	return hash;
 }
 
-// onnxruntime-node (transitive via @huggingface/transformers, on-device chat
+// onnxruntime-node (direct dependency, on-device chat
 // dictation) ships prebuilt binaries for every platform/arch inside its
 // tarball. Keep only the target build's binary so we don't bloat each package
 // with ~170MB of unused native code.
@@ -401,7 +401,7 @@ function packageTask(platform: string, arch: string, sourceFolderName: string, d
 				'**/node-pty/package.json',
 				'**/*.wasm',
 				'**/@vscode/vsce-sign/bin/*',
-				// onnxruntime-node (transitive via @huggingface/transformers, used
+				// onnxruntime-node (direct dependency, used
 				// for on-device chat dictation) ships a prebuilt N-API addon that
 				// dlopen's sibling shared libraries (libonnxruntime.*.dylib / .so /
 				// onnxruntime.dll + DirectML). The OS loader resolves those by

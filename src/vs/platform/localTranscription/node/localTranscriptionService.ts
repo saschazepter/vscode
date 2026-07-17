@@ -8,6 +8,7 @@ import { Disposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
 import {
 	ILocalTranscriptionModelStatus,
+	ILocalTranscriptionProxyConfig,
 	ILocalTranscriptionResult,
 	ILocalTranscriptionService,
 	LocalTranscriptionModelState,
@@ -20,9 +21,9 @@ const SAMPLE_RATE = 16000;
 /**
  * On-device model used for dictation: NVIDIA Nemotron RNN-T — a streaming,
  * multilingual (35+ languages, auto-detected) transducer, matching the model
- * the GitHub Copilot desktop app ships.
+ * the GitHub Copilot desktop app ships. There is a single supported model; the
+ * public API exposes no model or language selection.
  */
-const DEFAULT_MODEL = 'onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4';
 
 /** Minimum audio (seconds) before a first interim transcription is attempted. */
 const MIN_INTERIM_SECONDS = 1.0;
@@ -72,7 +73,6 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 	/** The streaming RNN-T transducer; undefined until loaded. */
 	private _nemotron: NemotronTranscriber | undefined;
 	private _nemotronPromise: Promise<NemotronTranscriber> | undefined;
-	private _loadedModel: string | undefined;
 
 	/** Accumulated Float32 PCM for the active session (mono, 16 kHz). */
 	private _samples: Float32Array[] = [];
@@ -116,11 +116,11 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 		this._onDidChangeModelStatus.fire(status);
 	}
 
-	async start(options: { cacheDir: string; model?: string; language?: string }): Promise<void> {
+	async start(options: { cacheDir: string; proxy?: ILocalTranscriptionProxyConfig }): Promise<void> {
 		this._resetSession();
 		this._sessionActive = true;
 		// Kick off (or reuse) model loading; do not block starting capture on it.
-		this._ensureModel(options.cacheDir, options.model ?? DEFAULT_MODEL).catch(() => { /* status already reported */ });
+		this._ensureModel(options.cacheDir, options.proxy).catch(() => { /* status already reported */ });
 	}
 
 	/**
@@ -129,15 +129,14 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 	 * ONNX graphs are driven directly via onnxruntime-node, since this is a
 	 * transducer that transformers.js cannot run.
 	 */
-	private async _ensureModel(cacheDir: string, model: string): Promise<NemotronTranscriber> {
-		if (this._nemotron && this._loadedModel === model) {
+	private async _ensureModel(cacheDir: string, proxy: ILocalTranscriptionProxyConfig | undefined): Promise<NemotronTranscriber> {
+		if (this._nemotron) {
 			return this._nemotron;
 		}
-		if (this._nemotronPromise && this._loadedModel === model) {
+		if (this._nemotronPromise) {
 			return this._nemotronPromise;
 		}
 
-		this._loadedModel = model;
 		this._nemotronPromise = (async () => {
 			try {
 				this._setStatus({ state: LocalTranscriptionModelState.Downloading, progress: 0 });
@@ -158,7 +157,7 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 				let didDownload = false;
 				const transcriber = new NemotronTranscriber();
 				try {
-					await transcriber.prepare(cacheDir, model, ({ downloaded, progress }) => {
+					await transcriber.prepare(cacheDir, proxy, ({ downloaded, progress }) => {
 						if (downloaded) {
 							this._setStatus({ state: LocalTranscriptionModelState.Loading });
 						} else {
@@ -177,7 +176,6 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 			} catch (err) {
 				this._nemotron = undefined;
 				this._nemotronPromise = undefined;
-				this._loadedModel = undefined;
 				const message = String(err instanceof Error ? err.message : err);
 				this._setStatus({ state: LocalTranscriptionModelState.Error, error: message, errorCode: classifyModelError(message) });
 				throw err;

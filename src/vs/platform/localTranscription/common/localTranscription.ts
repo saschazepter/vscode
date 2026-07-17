@@ -53,6 +53,22 @@ export interface ILocalTranscriptionResult {
 }
 
 /**
+ * Proxy/TLS settings forwarded from the renderer's configuration so the first-use
+ * model download can honour corporate proxies and strict-SSL. The transcription
+ * worker is a DI-less utility process with no access to `IConfigurationService`
+ * or `IRequestService`, so the renderer reads the relevant `http.*` settings and
+ * hands them across. Mirrors the values `RequestService` itself reads.
+ */
+export interface ILocalTranscriptionProxyConfig {
+	/** Value of `http.proxy`, when configured. */
+	readonly url?: string;
+	/** Value of `http.proxyStrictSSL` (defaults to strict when unset). */
+	readonly strictSSL?: boolean;
+	/** Value of `http.proxyAuthorization`, when configured. */
+	readonly authorization?: string;
+}
+
+/**
  * On-device speech-to-text using a downloaded NeMo RNN-T model (Nemotron, run
  * directly on onnxruntime-node). Runs in a utility process. A single
  * transcription session is active at a time (dictation is a singleton in the
@@ -83,9 +99,12 @@ export interface ILocalTranscriptionService {
 
 	/**
 	 * Ensure the model is downloaded/loaded (idempotent) and begin a new
-	 * transcription session. `cacheDir` is where model files are stored.
+	 * transcription session. `cacheDir` is where model files are stored. The
+	 * single supported Nemotron model is fixed; there is no model or language
+	 * selection. `proxy` carries the renderer's `http.*` settings so a first-use
+	 * download can traverse a corporate proxy.
 	 */
-	start(options: { readonly cacheDir: string; readonly model?: string; readonly language?: string }): Promise<void>;
+	start(options: { readonly cacheDir: string; readonly proxy?: ILocalTranscriptionProxyConfig }): Promise<void>;
 
 	/** Append captured audio (raw little-endian PCM16 mono 16 kHz). */
 	pushAudio(chunk: VSBuffer): Promise<void>;
