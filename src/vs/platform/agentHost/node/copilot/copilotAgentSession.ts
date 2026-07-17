@@ -3994,9 +3994,7 @@ export class CopilotAgentSession extends Disposable {
 			if (!tracked || !isShellTool(tracked.toolName)) {
 				return;
 			}
-			// TODO: Replace this text snapshot bridge with an output-only AHP terminal once AHP defines
-			// that capability and SDK shell events expose a live shell identity. Then attach terminal
-			// content to the tool call and stream its output through the terminal channel.
+			// TODO: Use terminal-specific AHP content once live shell output is modeled separately from terminalComplete.preview.
 			this._emitAction({
 				type: ActionType.ChatToolCallContentChanged,
 				turnId: this._turnId,
