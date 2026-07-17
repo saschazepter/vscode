@@ -9,6 +9,7 @@ const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const STREAK_COUNT_KEY = 'sessions.aquarium.streak.count';
 const STREAK_LAST_FED_KEY = 'sessions.aquarium.streak.lastFedAt';
+const STREAK_LAST_FED_DAY_KEY = 'sessions.aquarium.streak.lastFedDay';
 const STREAK_REVIVABLE_KEY = 'sessions.aquarium.streak.revivable';
 
 function getLocalCalendarDay(timestamp: number): number {
@@ -37,12 +38,17 @@ export class FishFeedingStreak {
 	constructor(
 		private readonly storageService: IStorageService,
 		private readonly now: () => number = Date.now,
+		private readonly getCalendarDay: (timestamp: number) => number = getLocalCalendarDay,
 	) {
 		this.normalizePersistedState();
 	}
 
 	private get lastFedAt(): number {
 		return this.storageService.getNumber(STREAK_LAST_FED_KEY, StorageScope.APPLICATION, 0);
+	}
+
+	private get lastFedDay(): number | undefined {
+		return this.storageService.getNumber(STREAK_LAST_FED_DAY_KEY, StorageScope.APPLICATION);
 	}
 
 	private get rawCount(): number {
@@ -60,10 +66,10 @@ export class FishFeedingStreak {
 	}
 
 	private isAliveAt(now: number): boolean {
-		const lastFedAt = this.lastFedAt;
+		const lastFedDay = this.lastFedDay;
 		return this.rawCount > 0
-			&& lastFedAt > 0
-			&& getLocalCalendarDay(now) - getLocalCalendarDay(lastFedAt) <= 1;
+			&& lastFedDay !== undefined
+			&& this.getCalendarDay(now) - lastFedDay <= 1;
 	}
 
 	/** The current live streak count, or 0 when no streak is alive. */
@@ -97,12 +103,14 @@ export class FishFeedingStreak {
 	 */
 	recordFeed(): IFeedResult {
 		const now = this.now();
+		const calendarDay = this.getCalendarDay(now);
 		this.collectExpiredAt(now);
 		const alive = this.isAliveAt(now);
+		const lastFedDay = this.lastFedDay;
 		const revivable = this.revivableCount;
 		let count: number;
 		let revived = false;
-		if (alive && getLocalCalendarDay(now) > getLocalCalendarDay(this.lastFedAt)) {
+		if (alive && lastFedDay !== undefined && calendarDay > lastFedDay) {
 			count = this.rawCount + 1;
 			this.store(STREAK_COUNT_KEY, count);
 		} else if (alive) {
@@ -116,6 +124,7 @@ export class FishFeedingStreak {
 			this.store(STREAK_COUNT_KEY, count);
 		}
 		this.store(STREAK_LAST_FED_KEY, now);
+		this.store(STREAK_LAST_FED_DAY_KEY, calendarDay);
 		if (revivable > 0) {
 			this.store(STREAK_REVIVABLE_KEY, 0);
 		}
@@ -131,6 +140,9 @@ export class FishFeedingStreak {
 			lastFedAt = this.now();
 			this.store(STREAK_LAST_FED_KEY, lastFedAt);
 		}
+		if (this.lastFedDay === undefined) {
+			this.store(STREAK_LAST_FED_DAY_KEY, this.getCalendarDay(lastFedAt));
+		}
 	}
 
 	/**
@@ -144,16 +156,20 @@ export class FishFeedingStreak {
 		if (count <= 0) {
 			this.store(STREAK_COUNT_KEY, 0);
 			this.store(STREAK_LAST_FED_KEY, 0);
+			this.storageService.remove(STREAK_LAST_FED_DAY_KEY, StorageScope.APPLICATION);
 			this.store(STREAK_REVIVABLE_KEY, 0);
 			return;
 		}
 		if (alive) {
+			const now = this.now();
 			this.store(STREAK_COUNT_KEY, count);
-			this.store(STREAK_LAST_FED_KEY, this.now());
+			this.store(STREAK_LAST_FED_KEY, now);
+			this.store(STREAK_LAST_FED_DAY_KEY, this.getCalendarDay(now));
 			this.store(STREAK_REVIVABLE_KEY, 0);
 		} else {
 			this.store(STREAK_COUNT_KEY, 0);
 			this.store(STREAK_LAST_FED_KEY, 0);
+			this.storageService.remove(STREAK_LAST_FED_DAY_KEY, StorageScope.APPLICATION);
 			this.store(STREAK_REVIVABLE_KEY, count);
 		}
 	}

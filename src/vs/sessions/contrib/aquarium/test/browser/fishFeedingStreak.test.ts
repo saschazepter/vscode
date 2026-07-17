@@ -12,6 +12,8 @@ suite('FishFeedingStreak', () => {
 
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 	const STREAK_COUNT_KEY = 'sessions.aquarium.streak.count';
+	const STREAK_LAST_FED_KEY = 'sessions.aquarium.streak.lastFedAt';
+	const STREAK_LAST_FED_DAY_KEY = 'sessions.aquarium.streak.lastFedDay';
 
 	function localTime(day: number, hour = 12, minute = 0): number {
 		return new Date(2026, 6, day, hour, minute).getTime();
@@ -117,6 +119,43 @@ suite('FishFeedingStreak', () => {
 			isAlive: true,
 			revivableCount: 0,
 		});
+	});
+
+	test('uses the timezone where each feed occurred', () => {
+		const storage = store.add(new InMemoryStorageService());
+		let timezoneOffset = -5 * 60;
+		let clock = Date.UTC(2026, 0, 2, 4, 30);
+		const getCalendarDay = (timestamp: number) => Math.floor((timestamp + timezoneOffset * 60 * 1000) / (24 * 60 * 60 * 1000));
+		const streak = new FishFeedingStreak(storage, () => clock, getCalendarDay);
+
+		const firstFeed = streak.recordFeed();
+		timezoneOffset = 2 * 60;
+		clock = Date.UTC(2026, 0, 2, 5, 0);
+		const nextLocalDayFeed = streak.recordFeed();
+
+		assert.deepStrictEqual({
+			firstFeed,
+			nextLocalDayFeed,
+			count: streak.count,
+		}, {
+			firstFeed: { count: 1, started: true, revived: false },
+			nextLocalDayFeed: { count: 2, started: false, revived: false },
+			count: 2,
+		});
+	});
+
+	test('migrates the local calendar day from the existing timestamp', () => {
+		const storage = store.add(new InMemoryStorageService());
+		const lastFedAt = localTime(17, 23, 30);
+		storage.store(STREAK_COUNT_KEY, 7, StorageScope.APPLICATION, StorageTarget.USER);
+		storage.store(STREAK_LAST_FED_KEY, lastFedAt, StorageScope.APPLICATION, StorageTarget.USER);
+
+		new FishFeedingStreak(storage, () => localTime(18));
+
+		assert.strictEqual(
+			storage.getNumber(STREAK_LAST_FED_DAY_KEY, StorageScope.APPLICATION),
+			Date.UTC(2026, 6, 17) / (24 * 60 * 60 * 1000)
+		);
 	});
 
 	test('a revived streak continues counting on the next local day', () => {
