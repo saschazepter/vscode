@@ -1248,6 +1248,9 @@ function renderMcpDisabled(ctx: ComponentFixtureContext, byPolicy: boolean): voi
 				override registerExternalHarness() { return { dispose() { } }; }
 			}());
 			reg.defineInstance(IAgentHostCustomizationService, createMockAgentHostCustomizationService());
+			reg.defineInstance(IOutputService, new class extends mock<IOutputService>() {
+				override async showChannel() { }
+			}());
 		},
 	});
 
