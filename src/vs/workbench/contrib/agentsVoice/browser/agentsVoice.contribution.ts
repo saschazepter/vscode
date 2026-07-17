@@ -25,6 +25,7 @@ import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/c
 import { Extensions as ConfigurationExtensions, ConfigurationScope, IConfigurationRegistry } from '../../../../platform/configuration/common/configurationRegistry.js';
 import { ContextKeyExpr, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { IWorkbenchContribution, WorkbenchPhase, registerWorkbenchContribution2 } from '../../../common/contributions.js';
@@ -179,12 +180,34 @@ registerAction2(class extends Action2 {
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const voiceController = accessor.get(IVoiceSessionController);
+		const keybindingService = accessor.get(IKeybindingService);
+
+		// Ensure the session is connected before we start recording. The mic
+		// button's first press connects; a held keybinding also connects here so
+		// that press-and-hold works on the very first invocation.
 		if (!voiceController.isConnected.get()) {
 			await voiceController.connect(mainWindow);
-		} else {
-			voiceController.pttDown();
-			voiceController.pttUp();
 		}
+
+		// Map the physical key/button gesture directly onto the controller's
+		// push-to-talk model: press => pttDown(), release => pttUp(). The
+		// controller itself decides tap-vs-hold based on how long the key was
+		// held (a quick tap enters toggle mode and keeps recording; a real hold
+		// records only while held). `enableKeybindingHoldMode` resolves when the
+		// triggering chord is released and — crucially — swallows OS key-repeat
+		// while held, so holding the shortcut no longer rapidly toggles.
+		const holdMode = keybindingService.enableKeybindingHoldMode('agentsVoice.startVoiceInChat');
+		voiceController.pttDown();
+		if (!holdMode) {
+			// Not invoked via a held keybinding (toolbar mic button or command
+			// palette): emulate a tap so the controller enters toggle mode and
+			// keeps listening. Pressing the button/shortcut again stops.
+			voiceController.pttUp();
+			return;
+		}
+
+		await holdMode;
+		voiceController.pttUp();
 	}
 });
 
@@ -209,18 +232,11 @@ registerAction2(class extends Action2 {
 				group: 'navigation',
 				order: -10
 			},
-			keybinding: {
-				weight: KeybindingWeight.WorkbenchContrib,
-				primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.Space,
-				linux: {
-					primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyMod.Shift | KeyCode.Space,
-				},
-				when: ContextKeyExpr.and(
-					ContextKeyExpr.equals('config.agents.voice.enabled', true),
-					ChatContextKeys.inChatInput,
-					AGENTS_VOICE_LISTENING.isEqualTo(true),
-				),
-			},
+			// NOTE: intentionally no keybinding. The Cmd+Shift+Space chord is
+			// owned solely by `agentsVoice.startVoiceInChat`, which handles both
+			// starting and stopping (via the controller's push-to-talk model).
+			// Binding the same chord here as well caused the two actions to
+			// fight on every OS key-repeat, producing rapid start/stop toggling.
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
