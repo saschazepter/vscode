@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ILanguageModelChatMetadataAndIdentifier, isLanguageModelVendorAbsenceConclusive } from './languageModels.js';
+import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService, isLanguageModelVendorAbsenceConclusive } from './languageModels.js';
 
 export type ModelIdentifierResolution =
 	| { readonly kind: 'notRequested' }
@@ -54,6 +54,28 @@ export function resolveModelIdentifierFromCatalog(
 		vendorResolution.hasResolved(vendor),
 	);
 	return resolveModelIdentifier(models, identifier, isAbsenceConclusive);
+}
+
+export function getRegisteredLanguageModels(languageModelsService: Pick<ILanguageModelsService, 'getLanguageModelIds' | 'lookupLanguageModel'>): ILanguageModelChatMetadataAndIdentifier[] {
+	return languageModelsService.getLanguageModelIds()
+		.map(identifier => {
+			const metadata = languageModelsService.lookupLanguageModel(identifier);
+			return metadata ? { identifier, metadata } : undefined;
+		})
+		.filter(model => model !== undefined);
+}
+
+export function resolveModelIdentifierFromLanguageModels(
+	models: readonly ILanguageModelChatMetadataAndIdentifier[],
+	identifier: string | undefined,
+	languageModelsService: Pick<ILanguageModelsService, 'hasResolvedVendor'>,
+	allModels: readonly ILanguageModelChatMetadataAndIdentifier[],
+): ModelIdentifierResolution {
+	const liveVendors = new Set(allModels.map(model => model.metadata.vendor));
+	return resolveModelIdentifierFromCatalog(models, identifier, {
+		hasLiveModels: vendor => liveVendors.has(vendor),
+		hasResolved: vendor => languageModelsService.hasResolvedVendor(vendor),
+	});
 }
 
 const AUTO_MODEL_ID = 'auto';
@@ -107,6 +129,7 @@ export const enum ModelSelectionReason {
 	RemovedModelFallback = 'removedModelFallback',
 	SessionRestore = 'sessionRestore',
 	NewChatRepush = 'newChatRepush',
+	UserSelection = 'userSelection',
 }
 
 export type ModelSelectionApplyReason = Exclude<ModelSelectionReason, ModelSelectionReason.NoModels>;
@@ -124,6 +147,7 @@ export type InitialModelSelectionResult =
 export interface IInitialModelSelectionInput {
 	readonly configuredModelValue: string | undefined;
 	readonly configuredModel: ILanguageModelChatMetadataAndIdentifier | undefined;
+	readonly waitForConfiguredModel: boolean;
 	readonly desiredModelResolution: ModelIdentifierResolution;
 	readonly desiredReason: ModelSelectionReason.SessionRestore | ModelSelectionReason.Remembered;
 	readonly fallbackModel: ILanguageModelChatMetadataAndIdentifier | undefined;
@@ -135,7 +159,7 @@ export function resolveInitialModelSelection(input: IInitialModelSelectionInput)
 	if (input.configuredModel) {
 		return { kind: 'apply', model: input.configuredModel, reason: ModelSelectionReason.ConfiguredDefault };
 	}
-	if (input.configuredModelValue) {
+	if (input.configuredModelValue && input.waitForConfiguredModel) {
 		return { kind: 'pending', selection: { source: 'configured', reference: input.configuredModelValue } };
 	}
 	if (input.desiredModelResolution.kind === 'available') {
@@ -166,14 +190,17 @@ export type IModelSelectionSessionContext =
 export interface IModelSelectionModelsContext {
 	readonly available: readonly ILanguageModelChatMetadataAndIdentifier[];
 	readonly configuredModel: string | undefined;
+	readonly waitForConfiguredModel: boolean;
 	readonly rememberedModelId: string | undefined;
 	readonly desiredModelResolution: ModelIdentifierResolution;
+	readonly fallbackModel: ILanguageModelChatMetadataAndIdentifier | undefined;
 }
 
 export interface IModelSelectionMemory {
 	readonly sessionKey: string | undefined;
 	readonly lastPushedChatKey: string | undefined;
 	readonly currentModel: ILanguageModelChatMetadataAndIdentifier | undefined;
+	readonly currentReason: ModelSelectionApplyReason | undefined;
 }
 
 export interface IModelSelectionTransitionInput {
@@ -184,6 +211,7 @@ export interface IModelSelectionTransitionInput {
 
 export interface IModelSelectionTransitionResult {
 	readonly currentModel: ILanguageModelChatMetadataAndIdentifier | undefined;
+	readonly currentReason: ModelSelectionApplyReason | undefined;
 	readonly pendingSelection: IPendingModelSelection | undefined;
 	readonly effect: ModelSelectionEffect;
 	readonly sessionKey: string | undefined;
@@ -195,22 +223,39 @@ export function transitionModelSelection(input: IModelSelectionTransitionInput):
 	const sessionKey = session.kind === 'none' ? undefined : session.key;
 	const chatKey = session.kind === 'none' ? undefined : session.chatKey;
 	const sessionModelId = session.kind === 'none' ? undefined : session.modelId;
-	const currentModel = sessionKey !== previous.sessionKey ? undefined : previous.currentModel;
+	const sessionChanged = sessionKey !== previous.sessionKey;
+	const currentModel = sessionChanged ? undefined : previous.currentModel;
+	const currentReason = sessionChanged ? undefined : previous.currentReason;
 	const sessionModel = sessionModelId ? models.available.find(model => model.identifier === sessionModelId) : undefined;
-	const configuredModelValue = session.kind === 'untitled' && chatKey !== previous.lastPushedChatKey ? models.configuredModel : undefined;
+	const fallbackModel = models.available.find(model => model.identifier === models.rememberedModelId) ?? models.fallbackModel;
+	const configuredModelValue = session.kind === 'untitled' && (chatKey !== previous.lastPushedChatKey || currentReason !== ModelSelectionReason.UserSelection) ? models.configuredModel : undefined;
 	const configuredModel = configuredModelValue
 		? resolveConfiguredModel(models.configuredModel, models.available)
 		: undefined;
 	if (configuredModel) {
+		if (chatKey === previous.lastPushedChatKey && currentReason === ModelSelectionReason.ConfiguredDefault && currentModel?.identifier === configuredModel.identifier) {
+			return { currentModel, currentReason, pendingSelection: undefined, effect: { kind: 'none' }, sessionKey, lastPushedChatKey: previous.lastPushedChatKey };
+		}
 		return applyResult(sessionKey, chatKey, configuredModel, ModelSelectionReason.ConfiguredDefault);
 	}
-	if (configuredModelValue) {
+	if (configuredModelValue && models.waitForConfiguredModel) {
 		return {
 			currentModel: undefined,
+			currentReason: undefined,
 			pendingSelection: { source: 'configured', reference: configuredModelValue },
 			effect: { kind: 'none' },
 			sessionKey,
 			lastPushedChatKey: previous.lastPushedChatKey,
+		};
+	}
+	if (session.kind === 'existing' && models.desiredModelResolution.kind === 'pending') {
+		return {
+			currentModel: undefined,
+			currentReason: undefined,
+			pendingSelection: { source: 'desired', reference: models.desiredModelResolution.identifier },
+			effect: currentModel ? { kind: 'clear', reason: ModelSelectionReason.SessionRestore } : { kind: 'none' },
+			sessionKey,
+			lastPushedChatKey: chatKey,
 		};
 	}
 
@@ -218,13 +263,14 @@ export function transitionModelSelection(input: IModelSelectionTransitionInput):
 		const initial = resolveInitialModelSelection({
 			configuredModelValue,
 			configuredModel,
+			waitForConfiguredModel: models.waitForConfiguredModel,
 			desiredModelResolution: models.desiredModelResolution,
 			desiredReason: sessionModelId ? ModelSelectionReason.SessionRestore : ModelSelectionReason.Remembered,
-			fallbackModel: models.available.find(model => model.identifier === models.rememberedModelId) ?? models.available[0],
+			fallbackModel,
 			fallbackReason: ModelSelectionReason.FirstAvailable,
 		});
 		if (initial.kind === 'pending') {
-			return { currentModel: undefined, pendingSelection: initial.selection, effect: { kind: 'none' }, sessionKey, lastPushedChatKey: previous.lastPushedChatKey };
+			return { currentModel: undefined, currentReason: undefined, pendingSelection: initial.selection, effect: { kind: 'none' }, sessionKey, lastPushedChatKey: previous.lastPushedChatKey };
 		}
 		if (initial.kind === 'apply') {
 			return applyResult(sessionKey, chatKey, initial.model, initial.reason);
@@ -234,6 +280,7 @@ export function transitionModelSelection(input: IModelSelectionTransitionInput):
 	if (models.available.length === 0) {
 		return {
 			currentModel: undefined,
+			currentReason: undefined,
 			pendingSelection: undefined,
 			effect: currentModel ? { kind: 'clear', reason: ModelSelectionReason.NoModels } : { kind: 'none' },
 			sessionKey,
@@ -242,28 +289,73 @@ export function transitionModelSelection(input: IModelSelectionTransitionInput):
 	}
 
 	if (session.kind === 'existing') {
-		if (!sessionModelId || sessionModel || models.desiredModelResolution.kind === 'pending') {
+		if (sessionModel) {
 			return {
 				currentModel: sessionModel,
-				pendingSelection: models.desiredModelResolution.kind === 'pending' ? { source: 'desired', reference: models.desiredModelResolution.identifier } : undefined,
-				effect: !sessionModel && currentModel ? { kind: 'clear', reason: ModelSelectionReason.SessionRestore } : { kind: 'none' },
+				currentReason: ModelSelectionReason.SessionRestore,
+				pendingSelection: undefined,
+				effect: { kind: 'none' },
 				sessionKey,
 				lastPushedChatKey: chatKey,
 			};
 		}
-		const fallback = models.available.find(model => model.identifier === models.rememberedModelId) ?? models.available[0];
-		return applyResult(sessionKey, chatKey, fallback, ModelSelectionReason.RemovedModelFallback);
+		if (fallbackModel) {
+			return applyResult(sessionKey, chatKey, fallbackModel, sessionModelId ? ModelSelectionReason.RemovedModelFallback : ModelSelectionReason.FirstAvailable);
+		}
+	}
+
+	const currentModelAvailable = !!currentModel && models.available.some(model => model.identifier === currentModel.identifier);
+	if (currentModel && !currentModelAvailable) {
+		if (models.desiredModelResolution.kind === 'pending') {
+			return {
+				currentModel: undefined,
+				currentReason: undefined,
+				pendingSelection: { source: 'desired', reference: models.desiredModelResolution.identifier },
+				effect: { kind: 'clear', reason: ModelSelectionReason.SessionRestore },
+				sessionKey,
+				lastPushedChatKey: previous.lastPushedChatKey,
+			};
+		}
+		if (fallbackModel) {
+			return applyResult(sessionKey, chatKey, fallbackModel, ModelSelectionReason.RemovedModelFallback);
+		}
+		return {
+			currentModel: undefined,
+			currentReason: undefined,
+			pendingSelection: undefined,
+			effect: { kind: 'clear', reason: ModelSelectionReason.NoModels },
+			sessionKey,
+			lastPushedChatKey: previous.lastPushedChatKey,
+		};
+	}
+
+	if (session.kind === 'untitled' && currentModel && currentReason === ModelSelectionReason.FirstAvailable) {
+		const initial = resolveInitialModelSelection({
+			configuredModelValue,
+			configuredModel,
+			waitForConfiguredModel: models.waitForConfiguredModel,
+			desiredModelResolution: models.desiredModelResolution,
+			desiredReason: ModelSelectionReason.Remembered,
+			fallbackModel,
+			fallbackReason: ModelSelectionReason.FirstAvailable,
+		});
+		if (initial.kind === 'pending') {
+			return { currentModel: undefined, currentReason: undefined, pendingSelection: initial.selection, effect: { kind: 'clear', reason: ModelSelectionReason.SessionRestore }, sessionKey, lastPushedChatKey: previous.lastPushedChatKey };
+		}
+		if (initial.kind === 'apply' && initial.model.identifier !== currentModel.identifier) {
+			return applyResult(sessionKey, chatKey, initial.model, initial.reason);
+		}
 	}
 
 	if (sessionModel && currentModel && sessionModel.identifier !== currentModel.identifier) {
-		return { currentModel: sessionModel, pendingSelection: undefined, effect: { kind: 'none' }, sessionKey, lastPushedChatKey: chatKey };
+		return { currentModel: sessionModel, currentReason: ModelSelectionReason.SessionRestore, pendingSelection: undefined, effect: { kind: 'none' }, sessionKey, lastPushedChatKey: chatKey };
 	}
 
 	if (session.kind === 'untitled' && chatKey !== previous.lastPushedChatKey && currentModel && models.available.some(model => model.identifier === currentModel.identifier)) {
 		return applyResult(sessionKey, chatKey, currentModel, ModelSelectionReason.NewChatRepush);
 	}
 
-	return { currentModel, pendingSelection: undefined, effect: { kind: 'none' }, sessionKey, lastPushedChatKey: previous.lastPushedChatKey };
+	return { currentModel, currentReason, pendingSelection: undefined, effect: { kind: 'none' }, sessionKey, lastPushedChatKey: previous.lastPushedChatKey };
 }
 
 function applyResult(
@@ -272,5 +364,5 @@ function applyResult(
 	model: ILanguageModelChatMetadataAndIdentifier,
 	reason: ModelSelectionApplyReason,
 ): IModelSelectionTransitionResult {
-	return { currentModel: model, pendingSelection: undefined, effect: { kind: 'apply', model, reason }, sessionKey, lastPushedChatKey: chatKey };
+	return { currentModel: model, currentReason: reason, pendingSelection: undefined, effect: { kind: 'apply', model, reason }, sessionKey, lastPushedChatKey: chatKey };
 }

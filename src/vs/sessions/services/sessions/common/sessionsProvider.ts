@@ -224,10 +224,10 @@ export interface ISessionsProvider {
 	renameSession(sessionId: string, title: string): Promise<void>;
 
 	/**
-	 * Get selectable models and the current resolution of `restoredModelId`.
+	 * Get selectable models and the current resolution of `desiredModelId`.
 	 * Callers wait for {@link onDidChangeModels} while the requested model is pending.
 	 */
-	getModelsSnapshot(sessionId: string, restoredModelId?: string): ISessionModelsSnapshot;
+	getModelsSnapshot(sessionId: string, desiredModelId?: string): ISessionModelsSnapshot;
 
 	/**
 	 * Get the presentation options for the sessions-core model picker for the

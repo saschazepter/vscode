@@ -287,6 +287,7 @@ class MobileChatInputConfigPicker extends Disposable {
 			await this._phonePresenter.showCombinedModeAndModelSheet(trigger, {
 				kind: 'session',
 				getSessionContext: () => createChatPhoneInputSessionContext(this._session.get()),
+				selectModel: modelIdentifier => this._switchToModel(modelIdentifier),
 			});
 			const afterCtx = this._getContext();
 			if (beforeCtx && afterCtx && matchesChatPhoneInputTarget(target, createChatPhoneInputSessionContext(afterCtx.session), this._uriIdentityService)) {

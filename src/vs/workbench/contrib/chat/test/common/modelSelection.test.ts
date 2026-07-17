@@ -47,14 +47,17 @@ function transition(overrides: ITransitionOverrides = {}) {
 		models: {
 			available: [first, second],
 			configuredModel: undefined,
+			waitForConfiguredModel: false,
 			rememberedModelId: undefined,
 			desiredModelResolution: { kind: 'notRequested' },
+			fallbackModel: first,
 			...overrides.models,
 		},
 		previous: {
 			sessionKey: 'provider/type',
 			lastPushedChatKey: 'chat:one',
 			currentModel: undefined,
+			currentReason: undefined,
 			...overrides.previous,
 		},
 	});
@@ -110,14 +113,16 @@ suite('ModelSelection', () => {
 
 	test('shares configured, desired, pending, then fallback precedence', () => {
 		assert.deepStrictEqual([
-			resolveInitialModelSelection({ configuredModelValue: 'second', configuredModel: second, desiredModelResolution: { kind: 'available', model: first }, desiredReason: ModelSelectionReason.Remembered, fallbackModel: first, fallbackReason: ModelSelectionReason.FirstAvailable }),
-			resolveInitialModelSelection({ configuredModelValue: 'second', configuredModel: undefined, desiredModelResolution: { kind: 'available', model: first }, desiredReason: ModelSelectionReason.Remembered, fallbackModel: first, fallbackReason: ModelSelectionReason.FirstAvailable }),
-			resolveInitialModelSelection({ configuredModelValue: undefined, configuredModel: undefined, desiredModelResolution: { kind: 'available', model: second }, desiredReason: ModelSelectionReason.Remembered, fallbackModel: first, fallbackReason: ModelSelectionReason.FirstAvailable }),
-			resolveInitialModelSelection({ configuredModelValue: undefined, configuredModel: undefined, desiredModelResolution: { kind: 'pending', identifier: second.identifier }, desiredReason: ModelSelectionReason.Remembered, fallbackModel: first, fallbackReason: ModelSelectionReason.FirstAvailable }),
-			resolveInitialModelSelection({ configuredModelValue: undefined, configuredModel: undefined, desiredModelResolution: { kind: 'unavailable', identifier: second.identifier }, desiredReason: ModelSelectionReason.Remembered, fallbackModel: first, fallbackReason: ModelSelectionReason.FirstAvailable }),
+			resolveInitialModelSelection({ configuredModelValue: 'second', configuredModel: second, waitForConfiguredModel: true, desiredModelResolution: { kind: 'available', model: first }, desiredReason: ModelSelectionReason.Remembered, fallbackModel: first, fallbackReason: ModelSelectionReason.FirstAvailable }),
+			resolveInitialModelSelection({ configuredModelValue: 'second', configuredModel: undefined, waitForConfiguredModel: true, desiredModelResolution: { kind: 'available', model: first }, desiredReason: ModelSelectionReason.Remembered, fallbackModel: first, fallbackReason: ModelSelectionReason.FirstAvailable }),
+			resolveInitialModelSelection({ configuredModelValue: 'second', configuredModel: undefined, waitForConfiguredModel: false, desiredModelResolution: { kind: 'available', model: first }, desiredReason: ModelSelectionReason.Remembered, fallbackModel: first, fallbackReason: ModelSelectionReason.FirstAvailable }),
+			resolveInitialModelSelection({ configuredModelValue: undefined, configuredModel: undefined, waitForConfiguredModel: false, desiredModelResolution: { kind: 'available', model: second }, desiredReason: ModelSelectionReason.Remembered, fallbackModel: first, fallbackReason: ModelSelectionReason.FirstAvailable }),
+			resolveInitialModelSelection({ configuredModelValue: undefined, configuredModel: undefined, waitForConfiguredModel: false, desiredModelResolution: { kind: 'pending', identifier: second.identifier }, desiredReason: ModelSelectionReason.Remembered, fallbackModel: first, fallbackReason: ModelSelectionReason.FirstAvailable }),
+			resolveInitialModelSelection({ configuredModelValue: undefined, configuredModel: undefined, waitForConfiguredModel: false, desiredModelResolution: { kind: 'unavailable', identifier: second.identifier }, desiredReason: ModelSelectionReason.Remembered, fallbackModel: first, fallbackReason: ModelSelectionReason.FirstAvailable }),
 		], [
 			{ kind: 'apply', model: second, reason: ModelSelectionReason.ConfiguredDefault },
 			{ kind: 'pending', selection: { source: 'configured', reference: 'second' } },
+			{ kind: 'apply', model: first, reason: ModelSelectionReason.Remembered },
 			{ kind: 'apply', model: second, reason: ModelSelectionReason.Remembered },
 			{ kind: 'pending', selection: { source: 'desired', reference: second.identifier } },
 			{ kind: 'apply', model: first, reason: ModelSelectionReason.FirstAvailable },
@@ -153,12 +158,15 @@ suite('ModelSelection', () => {
 			summarize(transition({ session: { kind: 'existing', modelId: second.identifier }, models: { desiredModelResolution: { kind: 'available', model: second } }, previous: { currentModel: first } })),
 			summarize(transition({ session: { kind: 'existing', modelId: 'target:missing' }, models: { desiredModelResolution: { kind: 'pending', identifier: 'target:missing' } }, previous: { currentModel: first } })),
 			summarize(transition({ session: { kind: 'existing', modelId: 'target:missing' }, models: { rememberedModelId: second.identifier, desiredModelResolution: { kind: 'unavailable', identifier: 'target:missing' } } })),
+			summarize(transition({ session: { kind: 'existing', modelId: undefined } })),
 		], [{
 			current: second.identifier, pending: undefined, effect: 'none', applied: undefined, reason: undefined, lastPushedChatKey: 'chat:one',
 		}, {
 			current: undefined, pending: { source: 'desired', reference: 'target:missing' }, effect: 'clear', applied: undefined, reason: ModelSelectionReason.SessionRestore, lastPushedChatKey: 'chat:one',
 		}, {
 			current: second.identifier, pending: undefined, effect: 'apply', applied: second.identifier, reason: ModelSelectionReason.RemovedModelFallback, lastPushedChatKey: 'chat:one',
+		}, {
+			current: first.identifier, pending: undefined, effect: 'apply', applied: first.identifier, reason: ModelSelectionReason.FirstAvailable, lastPushedChatKey: 'chat:one',
 		}]);
 	});
 
@@ -177,6 +185,87 @@ suite('ModelSelection', () => {
 		}, {
 			current: first.identifier, pending: undefined, effect: 'apply', applied: first.identifier, reason: ModelSelectionReason.FirstAvailable, lastPushedChatKey: 'chat:one',
 		}]);
+	});
+
+	test('does not reapply an unchanged configured model for the same chat', () => {
+		assert.deepStrictEqual([
+			summarize(transition({
+				models: { configuredModel: first.metadata.id },
+				previous: { currentModel: first, currentReason: ModelSelectionReason.ConfiguredDefault },
+			})),
+			summarize(transition({
+				models: { configuredModel: second.metadata.id },
+				previous: { currentModel: first, currentReason: ModelSelectionReason.ConfiguredDefault },
+			})),
+			summarize(transition({
+				models: { configuredModel: second.metadata.id },
+				previous: { currentModel: first, currentReason: ModelSelectionReason.UserSelection },
+			})),
+		], [{
+			current: first.identifier, pending: undefined, effect: 'none', applied: undefined, reason: undefined, lastPushedChatKey: 'chat:one',
+		}, {
+			current: second.identifier, pending: undefined, effect: 'apply', applied: second.identifier, reason: ModelSelectionReason.ConfiguredDefault, lastPushedChatKey: 'chat:one',
+		}, {
+			current: first.identifier, pending: undefined, effect: 'none', applied: undefined, reason: undefined, lastPushedChatKey: 'chat:one',
+		}]);
+	});
+
+	test('falls back when a configured model is inapplicable to an authoritative provider pool', () => {
+		assert.deepStrictEqual(summarize(transition({
+			models: {
+				configuredModel: 'missing-family',
+				waitForConfiguredModel: false,
+				available: [first],
+				fallbackModel: first,
+				desiredModelResolution: { kind: 'notRequested' },
+			},
+			previous: { lastPushedChatKey: 'chat:previous' },
+		})), {
+			current: first.identifier,
+			pending: undefined,
+			effect: 'apply',
+			applied: first.identifier,
+			reason: ModelSelectionReason.FirstAvailable,
+			lastPushedChatKey: 'chat:one',
+		});
+	});
+
+	test('preserves pending restoration for an empty existing-session catalog', () => {
+		assert.deepStrictEqual(summarize(transition({
+			session: { kind: 'existing', modelId: second.identifier },
+			models: {
+				available: [],
+				desiredModelResolution: { kind: 'pending', identifier: second.identifier },
+				fallbackModel: undefined,
+			},
+			previous: { currentModel: first },
+		})), {
+			current: undefined,
+			pending: { source: 'desired', reference: second.identifier },
+			effect: 'clear',
+			applied: undefined,
+			reason: ModelSelectionReason.SessionRestore,
+			lastPushedChatKey: 'chat:one',
+		});
+	});
+
+	test('repairs a stale current model while other models remain available', () => {
+		const removed = model('target:removed');
+		assert.deepStrictEqual(summarize(transition({
+			models: {
+				available: [first],
+				desiredModelResolution: { kind: 'unavailable', identifier: removed.identifier },
+				fallbackModel: first,
+			},
+			previous: { currentModel: removed },
+		})), {
+			current: first.identifier,
+			pending: undefined,
+			effect: 'apply',
+			applied: first.identifier,
+			reason: ModelSelectionReason.RemovedModelFallback,
+			lastPushedChatKey: 'chat:one',
+		});
 	});
 
 	test('resets on scope change, clears empty pools, and re-pushes reused chats', () => {

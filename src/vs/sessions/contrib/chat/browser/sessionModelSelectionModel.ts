@@ -8,9 +8,9 @@ import { autorun, IObservable, observableValue } from '../../../../base/common/o
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
-import { ChatConfiguration } from '../../../../workbench/contrib/chat/common/constants.js';
+import { ChatAgentLocation, ChatConfiguration } from '../../../../workbench/contrib/chat/common/constants.js';
 import { ILanguageModelChatMetadataAndIdentifier } from '../../../../workbench/contrib/chat/common/languageModels.js';
-import { IPendingModelSelection, transitionModelSelection } from '../../../../workbench/contrib/chat/common/modelSelection.js';
+import { IPendingModelSelection, ModelSelectionApplyReason, ModelSelectionReason, transitionModelSelection } from '../../../../workbench/contrib/chat/common/modelSelection.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { ISessionModelPickerOptions, ISessionsProvider } from '../../../services/sessions/common/sessionsProvider.js';
 import { SessionStatus } from '../../../services/sessions/common/session.js';
@@ -40,39 +40,19 @@ export function modelPickerStorageKey(providerId: string, sessionType: string): 
 	return `sessions.modelPicker.${providerId}.${sessionType}.selectedModelId`;
 }
 
-export interface ISessionModelSelectionTarget {
-	readonly providerId: string;
-	readonly sessionType: string;
-	readonly sessionId: string;
-}
-
-export function persistSessionModelSelection(
-	session: ISessionModelSelectionTarget,
+function persistSessionModelSelection(
+	session: Pick<IActiveSession, 'providerId' | 'sessionType' | 'sessionId'>,
 	provider: Pick<ISessionsProvider, 'setModel'>,
 	storageService: Pick<IStorageService, 'store'>,
 	model: ILanguageModelChatMetadataAndIdentifier,
 ): void {
+	provider.setModel(session.sessionId, model.identifier);
 	storageService.store(
 		modelPickerStorageKey(session.providerId, session.sessionType),
 		model.identifier,
 		StorageScope.PROFILE,
 		StorageTarget.MACHINE,
 	);
-	provider.setModel(session.sessionId, model.identifier);
-}
-
-export function selectAvailableSessionModel(
-	session: ISessionModelSelectionTarget,
-	provider: Pick<ISessionsProvider, 'getModelsSnapshot' | 'setModel'>,
-	storageService: Pick<IStorageService, 'store'>,
-	modelIdentifier: string,
-): ILanguageModelChatMetadataAndIdentifier | undefined {
-	const model = provider.getModelsSnapshot(session.sessionId).models.find(model => model.identifier === modelIdentifier);
-	if (!model) {
-		return undefined;
-	}
-	persistSessionModelSelection(session, provider, storageService, model);
-	return model;
 }
 
 export function hasSelectableModel(
@@ -115,6 +95,7 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 	private _provider: ISessionsProvider | undefined;
 	private _previousSessionKey: string | undefined;
 	private _lastPushedChatKey: string | undefined;
+	private _currentReason: ModelSelectionApplyReason | undefined;
 
 	constructor(
 		private readonly _session: IObservable<IActiveSession | undefined>,
@@ -153,6 +134,10 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 		}
 
 		const options = normalizeModelPickerOptions(provider.getModelPickerOptions(session.sessionId));
+		const previousState = this._state.get();
+		const previousSessionKey = this._previousSessionKey;
+		const previousLastPushedChatKey = this._lastPushedChatKey;
+		const previousReason = this._currentReason;
 		this._state.set({
 			models,
 			options,
@@ -162,7 +147,22 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 		}, undefined);
 		this._previousSessionKey = this._sessionKey(session);
 		this._lastPushedChatKey = session.activeChat.get().resource.toString();
-		this._applyModel(session, provider, model);
+		this._currentReason = ModelSelectionReason.UserSelection;
+		try {
+			persistSessionModelSelection(session, provider, this._storageService, model);
+		} catch (error) {
+			this._previousSessionKey = previousSessionKey;
+			this._lastPushedChatKey = previousLastPushedChatKey;
+			this._currentReason = previousReason;
+			this._state.set({
+				models,
+				options,
+				hasSelectableModel: hasSelectableModel(models, options),
+				currentModel: previousState.currentModel,
+				pendingSelection: previousState.pendingSelection,
+			}, undefined);
+			throw error;
+		}
 		return true;
 	}
 
@@ -170,11 +170,15 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 		const provider = session ? this._sessionsProvidersService.getProvider(session.providerId) : undefined;
 		this._setProvider(provider);
 		const sessionKey = session ? this._sessionKey(session) : undefined;
+		const currentReason = sessionKey === this._previousSessionKey ? this._currentReason : undefined;
 		const sessionModelId = session?.modelId.get();
 		const rememberedModelId = session
 			? this._storageService.get(modelPickerStorageKey(session.providerId, session.sessionType), StorageScope.PROFILE)
 			: undefined;
-		const desiredModelIdentifier = sessionModelId ?? rememberedModelId;
+		// A provisional fallback keeps chasing the remembered model instead of its temporary provider model id.
+		const desiredModelIdentifier = session?.status.get() === SessionStatus.Untitled
+			? (currentReason === ModelSelectionReason.FirstAvailable ? rememberedModelId : (sessionModelId ?? rememberedModelId))
+			: sessionModelId;
 		const snapshot = session && provider ? provider.getModelsSnapshot(session.sessionId, desiredModelIdentifier) : { models: [], desiredModelResolution: { kind: 'notRequested' } as const };
 		const models = snapshot.models;
 		const options = normalizeModelPickerOptions(session && provider ? provider.getModelPickerOptions(session.sessionId) : undefined);
@@ -188,18 +192,22 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 			models: {
 				available: models,
 				configuredModel: this._configurationService.getValue<string>(ChatConfiguration.DefaultModel),
+				waitForConfiguredModel: false,
 				rememberedModelId,
 				desiredModelResolution: snapshot.desiredModelResolution,
+				fallbackModel: models.find(model => model.metadata.isDefaultForLocation[ChatAgentLocation.Chat]) ?? models[0],
 			},
 			previous: {
 				sessionKey: this._previousSessionKey,
 				lastPushedChatKey: this._lastPushedChatKey,
 				currentModel: this._state.get().currentModel,
+				currentReason,
 			},
 		});
 
 		this._previousSessionKey = result.sessionKey;
 		this._lastPushedChatKey = result.lastPushedChatKey;
+		this._currentReason = result.currentReason;
 		this._state.set({
 			models,
 			options,
@@ -209,7 +217,7 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 		}, undefined);
 
 		if (result.effect.kind === 'apply' && session && provider) {
-			this._applyModel(session, provider, result.effect.model);
+			provider.setModel(session.sessionId, result.effect.model.identifier);
 		}
 	}
 
@@ -219,10 +227,6 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 		}
 		this._provider = provider;
 		this._providerListener.value = provider?.onDidChangeModels(() => this._refresh());
-	}
-
-	private _applyModel(session: IActiveSession, provider: ISessionsProvider, model: ILanguageModelChatMetadataAndIdentifier): void {
-		persistSessionModelSelection(session, provider, this._storageService, model);
 	}
 
 	private _sessionKey(session: IActiveSession): string {

@@ -11,14 +11,14 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/tes
 import { IConfigurationChangeEvent, IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { ExtensionIdentifier } from '../../../../../platform/extensions/common/extensions.js';
 import { InMemoryStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
-import { ChatConfiguration } from '../../../../../workbench/contrib/chat/common/constants.js';
+import { ChatAgentLocation, ChatConfiguration } from '../../../../../workbench/contrib/chat/common/constants.js';
 import { ILanguageModelChatMetadataAndIdentifier } from '../../../../../workbench/contrib/chat/common/languageModels.js';
 import { resolveModelIdentifier } from '../../../../../workbench/contrib/chat/common/modelSelection.js';
 import { ISessionsProvidersService } from '../../../../services/sessions/browser/sessionsProvidersService.js';
 import { ISessionsProvider, ISessionModelPickerOptions } from '../../../../services/sessions/common/sessionsProvider.js';
 import { IChat, SessionStatus } from '../../../../services/sessions/common/session.js';
 import { IActiveSession } from '../../../../services/sessions/common/sessionsManagement.js';
-import { modelPickerStorageKey, selectAvailableSessionModel, SessionModelSelectionModel } from '../../browser/sessionModelSelectionModel.js';
+import { modelPickerStorageKey, SessionModelSelectionModel } from '../../browser/sessionModelSelectionModel.js';
 
 function model(identifier: string): ILanguageModelChatMetadataAndIdentifier {
 	return {
@@ -39,6 +39,14 @@ function model(identifier: string): ILanguageModelChatMetadataAndIdentifier {
 
 const first = model('test/first');
 const second = model('test/second');
+const auto = {
+	...model('copilot/auto'),
+	metadata: {
+		...model('copilot/auto').metadata,
+		id: 'auto',
+		isDefaultForLocation: { [ChatAgentLocation.Chat]: true },
+	},
+};
 
 interface ITestSession {
 	readonly session: IActiveSession;
@@ -68,7 +76,7 @@ interface ITestProvider extends ISessionsProvider {
 	models: readonly ILanguageModelChatMetadataAndIdentifier[];
 	readonly modelChanges: Emitter<void>;
 	readonly writes: string[];
-	readonly restoredModelIds: (string | undefined)[];
+	readonly desiredModelIds: (string | undefined)[];
 	getModelsCalls: number;
 	modelsResolved: boolean;
 	dispose(): void;
@@ -81,15 +89,15 @@ function createProvider(id: string, onSetModel?: (modelIdentifier: string) => vo
 		models: [first, second],
 		modelChanges,
 		writes: [],
-		restoredModelIds: [],
+		desiredModelIds: [],
 		getModelsCalls: 0,
 		modelsResolved: true,
 		dispose: () => modelChanges.dispose(),
 		onDidChangeModels: modelChanges.event,
-		getModelsSnapshot(_sessionId: string, restoredModelId?: string) {
+		getModelsSnapshot(_sessionId: string, desiredModelId?: string) {
 			provider.getModelsCalls++;
-			provider.restoredModelIds.push(restoredModelId);
-			return { models: provider.models, desiredModelResolution: resolveModelIdentifier(provider.models, restoredModelId, provider.modelsResolved) };
+			provider.desiredModelIds.push(desiredModelId);
+			return { models: provider.models, desiredModelResolution: resolveModelIdentifier(provider.models, desiredModelId, provider.modelsResolved) };
 		},
 		getModelPickerOptions(): ISessionModelPickerOptions {
 			return {
@@ -231,28 +239,47 @@ suite('SessionModelSelectionModel', () => {
 		});
 	});
 
-	test('validates stateless phone selection before persisting it', () => {
+	test('does not remember a selection rejected by the provider', () => {
+		const testSession = createSession('provider', SessionStatus.Completed, first.identifier);
 		const storage = disposables.add(new InMemoryStorageService());
-		const writes: string[] = [];
-		const session = { providerId: 'provider', sessionType: 'type', sessionId: 'session' };
-		const provider = {
-			getModelsSnapshot: () => ({ models: [first], desiredModelResolution: { kind: 'notRequested' as const } }),
-			setModel: (_sessionId: string, modelIdentifier: string) => writes.push(modelIdentifier),
-		};
+		const provider = disposables.add(createProvider('provider', () => { throw new Error('rejected'); }));
+		const selection = disposables.add(new SessionModelSelectionModel(
+			observableValue<IActiveSession | undefined>('session', testSession.session),
+			createProvidersService([provider]),
+			storage,
+			createConfigurationService(),
+		));
 
-		const selected = selectAvailableSessionModel(session, provider, storage, first.identifier);
-		const rejected = selectAvailableSessionModel(session, provider, storage, second.identifier);
-
+		assert.throws(() => selection.selectModel(second.identifier), /rejected/);
 		assert.deepStrictEqual({
-			selected: selected?.identifier,
-			rejected,
+			current: selection.state.get().currentModel?.identifier,
 			stored: storage.get(modelPickerStorageKey('provider', 'type'), StorageScope.PROFILE),
-			writes,
 		}, {
-			selected: first.identifier,
-			rejected: undefined,
-			stored: first.identifier,
-			writes: [first.identifier],
+			current: first.identifier,
+			stored: undefined,
+		});
+	});
+
+	test('clears a rejected draft selection when the provider has no previous model', () => {
+		const testSession = createSession('provider', SessionStatus.Untitled);
+		const storage = disposables.add(new InMemoryStorageService());
+		const provider = disposables.add(createProvider('provider', () => { throw new Error('rejected'); }));
+		provider.models = [];
+		const selection = disposables.add(new SessionModelSelectionModel(
+			observableValue<IActiveSession | undefined>('session', testSession.session),
+			createProvidersService([provider]),
+			storage,
+			createConfigurationService(),
+		));
+		provider.models = [second];
+
+		assert.throws(() => selection.selectModel(second.identifier), /rejected/);
+		assert.deepStrictEqual({
+			current: selection.state.get().currentModel?.identifier,
+			stored: storage.get(modelPickerStorageKey('provider', 'type'), StorageScope.PROFILE),
+		}, {
+			current: undefined,
+			stored: undefined,
 		});
 	});
 
@@ -338,7 +365,7 @@ suite('SessionModelSelectionModel', () => {
 			pending: selection.state.get().pendingSelection,
 			stored: storage.get(modelPickerStorageKey('provider', 'type'), StorageScope.PROFILE),
 			writes: [...provider.writes],
-			restoredModelIds: [...provider.restoredModelIds],
+			desiredModelIds: [...provider.desiredModelIds],
 		};
 
 		provider.models = [first, second];
@@ -352,7 +379,6 @@ suite('SessionModelSelectionModel', () => {
 				pending: selection.state.get().pendingSelection,
 				stored: storage.get(modelPickerStorageKey('provider', 'type'), StorageScope.PROFILE),
 				writes: provider.writes,
-				restoredModelIds: provider.restoredModelIds,
 			},
 		}, {
 			beforeResolve: {
@@ -360,15 +386,76 @@ suite('SessionModelSelectionModel', () => {
 				pending: { source: 'desired', reference: second.identifier },
 				stored: second.identifier,
 				writes: [],
-				restoredModelIds: [second.identifier],
+				desiredModelIds: [second.identifier],
 			},
 			afterResolve: {
 				current: second.identifier,
 				pending: undefined,
 				stored: second.identifier,
 				writes: [second.identifier],
-				restoredModelIds: [second.identifier, second.identifier, second.identifier],
 			},
+		});
+		assert.ok(provider.desiredModelIds.every(identifier => identifier === second.identifier));
+	});
+
+	test('replaces but does not remember a provisional first model when the default arrives later', () => {
+		const testSession = createSession('provider', SessionStatus.Untitled);
+		const provider = disposables.add(createProvider('provider', identifier => testSession.modelId.set(identifier, undefined)));
+		provider.models = [first];
+		provider.modelsResolved = false;
+		const storage = disposables.add(new InMemoryStorageService());
+		const selection = disposables.add(new SessionModelSelectionModel(
+			observableValue<IActiveSession | undefined>('session', testSession.session),
+			createProvidersService([provider]),
+			storage,
+			createConfigurationService(),
+		));
+
+		provider.models = [first, auto];
+		provider.modelsResolved = true;
+		provider.modelChanges.fire();
+
+		assert.deepStrictEqual({
+			current: selection.state.get().currentModel?.identifier,
+			stored: storage.get(modelPickerStorageKey('provider', 'type'), StorageScope.PROFILE),
+			writes: provider.writes,
+		}, {
+			current: auto.identifier,
+			stored: undefined,
+			writes: [first.identifier, auto.identifier],
+		});
+	});
+
+	test('falls back instead of waiting for an inapplicable configured model', () => {
+		const testSession = createSession('provider', SessionStatus.Untitled);
+		const provider = disposables.add(createProvider('provider', identifier => testSession.modelId.set(identifier, undefined)));
+		const selection = disposables.add(new SessionModelSelectionModel(
+			observableValue<IActiveSession | undefined>('session', testSession.session),
+			createProvidersService([provider]),
+			disposables.add(new InMemoryStorageService()),
+			createConfigurationService('missing-family'),
+		));
+
+		const beforeArrival = {
+			current: selection.state.get().currentModel?.identifier,
+			pending: selection.state.get().pendingSelection,
+		};
+		const configured = {
+			...second,
+			metadata: { ...second.metadata, id: 'missing-family' },
+		};
+		provider.models = [first, configured];
+		provider.modelChanges.fire();
+
+		assert.deepStrictEqual({
+			beforeArrival,
+			afterArrival: {
+				current: selection.state.get().currentModel?.identifier,
+				pending: selection.state.get().pendingSelection,
+			},
+		}, {
+			beforeArrival: { current: first.identifier, pending: undefined },
+			afterArrival: { current: configured.identifier, pending: undefined },
 		});
 	});
 
@@ -403,6 +490,28 @@ suite('SessionModelSelectionModel', () => {
 			pending: undefined,
 			stored: first.identifier,
 			writes: [first.identifier],
+		});
+	});
+
+	test('explicit selection survives configured-default refreshes', () => {
+		const testSession = createSession('provider', SessionStatus.Untitled);
+		const provider = disposables.add(createProvider('provider', identifier => testSession.modelId.set(identifier, undefined)));
+		const selection = disposables.add(new SessionModelSelectionModel(
+			observableValue<IActiveSession | undefined>('session', testSession.session),
+			createProvidersService([provider]),
+			disposables.add(new InMemoryStorageService()),
+			createConfigurationService(second.metadata.id),
+		));
+
+		selection.selectModel(first.identifier);
+		provider.modelChanges.fire();
+
+		assert.deepStrictEqual({
+			current: selection.state.get().currentModel?.identifier,
+			writes: provider.writes,
+		}, {
+			current: first.identifier,
+			writes: [second.identifier, first.identifier],
 		});
 	});
 

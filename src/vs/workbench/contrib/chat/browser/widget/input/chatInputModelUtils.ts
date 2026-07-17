@@ -243,6 +243,18 @@ export function findDefaultModel(
 	return models.find(m => m.metadata.isDefaultForLocation[location]) || models[0];
 }
 
+export function findReplacementForProvisionalModel(
+	currentModelId: string | undefined,
+	provisionalModelId: string | undefined,
+	models: readonly ILanguageModelChatMetadataAndIdentifier[],
+	location: ChatAgentLocation,
+): ILanguageModelChatMetadataAndIdentifier | undefined {
+	if (!provisionalModelId || currentModelId !== provisionalModelId) {
+		return undefined;
+	}
+	return models.find(model => model.metadata.isDefaultForLocation[location]);
+}
+
 /**
  * Determine whether a persisted model selection should be restored.
  *

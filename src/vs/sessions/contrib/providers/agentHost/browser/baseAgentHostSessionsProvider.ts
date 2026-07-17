@@ -41,8 +41,8 @@ import { IChatSendRequestOptions, IChatService, type IChatModelReference } from 
 import { IChatSessionFileChange, IChatSessionFileChange2, IChatSessionsService } from '../../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, ChatPermissionLevel, getChatPermissionLevelFromDefaultConfiguration, isChatPermissionLevel, type IChatDefaultConfiguration } from '../../../../../workbench/contrib/chat/common/constants.js';
 import { isAutoApprovePolicyRestricted, normalizeSessionConfigValue } from '../../../../../workbench/contrib/chat/common/agentHostConfigPolicy.js';
-import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../../../workbench/contrib/chat/common/languageModels.js';
-import { resolveModelIdentifier } from '../../../../../workbench/contrib/chat/common/modelSelection.js';
+import { ILanguageModelsService } from '../../../../../workbench/contrib/chat/common/languageModels.js';
+import { getRegisteredLanguageModels, resolveModelIdentifier, resolveModelIdentifierFromLanguageModels } from '../../../../../workbench/contrib/chat/common/modelSelection.js';
 import { buildMutableConfigSchema, IAgentHostMcpServer, IAgentHostSessionsProvider, resolvedConfigsEqual } from '../../../../common/agentHostSessionsProvider.js';
 import { agentHostSessionWorkspaceKey } from '../../../../common/agentHostSessionWorkspace.js';
 import { isSessionConfigComplete } from '../../../../common/sessionConfig.js';
@@ -2835,23 +2835,22 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		return Event.signal(this._languageModelsService.onDidChangeLanguageModels);
 	}
 
-	getModelsSnapshot(sessionId: string, restoredModelId?: string): ISessionModelsSnapshot {
+	getModelsSnapshot(sessionId: string, desiredModelId?: string): ISessionModelsSnapshot {
 		// Agent-host models are registered against the session's resource
 		// scheme (the per-host/per-agent `targetChatSessionType`). Resolve the
 		// scheme from the session and return the matching language models.
 		const resourceScheme = this._resolveSessionResourceScheme(sessionId);
 		if (!resourceScheme) {
-			return { models: [], desiredModelResolution: resolveModelIdentifier([], restoredModelId, false) };
+			return {
+				models: [],
+				desiredModelResolution: resolveModelIdentifier([], desiredModelId, false),
+			};
 		}
-		const models = this._languageModelsService.getLanguageModelIds()
-			.map((id): ILanguageModelChatMetadataAndIdentifier | undefined => {
-				const metadata = this._languageModelsService.lookupLanguageModel(id);
-				return metadata && metadata.targetChatSessionType === resourceScheme ? { identifier: id, metadata } : undefined;
-			})
-			.filter((m): m is ILanguageModelChatMetadataAndIdentifier => !!m);
+		const allModels = getRegisteredLanguageModels(this._languageModelsService);
+		const models = allModels.filter(model => model.metadata.targetChatSessionType === resourceScheme);
 		return {
 			models,
-			desiredModelResolution: resolveModelIdentifier(models, restoredModelId, this._languageModelsService.hasResolvedVendor(resourceScheme)),
+			desiredModelResolution: resolveModelIdentifierFromLanguageModels(models, desiredModelId, this._languageModelsService, allModels),
 		};
 	}
 
