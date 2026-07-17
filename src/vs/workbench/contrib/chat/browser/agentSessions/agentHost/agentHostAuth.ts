@@ -5,7 +5,7 @@
 
 import { fetchAuthorizationServerMetadata } from '../../../../../../base/common/oauth.js';
 import { URI } from '../../../../../../base/common/uri.js';
-import { type ProtectedResourceMetadata } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
+import { type McpOAuthClient, type ProtectedResourceMetadata } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { type AgentInfo } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { ILabelService } from '../../../../../../platform/label/common/label.js';
@@ -162,7 +162,9 @@ export interface IAgentHostMcpAuthenticationOptionsBase {
 	readonly mcpServerId: string;
 	readonly mcpServerName: string;
 	readonly mcpServerUrl: string;
+	readonly oauthClient?: McpOAuthClient;
 	readonly scopes: readonly string[];
+	readonly authorizationServerMetadataFetcher?: typeof fetchAuthorizationServerMetadata;
 	/**
 	 * Identifies the agent host backing this MCP server so remembered-auth
 	 * entries can be surfaced in their own section of the "Manage Trusted MCP
@@ -276,10 +278,22 @@ export async function resolveMcpServerAuthentication(
 	const agentHostMeta = options.agentHost
 		? { authority: options.agentHost.authority, label: accessor.get(ILabelService).getHostLabel(options.agentHost.scheme, options.agentHost.authority) }
 		: undefined;
-	const scopes = options.scopes;
+	// GitHub MCP supports demand-driven step-up auth, while other servers may reject authorization requests with no scopes.
+	const scopes = options.scopes.length > 0 || isGitHubMcpResource(protectedResource)
+		? options.scopes
+		: protectedResource.scopes_supported ?? [];
 	for (const authorizationServer of protectedResource.authorization_servers ?? []) {
 		const authorizationServerUri = URI.parse(authorizationServer);
-		const providerId = await getOrCreateProviderForMcpResource(authorizationServerUri, protectedResource, authenticationService, logService, options.logPrefix, options.allowInteraction);
+		const providerId = await getOrCreateProviderForMcpResource(
+			authorizationServerUri,
+			protectedResource,
+			options.oauthClient,
+			authenticationService,
+			logService,
+			options.logPrefix,
+			options.allowInteraction,
+			options.authorizationServerMetadataFetcher ?? fetchAuthorizationServerMetadata,
+		);
 		if (!providerId) {
 			continue;
 		}
@@ -311,13 +325,19 @@ export async function resolveMcpServerAuthentication(
 	return false;
 }
 
+function isGitHubMcpResource(resource: ProtectedResourceMetadata): boolean {
+	return resource.resource_name === 'GitHub MCP Server';
+}
+
 async function getOrCreateProviderForMcpResource(
 	authorizationServer: URI,
 	protectedResource: ProtectedResourceMetadata,
+	oauthClient: McpOAuthClient | undefined,
 	authenticationService: IAuthenticationService,
 	logService: ILogService,
 	logPrefix: string,
 	allowCreation: boolean,
+	authorizationServerMetadataFetcher: typeof fetchAuthorizationServerMetadata,
 ): Promise<string | undefined> {
 	const resourceUri = URI.parse(protectedResource.resource);
 	const existing = await authenticationService.getOrActivateProviderIdForServer(authorizationServer, resourceUri);
@@ -326,8 +346,8 @@ async function getOrCreateProviderForMcpResource(
 	}
 
 	try {
-		const { metadata } = await fetchAuthorizationServerMetadata(authorizationServer.toString(true));
-		const provider = await authenticationService.createDynamicAuthenticationProvider(authorizationServer, metadata, protectedResource);
+		const { metadata } = await authorizationServerMetadataFetcher(authorizationServer.toString(true));
+		const provider = await authenticationService.createDynamicAuthenticationProvider(authorizationServer, metadata, protectedResource, oauthClient?.clientId, oauthClient?.clientSecret);
 		return provider?.id;
 	} catch (err) {
 		logService.warn(`${logPrefix} Failed to create MCP auth provider for ${authorizationServer.toString(true)}`, err);

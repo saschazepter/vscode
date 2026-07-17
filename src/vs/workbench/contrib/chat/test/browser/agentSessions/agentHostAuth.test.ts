@@ -20,11 +20,13 @@ function createMockAuthService(overrides: {
 	getOrActivateProviderIdForServer?: (serverUri: URI, resourceUri: URI) => Promise<string | undefined>;
 	getSessions?: (providerId: string, scopes: string[] | undefined, options: any, activate: boolean) => Promise<readonly { scopes: string[]; accessToken: string }[]>;
 	createSession?: (providerId: string, scopes: string[], options: any) => Promise<{ accessToken: string }>;
+	createDynamicAuthenticationProvider?: (...args: Parameters<IAuthenticationService['createDynamicAuthenticationProvider']>) => Promise<{ readonly id: string } | undefined>;
 }): IAuthenticationService {
 	return {
 		getOrActivateProviderIdForServer: overrides.getOrActivateProviderIdForServer ?? (() => Promise.resolve(undefined)),
 		getSessions: overrides.getSessions ?? (() => Promise.resolve([])),
 		createSession: overrides.createSession ?? (() => Promise.reject(new Error('Unexpected createSession call'))),
+		createDynamicAuthenticationProvider: overrides.createDynamicAuthenticationProvider ?? (() => Promise.resolve(undefined)),
 	} as unknown as IAuthenticationService;
 }
 
@@ -238,6 +240,84 @@ suite('resolveMcpServerAuthentication', () => {
 		});
 	});
 
+	test('uses supported scopes when the challenge does not specify scopes', async () => {
+		const requestedScopes: (readonly string[])[] = [];
+		const authService = createMockAuthService({
+			getOrActivateProviderIdForServer: () => Promise.resolve('provider-1'),
+			getSessions: (_providerId, scopes) => {
+				requestedScopes.push(scopes ?? []);
+				return Promise.resolve([]);
+			},
+		});
+		const instantiationService = disposables.add(new TestInstantiationService());
+		instantiationService.stub(IAuthenticationService, authService);
+		instantiationService.stub(IAuthenticationMcpAccessService, {});
+		instantiationService.stub(IAuthenticationMcpService, {
+			getAccountPreference: () => undefined,
+		});
+		instantiationService.stub(IAuthenticationMcpUsageService, {});
+		instantiationService.stub(ILogService, new NullLogService());
+
+		const result = await instantiationService.invokeFunction(resolveMcpServerAuthentication, {
+			resource: 'https://mcp.slack.com',
+			resource_name: 'Slack API',
+			authorization_servers: ['https://mcp.slack.com'],
+			scopes_supported: ['search:read.public', 'chat:write'],
+		}, {
+			allowInteraction: false,
+			logPrefix: '[AgentHost]',
+			mcpServerId: 'slack',
+			mcpServerName: 'Slack',
+			mcpServerUrl: 'https://mcp.slack.com',
+			scopes: [],
+			authenticate: async () => { },
+		});
+
+		assert.deepStrictEqual({ result, requestedScopes }, {
+			result: false,
+			requestedScopes: [['search:read.public', 'chat:write']],
+		});
+	});
+
+	test('does not eagerly request GitHub MCP supported scopes', async () => {
+		const requestedScopes: (readonly string[])[] = [];
+		const authService = createMockAuthService({
+			getOrActivateProviderIdForServer: () => Promise.resolve('provider-1'),
+			getSessions: (_providerId, scopes) => {
+				requestedScopes.push(scopes ?? []);
+				return Promise.resolve([]);
+			},
+		});
+		const instantiationService = disposables.add(new TestInstantiationService());
+		instantiationService.stub(IAuthenticationService, authService);
+		instantiationService.stub(IAuthenticationMcpAccessService, {});
+		instantiationService.stub(IAuthenticationMcpService, {
+			getAccountPreference: () => undefined,
+		});
+		instantiationService.stub(IAuthenticationMcpUsageService, {});
+		instantiationService.stub(ILogService, new NullLogService());
+
+		const result = await instantiationService.invokeFunction(resolveMcpServerAuthentication, {
+			resource: 'https://api.githubcopilot.com/mcp',
+			resource_name: 'GitHub MCP Server',
+			authorization_servers: ['https://github.com/login/oauth'],
+			scopes_supported: ['repo', 'notifications'],
+		}, {
+			allowInteraction: false,
+			logPrefix: '[AgentHost]',
+			mcpServerId: 'github',
+			mcpServerName: 'GitHub',
+			mcpServerUrl: 'https://api.githubcopilot.com/mcp',
+			scopes: [],
+			authenticate: async () => { },
+		});
+
+		assert.deepStrictEqual({ result, requestedScopes }, {
+			result: false,
+			requestedScopes: [[]],
+		});
+	});
+
 	test('does not attempt dynamic provider creation without user interaction', async () => {
 		const warnings: string[] = [];
 		const logService = new class extends NullLogService {
@@ -270,6 +350,104 @@ suite('resolveMcpServerAuthentication', () => {
 		assert.deepStrictEqual({ result, warnings }, {
 			result: false,
 			warnings: [],
+		});
+	});
+
+	test('uses configured public and confidential clients when creating a dynamic provider', async () => {
+		const providerCreations: { authorizationServer: string; resource: string | undefined; clientId: string | undefined; clientSecret: string | undefined }[] = [];
+		const authenticateRequests: { resource: string; scopes?: readonly string[]; token: string }[] = [];
+		const authService = createMockAuthService({
+			getSessions: () => Promise.resolve([{
+				scopes: ['search:read.public'],
+				accessToken: 'slack-token',
+				account: { id: 'account-id', label: 'Slack Account' },
+			}]),
+			createDynamicAuthenticationProvider: async (authorizationServer, _metadata, resource, clientId, clientSecret) => {
+				providerCreations.push({
+					authorizationServer: authorizationServer.toString(true),
+					resource: resource?.resource,
+					clientId,
+					clientSecret,
+				});
+				return { id: 'dynamic-provider' };
+			},
+		});
+		const instantiationService = disposables.add(new TestInstantiationService());
+		instantiationService.stub(IAuthenticationService, authService);
+		instantiationService.stub(IAuthenticationMcpAccessService, {
+			isAccessAllowedForUrl: () => true,
+		});
+		instantiationService.stub(IAuthenticationMcpService, {
+			getAccountPreference: () => 'Slack Account',
+		});
+		instantiationService.stub(IAuthenticationMcpUsageService, {
+			addAccountUsage: () => { },
+		});
+		instantiationService.stub(ILogService, new NullLogService());
+
+		const results: boolean[] = [];
+		for (const oauthClient of [
+			{ clientId: 'public-client-id' },
+			{ clientId: 'confidential-client-id', clientSecret: 'confidential-client-secret' },
+		]) {
+			results.push(await instantiationService.invokeFunction(resolveMcpServerAuthentication, {
+				resource: 'https://mcp.slack.com',
+				authorization_servers: ['https://mcp.slack.com'],
+				scopes_supported: ['search:read.public'],
+			}, {
+				allowInteraction: true,
+				logPrefix: '[AgentHost]',
+				mcpServerId: 'slack',
+				mcpServerName: 'Slack',
+				mcpServerUrl: 'https://mcp.slack.com',
+				oauthClient,
+				scopes: ['search:read.public'],
+				authorizationServerMetadataFetcher: async authorizationServer => ({
+					metadata: {
+						issuer: authorizationServer,
+						response_types_supported: ['code'],
+					},
+					discoveryUrl: `${authorizationServer}/.well-known/oauth-authorization-server`,
+					errors: [],
+				}),
+				authenticate: async request => {
+					authenticateRequests.push(request);
+				},
+			}));
+		}
+
+		assert.deepStrictEqual({
+			results,
+			providerCreations,
+			authenticateRequests,
+		}, {
+			results: [true, true],
+			providerCreations: [
+				{
+					authorizationServer: 'https://mcp.slack.com/',
+					resource: 'https://mcp.slack.com',
+					clientId: 'public-client-id',
+					clientSecret: undefined,
+				},
+				{
+					authorizationServer: 'https://mcp.slack.com/',
+					resource: 'https://mcp.slack.com',
+					clientId: 'confidential-client-id',
+					clientSecret: 'confidential-client-secret',
+				},
+			],
+			authenticateRequests: [
+				{
+					resource: 'https://mcp.slack.com',
+					scopes: ['search:read.public'],
+					token: 'slack-token',
+				},
+				{
+					resource: 'https://mcp.slack.com',
+					scopes: ['search:read.public'],
+					token: 'slack-token',
+				},
+			],
 		});
 	});
 });
