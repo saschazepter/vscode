@@ -2487,14 +2487,7 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._transcriptTurns.set([...cur.slice(0, -1), updated], undefined);
 	}
 
-	/**
-	 * True when the user is mid-utterance: the tail of the transcript is a
-	 * still-open (partial) user turn with non-empty recognized text. Used to
-	 * decide whether a client-driven narration may force-end the current
-	 * hands-free listen turn (safe when silent) or must defer to the
-	 * busy/`narration_unblocked` path (when the user is actually speaking, so we
-	 * don't cut off their words).
-	 */
+/** Whether the transcript currently contains a non-empty partial user turn. */
 	private _isActivelyDictating(): boolean {
 		const turns = this._transcriptTurns.get();
 		const last = turns[turns.length - 1];
