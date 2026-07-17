@@ -17,7 +17,7 @@ import { TestConfigurationService } from '../../../../../../platform/configurati
 import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
 import { NullTelemetryService } from '../../../../../../platform/telemetry/common/telemetryUtils.js';
-import { GitRefType } from '../../../../../../workbench/contrib/git/common/gitService.js';
+import { GitRefType, IGitRepository } from '../../../../../../workbench/contrib/git/common/gitService.js';
 import { ISessionsProvider } from '../../../../../services/sessions/common/sessionsProvider.js';
 import { IActiveSession } from '../../../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsProvidersService } from '../../../../../services/sessions/browser/sessionsProvidersService.js';
@@ -82,7 +82,7 @@ suite('Copilot BranchPicker', () => {
 		branches?: readonly string[];
 		branch?: string;
 		isolationMode?: IsolationMode;
-		gitRepository?: { state: ReturnType<typeof observableValue> } | undefined;
+		gitRepository?: IGitRepository | undefined;
 		setModeCalls?: IsolationMode[];
 	} = {}) {
 		const branch = observableValue<string | undefined>('branch', options.branch ?? 'main');
@@ -102,7 +102,7 @@ suite('Copilot BranchPicker', () => {
 			branch,
 			branches,
 			isolationMode,
-			gitRepository: options.gitRepository !== undefined ? options.gitRepository : { state: gitState },
+			gitRepository: options.gitRepository !== undefined ? options.gitRepository : upcastPartial<IGitRepository>({ state: gitState }),
 			setBranch: (value: string) => branch.set(value, undefined),
 			setIsolationMode: (mode: IsolationMode) => {
 				setModeCalls.push(mode);
