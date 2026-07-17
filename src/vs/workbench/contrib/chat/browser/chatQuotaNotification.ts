@@ -114,6 +114,7 @@ export class ChatQuotaNotificationContribution extends Disposable implements IWo
 		this._register(this._chatEntitlementService.onDidChangeQuotaRemaining(() => this._update()));
 		this._register(this._chatEntitlementService.onDidChangeQuotaExceeded(() => this._update()));
 		this._register(this._chatEntitlementService.onDidChangeEntitlement(() => this._update()));
+		this._register(this._languageModelsService.onDidChangeLanguageModels(() => this._refreshActiveQuotaApproachingWarning()));
 		this._register(CommandsRegistry.registerCommand(TRAJECTORY_NUDGE_SPEC.learnMoreCommandId, (accessor: ServicesAccessor) => this._handleCreditEfficiencyLearnMoreCommand(accessor)));
 
 		// Re-evaluate when the selected model changes (e.g. switching between Copilot and BYOK).
@@ -619,7 +620,7 @@ export class ChatQuotaNotificationContribution extends Disposable implements IWo
 
 	private _refreshActiveQuotaApproachingWarning(): void {
 		const warning = this._activeQuotaWarning;
-		if (!warning) {
+		if (!warning || !this._isCopilotModelSelected()) {
 			return;
 		}
 		const notification = this._chatInputNotificationService.getActiveNotification(candidate => candidate.id === QUOTA_NOTIFICATION_ID);

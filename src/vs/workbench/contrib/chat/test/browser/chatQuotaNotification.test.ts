@@ -244,7 +244,7 @@ suite('ChatQuotaNotificationContribution', () => {
 		const assignmentMock = createMockAssignmentService(modelOpts?.trajectoryTreatment, modelOpts?.switchToAutoTreatment);
 		const contextKeyService = store.add(new MockContextKeyService());
 		if (modelOpts?.contextModelId) {
-			contextKeyService.createKey(ChatContextKeys.chatModelId.key, undefined).set(modelOpts.contextModelId);
+			contextKeyService.createKey<string | undefined>(ChatContextKeys.chatModelId.key, undefined).set(modelOpts.contextModelId);
 		}
 		const storageService = sharedStorageService ?? store.add(new InMemoryStorageService());
 		const vendor = modelOpts?.vendor ?? 'copilot';
