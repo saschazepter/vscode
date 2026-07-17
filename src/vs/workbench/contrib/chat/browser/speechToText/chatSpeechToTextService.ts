@@ -185,11 +185,10 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private _sessionSegments = 0;
 	private _sessionErrorCode = '';
 
-	// Model-preparation telemetry accumulators. `_prepareStartMs` is non-zero
-	// while a preparation is being tracked; `_prepareDownloadObserved` records
-	// whether a first-use download to disk was seen (vs loading a cached model).
+	// Model-preparation telemetry accumulator. `_prepareStartMs` is non-zero
+	// while a preparation is being tracked, so the terminal Ready/Error status
+	// can report the elapsed download/load time exactly once.
 	private _prepareStartMs = 0;
-	private _prepareDownloadObserved = false;
 
 	constructor(
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
@@ -258,16 +257,17 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	 * reaches a terminal state (ready or error). `_prepareStartMs` guards against
 	 * duplicate emission, since `_handleModelStatus` can fire repeatedly.
 	 */
-	private _logModelPrepareTelemetry(outcome: 'ready' | 'error', error?: string): void {
+	private _logModelPrepareTelemetry(status: ILocalTranscriptionModelStatus): void {
 		if (this._prepareStartMs === 0) {
 			return;
 		}
+		const outcome = status.state === LocalTranscriptionModelState.Ready ? 'ready' : 'error';
 		const durationMs = Date.now() - this._prepareStartMs;
 		this._telemetryService.publicLog2<SpeechToTextModelPrepareEvent, SpeechToTextModelPrepareClassification>('chatSpeechToText.modelPrepare', {
 			outcome,
-			downloaded: this._prepareDownloadObserved,
+			downloaded: status.downloaded === true,
 			durationMs,
-			errorCode: outcome === 'error' ? (error || 'unknown') : '',
+			errorCode: outcome === 'error' ? (status.errorCode || 'unknown') : '',
 		});
 		this._prepareStartMs = 0;
 	}
@@ -397,7 +397,6 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		// Start timing preparation (download + load) for the model-prepare
 		// telemetry event, emitted once the model reaches Ready or Error.
 		this._prepareStartMs = Date.now();
-		this._prepareDownloadObserved = false;
 		// Guarantee the download notification is dismissed no matter how the
 		// session ends (teardown, cancel, or the service being disposed).
 		this._localSessionDisposables.add(toDisposable(() => this._completeDownloadNotification()));
@@ -420,13 +419,11 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	 */
 	private _handleModelStatus(status: ILocalTranscriptionModelStatus): void {
 		this._updateDownloadNotification(status);
-		if (status.state === LocalTranscriptionModelState.Downloading) {
-			this._prepareDownloadObserved = true;
-		} else if (status.state === LocalTranscriptionModelState.Ready) {
-			this._logModelPrepareTelemetry('ready');
+		if (status.state === LocalTranscriptionModelState.Ready) {
+			this._logModelPrepareTelemetry(status);
 			this._setPreparingModel(false);
 		} else if (status.state === LocalTranscriptionModelState.Error) {
-			this._logModelPrepareTelemetry('error', status.error);
+			this._logModelPrepareTelemetry(status);
 			this._setPreparingModel(false);
 			this._failSession('model', localize('chatStt.modelError', "On-device speech-to-text model failed to load: {0}", status.error ?? ''));
 		}
