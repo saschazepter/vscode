@@ -162,6 +162,8 @@ export class BranchPicker extends Disposable {
 			this._isolationCheckbox.enable();
 		} else {
 			this._isolationCheckbox.disable();
+			// Keep focusable so keyboard users can discover the disabled reason via tooltip
+			this._isolationCheckbox.domNode.tabIndex = 0;
 		}
 		this._isolationSlot.classList.toggle('disabled', mode === 'disabled');
 		this._isolationSlot.classList.toggle('hidden', mode === 'hidden');
