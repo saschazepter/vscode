@@ -2867,6 +2867,82 @@ suite('CopilotAgentSession', () => {
 			assert.strictEqual((toolStart.action as ChatToolCallStartAction).intention, 'List files in the repo root');
 		});
 
+		test('tool partial results stream cumulative output as running content', async () => {
+			const { session, mockSession, signals, waitForSignal } = await createAgentSession(disposables);
+			session.resetTurnState('turn-stream');
+
+			mockSession.fire('tool.execution_start', {
+				toolCallId: 'tc-stream',
+				toolName: 'bash',
+				arguments: { command: 'print ticks', description: 'Print ticks' },
+			} as SessionEventPayload<'tool.execution_start'>['data']);
+			mockSession.fire('tool.execution_partial_result', {
+				toolCallId: 'tc-stream',
+				partialOutput: 'tick 1\n',
+			} as SessionEventPayload<'tool.execution_partial_result'>['data']);
+			mockSession.fire('tool.execution_partial_result', {
+				toolCallId: 'tc-stream',
+				partialOutput: 'tick 1\ntick 2\n',
+			} as SessionEventPayload<'tool.execution_partial_result'>['data']);
+			mockSession.fire('tool.execution_complete', {
+				toolCallId: 'tc-stream',
+				success: true,
+				result: { content: 'tick 1\ntick 2\n' },
+			} as SessionEventPayload<'tool.execution_complete'>['data']);
+			await waitForSignal(signal => isAction(signal, ActionType.ChatToolCallComplete));
+
+			assert.deepStrictEqual(getActions(signals)
+				.filter(action => action.type === ActionType.ChatToolCallContentChanged)
+				.map(action => ({
+					turnId: action.turnId,
+					toolCallId: action.toolCallId,
+					content: action.content,
+				})), [
+				{
+					turnId: 'turn-stream',
+					toolCallId: 'tc-stream',
+					content: [{ type: ToolResultContentType.Text, text: 'tick 1\n' }],
+				},
+				{
+					turnId: 'turn-stream',
+					toolCallId: 'tc-stream',
+					content: [{ type: ToolResultContentType.Text, text: 'tick 1\ntick 2\n' }],
+				},
+			]);
+			const completed = getActions(signals).find(action => action.type === ActionType.ChatToolCallComplete) as ChatToolCallCompleteAction;
+			assert.deepStrictEqual(completed.result.content, [
+				{ type: ToolResultContentType.Text, text: 'tick 1\ntick 2\n' },
+			]);
+		});
+
+		test('tool partial results for untracked tools are ignored', async () => {
+			const { mockSession, signals } = await createAgentSession(disposables);
+
+			mockSession.fire('tool.execution_partial_result', {
+				toolCallId: 'tc-untracked',
+				partialOutput: 'orphaned output',
+			} as SessionEventPayload<'tool.execution_partial_result'>['data']);
+
+			assert.deepStrictEqual(getActions(signals), []);
+		});
+
+		test('tool partial results for tracked non-shell tools are ignored', async () => {
+			const { mockSession, signals } = await createAgentSession(disposables);
+
+			mockSession.fire('tool.execution_start', {
+				toolCallId: 'tc-non-shell',
+				toolName: 'grep',
+				arguments: { pattern: 'needle' },
+			} as SessionEventPayload<'tool.execution_start'>['data']);
+			mockSession.fire('tool.execution_partial_result', {
+				toolCallId: 'tc-non-shell',
+				partialOutput: 'unexpected partial output',
+			} as SessionEventPayload<'tool.execution_partial_result'>['data']);
+
+			assert.deepStrictEqual(getActions(signals)
+				.filter(action => action.type === ActionType.ChatToolCallContentChanged), []);
+		});
+
 		test('live tool_start strips redundant cd prefix matching workingDirectory', async () => {
 			const wd = URI.file('/repo/project');
 			const { mockSession, signals } = await createAgentSession(disposables, { workingDirectory: wd });

@@ -3990,6 +3990,22 @@ export class CopilotAgentSession extends Disposable {
 
 		this._register(wrapper.onToolPartialResult(e => {
 			this._logService.trace(`[Copilot:${sessionId}] Tool partial result: ${e.data.toolCallId} (${e.data.partialOutput.length} chars)`);
+			const tracked = this._activeToolCalls.get(e.data.toolCallId);
+			if (!tracked || !isShellTool(tracked.toolName)) {
+				return;
+			}
+			// TODO: Replace this text snapshot bridge with an output-only AHP terminal once AHP defines
+			// that capability and SDK shell events expose a live shell identity. Then attach terminal
+			// content to the tool call and stream its output through the terminal channel.
+			this._emitAction({
+				type: ActionType.ChatToolCallContentChanged,
+				turnId: this._turnId,
+				toolCallId: e.data.toolCallId,
+				content: [
+					...tracked.content.filter(content => content.type !== ToolResultContentType.Text),
+					{ type: ToolResultContentType.Text, text: e.data.partialOutput },
+				],
+			}, tracked.parentToolCallId);
 		}));
 
 		this._register(wrapper.onToolProgress(e => {
