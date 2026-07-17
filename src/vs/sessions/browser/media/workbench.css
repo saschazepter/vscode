@@ -197,6 +197,12 @@
 	border-radius: var(--vscode-sash-size);
 }
 
+/*
+ * SplitView centers each sash on its logical boundary, but the card margins put
+ * the Sessions/Editor gap before that boundary and the Panel gap after it.
+ * Grow the hit area to at least the visual gap, then shift it toward that gap
+ * without moving the split itself. `max()` preserves larger configured sashes.
+ */
 .agent-sessions-workbench:not(.noeditorpane) .monaco-split-view2.horizontal:has(> .monaco-scrollable-element > .split-view-container > .split-view-view > .part.sessionspart) > .sash-container > .monaco-sash.vertical:first-child {
 	width: max(var(--vscode-sash-size), var(--vscode-agents-layout-floatingPanelGap));
 	transform: translateX(calc((var(--vscode-sash-size) - max(var(--vscode-sash-size), var(--vscode-agents-layout-floatingPanelGap)) - var(--vscode-agents-layout-floatingPanelGap)) / 2));
@@ -207,6 +213,11 @@
 	transform: translateY(calc((var(--vscode-sash-size) - max(var(--vscode-sash-size), var(--vscode-agents-layout-floatingPanelGap)) + var(--vscode-agents-layout-floatingPanelGap)) / 2));
 }
 
+/*
+ * Match the standard workbench's persistent three-dot sash gripper. The center
+ * dot is the pseudo-element and box shadows draw the outer dots; hide all three
+ * while the full hover/drag highlight communicates the active resize target.
+ */
 .agent-sessions-workbench:not(.noeditorpane) .monaco-split-view2.horizontal:has(> .monaco-scrollable-element > .split-view-container > .split-view-view > .part.sessionspart) > .sash-container > .monaco-sash.vertical:first-child:not(.disabled)::after,
 .agent-sessions-workbench:not(.nopanel) .monaco-split-view2.vertical:has(> .monaco-scrollable-element > .split-view-container > .split-view-view > .part.panel) > .sash-container > .monaco-sash.horizontal:not(.disabled)::after {
 	content: '';
