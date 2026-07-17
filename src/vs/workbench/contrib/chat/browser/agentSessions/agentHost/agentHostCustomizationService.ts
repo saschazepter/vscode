@@ -6,7 +6,8 @@
 import { URI } from '../../../../../../base/common/uri.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { Disposable, DisposableResourceMap, IDisposable, toDisposable } from '../../../../../../base/common/lifecycle.js';
-import { NKeyMap } from '../../../../../../base/common/map.js';
+import { NKeyMap, ResourceSet } from '../../../../../../base/common/map.js';
+import { StringSHA1 } from '../../../../../../base/common/hash.js';
 import { IReader } from '../../../../../../base/common/observable.js';
 import { AgentHostMcpServers, AgentHostMcpServersConfigKey } from '../../../../../../platform/agentHost/common/agentHostSchema.js';
 import { IAgentConnection } from '../../../../../../platform/agentHost/common/agentService.js';
@@ -154,6 +155,14 @@ export abstract class AbstractAgentHostCustomizationService extends Disposable i
 	private readonly _mcpEnablementModel: EnablementModel;
 	private readonly _mcpServerTracking = new NKeyMap<IMcpServerTrackingEntry, [string, string]>();
 	private readonly _mcpLogRegistry: AgentHostMcpServerLogRegistry;
+	/**
+	 * Sessions whose MCP diagnostics we mirror into per-server Output channels.
+	 * A session is tracked once the UI first queries its MCP servers; from then
+	 * on every state change is recorded via {@link onDidChangeCustomizations},
+	 * independent of whether the UI re-queries -- so a failure and a later
+	 * recovery both land in the channel history.
+	 */
+	private readonly _mcpDiagnosticSessions = new ResourceSet();
 
 	protected constructor(
 		protected readonly _instantiationService: IInstantiationService,
@@ -163,6 +172,7 @@ export abstract class AbstractAgentHostCustomizationService extends Disposable i
 		super();
 		this._mcpEnablementModel = this._register(new EnablementModel(MCP_SERVER_ENABLEMENT_STORAGE_KEY, storageService));
 		this._mcpLogRegistry = this._register(this._instantiationService.createInstance(AgentHostMcpServerLogRegistry));
+		this._register(this.onDidChangeCustomizations(() => this._recordMcpDiagnostics()));
 	}
 
 	protected abstract _resolveTarget(sessionResource: URI): IAgentHostCustomizationTarget | undefined;
@@ -184,26 +194,21 @@ export abstract class AbstractAgentHostCustomizationService extends Disposable i
 		if (!target) {
 			return [];
 		}
+		// Start mirroring this session's MCP diagnostics (idempotent). Recording
+		// itself is driven by state-change events, not this getter, so a later
+		// failure/recovery is captured even without a re-query.
+		this._trackMcpDiagnostics(sessionResource, target);
 		return this._flattenMcpServers(target.customizations)
-			.map((c): IAgentHostMcpServer => {
-				const id = this._scopedMcpServerId(sessionResource, c.id);
-				// Record into the per-server diagnostics channel on every
-				// projection (which fires on each state change the UI observes)
-				// so the channel captures the observable transition history. The
-				// channel id itself stays internal -- reveal it via
-				// {@link showMcpServerLog}.
-				this._mcpLogRegistry.record({ id, name: c.name, enabled: c.enabled, state: c.state });
-				return {
-					id,
-					name: c.name,
-					enabled: c.enabled,
-					status: c.state.kind,
-					state: c.state,
-					setEnabled: (enabled: boolean) => target.setCustomizationEnabled(c.id, enabled),
-					start: () => target.startMcpServer(c.id),
-					stop: () => target.stopMcpServer(c.id),
-				};
-			});
+			.map((c): IAgentHostMcpServer => ({
+				id: this._scopedMcpServerId(sessionResource, c.id),
+				name: c.name,
+				enabled: c.enabled,
+				status: c.state.kind,
+				state: c.state,
+				setEnabled: (enabled: boolean) => target.setCustomizationEnabled(c.id, enabled),
+				start: () => target.startMcpServer(c.id),
+				stop: () => target.stopMcpServer(c.id),
+			}));
 	}
 
 	showMcpServerLog(sessionResource: URI, serverId: string): void {
@@ -215,10 +220,41 @@ export abstract class AbstractAgentHostCustomizationService extends Disposable i
 		if (!server) {
 			return;
 		}
-		// Record (idempotent -- dedup'd by state signature) so the channel exists
-		// even if `getMcpServers` was never called for this session, then reveal it.
-		const channelId = this._mcpLogRegistry.record({ id: serverId, name: server.name, enabled: server.enabled, state: server.state });
+		// Ensure the session is tracked and its channels exist, then reveal.
+		this._trackMcpDiagnostics(sessionResource, target);
+		const channelId = this._mcpLogRegistry.record({ sessionResource, rawId: server.id, name: server.name, enabled: server.enabled, state: server.state });
 		this._mcpLogRegistry.show(channelId);
+	}
+
+	/**
+	 * Registers `sessionResource` for MCP diagnostics mirroring and records the
+	 * currently-observed state of each of its servers. Idempotent: registering
+	 * an already-tracked session simply re-records (dedup'd by state signature).
+	 */
+	private _trackMcpDiagnostics(sessionResource: URI, target: IAgentHostCustomizationTarget): void {
+		this._mcpDiagnosticSessions.add(sessionResource);
+		for (const server of this._flattenMcpServers(target.customizations)) {
+			this._mcpLogRegistry.record({ sessionResource, rawId: server.id, name: server.name, enabled: server.enabled, state: server.state });
+		}
+	}
+
+	/** Re-records every tracked session's MCP server states (on any customizations change). */
+	private _recordMcpDiagnostics(): void {
+		for (const sessionResource of this._mcpDiagnosticSessions) {
+			const target = this._resolveTarget(sessionResource);
+			if (!target) {
+				continue;
+			}
+			for (const server of this._flattenMcpServers(target.customizations)) {
+				this._mcpLogRegistry.record({ sessionResource, rawId: server.id, name: server.name, enabled: server.enabled, state: server.state });
+			}
+		}
+	}
+
+	/** Stops mirroring and disposes all MCP diagnostics channels for a session that is going away. */
+	protected _disposeMcpDiagnostics(sessionResource: URI): void {
+		this._mcpDiagnosticSessions.delete(sessionResource);
+		this._mcpLogRegistry.disposeForSession(sessionResource);
 	}
 
 	addMcpServer(sessionResource: URI, name: string, config: IMcpServerConfiguration): void {
@@ -390,6 +426,7 @@ class WorkbenchAgentHostCustomizationService extends AbstractAgentHostCustomizat
 			const currentBackend = this._provisionalSessionService.get(sessionResource);
 			if (existing && existing.backendSession.toString() !== currentBackend?.toString()) {
 				this._clearMcpServerTracking(sessionResource);
+				this._disposeMcpDiagnostics(sessionResource);
 			}
 			this._sessionStateSubscriptions.deleteAndDispose(sessionResource);
 			this._fireCustomizationsChanged();
@@ -399,6 +436,7 @@ class WorkbenchAgentHostCustomizationService extends AbstractAgentHostCustomizat
 			for (const sessionResource of e.sessionResources) {
 				this._sessionStateSubscriptions.deleteAndDispose(sessionResource);
 				this._clearMcpServerTracking(sessionResource);
+				this._disposeMcpDiagnostics(sessionResource);
 			}
 			this._fireCustomizationsChanged();
 			this._fireCustomAgentsChanged();
@@ -502,43 +540,60 @@ class WorkbenchAgentHostCustomizationService extends AbstractAgentHostCustomizat
 registerSingleton(IAgentHostCustomizationService, WorkbenchAgentHostCustomizationService, InstantiationType.Delayed);
 
 /**
- * Owns one hidden Output channel per agent-host MCP server (keyed by the
- * scoped server id, so same-named servers in different sessions stay
- * separate). {@link record} appends a line whenever a server's observable
- * state changes — its lifecycle kind, error, or enablement — so opening the
- * channel shows the server's history including any failure detail. {@link show}
- * reveals the (otherwise hidden) channel.
+ * Owns one hidden Output channel per (agent-host session, MCP server) pair.
+ * {@link record} appends a line whenever a server's observable state changes
+ * (its lifecycle kind, error, or enablement) so opening the channel shows the
+ * server's history including any failure detail. {@link show} reveals the
+ * (otherwise hidden) channel, and {@link disposeForSession} tears down every
+ * channel belonging to a session that is going away.
  */
 class AgentHostMcpServerLogRegistry extends Disposable {
 
-	private readonly _entries = new Map<string, { readonly logger: ILogger; lastSignature: string | undefined }>();
+	private readonly _entries = new Map<string, { readonly logger: ILogger; readonly dispose: () => void; lastSignature: string | undefined }>();
+	/** Channel ids grouped by owning session key, so a session teardown can dispose them all. */
+	private readonly _bySession = new Map<string, Set<string>>();
 
 	constructor(
 		@ILoggerService private readonly _loggerService: ILoggerService,
 		@IOutputService private readonly _outputService: IOutputService,
 	) {
 		super();
+		this._register(toDisposable(() => {
+			for (const key of [...this._bySession.keys()]) {
+				this._disposeSessionKey(key);
+			}
+		}));
 	}
 
 	/**
-	 * Ensures a hidden diagnostics channel exists for the MCP server and
-	 * records a line whenever its state changes (including the first observed
-	 * state). Returns the stable channel id for the service to reveal via
-	 * {@link show} — the id is not exposed outside the service.
+	 * Ensures a hidden diagnostics channel exists for the MCP server identified
+	 * by `(sessionResource, rawId)` and records a line whenever its state
+	 * changes (including the first observed state). Returns the stable channel
+	 * id for the service to reveal via {@link show} -- the id is internal.
 	 */
-	record(server: { readonly id: string; readonly name: string; readonly enabled: boolean; readonly state: McpServerState }): string {
-		const channelId = channelIdForMcpServer(server.id);
+	record(server: { readonly sessionResource: URI; readonly rawId: string; readonly name: string; readonly enabled: boolean; readonly state: McpServerState }): string {
+		const sessionKey = server.sessionResource.toString();
+		const channelId = channelIdForMcpServer(sessionKey, server.rawId);
 		let entry = this._entries.get(channelId);
 		if (!entry) {
-			const logger = this._register(this._loggerService.createLogger(channelId, {
+			const logger = this._loggerService.createLogger(channelId, {
 				hidden: true,
 				name: localize('agentHost.mcpServer.outputChannel', "MCP: {0}", server.name),
-			}));
+			});
 			// Mirror the workbench MCP server pattern: a logger disposed but not
 			// deregistered is reused as a no-op instance, so deregister on dispose.
-			this._register(toDisposable(() => this._loggerService.deregisterLogger(channelId)));
-			entry = { logger, lastSignature: undefined };
+			const dispose = () => {
+				logger.dispose();
+				this._loggerService.deregisterLogger(channelId);
+			};
+			entry = { logger, dispose, lastSignature: undefined };
 			this._entries.set(channelId, entry);
+			let group = this._bySession.get(sessionKey);
+			if (!group) {
+				group = new Set();
+				this._bySession.set(sessionKey, group);
+			}
+			group.add(channelId);
 		}
 
 		const { signature, message, isError } = describeMcpServerState(server.name, server.enabled, server.state);
@@ -561,16 +616,39 @@ class AgentHostMcpServerLogRegistry extends Disposable {
 		this._loggerService.setVisibility(channelId, true);
 		void this._outputService.showChannel(channelId);
 	}
+
+	/** Disposes every channel/logger owned by `sessionResource` (session teardown). */
+	disposeForSession(sessionResource: URI): void {
+		this._disposeSessionKey(sessionResource.toString());
+	}
+
+	private _disposeSessionKey(sessionKey: string): void {
+		const group = this._bySession.get(sessionKey);
+		if (!group) {
+			return;
+		}
+		this._bySession.delete(sessionKey);
+		for (const channelId of group) {
+			this._entries.get(channelId)?.dispose();
+			this._entries.delete(channelId);
+		}
+	}
 }
 
 /**
- * Stable, filesystem-safe Output/logger id for the MCP server whose scoped id
- * is `serverId`. Reserved logger-id characters are replaced (rather than
- * stripped, which the logger service would otherwise do and could collide two
- * distinct ids) so each server keeps a distinct channel.
+ * Stable, injective, filesystem-safe Output/logger id for the MCP server
+ * `rawId` in the session keyed by `sessionKey`. The composite key is SHA1-hashed
+ * to hex: hex characters are never touched by the logger service's own reserved-
+ * character stripping (so distinct servers can't collapse onto one channel), and
+ * hashing keeps the id bounded regardless of how long the session URI or raw id
+ * is.
  */
-function channelIdForMcpServer(serverId: string): string {
-	return `agentHostMcpServer.${serverId.replace(/[\\/:*?"<>|]/g, '-')}`;
+function channelIdForMcpServer(sessionKey: string, rawId: string): string {
+	const sha = new StringSHA1();
+	sha.update(sessionKey);
+	sha.update('\0');
+	sha.update(rawId);
+	return `agentHostMcpServer.${sha.digest()}`;
 }
 
 /**

@@ -34,6 +34,7 @@ export class AgentHostCustomizationService extends AbstractAgentHostCustomizatio
 		this._register(this._sessionsManagementService.onDidChangeSessions(e => {
 			for (const session of e.removed) {
 				this._clearMcpServerTracking(session.resource);
+				this._disposeMcpDiagnostics(session.resource);
 			}
 			this._fireCustomAgentsChanged();
 			this._fireCustomizationsChanged();

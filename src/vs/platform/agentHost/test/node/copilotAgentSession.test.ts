@@ -187,6 +187,9 @@ class MockCopilotSession {
 					servers: this.mcpListResult.servers.map(server => server.name === params.serverName ? { ...server, status: 'pending' } : server),
 				};
 			},
+			listTools: async (_params: { serverName: string }) => {
+				return { tools: [] };
+			},
 			disable: async (params: { serverName: string }) => {
 				this.mcpDisableCalls.push(params);
 				await this.mcpDisableGate;
@@ -5515,6 +5518,35 @@ suite('CopilotAgentSession', () => {
 			assert.deepStrictEqual({ beforeSend, afterSend }, {
 				beforeSend: { kind: McpServerStatus.Error, error: { errorType: 'mcp-server-failed', message: 'boom' } },
 				afterSend: { kind: McpServerStatus.Starting },
+			});
+		});
+
+		test('startMcpServer optimistically marks the server Starting before the blocking reconnect', async () => {
+			const serverName = 'db';
+			const id = 'mcp-top-level:copilot:test-session-1:db';
+			const { session } = await createAgentSession(disposables, {
+				sessionCustomizations: () => [{
+					type: CustomizationType.McpServer,
+					id,
+					uri: id,
+					name: serverName,
+					enabled: true,
+					state: { kind: McpServerStatus.Stopped },
+				}],
+				// Settled (failed) before the explicit restart; the disable->enable
+				// reconnect is a background SDK operation with no live "starting" event.
+				configureMockSession: mock => { mock.mcpListResult = { servers: [{ name: serverName, status: 'failed', error: 'boom' }] }; },
+			});
+
+			const beforeStart = session.topLevelMcpCustomizations()[0]?.state;
+			await session.startMcpServer(id);
+			// The trailing inventory refresh is fire-and-forget, so right after the
+			// awaited enable the optimistic Starting is observable.
+			const afterStart = session.topLevelMcpCustomizations()[0]?.state;
+
+			assert.deepStrictEqual({ beforeStart, afterStart }, {
+				beforeStart: { kind: McpServerStatus.Error, error: { errorType: 'mcp-server-failed', message: 'boom' } },
+				afterStart: { kind: McpServerStatus.Starting },
 			});
 		});
 

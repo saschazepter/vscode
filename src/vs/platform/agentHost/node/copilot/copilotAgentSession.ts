@@ -1830,9 +1830,18 @@ export class CopilotAgentSession extends Disposable {
 		}
 		// stopServer leaves inline session MCP servers not_configured; disable->enable is the validated restart path.
 		await this._disableMcpServer(serverName);
-		await this._wrapper.session.rpc.mcp.enable({ serverName });
-		await this._wrapper.session.rpc.mcp.listTools({ serverName });
-		this._seedMcpServersFromRpc();
+		// The SDK reconnects in the background on enable with no live "starting"
+		// event, so surface Starting optimistically until the seed below settles it.
+		this._mcpCustomizations.markStarting([serverName]);
+		try {
+			await this._wrapper.session.rpc.mcp.enable({ serverName });
+			await this._wrapper.session.rpc.mcp.listTools({ serverName });
+		} finally {
+			// Always reconcile against the SDK's real state -- on success this
+			// settles Starting -> Ready/AuthRequired, and on failure it clears the
+			// optimistic Starting instead of leaving the UI stuck.
+			this._seedMcpServersFromRpc();
+		}
 	}
 
 	private async _reconcileMcpServerEnablement(): Promise<void> {
@@ -1852,13 +1861,16 @@ export class CopilotAgentSession extends Disposable {
 				if (desired) {
 					// Re-enabling restarts the server. The SDK connects it in the
 					// background with no live "starting" event, so surface Starting
-					// optimistically until the trailing refresh settles it.
+					// optimistically. Mark `changed` now (before the enable) so the
+					// trailing refresh always runs and settles/clears this optimistic
+					// Starting even if the enable rejects.
 					this._mcpCustomizations.markStarting([server.serverName]);
+					changed = true;
 					await this._wrapper.session.rpc.mcp.enable({ serverName: server.serverName });
 				} else {
 					await this._disableMcpServer(server.serverName);
+					changed = true;
 				}
-				changed = true;
 			} catch (e) {
 				this._logService.error(e, `[Copilot:${this.sessionId}] Failed to ${desired ? 'enable' : 'disable'} MCP server ${server.serverName}`);
 			}
