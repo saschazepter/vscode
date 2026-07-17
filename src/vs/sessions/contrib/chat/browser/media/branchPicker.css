@@ -15,6 +15,11 @@
 	border: 0;
 }
 
+.sessions-chat-branch-picker-group {
+	display: inline-flex;
+	align-items: center;
+}
+
 .sessions-chat-picker-slot.sessions-chat-isolation-checkbox .action-label {
 	cursor: pointer;
 }

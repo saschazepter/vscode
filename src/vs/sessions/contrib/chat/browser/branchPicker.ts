@@ -178,9 +178,16 @@ export class BranchPicker extends Disposable {
 		}
 		this._renderDisposables.clear();
 
-		this._renderIsolation(container);
+		const renderTarget = this._options.isolation
+			? dom.append(container, dom.$('.sessions-chat-branch-picker-group'))
+			: container;
+		if (renderTarget !== container) {
+			this._renderDisposables.add({ dispose: () => renderTarget.remove() });
+		}
 
-		const slot = dom.append(container, dom.$('.sessions-chat-picker-slot'));
+		this._renderIsolation(renderTarget);
+
+		const slot = dom.append(renderTarget, dom.$('.sessions-chat-picker-slot'));
 		if (this._options.slotClassName) {
 			slot.classList.add(this._options.slotClassName);
 		}
