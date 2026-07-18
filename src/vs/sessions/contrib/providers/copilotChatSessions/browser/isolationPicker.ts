@@ -80,10 +80,8 @@ export class IsolationPicker extends Disposable {
 			const providerSession = provider instanceof CopilotChatSessionsProvider ? provider.getSession(session!.sessionId) : undefined;
 			if (providerSession) {
 				const gitRepo = providerSession.gitRepository;
-				const repoState = gitRepo?.state?.read?.(reader);
-				const hasHeadCommit = repoState ? !!repoState.HEAD?.commit : true;
-				// Enable only when git repo exists and HEAD has a valid commit (not an empty repo)
-				this._hasGitRepo = !isLoading && !!gitRepo && hasHeadCommit;
+				const repoState = gitRepo?.state.read(reader);
+				this._hasGitRepo = !isLoading && !!repoState?.HEAD?.commit;
 				// Read isolation mode from session — session is the source of truth
 				providerSession.isolationMode.read(reader);
 			} else {
