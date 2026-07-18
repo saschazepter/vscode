@@ -888,7 +888,9 @@ export class ChatWidget extends Disposable implements IChatWidget {
 	focusInput(): void {
 		// Read-only chats hide the input; focus the message list instead.
 		if (!this._inputVisible) {
-			this.listWidget.focusLastItem(true);
+			if (this.listWidget.focusLastItem(true) < 0) {
+				this.listWidget.focus();
+			}
 			this._onDidFocus.fire();
 			return;
 		}
@@ -1605,7 +1607,9 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			}
 			this.chatSuggestNextWidget.hide();
 			if (this.hasInputFocus()) {
-				this.listWidget.focusLastItem(true);
+				if (this.listWidget.focusLastItem(true) < 0) {
+					this.listWidget.focus();
+				}
 			}
 		} else if (wasReadOnly) {
 			this.renderChatSuggestNextWidget();
@@ -2836,6 +2840,12 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		});
 
 		if (ChatSendResult.isRejected(result)) {
+			if (result.newSessionResource) {
+				const newModel = this.chatService.getSession(result.newSessionResource);
+				if (newModel) {
+					this.setModel(newModel);
+				}
+			}
 			return;
 		}
 

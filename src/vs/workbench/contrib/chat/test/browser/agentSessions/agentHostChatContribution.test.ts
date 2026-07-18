@@ -27,7 +27,7 @@ import { AgentFeedbackAttachmentDisplayKind, AgentFeedbackAttachmentMetadataKey 
 import { BrowserViewAttachmentDisplayKind, BrowserViewAttachmentMetadataKey } from '../../../../../../platform/agentHost/common/meta/browserViewAttachments.js';
 import { ActionType, isSessionAction, isChatAction, type ActionEnvelope, type IRootConfigChangedAction, type SessionAction, type ChatAction as AgentHostChatAction, type TerminalAction, type INotification, type IToolCallConfirmedAction, type ITurnStartedAction, type ClientAnnotationsAction } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
 import type { IStateSnapshot } from '../../../../../../platform/agentHost/common/state/sessionProtocol.js';
-import { CustomizationType, McpAuthRequiredReason, McpServerStatus, type ClientPluginCustomization, type ToolDefinition } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
+import { ChatInteractivity, CustomizationType, McpAuthRequiredReason, McpServerStatus, type ClientPluginCustomization, type ToolDefinition } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, SessionLifecycle, SessionStatus, TurnState, ToolCallStatus, ToolCallConfirmationReason, ToolCallContributorKind, createSessionState, createChatState, createDefaultChatSummary, buildChatUri, buildDefaultChatUri, parseDefaultChatUri, isAhpChatChannel, createActiveTurn, isAhpRootChannel, PolicyState, ResponsePartKind, ROOT_STATE_URI, StateComponents, buildSubagentChatUri, ToolResultContentType, MessageAttachmentKind, MessageKind, type SessionState, type SessionSummary, type ChatState, type ISessionWithDefaultChat, RootState, type ToolCallState, type AgentInfo } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { CompletionItemKind as AhpCompletionItemKind, type CompletionsParams, type CompletionsResult } from '../../../../../../platform/agentHost/common/state/protocol/commands.js';
 import { sessionReducer, chatReducer } from '../../../../../../platform/agentHost/common/state/sessionReducers.js';
@@ -149,6 +149,7 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 	// may hold a SessionState (for session channels) or a ChatState (for the
 	// per-session default chat channel).
 	private readonly _liveSubscriptions = new Map<string, { state: SessionState | ChatState; emitter: Emitter<SessionState | ChatState>; onWillApply: Emitter<ActionEnvelope>; onDidApply: Emitter<ActionEnvelope> }>();
+	private readonly _chatInteractivities = new Map<string, ChatInteractivity>();
 
 	private _nextId = 1;
 	private readonly _sessions = new Map<string, IAgentSessionMetadata>();
@@ -471,6 +472,19 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 		}
 	}
 
+	setChatInteractivity(session: URI, interactivity: ChatInteractivity): void {
+		const entry = this._liveSubscriptions.get(buildDefaultChatUri(session.toString()));
+		if (!entry) {
+			throw new Error(`No live chat subscription for ${session.toString()}`);
+		}
+		entry.state = { ...entry.state, interactivity };
+		entry.emitter.fire(entry.state);
+	}
+
+	seedChatInteractivity(session: URI, interactivity: ChatInteractivity): void {
+		this._chatInteractivities.set(buildDefaultChatUri(session.toString()), interactivity);
+	}
+
 	/**
 	 * Builds the default-chat {@link ChatState} for a session, seeded with any
 	 * conversation fields a test attached to the session's {@link SeededSessionState}.
@@ -490,6 +504,7 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 		const chatSummary = createDefaultChatSummary(sessionSummary, chatUriStr);
 		return {
 			...createChatState(chatSummary),
+			interactivity: this._chatInteractivities.get(chatUriStr),
 			turns: seeded?.turns ?? [],
 			activeTurn: seeded?.activeTurn,
 			steeringMessage: seeded?.steeringMessage,
@@ -4647,6 +4662,34 @@ suite('AgentHostChatContribution', () => {
 			states.push(session.isReadOnly.get());
 
 			assert.deepStrictEqual(states, [true, false, true]);
+		});
+
+		test('non-archived session read-only state follows chat interactivity', async () => {
+			const { sessionHandler, agentHostService } = createContribution(disposables);
+			const sessionUri = AgentSession.uri('copilot', 'read-only-chat');
+			agentHostService.sessionStates.set(sessionUri.toString(), {
+				...createSessionState({
+					resource: sessionUri.toString(),
+					provider: 'copilot',
+					title: 'Read-only chat',
+					status: SessionStatus.Idle,
+					createdAt: new Date().toISOString(),
+					modifiedAt: new Date().toISOString(),
+				}),
+				lifecycle: SessionLifecycle.Ready,
+			});
+			agentHostService.seedChatInteractivity(sessionUri, ChatInteractivity.ReadOnly);
+
+			const sessionResource = URI.from({ scheme: 'agent-host-copilot', path: '/read-only-chat' });
+			const session = await sessionHandler.provideChatSessionContent(sessionResource, CancellationToken.None);
+			disposables.add(toDisposable(() => session.dispose()));
+			assert.ok(session.isReadOnly);
+
+			const states = [session.isReadOnly.get()];
+			agentHostService.setChatInteractivity(sessionUri, ChatInteractivity.Full);
+			states.push(session.isReadOnly.get());
+
+			assert.deepStrictEqual(states, [true, false]);
 		});
 
 		test('new session read-only state follows status after materialization', async () => {

@@ -1105,7 +1105,11 @@ export class ChatService extends Disposable implements IChatService {
 			throw new Error(`Unknown session: ${sessionResource}`);
 		}
 		if (model.isReadOnly.get()) {
-			return { kind: 'rejected', reason: 'Session is read-only' };
+			return {
+				kind: 'rejected',
+				reason: 'Session is read-only',
+				...(newSessionResource ? { newSessionResource } : {}),
+			};
 		}
 
 		// Internally blank widgets use special sessions with an untitled- path.
@@ -1120,6 +1124,9 @@ export class ChatService extends Disposable implements IChatService {
 				sessionResource = materialized.sessionResource;
 				newSessionResource = materialized.newSessionResource;
 			}
+		}
+		if (model.isReadOnly.get()) {
+			return { kind: 'rejected', reason: 'Session is read-only', newSessionResource };
 		}
 
 		const hasPendingRequest = this._pendingRequests.has(sessionResource);

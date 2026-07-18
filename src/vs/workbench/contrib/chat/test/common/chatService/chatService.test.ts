@@ -1453,6 +1453,36 @@ suite('ChatService', () => {
 			await sent.data.responseCompletePromise;
 		});
 
+		test('materialization rejects a send when the real session is read-only', async () => {
+			const realResource = URI.from({ scheme: remoteScheme, path: '/real-read-only' });
+			let invokeCount = 0;
+			const { service, untitledResource } = setupUntitledRemote({
+				createItem: async () => realItem(realResource),
+				invoke: async () => { invokeCount++; return {}; },
+				provideContent: resource => Promise.resolve({
+					sessionResource: resource,
+					history: [],
+					onWillDispose: Event.None,
+					isReadOnly: constObservable(resource.toString() === realResource.toString()),
+					dispose: () => { },
+				}),
+			});
+			testDisposables.add((await service.acquireOrLoadSession(untitledResource, ChatAgentLocation.Chat, CancellationToken.None))!);
+
+			const result = await service.sendRequest(untitledResource, 'hello', { agentId: remoteScheme });
+			const realModel = service.getSession(realResource);
+
+			assert.deepStrictEqual({
+				result,
+				invokeCount,
+				requestCount: realModel?.getRequests().length,
+			}, {
+				result: { kind: 'rejected', reason: 'Session is read-only', newSessionResource: realResource },
+				invokeCount: 0,
+				requestCount: 0,
+			});
+		});
+
 		test('a late send still addressed to the untitled resource re-targets the real session', async () => {
 			const realResource = URI.from({ scheme: remoteScheme, path: '/real-late' });
 			let createCount = 0;
@@ -1480,6 +1510,39 @@ suite('ChatService', () => {
 			assert.strictEqual(createCount, 1, 'no second materialization for a stale untitled send');
 			assert.strictEqual(r2.newSessionResource?.toString(), realResource.toString(), 'late re-target reports the real resource as the new session');
 			assert.strictEqual(realModel.getRequests().length, requestsAfterFirst + 1, 'second request is routed to the real session');
+		});
+
+		test('a late send to a read-only materialized session reports the real resource', async () => {
+			const realResource = URI.from({ scheme: remoteScheme, path: '/real-late-read-only' });
+			const isReadOnly = observableValue<boolean>('isReadOnly', false);
+			let invokeCount = 0;
+			const { service, untitledResource } = setupUntitledRemote({
+				createItem: async () => realItem(realResource),
+				invoke: async () => { invokeCount++; return {}; },
+				provideContent: resource => Promise.resolve({
+					sessionResource: resource,
+					history: [],
+					onWillDispose: Event.None,
+					isReadOnly,
+					dispose: () => { },
+				}),
+			});
+			testDisposables.add((await service.acquireOrLoadSession(untitledResource, ChatAgentLocation.Chat, CancellationToken.None))!);
+
+			const first = await service.sendRequest(untitledResource, 'first', { agentId: remoteScheme });
+			ChatSendResult.assertSent(first);
+			await first.data.responseCompletePromise;
+			isReadOnly.set(true, undefined);
+
+			const second = await service.sendRequest(untitledResource, 'second', { agentId: remoteScheme });
+
+			assert.deepStrictEqual({
+				second,
+				invokeCount,
+			}, {
+				second: { kind: 'rejected', reason: 'Session is read-only', newSessionResource: realResource },
+				invokeCount: 1,
+			});
 		});
 
 		test('a failed materialization does not poison the latch (retry re-attempts)', async () => {
