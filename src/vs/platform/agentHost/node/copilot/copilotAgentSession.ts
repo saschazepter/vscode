@@ -49,6 +49,9 @@ import { AgentHostTelemetryReporter } from '../agentHostTelemetryReporter.js';
 import { PendingRequestRegistry } from '../../common/pendingRequestRegistry.js';
 import { buildCopilotSystemNotification } from './copilotSystemNotification.js';
 import { parseLeadingSlashCommand } from './copilotSlashCommandCompletionProvider.js';
+import { augmentTroubleshootRequest, TROUBLESHOOT_SKILL_NAME } from '../../common/agentHostTroubleshoot.js';
+import { buildSkillInvocationPrompt } from '../../common/agentHostSkillInvocation.js';
+import { isBuiltinSkill } from './copilotBuiltinSkills.js';
 import type { IUnsandboxedCommandConfirmationRequest, ShellManager } from './copilotShellTools.js';
 import { buildSandboxConfigForSdk, type ISdkSandboxConfig } from './sandboxConfigForSdk.js';
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
@@ -1412,8 +1415,26 @@ export class CopilotAgentSession extends Disposable {
 			}
 		}
 
-		const sdkAttachments = attachments?.length
-			? (await Promise.all(attachments.map(a => this._toSdkAttachment(a)))).filter(isDefined)
+		// A bundled built-in skill request (`/<name>`) is rewritten into a
+		// deterministic skill invocation: the runtime does not reliably auto-run
+		// a skill from a bare `/<name>`, so we ask the model to use the `skill`
+		// tool (see `buildSkillInvocationPrompt`). `/troubleshoot` additionally
+		// resolves the on-disk session log(s) to analyze - `#session` reference
+		// attachments target other sessions, else the current session - and its
+		// `#session` markers are consumed here, not forwarded to the model.
+		let effectiveAttachments = attachments;
+		if (slashCommand && isBuiltinSkill(slashCommand.command)) {
+			if (slashCommand.command === TROUBLESHOOT_SKILL_NAME) {
+				const augmented = augmentTroubleshootRequest(slashCommand.rest, attachments, id => this._sessionEventsLogPath(id));
+				prompt = augmented.prompt;
+				effectiveAttachments = augmented.attachments;
+			} else {
+				prompt = buildSkillInvocationPrompt(slashCommand.command, slashCommand.rest);
+			}
+		}
+
+		const sdkAttachments = effectiveAttachments?.length
+			? (await Promise.all(effectiveAttachments.map(a => this._toSdkAttachment(a)))).filter(isDefined)
 			: undefined;
 		if (sdkAttachments?.length) {
 			this._logService.trace(`[Copilot:${this.sessionId}] Attachments: ${JSON.stringify(sdkAttachments.map(a => ({ type: a.type })))}`);
@@ -1424,6 +1445,17 @@ export class CopilotAgentSession extends Disposable {
 		await this._applyEffectiveSandboxConfig();
 		await this._wrapper.session.send({ prompt, attachments: sdkAttachments?.length ? sdkAttachments : undefined });
 		this._logService.info(`[Copilot:${this.sessionId}] session.send() returned`);
+	}
+
+	/**
+	 * Resolves the on-disk `events.jsonl` path for a Copilot CLI session,
+	 * `<sessionStateDir>/<sessionId>/events.jsonl`. The path is host-local (the
+	 * agent runs where its logs live), so the built-in `/troubleshoot` skill can
+	 * read it directly whether the host is local or remote.
+	 */
+	private _sessionEventsLogPath(sessionId: string): string {
+		const sessionStateDir = getCopilotCLISessionStateDir(this._environmentService.userHome.fsPath);
+		return join(sessionStateDir, sessionId, 'events.jsonl');
 	}
 
 	async hasRuntimeSlashCommand(command: string): Promise<boolean> {

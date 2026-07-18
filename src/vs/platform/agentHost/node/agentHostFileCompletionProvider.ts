@@ -12,6 +12,7 @@ import { URI } from '../../../base/common/uri.js';
 import { CompletionItem, CompletionItemKind, CompletionsParams } from '../common/state/protocol/commands.js';
 import { MessageAttachmentKind } from '../common/state/protocol/state.js';
 import { CompletionTriggerCharacter, IAgentHostCompletionItemProvider } from './agentHostCompletions.js';
+import { isSessionReferenceToken } from './agentHostSessionReferenceCompletionProvider.js';
 import { AgentHostStateManager } from './agentHostStateManager.js';
 import { AgentHostWorkspaceFiles } from './agentHostWorkspaceFiles.js';
 
@@ -122,6 +123,11 @@ export class AgentHostFileCompletionProvider implements IAgentHostCompletionItem
 
 		const at = extractAtToken(params.text, params.offset);
 		if (!at) {
+			return [];
+		}
+		// Cede `#session…` tokens to the session-reference provider so file
+		// matches don't get mixed into the session list.
+		if (at.triggerChar === CompletionTriggerCharacter.Hash && isSessionReferenceToken(at.token)) {
 			return [];
 		}
 
