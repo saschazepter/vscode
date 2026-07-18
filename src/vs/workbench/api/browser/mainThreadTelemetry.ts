@@ -58,8 +58,11 @@ export class MainThreadTelemetry extends Disposable implements MainThreadTelemet
 		this.$publicLog(eventName, data);
 	}
 
+	// __GDPR__COMMON__ "capi.assignmentcontext" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" }
 	$setExperimentProperty(name: string, value: string): void {
-		this._telemetryService.setExperimentProperty(name, value);
+		// Properties forwarded from an extension are additive and must not release the startup
+		// event buffer, which waits for this window's own experiment context (TAS assignment context).
+		this._telemetryService.setExperimentProperty(name, value, false);
 	}
 }
 

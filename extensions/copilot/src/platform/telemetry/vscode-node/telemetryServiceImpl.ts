@@ -128,6 +128,8 @@ export class TelemetryService extends BaseTelemetryService {
 
 		// Forward CAPI assignment context to VS Code's core telemetry pipeline
 		// so it appears on all VS Code telemetry events, not just the Copilot extension's.
+		// The proposed API is accessed dynamically because the extension's `vscode` module types
+		// come from a shim that does not expose it, and it may be unavailable on older hosts.
 		if (name === 'capi.assignmentcontext') {
 			const setProperty: ((name: string, value: string) => void) | undefined =
 				(vscode.env as Record<string, unknown>)['setTelemetryExperimentProperty'] as ((name: string, value: string) => void) | undefined;
