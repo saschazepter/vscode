@@ -409,6 +409,8 @@ class AgentHostChatSession extends Disposable implements IChatSession {
 	readonly progressObs = observableValue<IChatProgress[]>('agentHostProgress', []);
 	readonly isCompleteObs = observableValue<boolean>('agentHostComplete', true);
 	readonly isReadOnly: IObservable<boolean>;
+	private readonly _sessionState = observableValue<IObservable<SessionState | undefined>>(this, constObservable(undefined));
+	private readonly _chatState = observableValue<IObservable<ChatState | undefined>>(this, constObservable(undefined));
 
 	private readonly _onWillDispose = this._register(new Emitter<void>());
 	readonly onWillDispose = this._onWillDispose.event;
@@ -437,11 +439,10 @@ class AgentHostChatSession extends Disposable implements IChatSession {
 	) {
 		super();
 
-		const sessionState = sessionSubscription ? observableFromSubscription(this, sessionSubscription) : constObservable<SessionState | undefined>(undefined);
-		const chatState = chatSubscription ? observableFromSubscription(this, chatSubscription) : constObservable<ChatState | undefined>(undefined);
+		this.setStateSubscriptions(sessionSubscription, chatSubscription);
 		this.isReadOnly = derived(this, reader => {
-			const sessionArchived = Boolean((sessionState.read(reader)?.status ?? 0) & SessionStatus.IsArchived);
-			return isChatReadOnly(chatState.read(reader)?.interactivity, sessionArchived);
+			const sessionArchived = Boolean((this._sessionState.read(reader).read(reader)?.status ?? 0) & SessionStatus.IsArchived);
+			return isChatReadOnly(this._chatState.read(reader).read(reader)?.interactivity, sessionArchived);
 		});
 
 		const hasActiveTurn = initialProgress !== undefined;
@@ -460,6 +461,13 @@ class AgentHostChatSession extends Disposable implements IChatSession {
 
 		this.forkSession = this._forkSession;
 		this.renameSession = this._renameSession;
+	}
+
+	setStateSubscriptions(sessionSubscription: IAgentSubscription<SessionState> | undefined, chatSubscription: IAgentSubscription<ChatState> | undefined): void {
+		transaction(tx => {
+			this._sessionState.set(sessionSubscription ? observableFromSubscription(this, sessionSubscription) : constObservable(undefined), tx);
+			this._chatState.set(chatSubscription ? observableFromSubscription(this, chatSubscription) : constObservable(undefined), tx);
+		});
 	}
 
 	override dispose(): void {
@@ -3748,7 +3756,8 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		const rawState = this._requireRawSessionState(session.toString());
 		const chatURI = this._resolveChatUriFromState(sessionResource, rawState);
 		this._setChatURI(sessionResource, chatURI);
-		this._ensureChatSubscription(session.toString(), chatURI);
+		const chatSub = this._ensureChatSubscription(session.toString(), chatURI);
+		this._activeSessions.get(sessionResource)?.setStateSubscriptions(newSub, chatSub);
 
 		// Start syncing the chat model's pending requests to the protocol
 		this._ensurePendingMessageSubscription(sessionResource, session);

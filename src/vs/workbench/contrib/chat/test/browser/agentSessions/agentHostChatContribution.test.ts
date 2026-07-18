@@ -4661,6 +4661,41 @@ suite('AgentHostChatContribution', () => {
 			assert.deepStrictEqual(states, [true, false, true]);
 		});
 
+		test('new session read-only state follows status after materialization', async () => {
+			const { sessionHandler, agentHostService, chatAgentService } = createContribution(disposables);
+			const sessionResource = URI.from({ scheme: 'agent-host-copilot', path: '/new-read-only-session' });
+			const { chatSession, turnPromise, fire, session, turnId } = await startTurn(
+				sessionHandler,
+				agentHostService,
+				chatAgentService,
+				disposables,
+				{ sessionResource },
+			);
+			assert.ok(chatSession.isReadOnly);
+
+			const backendSession = AgentSession.uri('copilot', 'new-read-only-session');
+			const states = [chatSession.isReadOnly.get()];
+			agentHostService.fireAction({
+				channel: backendSession.toString(),
+				action: { type: ActionType.SessionIsArchivedChanged, isArchived: true },
+				serverSeq: 100,
+				origin: undefined,
+			});
+			states.push(chatSession.isReadOnly.get());
+			agentHostService.fireAction({
+				channel: backendSession.toString(),
+				action: { type: ActionType.SessionIsArchivedChanged, isArchived: false },
+				serverSeq: 101,
+				origin: undefined,
+			});
+			states.push(chatSession.isReadOnly.get());
+
+			fire({ type: 'chat/turnComplete', endedAt: new Date().toISOString(), session, turnId } as ChatAction);
+			await turnPromise;
+
+			assert.deepStrictEqual(states, [false, true, false]);
+		});
+
 		test('loads user and assistant messages into history', async () => {
 			const { sessionHandler, agentHostService } = createContribution(disposables);
 
