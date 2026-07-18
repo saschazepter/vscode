@@ -13,7 +13,6 @@ import { IAgentHostEnablementService } from '../../../../../../platform/agentHos
 import { type ProtectedResourceMetadata } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
 import { NotificationType } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
 import { type AgentInfo, type RootState } from '../../../../../../platform/agentHost/common/state/sessionState.js';
-import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IDefaultAccountService } from '../../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../../../platform/instantiation/common/instantiation.js';
@@ -119,7 +118,6 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 		@IAgentHostActiveClientService private readonly _activeClientService: IAgentHostActiveClientService,
 		@IAgentHostEnablementService agentHostEnablementService: IAgentHostEnablementService,
-		@ICommandService private readonly _commandService: ICommandService,
 	) {
 		super();
 		this._isSessionsWindow = environmentService.isSessionsWindow;
@@ -314,11 +312,9 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 				await this._seedTestToken(agents, testToken);
 				return;
 			}
-			await authenticateProtectedResources(agents, {
+			await this._instantiationService.invokeFunction(authenticateProtectedResources, agents, {
 				authTokenCache: this._authTokenCache,
-				authenticationService: this._authenticationService,
 				logPrefix: '[AgentHost]',
-				logService: this._logService,
 				authenticate: request => this._agentHostService.authenticate(request),
 			});
 		} catch (err) {
@@ -338,33 +334,31 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		const testToken = this._getScenarioAutomationToken();
 		if (testToken !== undefined) {
 			for (const resource of protectedResources) {
-				await this._agentHostService.authenticate({ resource: resource.resource, token: testToken });
-				this._authTokenCache.updateAndIsChanged(resource.resource, resource.scopes_supported, testToken);
+				await this._authTokenCache.authenticate(
+					resource.resource,
+					resource.scopes_supported,
+					testToken,
+					() => this._agentHostService.authenticate({ resource: resource.resource, token: testToken }),
+				);
 			}
 			return protectedResources.length > 0;
 		}
-		return resolveAuthenticationInteractively(protectedResources, {
+		return this._instantiationService.invokeFunction(resolveAuthenticationInteractively, protectedResources, {
 			authTokenCache: this._authTokenCache,
-			authenticationService: this._authenticationService,
 			logPrefix: '[AgentHost]',
-			logService: this._logService,
 			authenticate: request => this._agentHostService.authenticate(request),
-			commandService: this._commandService,
 		});
 	}
 
 	private async _seedTestToken(agents: readonly AgentInfo[], token: string): Promise<void> {
 		for (const agent of agents) {
 			for (const resource of agent.protectedResources ?? []) {
-				if (!this._authTokenCache.updateAndIsChanged(resource.resource, resource.scopes_supported, token)) {
-					continue;
-				}
-				try {
-					await this._agentHostService.authenticate({ resource: resource.resource, token });
-				} catch (err) {
-					this._authTokenCache.clear(resource.resource);
-					throw err;
-				}
+				await this._authTokenCache.authenticate(
+					resource.resource,
+					resource.scopes_supported,
+					token,
+					() => this._agentHostService.authenticate({ resource: resource.resource, token }),
+				);
 			}
 		}
 	}

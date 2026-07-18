@@ -554,15 +554,12 @@ class MockChatAgentService extends mock<IChatAgentService>() {
 }
 
 class MockCommandService extends mock<ICommandService>() {
-	error: Error | undefined;
 	readonly calls: { commandId: string; args: unknown[] }[] = [];
+	result: unknown;
 
 	override async executeCommand<R = unknown>(commandId: string, ...args: unknown[]): Promise<R | undefined> {
 		this.calls.push({ commandId, args });
-		if (this.error) {
-			throw this.error;
-		}
-		return undefined;
+		return this.result as R | undefined;
 	}
 }
 
@@ -8698,7 +8695,7 @@ suite('AgentHostChatContribution', () => {
 				getSessions: (async () => []) as IAuthenticationService['getSessions'],
 			};
 			const { instantiationService, agentHostService, chatAgentService, commandService } = createTestServices(disposables, undefined, authService);
-			commandService.error = new Error('Bad credentials');
+			commandService.result = { success: false, dialogSkipped: false, error: new Error('Bad credentials') };
 			disposables.add(instantiationService.createInstance(AgentHostContribution));
 			agentHostService.setRootState({ agents: protectedAgents(), activeSessions: 0 });
 			await timeout(0);
@@ -8728,6 +8725,8 @@ suite('AgentHostChatContribution', () => {
 						forceSignInDialog: true,
 						additionalScopes: ['read:user'],
 						dialogTitle: 'Sign in to use GitHub Copilot',
+						disableChatViewReveal: true,
+						returnResult: true,
 					}],
 				}],
 				turnActions: [],
