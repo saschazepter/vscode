@@ -193,10 +193,9 @@ export interface IFile {
 	localPath?: string;
 	/**
 	 * When set (and `contents` is not provided), stream at most this many bytes
-	 * from the start of {@link localPath} into the archive instead of adding the
-	 * whole file. The prefix is clamped to the file's current size, so a file
-	 * that was truncated or rotated after this size was captured still produces a
-	 * valid entry rather than failing the whole archive.
+	 * from the start of {@link localPath} instead of adding the whole file. The
+	 * prefix is clamped to the file's current size so a rotated or truncated file
+	 * still produces a valid entry.
 	 */
 	localPathSize?: number;
 }
@@ -207,10 +206,8 @@ export async function zip(zipPath: string, files: IFile[]): Promise<string> {
 	const zip = new ZipFile();
 	const zipStream = createWriteStream(zipPath);
 
-	// Wire up the output pipe and error handling before adding any entries, so a
-	// read stream that errors while a later entry is still awaiting I/O cannot
-	// emit on `outputStream` before a listener is attached (which would surface
-	// as an uncaught exception).
+	// Attach error/finish handling before adding entries so a read stream that
+	// errors while a later entry is still awaiting I/O has a listener.
 	const result = new Promise<string>((c, e) => {
 		zip.outputStream.once('error', e);
 		zipStream.once('error', e);
@@ -225,14 +222,10 @@ export async function zip(zipPath: string, files: IFile[]): Promise<string> {
 			if (f.localPathSize === undefined) {
 				zip.addFile(f.localPath, f.path);
 			} else {
-				// Stream a bounded prefix of the file. yazl requires the number of
-				// streamed bytes to exactly match the declared size, otherwise it
-				// aborts the whole archive. The size was captured earlier (before,
-				// e.g., a save dialog), so open a single handle and derive the size
-				// and the bytes from that same descriptor: the read is unaffected by
-				// any rotation/truncation of the path, so the counts always match. A
-				// file that vanished (ENOENT) is skipped rather than failing the
-				// entire archive; other open errors are surfaced.
+				// yazl aborts the archive unless the streamed byte count matches the
+				// declared size. Derive both from a single handle so the counts match
+				// even if the path is rotated or truncated concurrently; skip a
+				// vanished file rather than failing the whole archive.
 				let handle: FileHandle;
 				try {
 					handle = await promises.open(f.localPath, 'r');
@@ -254,8 +247,7 @@ export async function zip(zipPath: string, files: IFile[]): Promise<string> {
 						streamOwnsHandle = true;
 					}
 				} finally {
-					// The read stream auto-closes the handle when it finishes; only
-					// close it here if no stream took ownership.
+					// The read stream closes the handle when it finishes.
 					if (!streamOwnsHandle) {
 						await handle.close();
 					}

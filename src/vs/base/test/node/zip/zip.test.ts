@@ -51,8 +51,7 @@ suite('Zip', () => {
 		const zipPath = path.join(testDir, 'logs.zip');
 		await fs.promises.mkdir(testDir, { recursive: true });
 		await fs.promises.writeFile(sourcePath, 'shrunk');
-		// Request more bytes than the file now holds (e.g. it was rotated after its
-		// size was captured): the entry should contain the whole file, not error.
+		// Request more bytes than the file holds: the entry contains the whole file.
 		await zip(zipPath, [{ path: 'source.txt', localPath: sourcePath, localPathSize: 1024 }]);
 
 		assert.strictEqual((await buffer(zipPath, 'source.txt')).toString(), 'shrunk');

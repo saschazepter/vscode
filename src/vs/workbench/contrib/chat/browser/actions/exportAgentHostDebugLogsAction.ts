@@ -364,8 +364,7 @@ async function createDebugLogFile(path: string, resource: URI, fileService: IFil
 		return { path, resource, size: observedSize };
 	}
 	// Non-local resources (e.g. remote agent-host logs) can't be streamed from
-	// disk, so read them inline. When a captured size is known, read only that
-	// prefix so an actively growing log doesn't produce an unbounded allocation.
+	// disk, so read them inline, bounded to the captured size when known.
 	if (size !== undefined) {
 		const stream = await fileService.readFileStream(resource, { length: size });
 		const content = await streamToBuffer(stream.value);
