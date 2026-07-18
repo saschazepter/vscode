@@ -3573,7 +3573,8 @@ suite('AgentSideEffects', () => {
 				kind: 'action', resource: URI.parse(defaultChatUri),
 				action: {
 					type: ActionType.ChatToolCallReady, turnId: 'turn-1',
-					toolCallId: 'tc-1', invocationMessage: 'Delegating task...', toolInput: undefined,
+					toolCallId: 'tc-1', invocationMessage: 'Delegating task...',
+					toolInput: JSON.stringify({ prompt: 'Review the auth module for security issues' }),
 					confirmed: ToolCallConfirmationReason.NotNeeded,
 				},
 			});
@@ -3595,6 +3596,7 @@ suite('AgentSideEffects', () => {
 			assert.strictEqual(subagentSummary?.title, 'Code Reviewer');
 			assert.deepStrictEqual(subagentSummary?.origin, { kind: 'tool', chat: defaultChatUri, toolCallId: 'tc-1' });
 			assert.ok(subState!.activeTurn, 'subagent chat should have an active turn');
+			assert.strictEqual(subState!.activeTurn!.message.text, 'Review the auth module for security issues', 'subagent turn should render the spawning tool call prompt as its request');
 
 			// Verify content was dispatched on the parent tool call
 			const parentState = stateManager.getSessionState(sessionUri.toString());
