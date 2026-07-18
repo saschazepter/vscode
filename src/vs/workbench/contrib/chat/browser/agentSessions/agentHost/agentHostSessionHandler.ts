@@ -1235,8 +1235,11 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				// handler observes state changes for the duration of the chat
 				// session, then wire up the per-turn machinery that
 				// `_createAndSubscribe` would normally set up.
-				this._ensureSessionSubscription(sessionKey);
-				this._setChatURI(request.sessionResource, this._resolveChatUriFromState(request.sessionResource, existingState));
+				const sessionSub = this._ensureSessionSubscription(sessionKey);
+				const chatURI = this._resolveChatUriFromState(request.sessionResource, existingState);
+				this._setChatURI(request.sessionResource, chatURI);
+				const chatSub = this._ensureChatSubscription(sessionKey, chatURI);
+				this._activeSessions.get(request.sessionResource)?.setStateSubscriptions(sessionSub, chatSub);
 				this._ensurePendingMessageSubscription(request.sessionResource, resolvedSession);
 				this._watchForServerInitiatedTurns(resolvedSession, request.sessionResource);
 
@@ -3757,7 +3760,9 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		const chatURI = this._resolveChatUriFromState(sessionResource, rawState);
 		this._setChatURI(sessionResource, chatURI);
 		const chatSub = this._ensureChatSubscription(session.toString(), chatURI);
-		this._activeSessions.get(sessionResource)?.setStateSubscriptions(newSub, chatSub);
+		if (!fork) {
+			this._activeSessions.get(sessionResource)?.setStateSubscriptions(newSub, chatSub);
+		}
 
 		// Start syncing the chat model's pending requests to the protocol
 		this._ensurePendingMessageSubscription(sessionResource, session);

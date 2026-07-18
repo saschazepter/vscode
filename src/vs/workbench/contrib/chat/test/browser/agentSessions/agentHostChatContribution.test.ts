@@ -78,8 +78,6 @@ import { OpenAgentHostFolderPickerAction } from '../../../browser/agentSessions/
 import { MenuId, MenuRegistry, isIMenuItem, type IMenuItem } from '../../../../../../platform/actions/common/actions.js';
 import { ChatContextKeys } from '../../../common/actions/chatContextKeys.js';
 import { type ContextKeyValue } from '../../../../../../platform/contextkey/common/contextkey.js';
-import { type IAgentSession, type IAgentSessionsModel } from '../../../browser/agentSessions/agentSessionsModel.js';
-import { IAgentSessionsService } from '../../../browser/agentSessions/agentSessionsService.js';
 import { IAgentHostActiveClientService } from '../../../browser/agentSessions/agentHost/agentHostActiveClientService.js';
 import { SyncedCustomizationBundler } from '../../../browser/agentSessions/agentHost/syncedCustomizationBundler.js';
 import { IAgentHostCustomizationService, NullAgentHostCustomizationService } from '../../../browser/agentSessions/agentHost/agentHostCustomizationService.js';
@@ -624,9 +622,6 @@ function createTestServices(disposables: DisposableStore, workingDirectoryResolv
 	const chatWidgetService = new MockChatWidgetService();
 	const chatSessionContributions: IChatSessionsExtensionPoint[] = [];
 	const chatSessionItemControllers: { type: string; controller: IChatSessionItemController }[] = [];
-	const onDidChangeSessionArchivedState = disposables.add(new Emitter<IAgentSession>());
-	const onDidChangeAgentSessions = disposables.add(new Emitter<void>());
-	const agentSessions: IAgentSession[] = [];
 	const openerService: { openedUrls: (string | URI)[]; openShouldFail: boolean; openResult: boolean } & Partial<IOpenerService> = {
 		openedUrls: [],
 		openShouldFail: false,
@@ -646,13 +641,6 @@ function createTestServices(disposables: DisposableStore, workingDirectoryResolv
 	instantiationService.stub(IChatEntitlementService, { entitlement: ChatEntitlement.Free, quotas: {} } as Partial<IChatEntitlementService> as IChatEntitlementService);
 	instantiationService.stub(IChatAgentService, chatAgentService);
 	instantiationService.stub(IChatWidgetService, chatWidgetService);
-	instantiationService.stub(IAgentSessionsService, upcastPartial<IAgentSessionsService>({
-		onDidChangeSessionArchivedState: onDidChangeSessionArchivedState.event,
-		model: upcastPartial<IAgentSessionsModel>({
-			sessions: agentSessions,
-			onDidChangeSessions: onDidChangeAgentSessions.event,
-		}),
-	}));
 	instantiationService.stub(IFileService, TestFileService);
 	instantiationService.stub(ILabelService, MockLabelService);
 	instantiationService.stub(IPathService, new class extends mock<IPathService>() {
@@ -864,7 +852,7 @@ function createTestServices(disposables: DisposableStore, workingDirectoryResolv
 	instantiationService.stub(IAgentHostActiveClientService, activeClientService);
 	instantiationService.stub(IOpenerService, openerService as IOpenerService);
 
-	return { instantiationService, agentHostService, chatAgentService, chatWidgetService, chatService, openerService, activeClientService, seedActiveClient, chatSessionContributions, chatSessionItemControllers, newSessionFolderService, trustController, modelService, workingCopyService, onDidChangeSessionArchivedState, onDidChangeAgentSessions, agentSessions };
+	return { instantiationService, agentHostService, chatAgentService, chatWidgetService, chatService, openerService, activeClientService, seedActiveClient, chatSessionContributions, chatSessionItemControllers, newSessionFolderService, trustController, modelService, workingCopyService };
 }
 
 function createSessionListStore(disposables: DisposableStore, instantiationService: TestInstantiationService, connection: IAgentHostSessionListConnection): AgentHostSessionListStore {
@@ -4696,6 +4684,52 @@ suite('AgentHostChatContribution', () => {
 			assert.deepStrictEqual(states, [false, true, false]);
 		});
 
+		test('eager-created session read-only state follows status after materialization', async () => {
+			const { sessionHandler, agentHostService, chatAgentService } = createContribution(disposables);
+			const backendSession = AgentSession.uri('copilot', 'new-eager-read-only-session');
+			agentHostService.sessionStates.set(backendSession.toString(), {
+				...createSessionState({
+					resource: backendSession.toString(),
+					provider: 'copilot',
+					title: 'Eager',
+					status: SessionStatus.Idle,
+					createdAt: new Date().toISOString(),
+					modifiedAt: new Date().toISOString(),
+				}),
+				lifecycle: SessionLifecycle.Ready,
+			});
+			const sessionResource = URI.from({ scheme: 'agent-host-copilot', path: '/new-eager-read-only-session' });
+			const { chatSession, turnPromise, fire, session, turnId } = await startTurn(
+				sessionHandler,
+				agentHostService,
+				chatAgentService,
+				disposables,
+				{ sessionResource },
+			);
+			assert.ok(chatSession.isReadOnly);
+
+			const states = [chatSession.isReadOnly.get()];
+			agentHostService.fireAction({
+				channel: backendSession.toString(),
+				action: { type: ActionType.SessionIsArchivedChanged, isArchived: true },
+				serverSeq: 100,
+				origin: undefined,
+			});
+			states.push(chatSession.isReadOnly.get());
+			agentHostService.fireAction({
+				channel: backendSession.toString(),
+				action: { type: ActionType.SessionIsArchivedChanged, isArchived: false },
+				serverSeq: 101,
+				origin: undefined,
+			});
+			states.push(chatSession.isReadOnly.get());
+
+			fire({ type: 'chat/turnComplete', endedAt: new Date().toISOString(), session, turnId } as ChatAction);
+			await turnPromise;
+
+			assert.deepStrictEqual(states, [false, true, false]);
+		});
+
 		test('loads user and assistant messages into history', async () => {
 			const { sessionHandler, agentHostService } = createContribution(disposables);
 
@@ -6794,57 +6828,6 @@ suite('AgentHostChatContribution', () => {
 			});
 
 			assert.deepStrictEqual(chatSessionItemControllers.map(c => c.type), ['agent-host-copilot']);
-		});
-
-		test('session list contribution forwards archived state to the agent host', () => {
-			const { instantiationService, agentHostService, onDidChangeSessionArchivedState } = createTestServices(disposables);
-			disposables.add(instantiationService.createInstance(AgentHostSessionListContribution));
-			agentHostService.setRootState({
-				agents: [{ provider: 'copilot' as const, displayName: 'Agent Host - Copilot', description: 'test', models: [] }],
-				activeSessions: 0,
-			});
-
-			let archived = true;
-			const session = upcastPartial<IAgentSession>({
-				providerType: 'agent-host-copilot',
-				resource: URI.from({ scheme: 'agent-host-copilot', path: '/archive-test' }),
-				isArchived: () => archived,
-			});
-			onDidChangeSessionArchivedState.fire(session);
-			archived = false;
-			onDidChangeSessionArchivedState.fire(session);
-
-			assert.deepStrictEqual(agentHostService.dispatchedActions.map(({ channel, action }) => ({ channel, action })), [
-				{
-					channel: AgentSession.uri('copilot', 'archive-test').toString(),
-					action: { type: ActionType.SessionIsArchivedChanged, isArchived: true },
-				},
-				{
-					channel: AgentSession.uri('copilot', 'archive-test').toString(),
-					action: { type: ActionType.SessionIsArchivedChanged, isArchived: false },
-				},
-			]);
-		});
-
-		test('session list contribution syncs archived state when sessions load', () => {
-			const { instantiationService, agentHostService, agentSessions, onDidChangeAgentSessions } = createTestServices(disposables);
-			disposables.add(instantiationService.createInstance(AgentHostSessionListContribution));
-			agentHostService.setRootState({
-				agents: [{ provider: 'copilot' as const, displayName: 'Agent Host - Copilot', description: 'test', models: [] }],
-				activeSessions: 0,
-			});
-
-			agentSessions.push(upcastPartial<IAgentSession>({
-				providerType: 'agent-host-copilot',
-				resource: URI.from({ scheme: 'agent-host-copilot', path: '/archived-at-startup' }),
-				isArchived: () => true,
-			}));
-			onDidChangeAgentSessions.fire();
-
-			assert.deepStrictEqual(agentHostService.dispatchedActions.map(({ channel, action }) => ({ channel, action })), [{
-				channel: AgentSession.uri('copilot', 'archived-at-startup').toString(),
-				action: { type: ActionType.SessionIsArchivedChanged, isArchived: true },
-			}]);
 		});
 
 		test('session list contribution does not register item controller in sessions window', () => {
