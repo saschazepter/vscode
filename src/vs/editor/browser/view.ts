@@ -241,6 +241,8 @@ export class View extends ViewEventHandler {
 		if (!gpu?.decorations) {
 			contentOverlays.push(new IndentGuidesOverlay(this._context));
 			contentOverlays.push(new DecorationsOverlay(this._context));
+		}
+		if (!gpu?.whitespace) {
 			contentOverlays.push(new WhitespaceOverlay(this._context));
 		}
 		let contentViewOverlays: ContentViewOverlays | undefined;

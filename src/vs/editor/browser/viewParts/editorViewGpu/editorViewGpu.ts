@@ -11,7 +11,7 @@ import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { resolveAmdNodeModulePath } from '../../../../amdX.js';
 import { editorBackground, editorForeground, editorSelectionBackground, editorInactiveSelection } from '../../../../platform/theme/common/colorRegistry.js';
 import { isHighContrast } from '../../../../platform/theme/common/theme.js';
-import { editorActiveLineNumber, editorGutter, editorLineNumbers, editorLineHighlight, editorLineHighlightBorder, editorInactiveLineHighlight, editorCursorForeground, editorCursorBackground, editorMultiCursorPrimaryForeground, editorMultiCursorPrimaryBackground, editorMultiCursorSecondaryForeground, editorMultiCursorSecondaryBackground } from '../../../common/core/editorColorRegistry.js';
+import { editorActiveLineNumber, editorGutter, editorLineNumbers, editorLineHighlight, editorLineHighlightBorder, editorInactiveLineHighlight, editorCursorForeground, editorCursorBackground, editorMultiCursorPrimaryForeground, editorMultiCursorPrimaryBackground, editorMultiCursorSecondaryForeground, editorMultiCursorSecondaryBackground, editorWhitespaces } from '../../../common/core/editorColorRegistry.js';
 import { EditorOption, RenderLineNumbersType, TextEditorCursorBlinkingStyle, TextEditorCursorStyle } from '../../../common/config/editorOptions.js';
 import { Position } from '../../../common/core/position.js';
 import { TokenizationRegistry } from '../../../common/languages.js';
@@ -41,12 +41,13 @@ export interface EditorViewGpuCapabilities {
 	readonly currentLine: boolean;
 	/** Text caret (`ViewCursors`). */
 	readonly cursor: boolean;
+	/** Visible space/tab markers (`WhitespaceOverlay`). */
+	readonly whitespace: boolean;
 	/** Gutter line numbers (`LineNumbersOverlay`). */
 	readonly lineNumbers: boolean;
 	/**
 	 * Content/margin decorations: squiggles, inline/line decorations, indent
-	 * guides, rendered whitespace (`DecorationsOverlay`, `IndentGuidesOverlay`,
-	 * `WhitespaceOverlay`, `LinesDecorationsOverlay`,
+	 * guides (`DecorationsOverlay`, `IndentGuidesOverlay`, `LinesDecorationsOverlay`,
 	 * `MarginViewLineDecorationsOverlay`).
 	 */
 	readonly decorations: boolean;
@@ -63,18 +64,18 @@ export interface EditorViewGpuCapabilities {
 }
 
 /**
- * What the Rust renderer draws **today**. Only text is owned so far (the DOM
- * `ViewLines.renderText` is already skipped in `editorView` mode); every other
- * surface still falls to its DOM view part until the renderer grows it. This is
- * a synchronous, static descriptor (it reflects what the renderer can do, not
- * runtime state), so `view.ts` can consult it while constructing the view even
- * though the renderer itself initializes asynchronously.
+ * What the Rust renderer draws **today**. Each unowned surface still falls to
+ * its DOM view part until the renderer grows it. This is a synchronous, static
+ * descriptor (it reflects what the renderer can do, not runtime state), so
+ * `view.ts` can consult it while constructing the view even though the renderer
+ * itself initializes asynchronously.
  */
 export const EDITOR_VIEW_GPU_CAPABILITIES: EditorViewGpuCapabilities = {
 	text: true,
 	selection: true,
 	currentLine: true,
 	cursor: true,
+	whitespace: true,
 	lineNumbers: false,
 	decorations: false,
 	rulers: false,
@@ -214,6 +215,7 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 			gutterWidth: layoutInfo.contentLeft,
 			lineNumbersRight: layoutInfo.lineNumbersLeft + layoutInfo.lineNumbersWidth,
 			tabSize: this._context.viewModel.model.getOptions().tabSize,
+			...this._whitespaceConfig(),
 			background: this._packColor(this._context.theme.getColor(editorBackground), 0x1e1e1eff),
 			// `editorGutter.background` defaults to `editor.background`; mirror that
 			// fallback so the margin matches the DOM view in every theme.
@@ -232,6 +234,22 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 			roundedSelection: options.get(EditorOption.roundedSelection) && !isHighContrast(this._context.theme.type),
 			...this._highlightColors(),
 			...this._cursorConfig(),
+		};
+	}
+
+	private _whitespaceConfig(): Pick<EditorViewConfig, 'renderWhitespace' | 'whitespaceColor' | 'spaceMarker' | 'tabMarker' | 'stopRenderingLineAfter'> {
+		const options = this._context.configuration.options;
+		const fontInfo = options.get(EditorOption.fontInfo);
+		const spaceMarker = Math.abs(fontInfo.wsmiddotWidth - fontInfo.spaceWidth)
+			< Math.abs(fontInfo.middotWidth - fontInfo.spaceWidth)
+			? '\u2e31'
+			: '\u00b7';
+		return {
+			renderWhitespace: options.get(EditorOption.renderWhitespace),
+			whitespaceColor: this._packColor(this._context.theme.getColor(editorWhitespaces), 0xe3e4e229),
+			spaceMarker,
+			tabMarker: fontInfo.canUseHalfwidthRightwardsArrow ? '\uffeb' : '\u2192',
+			stopRenderingLineAfter: options.get(EditorOption.stopRenderingLineAfter),
 		};
 	}
 
@@ -400,6 +418,8 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 			text: lineData.content,
 			tokens: this._buildTokens(lineData.tokens, colorMap, defaultForeground),
 			gutterLabel: this._getGutterLabel(viewLineNumber),
+			continuesWithWrappedLine: lineData.continuesWithWrappedLine,
+			fauxIndentLength: lineData.minColumn - 1,
 		};
 	}
 
