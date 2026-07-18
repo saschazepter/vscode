@@ -13,6 +13,7 @@ import { TROUBLESHOOT_SKILL_NAME } from '../../common/agentHostTroubleshoot.js';
  * Root directory of the Copilot harness's built-in skills, bundled next to
  * this module (`<out>/vs/platform/agentHost/node/copilot/skills`). Each skill
  * lives in its own `<name>/SKILL.md` subfolder.
+ */
 function builtinSkillsRoot(): URI {
 	return FileAccess.asFileUri('vs/platform/agentHost/node/copilot/skills');
 }
