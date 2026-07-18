@@ -33,6 +33,13 @@ export interface IToastResult {
 	readonly actionIndex?: number;
 }
 
+/**
+ * A ZIP entry whose contents are inline or streamed from a local file.
+ */
+export type INativeZipFile =
+	| { readonly path: string; readonly contents: string }
+	| { readonly path: string; readonly source: URI; readonly size: number };
+
 export interface ICPUProperties {
 	model: string;
 	speed: number;
@@ -370,7 +377,7 @@ export interface ICommonNativeHostService {
 	 * @param zipPath The URI where the zip file should be created.
 	 * @param files An array of file entries to include in the zip, each with a relative path and string contents.
 	 */
-	createZipFile(zipPath: URI, files: { path: string; contents: string }[]): Promise<void>;
+	createZipFile(zipPath: URI, files: INativeZipFile[]): Promise<void>;
 
 	// Power
 	getSystemIdleState(idleThreshold: number): Promise<SystemIdleState>;

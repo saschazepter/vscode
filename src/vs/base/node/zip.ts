@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { createWriteStream, WriteStream, promises } from 'fs';
+import { createReadStream, createWriteStream, WriteStream, promises } from 'fs';
 import { Readable } from 'stream';
 import { createCancelablePromise, Sequencer } from '../common/async.js';
 import { CancellationToken } from '../common/cancellation.js';
@@ -190,22 +190,54 @@ export interface IFile {
 	path: string;
 	contents?: Buffer | string;
 	localPath?: string;
+	/**
+	 * When set (and `contents` is not provided), stream at most this many bytes
+	 * from the start of {@link localPath} into the archive instead of adding the
+	 * whole file. The prefix is clamped to the file's current size, so a file
+	 * that was truncated or rotated after this size was captured still produces a
+	 * valid entry rather than failing the whole archive.
+	 */
+	localPathSize?: number;
 }
 
 export async function zip(zipPath: string, files: IFile[]): Promise<string> {
 	const { ZipFile } = await import('yazl');
 
-	return new Promise<string>((c, e) => {
-		const zip = new ZipFile();
-		files.forEach(f => {
-			if (f.contents) {
-				zip.addBuffer(typeof f.contents === 'string' ? Buffer.from(f.contents, 'utf8') : f.contents, f.path);
-			} else if (f.localPath) {
+	const zip = new ZipFile();
+	for (const f of files) {
+		if (f.contents !== undefined) {
+			zip.addBuffer(typeof f.contents === 'string' ? Buffer.from(f.contents, 'utf8') : f.contents, f.path);
+		} else if (f.localPath) {
+			if (f.localPathSize === undefined) {
 				zip.addFile(f.localPath, f.path);
+			} else {
+				// Stream a bounded prefix of the file. yazl requires the number of
+				// streamed bytes to exactly match the size we declare, otherwise it
+				// aborts the whole archive. Because the size was captured earlier
+				// (before, e.g., a save dialog) the file may have been rotated or
+				// truncated since. Re-stat here and clamp to the current size so the
+				// declared size always matches what we can actually read. If the file
+				// vanished, skip it rather than failing the entire zip.
+				let currentSize: number;
+				try {
+					currentSize = (await promises.stat(f.localPath)).size;
+				} catch (error) {
+					continue;
+				}
+				const size = Math.min(f.localPathSize, currentSize);
+				if (size === 0) {
+					zip.addBuffer(Buffer.alloc(0), f.path);
+				} else {
+					const readStream = createReadStream(f.localPath, { start: 0, end: size - 1 });
+					readStream.once('error', error => zip.outputStream.emit('error', error));
+					zip.addReadStream(readStream, f.path, { size });
+				}
 			}
-		});
-		zip.end();
+		}
+	}
+	zip.end();
 
+	return new Promise<string>((c, e) => {
 		const zipStream = createWriteStream(zipPath);
 		zip.outputStream.pipe(zipStream);
 
