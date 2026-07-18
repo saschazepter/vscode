@@ -375,7 +375,10 @@ export interface ICommonNativeHostService {
 	 * Creates a zip file at the specified path containing the provided files.
 	 *
 	 * @param zipPath The URI where the zip file should be created.
-	 * @param files An array of file entries to include in the zip, each with a relative path and string contents.
+	 * @param files An array of file entries to include in the zip. Each entry has
+	 * a relative path and is either given inline string `contents`, or a local
+	 * file `source` URI together with the number of leading bytes (`size`) to
+	 * stream from it.
 	 */
 	createZipFile(zipPath: URI, files: INativeZipFile[]): Promise<void>;
 

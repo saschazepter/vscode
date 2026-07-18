@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { VSBuffer } from '../../../../../base/common/buffer.js';
+import { VSBuffer, streamToBuffer } from '../../../../../base/common/buffer.js';
 import { Schemas } from '../../../../../base/common/network.js';
 import { joinPath } from '../../../../../base/common/resources.js';
 import { hasKey } from '../../../../../base/common/types.js';
@@ -216,7 +216,11 @@ export async function collectAgentHostDebugLogs(
 		if (copilotLogsDir) {
 			const copilotLogFiles = await findCopilotLogsForSession(copilotLogsDir, rawSessionId, fileService, logService);
 			for (const file of copilotLogFiles) {
-				files.push(await createDebugLogFile(file.path, file.resource, fileService, file.size));
+				try {
+					files.push(await createDebugLogFile(file.path, file.resource, fileService, file.size));
+				} catch (error) {
+					logService.warn(`[ExportAgentHostDebugLogs] Failed to read Copilot log '${file.path}': ${error instanceof Error ? error.message : String(error)}`);
+				}
 			}
 		}
 	}
@@ -358,6 +362,14 @@ async function createDebugLogFile(path: string, resource: URI, fileService: IFil
 	if (resource.scheme === Schemas.file) {
 		const observedSize = size ?? (await fileService.resolve(resource, { resolveMetadata: true })).size;
 		return { path, resource, size: observedSize };
+	}
+	// Non-local resources (e.g. remote agent-host logs) can't be streamed from
+	// disk, so read them inline. When a captured size is known, read only that
+	// prefix so an actively growing log doesn't produce an unbounded allocation.
+	if (size !== undefined) {
+		const stream = await fileService.readFileStream(resource, { length: size });
+		const content = await streamToBuffer(stream.value);
+		return { path, contents: content.toString() };
 	}
 	const content = await fileService.readFile(resource);
 	return { path, contents: content.value.toString() };

@@ -72,4 +72,22 @@ suite('Zip', () => {
 
 		await Promises.rm(testDir);
 	});
+
+	test('zip should skip a vanished streamed source without failing the archive', async () => {
+		const testDir = getRandomTestPath(tmpdir(), 'vsctests', 'zip');
+		const presentPath = path.join(testDir, 'present.txt');
+		const missingPath = path.join(testDir, 'missing.txt');
+		const zipPath = path.join(testDir, 'logs.zip');
+		await fs.promises.mkdir(testDir, { recursive: true });
+		await fs.promises.writeFile(presentPath, 'present-contents');
+		await zip(zipPath, [
+			{ path: 'missing.txt', localPath: missingPath, localPathSize: 8 },
+			{ path: 'present.txt', localPath: presentPath, localPathSize: 7 },
+		]);
+
+		assert.strictEqual((await buffer(zipPath, 'present.txt')).toString(), 'present');
+		await assert.rejects(buffer(zipPath, 'missing.txt'));
+
+		await Promises.rm(testDir);
+	});
 });

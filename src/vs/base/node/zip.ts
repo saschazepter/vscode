@@ -3,7 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { createReadStream, createWriteStream, WriteStream, promises } from 'fs';
+import { createWriteStream, WriteStream, promises } from 'fs';
+import type { FileHandle } from 'fs/promises';
 import { Readable } from 'stream';
 import { createCancelablePromise, Sequencer } from '../common/async.js';
 import { CancellationToken } from '../common/cancellation.js';
@@ -204,6 +205,19 @@ export async function zip(zipPath: string, files: IFile[]): Promise<string> {
 	const { ZipFile } = await import('yazl');
 
 	const zip = new ZipFile();
+	const zipStream = createWriteStream(zipPath);
+
+	// Wire up the output pipe and error handling before adding any entries, so a
+	// read stream that errors while a later entry is still awaiting I/O cannot
+	// emit on `outputStream` before a listener is attached (which would surface
+	// as an uncaught exception).
+	const result = new Promise<string>((c, e) => {
+		zip.outputStream.once('error', e);
+		zipStream.once('error', e);
+		zipStream.once('finish', () => c(zipPath));
+	});
+	zip.outputStream.pipe(zipStream);
+
 	for (const f of files) {
 		if (f.contents !== undefined) {
 			zip.addBuffer(typeof f.contents === 'string' ? Buffer.from(f.contents, 'utf8') : f.contents, f.path);
@@ -212,39 +226,46 @@ export async function zip(zipPath: string, files: IFile[]): Promise<string> {
 				zip.addFile(f.localPath, f.path);
 			} else {
 				// Stream a bounded prefix of the file. yazl requires the number of
-				// streamed bytes to exactly match the size we declare, otherwise it
-				// aborts the whole archive. Because the size was captured earlier
-				// (before, e.g., a save dialog) the file may have been rotated or
-				// truncated since. Re-stat here and clamp to the current size so the
-				// declared size always matches what we can actually read. If the file
-				// vanished, skip it rather than failing the entire zip.
-				let currentSize: number;
+				// streamed bytes to exactly match the declared size, otherwise it
+				// aborts the whole archive. The size was captured earlier (before,
+				// e.g., a save dialog), so open a single handle and derive the size
+				// and the bytes from that same descriptor: the read is unaffected by
+				// any rotation/truncation of the path, so the counts always match. A
+				// file that vanished (ENOENT) is skipped rather than failing the
+				// entire archive; other open errors are surfaced.
+				let handle: FileHandle;
 				try {
-					currentSize = (await promises.stat(f.localPath)).size;
+					handle = await promises.open(f.localPath, 'r');
 				} catch (error) {
-					continue;
+					if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+						continue;
+					}
+					throw error;
 				}
-				const size = Math.min(f.localPathSize, currentSize);
-				if (size === 0) {
-					zip.addBuffer(Buffer.alloc(0), f.path);
-				} else {
-					const readStream = createReadStream(f.localPath, { start: 0, end: size - 1 });
-					readStream.once('error', error => zip.outputStream.emit('error', error));
-					zip.addReadStream(readStream, f.path, { size });
+				let streamOwnsHandle = false;
+				try {
+					const size = Math.min(f.localPathSize, (await handle.stat()).size);
+					if (size === 0) {
+						zip.addBuffer(Buffer.alloc(0), f.path);
+					} else {
+						const readStream = handle.createReadStream({ start: 0, end: size - 1 });
+						readStream.once('error', error => zip.outputStream.emit('error', error));
+						zip.addReadStream(readStream, f.path, { size });
+						streamOwnsHandle = true;
+					}
+				} finally {
+					// The read stream auto-closes the handle when it finishes; only
+					// close it here if no stream took ownership.
+					if (!streamOwnsHandle) {
+						await handle.close();
+					}
 				}
 			}
 		}
 	}
 	zip.end();
 
-	return new Promise<string>((c, e) => {
-		const zipStream = createWriteStream(zipPath);
-		zip.outputStream.pipe(zipStream);
-
-		zip.outputStream.once('error', e);
-		zipStream.once('error', e);
-		zipStream.once('finish', () => c(zipPath));
-	});
+	return result;
 }
 
 export function extract(zipPath: string, targetPath: string, options: IExtractOptions = {}, token: CancellationToken): Promise<void> {
