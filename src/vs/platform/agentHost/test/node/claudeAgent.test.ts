@@ -5849,6 +5849,122 @@ suite('ClaudeAgent (Phase 9 — runtime mutation surface)', () => {
 		}, { model: 'claude-sonnet-4-6', effort: 'high' });
 	});
 
+	// C9 adversarial edge cases — races the immutable-pipeline / session-orchestrated
+	// rebuild opens up that a happy-path E2E can't hold open. Driven deterministically
+	// against the real ClaudeAgentSession + ClaudeSdkPipeline via the controllable SDK
+	// fake (park a turn / park inside startup, then fire a concurrent abort).
+
+	test('double abort (two aborts back-to-back) is idempotent, rejects the in-flight turn once, and the session still rebuilds on the next send', async () => {
+		const ctx = createTestContext(disposables);
+		await ctx.agent.authenticate('https://api.github.com', 'tok');
+		await tick();
+		const created = await ctx.agent.createSession({ workingDirectory: URI.file('/workspace'), model: { id: 'claude-opus-4.6' } });
+		const sid = AgentSession.id(created.session);
+
+		// Park the first turn so it is genuinely in flight when we abort.
+		const stall = new DeferredPromise<void>();
+		ctx.sdk.queryAdvance = async (i) => { if (i === 0) { await stall.p; } };
+		ctx.sdk.nextQueryMessages = [makeSystemInitMessage(sid), makeResultSuccess(sid)];
+		const inFlight = ctx.agent.chats.sendMessage(defaultChatUri(created.session), 'hi', undefined, undefined, 'turn-1');
+		await tick();
+
+		// Abort twice — the second must be a no-op (the shared-controller signal is
+		// already aborted), NOT a throw or a double-settle of the same deferred.
+		await ctx.agent.chats.abort(defaultChatUri(created.session));
+		await ctx.agent.chats.abort(defaultChatUri(created.session));
+		await assert.rejects(inFlight, (err: unknown) => isCancellationError(err));
+
+		// The session survives the double abort: the next send recover-rebuilds cleanly.
+		ctx.sdk.queryAdvance = undefined;
+		stall.complete();
+		await tick();
+		const startupBefore = ctx.sdk.startupCallCount;
+		ctx.sdk.nextQueryMessages = [makeSystemInitMessage(sid), makeResultSuccess(sid)];
+		await ctx.agent.chats.sendMessage(defaultChatUri(created.session), 'again', undefined, undefined, 'turn-2');
+		assert.strictEqual(ctx.sdk.startupCallCount, startupBefore + 1, 'double-abort still allows exactly one clean rebuild');
+	});
+
+	test('abort landing inside a rebuild\'s startup() await is caught by the post-await gate: the half-built WarmQuery is disposed and the send rejects', async () => {
+		const ctx = createTestContext(disposables);
+		await ctx.agent.authenticate('https://api.github.com', 'tok');
+		await tick();
+		const created = await ctx.agent.createSession({ workingDirectory: URI.file('/workspace'), model: { id: 'claude-opus-4.6' } });
+		const sid = AgentSession.id(created.session);
+
+		// Turn 1 materializes (startup #1).
+		ctx.sdk.nextQueryMessages = [makeSystemInitMessage(sid), makeResultSuccess(sid)];
+		await ctx.agent.chats.sendMessage(defaultChatUri(created.session), 'hi', undefined, undefined, 'turn-1');
+		// Kill the pipeline so the next send must rebuild.
+		await ctx.agent.chats.abort(defaultChatUri(created.session));
+		await tick();
+
+		// Park INSIDE the rebuild's startup() (startup #2), then abort mid-await. This
+		// exercises `_installPipeline`'s post-await gate on the rebuild path (not just
+		// the materialize path): an abort that lands while the subprocess is spawning
+		// must dispose the freshly-spawned WarmQuery and NOT install a dead pipeline.
+		const inStartup = new DeferredPromise<void>();
+		const releaseStartup = new DeferredPromise<void>();
+		ctx.sdk.startupAdvance = async (callIndex) => {
+			if (callIndex === 2) { inStartup.complete(); await releaseStartup.p; }
+		};
+		const warmsBeforeRebuild = ctx.sdk.warmQueries.length;
+		ctx.sdk.nextQueryMessages = [makeSystemInitMessage(sid), makeResultSuccess(sid)];
+		const rebuildSend = ctx.agent.chats.sendMessage(defaultChatUri(created.session), 'rebuild', undefined, undefined, 'turn-2');
+		await inStartup.p;
+
+		await ctx.agent.chats.abort(defaultChatUri(created.session));
+		releaseStartup.complete();
+		await assert.rejects(rebuildSend, (err: unknown) => isCancellationError(err));
+
+		const rebuildWarm = ctx.sdk.warmQueries[warmsBeforeRebuild];
+		assert.deepStrictEqual({
+			spawnedRebuildWarm: !!rebuildWarm,
+			rebuildWarmDisposed: rebuildWarm?.asyncDisposeCount,
+			startups: ctx.sdk.startupCallCount,
+		}, {
+			spawnedRebuildWarm: true,
+			rebuildWarmDisposed: 1,
+			startups: 2,
+		});
+	});
+
+	test('abort→resend churn: every retired WarmQuery is disposed (no leaked subprocess handle across repeated recover-rebuilds), one startup per cycle', async () => {
+		const ctx = createTestContext(disposables);
+		await ctx.agent.authenticate('https://api.github.com', 'tok');
+		await tick();
+		const created = await ctx.agent.createSession({ workingDirectory: URI.file('/workspace'), model: { id: 'claude-opus-4.6' } });
+		const sid = AgentSession.id(created.session);
+
+		const CYCLES = 4;
+		for (let n = 0; n < CYCLES; n++) {
+			const stall = new DeferredPromise<void>();
+			ctx.sdk.queryAdvance = async (i) => { if (i === 0) { await stall.p; } };
+			ctx.sdk.nextQueryMessages = [makeSystemInitMessage(sid), makeResultSuccess(sid)];
+			const inFlight = ctx.agent.chats.sendMessage(defaultChatUri(created.session), `msg-${n}`, undefined, undefined, `turn-${n}`);
+			await tick();
+			await ctx.agent.chats.abort(defaultChatUri(created.session));
+			await assert.rejects(inFlight, (err: unknown) => isCancellationError(err));
+			ctx.sdk.queryAdvance = undefined;
+			stall.complete();
+			await tick();
+		}
+
+		// One SDK startup per cycle (materialize on cycle 0, recover-rebuild thereafter),
+		// and every WarmQuery except the still-live last one was async-disposed at least
+		// once — the deterministic analog of "no orphan subprocess accumulates".
+		const retired = ctx.sdk.warmQueries.slice(0, -1);
+		assert.deepStrictEqual({
+			startups: ctx.sdk.startupCallCount,
+			warmCount: ctx.sdk.warmQueries.length,
+			leakedRetiredWarms: retired.filter(w => w.asyncDisposeCount === 0).length,
+		}, {
+			startups: CYCLES,
+			warmCount: CYCLES,
+			leakedRetiredWarms: 0,
+		});
+	});
+
+
 	test('intermediate result during steering does NOT complete the in-flight sendMessage or fire ChatTurnComplete', async () => {
 		// CONTEXT.md M10: when the SDK preempts via `'now'`-priority, it
 		// emits one `result` message per turn it ran (the aborted
