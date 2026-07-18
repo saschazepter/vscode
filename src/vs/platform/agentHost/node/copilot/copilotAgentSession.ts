@@ -296,6 +296,15 @@ function elicitationAnswerToFieldValue(field: ElicitationSchemaField, answer: Ch
 }
 
 function getCopilotCLISessionStateDir(userHome: string): string {
+	// The CLI stores per-session state under `<root>/session-state`, where `<root>`
+	// is `$COPILOT_HOME` when set (see CopilotAgent's config-root resolver), else
+	// `~/.copilot` - honoring `$XDG_STATE_HOME` (as `<xdg>/.copilot`) only when
+	// `COPILOT_HOME` is unset. Kept in lock-step so troubleshooting reads the same
+	// directory session creation/import writes to.
+	const copilotHome = process.env['COPILOT_HOME'];
+	if (copilotHome) {
+		return join(copilotHome, 'session-state');
+	}
 	const xdgHome = process.env['XDG_STATE_HOME'];
 	return xdgHome ? join(xdgHome, SESSION_STATE_DIRECTORY) : join(userHome, SESSION_STATE_DIRECTORY);
 }

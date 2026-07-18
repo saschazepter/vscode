@@ -61,6 +61,15 @@ suite('AgentHostSessionReferenceCompletionProvider', () => {
 		assert.strictEqual(forSession.length, 1);
 	});
 
+	test('does not fire for tokens that merely start with "session"', async () => {
+		const provider = create([session('a', 'Session A', 20)]);
+		for (const token of ['#sessions', '#sessionManager', '#session.ts']) {
+			assert.deepStrictEqual(await provider.provideCompletionItems(params(token), CancellationToken.None), [], token);
+		}
+		// The completed `#session:` form still fires.
+		assert.strictEqual((await provider.provideCompletionItems(params('#session:'), CancellationToken.None)).length, 1);
+	});
+
 	test('ignores sessions from a different provider', async () => {
 		const provider = create([session('a', 'Session A', 20)]);
 		const p: CompletionsParams = { kind: CompletionItemKind.UserMessage, channel: AgentSession.uri('claude', 'x').toString(), text: '#session:', offset: 9 };

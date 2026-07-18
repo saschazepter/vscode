@@ -17,11 +17,12 @@ suite('agentHostTroubleshoot - augmentTroubleshootRequest', () => {
 	const PROVIDER = 'copilotcli';
 	const resolvePath = (id: string) => `/state/${id}/log.jsonl`;
 
-	function sessionReferenceAttachment(sessionId: string): MessageAttachment {
+	function sessionReferenceAttachment(sessionId: string, title: string = sessionId): MessageAttachment {
 		const resource = AgentSession.uri(PROVIDER, sessionId);
 		return {
 			type: MessageAttachmentKind.Simple,
-			label: `session ${sessionId}`,
+			// The label mirrors the inserted `#session:<title>` marker text.
+			label: title,
 			_meta: toSessionReferenceAttachmentMeta({ sessionResource: resource.toString(), sessionID: sessionId }),
 		};
 	}
@@ -40,19 +41,28 @@ suite('agentHostTroubleshoot - augmentTroubleshootRequest', () => {
 		});
 	});
 
-	test('targets a referenced session, drops the marker, and ignores the marker title text', () => {
-		const attachments = [sessionReferenceAttachment('other')];
-		const result = augmentTroubleshootRequest('how many tests does util have', attachments, resolvePath);
+	test('targets a referenced session and strips the marker when it is the only text', () => {
+		const attachments = [sessionReferenceAttachment('other', 'Other Session')];
+		const result = augmentTroubleshootRequest('#session:Other Session', attachments, resolvePath);
 		assert.deepStrictEqual(result, {
 			prompt: `${SKILL_BASE}\n\nSession log: /state/other/log.jsonl`,
 			attachments: [],
 		});
 	});
 
+	test('keeps a genuine question typed alongside a reference', () => {
+		const attachments = [sessionReferenceAttachment('build', 'Build')];
+		const result = augmentTroubleshootRequest('#session:Build why was the test skipped?', attachments, resolvePath);
+		assert.deepStrictEqual(result, {
+			prompt: `${SKILL_BASE}\n\nSession log: /state/build/log.jsonl\n\nAdditional context from the user:\nwhy was the test skipped?`,
+			attachments: [],
+		});
+	});
+
 	test('keeps non-marker attachments and dedupes multiple references', () => {
 		const keep = plainAttachment('notes.txt');
-		const attachments = [sessionReferenceAttachment('a'), keep, sessionReferenceAttachment('b'), sessionReferenceAttachment('a')];
-		const result = augmentTroubleshootRequest('#session:a #session:b', attachments, resolvePath);
+		const attachments = [sessionReferenceAttachment('a', 'A'), keep, sessionReferenceAttachment('b', 'B'), sessionReferenceAttachment('a', 'A')];
+		const result = augmentTroubleshootRequest('#session:A #session:B', attachments, resolvePath);
 		assert.deepStrictEqual(result, {
 			prompt: `${SKILL_BASE}\n\nSession log: /state/a/log.jsonl, /state/b/log.jsonl`,
 			attachments: [keep],

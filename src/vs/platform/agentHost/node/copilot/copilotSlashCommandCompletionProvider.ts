@@ -227,30 +227,34 @@ export class CopilotSlashCommandCompletionProvider implements IAgentHostCompleti
 		// even for a brand-new session, before the SDK lists them as runtime
 		// commands. These are plain completion items (not customizations), so
 		// they are not claimed by the workbench prompt-file machinery; dispatch
-		// remains text-side via `parseLeadingSlashCommand`.
-		for (const skill of this._sessionInfo.getBuiltinSkills?.() ?? []) {
-			if (addedAliases.has(skill.name)) {
-				continue;
+		// remains text-side via `parseLeadingSlashCommand`, whose regex requires
+		// the `/` at offset 0 - so only advertise built-ins for a leading token,
+		// never a mid-message `use /...` token that could not be dispatched.
+		if (!returnJustSkills) {
+			for (const skill of this._sessionInfo.getBuiltinSkills?.() ?? []) {
+				if (addedAliases.has(skill.name)) {
+					continue;
+				}
+				if (typed.length > 0 && !skill.name.toLowerCase().startsWith(typedLower)) {
+					continue;
+				}
+				const insertText = `/${skill.name} `;
+				const description = skill.description();
+				addedAliases.add(skill.name);
+				completionItems.push({
+					insertText,
+					rangeStart,
+					rangeEnd,
+					attachment: {
+						type: MessageAttachmentKind.Simple,
+						label: insertText,
+						_meta: toCommandCompletionAttachmentMeta({
+							command: skill.name,
+							description,
+						}),
+					},
+				});
 			}
-			if (typed.length > 0 && !skill.name.toLowerCase().startsWith(typedLower)) {
-				continue;
-			}
-			const insertText = `/${skill.name} `;
-			const description = skill.description();
-			addedAliases.add(skill.name);
-			completionItems.push({
-				insertText,
-				rangeStart,
-				rangeEnd,
-				attachment: {
-					type: MessageAttachmentKind.Simple,
-					label: insertText,
-					_meta: toCommandCompletionAttachmentMeta({
-						command: skill.name,
-						description,
-					}),
-				},
-			});
 		}
 
 		return completionItems.sort((a, b) => a.insertText.localeCompare(b.insertText));

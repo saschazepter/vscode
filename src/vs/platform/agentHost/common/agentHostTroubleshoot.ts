@@ -39,9 +39,11 @@ export interface ITroubleshootRequest {
  * its marker attachments are dropped, consumed here rather than forwarded). A
  * bare `/troubleshoot` injects no path, so the skill continues the session
  * already established earlier in the conversation (its sticky-reference rule),
- * or self-discovers the current session on a first call. The user's free text
- * is forwarded as context only for a bare request, since with a reference the
- * trailing text is the marker title rather than an instruction.
+ * or self-discovers the current session on a first call. The user's genuine
+ * free text is always forwarded as context, with the inserted `#session:<title>`
+ * marker text stripped out so only a real question (if any) survives - e.g.
+ * `/troubleshoot #session:Build why was the test skipped?` keeps "why was the
+ * test skipped?".
  *
  * Harness-agnostic: each harness supplies `resolveSessionLogPath`, mapping a raw
  * session id to that harness's on-disk log (Copilot CLI's `events.jsonl`,
@@ -54,6 +56,7 @@ export function augmentTroubleshootRequest(
 ): ITroubleshootRequest {
 	const referencedIds: string[] = [];
 	const remaining: MessageAttachment[] = [];
+	const markerLabels: string[] = [];
 	for (const attachment of attachments ?? []) {
 		const meta = readSessionReferenceAttachmentMeta(attachment._meta);
 		if (meta) {
@@ -65,6 +68,9 @@ export function augmentTroubleshootRequest(
 			} catch {
 				// Ignore an unparseable reference.
 			}
+			// Remember the inserted marker text (`#session:<label>`) so it can be
+			// stripped from the user's free text below.
+			markerLabels.push(attachment.label);
 		} else {
 			remaining.push(attachment);
 		}
@@ -80,10 +86,15 @@ export function augmentTroubleshootRequest(
 			parts.push(`Session log: ${logPaths.join(', ')}`);
 		}
 	}
-	// Forward the user's free text only when it is a genuine instruction. With a
-	// `#session` reference the trailing text is the reference title, so forwarding
-	// it would just re-ask the title.
-	const instructions = referencedIds.length ? '' : userInstructions.trim();
+	// Forward the user's genuine free text, stripping the inserted
+	// `#session:<title>` marker(s) - their target is conveyed via the log path
+	// above, so what remains is any real question the user typed alongside the
+	// reference (e.g. "#session:Build why was the test skipped?").
+	let instructions = userInstructions;
+	for (const label of markerLabels) {
+		instructions = instructions.replace(`#session:${label}`, ' ');
+	}
+	instructions = instructions.trim();
 	if (instructions) {
 		parts.push(`Additional context from the user:\n${instructions}`);
 	}

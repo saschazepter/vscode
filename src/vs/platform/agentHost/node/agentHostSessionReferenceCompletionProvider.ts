@@ -10,21 +10,7 @@ import { SESSION_REFERENCE_DISPLAY_DATE_META_KEY } from '../common/meta/agentCom
 import { CompletionItem, CompletionItemKind, CompletionsParams } from '../common/state/protocol/commands.js';
 import { MessageAttachmentKind } from '../common/state/protocol/state.js';
 import { CompletionTriggerCharacter, IAgentHostCompletionItemProvider } from './agentHostCompletions.js';
-import { extractAtToken } from './agentHostFileCompletionProvider.js';
-
-/** Token the user types after `#` to reference another session. */
-const SESSION_TOKEN = 'session';
-
-/**
- * Whether a `#`-token is heading toward a `#session` reference — any non-empty
- * prefix of `session` (so it matches as soon as `#s` is typed) or the full
- * `#session:<filter>`. Shared with the file-reference provider so it can cede
- * these tokens (and not mix file matches into the session list).
- */
-export function isSessionReferenceToken(token: string): boolean {
-	const typed = token.toLowerCase();
-	return typed.length > 0 && (SESSION_TOKEN.startsWith(typed) || typed.startsWith(SESSION_TOKEN));
-}
+import { extractAtToken, isSessionReferenceToken, SESSION_TOKEN } from './agentHostCompletionTokens.js';
 
 /**
  * Provides `#session` completions for a harness — one item per other session of

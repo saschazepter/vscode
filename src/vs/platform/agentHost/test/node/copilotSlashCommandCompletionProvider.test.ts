@@ -626,9 +626,12 @@ suite('CopilotSlashCommandCompletionProvider', () => {
 			assert.deepStrictEqual((await run(createProvider(), '/z')).map(i => i.insertText), []);
 		});
 
-		test('surfaces built-in skills for an in-message slash token', async () => {
+		test('does not surface built-in skills for an in-message slash token', async () => {
+			// A mid-message `use /...` token cannot be dispatched via
+			// `parseLeadingSlashCommand` (needs `/` at offset 0), so built-ins are
+			// only advertised for a leading token.
 			const items = await run(createProvider(), 'use /');
-			assert.deepStrictEqual(items.map(i => i.insertText), ['/troubleshoot ']);
+			assert.deepStrictEqual(items.map(i => i.insertText), []);
 		});
 
 		test('dedupes the runtime skill copy the SDK reports once materialized', async () => {
