@@ -4,14 +4,17 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable, DisposableMap, DisposableStore } from '../../../../../../base/common/lifecycle.js';
-import { affectsAgentHostProviderPreference, IAgentHostService, shouldSurfaceLocalAgentHostProvider, type AgentProvider } from '../../../../../../platform/agentHost/common/agentService.js';
+import { affectsAgentHostProviderPreference, AgentSession, IAgentHostService, shouldSurfaceLocalAgentHostProvider, type AgentProvider } from '../../../../../../platform/agentHost/common/agentService.js';
 import { IAgentHostEnablementService } from '../../../../../../platform/agentHost/common/agentHostEnablementService.js';
+import { ActionType } from '../../../../../../platform/agentHost/common/state/sessionActions.js';
 import { type AgentInfo, type RootState } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IWorkbenchContribution } from '../../../../../common/contributions.js';
 import { IWorkbenchEnvironmentService } from '../../../../../services/environment/common/environmentService.js';
 import { IChatSessionsService } from '../../../common/chatSessionsService.js';
+import { type IAgentSession } from '../agentSessionsModel.js';
+import { IAgentSessionsService } from '../agentSessionsService.js';
 import { IAgentHostSessionWorkingDirectoryResolver } from './agentHostSessionWorkingDirectoryResolver.js';
 import { AgentHostSessionListController } from './agentHostSessionListController.js';
 import { AgentHostSessionListStore } from './agentHostSessionListStore.js';
@@ -21,6 +24,7 @@ export class AgentHostSessionListContribution extends Disposable implements IWor
 	static readonly ID = 'workbench.contrib.agentHostSessionListContribution';
 
 	private readonly _agentRegistrations = this._register(new DisposableMap<AgentProvider, DisposableStore>());
+	private readonly _forwardedArchivedStates = new Map<string, boolean>();
 
 	private readonly _isSessionsWindow: boolean;
 
@@ -32,6 +36,7 @@ export class AgentHostSessionListContribution extends Disposable implements IWor
 		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 		@IAgentHostSessionWorkingDirectoryResolver private readonly _workingDirectoryResolver: IAgentHostSessionWorkingDirectoryResolver,
 		@IAgentHostEnablementService agentHostEnablementService: IAgentHostEnablementService,
+		@IAgentSessionsService private readonly _agentSessionsService: IAgentSessionsService,
 	) {
 		super();
 
@@ -42,6 +47,9 @@ export class AgentHostSessionListContribution extends Disposable implements IWor
 		}
 
 		const sessionListStore = this._register(this._instantiationService.createInstance(AgentHostSessionListStore, this._agentHostService));
+
+		this._register(this._agentSessionsService.onDidChangeSessionArchivedState(session => this._forwardArchivedState(session)));
+		this._register(this._agentSessionsService.model.onDidChangeSessions(() => this._syncArchivedStates()));
 
 		this._register(this._agentHostService.rootState.onDidChange(rootState => {
 			this._handleRootStateChange(rootState, sessionListStore);
@@ -97,5 +105,41 @@ export class AgentHostSessionListContribution extends Disposable implements IWor
 
 		store.add(this._chatSessionsService.registerChatSessionItemController(sessionType, listController));
 		store.add(this._workingDirectoryResolver.registerResolver(sessionType, _sessionResource => undefined, sessionResource => listController.isNewSession(sessionResource)));
+		this._syncArchivedStates();
+	}
+
+	private _syncArchivedStates(): void {
+		const currentResources = new Set<string>();
+		for (const session of this._agentSessionsService.model.sessions) {
+			currentResources.add(session.resource.toString());
+			if (session.isArchived()) {
+				this._forwardArchivedState(session);
+			}
+		}
+		for (const resource of this._forwardedArchivedStates.keys()) {
+			if (!currentResources.has(resource)) {
+				this._forwardedArchivedStates.delete(resource);
+			}
+		}
+	}
+
+	private _forwardArchivedState(session: IAgentSession): void {
+		for (const provider of this._agentRegistrations.keys()) {
+			if (session.providerType !== `agent-host-${provider}`) {
+				continue;
+			}
+
+			const archived = session.isArchived();
+			const key = session.resource.toString();
+			if (this._forwardedArchivedStates.get(key) === archived) {
+				return;
+			}
+			this._agentHostService.dispatch(AgentSession.uri(provider, AgentSession.id(session.resource)).toString(), {
+				type: ActionType.SessionIsArchivedChanged,
+				isArchived: archived,
+			});
+			this._forwardedArchivedStates.set(key, archived);
+			return;
+		}
 	}
 }
