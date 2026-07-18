@@ -139,18 +139,30 @@ export class ChatToolCalls extends PromptElement<ChatToolCallsProps, void> {
 		const thinking = includeThinking && round.thinking && <ThinkingDataContainer thinking={round.thinking} />;
 		const phase = (round.phase && roundModelId === this.promptEndpoint.model) ? <PhaseDataContainer phase={round.phase} /> : undefined;
 		const compaction = round.compaction && <CompactionDataContainer compaction={round.compaction} />;
-		const responsePrecedesThinking = round.responseOutputIndex !== undefined
-			&& round.thinking?.outputIndex !== undefined
-			&& round.responseOutputIndex < round.thinking.outputIndex;
+		const responseItems = round.responseOutputItems?.length
+			? round.responseOutputItems.map(item => ({
+				outputIndex: item.outputIndex,
+				legacyOrder: 2,
+				content: <>{item.phase && sameModelAsEndpoint ? <PhaseDataContainer phase={item.phase} /> : undefined}{item.text}</>,
+			}))
+			: [{ outputIndex: round.responseOutputIndex, legacyOrder: 2, content: <>{phase}{round.response}</> }];
+		const replayItems = [
+			...responseItems,
+			{ outputIndex: round.thinking?.outputIndex, legacyOrder: 0, content: thinking },
+			{ outputIndex: round.compaction?.outputIndex, legacyOrder: 1, content: compaction },
+		].filter(item => item.content).sort((a, b) => {
+			if (a.outputIndex !== undefined && b.outputIndex !== undefined) {
+				return a.outputIndex - b.outputIndex;
+			}
+			if (a.outputIndex !== undefined || b.outputIndex !== undefined) {
+				return a.outputIndex !== undefined ? -1 : 1;
+			}
+			return a.legacyOrder - b.legacyOrder;
+		});
 		children.push(
 			<AssistantMessage toolCalls={assistantToolCalls}>
 				{statefulMarker}
-				{responsePrecedesThinking ? phase : undefined}
-				{responsePrecedesThinking ? round.response : undefined}
-				{thinking}
-				{responsePrecedesThinking ? undefined : phase}
-				{compaction}
-				{responsePrecedesThinking ? undefined : round.response}
+				{replayItems.map(item => item.content)}
 			</AssistantMessage>);
 
 		// Tool call elements should be rendered with the later elements first, allowed to grow to fill the available space

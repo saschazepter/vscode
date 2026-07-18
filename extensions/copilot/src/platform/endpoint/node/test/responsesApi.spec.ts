@@ -11,7 +11,7 @@ import { IInstantiationService } from '../../../../util/vs/platform/instantiatio
 import { ChatLocation } from '../../../chat/common/commonTypes';
 import { ConfigKey, IConfigurationService } from '../../../configuration/common/configurationService';
 import { ILogService } from '../../../log/common/logService';
-import { isOpenAIContextManagementResponse } from '../../../networking/common/fetch';
+import { IResponseOutputItem, isOpenAIContextManagementResponse } from '../../../networking/common/fetch';
 import { IChatEndpoint, ICreateEndpointBodyOptions } from '../../../networking/common/networking';
 import { ChatCompletion, FilterReason, FinishedCompletionReason, openAIContextManagementCompactionType, OpenAIContextManagementResponse } from '../../../networking/common/openai';
 import { IToolDeferralService } from '../../../networking/common/toolDeferralService';
@@ -392,7 +392,7 @@ describe('createResponsesRequestBody', () => {
 		services.dispose();
 	});
 
-	it('preserves commentary before reasoning in stateless request history', () => {
+	it('preserves interleaved messages and reasoning in stateless request history', () => {
 		const services = createPlatformServices();
 		const accessor = services.createTestingAccessor();
 		const instantiationService = accessor.get(IInstantiationService);
@@ -407,6 +407,7 @@ describe('createResponsesRequestBody', () => {
 						thinking: { id: 'rs_after_commentary', text: '', encrypted: 'enc_reasoning' },
 					},
 				},
+				{ type: Raw.ChatCompletionContentPartKind.Text, text: 'final answer' },
 			],
 			toolCalls: [{
 				id: 'call_after_reasoning',
@@ -417,7 +418,7 @@ describe('createResponsesRequestBody', () => {
 
 		const body = instantiationService.invokeFunction(servicesAccessor => createResponsesRequestBody(servicesAccessor, createRequestOptions(messages, false), testEndpoint.model, testEndpoint));
 
-		expect(body.input?.map(item => item.type)).toEqual(['message', 'reasoning', 'function_call']);
+		expect(body.input?.map(item => item.type)).toEqual(['message', 'reasoning', 'message', 'function_call']);
 		expect(body.input?.[0]).toMatchObject({
 			type: 'message',
 			role: 'assistant',
@@ -428,6 +429,11 @@ describe('createResponsesRequestBody', () => {
 			id: 'rs_after_commentary',
 			summary: [],
 			encrypted_content: 'enc_reasoning',
+		});
+		expect(body.input?.[2]).toMatchObject({
+			type: 'message',
+			role: 'assistant',
+			content: [{ type: 'output_text', text: 'final answer' }],
 		});
 
 		accessor.dispose();
@@ -1769,6 +1775,7 @@ describe('phase commentary followed by phase final_answer', () => {
 		const accumulatedTexts: string[] = [];
 		const phases: string[] = [];
 		const responseOutputIndices: number[] = [];
+		const responseOutputItems: IResponseOutputItem[] = [];
 
 		const commentaryText = 'Responding directly in commentary as requested. My name is GitHub Copilot.';
 		const finalText = 'My name is GitHub Copilot.';
@@ -1845,6 +1852,9 @@ describe('phase commentary followed by phase final_answer', () => {
 				if (delta.responseOutputIndex !== undefined) {
 					responseOutputIndices.push(delta.responseOutputIndex);
 				}
+				if (delta.responseOutputItem) {
+					responseOutputItems.push(delta.responseOutputItem);
+				}
 				return undefined;
 			},
 			telemetryData,
@@ -1856,6 +1866,10 @@ describe('phase commentary followed by phase final_answer', () => {
 
 		expect(phases).toEqual(['commentary', 'final_answer']);
 		expect(responseOutputIndices).toEqual([0, 1]);
+		expect(responseOutputItems).toEqual([
+			{ text: commentaryText, phase: 'commentary', outputIndex: 0 },
+			{ text: finalText, phase: 'final_answer', outputIndex: 1 },
+		]);
 
 		// The accumulated text must separate commentary and final_answer text
 		const finalAccumulatedText = accumulatedTexts[accumulatedTexts.length - 1];

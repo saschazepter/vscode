@@ -8,16 +8,18 @@ import { describe, expect, test } from 'vitest';
 import type * as vscode from 'vscode';
 import { IChatHookService, type IPreToolUseHookResult } from '../../../../../platform/chat/common/chatHookService';
 import { ConfigKey, IConfigurationService } from '../../../../../platform/configuration/common/configurationService';
+import { rawPartAsCompactionData } from '../../../../../platform/endpoint/common/compactionDataContainer';
 import { IEndpointProvider } from '../../../../../platform/endpoint/common/endpointProvider';
+import { rawPartAsPhaseData } from '../../../../../platform/endpoint/common/phaseDataContainer';
 import { rawPartAsThinkingData } from '../../../../../platform/endpoint/common/thinkingDataContainer';
 import type { IChatEndpoint } from '../../../../../platform/networking/common/networking';
+import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry';
+import { SpyingTelemetryService } from '../../../../../platform/telemetry/node/spyingTelemetryService';
 import { DeferredPromise } from '../../../../../util/vs/base/common/async';
 import { CancellationToken } from '../../../../../util/vs/base/common/cancellation';
 import { Event } from '../../../../../util/vs/base/common/event';
 import { constObservable } from '../../../../../util/vs/base/common/observable';
 import { IInstantiationService } from '../../../../../util/vs/platform/instantiation/common/instantiation';
-import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry';
-import { SpyingTelemetryService } from '../../../../../platform/telemetry/node/spyingTelemetryService';
 import { LanguageModelDataPart, LanguageModelTextPart, LanguageModelToolResult } from '../../../../../vscodeTypes';
 import { ChatVariablesCollection } from '../../../../prompt/common/chatVariablesCollection';
 import type { Conversation } from '../../../../prompt/common/conversation';
@@ -224,7 +226,7 @@ class ParallelAwareToolsService implements IToolsService {
 }
 
 describe('ChatToolCalls (toolCalling.tsx)', () => {
-	test('preserves commentary before reasoning from Responses API output order', async () => {
+	test('preserves interleaved Responses API output item order', async () => {
 		const testingServiceCollection = createExtensionUnitTestingServices();
 		const accessor = testingServiceCollection.createTestingAccessor();
 		const instantiationService = accessor.get(IInstantiationService);
@@ -233,13 +235,23 @@ describe('ChatToolCalls (toolCalling.tsx)', () => {
 		const round: IToolCallRound = {
 			id: 'round-1',
 			modelId: endpoint.model,
-			response: 'commentary',
+			response: 'commentary\n\nfinal answer',
 			responseOutputIndex: 0,
+			responseOutputItems: [
+				{ text: 'commentary', phase: 'commentary', outputIndex: 0 },
+				{ text: 'final answer', phase: 'final_answer', outputIndex: 2 },
+			],
 			thinking: {
 				id: 'rs_after_commentary',
 				text: '',
 				encrypted: 'enc_reasoning',
 				outputIndex: 1,
+			},
+			compaction: {
+				type: 'compaction',
+				id: 'cmp_after_messages',
+				encrypted_content: 'enc_compaction',
+				outputIndex: 3,
 			},
 			toolInputRetry: 0,
 			toolCalls: [],
@@ -266,13 +278,26 @@ describe('ChatToolCalls (toolCalling.tsx)', () => {
 
 		expect(assistantMessage?.content.map(part => {
 			if (part.type === Raw.ChatCompletionContentPartKind.Text) {
-				return 'message';
+				return `message:${part.text}`;
 			}
 			if (part.type === Raw.ChatCompletionContentPartKind.Opaque && rawPartAsThinkingData(part)) {
 				return 'reasoning';
 			}
+			if (part.type === Raw.ChatCompletionContentPartKind.Opaque && rawPartAsPhaseData(part)) {
+				return `phase:${rawPartAsPhaseData(part)}`;
+			}
+			if (part.type === Raw.ChatCompletionContentPartKind.Opaque && rawPartAsCompactionData(part)) {
+				return 'compaction';
+			}
 			return 'other';
-		})).toEqual(['message', 'reasoning']);
+		})).toEqual([
+			'phase:commentary',
+			'message:commentary',
+			'reasoning',
+			'phase:final_answer',
+			'message:final answer',
+			'compaction',
+		]);
 	});
 
 	test('starts multiple sub-agent tool calls in parallel', async () => {

@@ -631,8 +631,8 @@ function isResponsesReasoningId(id: string | undefined): boolean {
 
 function extractAssistantResponseItems(content: Raw.ChatCompletionContentPart[]): OpenAI.Responses.ResponseInputItem[] {
 	const input: OpenAI.Responses.ResponseInputItem[] = [];
-	const phase = extractPhaseData(content);
 	let assistantContent: ResponseInputAssistantTextContentPart[] = [];
+	let assistantPhase: string | undefined;
 
 	const flushAssistantContent = () => {
 		if (!assistantContent.length) {
@@ -642,12 +642,13 @@ function extractAssistantResponseItems(content: Raw.ChatCompletionContentPart[])
 			role: 'assistant',
 			content: assistantContent,
 			type: 'message',
-			phase,
+			phase: assistantPhase,
 		};
 		// The Responses API expects previous assistant message content as output_text/refusal,
 		// but the SDK's ResponseOutputMessage type requires response-only id/status fields.
 		input.push(assistantMessage as OpenAI.Responses.ResponseInputItem);
 		assistantContent = [];
+		assistantPhase = undefined;
 	};
 
 	for (const part of content) {
@@ -657,6 +658,13 @@ function extractAssistantResponseItems(content: Raw.ChatCompletionContentPart[])
 			continue;
 		}
 		if (part.type !== Raw.ChatCompletionContentPartKind.Opaque) {
+			continue;
+		}
+
+		const phase = rawPartAsPhaseData(part);
+		if (phase !== undefined) {
+			flushAssistantContent();
+			assistantPhase = phase;
 			continue;
 		}
 
@@ -687,18 +695,6 @@ function extractAssistantResponseItems(content: Raw.ChatCompletionContentPart[])
 
 	flushAssistantContent();
 	return input;
-}
-
-function extractPhaseData(content: Raw.ChatCompletionContentPart[]): string | undefined {
-	for (const part of content) {
-		if (part.type === Raw.ChatCompletionContentPartKind.Opaque) {
-			const phase = rawPartAsPhaseData(part);
-			if (phase) {
-				return phase;
-			}
-		}
-	}
-	return undefined;
 }
 
 /**
@@ -1154,7 +1150,8 @@ export class OpenAIResponsesProcessor {
 		const previousCompactionItem = this.latestCompactionItem;
 		this.sawCompactionMessage = true;
 		this.latestCompactionOutputIndex = outputIndex ?? this.latestCompactionOutputIndex;
-		this.latestCompactionItem = item;
+		const compactionItem = { ...item, outputIndex };
+		this.latestCompactionItem = compactionItem;
 
 		if (previousCompactionItem?.id === item.id && previousCompactionItem.encrypted_content === item.encrypted_content) {
 			return;
@@ -1162,11 +1159,7 @@ export class OpenAIResponsesProcessor {
 
 		onProgress({
 			text: '',
-			contextManagement: {
-				type: openAIContextManagementCompactionType,
-				id: item.id,
-				encrypted_content: item.encrypted_content,
-			}
+			contextManagement: compactionItem,
 		});
 	}
 
@@ -1287,10 +1280,19 @@ export class OpenAIResponsesProcessor {
 						} : undefined
 					});
 				} else if (chunk.item.type === 'message') {
+					const phase = (chunk.item as ResponseOutputItemWithPhase).phase;
 					onProgress({
 						text: '',
-						phase: (chunk.item as ResponseOutputItemWithPhase).phase,
+						phase,
 						responseOutputIndex: chunk.output_index,
+						responseOutputItem: {
+							text: chunk.item.content
+								.filter(part => part.type === 'output_text')
+								.map(part => part.text)
+								.join(''),
+							phase,
+							outputIndex: chunk.output_index,
+						},
 					});
 				}
 				return;
@@ -1315,11 +1317,13 @@ export class OpenAIResponsesProcessor {
 				const capiChunk = chunk as CapiResponseCompletedEvent;
 				const normalizedOutput = keepLatestCompactionOutput(capiChunk.response.output, this.latestCompactionOutputIndex);
 				const latestCompactionOutput = getLatestCompactionOutput(normalizedOutput, this.latestCompactionOutputIndex);
-				const latestCompactionItem = latestCompactionOutput?.item;
+				const latestCompactionItem = latestCompactionOutput
+					? { ...latestCompactionOutput.item, outputIndex: latestCompactionOutput.outputIndex }
+					: undefined;
 				const previousCompactionItem = this.latestCompactionItem;
 				if (latestCompactionItem) {
 					this.sawCompactionMessage = true;
-					this.latestCompactionOutputIndex = latestCompactionOutput.outputIndex;
+					this.latestCompactionOutputIndex = latestCompactionItem.outputIndex;
 				}
 
 				const shouldEmitResolvedCompaction = latestCompactionItem && (

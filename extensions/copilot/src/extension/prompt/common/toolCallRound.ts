@@ -18,6 +18,7 @@ export class ToolCallRound implements IToolCallRound {
 	public summary: string | undefined;
 	public phase?: string;
 	public modelId?: string;
+	public responseOutputItems?: IToolCallRound['responseOutputItems'];
 
 	/**
 	 * Creates a ToolCallRound from an existing IToolCallRound object.
@@ -39,6 +40,7 @@ export class ToolCallRound implements IToolCallRound {
 		round.summary = params.summary;
 		round.phase = params.phase;
 		round.modelId = params.modelId;
+		round.responseOutputItems = params.responseOutputItems;
 		return round;
 	}
 

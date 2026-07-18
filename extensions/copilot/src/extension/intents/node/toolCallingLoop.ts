@@ -1577,6 +1577,7 @@ export abstract class ToolCallingLoop<TOptions extends IToolCallingLoopOptions =
 		const enableThinking = !shouldDisableThinking;
 		let phase: string | undefined;
 		let responseOutputIndex: number | undefined;
+		const responseOutputItems: NonNullable<IToolCallRound['responseOutputItems']> = [];
 		let compaction: OpenAIContextManagementResponse | undefined;
 		markChatExt(this.options.conversation.sessionId, ChatExtPerfMark.WillFetch);
 		const fetchOptions: ToolCallingLoopFetchOptions = {
@@ -1606,6 +1607,9 @@ export abstract class ToolCallingLoop<TOptions extends IToolCallingLoopOptions =
 					responseOutputIndex = responseOutputIndex === undefined
 						? delta.responseOutputIndex
 						: Math.min(responseOutputIndex, delta.responseOutputIndex);
+				}
+				if (delta.responseOutputItem) {
+					responseOutputItems.push(delta.responseOutputItem);
 				}
 				if (delta.contextManagement && isOpenAIContextManagementResponse(delta.contextManagement)) {
 					compaction = delta.contextManagement;
@@ -1741,6 +1745,7 @@ export abstract class ToolCallingLoop<TOptions extends IToolCallingLoopOptions =
 					phase,
 					modelId: endpoint.model,
 					responseOutputIndex,
+					responseOutputItems: responseOutputItems.length ? responseOutputItems : undefined,
 					compaction,
 				}),
 				chatResult,
