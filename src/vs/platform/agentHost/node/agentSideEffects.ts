@@ -840,20 +840,12 @@ export class AgentSideEffects extends Disposable {
 
 		this._logService.info(`[AgentSideEffects] Starting subagent turn: ${subagentChatUri} (parent=${chatURI}, toolCallId=${toolCallId})`);
 
-		// The spawning tool call lives in the immediate parent chat — the
-		// top-level chat for a first-level subagent or the immediate parent
-		// subagent chat when nested. Resolve it so both the discovery content
-		// block and the parent-tool-input prompt address the right chat.
+		// The spawning tool call lives in the immediate parent chat (top-level, or the parent subagent chat when nested).
 		const contentChatUri = spawningToolParentId
 			? this._subagentChats.get(chatURI, spawningToolParentId)?.chatUri ?? chatURI
 			: chatURI;
 
-		// Start a turn on the subagent session, seeding the request with the
-		// task prompt the parent handed the subagent so the peer chat renders
-		// what it was asked to do. The prompt is recovered from the spawning
-		// tool call's recorded input — already in state by the time the subagent
-		// starts, for every provider — so seeding does not depend on any
-		// provider-side capture timing.
+		// Seed the subagent's opening request with the spawning tool call's prompt.
 		const turnId = generateUuid();
 		this._stateManager.dispatchServerAction(subagentChatUri, {
 			type: ActionType.ChatTurnStarted,
@@ -864,11 +856,7 @@ export class AgentSideEffects extends Disposable {
 
 		this._subagentChats.set({ parentChatUri: chatURI, toolCallId, sessionUri: parentSessionUri, chatUri: subagentChatUri, turnStopWatch: StopWatch.create(false) }, chatURI, toolCallId);
 
-		// Dispatch content on the spawning tool call so clients discover the
-		// subagent. Merge with any existing content to avoid dropping prior
-		// content blocks. (Dispatching on the top-level chat for a nested
-		// subagent would be a no-op, leaving it undiscoverable — hence
-		// `contentChatUri` above.)
+		// Dispatch the discovery content on the spawning tool call's own chat; the top-level chat is a no-op when nested.
 		const parentTurnId = this._stateManager.getActiveTurnId(contentChatUri);
 		if (parentTurnId) {
 			const parentState = this._stateManager.getSessionState(contentChatUri);

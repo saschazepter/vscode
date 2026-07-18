@@ -1585,9 +1585,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		this._readOnly = readOnly;
 		this._readOnlyContextKey.set(readOnly);
 		this.setInputVisible(!readOnly);
-		// Read-only chats (e.g. subagent transcripts, archived sessions) must not
-		// offer request editing, so disable the renderer's edit affordance. This
-		// is authoritative over the lock/unlock `editable` toggles below.
+		// Authoritative over the lock/unlock `editable` toggles below.
 		this._applyRendererEditable(!readOnly);
 		if (this.visible) {
 			this.listWidget?.rerender();
