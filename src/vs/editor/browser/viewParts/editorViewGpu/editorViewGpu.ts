@@ -11,7 +11,7 @@ import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { resolveAmdNodeModulePath } from '../../../../amdX.js';
 import { editorBackground, editorForeground, editorSelectionBackground, editorInactiveSelection } from '../../../../platform/theme/common/colorRegistry.js';
 import { isHighContrast } from '../../../../platform/theme/common/theme.js';
-import { editorActiveLineNumber, editorGutter, editorLineNumbers, editorLineHighlight, editorLineHighlightBorder, editorInactiveLineHighlight, editorCursorForeground, editorCursorBackground, editorMultiCursorPrimaryForeground, editorMultiCursorPrimaryBackground, editorMultiCursorSecondaryForeground, editorMultiCursorSecondaryBackground, editorWhitespaces } from '../../../common/core/editorColorRegistry.js';
+import { editorActiveLineNumber, editorGutter, editorLineNumbers, editorLineHighlight, editorLineHighlightBorder, editorInactiveLineHighlight, editorCursorForeground, editorCursorBackground, editorMultiCursorPrimaryForeground, editorMultiCursorPrimaryBackground, editorMultiCursorSecondaryForeground, editorMultiCursorSecondaryBackground, editorWhitespaces, editorIndentGuide1, editorIndentGuide2, editorIndentGuide3, editorIndentGuide4, editorIndentGuide5, editorIndentGuide6 } from '../../../common/core/editorColorRegistry.js';
 import { EditorOption, RenderLineNumbersType, TextEditorCursorBlinkingStyle, TextEditorCursorStyle } from '../../../common/config/editorOptions.js';
 import { Position } from '../../../common/core/position.js';
 import { TokenizationRegistry } from '../../../common/languages.js';
@@ -43,11 +43,13 @@ export interface EditorViewGpuCapabilities {
 	readonly cursor: boolean;
 	/** Visible space/tab markers (`WhitespaceOverlay`). */
 	readonly whitespace: boolean;
+	/** Inactive indentation guides (`IndentGuidesOverlay`). */
+	readonly indentGuides: boolean;
 	/** Gutter line numbers (`LineNumbersOverlay`). */
 	readonly lineNumbers: boolean;
 	/**
-	 * Content/margin decorations: squiggles, inline/line decorations, indent
-	 * guides (`DecorationsOverlay`, `IndentGuidesOverlay`, `LinesDecorationsOverlay`,
+	 * Content/margin decorations: squiggles and inline/line decorations
+	 * (`DecorationsOverlay`, `LinesDecorationsOverlay`,
 	 * `MarginViewLineDecorationsOverlay`).
 	 */
 	readonly decorations: boolean;
@@ -76,6 +78,7 @@ export const EDITOR_VIEW_GPU_CAPABILITIES: EditorViewGpuCapabilities = {
 	currentLine: true,
 	cursor: true,
 	whitespace: true,
+	indentGuides: true,
 	lineNumbers: false,
 	decorations: false,
 	rulers: false,
@@ -204,6 +207,18 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 		const options = this._context.configuration.options;
 		const fontInfo = options.get(EditorOption.fontInfo);
 		const layoutInfo = options.get(EditorOption.layoutInfo);
+		const wrappingInfo = options.get(EditorOption.wrappingInfo);
+		const guideColors = [
+			editorIndentGuide1,
+			editorIndentGuide2,
+			editorIndentGuide3,
+			editorIndentGuide4,
+			editorIndentGuide5,
+			editorIndentGuide6,
+		]
+			.map(id => this._context.theme.getColor(id))
+			.filter(color => color !== undefined && !color.isTransparent())
+			.map(color => this._packColor(color, 0));
 		return {
 			fontFamily: fontInfo.fontFamily,
 			fontSize: fontInfo.fontSize,
@@ -215,6 +230,12 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 			gutterWidth: layoutInfo.contentLeft,
 			lineNumbersRight: layoutInfo.lineNumbersLeft + layoutInfo.lineNumbersWidth,
 			tabSize: this._context.viewModel.model.getOptions().tabSize,
+			indentSize: this._context.viewModel.model.getOptions().indentSize,
+			indentGuides: options.get(EditorOption.guides).indentation,
+			indentGuideColors: guideColors,
+			maxIndentGuideOffset: wrappingInfo.wrappingColumn === -1
+				? -1
+				: wrappingInfo.wrappingColumn * fontInfo.typicalHalfwidthCharacterWidth,
 			...this._whitespaceConfig(),
 			background: this._packColor(this._context.theme.getColor(editorBackground), 0x1e1e1eff),
 			// `editorGutter.background` defaults to `editor.background`; mirror that
@@ -602,6 +623,24 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 		}
 	}
 
+	private _syncIndentGuides(scrollTop: number, height: number): void {
+		if (!this._context.configuration.options.get(EditorOption.guides).indentation) {
+			return;
+		}
+		const lineCount = Math.min(this._context.viewModel.getLineCount(), EditorViewGpu.MAX_LINES);
+		if (lineCount === 0) {
+			return;
+		}
+		const lineHeight = this._context.configuration.options.get(EditorOption.fontInfo).lineHeight;
+		const start = Math.max(0, Math.floor(scrollTop / lineHeight - 2));
+		const end = Math.min(lineCount, Math.ceil((scrollTop + height) / lineHeight + 2));
+		if (start >= end) {
+			return;
+		}
+		const counts = this._context.viewModel.getLinesIndentGuides(start + 1, end);
+		this._applyDelta({ type: 'setIndentGuides', start, counts });
+	}
+
 	// --- rendering -----------------------------------------------------------
 
 	private _present(): void {
@@ -619,13 +658,16 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 			this._editorView.resize(backingWidth, backingHeight);
 		}
 
+		const scrollTop = this._context.viewLayout.getCurrentScrollTop();
+		const scrollLeft = this._context.viewLayout.getCurrentScrollLeft();
 		this._editorView.setConfig(this._buildConfig());
 		this._syncModel();
+		this._syncIndentGuides(scrollTop, height);
 		this._editorView.setViewport({
 			width,
 			height,
-			scrollTop: this._context.viewLayout.getCurrentScrollTop(),
-			scrollLeft: this._context.viewLayout.getCurrentScrollLeft(),
+			scrollTop,
+			scrollLeft,
 			devicePixelRatio: dpr,
 		});
 

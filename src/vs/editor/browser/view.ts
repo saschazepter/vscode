@@ -238,8 +238,8 @@ export class View extends ViewEventHandler {
 		const contentOverlays: DynamicViewOverlay[] = [];
 		if (!gpu?.currentLine) { contentOverlays.push(new CurrentLineHighlightOverlay(this._context)); }
 		if (!gpu?.selection) { contentOverlays.push(new SelectionsOverlay(this._context)); }
+		if (!gpu?.indentGuides) { contentOverlays.push(new IndentGuidesOverlay(this._context)); }
 		if (!gpu?.decorations) {
-			contentOverlays.push(new IndentGuidesOverlay(this._context));
 			contentOverlays.push(new DecorationsOverlay(this._context));
 		}
 		if (!gpu?.whitespace) {
