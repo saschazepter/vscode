@@ -3143,18 +3143,19 @@ suite('AgentService (node dispatcher)', () => {
 			}
 
 			override readonly chats: IAgentChats = {
-				createChat: async (chat: URI, options?: IAgentCreateChatOptions) => {
-					const session = parseChatUri(chat)!.session;
-					this.chatCalls.push({ op: 'createChat', args: [session, chat.toString(), options?.title ?? ''] });
+				createChat: async (chat: URI, session: URI, options?: IAgentCreateChatOptions) => {
+					this.chatCalls.push({ op: 'createChat', args: [session.toString(), chat.toString(), options?.title ?? '', options?.provisionSession?.model?.id ?? ''] });
 					return { providerData: 'pd' };
 				},
-				fork: async (chat: URI, source: IAgentCreateChatForkSource) => {
-					const session = parseChatUri(chat)!.session;
-					this.chatCalls.push({ op: 'fork', args: [session, chat.toString(), source.source.toString(), source.turnId] });
+				fork: async (chat: URI, session: URI, source: IAgentCreateChatForkSource) => {
+					this.chatCalls.push({ op: 'fork', args: [session.toString(), chat.toString(), source.source.toString(), source.turnId] });
 					return { providerData: 'pd-fork' };
 				},
 				disposeChat: async (chat: URI) => {
 					this.chatCalls.push({ op: 'disposeChat', args: [chat.toString()] });
+				},
+				releaseChat: async (chat: URI) => {
+					this.chatCalls.push({ op: 'releaseChat', args: [chat.toString()] });
 				},
 				sendMessage: async () => { },
 				abort: async () => { },
@@ -3171,7 +3172,7 @@ suite('AgentService (node dispatcher)', () => {
 			const agent = disposables.add(new ChatSurfaceAgent('copilot'));
 			service.registerProvider(agent);
 
-			const session = await service.createSession({ provider: 'copilot' });
+			const session = await service.createSession({ provider: 'copilot', model: { id: 'model-1' } });
 			const chatUri = URI.parse(buildChatUri(session, 'peer-1'));
 			await service.createChat(session, chatUri, { title: 'Peer' });
 			await service.disposeChat(session, chatUri);
@@ -3193,10 +3194,28 @@ suite('AgentService (node dispatcher)', () => {
 				sessionDispose: [],
 				legacyCreateChat: 0,
 				chatOps: ['createChat', 'createChat', 'disposeChat', 'disposeChat'],
-				provisionChatArgs: [session.toString(), defaultChatUri, ''],
-				peerChatArgs: [session.toString(), chatUri.toString(), 'Peer'],
+				provisionChatArgs: [session.toString(), defaultChatUri, '', 'model-1'],
+				peerChatArgs: [session.toString(), chatUri.toString(), 'Peer', ''],
 				disposeChatArgs: [chatUri.toString(), defaultChatUri],
 			});
+		});
+
+		test('session disposal visits peer chats before the default chat', async () => {
+			const agent = disposables.add(new ChatSurfaceAgent('copilot'));
+			service.registerProvider(agent);
+			const session = await service.createSession({ provider: 'copilot' });
+			const chatA = URI.parse(buildChatUri(session, 'peer-a'));
+			const chatB = URI.parse(buildChatUri(session, 'peer-b'));
+			await service.createChat(session, chatA);
+			await service.createChat(session, chatB);
+
+			await service.disposeSession(session);
+
+			assert.deepStrictEqual(agent.chatCalls.filter(call => call.op === 'disposeChat').map(call => call.args[0]), [
+				chatA.toString(),
+				chatB.toString(),
+				buildDefaultChatUri(session),
+			]);
 		});
 
 		test('fork routes to chats.fork with the resolved source chat', async () => {
@@ -3509,7 +3528,7 @@ suite('AgentService (node dispatcher)', () => {
 				override async createChat(_session: URI, _chat: URI): Promise<{ providerData?: string }> {
 					return { providerData: 'blob-1' };
 				}
-				async materializeChat(chat: URI, providerData: string | undefined): Promise<void> {
+				async materializeChat(chat: URI, _session: URI, providerData: string | undefined): Promise<void> {
 					materializeOrder.push({ call: 'materialize', uri: chat.toString(), providerData });
 				}
 				override async getSessionMessages(session: URI): Promise<readonly Turn[]> {
@@ -3915,6 +3934,37 @@ suite('AgentService (node dispatcher)', () => {
 					'provider releaseSession should be invoked for the evicted root',
 				);
 				assert.strictEqual(copilotAgent.disposeSessionCalls.length, 0, 'eviction must not destructively dispose the session');
+			});
+		});
+
+		test('idle eviction releases every chat when the provider supports chat release', () => {
+			return runWithFakedTimers({ useFakeTimers: true }, async () => {
+				const agent = new MockAgent('copilot');
+				disposables.add(toDisposable(() => agent.dispose()));
+				const chatReleases: string[] = [];
+				agent.chats.releaseChat = async chat => {
+					chatReleases.push(chat.toString());
+				};
+				service.registerProvider(agent);
+				const { session } = await agent.createSession();
+				agent.sessionMessages = [
+					{ type: 'message', session, role: 'user', messageId: 'msg-1', content: 'Hello', toolRequests: [] },
+				];
+				await service.restoreSession(session);
+				const chat = URI.parse(buildChatUri(session, 'peer-1'));
+				service.stateManager.addChat(session.toString(), chat.toString(), {});
+				service.addSubscriber(session, 'client-1');
+
+				service.unsubscribe(session, 'client-1');
+				await new Promise(resolve => setTimeout(resolve, 30_000));
+
+				assert.deepStrictEqual({
+					chatReleases,
+					sessionReleases: agent.releaseSessionCalls.map(call => call.toString()),
+				}, {
+					chatReleases: [chat.toString(), buildDefaultChatUri(session)],
+					sessionReleases: [],
+				});
 			});
 		});
 

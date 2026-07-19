@@ -488,7 +488,15 @@ class CopilotTurn {
 export class CopilotAgentSession extends Disposable {
 	readonly sessionId: string;
 	readonly sessionUri: URI;
-	private readonly _chatChannelUri: URI;
+	private _chatChannelUri: URI;
+
+	get chatChannelUri(): URI {
+		return this._chatChannelUri;
+	}
+
+	bindChatChannel(chatChannelUri: URI): void {
+		this._chatChannelUri = chatChannelUri;
+	}
 
 	/** Working directory this session operates in, if any. */
 	get workingDirectory(): URI | undefined { return this._workingDirectory; }
@@ -1620,9 +1628,9 @@ export class CopilotAgentSession extends Disposable {
 				const content = (tc as { content?: readonly ToolResultContent[] }).content;
 				const subagentContent = content ? getToolSubagentContent({ content }) : undefined;
 				// Prefer the spawning Task tool's short `description` (captured on
-				// the parent tool call's `_meta`) so restored peer tabs match the
-				// live path's concise, per-task naming; fall back to the agent
-				// type's display name.
+				// the parent tool call's `_meta`) so restored subagent tabs match
+				// the live path's concise, per-task naming; fall back to the
+				// agent type's display name.
 				const taskDescription = readToolCallMeta(tc).subagentDescription;
 				out.push({
 					resource: URI.parse(buildSubagentSessionUri(parentSessionStr, tc.toolCallId)),
@@ -3138,7 +3146,7 @@ export class CopilotAgentSession extends Disposable {
 				agentDescription: e.data.agentDescription,
 				// The spawning Task tool's short `description` input (captured on
 				// tool start) is the concise per-task tab title for the subagent's
-				// read-only peer chat — distinct even for same-type subagents.
+				// read-only chat — distinct even for same-type subagents.
 				taskDescription: tracked?.meta?.subagentDescription,
 				// When the spawning tool call is itself an inner tool of
 				// another subagent, its recorded parent is the tool call one
