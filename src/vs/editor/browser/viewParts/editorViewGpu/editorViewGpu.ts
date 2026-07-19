@@ -224,6 +224,7 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 			fontSize: fontInfo.fontSize,
 			lineHeight: fontInfo.lineHeight,
 			fontLigatures: !!options.get(EditorOption.fontLigatures),
+			monospaceWidth: fontInfo.isMonospace ? fontInfo.spaceWidth : undefined,
 			// Match the DOM editor's geometry so text/line-numbers land at the
 			// same x offset: reserve exactly the editor's content-left as the
 			// gutter, and expand tabs by the model's tab size.
