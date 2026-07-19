@@ -1,0 +1,96 @@
+version: 1
+rounds:
+  - clientToServer:
+      - channel: ${chat_0}
+        action:
+          type: chat/turnStarted
+          turnId: ${turn_0}
+          message:
+            text: Try to read missing.txt. If it does not exist, reply exactly "missing".
+            origin:
+              kind: user
+    serverToClient:
+      - channel: ${session_0}
+        action:
+          type: session/chatUpdated
+      - channel: ${chat_0}
+        action:
+          type: chat/turnStarted
+          turnId: ${turn_0}
+          message:
+            text: Try to read missing.txt. If it does not exist, reply exactly "missing".
+            origin:
+              kind: user
+      - channel: ${session_0}
+        action:
+          type: session/titleChanged
+      - channel: ${session_0}
+        action:
+          type: session/serverToolsChanged
+      - method: root/sessionAdded
+      - channel: ${session_0}
+        action:
+          type: session/ready
+      - channel: ${session_0}
+        action:
+          type: session/changesetsChanged
+      - channel: ${session_0}
+        action:
+          type: session/customizationsChanged
+      - channel: ${chat_0}
+        action:
+          type: chat/responsePart
+          turnId: ${turn_0}
+          part:
+            kind: markdown
+            content: I'll try to read the file.
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallStart
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_0}
+          toolName: Read
+          displayName: Read file
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallDelta
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallReady
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_0}
+          invocationMessage: Reading [missing.txt](file://${workdir}/missing.txt)
+          toolInput: |-
+            {
+              "file_path": "${workdir}/missing.txt"
+            }
+          confirmed: not-needed
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallComplete
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_0}
+          result:
+            success: false
+            pastTenseMessage: '"Read file" failed'
+            content:
+              - type: text
+                text: 'File does not exist. Note: your current working directory is ${workdir}.'
+      - channel: ${chat_0}
+        action:
+          type: chat/responsePart
+          turnId: ${turn_0}
+          part:
+            kind: markdown
+            content: missing
+      - channel: ${chat_0}
+        action:
+          type: chat/usage
+          turnId: ${turn_0}
+      - channel: ${session_0}
+        action:
+          type: session/chatUpdated
+      - channel: ${chat_0}
+        action:
+          type: chat/turnComplete
+          turnId: ${turn_0}

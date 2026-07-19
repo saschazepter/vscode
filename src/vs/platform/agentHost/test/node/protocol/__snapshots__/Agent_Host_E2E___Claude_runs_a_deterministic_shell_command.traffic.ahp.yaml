@@ -1,0 +1,93 @@
+version: 1
+rounds:
+  - clientToServer:
+      - channel: ${chat_0}
+        action:
+          type: chat/turnStarted
+          turnId: ${turn_0}
+          message:
+            text: Run a shell command that prints SHELL_VALUE_73, then reply with that exact value only.
+            origin:
+              kind: user
+    serverToClient:
+      - channel: ${session_0}
+        action:
+          type: session/chatUpdated
+      - channel: ${chat_0}
+        action:
+          type: chat/turnStarted
+          turnId: ${turn_0}
+          message:
+            text: Run a shell command that prints SHELL_VALUE_73, then reply with that exact value only.
+            origin:
+              kind: user
+      - channel: ${session_0}
+        action:
+          type: session/titleChanged
+      - channel: ${session_0}
+        action:
+          type: session/serverToolsChanged
+      - method: root/sessionAdded
+      - channel: ${session_0}
+        action:
+          type: session/ready
+      - channel: ${session_0}
+        action:
+          type: session/changesetsChanged
+      - channel: ${session_0}
+        action:
+          type: session/customizationsChanged
+      - channel: ${chat_0}
+        action:
+          type: chat/responsePart
+          turnId: ${turn_0}
+          part:
+            kind: markdown
+            content: I'll run a command to print that value.
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallStart
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_0}
+          toolName: Bash
+          displayName: Run shell command
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallDelta
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallReady
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_0}
+          invocationMessage: Running `printf '%s\n' "SHELL_VALUE_73"`
+          toolInput: printf '%s\n' "SHELL_VALUE_73"
+          confirmed: not-needed
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallComplete
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_0}
+          result:
+            success: true
+            pastTenseMessage: Ran `printf '%s\n' "SHELL_VALUE_73"`
+            content:
+              - type: text
+                text: SHELL_VALUE_73
+      - channel: ${chat_0}
+        action:
+          type: chat/responsePart
+          turnId: ${turn_0}
+          part:
+            kind: markdown
+            content: SHELL_VALUE_73
+      - channel: ${chat_0}
+        action:
+          type: chat/usage
+          turnId: ${turn_0}
+      - channel: ${session_0}
+        action:
+          type: session/chatUpdated
+      - channel: ${chat_0}
+        action:
+          type: chat/turnComplete
+          turnId: ${turn_0}

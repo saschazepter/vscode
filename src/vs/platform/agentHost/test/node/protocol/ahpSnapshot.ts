@@ -4,8 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { createRequire } from 'module';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, realpathSync, writeFileSync } from 'fs';
 import { FileAccess } from '../../../../../base/common/network.js';
+import { dirname } from '../../../../../base/common/path.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { assertSnapshot } from '../../../../../base/test/common/snapshot.js';
@@ -71,10 +72,21 @@ interface IAhpSnapshotClient {
 	takeReplayError(): Error | undefined;
 }
 
+export interface IAhpSnapshotNormalization {
+	readonly workingDirectory: string;
+	readonly homeDirectory: string;
+	readonly userName: string;
+}
+
 /** Captures AHP wire messages and serializes a stable semantic projection for snapshots. */
 export class AhpSnapshotRecorder {
 	private readonly _messages: ICapturedAhpMessage[] = [];
 	private readonly _roundStarts: number[] = [];
+	private _normalization: IAhpSnapshotNormalization | undefined;
+
+	setNormalization(normalization: IAhpSnapshotNormalization): void {
+		this._normalization = normalization;
+	}
 
 	record(direction: AhpSnapshotDirection, message: object): void {
 		this._messages.push({ direction, message });
@@ -149,8 +161,22 @@ export class AhpSnapshotRecorder {
 			(direction === 'c2s' ? rounds[roundIndex].clientToServer : rounds[roundIndex].serverToClient).push(projected);
 		}
 
+		for (const round of rounds) {
+			normalizeSnapshotObjects(round.clientToServer, this._normalization);
+			normalizeSnapshotObjects(round.serverToClient, this._normalization);
+		}
 		return serializeFixture({ version: 1, rounds });
 	}
+}
+
+/** Records code-driven AHP traffic during snapshot updates and asserts it during replay. */
+export async function assertRecordedAhpSnapshot(test: Mocha.Runnable, client: IAhpSnapshotClient): Promise<void> {
+	const actual = client.serializeAhpSnapshot();
+	if (UPDATE_AHP_SNAPSHOTS || UPDATE_ALL_SNAPSHOTS) {
+		writeFileSync(snapshotPathForTest(test), actual);
+		return;
+	}
+	await assertSnapshot(actual, { name: 'traffic', extension: 'ahp.yaml' });
 }
 
 /** Loads client actions from an AHP snapshot, dispatches them, and asserts the resulting traffic. */
@@ -392,6 +418,73 @@ function projectContributor(contributor: ToolCallContributor | undefined): objec
 
 function projectStringOrMarkdown(value: StringOrMarkdown): string {
 	return typeof value === 'string' ? value : value.markdown;
+}
+
+function normalizeSnapshotObjects(values: object[], normalization: IAhpSnapshotNormalization | undefined): void {
+	if (!normalization) {
+		return;
+	}
+	for (let index = 0; index < values.length; index++) {
+		values[index] = normalizeSnapshotObject(values[index], normalization);
+	}
+}
+
+function normalizeSnapshotObject(value: object, normalization: IAhpSnapshotNormalization): object {
+	if (Array.isArray(value)) {
+		return value.map(item => normalizeSnapshotValue(item, normalization));
+	}
+	const result: Record<string, unknown> = {};
+	for (const [key, item] of Object.entries(value)) {
+		result[key] = normalizeSnapshotValue(item, normalization);
+	}
+	return result;
+}
+
+function normalizeSnapshotValue(value: unknown, normalization: IAhpSnapshotNormalization): unknown {
+	if (typeof value === 'string') {
+		return normalizeSnapshotText(value, normalization);
+	}
+	if (Array.isArray(value)) {
+		return value.map(item => normalizeSnapshotValue(item, normalization));
+	}
+	if (value && typeof value === 'object') {
+		return normalizeSnapshotObject(value, normalization);
+	}
+	return value;
+}
+
+function normalizeSnapshotText(value: string, normalization: IAhpSnapshotNormalization): string {
+	const workDirs = new Set([normalization.workingDirectory]);
+	try {
+		workDirs.add(realpathSync.native(normalization.workingDirectory));
+	} catch {
+		// The workspace can be deleted during teardown after the traffic was captured.
+	}
+	let normalized = value;
+	for (const workDir of [...workDirs].sort((a, b) => b.length - a.length)) {
+		normalized = normalized
+			.replaceAll(JSON.stringify(workDir).slice(1, -1), '${workdir}')
+			.replaceAll(workDir, '${workdir}')
+			.replaceAll(URI.file(workDir).toString(), '${workdir}');
+	}
+	normalized = normalized.replaceAll('/private${workdir}', '${workdir}');
+	for (const tempRoot of new Set([...workDirs].map(workDir => dirname(workDir)))) {
+		const escapedRoot = escapeRegExpCharacters(tempRoot);
+		normalized = normalized.replace(new RegExp(`(?:file://)?${escapedRoot}/ahp-coverage-[^\\s\`"')]*`, 'g'), '${workdir}');
+	}
+	normalized = normalized
+		.replaceAll(normalization.homeDirectory, '${homedir}')
+		.replaceAll(URI.file(normalization.homeDirectory).toString(), '${homedir}')
+		.replaceAll(normalization.userName, '${user}');
+	if (!normalized.includes('${temp}')) {
+		normalized = normalized.replace(/ahp-coverage-([a-z-]+)-[A-Za-z0-9]{6}/g, 'ahp-coverage-$1-${temp}');
+	}
+	normalized = normalized.replace(/<shellId: \d+/g, '<shellId: ${shellId}');
+	return normalized.replace(/^[dlcbps-][rwxStTs-]{9}[+@.]?\s+\d+\s+\S+\s+\S+\s+\d+\s+\w{3}\s+\d{1,2}\s+(?:\d{2}:\d{2}|\d{4})\s+/gm, '${listing} ');
+}
+
+function escapeRegExpCharacters(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function snapshotPathForTest(test: Mocha.Runnable): string {

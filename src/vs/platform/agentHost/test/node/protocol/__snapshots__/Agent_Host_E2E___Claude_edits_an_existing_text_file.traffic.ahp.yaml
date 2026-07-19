@@ -1,0 +1,198 @@
+version: 1
+rounds:
+  - clientToServer:
+      - channel: ${chat_0}
+        action:
+          type: chat/turnStarted
+          turnId: ${turn_0}
+          message:
+            text: Replace the complete contents of edit.txt with AFTER_VALUE.
+            origin:
+              kind: user
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallConfirmed
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_2}
+          approved: true
+          confirmed: user-action
+    serverToClient:
+      - channel: ${session_0}
+        action:
+          type: session/chatUpdated
+      - channel: ${chat_0}
+        action:
+          type: chat/turnStarted
+          turnId: ${turn_0}
+          message:
+            text: Replace the complete contents of edit.txt with AFTER_VALUE.
+            origin:
+              kind: user
+      - channel: ${session_0}
+        action:
+          type: session/titleChanged
+      - channel: ${session_0}
+        action:
+          type: session/serverToolsChanged
+      - method: root/sessionAdded
+      - channel: ${session_0}
+        action:
+          type: session/ready
+      - channel: ${session_0}
+        action:
+          type: session/changesetsChanged
+      - channel: ${session_0}
+        action:
+          type: session/customizationsChanged
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallStart
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_0}
+          toolName: Bash
+          displayName: Run shell command
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallDelta
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallReady
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_0}
+          invocationMessage: Running `cat AFTER_VALUE 2>/dev/null; echo "---SEP---"; cat edit.txt 2>/dev/null; echo "-…`
+          toolInput: cat AFTER_VALUE 2>/dev/null; echo "---SEP---"; cat edit.txt 2>/dev/null; echo "---LS---"; ls -la
+          confirmed: not-needed
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallComplete
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_0}
+          result:
+            success: true
+            pastTenseMessage: Ran `cat AFTER_VALUE 2>/dev/null; echo "---SEP---"; cat edit.txt 2>/dev/null; echo "-…`
+            content:
+              - type: text
+                text: |-
+                  ---SEP---
+                  BEFORE_VALUE---LS---
+                  total 8
+                  ${listing} .
+                  ${listing} ..
+                  ${listing} edit.txt
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallStart
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_1}
+          toolName: Read
+          displayName: Read file
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallDelta
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallReady
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_1}
+          invocationMessage: Reading [edit.txt](file://${workdir}/edit.txt)
+          toolInput: |-
+            {
+              "file_path": "${workdir}/edit.txt"
+            }
+          confirmed: not-needed
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallComplete
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_1}
+          result:
+            success: true
+            pastTenseMessage: Read [edit.txt](file://${workdir}/edit.txt)
+            content:
+              - type: text
+                text: "1\tBEFORE_VALUE"
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallStart
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_2}
+          toolName: Edit
+          displayName: Edit file
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallDelta
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallReady
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_2}
+          invocationMessage: Editing [edit.txt](file://${workdir}/edit.txt)
+          toolInput: |-
+            {
+              "file_path": "${workdir}/edit.txt",
+              "old_string": "BEFORE_VALUE",
+              "new_string": "AFTER_VALUE"
+            }
+          confirmed: not-needed
+      - channel: ${session_0}
+        action:
+          type: session/chatUpdated
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallReady
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_2}
+          invocationMessage: Editing [edit.txt](file://${workdir}/edit.txt)
+          toolInput: |-
+            {
+              "file_path": "${workdir}/edit.txt",
+              "old_string": "BEFORE_VALUE",
+              "new_string": "AFTER_VALUE",
+              "replace_all": false
+            }
+      - channel: ${session_0}
+        action:
+          type: session/inputNeededSet
+      - channel: ${session_0}
+        action:
+          type: session/chatUpdated
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallConfirmed
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_2}
+          approved: true
+          confirmed: user-action
+      - channel: ${session_0}
+        action:
+          type: session/inputNeededRemoved
+      - channel: ${chat_0}
+        action:
+          type: chat/toolCallComplete
+          turnId: ${turn_0}
+          toolCallId: ${toolCall_2}
+          result:
+            success: true
+            pastTenseMessage: Edited [edit.txt](file://${workdir}/edit.txt)
+            content:
+              - type: text
+                text: The file ${workdir}/edit.txt has been updated successfully. (file state is current in your context — no need to Read it back)
+              - type: fileEdit
+      - channel: ${chat_0}
+        action:
+          type: chat/responsePart
+          turnId: ${turn_0}
+          part:
+            kind: markdown
+            content: Done. `edit.txt` now contains `AFTER_VALUE` (replacing `BEFORE_VALUE`).
+      - channel: ${chat_0}
+        action:
+          type: chat/usage
+          turnId: ${turn_0}
+      - channel: ${session_0}
+        action:
+          type: session/chatUpdated
+      - channel: ${chat_0}
+        action:
+          type: chat/turnComplete
+          turnId: ${turn_0}
