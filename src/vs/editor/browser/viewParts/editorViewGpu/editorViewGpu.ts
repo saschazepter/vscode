@@ -385,7 +385,7 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 	 *   the theme explicitly defines a border. `renderLineHighlightOnlyWhenFocus`
 	 *   suppresses both when unfocused.
 	 */
-	private _highlightColors(): Pick<EditorViewConfig, 'selectionBackground' | 'lineHighlightBackground' | 'lineHighlightBorder' | 'highlightLines' | 'highlightContent' | 'highlightMargin'> {
+	private _highlightColors(): Pick<EditorViewConfig, 'selectionBackground' | 'lineHighlightBackground' | 'lineHighlightBorder' | 'lineHighlightWidth' | 'highlightLines' | 'highlightContent' | 'highlightMargin'> {
 		const theme = this._context.theme;
 		const options = this._context.configuration.options;
 		const selection = this._focused
@@ -414,6 +414,10 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 			selectionBackground: this._packColor(selection, 0),
 			lineHighlightBackground: hasOpaqueFill ? this._packColor(fill, 0) : 0,
 			lineHighlightBorder,
+			lineHighlightWidth: Math.max(
+				this._context.viewModel.viewLayout.getScrollWidth(),
+				options.get(EditorOption.layoutInfo).contentWidth,
+			),
 			highlightLines: this._cursorLines,
 			highlightContent,
 			highlightMargin,
