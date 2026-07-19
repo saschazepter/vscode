@@ -72,7 +72,7 @@ suite('Agent host _meta readers', () => {
 		});
 
 		test('reads valid tool-search candidates and drops malformed corpora', () => {
-			const candidates = [{ name: 'everything-get-sum', description: 'Adds numbers', inputSchema: { type: 'object' } }];
+			const candidates = [{ name: 'everything-get-sum', description: 'Adds numbers' }];
 			assert.deepStrictEqual(readToolCallMeta(toolCall({ toolSearchCandidates: candidates })), { toolSearchCandidates: candidates });
 			assert.deepStrictEqual(readToolCallMeta(toolCall({ toolSearchCandidates: [{ name: 1, description: 'bad' }] })), {});
 			assert.deepStrictEqual(readToolCallMeta(toolCall({ toolSearchCandidates: 'bad' })), {});

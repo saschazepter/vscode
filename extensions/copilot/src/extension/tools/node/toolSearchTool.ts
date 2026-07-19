@@ -23,7 +23,6 @@ export interface IToolSearchParams {
 export interface IToolSearchCandidate {
 	name: string;
 	description: string;
-	inputSchema?: object;
 }
 
 const DEFAULT_SEARCH_LIMIT = 5;
@@ -49,7 +48,7 @@ export class ToolSearchTool implements ICopilotModelSpecificTool<IToolSearchPara
 			? candidateTools.map(tool => ({
 				name: tool.name,
 				description: tool.description,
-				inputSchema: tool.inputSchema,
+				inputSchema: undefined,
 				tags: [],
 				source: undefined,
 			}))

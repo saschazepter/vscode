@@ -1138,7 +1138,6 @@ export class CopilotAgentSession extends Disposable {
 
 	private _clientToolName(toolName: string): string {
 		return this._isToolSearchActive()
-			&& this._clientToolNames.has(CLIENT_TOOL_SEARCH_REFERENCE_NAME)
 			&& toolName === RUNTIME_TOOL_SEARCH_TOOL_NAME
 			? CLIENT_TOOL_SEARCH_REFERENCE_NAME
 			: toolName;
@@ -1149,8 +1148,7 @@ export class CopilotAgentSession extends Disposable {
 			.filter(tool => tool.deferLoading)
 			.map(tool => ({
 				name: tool.name,
-				description: tool.description,
-				...(tool.input_schema ? { inputSchema: tool.input_schema } : {}),
+				description: tool.description ?? '',
 			}));
 	}
 
@@ -1216,6 +1214,7 @@ export class CopilotAgentSession extends Disposable {
 			name: def.name,
 			description: def.description ?? '',
 			parameters: def.inputSchema ?? { type: 'object' as const, properties: {} },
+			defer: 'never' as const,
 			handler: async (args: Record<string, unknown>): Promise<ToolResultObject> => {
 				try {
 					const text = host.executeTool(this._chatChannelUri.toString(), def.name, args);
@@ -2149,7 +2148,7 @@ export class CopilotAgentSession extends Disposable {
 			if (recommendation === 'approve' && !request.requestSandboxBypass) {
 				if (request.kind === 'custom-tool'
 					&& typeof request.toolName === 'string'
-					&& this._clientToolNames.has(request.toolName)
+					&& this._clientToolNames.has(this._clientToolName(request.toolName))
 				) {
 					const trackedToolCall = this._activeToolCalls.get(toolCallId);
 					const displayName = trackedToolCall?.displayName ?? getToolDisplayName(request.toolName);

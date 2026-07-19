@@ -34,7 +34,7 @@ describe('ToolSearchTool', () => {
 		const result = await tool.invoke({
 			input: {
 				query: 'add numbers',
-				candidateTools: [{ name: 'everything-get-sum', description: 'Adds numbers', inputSchema: { type: 'object' } }],
+				candidateTools: [{ name: 'everything-get-sum', description: 'Adds numbers' }],
 			},
 			toolInvocationToken: undefined,
 		} as vscode.LanguageModelToolInvocationOptions<any>, CancellationToken.None);

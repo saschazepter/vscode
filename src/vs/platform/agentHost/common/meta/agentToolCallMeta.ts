@@ -54,7 +54,6 @@ export interface IToolCallMeta {
 export interface IToolSearchCandidate {
 	readonly name: string;
 	readonly description: string;
-	readonly inputSchema?: Record<string, unknown>;
 }
 
 /**
@@ -107,14 +106,9 @@ function readToolSearchCandidates(value: unknown): readonly IToolSearchCandidate
 		if (typeof raw['name'] !== 'string' || typeof raw['description'] !== 'string') {
 			return undefined;
 		}
-		const inputSchema = raw['inputSchema'];
-		if (inputSchema !== undefined && (!inputSchema || typeof inputSchema !== 'object' || Array.isArray(inputSchema))) {
-			return undefined;
-		}
 		result.push({
 			name: raw['name'],
 			description: raw['description'],
-			...(inputSchema ? { inputSchema: inputSchema as Record<string, unknown> } : {}),
 		});
 	}
 	return result;

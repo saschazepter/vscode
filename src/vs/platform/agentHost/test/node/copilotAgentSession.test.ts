@@ -5458,6 +5458,10 @@ suite('CopilotAgentSession', () => {
 
 			const tools = runtime.createServerSdkTools();
 			assert.deepStrictEqual(tools.map(t => t.name).sort(), [...serverToolHost.toolNames].sort());
+			// Server tools are always-available internal tools; they must be
+			// eager (`defer: 'never'`) so tool search never hides them behind
+			// `tool_search_tool`.
+			assert.deepStrictEqual(tools.map(t => t.defer), tools.map(() => 'never'));
 		});
 
 		test('server tool handler routes to the host and returns a success result', async () => {
