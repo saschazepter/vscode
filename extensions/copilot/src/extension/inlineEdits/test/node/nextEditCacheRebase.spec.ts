@@ -182,3 +182,85 @@ describe('NextEditCache rebase — Fibonacci scenario', () => {
 		assert.strictEqual(rebaseResult.edit.modelTelemetry, testModelTelemetry, 'should preserve model attribution on the rebased edit');
 	});
 });
+
+/**
+ * Regression test from a real scenario (NES cached suggestion not shown):
+ *
+ * The user is inside `function familyJohn() {` on an empty body line. NES cached a
+ * suggestion that predicts the indented `return [` on that line (a line-based edit
+ * that restates the indentation: `"" -> "    return ["`). The user then tabs to
+ * indent the line.
+ *
+ * When the cached edit is rebased over the user's indentation, the served edit must
+ * be a clean pure insertion of `return [` at the cursor — the indentation the user
+ * already typed must NOT be part of the edit. Serving the raw (non-minimized) rebase
+ * result instead leaves the redundant indentation in the edit's range/new-text, which
+ * is fragile to render as ghost text and can result in the suggestion not being shown.
+ */
+describe('NextEditCache rebase — indented insertion over user indentation', () => {
+
+	let configService: InMemoryConfigurationService;
+	let obsWorkspace: MutableObservableWorkspace;
+	let logService: LogServiceImpl;
+	let expService: NullExperimentationService;
+	let cache: NextEditCache;
+	let docId: DocumentId;
+
+	// cache-time doc: empty body line inside the function
+	const docBefore = 'function familyJohn() {\n\n}\n';
+	const emptyLineOffset = 'function familyJohn() {\n'.length; // start of the empty body line
+	// current doc: the user has tabbed 4 spaces on the (empty) body line
+	const currentDoc = 'function familyJohn() {\n    \n}\n';
+	const cursorOffset = emptyLineOffset + '    '.length; // caret sits after the typed indentation
+
+	function makeSource(): NextEditFetchRequest {
+		const logContext = new InlineEditRequestLogContext('test', 0, undefined);
+		return new NextEditFetchRequest(generateUuid(), logContext, undefined, false);
+	}
+
+	beforeEach(async () => {
+		configService = new InMemoryConfigurationService(new DefaultsOnlyConfigurationService());
+		await configService.setConfig(ConfigKey.TeamInternal.InlineEditsReverseAgreement, true);
+		obsWorkspace = new MutableObservableWorkspace();
+		logService = new LogServiceImpl([]);
+		expService = new NullExperimentationService();
+
+		docId = DocumentId.create(URI.file('/test/example.ts').toString());
+		obsWorkspace.addDocument({ id: docId, initialValue: currentDoc });
+
+		cache = new NextEditCache(obsWorkspace, logService, configService, expService);
+	});
+
+	it('serves a clean at-cursor insertion (no leading whitespace) after the user tabs', () => {
+		// Model predicts the indented `return [` on the empty body line.
+		const modelEdit = new StringReplacement(OffsetRange.emptyAt(emptyLineOffset), '    return [');
+		// The user tabbed 4 spaces on that same (empty) line.
+		const userEditSince = StringEdit.single(new StringReplacement(OffsetRange.emptyAt(emptyLineOffset), '    '));
+
+		const cachedEdit = cache.setKthNextEdit(
+			docId,
+			new StringText(docBefore),
+			undefined, // editWindow
+			modelEdit,
+			0,
+			[modelEdit],
+			userEditSince,
+			makeSource(),
+			{ isFromCursorJump: false, modelTelemetry: testModelTelemetry, cursorOffset: emptyLineOffset },
+		);
+
+		assert(cachedEdit !== undefined, 'setKthNextEdit should return the cached edit');
+		assert(cachedEdit.userEditSince !== undefined, 'userEditSince should be set');
+
+		const rebaseResult = cache.tryRebaseCacheEntry(
+			cachedEdit,
+			new StringText(currentDoc),
+			[OffsetRange.emptyAt(cursorOffset)],
+		);
+
+		assert(rebaseResult.edit !== undefined, 'should rebase successfully');
+		assert(rebaseResult.edit.rebasedEdit !== undefined, 'should have a rebased edit');
+		// The indentation the user typed must not be part of the edit: a pure insertion at the cursor.
+		assert.strictEqual(rebaseResult.edit.rebasedEdit.toString(), '[28, 28) -> "return ["');
+	});
+});

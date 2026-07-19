@@ -399,10 +399,17 @@ class DocumentEditCache {
 					// Try the next window (if available)
 					continue;
 				} else if (res.length) {
-					if (!cachedEdit.rejected && this.isRejectedNextEdit(currentDocumentContents, res[0].rebasedEdit)) {
+					// Minimize the served edit against the current document: the user may have
+					// already typed part of the prediction (e.g. the leading indentation after
+					// tabbing on an empty line). Removing the common prefix/suffix yields a clean
+					// at-cursor edit (a pure insertion when the only remaining change is the
+					// inserted text), which is what the display layer can render as ghost text.
+					// This is semantically neutral (same `apply()` result on the current document).
+					const rebasedEdit = res[0].rebasedEdit.removeCommonSuffixAndPrefix(currentDocumentContents.value);
+					if (!cachedEdit.rejected && this.isRejectedNextEdit(currentDocumentContents, rebasedEdit)) {
 						cachedEdit.rejected = true;
 					}
-					return { edit: { ...cachedEdit, ...res[0], baseCacheEntry: cachedEdit } };
+					return { edit: { ...cachedEdit, ...res[0], rebasedEdit, baseCacheEntry: cachedEdit } };
 				} else if (!originalEdits.length) {
 					return { edit: cachedEdit }; // cached 'no edits'
 				}
