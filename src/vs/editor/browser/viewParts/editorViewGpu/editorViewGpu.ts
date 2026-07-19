@@ -19,10 +19,11 @@ import { HorizontalGuidesState } from '../../../common/textModelGuides.js';
 import type { IViewLineTokens } from '../../../common/tokens/lineTokens.js';
 import type * as viewEvents from '../../../common/viewEvents.js';
 import type { ViewContext } from '../../../common/viewModel/viewContext.js';
-import type { RenderingContext, RestrictedRenderingContext } from '../../view/renderingContext.js';
+import { HorizontalPosition, type RenderingContext, type RestrictedRenderingContext } from '../../view/renderingContext.js';
 import { ViewPart } from '../../view/viewPart.js';
 import { EditorViewModelSync } from './editorViewModelSync.js';
 import type { IEditorViewLineWidthProvider } from '../viewLines/viewLines.js';
+import type { IViewLineHitTestProvider } from '../../controller/mouseHandler.js';
 
 /**
  * Which editor surfaces the `@vscode/editor-view` (Rust/WASM) renderer draws
@@ -101,7 +102,7 @@ export const EDITOR_VIEW_GPU_CAPABILITIES: EditorViewGpuCapabilities = {
  * It is only constructed when `editor.experimentalGpuAcceleration` is set to
  * `'editorView'`; with any other value nothing here runs.
  */
-export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvider {
+export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvider, IViewLineHitTestProvider {
 
 	/** Guard against pathological documents while this is a proof of concept. */
 	private static readonly MAX_LINES = 20_000;
@@ -753,11 +754,29 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 	 * is 0-based (matching the cursor/selection conversions elsewhere here).
 	 */
 	public getColumnOffset(lineNumber: number, column: number): number | undefined {
-		if (!this._editorView) {
+		if (!this._editorView || lineNumber < 1 || lineNumber > Math.min(this._context.viewModel.getLineCount(), EditorViewGpu.MAX_LINES)) {
 			return undefined;
 		}
 		this._syncModel();
 		return this._editorView.columnOffset(lineNumber - 1, column - 1);
+	}
+
+	public getLineWidth(lineNumber: number): number | undefined {
+		return this.getColumnOffset(lineNumber, this._context.viewModel.getLineMaxColumn(lineNumber));
+	}
+
+	public visibleRangeForPosition(position: Position): HorizontalPosition | null {
+		const offset = this.getColumnOffset(position.lineNumber, position.column);
+		return offset === undefined ? null : new HorizontalPosition(false, offset);
+	}
+
+	public getPositionAtCoordinate(lineNumber: number, mouseContentHorizontalOffset: number): Position | undefined {
+		if (!this._editorView || lineNumber < 1 || lineNumber > Math.min(this._context.viewModel.getLineCount(), EditorViewGpu.MAX_LINES)) {
+			return undefined;
+		}
+		this._syncModel();
+		const column = this._editorView.columnAtOffset(lineNumber - 1, mouseContentHorizontalOffset);
+		return column === undefined ? undefined : new Position(lineNumber, column + 1);
 	}
 
 	// --- events --------------------------------------------------------------

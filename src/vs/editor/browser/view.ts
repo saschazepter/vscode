@@ -449,7 +449,7 @@ export class View extends ViewEventHandler {
 			viewDomNode: this.domNode.domNode,
 			linesContentDomNode: this._linesContent.domNode,
 			viewLinesDomNode: this._viewLines.getDomNode().domNode,
-			viewLinesGpu: this._viewLinesGpu,
+			viewLineHitTestProvider: this._editorViewGpu ?? this._viewLinesGpu,
 
 			focusTextArea: () => {
 				this.focus();
@@ -481,7 +481,10 @@ export class View extends ViewEventHandler {
 			visibleRangeForPosition: (lineNumber: number, column: number) => {
 				this._flushAccumulatedAndRenderNow();
 				const position = new Position(lineNumber, column);
-				return this._viewLines.visibleRangeForPosition(position) ?? this._viewLinesGpu?.visibleRangeForPosition(position) ?? null;
+				return this._viewLines.visibleRangeForPosition(position)
+					?? this._viewLinesGpu?.visibleRangeForPosition(position)
+					?? this._editorViewGpu?.visibleRangeForPosition(position)
+					?? null;
 			},
 
 			getLineWidth: (lineNumber: number) => {
@@ -492,6 +495,10 @@ export class View extends ViewEventHandler {
 						return result;
 					}
 				}
+				const editorViewWidth = this._editorViewGpu?.getLineWidth(lineNumber);
+				if (editorViewWidth !== undefined) {
+					return editorViewWidth;
+				}
 				return this._viewLines.getLineWidth(lineNumber);
 			}
 		};
@@ -501,7 +508,9 @@ export class View extends ViewEventHandler {
 		return {
 			visibleRangeForPosition: (position: Position) => {
 				this._flushAccumulatedAndRenderNow();
-				return this._viewLines.visibleRangeForPosition(position);
+				return this._viewLines.visibleRangeForPosition(position)
+					?? this._editorViewGpu?.visibleRangeForPosition(position)
+					?? null;
 			},
 			linesVisibleRangesForRange: (range: Range, includeNewLines: boolean): LineVisibleRanges[] | null => {
 				this._flushAccumulatedAndRenderNow();
@@ -762,7 +771,8 @@ export class View extends ViewEventHandler {
 		});
 		const viewPosition = this._context.viewModel.coordinatesConverter.convertModelPositionToViewPosition(modelPosition);
 		this._flushAccumulatedAndRenderNow();
-		const visibleRange = this._viewLines.visibleRangeForPosition(new Position(viewPosition.lineNumber, viewPosition.column));
+		const visibleRange = this._viewLines.visibleRangeForPosition(new Position(viewPosition.lineNumber, viewPosition.column))
+			?? this._editorViewGpu?.visibleRangeForPosition(viewPosition);
 		if (!visibleRange) {
 			return -1;
 		}
@@ -773,7 +783,7 @@ export class View extends ViewEventHandler {
 		const model = this._context.viewModel.model;
 		const viewLine = this._context.viewModel.coordinatesConverter.convertModelPositionToViewPosition(new Position(modelLineNumber, model.getLineMaxColumn(modelLineNumber))).lineNumber;
 		this._flushAccumulatedAndRenderNow();
-		const width = this._viewLines.getLineWidth(viewLine);
+		const width = this._editorViewGpu?.getLineWidth(viewLine) ?? this._viewLines.getLineWidth(viewLine);
 
 		return width;
 	}
