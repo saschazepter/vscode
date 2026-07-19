@@ -846,15 +846,14 @@ export class AgentSideEffects extends Disposable {
 			? this._subagentChats.get(chatURI, spawningToolParentId)?.chatUri ?? chatURI
 			: chatURI;
 
-		// Seed the subagent's opening request with the delegated task prompt.
-		// Prefer the provider-supplied `taskPrompt`; fall back to recovering it
-		// from the spawning tool call's recorded input.
+		// Seed the subagent's opening request with the delegated task prompt,
+		// supplied by the provider on the `subagent_started` signal.
 		const turnId = generateUuid();
 		this._stateManager.dispatchServerAction(subagentChatUri, {
 			type: ActionType.ChatTurnStarted,
 			turnId,
 			startedAt: new Date().toISOString(),
-			message: { text: taskPrompt ?? this._taskPromptFromToolInput(contentChatUri, toolCallId) ?? '', origin: { kind: MessageKind.User } },
+			message: { text: taskPrompt ?? '', origin: { kind: MessageKind.User } },
 		});
 
 		this._subagentChats.set({ parentChatUri: chatURI, toolCallId, sessionUri: parentSessionUri, chatUri: subagentChatUri, turnStopWatch: StopWatch.create(false) }, chatURI, toolCallId);
@@ -880,33 +879,6 @@ export class AgentSideEffects extends Disposable {
 				],
 			});
 		}
-	}
-
-	/**
-	 * Fallback prompt recovery: reads the spawning tool call's `prompt` input
-	 * from the parent chat's running tool call state, for providers that do not
-	 * supply `taskPrompt` on the `subagent_started` signal.
-	 */
-	private _taskPromptFromToolInput(chatURI: ProtocolURI, toolCallId: string): string | undefined {
-		const state = this._stateManager.getSessionState(chatURI);
-		if (!state?.activeTurn) {
-			return undefined;
-		}
-		for (const rp of state.activeTurn.responseParts) {
-			if (rp.kind === ResponsePartKind.ToolCall && rp.toolCall.toolCallId === toolCallId) {
-				const toolInput = (rp.toolCall as { toolInput?: unknown }).toolInput;
-				if (typeof toolInput !== 'string') {
-					return undefined;
-				}
-				try {
-					const parsed = JSON.parse(toolInput) as Record<string, unknown>;
-					return typeof parsed.prompt === 'string' && parsed.prompt.length > 0 ? parsed.prompt : undefined;
-				} catch {
-					return undefined;
-				}
-			}
-		}
-		return undefined;
 	}
 
 	/**

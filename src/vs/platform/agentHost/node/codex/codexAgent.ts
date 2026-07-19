@@ -1894,6 +1894,9 @@ export class CodexAgent extends Disposable implements IAgent {
 				agentName: model ?? 'codex',
 				agentDisplayName: model ?? 'Subagent',
 				taskDescription,
+				// The `spawnAgent` prompt is the full delegated instruction that
+				// seeds the subagent peer chat's opening request.
+				taskPrompt: item.prompt || undefined,
 			});
 			this._logService.trace(`[Codex:${session.sessionId}] subagent spawned thread=${childThreadId} toolCall=${entry.toolCallId} model=${model ?? '(default)'}`);
 		}
