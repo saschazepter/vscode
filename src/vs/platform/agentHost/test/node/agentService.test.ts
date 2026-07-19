@@ -26,7 +26,7 @@ import { AgentSession, GITHUB_COPILOT_PROTECTED_RESOURCE, IRestoredSubagentSessi
 import { ISessionDatabase, ISessionDataService } from '../../common/sessionDataService.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { SessionDatabase } from '../../node/sessionDatabase.js';
-import { ActionType, ActionEnvelope } from '../../common/state/sessionActions.js';
+import { ActionType, ActionEnvelope, NotificationType, type INotification } from '../../common/state/sessionActions.js';
 import { ChangesetStatus, CustomizationType, MessageAttachmentKind, MessageKind, SessionActiveClient, ResponsePartKind, ROOT_STATE_URI, SessionLifecycle, SessionStatus, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildChatUri, buildDefaultChatUri, buildSubagentChatUri, buildSubagentSessionUri, customizationId, isSubagentSession, parseChatUri, parseSubagentSessionUri, ChatOriginKind, type ChangesetState, type ISessionWithDefaultChat, type MarkdownResponsePart, type ToolCallCompletedState, type ToolCallResponsePart, type Turn } from '../../common/state/sessionState.js';
 import { type MessageResourceAttachment } from '../../common/state/protocol/state.js';
 import { IProductService } from '../../../product/common/productService.js';
@@ -500,6 +500,161 @@ suite('AgentService (node dispatcher)', () => {
 			const session = await svc.createSession({ provider: 'copilot' });
 			return { svc, agent, session, db };
 		}
+
+		test('broadcasts read state changes for listed but unrestored sessions', async () => {
+			const db = new TestSessionDatabase();
+			const svc = disposables.add(new AgentService(
+				new NullLogService(),
+				fileService,
+				createSessionDataService(db),
+				{ _serviceBrand: undefined } as IProductService,
+				createNoopGitService(),
+			));
+			const agent = new MockAgent('copilot');
+			disposables.add(toDisposable(() => agent.dispose()));
+			svc.registerProvider(agent);
+			agent.sessionMetadataOverrides = {
+				status: SessionStatus.InProgress,
+				isRead: false,
+				isArchived: true,
+			};
+			const { session } = await agent.createSession();
+			await svc.listSessions();
+			assert.strictEqual(svc.stateManager.getSessionState(session.toString()), undefined);
+
+			const notifications: INotification[] = [];
+			disposables.add(svc.onDidNotification(notification => notifications.push(notification)));
+
+			svc.dispatchAction(session.toString(), { type: ActionType.SessionIsReadChanged, isRead: true }, 'client-1', 1);
+			svc.dispatchAction(session.toString(), { type: ActionType.SessionIsReadChanged, isRead: true }, 'client-1', 2);
+			svc.dispatchAction(session.toString(), { type: ActionType.SessionIsReadChanged, isRead: false }, 'client-2', 1);
+
+			assert.deepStrictEqual(
+				notifications
+					.filter(notification => notification.type === NotificationType.SessionSummaryChanged)
+					.map(notification => notification.changes.status),
+				[
+					SessionStatus.InProgress | SessionStatus.IsRead | SessionStatus.IsArchived,
+					SessionStatus.InProgress | SessionStatus.IsArchived,
+				],
+			);
+		});
+
+		test('hydrates catalog status before an early read state change', async () => {
+			const db = new TestSessionDatabase();
+			const svc = disposables.add(new AgentService(
+				new NullLogService(),
+				fileService,
+				createSessionDataService(db),
+				{ _serviceBrand: undefined } as IProductService,
+				createNoopGitService(),
+			));
+			const agent = new MockAgent('copilot');
+			disposables.add(toDisposable(() => agent.dispose()));
+			svc.registerProvider(agent);
+			agent.sessionMetadataOverrides = { isRead: false };
+			const { session } = await agent.createSession();
+
+			const notifications: INotification[] = [];
+			disposables.add(svc.onDidNotification(notification => notifications.push(notification)));
+			svc.dispatchAction(session.toString(), { type: ActionType.SessionIsReadChanged, isRead: true }, 'client-1', 1);
+			await waitForCondition(
+				() => notifications.some(notification => notification.type === NotificationType.SessionSummaryChanged),
+				'expected the early read change to emit a catalog notification',
+			);
+
+			assert.deepStrictEqual(
+				notifications
+					.filter(notification => notification.type === NotificationType.SessionSummaryChanged)
+					.map(notification => notification.changes.status),
+				[SessionStatus.Idle | SessionStatus.IsRead],
+			);
+		});
+
+		test('preserves a server-driven unread update after the live session is evicted', async () => {
+			const db = new TestSessionDatabase();
+			const svc = disposables.add(new AgentService(
+				new NullLogService(),
+				fileService,
+				createSessionDataService(db),
+				{ _serviceBrand: undefined } as IProductService,
+				createNoopGitService(),
+			));
+			const agent = new MockAgent('copilot');
+			disposables.add(toDisposable(() => agent.dispose()));
+			svc.registerProvider(agent);
+			await db.setMetadata('isRead', 'true');
+			agent.sessionMetadataOverrides = { isRead: true };
+			const { session } = await agent.createSession();
+			await svc.listSessions();
+			await svc.subscribe(session, 'client-1');
+
+			svc.stateManager.dispatchServerAction(session.toString(), { type: ActionType.SessionIsReadChanged, isRead: false });
+			svc.stateManager.removeSession(session.toString());
+			assert.strictEqual(svc.stateManager.getSessionState(session.toString()), undefined);
+
+			const notifications: INotification[] = [];
+			disposables.add(svc.onDidNotification(notification => notifications.push(notification)));
+			svc.dispatchAction(session.toString(), { type: ActionType.SessionIsReadChanged, isRead: true }, 'client-1', 1);
+
+			assert.deepStrictEqual(
+				notifications
+					.filter(notification => notification.type === NotificationType.SessionSummaryChanged)
+					.map(notification => notification.changes.status),
+				[SessionStatus.Idle | SessionStatus.IsRead],
+			);
+		});
+
+		test('reconciles newly listed sessions when another session changes concurrently', async () => {
+			const db = new TestSessionDatabase();
+			const sessionDataService = {
+				...createSessionDataService(db),
+				tryOpenDatabase: async () => undefined,
+			};
+			const svc = disposables.add(new AgentService(
+				new NullLogService(),
+				fileService,
+				sessionDataService,
+				{ _serviceBrand: undefined } as IProductService,
+				createNoopGitService(),
+			));
+			const agent = new MockAgent('copilot');
+			disposables.add(toDisposable(() => agent.dispose()));
+			svc.registerProvider(agent);
+			agent.sessionMetadataOverrides = { isRead: true };
+			const { session: first } = await agent.createSession();
+			await svc.listSessions();
+			const { session: second } = await agent.createSession();
+
+			const originalListSessions = agent.listSessions.bind(agent);
+			const releaseListSessions = new DeferredPromise<void>();
+			agent.listSessions = async () => {
+				await releaseListSessions.p;
+				return originalListSessions();
+			};
+			const refresh = svc.listSessions();
+			await timeout(0);
+			svc.dispatchAction(first.toString(), { type: ActionType.SessionIsReadChanged, isRead: false }, 'client-1', 1);
+			releaseListSessions.complete();
+			const refreshed = await refresh;
+
+			const notifications: INotification[] = [];
+			disposables.add(svc.onDidNotification(notification => notifications.push(notification)));
+			svc.dispatchAction(second.toString(), { type: ActionType.SessionIsReadChanged, isRead: false }, 'client-2', 1);
+
+			assert.deepStrictEqual({
+				refreshed: refreshed.map(session => ({ session: session.session.toString(), isRead: session.isRead })),
+				notifications: notifications
+					.filter(notification => notification.type === NotificationType.SessionSummaryChanged)
+					.map(notification => ({ session: notification.session.toString(), status: notification.changes.status })),
+			}, {
+				refreshed: [
+					{ session: first.toString(), isRead: false },
+					{ session: second.toString(), isRead: true },
+				],
+				notifications: [{ session: second.toString(), status: SessionStatus.Idle }],
+			});
+		});
 
 		test('applies and persists root config changes from clients', async () => {
 			const tempDir = URI.file(mkdtempSync(`${tmpdir()}/agent-host-config-`));
@@ -1018,6 +1173,26 @@ suite('AgentService (node dispatcher)', () => {
 
 			const sessions = await service.listSessions();
 			assert.strictEqual(sessions.length, 1);
+		});
+
+		test('listSessions state fallback includes read and archive booleans', async () => {
+			service.registerProvider(copilotAgent);
+			const session = await service.createSession({ provider: 'copilot' });
+			service.stateManager.dispatchServerAction(session.toString(), { type: ActionType.SessionIsReadChanged, isRead: true });
+			service.stateManager.dispatchServerAction(session.toString(), { type: ActionType.SessionIsArchivedChanged, isArchived: true });
+			copilotAgent.listSessions = async () => [];
+
+			const sessions = await service.listSessions();
+
+			assert.deepStrictEqual(sessions.map(item => ({
+				session: item.session.toString(),
+				isRead: item.isRead,
+				isArchived: item.isArchived,
+			})), [{
+				session: session.toString(),
+				isRead: true,
+				isArchived: true,
+			}]);
 		});
 
 		test('listSessions overlays custom title from session database', async () => {

@@ -278,6 +278,18 @@ export class AgentHostStateManager extends Disposable {
 	}
 
 	/**
+	 * Emits a status delta for a session known only through the provider catalog.
+	 */
+	emitCatalogSessionStatusChanged(session: string, status: SessionStatus): void {
+		this._onDidEmitNotification.fire({
+			type: 'root/sessionSummaryChanged',
+			channel: ROOT_STATE_URI,
+			session,
+			changes: { status },
+		});
+	}
+
+	/**
 	 * Whether the given session currently has an active turn — i.e. a request is
 	 * in progress on any of its chats. Stays `true` while at least one chat is
 	 * streaming, so it remains correct for multi-chat sessions running

@@ -24,7 +24,7 @@ import { AgentProvider, AgentSession, AgentSignal, AgentHostSessionReleaseGraceM
 import { ISessionDataService, SESSION_ATTACHMENTS_DIRNAME } from '../common/sessionDataService.js';
 import { SessionConfigKey } from '../common/sessionConfigKeys.js';
 import { parseChangesetUri } from '../common/changesetUri.js';
-import { ActionType, ActionEnvelope, AuthRequiredReason, INotification, type ChatAction, type IRootConfigChangedAction, type SessionAction, type TerminalAction, type ClientAnnotationsAction, type ClientChangesetAction } from '../common/state/sessionActions.js';
+import { ActionType, ActionEnvelope, AuthRequiredReason, INotification, NotificationType, type ChatAction, type IRootConfigChangedAction, type SessionAction, type TerminalAction, type ClientAnnotationsAction, type ClientChangesetAction } from '../common/state/sessionActions.js';
 import type { CompletionsParams, CompletionsResult, CreateTerminalParams, ResolveSessionConfigResult, SessionConfigCompletionsResult, SessionConfigPropertySchema } from '../common/state/protocol/commands.js';
 import type { InvokeChangesetOperationParams, InvokeChangesetOperationResult } from '../common/state/protocol/channels-changeset/commands.js';
 import { AhpErrorCodes, AHP_SESSION_NOT_FOUND, ContentEncoding, JSON_RPC_INTERNAL_ERROR, ProtocolError, ResourceChangeType, ResourceType, ResourceWriteMode, type CreateResourceWatchParams, type CreateResourceWatchResult, type DirectoryEntry, type ResourceCopyParams, type ResourceCopyResult, type ResourceDeleteParams, type ResourceDeleteResult, type ResourceListResult, type ResourceMkdirParams, type ResourceMkdirResult, type ResourceMoveParams, type ResourceMoveResult, type ResourceReadResult, type ResourceResolveParams, type ResourceResolveResult, type ResourceWatchState, type ResourceWriteParams, type ResourceWriteResult, type IStateSnapshot } from '../common/state/sessionProtocol.js';
@@ -198,6 +198,10 @@ export class AgentService extends Disposable implements IAgentService {
 	private readonly _providers = new Map<AgentProvider, IAgent>();
 	/** Maps each active session URI (toString) to its owning provider. */
 	private readonly _sessionToProvider = new Map<string, AgentProvider>();
+	/** Latest statuses returned by listSessions for sessions not necessarily restored into state. */
+	private readonly _listedSessionStatuses = new Map<string, SessionStatus>();
+	private readonly _listedSessionStatusVersions = new Map<string, number>();
+	private _listedSessionStatusVersion = 0;
 	/**
 	 * Sessions that have opted in to bring-up progress, keyed by provider id.
 	 * A session is added here when its `createSession` carries a
@@ -354,7 +358,10 @@ export class AgentService extends Disposable implements IAgentService {
 			},
 		}));
 		this._register(this._stateManager.onDidEmitEnvelope(e => this._onDidAction.fire(e)));
-		this._register(this._stateManager.onDidEmitNotification(e => this._onDidNotification.fire(e)));
+		this._register(this._stateManager.onDidEmitNotification(e => {
+			this._updateListedSessionStatusFromNotification(e);
+			this._onDidNotification.fire(e);
+		}));
 
 		// Build a local instantiation scope so downstream components can
 		// consume {@link IAgentConfigurationService} (and later {@link ILogService})
@@ -722,6 +729,7 @@ export class AgentService extends Disposable implements IAgentService {
 
 	async listSessions(): Promise<IAgentSessionMetadata[]> {
 		this._logService.trace('[AgentService] listSessions called');
+		const listedSessionStatusVersions = new Map(this._listedSessionStatusVersions);
 		const results = await Promise.all(
 			[...this._providers.values()].map(p => p.listSessions())
 		);
@@ -835,6 +843,8 @@ export class AgentService extends Disposable implements IAgentService {
 					...s,
 					summary: liveSummary.title || s.summary,
 					status: liveSummary.status,
+					isRead: !!(liveSummary.status & SessionStatus.IsRead),
+					isArchived: !!(liveSummary.status & SessionStatus.IsArchived),
 					activity: liveSummary.activity,
 					modifiedTime: Date.parse(liveSummary.modifiedAt),
 					project: liveSummary.project
@@ -880,6 +890,8 @@ export class AgentService extends Disposable implements IAgentService {
 				modifiedTime: Date.parse(summary.modifiedAt),
 				summary: summary.title,
 				status: summary.status,
+				isRead: !!(summary.status & SessionStatus.IsRead),
+				isArchived: !!(summary.status & SessionStatus.IsArchived),
 				activity: summary.activity,
 				workingDirectory: typeof summary.workingDirectory === 'string' ? URI.parse(summary.workingDirectory) : undefined,
 				...(summary.project ? { project: { uri: URI.parse(summary.project.uri), displayName: summary.project.displayName } } : {}),
@@ -894,9 +906,78 @@ export class AgentService extends Disposable implements IAgentService {
 			});
 		}
 		const combined = additions.length > 0 ? [...withStatus, ...additions] : withStatus;
+		this._reconcileListedSessionStatuses(combined, listedSessionStatusVersions);
+		const reconciled = combined.map(session => this._withListedSessionStatus(session));
 
-		this._logService.trace(`[AgentService] listSessions returned ${combined.length} sessions (${additions.length} state-manager fallback)`);
-		return combined;
+		this._logService.trace(`[AgentService] listSessions returned ${reconciled.length} sessions (${additions.length} state-manager fallback)`);
+		return reconciled;
+	}
+
+	private _statusFromMetadata(session: IAgentSessionMetadata): SessionStatus {
+		let status = session.status ?? SessionStatus.Idle;
+		if (session.isRead !== undefined) {
+			status = session.isRead ? status | SessionStatus.IsRead : status & ~SessionStatus.IsRead;
+		}
+		if (session.isArchived !== undefined) {
+			status = session.isArchived ? status | SessionStatus.IsArchived : status & ~SessionStatus.IsArchived;
+		}
+		return status;
+	}
+
+	private _withListedSessionStatus(session: IAgentSessionMetadata): IAgentSessionMetadata {
+		const status = this._listedSessionStatuses.get(session.session.toString());
+		if (status === undefined) {
+			return session;
+		}
+		return {
+			...session,
+			status,
+			isRead: !!(status & SessionStatus.IsRead),
+			isArchived: !!(status & SessionStatus.IsArchived),
+		};
+	}
+
+	private _reconcileListedSessionStatuses(sessions: readonly IAgentSessionMetadata[], versions: ReadonlyMap<string, number>): void {
+		const listedSessions = new Set<string>();
+		for (const session of sessions) {
+			const key = session.session.toString();
+			listedSessions.add(key);
+			if (this._listedSessionStatusVersions.get(key) === versions.get(key)) {
+				this._listedSessionStatuses.set(key, this._statusFromMetadata(session));
+			}
+		}
+		const trackedSessions = new Set([...this._listedSessionStatuses.keys(), ...this._listedSessionStatusVersions.keys()]);
+		for (const session of trackedSessions) {
+			if (!listedSessions.has(session) && this._listedSessionStatusVersions.get(session) === versions.get(session)) {
+				this._listedSessionStatuses.delete(session);
+				this._listedSessionStatusVersions.delete(session);
+			}
+		}
+	}
+
+	private _updateListedSessionStatusFromNotification(notification: INotification): void {
+		if (notification.type === NotificationType.SessionAdded) {
+			this._setListedSessionStatus(notification.summary.resource, notification.summary.status);
+		} else if (notification.type === NotificationType.SessionRemoved) {
+			this._deleteListedSessionStatus(notification.session.toString());
+		} else if (notification.type === NotificationType.SessionSummaryChanged && notification.changes.status !== undefined) {
+			this._setListedSessionStatus(notification.session.toString(), notification.changes.status);
+		}
+	}
+
+	private _setListedSessionStatus(session: string, status: SessionStatus): void {
+		if (this._listedSessionStatuses.get(session) === status) {
+			return;
+		}
+		this._listedSessionStatuses.set(session, status);
+		this._listedSessionStatusVersions.set(session, ++this._listedSessionStatusVersion);
+	}
+
+	private _deleteListedSessionStatus(session: string): void {
+		if (!this._listedSessionStatuses.delete(session)) {
+			return;
+		}
+		this._listedSessionStatusVersions.set(session, ++this._listedSessionStatusVersion);
 	}
 
 	async createSession(config?: IAgentCreateSessionConfig): Promise<URI> {
@@ -1645,6 +1726,7 @@ export class AgentService extends Disposable implements IAgentService {
 		await this._worktree?.removeCreatedWorktree(AgentSession.id(session));
 		this._changesetCoordinator.onSessionDisposed(session.toString());
 		this._sideEffects.cancelSessionTitleGeneration(session.toString());
+		this._deleteListedSessionStatus(session.toString());
 		// Remove all subagent sessions for this parent
 		this._sideEffects.removeSubagentSessions(session.toString());
 		this._stateManager.deleteSession(session.toString());
@@ -2008,11 +2090,18 @@ export class AgentService extends Disposable implements IAgentService {
 		const sessionChannel = chatChannel ? parseRequiredSessionUriFromChatUri(chatChannel) : channel;
 
 		const pending = this._clientDispatchQueues.get(clientId);
-		if (!pending && !this._needsAsyncRewrite(sessionChannel, action)) {
+		if (!pending && !this._needsAsyncRewrite(sessionChannel, action) && !this._needsListedSessionStatusHydration(sessionChannel, action)) {
 			this._dispatchActionNow(channel, sessionChannel, action, clientId, clientSeq);
 			return;
 		}
 		const next = (pending ?? Promise.resolve()).then(async () => {
+			if (this._needsListedSessionStatusHydration(sessionChannel, action)) {
+				try {
+					await this.listSessions();
+				} catch (err) {
+					this._logService.warn(`[AgentService] Failed to hydrate listed session status for ${sessionChannel}: ${toErrorMessage(err)}`);
+				}
+			}
 			const rewritten: SessionAction | ChatAction | TerminalAction | ClientChangesetAction | ClientAnnotationsAction | IRootConfigChangedAction = this._needsAsyncRewrite(sessionChannel, action)
 				? await this._rewriteUserMessageAttachments(sessionChannel, action, clientId)
 				: action;
@@ -2038,11 +2127,43 @@ export class AgentService extends Disposable implements IAgentService {
 
 	private _dispatchActionNow(channel: string, sessionChannel: string, action: SessionAction | ChatAction | TerminalAction | ClientChangesetAction | ClientAnnotationsAction | IRootConfigChangedAction, clientId: string, clientSeq: number): void {
 		const origin = { clientId, clientSeq };
+		const catalogStatus = this._updateListedSessionStatus(sessionChannel, action);
 		this._stateManager.dispatchClientAction(channel, action, origin);
+		if (catalogStatus !== undefined && !this._stateManager.getSessionState(sessionChannel)) {
+			this._stateManager.emitCatalogSessionStatusChanged(sessionChannel, catalogStatus);
+		}
 		if (action.type === ActionType.RootConfigChanged) {
 			this._configurationService.persistRootConfig();
 		}
 		this._sideEffects.handleAction(channel, action, clientId);
+	}
+
+	private _updateListedSessionStatus(session: string, action: SessionAction | ChatAction | TerminalAction | ClientChangesetAction | ClientAnnotationsAction | IRootConfigChangedAction): SessionStatus | undefined {
+		const current = this._listedSessionStatuses.get(session);
+		if (current === undefined) {
+			return undefined;
+		}
+
+		let status: SessionStatus;
+		if (action.type === ActionType.SessionIsReadChanged) {
+			status = action.isRead ? current | SessionStatus.IsRead : current & ~SessionStatus.IsRead;
+		} else if (action.type === ActionType.SessionIsArchivedChanged) {
+			status = action.isArchived ? current | SessionStatus.IsArchived : current & ~SessionStatus.IsArchived;
+		} else {
+			return undefined;
+		}
+
+		if (status === current) {
+			return undefined;
+		}
+		this._setListedSessionStatus(session, status);
+		return status;
+	}
+
+	private _needsListedSessionStatusHydration(session: string, action: SessionAction | ChatAction | TerminalAction | ClientChangesetAction | ClientAnnotationsAction | IRootConfigChangedAction): boolean {
+		return !this._stateManager.getSessionState(session)
+			&& !this._listedSessionStatuses.has(session)
+			&& (action.type === ActionType.SessionIsReadChanged || action.type === ActionType.SessionIsArchivedChanged);
 	}
 
 	private _needsAsyncRewrite(channel: string, action: SessionAction | ChatAction | TerminalAction | ClientChangesetAction | ClientAnnotationsAction | IRootConfigChangedAction): action is ChatTurnStartedAction | ChatPendingMessageSetAction {
