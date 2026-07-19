@@ -6,7 +6,7 @@
 import { createRequire } from 'module';
 import { readFileSync, realpathSync, writeFileSync } from 'fs';
 import { FileAccess } from '../../../../../base/common/network.js';
-import { dirname } from '../../../../../base/common/path.js';
+import { dirname, win32 } from '../../../../../base/common/path.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { assertSnapshot } from '../../../../../base/test/common/snapshot.js';
@@ -468,9 +468,19 @@ function normalizeSnapshotText(value: string, normalization: IAhpSnapshotNormali
 			.replaceAll(URI.file(workDir).toString(), '${workdir}');
 	}
 	normalized = normalized.replaceAll('/private${workdir}', '${workdir}');
-	for (const tempRoot of new Set([...workDirs].map(workDir => dirname(workDir)))) {
-		const escapedRoot = escapeRegExpCharacters(tempRoot);
-		normalized = normalized.replace(new RegExp(`(?:file://)?${escapedRoot}/ahp-coverage-[^\\s\`"')]*`, 'g'), '${workdir}');
+	const tempRoots = new Set([...workDirs].flatMap(workDir => [dirname(workDir), win32.dirname(workDir)]).filter(root => root !== '.'));
+	for (const tempRoot of tempRoots) {
+		const win32FileUri = win32.isAbsolute(tempRoot) ? `file:///${tempRoot.replaceAll('\\', '/')}` : undefined;
+		const rootVariants = new Set([
+			tempRoot,
+			JSON.stringify(tempRoot).slice(1, -1),
+			URI.file(tempRoot).toString(),
+			...(win32FileUri ? [win32FileUri] : []),
+		]);
+		for (const rootVariant of [...rootVariants].sort((a, b) => b.length - a.length)) {
+			const escapedRoot = escapeRegExpCharacters(rootVariant);
+			normalized = normalized.replace(new RegExp(`${escapedRoot}(?:/|\\\\|\\\\\\\\)ahp-coverage-[^\\s\`"')]*`, 'g'), '${workdir}');
+		}
 	}
 	normalized = normalized
 		.replaceAll(normalization.homeDirectory, '${homedir}')
