@@ -2158,12 +2158,6 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		});
 	}
 
-	setCustomizationEnabled(id: string, enabled: boolean): void {
-		for (const chat of this._allLiveSessions()) {
-			chat.setClientCustomizationEnabled(id, enabled);
-		}
-	}
-
 	getCustomizations(): readonly Customization[] {
 		// Provider-level customization catalogue — feeds `AgentInfo.customizations`
 		// on `RootAgentsChanged`. Should advertise host-configured plugin refs

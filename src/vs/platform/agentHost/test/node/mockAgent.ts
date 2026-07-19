@@ -72,7 +72,6 @@ export class MockAgent implements IAgent {
 	readonly removeActiveClientCalls: { clientId: string }[] = [];
 	readonly clientToolCallCompleteCalls: { session: URI; chat: URI; toolCallId: string; result: ToolCallResult }[] = [];
 	readonly truncateSessionCalls: { session: URI; turnId: string | undefined; chat: URI | undefined }[] = [];
-	readonly setCustomizationEnabledCalls: { id: string; enabled: boolean }[] = [];
 	/** Configurable return value for getCustomizations. */
 	customizations: Customization[] = [];
 	private readonly _onDidCustomizationsChange = new Emitter<void>();
@@ -322,10 +321,6 @@ export class MockAgent implements IAgent {
 			},
 		});
 		return results;
-	}
-
-	setCustomizationEnabled(id: string, enabled: boolean): void {
-		this.setCustomizationEnabledCalls.push({ id, enabled });
 	}
 
 	getOrCreateActiveClient(session: URI, client: { readonly clientId: string; readonly displayName?: string }): IActiveClient {
@@ -882,10 +877,6 @@ export class ScriptedMockAgent implements IAgent {
 	}
 
 	removeActiveClient(): void { }
-
-	setCustomizationEnabled() {
-
-	}
 
 	private didCompleteToolCalls = new Set<string>();
 
