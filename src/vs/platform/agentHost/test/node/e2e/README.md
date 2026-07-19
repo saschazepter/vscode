@@ -146,13 +146,15 @@ The swap is what makes sharing cheap: the proxy is an `http.Server` running **in
 
 ## Collecting coverage
 
-Run the complete replay suite and collect native V8 coverage from the agent host processes:
+Run the deterministic full-stack provider suites and collect native V8 coverage from the Agent Host processes:
 
 ```bash
 npm run test-agent-host-e2e-coverage
 ```
 
-The command retranspiles the sources, runs the deterministic Agent Host protocol integration suites plus the Claude, Codex, and Copilot E2E suites in replay mode, and sets `AGENT_HOST_E2E_COVERAGE=1`. That opt-in makes the test helpers set `NODE_V8_COVERAGE` only on agent host child processes. Provider suite teardown closes the server's stdin and awaits its graceful shutdown so Node flushes coverage after the host finishes its existing persistence cleanup. The mocked customization watcher suite remains in normal CI but is excluded here because filesystem-watch delivery is not reliable under V8 coverage.
+The command retranspiles the sources, runs only the Claude, Codex, and Copilot E2E suites in replay mode, and sets `AGENT_HOST_E2E_COVERAGE=1`. These suites exercise the real Agent Host server, bundled provider process, AHP transport, and local tools; only model traffic is replayed. Mock-agent protocol tests, mocked-LLM provider tests, and direct SDK integration tests do not contribute to this coverage report.
+
+The coverage opt-in sets `NODE_V8_COVERAGE` only on Agent Host child processes. Provider suite teardown closes the server's stdin and awaits its graceful shutdown so Node flushes coverage after the host finishes its existing persistence cleanup.
 
 After the tests pass, `c8` combines the raw process data and source-maps it to TypeScript. The report includes only loaded executable files under `src/vs/platform/agentHost/common/` and `src/vs/platform/agentHost/node/`; unloaded files, tests, provider dependencies, and generated type-only modules are outside the denominator.
 

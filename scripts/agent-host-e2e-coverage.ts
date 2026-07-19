@@ -43,9 +43,6 @@ const incompatibleFlags = [
 	'AGENT_HOST_UPDATE_SNAPSHOTS',
 ];
 
-const resourceIntegrationGlob = '**/agentHost/test/node/protocol/resourceOperations.integrationTest.js';
-const protocolIntegrationGlob = '**/agentHost/test/node/protocol/{agentHostServer,clientTools,handshake,multiClient,networkDiagnostics,otlpLogs,sessionConfig,sessionDiffs,sessionFeatures,sessionLifecycle,toolApproval,turnExecution}.integrationTest.js';
-const mockedProviderE2EGlob = '**/agentHost/test/node/e2e/mocked/copilotAgentHostE2EMocked.integrationTest.js';
 const providerE2EGlob = '**/agentHost/test/node/e2e/providers/*AgentHostE2E.integrationTest.js';
 
 function main(): void {
@@ -65,9 +62,6 @@ function main(): void {
 		AGENT_HOST_E2E_COVERAGE: '1',
 	};
 	const testScript = join(repoRoot, 'scripts', process.platform === 'win32' ? 'test-integration.bat' : 'test-integration.sh');
-	run(testScript, ['--runGlob', resourceIntegrationGlob], testEnvironment, process.platform === 'win32');
-	run(testScript, ['--runGlob', protocolIntegrationGlob], testEnvironment, process.platform === 'win32');
-	run(testScript, ['--runGlob', mockedProviderE2EGlob], testEnvironment, process.platform === 'win32');
 	run(testScript, ['--runGlob', providerE2EGlob], testEnvironment, process.platform === 'win32');
 
 	const rawFiles = readdirSync(rawCoveragePath).filter(file => file.endsWith('.json'));
@@ -163,7 +157,7 @@ function writeStats(): void {
 				'src/vs/platform/agentHost/common/**/*.ts',
 				'src/vs/platform/agentHost/node/**/*.ts',
 			],
-			suites: ['protocol', 'claude', 'codex', 'copilotcli', 'copilotcli-mocked'],
+			suites: ['claude', 'codex', 'copilotcli'],
 		},
 		total,
 		files,
