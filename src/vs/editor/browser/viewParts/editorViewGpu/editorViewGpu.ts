@@ -11,10 +11,11 @@ import { onUnexpectedError } from '../../../../base/common/errors.js';
 import { resolveAmdNodeModulePath } from '../../../../amdX.js';
 import { editorBackground, editorForeground, editorSelectionBackground, editorInactiveSelection } from '../../../../platform/theme/common/colorRegistry.js';
 import { isHighContrast } from '../../../../platform/theme/common/theme.js';
-import { editorActiveLineNumber, editorGutter, editorLineNumbers, editorLineHighlight, editorLineHighlightBorder, editorInactiveLineHighlight, editorCursorForeground, editorCursorBackground, editorMultiCursorPrimaryForeground, editorMultiCursorPrimaryBackground, editorMultiCursorSecondaryForeground, editorMultiCursorSecondaryBackground, editorWhitespaces, editorIndentGuide1, editorIndentGuide2, editorIndentGuide3, editorIndentGuide4, editorIndentGuide5, editorIndentGuide6 } from '../../../common/core/editorColorRegistry.js';
+import { editorActiveLineNumber, editorGutter, editorLineNumbers, editorLineHighlight, editorLineHighlightBorder, editorInactiveLineHighlight, editorCursorForeground, editorCursorBackground, editorMultiCursorPrimaryForeground, editorMultiCursorPrimaryBackground, editorMultiCursorSecondaryForeground, editorMultiCursorSecondaryBackground, editorWhitespaces, editorIndentGuide1, editorIndentGuide2, editorIndentGuide3, editorIndentGuide4, editorIndentGuide5, editorIndentGuide6, editorActiveIndentGuide1, editorActiveIndentGuide2, editorActiveIndentGuide3, editorActiveIndentGuide4, editorActiveIndentGuide5, editorActiveIndentGuide6 } from '../../../common/core/editorColorRegistry.js';
 import { EditorOption, RenderLineNumbersType, TextEditorCursorBlinkingStyle, TextEditorCursorStyle } from '../../../common/config/editorOptions.js';
 import { Position } from '../../../common/core/position.js';
 import { TokenizationRegistry } from '../../../common/languages.js';
+import { HorizontalGuidesState } from '../../../common/textModelGuides.js';
 import type { IViewLineTokens } from '../../../common/tokens/lineTokens.js';
 import type * as viewEvents from '../../../common/viewEvents.js';
 import type { ViewContext } from '../../../common/viewModel/viewContext.js';
@@ -43,7 +44,7 @@ export interface EditorViewGpuCapabilities {
 	readonly cursor: boolean;
 	/** Visible space/tab markers (`WhitespaceOverlay`). */
 	readonly whitespace: boolean;
-	/** Inactive indentation guides (`IndentGuidesOverlay`). */
+	/** Indentation guides (`IndentGuidesOverlay`), including active highlighting. */
 	readonly indentGuides: boolean;
 	/** Gutter line numbers (`LineNumbersOverlay`). */
 	readonly lineNumbers: boolean;
@@ -209,16 +210,19 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 		const layoutInfo = options.get(EditorOption.layoutInfo);
 		const wrappingInfo = options.get(EditorOption.wrappingInfo);
 		const guideColors = [
-			editorIndentGuide1,
-			editorIndentGuide2,
-			editorIndentGuide3,
-			editorIndentGuide4,
-			editorIndentGuide5,
-			editorIndentGuide6,
+			[editorIndentGuide1, editorActiveIndentGuide1],
+			[editorIndentGuide2, editorActiveIndentGuide2],
+			[editorIndentGuide3, editorActiveIndentGuide3],
+			[editorIndentGuide4, editorActiveIndentGuide4],
+			[editorIndentGuide5, editorActiveIndentGuide5],
+			[editorIndentGuide6, editorActiveIndentGuide6],
 		]
-			.map(id => this._context.theme.getColor(id))
-			.filter(color => color !== undefined && !color.isTransparent())
-			.map(color => this._packColor(color, 0));
+			.map(([inactiveId, activeId]) => ({
+				inactive: this._context.theme.getColor(inactiveId),
+				active: this._context.theme.getColor(activeId),
+			}))
+			.filter(colors => colors.inactive !== undefined && !colors.inactive.isTransparent()
+				&& colors.active !== undefined && !colors.active.isTransparent());
 		return {
 			fontFamily: fontInfo.fontFamily,
 			fontSize: fontInfo.fontSize,
@@ -233,7 +237,8 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 			tabSize: this._context.viewModel.model.getOptions().tabSize,
 			indentSize: this._context.viewModel.model.getOptions().indentSize,
 			indentGuides: options.get(EditorOption.guides).indentation,
-			indentGuideColors: guideColors,
+			indentGuideColors: guideColors.map(colors => this._packColor(colors.inactive, 0)),
+			activeIndentGuideColors: guideColors.map(colors => this._packColor(colors.active, 0)),
 			maxIndentGuideOffset: wrappingInfo.wrappingColumn === -1
 				? -1
 				: wrappingInfo.wrappingColumn * fontInfo.typicalHalfwidthCharacterWidth,
@@ -625,7 +630,8 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 	}
 
 	private _syncIndentGuides(scrollTop: number, height: number): void {
-		if (!this._context.configuration.options.get(EditorOption.guides).indentation) {
+		const guideOptions = this._context.configuration.options.get(EditorOption.guides);
+		if (!guideOptions.indentation) {
 			return;
 		}
 		const lineCount = Math.min(this._context.viewModel.getLineCount(), EditorViewGpu.MAX_LINES);
@@ -639,7 +645,33 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 			return;
 		}
 		const counts = this._context.viewModel.getLinesIndentGuides(start + 1, end);
-		this._applyDelta({ type: 'setIndentGuides', start, counts });
+		const activeLevels = new Array<number>(counts.length).fill(0);
+		const activeCursor = this._cursorPositions[0];
+		if (guideOptions.highlightActiveIndentation !== false && activeCursor) {
+			const position = new Position(activeCursor.lineNumber, activeCursor.column);
+			const active = this._context.viewModel.getActiveIndentGuide(position.lineNumber, start + 1, end);
+			const bracketGuides = guideOptions.highlightActiveIndentation !== 'always' && guideOptions.bracketPairs !== false
+				? this._context.viewModel.getBracketGuidesInRangeByLine(start + 1, end, position, {
+					highlightActive: guideOptions.highlightActiveBracketPair,
+					horizontalGuides: guideOptions.bracketPairsHorizontal === true
+						? HorizontalGuidesState.Enabled
+						: guideOptions.bracketPairsHorizontal === 'active'
+							? HorizontalGuidesState.EnabledForActive
+							: HorizontalGuidesState.Disabled,
+					includeInactive: guideOptions.bracketPairs === true,
+				})
+				: undefined;
+			for (let lineNumber = active.startLineNumber; lineNumber <= active.endLineNumber; lineNumber++) {
+				const index = lineNumber - start - 1;
+				if (index >= 0 && index < counts.length
+					&& active.indent > 0
+					&& active.indent <= counts[index]
+					&& (!bracketGuides || bracketGuides[index].length === 0)) {
+					activeLevels[index] = active.indent;
+				}
+			}
+		}
+		this._applyDelta({ type: 'setIndentGuides', start, counts, activeLevels });
 	}
 
 	// --- rendering -----------------------------------------------------------
