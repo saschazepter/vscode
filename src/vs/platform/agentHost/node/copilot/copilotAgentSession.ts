@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import type { CopilotSession, CurrentToolMetadata, ExitPlanModeRequest, McpServersLoadedServer, MessageOptions, PermissionAllowAllMode, PermissionAutoApproval, PermissionRequestResult, SessionConfig, Tool, ToolResultObject, McpServerStatus as SdkMcpServerStatus } from '@github/copilot-sdk';
-import { DeferredPromise, raceTimeout, Sequencer } from '../../../../base/common/async.js';
+import { DeferredPromise, Sequencer } from '../../../../base/common/async.js';
 import { encodeBase64, VSBuffer } from '../../../../base/common/buffer.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { CancellationError, getErrorMessage } from '../../../../base/common/errors.js';
@@ -1100,14 +1100,10 @@ export class CopilotAgentSession extends Disposable {
 					handler: async (_args: Record<string, unknown>, invocation) => {
 						try {
 							const candidates = this._toToolSearchCandidates(invocation.availableTools);
-							const clientResult = await raceTimeout(
-								this._pendingClientToolCalls.registerAndFire(invocation.toolCallId, () => this._emitToolSearchReady(invocation.toolCallId, candidates)),
-								15_000,
-								() => this._pendingClientToolCalls.respond(invocation.toolCallId, this._toolSearchFailure('Timed out waiting for client-side tool search.')),
+							const clientResult = await this._pendingClientToolCalls.registerAndFire(
+								invocation.toolCallId,
+								() => this._emitToolSearchReady(invocation.toolCallId, candidates),
 							);
-							if (!clientResult) {
-								return this._toolSearchFailure('Timed out waiting for client-side tool search.');
-							}
 							return this._toToolSearchResult(clientResult, invocation.availableTools);
 						} catch (error) {
 							this._logService.error(error, `[Copilot:${this.sessionId}] Failed in tool-search handler: toolCallId=${invocation.toolCallId}`);

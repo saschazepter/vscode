@@ -30,7 +30,7 @@ import { AgentProvider, AgentSession, CODEX_AGENT_PROVIDER_ID, type IAgentConnec
 import { agentHostAuthority } from '../../../../../../platform/agentHost/common/agentHostUri.js';
 import { AgentFeedbackAttachmentDisplayKind, AgentFeedbackAttachmentMetadataKey } from '../../../../../../platform/agentHost/common/meta/agentFeedbackAttachments.js';
 import { BrowserViewAttachmentDisplayKind, BrowserViewAttachmentMetadataKey } from '../../../../../../platform/agentHost/common/meta/browserViewAttachments.js';
-import { readToolCallMeta, toToolCallMeta } from '../../../../../../platform/agentHost/common/meta/agentToolCallMeta.js';
+import { readToolCallMeta } from '../../../../../../platform/agentHost/common/meta/agentToolCallMeta.js';
 import { readCompletionAttachmentMeta } from '../../../../../../platform/agentHost/common/meta/agentCompletionAttachmentMeta.js';
 import { IRemoteAgentHostService } from '../../../../../../platform/agentHost/common/remoteAgentHostService.js';
 import { SessionConfigKey } from '../../../../../../platform/agentHost/common/sessionConfigKeys.js';
@@ -372,7 +372,7 @@ function getClientToolPreApproval(toolCall: ToolCallState): ConfirmedReason | un
  * explicit empty replacement is what actually drops the candidates.
  */
 function metaWithoutToolSearchCandidates(source: { readonly _meta?: Record<string, unknown> }): Record<string, unknown> {
-	const meta = toToolCallMeta(readToolCallMeta(source)) ?? {};
+	const meta = { ...source._meta };
 	delete meta['toolSearchCandidates'];
 	return meta;
 }
@@ -3079,6 +3079,9 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				parameters = parsed as Record<string, unknown>;
 			} catch {
 				this._logService.warn(`[AgentHost] Failed to parse tool input for ${toolName}`);
+				const clearedMeta = toolName === RUNTIME_TOOL_SEARCH_TOOL_NAME
+					? metaWithoutToolSearchCandidates(tc)
+					: undefined;
 				this._dispatchAction(opts.backendSession, {
 					type: ActionType.ChatToolCallComplete,
 					turnId: opts.turnId,
@@ -3088,6 +3091,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 						pastTenseMessage: `Failed to execute ${toolName}`,
 						error: { message: `Invalid tool input for "${toolName}": expected JSON object parameters` },
 					},
+					...(clearedMeta !== undefined ? { _meta: clearedMeta } : {}),
 				}, opts.chatURI);
 				return;
 			}
