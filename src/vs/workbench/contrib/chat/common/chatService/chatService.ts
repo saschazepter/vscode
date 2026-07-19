@@ -34,7 +34,7 @@ import { HookTypeValue } from '../promptSyntax/hookTypes.js';
 import { IParsedChatRequest } from '../requestParser/chatParserTypes.js';
 import { IChatParserContext } from '../requestParser/chatRequestParser.js';
 import { IPreparedToolInvocation, IToolConfirmationMessages, IToolResult, IToolResultInputOutputDetails, ToolDataSource } from '../tools/languageModelToolsService.js';
-import { ConfirmationOptionKind } from '../../../../../platform/agentHost/common/state/protocol/state.js';
+import { ConfirmationOptionKind, type McpOAuthClient } from '../../../../../platform/agentHost/common/state/protocol/state.js';
 
 export interface IChatRequest {
 	message: string;
@@ -1254,6 +1254,7 @@ export interface IChatMcpAuthenticationRequiredServer {
 	readonly id: string;
 	readonly name: string;
 	readonly resource: string;
+	readonly oauthClient?: McpOAuthClient;
 	readonly authorizationServers?: readonly string[];
 	readonly supportedScopes?: readonly string[];
 	readonly requiredScopes?: readonly string[];
@@ -1666,6 +1667,8 @@ export type ChatSendResult =
 export interface ChatSendResultRejected {
 	readonly kind: 'rejected';
 	readonly reason: string;
+	/** Set when the session was replaced before the request was rejected (e.g. untitled -> read-only contributed session). */
+	readonly newSessionResource?: URI;
 }
 
 export interface ChatSendResultSent {

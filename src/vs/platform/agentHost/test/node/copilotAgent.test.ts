@@ -42,7 +42,7 @@ import { ActionType, type ChatAction, type SessionAction } from '../../common/st
 
 import { AgentConfigurationService, IAgentConfigurationService } from '../../node/agentConfigurationService.js';
 import { AgentHostStateManager, IAgentHostStateManager } from '../../node/agentHostStateManager.js';
-import { IAgentHostGitService } from '../../common/agentHostGitService.js';
+import { IAgentHostGitService, type IDefaultBranch } from '../../common/agentHostGitService.js';
 import { IAgentHostTerminalManager } from '../../node/agentHostTerminalManager.js';
 import { IAgentHostOTelService } from '../../common/otel/agentHostOTelService.js';
 import { AgentHostCompletions, IAgentHostCompletions } from '../../node/agentHostCompletions.js';
@@ -146,7 +146,7 @@ class TestAgentHostGitService implements IAgentHostGitService {
 	dirtyWorkingDirectories = new Set<string>();
 
 	async getCurrentBranch(): Promise<string | undefined> { return undefined; }
-	async getDefaultBranch(): Promise<string | undefined> { return undefined; }
+	async getDefaultBranch(): Promise<IDefaultBranch | undefined> { return undefined; }
 	async getBranches(): Promise<string[]> { return []; }
 	async getRepositoryRoot(): Promise<URI | undefined> { return this.repositoryRoot; }
 	async getWorktreeRoots(): Promise<URI[]> { return []; }
@@ -2039,7 +2039,7 @@ suite('CopilotAgent', () => {
 				results: [firstResult, duplicateResult, thirdResult],
 				pendingPermissionCount,
 			}, {
-				results: [{ kind: 'approve-once' }, { kind: 'approve-once' }, { kind: 'reject' }],
+				results: [{ kind: 'approve-once' }, { kind: 'approve-once' }, { kind: 'denied-interactively-by-user' }],
 				pendingPermissionCount: 2,
 			});
 		} finally {
@@ -2095,7 +2095,7 @@ suite('CopilotAgent', () => {
 				results: [firstResult, changedResult],
 				pendingPermissionCount,
 			}, {
-				results: [{ kind: 'approve-once' }, { kind: 'reject' }],
+				results: [{ kind: 'approve-once' }, { kind: 'denied-interactively-by-user' }],
 				pendingPermissionCount: 2,
 			});
 		} finally {
@@ -2144,7 +2144,7 @@ suite('CopilotAgent', () => {
 				results: [firstResult, duplicateResult, thirdResult],
 				pendingPermissionCount,
 			}, {
-				results: [{ kind: 'approve-once' }, { kind: 'approve-once' }, { kind: 'reject' }],
+				results: [{ kind: 'approve-once' }, { kind: 'approve-once' }, { kind: 'denied-interactively-by-user' }],
 				pendingPermissionCount: 2,
 			});
 		} finally {
