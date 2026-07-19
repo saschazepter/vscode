@@ -508,7 +508,7 @@ export class AgentSideEffects extends Disposable {
 	 */
 	private _handleAgentSignal(agent: IAgent, signal: AgentSignal): void {
 		if (signal.kind === 'subagent_started') {
-			this._handleSubagentStarted(signal.chat.toString(), signal.toolCallId, signal.agentName, signal.agentDisplayName, signal.agentDescription, signal.parentToolCallId);
+			this._handleSubagentStarted(signal.chat.toString(), signal.toolCallId, signal.agentName, signal.agentDisplayName, signal.agentDescription, signal.taskPrompt, signal.parentToolCallId);
 			this._drainPendingSubagentSignals(signal.chat.toString(), signal.toolCallId);
 			return;
 		}
@@ -828,6 +828,7 @@ export class AgentSideEffects extends Disposable {
 		agentName: string,
 		agentDisplayName: string,
 		agentDescription?: string,
+		taskPrompt?: string,
 		spawningToolParentId?: string,
 	): void {
 		const parentSessionUri = parseRequiredSessionUriFromChatUri(chatURI);
@@ -845,13 +846,15 @@ export class AgentSideEffects extends Disposable {
 			? this._subagentChats.get(chatURI, spawningToolParentId)?.chatUri ?? chatURI
 			: chatURI;
 
-		// Seed the subagent's opening request with the spawning tool call's prompt.
+		// Seed the subagent's opening request with the delegated task prompt.
+		// Prefer the provider-supplied `taskPrompt`; fall back to recovering it
+		// from the spawning tool call's recorded input.
 		const turnId = generateUuid();
 		this._stateManager.dispatchServerAction(subagentChatUri, {
 			type: ActionType.ChatTurnStarted,
 			turnId,
 			startedAt: new Date().toISOString(),
-			message: { text: this._taskPromptFromToolInput(contentChatUri, toolCallId) ?? '', origin: { kind: MessageKind.User } },
+			message: { text: taskPrompt ?? this._taskPromptFromToolInput(contentChatUri, toolCallId) ?? '', origin: { kind: MessageKind.User } },
 		});
 
 		this._subagentChats.set({ parentChatUri: chatURI, toolCallId, sessionUri: parentSessionUri, chatUri: subagentChatUri, turnStopWatch: StopWatch.create(false) }, chatURI, toolCallId);
@@ -880,9 +883,9 @@ export class AgentSideEffects extends Disposable {
 	}
 
 	/**
-	 * Recovers the spawning Task tool call's `prompt` input from the parent
-	 * chat's running tool call state — the provider-agnostic source for seeding
-	 * the subagent's opening request.
+	 * Fallback prompt recovery: reads the spawning tool call's `prompt` input
+	 * from the parent chat's running tool call state, for providers that do not
+	 * supply `taskPrompt` on the `subagent_started` signal.
 	 */
 	private _taskPromptFromToolInput(chatURI: ProtocolURI, toolCallId: string): string | undefined {
 		const state = this._stateManager.getSessionState(chatURI);

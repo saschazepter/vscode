@@ -3611,6 +3611,42 @@ suite('AgentSideEffects', () => {
 			}
 		});
 
+		test('subagent_started seeds the opening request from the signal taskPrompt (no tool input needed)', () => {
+			setupSession();
+			startTurn('turn-1');
+			disposables.add(sideEffects.registerProgressListener(agent));
+
+			agent.fireProgress({
+				kind: 'action', resource: URI.parse(defaultChatUri),
+				action: {
+					type: ActionType.ChatToolCallStart, turnId: 'turn-1',
+					toolCallId: 'tc-1', toolName: 'spawnAgent', displayName: 'Spawn Agent', contributor: undefined,
+					_meta: { toolKind: undefined, language: undefined },
+				},
+			});
+			agent.fireProgress({
+				kind: 'action', resource: URI.parse(defaultChatUri),
+				action: {
+					type: ActionType.ChatToolCallReady, turnId: 'turn-1',
+					toolCallId: 'tc-1', invocationMessage: 'Delegating task...',
+					toolInput: undefined,
+					confirmed: ToolCallConfirmationReason.NotNeeded,
+				},
+			});
+
+			agent.fireProgress({
+				kind: 'subagent_started', chat: URI.parse(defaultChatUri),
+				toolCallId: 'tc-1',
+				agentName: 'explorer',
+				agentDisplayName: 'Explorer',
+				taskPrompt: 'List the files in the current directory',
+			});
+
+			const subagentUri = buildSubagentChatUri(sessionUri.toString(), 'tc-1');
+			const subState = stateManager.getSessionState(subagentUri);
+			assert.strictEqual(subState?.activeTurn?.message.text, 'List the files in the current directory', 'subagent turn should render the signal taskPrompt as its request');
+		});
+
 		test('stamps _meta.subagentChatUri onto a subagent-spawning tool call as soon as toolKind is known', () => {
 			setupSession();
 			startTurn('turn-1');
