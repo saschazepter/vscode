@@ -10,12 +10,12 @@
 import assert from 'assert';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
-import { timeout } from '../../../../../base/common/async.js';
-import { URI } from '../../../../../base/common/uri.js';
-import { buildDefaultChatUri, ResponsePartKind, type ISessionWithDefaultChat } from '../../../common/state/sessionState.js';
-import { AgentHostSessionReleaseGraceMsEnvVar } from '../../../common/agentService.js';
-import { createRealSession, dispatchTurn, IAgentHostE2EProviderConfig } from './agentHostE2ETestHelpers.js';
-import { fetchSessionWithChat, isActionNotification, IServerHandle, startRealServer, TestProtocolClient } from './testHelpers.js';
+import { timeout } from '../../../../../../base/common/async.js';
+import { URI } from '../../../../../../base/common/uri.js';
+import { buildDefaultChatUri, ResponsePartKind, type ISessionWithDefaultChat } from '../../../../common/state/sessionState.js';
+import { AgentHostSessionReleaseGraceMsEnvVar } from '../../../../common/agentService.js';
+import { createRealSession, dispatchTurn, IAgentHostE2EProviderConfig } from '../harness/agentHostE2ETestHarness.js';
+import { fetchSessionWithChat, isActionNotification, IServerHandle, startRealServer, TestProtocolClient } from '../../serverIntegrationTestHelpers.js';
 
 export const COPILOT_CONFIG: IAgentHostE2EProviderConfig = {
 	suiteTitle: 'Agent Host E2E — Copilot (Mocked LLM)',

@@ -12,13 +12,13 @@
 import assert from 'assert';
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
-import { join } from '../../../../../base/common/path.js';
-import { URI } from '../../../../../base/common/uri.js';
-import { ActionType, SessionCustomizationsChangedAction } from '../../../common/state/sessionActions.js';
-import { CustomizationType, type DirectoryCustomization } from '../../../common/state/sessionState.js';
-import { type AhpNotification } from '../../../common/state/sessionProtocol.js';
-import { createRealSession, dispatchTurn, IAgentHostE2EProviderConfig } from './agentHostE2ETestHelpers.js';
-import { getActionEnvelope, isActionNotification, IServerHandle, startRealServer, TestProtocolClient } from './testHelpers.js';
+import { join } from '../../../../../../base/common/path.js';
+import { URI } from '../../../../../../base/common/uri.js';
+import { ActionType, SessionCustomizationsChangedAction } from '../../../../common/state/sessionActions.js';
+import { CustomizationType, type DirectoryCustomization } from '../../../../common/state/sessionState.js';
+import { type AhpNotification } from '../../../../common/state/sessionProtocol.js';
+import { createRealSession, dispatchTurn, IAgentHostE2EProviderConfig } from '../harness/agentHostE2ETestHarness.js';
+import { getActionEnvelope, isActionNotification, IServerHandle, startRealServer, TestProtocolClient } from '../../serverIntegrationTestHelpers.js';
 
 /**
  * Whether `notification` is a *settled* `session/customizationsChanged` for
