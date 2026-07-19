@@ -163,7 +163,7 @@ function writeStats(): void {
 				'src/vs/platform/agentHost/common/**/*.ts',
 				'src/vs/platform/agentHost/node/**/*.ts',
 			],
-			suites: ['protocol', 'claude', 'codex', 'copilotcli'],
+			suites: ['protocol', 'claude', 'codex', 'copilotcli', 'copilotcli-mocked'],
 		},
 		total,
 		files,
