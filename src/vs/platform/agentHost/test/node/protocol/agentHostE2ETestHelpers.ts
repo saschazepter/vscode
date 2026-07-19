@@ -768,9 +768,10 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 	(config.enabled ? suite : suite.skip)(config.suiteTitle, function () {
 
 		const shellToolReplayEnabled = !isWindows && (RECORD || !isLinux || !config.shellToolReplayUnstableOnLinux);
-		// Codex currently duplicates every response part during aggregation. Keep
-		// the scenarios registered as skipped until the provider fixes that bug.
-		const stableNewScenarioResponse = config.provider !== 'codex';
+		// Codex currently duplicates every response part during aggregation, and
+		// the macOS-recorded tool snapshots have different path/event shapes on
+		// Windows. Keep the scenarios registered as skipped on those paths.
+		const stableNewScenarioResponse = config.provider !== 'codex' && !isWindows;
 		let client: TestProtocolClient;
 		let lease: AgentHostE2EServerLease | undefined;
 		let suiteDataDir: string | undefined;
@@ -917,7 +918,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 		});
 
 		// Expected to pass, but Copilot never completed this turn during recording and Codex duplicates its response.
-		(config.provider === 'claude' ? test : test.skip)('reads an existing text file', async function () {
+		(stableNewScenarioResponse && config.provider === 'claude' ? test : test.skip)('reads an existing text file', async function () {
 			this.timeout(180_000);
 			const workspace = mkdtempSync(join(tmpdir(), 'ahp-coverage-read-'));
 			tempDirs.push(workspace);
@@ -960,7 +961,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 		});
 
 		// Codex does not honor the exact-response contract on replay; Copilot never completes the replayed turn.
-		(config.provider === 'claude' ? test : test.skip)('reads a value from JSON', async function () {
+		(stableNewScenarioResponse && config.provider === 'claude' ? test : test.skip)('reads a value from JSON', async function () {
 			this.timeout(180_000);
 			const workspace = mkdtempSync(join(tmpdir(), 'ahp-coverage-json-'));
 			tempDirs.push(workspace);
