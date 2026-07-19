@@ -79,7 +79,7 @@ export const EDITOR_VIEW_GPU_CAPABILITIES: EditorViewGpuCapabilities = {
 	cursor: true,
 	whitespace: true,
 	indentGuides: true,
-	lineNumbers: false,
+	lineNumbers: true,
 	decorations: false,
 	rulers: false,
 	minimap: false,
