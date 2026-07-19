@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { CancellationToken } from '../../../../util/vs/base/common/cancellation';
 import type { ILogService } from '../../../../platform/log/common/logService';
 import type { IToolDeferralService } from '../../../../platform/networking/common/toolDeferralService';
-import type { IToolEmbeddingsComputer, IToolSearchEmbeddingOptions } from '../../common/virtualTools/toolEmbeddingsComputer';
+import type { IToolEmbeddingsComputer } from '../../common/virtualTools/toolEmbeddingsComputer';
 import type { IToolsService } from '../../common/toolsService';
 import { ToolSearchTool } from '../toolSearchTool';
 
@@ -21,7 +21,7 @@ function text(result: vscode.LanguageModelToolResult): string {
 
 describe('ToolSearchTool', () => {
 	it('uses an injected Agent Host corpus instead of the extension registry', async () => {
-		const searchToolsByQuery = vi.fn(async (_query: string, tools: readonly vscode.LanguageModelToolInformation[], _limit: number, _token: vscode.CancellationToken, _options?: IToolSearchEmbeddingOptions) => tools.map(tool => tool.name));
+		const searchToolsByQuery = vi.fn(async (_query: string, tools: readonly vscode.LanguageModelToolInformation[]) => tools.map(tool => tool.name));
 		const embeddings = { _serviceBrand: undefined, searchToolsByQuery } as unknown as IToolEmbeddingsComputer;
 		const toolsService = {
 			_serviceBrand: undefined,
@@ -41,12 +41,11 @@ describe('ToolSearchTool', () => {
 
 		expect(searchToolsByQuery).toHaveBeenCalledOnce();
 		expect(searchToolsByQuery.mock.calls[0][1].map(tool => tool.name)).toEqual(['everything-get-sum']);
-		expect(searchToolsByQuery.mock.calls[0][4]).toEqual({ useCache: false });
 		expect(text(result)).toBe('["everything-get-sum"]');
 	});
 
 	it('preserves the extension registry path when no corpus is injected', async () => {
-		const searchToolsByQuery = vi.fn(async (_query: string, tools: readonly vscode.LanguageModelToolInformation[], _limit: number, _token: vscode.CancellationToken, _options?: IToolSearchEmbeddingOptions) => tools.map(tool => tool.name));
+		const searchToolsByQuery = vi.fn(async (_query: string, tools: readonly vscode.LanguageModelToolInformation[]) => tools.map(tool => tool.name));
 		const embeddings = { _serviceBrand: undefined, searchToolsByQuery } as unknown as IToolEmbeddingsComputer;
 		const toolsService = {
 			_serviceBrand: undefined,
@@ -62,6 +61,5 @@ describe('ToolSearchTool', () => {
 		await tool.invoke({ input: { query: 'deferred' }, toolInvocationToken: undefined } as vscode.LanguageModelToolInvocationOptions<any>, CancellationToken.None);
 
 		expect(searchToolsByQuery.mock.calls[0][1].map(tool => tool.name)).toEqual(['deferred-extension-tool']);
-		expect(searchToolsByQuery.mock.calls[0][4]).toBeUndefined();
 	});
 });

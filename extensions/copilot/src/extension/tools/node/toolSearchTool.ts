@@ -61,7 +61,6 @@ export class ToolSearchTool implements ICopilotModelSpecificTool<IToolSearchPara
 			availableTools,
 			limit ?? DEFAULT_SEARCH_LIMIT,
 			token,
-			candidateTools !== undefined ? { useCache: false } : undefined,
 		);
 
 		this._logService.trace(`[custom-tool-search] Query "${query}" matched ${matchedToolNames.length} tools: ${JSON.stringify(matchedToolNames)}`);
