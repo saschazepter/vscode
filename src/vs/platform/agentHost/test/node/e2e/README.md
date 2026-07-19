@@ -66,17 +66,16 @@ Key properties:
 | `providers/` | Deterministic provider entry points and provider-specific scenarios. Live Codex scenarios are isolated in `codexAgentHostLive.integrationTest.ts`. |
 | `suites/` | Cross-provider scenarios grouped by behavior. Add new shared scenarios to the closest existing suite; add a suite module when a new behavior area emerges. |
 | `harness/` | Record/replay, AHP snapshots, shared turn drivers, and server lifecycle. |
-| `mocked/` | Real-provider tests backed by the local mock LLM rather than recorded CAPI traffic. |
-| `captures/agentHostE2E/*.yaml` | The committed fixtures, one per `(provider, test)`. |
+| `captures/*.yaml` | The committed fixtures, one per `(provider, test)`. |
 | `providers/__snapshots__/` | Semantic AHP snapshots for deterministic provider tests. |
 
-Use these deterministic E2E tests when the value comes from running the bundled provider process: SDK event ordering, tool schemas and execution, provider persistence, protocol-to-provider mapping, or cross-provider parity. Use `../protocol/` when `ScriptedMockAgent` can express the AHP contract precisely. Use an ordinary unit test when neither a server process nor a provider process is required.
+Use these deterministic E2E tests when the value comes from running the bundled provider process with realistic captured model behavior: SDK event ordering, tool schemas and execution, provider persistence, protocol-to-provider mapping, or cross-provider parity. Use `../providerIntegration/` for a real provider with a synthetic local LLM, `../protocol/` when `ScriptedMockAgent` can express the AHP contract precisely, and an ordinary unit test when no server process is required.
 
 ---
 
 ## Fixture format
 
-Fixtures live in `captures/agentHostE2E/` and are named `${provider}-${slugified-test-title}.yaml`. They are intentionally minimal and human-reviewable:
+Fixtures live in `captures/` and are named `${provider}-${slugified-test-title}.yaml`. They are intentionally minimal and human-reviewable:
 
 ```yaml
 version: 1
@@ -164,7 +163,7 @@ Outputs:
 - `.build/agent-host-e2e-coverage/report/index.html` — browsable HTML report.
 - `.build/agent-host-e2e-coverage/report/lcov.info` — LCOV output for editor tooling.
 - `.build/agent-host-e2e-coverage/report/coverage-summary.json` — full c8 JSON summary.
-- `coverage/agentHostE2E.json` — checked-in combined totals and sorted per-file metrics.
+- `coverage/summary.json` — checked-in combined totals and sorted per-file metrics.
 
 Every successful coverage run rewrites the checked-in stats. Test, report, or normalization failures leave the previous stats untouched. The stats are informational for now: there is no threshold, regression check, or commit gate yet. Asynchronous host and provider startup can cover slightly different executable ranges across otherwise identical runs, so a future gate must define an intentional tolerance or ratchet policy rather than assuming byte-identical stats.
 

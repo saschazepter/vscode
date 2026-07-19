@@ -16,14 +16,10 @@ import { raceTimeout, timeout } from '../../../../../../base/common/async.js';
 import { join } from '../../../../../../base/common/path.js';
 import { removeAnsiEscapeCodes } from '../../../../../../base/common/strings.js';
 import { URI } from '../../../../../../base/common/uri.js';
-import { generateUuid } from '../../../../../../base/common/uuid.js';
-import { SubscribeResult } from '../../../../common/state/protocol/commands.js';
-import { PROTOCOL_VERSION } from '../../../../common/state/protocol/version/registry.js';
 import {
-	MessageKind,
-	ResponsePartKind, ROOT_STATE_URI, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind,
+	ResponsePartKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind,
 	ChatInputResponseKind, ToolResultContentType, ToolCallConfirmationReason, ToolCallCancellationReason, buildDefaultChatUri,
-	type MessageAttachment, type ChatInputAnswer, type ChatInputRequest, type SessionState, type TerminalState,
+	type MessageAttachment, type ChatInputAnswer, type ChatInputRequest, type TerminalState,
 	type ToolResultContent,
 } from '../../../../common/state/sessionState.js';
 import {
@@ -36,6 +32,7 @@ import { CapiReplayMode } from './capiReplayProxy.js';
 import {
 	getActionEnvelope, isActionNotification, IServerHandle, startRealServer, TestProtocolClient,
 } from '../../serverIntegrationTestHelpers.js';
+import { createProviderSession, dispatchTurn, dispatchTurnWithAttachments } from '../../providerIntegrationTestHelpers.js';
 import { AgentHostUpdateSnapshotsEnvVar, AhpSnapshotScenario } from './ahpSnapshot.js';
 
 // #region Record/replay
@@ -99,7 +96,7 @@ export async function removeTempDirs(tempDirs: string[]): Promise<void> {
  * Fixtures live in the source tree (committed) though the compiled test runs
  * from `out/`/`out-build/` — resolve up to the repo root and into `src/...`.
  */
-const CAPTURES_DIR = fileURLToPath(new URL('../../../../../../../../src/vs/platform/agentHost/test/node/e2e/captures/agentHostE2E/', import.meta.url));
+const CAPTURES_DIR = fileURLToPath(new URL('../../../../../../../../src/vs/platform/agentHost/test/node/e2e/captures/', import.meta.url));
 
 /** Per-test fixture path derived from the provider + test title. */
 function fixturePathFor(provider: string, testTitle: string): string {
@@ -253,39 +250,16 @@ export async function createRealSession(
 	trackingList: string[],
 	workingDirectory: URI,
 ): Promise<string> {
-	c.setWorkingDirectory(workingDirectory.fsPath);
-	await c.call('initialize', { channel: ROOT_STATE_URI, protocolVersions: [PROTOCOL_VERSION], clientId }, 30_000);
-	await c.call('authenticate', { channel: ROOT_STATE_URI, resource: 'https://api.github.com', token: config.githubToken ?? resolveGitHubToken() }, 30_000);
-
-	const sessionUri = URI.from({ scheme: config.scheme, path: `/${generateUuid()}` }).toString();
-	// Default to `folder` isolation so the agent runs in the directory the
-	// test passed in. The default for Copilot is `worktree`, which would
-	// silently relocate the agent into `<workingDirectory>.worktrees/...`
-	// and break tests that assert on filesystem state in the original dir.
-	await c.call('createSession', {
-		channel: sessionUri,
+	const sessionUri = await createProviderSession(c, {
 		provider: config.provider,
-		workingDirectory: workingDirectory.toString(),
-		config: workingDirectory ? { isolation: 'folder' } : undefined,
-	}, 30_000);
-
-	// Sessions are created provisionally — `notify/sessionAdded` is deferred
-	// until the agent materializes on first message dispatch. Subscribe
-	// directly without waiting for the notification.
-	trackingList.push(sessionUri);
-
-	const subscribeResult = await c.call<SubscribeResult>('subscribe', { channel: sessionUri });
-	void (subscribeResult.snapshot!.state as SessionState);
-	// Conversation contents (turns, etc.) live on the session's default chat
-	// channel in the multi-chat protocol; subscribe to it as well so `chat/*`
-	// action notifications are delivered to this client.
-	await c.call<SubscribeResult>('subscribe', { channel: buildDefaultChatUri(sessionUri) });
+		scheme: config.scheme,
+		githubToken: config.githubToken ?? resolveGitHubToken(),
+	}, clientId, trackingList, workingDirectory);
 	c.setAhpSnapshotNormalization({
 		workingDirectory: workingDirectory.fsPath,
 		homeDirectory: homedir(),
 		userName: userInfo().username,
 	});
-	c.clearReceived();
 	c.clearAhpSnapshot();
 
 	return sessionUri;
@@ -305,33 +279,7 @@ export async function runAhpSnapshotTest(
 	await scenario.run(c, sessionUri);
 }
 
-/** Dispatch a turn with the given user message text. */
-export function dispatchTurn(c: TestProtocolClient, session: string, turnId: string, text: string, clientSeq: number): void {
-	c.dispatch({
-		channel: buildDefaultChatUri(session),
-		clientSeq,
-		action: {
-			type: ActionType.ChatTurnStarted,
-			turnId,
-			startedAt: '2025-01-01T00:00:00.000Z',
-			message: { text, origin: { kind: MessageKind.User } },
-		},
-	});
-}
-
-/** Dispatch a turn with the given user message text and attachments. */
-export function dispatchTurnWithAttachments(c: TestProtocolClient, session: string, turnId: string, text: string, attachments: readonly MessageAttachment[], clientSeq: number): void {
-	c.dispatch({
-		channel: buildDefaultChatUri(session),
-		clientSeq,
-		action: {
-			type: ActionType.ChatTurnStarted,
-			turnId,
-			startedAt: '2025-01-01T00:00:00.000Z',
-			message: { text, origin: { kind: MessageKind.User }, attachments: [...attachments] },
-		},
-	});
-}
+export { dispatchTurn, dispatchTurnWithAttachments };
 
 // #endregion
 

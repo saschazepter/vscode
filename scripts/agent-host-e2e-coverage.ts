@@ -15,7 +15,7 @@ const coverageRoot = join(repoRoot, '.build', 'agent-host-e2e-coverage');
 const rawCoveragePath = join(coverageRoot, 'raw');
 const reportPath = join(coverageRoot, 'report');
 const summaryPath = join(reportPath, 'coverage-summary.json');
-const statsPath = join(repoRoot, 'src', 'vs', 'platform', 'agentHost', 'test', 'node', 'e2e', 'coverage', 'agentHostE2E.json');
+const statsPath = join(repoRoot, 'src', 'vs', 'platform', 'agentHost', 'test', 'node', 'e2e', 'coverage', 'summary.json');
 const metricNames = ['statements', 'branches', 'functions', 'lines'] as const;
 
 type MetricName = typeof metricNames[number];
