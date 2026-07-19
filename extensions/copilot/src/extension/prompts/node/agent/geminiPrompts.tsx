@@ -34,11 +34,11 @@ export class DefaultGeminiAgentPrompt extends PromptElement<DefaultAgentPromptPr
 		const tools = detectToolCapabilities(this.props.availableTools);
 
 		// Experiment to reduce Gemini models' proactive tool usage by instructing them to minimize tool calls.
-		// Applies to all Gemini models except the gemini-3-flash and gemini-2.5 families.
+		// Applies to all Gemini models except the gemini-3-flash and gemini-2 families.
 		const modelFamily = this.props.modelFamily?.toLowerCase();
 		const isExcludedGeminiFamily = !!modelFamily && (
 			modelFamily.includes('gemini-3-flash')
-			|| modelFamily.includes('gemini-2.5')
+			|| modelFamily.includes('gemini-2')
 		);
 		const reduceToolUse = !!modelFamily?.includes('gemini')
 			&& !isExcludedGeminiFamily
