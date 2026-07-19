@@ -606,7 +606,7 @@ export class CopilotSessionLauncher implements ICopilotSessionLauncher {
 			skillDirectories,
 			instructionDirectories,
 			systemMessage,
-			...(toolSearchActive ? { toolSearch: { enabled: true, deferThreshold: 1 } } : {}),
+toolSearch: toolSearchActive ? { enabled: true, deferThreshold: 1 } : { enabled: false }
 			pluginDirectories: coalesce(plugins.map(p => p.pluginDir))
 				.filter(d => d.scheme === Schemas.file).map(d => d.fsPath),
 			tools: [...shellTools, ...runtime.createClientSdkTools(), ...runtime.createServerSdkTools()],
