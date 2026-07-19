@@ -9,17 +9,7 @@ rounds:
             text: Create result.txt containing exactly CREATED_VALUE.
             origin:
               kind: user
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallConfirmed
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_0}
-          approved: true
-          confirmed: user-action
     serverToClient:
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnStarted
@@ -31,19 +21,10 @@ rounds:
       - channel: ${session_0}
         action:
           type: session/titleChanged
-      - channel: ${session_0}
-        action:
-          type: session/serverToolsChanged
       - method: root/sessionAdded
       - channel: ${session_0}
         action:
           type: session/ready
-      - channel: ${session_0}
-        action:
-          type: session/changesetsChanged
-      - channel: ${session_0}
-        action:
-          type: session/customizationsChanged
       - channel: ${chat_0}
         action:
           type: chat/responsePart
@@ -57,52 +38,6 @@ rounds:
           turnId: ${turn_0}
           toolCallId: ${toolCall_0}
           toolName: Write
-          displayName: Write file
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallDelta
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallReady
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_0}
-          invocationMessage: Editing [result.txt](file://${workdir}/result.txt)
-          toolInput: |-
-            {
-              "file_path": "${workdir}/result.txt",
-              "content": "CREATED_VALUE"
-            }
-          confirmed: not-needed
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallReady
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_0}
-          invocationMessage: Editing [result.txt](file://${workdir}/result.txt)
-          toolInput: |-
-            {
-              "file_path": "${workdir}/result.txt",
-              "content": "CREATED_VALUE"
-            }
-      - channel: ${session_0}
-        action:
-          type: session/inputNeededSet
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallConfirmed
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_0}
-          approved: true
-          confirmed: user-action
-      - channel: ${session_0}
-        action:
-          type: session/inputNeededRemoved
       - channel: ${chat_0}
         action:
           type: chat/toolCallComplete
@@ -110,11 +45,6 @@ rounds:
           toolCallId: ${toolCall_0}
           result:
             success: true
-            pastTenseMessage: Edited [result.txt](file://${workdir}/result.txt)
-            content:
-              - type: text
-                text: 'File created successfully at: ${workdir}/result.txt (file state is current in your context — no need to Read it back)'
-              - type: fileEdit
       - channel: ${chat_0}
         action:
           type: chat/responsePart
@@ -122,13 +52,6 @@ rounds:
           part:
             kind: markdown
             content: Created `result.txt` containing exactly `CREATED_VALUE`.
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnComplete

@@ -68,6 +68,7 @@ const isLinux = process.platform === 'linux';
 const isWindows = process.platform === 'win32';
 /** A synthetic token used on replay (no real credential needed). */
 export const REPLAY_PLACEHOLDER_TOKEN = 'replay-no-token';
+const BEHAVIOR_SNAPSHOT = { profile: 'behavior' } as const;
 
 async function stopServer(server: IServerHandle | undefined): Promise<void> {
 	const serverProcess = server?.process;
@@ -768,10 +769,8 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 	(config.enabled ? suite : suite.skip)(config.suiteTitle, function () {
 
 		const shellToolReplayEnabled = !isWindows && (RECORD || !isLinux || !config.shellToolReplayUnstableOnLinux);
-		// Codex currently duplicates every response part during aggregation, and
-		// the macOS-recorded tool snapshots have different path/event shapes on
-		// Windows. Keep the scenarios registered as skipped on those paths.
-		const stableNewScenarioResponse = config.provider !== 'codex' && !isWindows;
+		// Codex currently duplicates every response part during aggregation.
+		const stableNewScenarioResponse = config.provider !== 'codex';
 		let client: TestProtocolClient;
 		let lease: AgentHostE2EServerLease | undefined;
 		let suiteDataDir: string | undefined;
@@ -914,7 +913,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			client.beginAhpSnapshotRound();
 			const second = await driveTurnToCompletion(client, sessionUri, 'turn-memory-2', 'What code word did I ask you to remember? Reply with only the code word.', 10);
 			assert.match(second.responseText, /ORCHID/i);
-			await assertRecordedAhpSnapshot(this.test!, client);
+			await assertRecordedAhpSnapshot(this.test!, client, BEHAVIOR_SNAPSHOT);
 		});
 
 		// Expected to pass, but Copilot never completed this turn during recording and Codex duplicates its response.
@@ -928,7 +927,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			client.beginAhpSnapshotRound();
 			const result = await driveTurnToCompletion(client, sessionUri, 'turn-read', 'Read note.txt and reply with its exact contents only.', 1);
 			assert.match(result.responseText, /ALPHA BETA GAMMA/);
-			await assertRecordedAhpSnapshot(this.test!, client);
+			await assertRecordedAhpSnapshot(this.test!, client, BEHAVIOR_SNAPSHOT);
 		});
 
 		(stableNewScenarioResponse && (config.provider !== 'copilotcli' || shellToolReplayEnabled) ? test : test.skip)('reads a file from a nested directory', async function () {
@@ -942,7 +941,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			client.beginAhpSnapshotRound();
 			const result = await driveTurnToCompletion(client, sessionUri, 'turn-nested-read', 'Read nested/value.txt and reply with its exact contents only.', 1);
 			assert.match(result.responseText, /NESTED_VALUE_42/);
-			await assertRecordedAhpSnapshot(this.test!, client);
+			await assertRecordedAhpSnapshot(this.test!, client, BEHAVIOR_SNAPSHOT);
 		});
 
 		(stableNewScenarioResponse && shellToolReplayEnabled ? test : test.skip)('lists workspace entries', async function () {
@@ -957,7 +956,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			const result = await driveTurnToCompletion(client, sessionUri, 'turn-list', 'List the files in the current working directory. Reply with the filenames only.', 1);
 			assert.match(result.responseText, /first\.txt/);
 			assert.match(result.responseText, /second\.md/);
-			await assertRecordedAhpSnapshot(this.test!, client);
+			await assertRecordedAhpSnapshot(this.test!, client, BEHAVIOR_SNAPSHOT);
 		});
 
 		// Codex does not honor the exact-response contract on replay; Copilot never completes the replayed turn.
@@ -971,11 +970,11 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			client.beginAhpSnapshotRound();
 			const result = await driveTurnToCompletion(client, sessionUri, 'turn-json', 'Read config.json and reply with the numeric value of "answer" only.', 1);
 			assert.match(result.responseText, /\b42\b/);
-			await assertRecordedAhpSnapshot(this.test!, client);
+			await assertRecordedAhpSnapshot(this.test!, client, BEHAVIOR_SNAPSHOT);
 		});
 
-		// Codex duplicates its response; Claude's shell rendering differs on Linux.
-		(stableNewScenarioResponse && shellToolReplayEnabled && !(isLinux && config.provider === 'claude') ? test : test.skip)('counts lines in a file', async function () {
+		// Codex duplicates its response.
+		(stableNewScenarioResponse && shellToolReplayEnabled ? test : test.skip)('counts lines in a file', async function () {
 			this.timeout(180_000);
 			const workspace = mkdtempSync(join(tmpdir(), 'ahp-coverage-lines-'));
 			tempDirs.push(workspace);
@@ -985,7 +984,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			client.beginAhpSnapshotRound();
 			const result = await driveTurnToCompletion(client, sessionUri, 'turn-lines', 'Count the lines in lines.txt and reply with the number only.', 1);
 			assert.match(result.responseText, /\b4\b/);
-			await assertRecordedAhpSnapshot(this.test!, client);
+			await assertRecordedAhpSnapshot(this.test!, client, BEHAVIOR_SNAPSHOT);
 		});
 
 		(stableNewScenarioResponse && (config.provider !== 'copilotcli' || shellToolReplayEnabled) ? test : test.skip)('handles a missing file without a session error', async function () {
@@ -997,11 +996,11 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			client.beginAhpSnapshotRound();
 			const result = await driveTurnToCompletion(client, sessionUri, 'turn-missing', 'Try to read missing.txt. If it does not exist, reply exactly "missing".', 1);
 			assert.match(result.responseText, /missing/i);
-			await assertRecordedAhpSnapshot(this.test!, client);
+			await assertRecordedAhpSnapshot(this.test!, client, BEHAVIOR_SNAPSHOT);
 		});
 
-		// Copilot's AHP completion ordering varies by platform; Claude prompts for confirmation on Linux.
-		(stableNewScenarioResponse && config.provider !== 'copilotcli' && !(isLinux && config.provider === 'claude') ? test : test.skip)('creates a new text file', async function () {
+		// Copilot does not consistently emit tool completion for this scenario.
+		(stableNewScenarioResponse && config.provider !== 'copilotcli' ? test : test.skip)('creates a new text file', async function () {
 			this.timeout(180_000);
 			const workspace = mkdtempSync(join(tmpdir(), 'ahp-coverage-create-'));
 			tempDirs.push(workspace);
@@ -1010,11 +1009,11 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			client.beginAhpSnapshotRound();
 			await driveTurnToCompletion(client, sessionUri, 'turn-create', 'Create result.txt containing exactly CREATED_VALUE.', 1);
 			assert.strictEqual(readFileSync(join(workspace, 'result.txt'), 'utf8'), 'CREATED_VALUE');
-			await assertRecordedAhpSnapshot(this.test!, client);
+			await assertRecordedAhpSnapshot(this.test!, client, BEHAVIOR_SNAPSHOT);
 		});
 
-		// Copilot never completes this turn; Claude's shell and confirmation traffic is stable only on macOS.
-		(stableNewScenarioResponse && config.provider === 'claude' && shellToolReplayEnabled && !isLinux ? test : test.skip)('edits an existing text file', async function () {
+		// Copilot never completes this turn.
+		(stableNewScenarioResponse && config.provider === 'claude' && shellToolReplayEnabled ? test : test.skip)('edits an existing text file', async function () {
 			this.timeout(180_000);
 			const workspace = mkdtempSync(join(tmpdir(), 'ahp-coverage-edit-'));
 			tempDirs.push(workspace);
@@ -1024,11 +1023,11 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			client.beginAhpSnapshotRound();
 			await driveTurnToCompletion(client, sessionUri, 'turn-edit', 'Replace the complete contents of edit.txt with AFTER_VALUE.', 1);
 			assert.strictEqual(readFileSync(join(workspace, 'edit.txt'), 'utf8'), 'AFTER_VALUE');
-			await assertRecordedAhpSnapshot(this.test!, client);
+			await assertRecordedAhpSnapshot(this.test!, client, BEHAVIOR_SNAPSHOT);
 		});
 
-		// Claude prompts for confirmation on Linux; Copilot's fixture uses a POSIX shell.
-		(stableNewScenarioResponse && !(isLinux && config.provider === 'claude') && (config.provider !== 'copilotcli' || shellToolReplayEnabled) ? test : test.skip)('creates a file in a new nested directory', async function () {
+		// Copilot's fixture uses a POSIX shell.
+		(stableNewScenarioResponse && (config.provider !== 'copilotcli' || shellToolReplayEnabled) ? test : test.skip)('creates a file in a new nested directory', async function () {
 			this.timeout(180_000);
 			const workspace = mkdtempSync(join(tmpdir(), 'ahp-coverage-nested-create-'));
 			tempDirs.push(workspace);
@@ -1037,10 +1036,10 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			client.beginAhpSnapshotRound();
 			await driveTurnToCompletion(client, sessionUri, 'turn-nested-create', 'Create output/report.txt containing exactly NESTED_CREATED.', 1);
 			assert.strictEqual(readFileSync(join(workspace, 'output', 'report.txt'), 'utf8'), 'NESTED_CREATED');
-			await assertRecordedAhpSnapshot(this.test!, client);
+			await assertRecordedAhpSnapshot(this.test!, client, BEHAVIOR_SNAPSHOT);
 		});
 
-		(stableNewScenarioResponse && shellToolReplayEnabled && !(isLinux && config.provider === 'copilotcli') ? test : test.skip)('renames a workspace file', async function () {
+		(stableNewScenarioResponse && shellToolReplayEnabled ? test : test.skip)('renames a workspace file', async function () {
 			this.timeout(180_000);
 			const workspace = mkdtempSync(join(tmpdir(), 'ahp-coverage-rename-'));
 			tempDirs.push(workspace);
@@ -1051,11 +1050,11 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			await driveTurnToCompletion(client, sessionUri, 'turn-rename', 'Rename before.txt to after.txt without changing its contents.', 1);
 			assert.strictEqual(existsSync(join(workspace, 'before.txt')), false);
 			assert.strictEqual(readFileSync(join(workspace, 'after.txt'), 'utf8'), 'RENAME_VALUE');
-			await assertRecordedAhpSnapshot(this.test!, client);
+			await assertRecordedAhpSnapshot(this.test!, client, BEHAVIOR_SNAPSHOT);
 		});
 
-		// Copilot never completed this turn; Claude's shell rendering differs across Linux and Windows.
-		(stableNewScenarioResponse && config.provider === 'claude' && shellToolReplayEnabled && !isLinux ? test : test.skip)('deletes a workspace file', async function () {
+		// Copilot never completed this turn.
+		(stableNewScenarioResponse && config.provider === 'claude' && shellToolReplayEnabled ? test : test.skip)('deletes a workspace file', async function () {
 			this.timeout(180_000);
 			const workspace = mkdtempSync(join(tmpdir(), 'ahp-coverage-delete-'));
 			tempDirs.push(workspace);
@@ -1065,7 +1064,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			client.beginAhpSnapshotRound();
 			await driveTurnToCompletion(client, sessionUri, 'turn-delete', 'Delete delete-me.txt.', 1);
 			assert.strictEqual(existsSync(join(workspace, 'delete-me.txt')), false);
-			await assertRecordedAhpSnapshot(this.test!, client);
+			await assertRecordedAhpSnapshot(this.test!, client, BEHAVIOR_SNAPSHOT);
 		});
 
 		(shellToolReplayEnabled && stableNewScenarioResponse ? test : test.skip)('runs a deterministic shell command', async function () {
@@ -1077,7 +1076,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			client.beginAhpSnapshotRound();
 			const result = await driveTurnToCompletion(client, sessionUri, 'turn-shell', 'Run a shell command that prints SHELL_VALUE_73, then reply with that exact value only.', 1);
 			assert.match(result.responseText, /SHELL_VALUE_73/);
-			await assertRecordedAhpSnapshot(this.test!, client);
+			await assertRecordedAhpSnapshot(this.test!, client, BEHAVIOR_SNAPSHOT);
 		});
 
 		// Claude and Codex emit customization/changeset updates at nondeterministic points in this snapshot.
@@ -1098,7 +1097,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			const result = await driveTurnToCompletion(client, sessionUri, 'turn-git', 'Inspect git status. Reply with the names of the modified and untracked files only.', 1);
 			assert.match(result.responseText, /tracked\.txt/);
 			assert.match(result.responseText, /untracked\.txt/);
-			await assertRecordedAhpSnapshot(this.test!, client);
+			await assertRecordedAhpSnapshot(this.test!, client, BEHAVIOR_SNAPSHOT);
 		});
 
 		(stableNewScenarioResponse ? test : test.skip)('reads a filename containing spaces', async function () {
@@ -1111,7 +1110,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			client.beginAhpSnapshotRound();
 			const result = await driveTurnToCompletion(client, sessionUri, 'turn-spaces', 'Read "file with spaces.txt" and reply with its exact contents only.', 1);
 			assert.match(result.responseText, /SPACED_VALUE/);
-			await assertRecordedAhpSnapshot(this.test!, client);
+			await assertRecordedAhpSnapshot(this.test!, client, BEHAVIOR_SNAPSHOT);
 		});
 
 		(shellToolReplayEnabled ? test : test.skip)('tool call triggers permission request and can be approved', async function () {

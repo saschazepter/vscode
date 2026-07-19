@@ -10,9 +10,6 @@ rounds:
             origin:
               kind: user
     serverToClient:
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnStarted
@@ -24,16 +21,10 @@ rounds:
       - channel: ${session_0}
         action:
           type: session/titleChanged
-      - channel: ${session_0}
-        action:
-          type: session/serverToolsChanged
       - method: root/sessionAdded
       - channel: ${session_0}
         action:
           type: session/ready
-      - channel: ${session_0}
-        action:
-          type: session/changesetsChanged
       - channel: ${chat_0}
         action:
           type: chat/responsePart
@@ -41,17 +32,6 @@ rounds:
           part:
             kind: markdown
             content: ready
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnComplete
@@ -66,9 +46,6 @@ rounds:
             origin:
               kind: user
     serverToClient:
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnStarted
@@ -84,17 +61,6 @@ rounds:
           part:
             kind: markdown
             content: ORCHID
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_1}
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_1}
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnComplete

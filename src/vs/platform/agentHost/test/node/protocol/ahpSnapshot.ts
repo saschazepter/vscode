@@ -68,8 +68,12 @@ interface IAhpSnapshotClient {
 	dispatch(params: DispatchActionParams): void;
 	receivedNotifications(): AhpNotification[];
 	waitForNotification(predicate: (notification: AhpNotification) => boolean, timeoutMs?: number): Promise<AhpNotification>;
-	serializeAhpSnapshot(): string;
+	serializeAhpSnapshot(options?: IAhpSnapshotOptions): string;
 	takeReplayError(): Error | undefined;
+}
+
+export interface IAhpSnapshotOptions {
+	readonly profile?: 'protocol' | 'behavior';
 }
 
 export interface IAhpSnapshotNormalization {
@@ -101,7 +105,8 @@ export class AhpSnapshotRecorder {
 		this._roundStarts.length = 0;
 	}
 
-	serialize(): string {
+	serialize(options: IAhpSnapshotOptions = {}): string {
+		const profile = options.profile ?? 'protocol';
 		const clientRequests = new Map<number, string>();
 		const serverRequests = new Map<number, string>();
 		const channels = new Map<string, string>();
@@ -133,8 +138,11 @@ export class AhpSnapshotRecorder {
 						if (action.type === ActionType.SessionCustomizationUpdated) {
 							continue;
 						}
+						if (profile === 'behavior' && isBehaviorSnapshotNoise(action.type)) {
+							continue;
+						}
 						const channel = typeof params?.channel === 'string' ? params.channel : '';
-						const projectedAction = projectAction(action, turns, toolCalls, responseParts, channel);
+						const projectedAction = projectAction(action, turns, toolCalls, responseParts, channel, profile);
 						if (!projectedAction) {
 							continue;
 						}
@@ -170,8 +178,8 @@ export class AhpSnapshotRecorder {
 }
 
 /** Records code-driven AHP traffic during snapshot updates and asserts it during replay. */
-export async function assertRecordedAhpSnapshot(test: Mocha.Runnable, client: IAhpSnapshotClient): Promise<void> {
-	const actual = client.serializeAhpSnapshot();
+export async function assertRecordedAhpSnapshot(test: Mocha.Runnable, client: IAhpSnapshotClient, options?: IAhpSnapshotOptions): Promise<void> {
+	const actual = client.serializeAhpSnapshot(options);
 	if (UPDATE_AHP_SNAPSHOTS || UPDATE_ALL_SNAPSHOTS) {
 		writeFileSync(snapshotPathForTest(test), actual);
 		return;
@@ -294,6 +302,7 @@ function projectAction(
 	toolCalls: Map<string, string>,
 	responseParts: Map<string, { content: string }>,
 	channel: string,
+	profile: NonNullable<IAhpSnapshotOptions['profile']>,
 ): object | undefined {
 	switch (action.type) {
 		case ActionType.SessionActiveClientSet:
@@ -353,8 +362,10 @@ function projectAction(
 				turnId: normalizeIdentifier(action.turnId, 'turn', turns),
 				toolCallId: normalizeIdentifier(action.toolCallId, 'toolCall', toolCalls),
 				toolName: action.toolName,
-				displayName: action.displayName,
-				contributor: projectContributor(action.contributor),
+				...(profile === 'protocol' ? {
+					displayName: action.displayName,
+					contributor: projectContributor(action.contributor),
+				} : {}),
 			};
 		case ActionType.ChatToolCallReady:
 			return {
@@ -380,17 +391,49 @@ function projectAction(
 				toolCallId: normalizeIdentifier(action.toolCallId, 'toolCall', toolCalls),
 				result: {
 					success: action.result.success,
-					pastTenseMessage: projectStringOrMarkdown(action.result.pastTenseMessage),
-					content: action.result.content?.map(content => content.type === ToolResultContentType.Text
-						? { type: content.type, text: content.text }
-						: { type: content.type }),
+					...(profile === 'protocol' ? {
+						pastTenseMessage: projectStringOrMarkdown(action.result.pastTenseMessage),
+						content: action.result.content?.map(content => content.type === ToolResultContentType.Text
+							? { type: content.type, text: content.text }
+							: { type: content.type }),
+					} : {}),
 				},
 			};
+		case ActionType.ChatError:
+			return profile === 'behavior' ? {
+				type: action.type,
+				turnId: normalizeIdentifier(action.turnId, 'turn', turns),
+				error: {
+					errorType: action.error.errorType,
+					message: action.error.message,
+				},
+			} : { type: action.type };
 		case ActionType.ChatUsage:
 		case ActionType.ChatTurnComplete:
 			return { type: action.type, turnId: normalizeIdentifier(action.turnId, 'turn', turns) };
 		default:
 			return { type: action.type };
+	}
+}
+
+function isBehaviorSnapshotNoise(type: ActionType): boolean {
+	switch (type) {
+		case ActionType.SessionChatUpdated:
+		case ActionType.SessionServerToolsChanged:
+		case ActionType.SessionInputNeededSet:
+		case ActionType.SessionInputNeededRemoved:
+		case ActionType.SessionCustomizationsChanged:
+		case ActionType.SessionChangesetsChanged:
+		case ActionType.SessionActivityChanged:
+		case ActionType.ChatActivityChanged:
+		case ActionType.ChatUsage:
+		case ActionType.ChatToolCallDelta:
+		case ActionType.ChatToolCallReady:
+		case ActionType.ChatToolCallConfirmed:
+		case ActionType.ChatToolCallContentChanged:
+			return true;
+		default:
+			return false;
 	}
 }
 

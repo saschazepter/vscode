@@ -9,17 +9,7 @@ rounds:
             text: Rename before.txt to after.txt without changing its contents.
             origin:
               kind: user
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallConfirmed
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_1}
-          approved: true
-          confirmed: user-action
     serverToClient:
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnStarted
@@ -31,47 +21,16 @@ rounds:
       - channel: ${session_0}
         action:
           type: session/titleChanged
-      - channel: ${session_0}
-        action:
-          type: session/serverToolsChanged
       - method: root/sessionAdded
       - channel: ${session_0}
         action:
           type: session/ready
-      - channel: ${session_0}
-        action:
-          type: session/changesetsChanged
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
       - channel: ${chat_0}
         action:
           type: chat/toolCallStart
           turnId: ${turn_0}
           toolCallId: ${toolCall_0}
           toolName: bash
-          displayName: Run Shell Command
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallReady
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_0}
-          invocationMessage: Running `find / -maxdepth 4 -name "before.txt" 2>/dev/null; pwd; ls -la`
-          toolInput: find / -maxdepth 4 -name "before.txt" 2>/dev/null; pwd; ls -la
-          confirmed: not-needed
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallReady
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_0}
-          invocationMessage: Locate before.txt
-          toolInput: find / -maxdepth 4 -name "before.txt" 2>/dev/null; pwd; ls -la
-          confirmed: not-needed
       - channel: ${chat_0}
         action:
           type: chat/toolCallComplete
@@ -79,65 +38,12 @@ rounds:
           toolCallId: ${toolCall_0}
           result:
             success: true
-            pastTenseMessage: Ran `find / -maxdepth 4 -name "before.txt" 2>/dev/null; pwd; ls -la`
-            content:
-              - type: text
-                text: |-
-                  ${workdir}
-                  total 8
-                  ${listing} .
-                  ${listing} ..
-                  ${listing} before.txt
-                  <shellId: ${shellId} completed with exit code 0>
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
       - channel: ${chat_0}
         action:
           type: chat/toolCallStart
           turnId: ${turn_0}
           toolCallId: ${toolCall_1}
           toolName: bash
-          displayName: Run Shell Command
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallReady
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_1}
-          invocationMessage: Running `mv before.txt after.txt && ls -la && cat after.txt`
-          toolInput: mv before.txt after.txt && ls -la && cat after.txt
-          confirmed: not-needed
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallReady
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_1}
-          invocationMessage: Rename before.txt to after.txt
-          toolInput: mv before.txt after.txt && ls -la && cat after.txt
-      - channel: ${session_0}
-        action:
-          type: session/inputNeededSet
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallConfirmed
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_1}
-          approved: true
-          confirmed: user-action
-      - channel: ${session_0}
-        action:
-          type: session/inputNeededRemoved
       - channel: ${chat_0}
         action:
           type: chat/toolCallComplete
@@ -145,16 +51,6 @@ rounds:
           toolCallId: ${toolCall_1}
           result:
             success: true
-            pastTenseMessage: Ran `mv before.txt after.txt && ls -la && cat after.txt`
-            content:
-              - type: text
-                text: |-
-                  total 8
-                  ${listing} .
-                  ${listing} ..
-                  ${listing} after.txt
-                  RENAME_VALUE
-                  <shellId: ${shellId} completed with exit code 0>
       - channel: ${chat_0}
         action:
           type: chat/responsePart
@@ -162,17 +58,6 @@ rounds:
           part:
             kind: markdown
             content: Renamed `before.txt` to `after.txt` — contents (`RENAME_VALUE`) unchanged.
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnComplete

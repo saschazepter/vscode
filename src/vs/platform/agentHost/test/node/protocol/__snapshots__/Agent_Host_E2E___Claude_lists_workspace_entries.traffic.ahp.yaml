@@ -10,9 +10,6 @@ rounds:
             origin:
               kind: user
     serverToClient:
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnStarted
@@ -24,19 +21,10 @@ rounds:
       - channel: ${session_0}
         action:
           type: session/titleChanged
-      - channel: ${session_0}
-        action:
-          type: session/serverToolsChanged
       - method: root/sessionAdded
       - channel: ${session_0}
         action:
           type: session/ready
-      - channel: ${session_0}
-        action:
-          type: session/changesetsChanged
-      - channel: ${session_0}
-        action:
-          type: session/customizationsChanged
       - channel: ${chat_0}
         action:
           type: chat/responsePart
@@ -50,18 +38,6 @@ rounds:
           turnId: ${turn_0}
           toolCallId: ${toolCall_0}
           toolName: Bash
-          displayName: Run shell command
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallDelta
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallReady
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_0}
-          invocationMessage: Running `ls -1`
-          toolInput: ls -1
-          confirmed: not-needed
       - channel: ${chat_0}
         action:
           type: chat/toolCallComplete
@@ -69,12 +45,6 @@ rounds:
           toolCallId: ${toolCall_0}
           result:
             success: true
-            pastTenseMessage: Ran `ls -1`
-            content:
-              - type: text
-                text: |-
-                  first.txt
-                  second.md
       - channel: ${chat_0}
         action:
           type: chat/responsePart
@@ -84,13 +54,6 @@ rounds:
             content: |-
               first.txt
               second.md
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnComplete

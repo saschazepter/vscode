@@ -10,9 +10,6 @@ rounds:
             origin:
               kind: user
     serverToClient:
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnStarted
@@ -24,47 +21,16 @@ rounds:
       - channel: ${session_0}
         action:
           type: session/titleChanged
-      - channel: ${session_0}
-        action:
-          type: session/serverToolsChanged
       - method: root/sessionAdded
       - channel: ${session_0}
         action:
           type: session/ready
-      - channel: ${session_0}
-        action:
-          type: session/changesetsChanged
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
       - channel: ${chat_0}
         action:
           type: chat/toolCallStart
           turnId: ${turn_0}
           toolCallId: ${toolCall_0}
           toolName: bash
-          displayName: Run Shell Command
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallReady
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_0}
-          invocationMessage: Running `echo SHELL_VALUE_73`
-          toolInput: echo SHELL_VALUE_73
-          confirmed: not-needed
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallReady
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_0}
-          invocationMessage: Print SHELL_VALUE_73
-          toolInput: echo SHELL_VALUE_73
-          confirmed: not-needed
       - channel: ${chat_0}
         action:
           type: chat/toolCallComplete
@@ -72,12 +38,6 @@ rounds:
           toolCallId: ${toolCall_0}
           result:
             success: true
-            pastTenseMessage: Ran `echo SHELL_VALUE_73`
-            content:
-              - type: text
-                text: |-
-                  SHELL_VALUE_73
-                  <shellId: ${shellId} completed with exit code 0>
       - channel: ${chat_0}
         action:
           type: chat/responsePart
@@ -85,17 +45,6 @@ rounds:
           part:
             kind: markdown
             content: SHELL_VALUE_73
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnComplete

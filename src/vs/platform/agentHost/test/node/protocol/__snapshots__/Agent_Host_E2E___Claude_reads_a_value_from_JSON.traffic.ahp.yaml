@@ -10,9 +10,6 @@ rounds:
             origin:
               kind: user
     serverToClient:
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnStarted
@@ -24,40 +21,16 @@ rounds:
       - channel: ${session_0}
         action:
           type: session/titleChanged
-      - channel: ${session_0}
-        action:
-          type: session/serverToolsChanged
       - method: root/sessionAdded
       - channel: ${session_0}
         action:
           type: session/ready
-      - channel: ${session_0}
-        action:
-          type: session/changesetsChanged
-      - channel: ${session_0}
-        action:
-          type: session/customizationsChanged
       - channel: ${chat_0}
         action:
           type: chat/toolCallStart
           turnId: ${turn_0}
           toolCallId: ${toolCall_0}
           toolName: Read
-          displayName: Read file
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallDelta
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallReady
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_0}
-          invocationMessage: Reading [config.json](file://${workdir}/config.json)
-          toolInput: |-
-            {
-              "file_path": "${workdir}/config.json"
-            }
-          confirmed: not-needed
       - channel: ${chat_0}
         action:
           type: chat/toolCallComplete
@@ -65,10 +38,6 @@ rounds:
           toolCallId: ${toolCall_0}
           result:
             success: true
-            pastTenseMessage: Read [config.json](file://${workdir}/config.json)
-            content:
-              - type: text
-                text: "1\t{\"answer\":42}"
       - channel: ${chat_0}
         action:
           type: chat/responsePart
@@ -76,13 +45,6 @@ rounds:
           part:
             kind: markdown
             content: '42'
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnComplete

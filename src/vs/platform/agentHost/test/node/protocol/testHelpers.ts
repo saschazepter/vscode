@@ -28,7 +28,7 @@ import {
 	type JsonRpcSuccessResponse,
 	type ProtocolMessage,
 } from '../../../common/state/sessionProtocol.js';
-import { AhpSnapshotRecorder, type IAhpSnapshotNormalization } from './ahpSnapshot.js';
+import { AhpSnapshotRecorder, type IAhpSnapshotNormalization, type IAhpSnapshotOptions } from './ahpSnapshot.js';
 
 // ---- JSON-RPC test client ---------------------------------------------------
 
@@ -235,8 +235,8 @@ export class TestProtocolClient {
 		this._ahpSnapshot.beginRound();
 	}
 
-	serializeAhpSnapshot(): string {
-		return this._ahpSnapshot.serialize();
+	serializeAhpSnapshot(options?: IAhpSnapshotOptions): string {
+		return this._ahpSnapshot.serialize(options);
 	}
 
 	takeReplayError(): Error | undefined {

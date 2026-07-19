@@ -10,9 +10,6 @@ rounds:
             origin:
               kind: user
     serverToClient:
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnStarted
@@ -24,37 +21,16 @@ rounds:
       - channel: ${session_0}
         action:
           type: session/titleChanged
-      - channel: ${session_0}
-        action:
-          type: session/serverToolsChanged
       - method: root/sessionAdded
       - channel: ${session_0}
         action:
           type: session/ready
-      - channel: ${session_0}
-        action:
-          type: session/changesetsChanged
-      - channel: ${session_0}
-        action:
-          type: session/customizationsChanged
       - channel: ${chat_0}
         action:
           type: chat/toolCallStart
           turnId: ${turn_0}
           toolCallId: ${toolCall_0}
           toolName: Bash
-          displayName: Run shell command
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallDelta
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallReady
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_0}
-          invocationMessage: Running `wc -l < ${workdir}`
-          toolInput: wc -l < ${workdir}/lines.txt
-          confirmed: not-needed
       - channel: ${chat_0}
         action:
           type: chat/toolCallComplete
@@ -62,31 +38,12 @@ rounds:
           toolCallId: ${toolCall_0}
           result:
             success: true
-            pastTenseMessage: Ran `wc -l < ${workdir}`
-            content:
-              - type: text
-                text: '       4'
       - channel: ${chat_0}
         action:
           type: chat/toolCallStart
           turnId: ${turn_0}
           toolCallId: ${toolCall_1}
           toolName: Read
-          displayName: Read file
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallDelta
-      - channel: ${chat_0}
-        action:
-          type: chat/toolCallReady
-          turnId: ${turn_0}
-          toolCallId: ${toolCall_1}
-          invocationMessage: Reading [lines.txt](file://${workdir}/lines.txt)
-          toolInput: |-
-            {
-              "file_path": "${workdir}/lines.txt"
-            }
-          confirmed: not-needed
       - channel: ${chat_0}
         action:
           type: chat/toolCallComplete
@@ -94,10 +51,6 @@ rounds:
           toolCallId: ${toolCall_1}
           result:
             success: true
-            pastTenseMessage: Read [lines.txt](file://${workdir}/lines.txt)
-            content:
-              - type: text
-                text: "1\tone\n2\ttwo\n3\tthree\n4\tfour\n5\t"
       - channel: ${chat_0}
         action:
           type: chat/responsePart
@@ -105,13 +58,6 @@ rounds:
           part:
             kind: markdown
             content: '4'
-      - channel: ${chat_0}
-        action:
-          type: chat/usage
-          turnId: ${turn_0}
-      - channel: ${session_0}
-        action:
-          type: session/chatUpdated
       - channel: ${chat_0}
         action:
           type: chat/turnComplete

@@ -15,14 +15,14 @@
 	},
 	"total": {
 		"statements": {
-			"covered": 60289,
+			"covered": 60292,
 			"total": 84285,
-			"percentage": 71.52
+			"percentage": 71.53
 		},
 		"branches": {
-			"covered": 5293,
-			"total": 8172,
-			"percentage": 64.76
+			"covered": 5296,
+			"total": 8174,
+			"percentage": 64.79
 		},
 		"functions": {
 			"covered": 1925,
@@ -30,9 +30,9 @@
 			"percentage": 60.34
 		},
 		"lines": {
-			"covered": 60289,
+			"covered": 60292,
 			"total": 84285,
-			"percentage": 71.52
+			"percentage": 71.53
 		}
 	},
 	"files": {
@@ -2463,9 +2463,9 @@
 				"percentage": 90.46
 			},
 			"branches": {
-				"covered": 188,
-				"total": 232,
-				"percentage": 81.03
+				"covered": 187,
+				"total": 231,
+				"percentage": 80.95
 			},
 			"functions": {
 				"covered": 52,
@@ -4201,9 +4201,9 @@
 				"percentage": 67.65
 			},
 			"branches": {
-				"covered": 303,
-				"total": 512,
-				"percentage": 59.17
+				"covered": 305,
+				"total": 514,
+				"percentage": 59.33
 			},
 			"functions": {
 				"covered": 129,
@@ -4658,14 +4658,14 @@
 		},
 		"src/vs/platform/agentHost/node/copilot/sessionCustomizationDiscovery.ts": {
 			"statements": {
-				"covered": 460,
+				"covered": 463,
 				"total": 627,
-				"percentage": 73.36
+				"percentage": 73.84
 			},
 			"branches": {
-				"covered": 71,
-				"total": 89,
-				"percentage": 79.77
+				"covered": 73,
+				"total": 90,
+				"percentage": 81.11
 			},
 			"functions": {
 				"covered": 16,
@@ -4673,9 +4673,9 @@
 				"percentage": 69.56
 			},
 			"lines": {
-				"covered": 460,
+				"covered": 463,
 				"total": 627,
-				"percentage": 73.36
+				"percentage": 73.84
 			}
 		},
 		"src/vs/platform/agentHost/node/diffComputeService.ts": {
