@@ -50,7 +50,6 @@ import { PendingRequestRegistry } from '../../common/pendingRequestRegistry.js';
 import { buildCopilotSystemNotification } from './copilotSystemNotification.js';
 import { parseLeadingSlashCommand } from './copilotSlashCommandCompletionProvider.js';
 import { augmentTroubleshootRequest, TROUBLESHOOT_SKILL_NAME } from '../../common/agentHostTroubleshoot.js';
-import { buildSkillInvocationPrompt } from '../../common/agentHostSkillInvocation.js';
 import { isBuiltinSkill } from './copilotBuiltinSkills.js';
 import type { IUnsandboxedCommandConfirmationRequest, ShellManager } from './copilotShellTools.js';
 import { buildSandboxConfigForSdk, type ISdkSandboxConfig } from './sandboxConfigForSdk.js';
@@ -1424,22 +1423,26 @@ export class CopilotAgentSession extends Disposable {
 			}
 		}
 
-		// A bundled built-in skill request (`/<name>`) is rewritten into a
-		// deterministic skill invocation: the runtime does not reliably auto-run
-		// a skill from a bare `/<name>`, so we ask the model to use the `skill`
-		// tool (see `buildSkillInvocationPrompt`). `/troubleshoot` additionally
-		// resolves the on-disk session log(s) to analyze - `#session` reference
-		// attachments target other sessions, else the current session - and its
-		// `#session` markers are consumed here, not forwarded to the model.
+		// A bundled built-in skill request (`/<name>`) is dispatched by asking the
+		// runtime to invoke the loaded, user-invocable skill via `commands.invoke`:
+		// the runtime resolves the skill (loading it on demand) and returns an
+		// `agent-prompt` whose text is the canonical skill-invocation message it
+		// builds itself, keeping the phrasing in sync with the CLI. `/troubleshoot`
+		// additionally resolves the on-disk session log(s) to analyze - `#session`
+		// reference attachments target other sessions, else the current session -
+		// passed as the skill `input`; its `#session` markers are consumed here,
+		// not forwarded to the model.
 		let effectiveAttachments = attachments;
 		if (slashCommand && isBuiltinSkill(slashCommand.command)) {
+			let skillInput: string;
 			if (slashCommand.command === TROUBLESHOOT_SKILL_NAME) {
 				const augmented = augmentTroubleshootRequest(slashCommand.rest, attachments, id => this._sessionEventsLogPath(id));
-				prompt = augmented.prompt;
+				skillInput = augmented.input;
 				effectiveAttachments = augmented.attachments;
 			} else {
-				prompt = buildSkillInvocationPrompt(slashCommand.command, slashCommand.rest);
+				skillInput = slashCommand.rest;
 			}
+			prompt = await this._invokeBuiltinSkillCommand(slashCommand.command, skillInput);
 		}
 
 		const sdkAttachments = effectiveAttachments?.length
@@ -1454,6 +1457,36 @@ export class CopilotAgentSession extends Disposable {
 		await this._applyEffectiveSandboxConfig();
 		await this._wrapper.session.send({ prompt, attachments: sdkAttachments?.length ? sdkAttachments : undefined });
 		this._logService.info(`[Copilot:${this.sessionId}] session.send() returned`);
+	}
+
+	/**
+	 * Invokes a bundled built-in skill via the runtime's native
+	 * `commands.invoke` RPC. The runtime resolves the loaded, user-invocable
+	 * skill by name (loading skills on demand) and returns an `agent-prompt`
+	 * result whose `prompt` is the canonical skill-invocation message it builds
+	 * itself - so the phrasing stays in sync with the CLI.
+	 *
+	 * @param name The built-in skill's `/<name>` command.
+	 * @param input Free-text context forwarded to the skill (the runtime appends
+	 *   it after the invocation message).
+	 * @throws when the invocation fails or the runtime does not return an
+	 *   `agent-prompt` (a built-in skill is expected to always produce one).
+	 */
+	private async _invokeBuiltinSkillCommand(name: string, input: string): Promise<string> {
+		let result: CopilotCommandInvocationResult;
+		try {
+			result = await this._wrapper.session.rpc.commands.invoke({
+				name,
+				...(input.length > 0 ? { input } : {}),
+			});
+		} catch (err) {
+			this._logService.error(err, `[Copilot:${this.sessionId}] rpc.commands.invoke(${name}) failed`);
+			throw err;
+		}
+		if (result.kind !== 'agent-prompt') {
+			throw new Error(`commands.invoke('${name}') returned kind '${result.kind}', expected 'agent-prompt'`);
+		}
+		return result.prompt;
 	}
 
 	/**

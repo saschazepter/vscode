@@ -31,12 +31,10 @@ suite('agentHostTroubleshoot - augmentTroubleshootRequest', () => {
 		return { type: MessageAttachmentKind.Simple, label };
 	}
 
-	const SKILL_BASE = `Use the skill tool to invoke the 'troubleshoot' skill, then follow the skill's instructions.`;
-
 	test('omits the log path for a bare request and forwards the free text as context', () => {
 		const result = augmentTroubleshootRequest('why slow', undefined, resolvePath);
 		assert.deepStrictEqual(result, {
-			prompt: `${SKILL_BASE}\n\nAdditional context from the user:\nwhy slow`,
+			input: `Additional context from the user:\nwhy slow`,
 			attachments: undefined,
 		});
 	});
@@ -45,7 +43,7 @@ suite('agentHostTroubleshoot - augmentTroubleshootRequest', () => {
 		const attachments = [sessionReferenceAttachment('other', 'Other Session')];
 		const result = augmentTroubleshootRequest('#session:Other Session', attachments, resolvePath);
 		assert.deepStrictEqual(result, {
-			prompt: `${SKILL_BASE}\n\nSession log: /state/other/log.jsonl`,
+			input: `Session log: /state/other/log.jsonl`,
 			attachments: [],
 		});
 	});
@@ -54,7 +52,7 @@ suite('agentHostTroubleshoot - augmentTroubleshootRequest', () => {
 		const attachments = [sessionReferenceAttachment('build', 'Build')];
 		const result = augmentTroubleshootRequest('#session:Build why was the test skipped?', attachments, resolvePath);
 		assert.deepStrictEqual(result, {
-			prompt: `${SKILL_BASE}\n\nSession log: /state/build/log.jsonl\n\nAdditional context from the user:\nwhy was the test skipped?`,
+			input: `Session log: /state/build/log.jsonl\n\nAdditional context from the user:\nwhy was the test skipped?`,
 			attachments: [],
 		});
 	});
@@ -64,7 +62,7 @@ suite('agentHostTroubleshoot - augmentTroubleshootRequest', () => {
 		const attachments = [sessionReferenceAttachment('a', 'A'), keep, sessionReferenceAttachment('b', 'B'), sessionReferenceAttachment('a', 'A')];
 		const result = augmentTroubleshootRequest('#session:A #session:B', attachments, resolvePath);
 		assert.deepStrictEqual(result, {
-			prompt: `${SKILL_BASE}\n\nSession log: /state/a/log.jsonl, /state/b/log.jsonl`,
+			input: `Session log: /state/a/log.jsonl, /state/b/log.jsonl`,
 			attachments: [keep],
 		});
 	});

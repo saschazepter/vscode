@@ -5,7 +5,6 @@
 
 import { URI } from '../../../base/common/uri.js';
 import { AgentSession } from './agentService.js';
-import { buildSkillInvocationPrompt } from './agentHostSkillInvocation.js';
 import { readSessionReferenceAttachmentMeta } from './meta/agentSessionReferenceMeta.js';
 import type { MessageAttachment } from './state/protocol/state.js';
 
@@ -18,22 +17,29 @@ import type { MessageAttachment } from './state/protocol/state.js';
 export const TROUBLESHOOT_SKILL_NAME = 'troubleshoot';
 
 /**
- * Result of {@link augmentTroubleshootRequest}: the rewritten prompt and the
- * attachments to forward to the model.
+ * Result of {@link augmentTroubleshootRequest}: the skill invocation context and
+ * the attachments to forward to the model.
  */
 export interface ITroubleshootRequest {
-	readonly prompt: string;
+	/**
+	 * The skill `input` (context only): the resolved session log line and any
+	 * genuine user question, WITHOUT the skill-invocation wrapper. Passed as the
+	 * `input` argument to the runtime's native `commands.invoke`, which wraps it
+	 * in the canonical invocation message itself.
+	 */
+	readonly input: string;
 	readonly attachments: readonly MessageAttachment[] | undefined;
 }
 
 /**
- * Rewrites a `/troubleshoot` request into a message that invokes the built-in
- * `troubleshoot` skill:
- *
- *   Use the skill tool to invoke the 'troubleshoot' skill, then follow the
- *   skill's instructions.
+ * Builds the `input` (context) for a `/troubleshoot` request, forwarded to the
+ * built-in `troubleshoot` skill via the runtime's native `commands.invoke`
+ * (which wraps it in the canonical skill-invocation message):
  *
  *   Session log: <path(s)>
+ *
+ *   Additional context from the user:
+ *   <question>
  *
  * An explicit `#session` reference pins the referenced session's log path (and
  * its marker attachments are dropped, consumed here rather than forwarded). A
@@ -76,14 +82,17 @@ export function augmentTroubleshootRequest(
 		}
 	}
 
-	const parts = [buildSkillInvocationPrompt(TROUBLESHOOT_SKILL_NAME)];
+	// Build the skill `input` (context only). The skill-invocation wrapper is
+	// added by the runtime when it resolves the skill via `commands.invoke` -
+	// not here.
+	const contextParts: string[] = [];
 	// Pin the log path only for an explicit `#session` reference. A bare
 	// `/troubleshoot` injects no path so the skill continues the session already
 	// established earlier in the conversation, or self-discovers the current one.
 	if (referencedIds.length) {
 		const logPaths = Array.from(new Set(referencedIds.map(resolveSessionLogPath)));
 		if (logPaths.length) {
-			parts.push(`Session log: ${logPaths.join(', ')}`);
+			contextParts.push(`Session log: ${logPaths.join(', ')}`);
 		}
 	}
 	// Forward the user's genuine free text, stripping the inserted
@@ -96,10 +105,11 @@ export function augmentTroubleshootRequest(
 	}
 	instructions = instructions.trim();
 	if (instructions) {
-		parts.push(`Additional context from the user:\n${instructions}`);
+		contextParts.push(`Additional context from the user:\n${instructions}`);
 	}
+	const input = contextParts.join('\n\n');
 
 	// Drop the `#session` markers; forward any other (real) attachments.
 	const nextAttachments = referencedIds.length ? remaining : attachments;
-	return { prompt: parts.join('\n\n'), attachments: nextAttachments };
+	return { input, attachments: nextAttachments };
 }

@@ -25,10 +25,11 @@ function builtinSkillsRoot(): URI {
  * Nothing else in the plumbing is skill-specific: the folder is fed to the
  * SDK's `skillDirectories` (so the runtime loads it), the manifest is surfaced
  * by the slash-command completion provider (so it appears in `/` completions
- * immediately), and the send path rewrites `/<name>` into a deterministic skill
- * invocation (see `buildSkillInvocationPrompt`). A skill that also needs
- * host-side request rewriting (as `/troubleshoot` does for its session log)
- * layers that behavior on top in the send path.
+ * immediately), and the send path dispatches `/<name>` to the runtime's native
+ * `commands.invoke` (which resolves the skill and returns its invocation
+ * message). A skill that also needs host-side request rewriting (as
+ * `/troubleshoot` does for its session log) layers that behavior on top in the
+ * send path.
  */
 export interface IBuiltinSkill {
 	/** Folder name under {@link builtinSkillsRoot} and the `/<name>` command. */
