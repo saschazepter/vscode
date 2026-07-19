@@ -314,6 +314,9 @@ export class AgentHostSessionConfigPicker extends Disposable {
 			if (!this._isPickable(schema)) {
 				continue;
 			}
+			if (property === SessionConfigKey.Isolation && !schema.enum?.includes('worktree')) {
+				continue;
+			}
 			if (!this._shouldRenderProperty(property, schema, isNewSession)) {
 				continue;
 			}
@@ -981,6 +984,7 @@ class AgentHostSessionConfigPickerContribution extends Disposable implements IWo
 			const { session } = instantiationService.invokeFunction(accessor => accessor.get(ISessionContext));
 			const pickerOptions: IChatInputPickerOptions = {
 				compact: constObservable(true),
+				listOptions: { minWidth: 255 },
 			};
 			return instantiationService.createInstance(
 				AgentHostPermissionPickerActionItem,

@@ -36,7 +36,7 @@ import { IConfigurationService } from '../../../../../../platform/configuration/
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 import type { IChatWidget } from '../../chat.js';
 import { ChatConfiguration, ChatPermissionLevel, isChatPermissionLevel } from '../../../common/constants.js';
-import { isAutoApprovalsEnabled, isAutoApprovePolicyRestricted, isAutoApproveValuePolicyRestricted, isAutoApproveValueVisible, normalizeSessionConfigValue } from '../../../common/agentHostConfigPolicy.js';
+import { isAssistedPermissionsEnabled, isAutoApprovePolicyRestricted, isAutoApproveValuePolicyRestricted, isPermissionLevelVisible, normalizeSessionConfigValue } from '../../../common/agentHostConfigPolicy.js';
 import { maybeConfirmElevatedPermissionLevel } from '../../../common/chatPermissionWarnings.js';
 import { isUntitledChatSession } from '../../../common/model/chatUri.js';
 import { withChatInputPickerMotion } from '../../widget/input/chatInputPickerActionItem.js';
@@ -178,9 +178,16 @@ function getPermissionsLearnMoreUrl(property: string): string | undefined {
 }
 
 export function getConfigPickerListOptions(property: string): IActionListOptions | undefined {
-	return property === CodexSessionConfigKey.PermissionsPreset
-		? getCodexApprovalsPickerListOptions()
-		: undefined;
+	switch (property) {
+		case SessionConfigKey.Mode:
+			return { minWidth: 260 };
+		case SessionConfigKey.AutoApprove:
+			return { minWidth: 255 };
+		case CodexSessionConfigKey.PermissionsPreset:
+			return getCodexApprovalsPickerListOptions();
+		default:
+			return undefined;
+	}
 }
 
 function renderPickerTrigger(slot: HTMLElement, disabled: boolean, disposables: DisposableStore, onOpen: () => void): HTMLElement {
@@ -663,8 +670,8 @@ export class AgentHostChatInputPicker extends Disposable {
 		if (this._property !== SessionConfigKey.AutoApprove) {
 			return items;
 		}
-		const autoApprovalsEnabled = isAutoApprovalsEnabled(this._configurationService);
-		return items.filter(item => isAutoApproveValueVisible(item.value, autoApprovalsEnabled));
+		const assistedPermissionsEnabled = isAssistedPermissionsEnabled(this._configurationService);
+		return items.filter(item => isPermissionLevelVisible(item.value, assistedPermissionsEnabled));
 	}
 
 	private _fromCompletion(item: SessionConfigValueItem): IConfigPickerItem {
@@ -700,7 +707,7 @@ export class AgentHostChatInputPicker extends Disposable {
 	 */
 	private async _confirmAndSetValue(backendSession: URI, item: IConfigPickerItem): Promise<void> {
 		const value = item.value;
-		if (this._property === SessionConfigKey.AutoApprove && !isAutoApproveValueVisible(value, isAutoApprovalsEnabled(this._configurationService))) {
+		if (this._property === SessionConfigKey.AutoApprove && !isPermissionLevelVisible(value, isAssistedPermissionsEnabled(this._configurationService))) {
 			return;
 		}
 		if (this._property === SessionConfigKey.AutoApprove) {

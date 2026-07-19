@@ -385,6 +385,7 @@ export interface IChatSession extends IDisposable {
 
 	readonly progressObs?: IObservable<IChatProgress[]>;
 	readonly isCompleteObs?: IObservable<boolean>;
+	readonly isReadOnly?: IObservable<boolean>;
 	readonly interruptActiveResponseCallback?: () => Promise<boolean>;
 
 	/**

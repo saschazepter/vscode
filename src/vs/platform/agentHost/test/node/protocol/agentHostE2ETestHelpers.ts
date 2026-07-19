@@ -30,7 +30,7 @@ import {
 	MessageKind,
 	ResponsePartKind, ROOT_STATE_URI, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind,
 	ChatInputResponseKind, ToolResultContentType, ToolCallConfirmationReason, ToolCallCancellationReason, buildDefaultChatUri, buildSubagentSessionUri, parseChatUri,
-	type MessageAttachment, type ChatInputAnswer, type ChatInputRequest, type ISessionWithDefaultChat, type SessionState, type TerminalState,
+	type MessageAttachment, type ChatInputAnswer, type ChatInputRequest, type ISessionWithDefaultChat, type SessionState, type ChatState, type TerminalState,
 	type ToolResultContent, type ToolResultSubagentContent,
 } from '../../../common/state/sessionState.js';
 import type { RootState } from '../../../common/state/protocol/state.js';
@@ -62,6 +62,7 @@ const RUN_RECORD_ONLY_TESTS = RECORD && !UPDATE_SNAPSHOTS;
 const REPLAY_MODE: CapiReplayMode = RECORD ? 'record' : 'replay';
 const SERVER_SHUTDOWN_TIMEOUT_MS = 30_000;
 const TEMP_DIR_CLEANUP_TIMEOUT_MS = 30_000;
+const isLinux = process.platform === 'linux';
 /** Gate for agent host e2e tests whose local execution is POSIX-specific (shell tool
  * calls, git worktrees, `pwd`) and does not reproduce on Windows. */
 const isWindows = process.platform === 'win32';
@@ -227,12 +228,11 @@ export interface IAgentHostE2EProviderConfig {
 	 */
 	readonly supportsSubagents: boolean;
 	/**
-	 * When set, this provider's shell tool call is not reproduced by its bundled
-	 * SDK on Windows during replay (e.g. Codex's `exec_command` yields no
-	 * tool-call notification there), so the shell-permission test runs only on
-	 * POSIX. macOS/Linux keep full coverage.
+	 * When set, shell-dependent replay tests are skipped on Linux because this
+	 * provider completes recorded shell-tool turns without emitting tool-call
+	 * notifications there. Recording and other platforms keep full coverage.
 	 */
-	readonly shellPermissionReplayUnstableOnWindows?: boolean;
+	readonly shellToolReplayUnstableOnLinux?: boolean;
 	/**
 	 * When set, the subagent-reopen ("replay path") test is skipped on Windows for
 	 * this provider, which rebuilds the reopened transcript from the bundled SDK's
@@ -757,6 +757,7 @@ export class AgentHostE2EServerLease {
 export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): void {
 	(config.enabled ? suite : suite.skip)(config.suiteTitle, function () {
 
+		const shellToolReplayEnabled = RECORD || !isLinux || !config.shellToolReplayUnstableOnLinux;
 		let client: TestProtocolClient;
 		let lease: AgentHostE2EServerLease | undefined;
 		let suiteDataDir: string | undefined;
@@ -886,11 +887,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			}
 		});
 
-		// Codex's `exec_command` shell tool call is not emitted by the bundled
-		// Codex CLI on Windows during replay (the turn streams text and completes
-		// with no tool call), so this shell-permission test is POSIX-only for such
-		// providers; Claude/Copilot still run it everywhere.
-		((isWindows && config.shellPermissionReplayUnstableOnWindows) ? test.skip : test)('tool call triggers permission request and can be approved', async function () {
+		(shellToolReplayEnabled ? test : test.skip)('tool call triggers permission request and can be approved', async function () {
 			this.timeout(120_000);
 
 			const tempDir = mkdtempSync(`${tmpdir()}/ahp-perm-test-`);
@@ -1059,7 +1056,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 		// Worktree isolation asserts on resolved `.worktrees/...` paths and a
 		// host-terminal `pwd`, which are POSIX-shaped (the fixtures were recorded on
 		// macOS); skip on Windows where the worktree paths and shell differ.
-		(config.supportsWorktreeIsolation && !isWindows ? test : test.skip)('worktree session uses the resolved worktree as working directory', async function () {
+		(config.supportsWorktreeIsolation && !isWindows && shellToolReplayEnabled ? test : test.skip)('worktree session uses the resolved worktree as working directory', async function () {
 			this.timeout(120_000);
 
 			const tempDir = mkdtempSync(`${tmpdir()}/ahp-wt-test-`);
@@ -1314,7 +1311,13 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 
 			// The subagent's conversation contents (its inner tool calls) are
 			// emitted on the chat channel carried by the tool result.
-			await client.call<SubscribeResult>('subscribe', { channel: subagentChatUri });
+			const subagentSnap = await client.call<SubscribeResult>('subscribe', { channel: subagentChatUri });
+			const subagentState = subagentSnap.snapshot?.state as ChatState | undefined;
+			const subagentFirstTurn = subagentState?.turns?.[0] ?? subagentState?.activeTurn;
+			assert.ok(
+				subagentFirstTurn?.message.text && subagentFirstTurn.message.text.includes('List the files'),
+				`subagent chat's opening request should render the task prompt, got: ${JSON.stringify(subagentFirstTurn?.message.text)}`,
+			);
 
 			await client.waitForNotification(n => {
 				if (!isActionNotification(n, 'chat/turnComplete')) {

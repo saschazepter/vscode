@@ -11,7 +11,7 @@ import { CodexSessionConfigKey } from '../../../../../../platform/agentHost/comm
 import type { SessionConfigPropertySchema } from '../../../../../../platform/agentHost/common/state/protocol/commands.js';
 import { getConfigPickerItemHover, getConfigPickerListOptions, getConfigPickerTriggerHover, resolveConfigChipValue } from '../../../browser/agentSessions/agentHost/agentHostChatInputPicker.js';
 import { getAgentHostPickerProperty, OpenAgentHostAutoApprovePickerAction, OpenAgentHostCodexApprovalsPickerAction, OpenAgentHostModePickerAction, OpenAgentHostPermissionModePickerAction } from '../../../browser/agentSessions/agentHost/agentHostChatInputPicker.contribution.js';
-import { isAutoApproveValuePolicyRestricted, isAutoApproveValueVisible, normalizeSessionConfigValue } from '../../../common/agentHostConfigPolicy.js';
+import { isAutoApproveValuePolicyRestricted, isPermissionLevelVisible, normalizeSessionConfigValue } from '../../../common/agentHostConfigPolicy.js';
 import { ChatPermissionLevel } from '../../../common/constants.js';
 
 suite('AgentHostChatInputPicker - action mapping', () => {
@@ -37,12 +37,22 @@ suite('AgentHostChatInputPicker - list options', () => {
 
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('uses the compact wrapped layout for Codex approvals', () => {
-		assert.deepStrictEqual(getConfigPickerListOptions(CodexSessionConfigKey.PermissionsPreset), {
-			className: 'codex-approvals-picker',
-			minWidth: 340,
-			maxWidth: 340,
-			detailItemHeight: 76,
+	test('uses picker-specific widths and layouts', () => {
+		assert.deepStrictEqual({
+			mode: getConfigPickerListOptions(SessionConfigKey.Mode),
+			approvals: getConfigPickerListOptions(SessionConfigKey.AutoApprove),
+			claudePermissions: getConfigPickerListOptions(ClaudeSessionConfigKey.PermissionMode),
+			codexApprovals: getConfigPickerListOptions(CodexSessionConfigKey.PermissionsPreset),
+		}, {
+			mode: { minWidth: 260 },
+			approvals: { minWidth: 255 },
+			claudePermissions: undefined,
+			codexApprovals: {
+				className: 'codex-approvals-picker',
+				minWidth: 340,
+				maxWidth: 340,
+				detailItemHeight: 76,
+			},
 		});
 	});
 });
@@ -61,11 +71,11 @@ suite('AgentHostChatInputPicker - resolveConfigChipValue', () => {
 
 		suite('AgentHostChatInputPicker - approval controls', () => {
 
-			test('shows Approve When Safe only when the experimental setting is enabled', () => {
+			test('shows Assisted permissions only when the setting is enabled', () => {
 				assert.deepStrictEqual({
-					enabled: isAutoApproveValueVisible(ChatPermissionLevel.Assisted, true),
-					disabled: isAutoApproveValueVisible(ChatPermissionLevel.Assisted, false),
-					bypass: isAutoApproveValueVisible(ChatPermissionLevel.AutoApprove, false),
+					enabled: isPermissionLevelVisible(ChatPermissionLevel.Assisted, true),
+					disabled: isPermissionLevelVisible(ChatPermissionLevel.Assisted, false),
+					bypass: isPermissionLevelVisible(ChatPermissionLevel.AutoApprove, false),
 				}, {
 					enabled: true,
 					disabled: false,
