@@ -387,6 +387,19 @@ class DocumentEditCache {
 			for (const window of windowsToTry) {
 				const res = tryRebase(cachedEdit.documentBeforeEdit.value, window, originalEdits, cachedEdit.detailedEdits, cachedEdit.userEditSince, currentDocumentContents.value, currentSelection, 'strict', logger, nesRebaseConfigs);
 				if (res === 'rebaseFailed') {
+					// Strict rebase treats indentation literally, so re-typing a line's
+					// leading whitespace differently than the model predicted (e.g. pressing
+					// Tab to insert a tab character or a different number of spaces on an
+					// empty body line) makes the whole suggestion drop. The model's content
+					// intent is still valid, so re-anchor it as a clean at-cursor insertion
+					// that respects the indentation the user actually typed.
+					const reanchored = tryReanchorContentAfterIndentation(originalEdits, cachedEdit.documentBeforeEdit.value, currentDocumentContents.value, currentSelection);
+					if (reanchored) {
+						if (!cachedEdit.rejected && this.isRejectedNextEdit(currentDocumentContents, reanchored)) {
+							cachedEdit.rejected = true;
+						}
+						return { edit: { ...cachedEdit, rebasedEdit: reanchored, rebasedEditIndex: 0, baseCacheEntry: cachedEdit } };
+					}
 					cachedEdit.rebaseFailed = true;
 					return {
 						edit: undefined,
@@ -399,17 +412,10 @@ class DocumentEditCache {
 					// Try the next window (if available)
 					continue;
 				} else if (res.length) {
-					// Minimize the served edit against the current document: the user may have
-					// already typed part of the prediction (e.g. the leading indentation after
-					// tabbing on an empty line). Removing the common prefix/suffix yields a clean
-					// at-cursor edit (a pure insertion when the only remaining change is the
-					// inserted text), which is what the display layer can render as ghost text.
-					// This is semantically neutral (same `apply()` result on the current document).
-					const rebasedEdit = res[0].rebasedEdit.removeCommonSuffixAndPrefix(currentDocumentContents.value);
-					if (!cachedEdit.rejected && this.isRejectedNextEdit(currentDocumentContents, rebasedEdit)) {
+					if (!cachedEdit.rejected && this.isRejectedNextEdit(currentDocumentContents, res[0].rebasedEdit)) {
 						cachedEdit.rejected = true;
 					}
-					return { edit: { ...cachedEdit, ...res[0], rebasedEdit, baseCacheEntry: cachedEdit } };
+					return { edit: { ...cachedEdit, ...res[0], baseCacheEntry: cachedEdit } };
 				} else if (!originalEdits.length) {
 					return { edit: cachedEdit }; // cached 'no edits'
 				}
@@ -445,4 +451,66 @@ class DocumentEditCache {
 	private _getKey(val: string): string {
 		return JSON.stringify([this.docId.uri, val]);
 	}
+}
+
+/**
+ * Salvage a cached next edit whose strict rebase failed *only* because the user
+ * re-typed the leading indentation of an (otherwise empty) line differently than
+ * the model predicted — for example pressing Tab to insert a tab character, or a
+ * different number of spaces, on an empty body line where the model wanted to add
+ * a statement.
+ *
+ * The rebase engine matches indentation literally, so a tab-vs-spaces (or
+ * different-width) mismatch drops the whole suggestion even though the model's
+ * *content* intent (the non-whitespace text it wanted to add on that line) is
+ * still valid. Re-anchor that content as a clean at-cursor insertion that respects
+ * the indentation the user actually typed. This mirrors the reconciliation the
+ * engine already performs when the user's indentation happens to match, and yields
+ * a pure insertion the display layer can render as ghost text.
+ *
+ * Returns the salvaged insertion, or `undefined` when the narrow pattern doesn't
+ * apply (in which case the caller keeps the original rebase-failed behavior).
+ */
+function tryReanchorContentAfterIndentation(
+	originalEdits: readonly StringReplacement[],
+	documentBeforeEdit: string,
+	currentDocument: string,
+	currentSelection: readonly OffsetRange[],
+): StringReplacement | undefined {
+	// Only handle the single-edit, single-empty-cursor case.
+	if (originalEdits.length !== 1 || currentSelection.length !== 1 || !currentSelection[0].isEmpty) {
+		return undefined;
+	}
+	const cursor = currentSelection[0].start;
+
+	// The model must only have touched indentation: the text it replaced is
+	// whitespace-only (typically empty for an insertion, or the line's existing
+	// indentation for a line-prefix replacement).
+	const modelEdit = originalEdits[0];
+	const replaced = modelEdit.replaceRange.substring(documentBeforeEdit);
+	if (!/^[ \t]*$/.test(replaced)) {
+		return undefined;
+	}
+
+	// The content the model wanted to add on that line, with its predicted
+	// indentation stripped. Must be a non-empty, single-line insertion.
+	const content = modelEdit.newText.replace(/^[ \t]*/, '');
+	if (content.length === 0 || content.includes('\n')) {
+		return undefined;
+	}
+
+	// The cursor must sit at the end of the current line's leading whitespace,
+	// on a line that has no real content yet (the user is indenting an empty line).
+	const lineStart = currentDocument.lastIndexOf('\n', cursor - 1) + 1;
+	let lineEnd = currentDocument.indexOf('\n', cursor);
+	if (lineEnd === -1) {
+		lineEnd = currentDocument.length;
+	}
+	const prefix = currentDocument.substring(lineStart, cursor);
+	const suffix = currentDocument.substring(cursor, lineEnd);
+	if (!/^[ \t]*$/.test(prefix) || !/^[ \t]*$/.test(suffix)) {
+		return undefined;
+	}
+
+	return StringReplacement.insert(cursor, content);
 }

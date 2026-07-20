@@ -187,17 +187,15 @@ describe('NextEditCache rebase — Fibonacci scenario', () => {
  * Regression test from a real scenario (NES cached suggestion not shown):
  *
  * The user is inside `function familyJohn() {` on an empty body line. NES cached a
- * suggestion that predicts the indented `return [` on that line (a line-based edit
- * that restates the indentation: `"" -> "    return ["`). The user then tabs to
- * indent the line.
+ * suggestion that predicts the indented `return [` on that line (`"" -> "    return ["`).
+ * The user then presses Tab to indent the line, inserting a tab character.
  *
- * When the cached edit is rebased over the user's indentation, the served edit must
- * be a clean pure insertion of `return [` at the cursor — the indentation the user
- * already typed must NOT be part of the edit. Serving the raw (non-minimized) rebase
- * result instead leaves the redundant indentation in the edit's range/new-text, which
- * is fragile to render as ghost text and can result in the suggestion not being shown.
+ * Strict rebase matches indentation literally, so the tab-vs-spaces mismatch makes
+ * the whole suggestion drop (`rebaseFailed`) and nothing is shown. The model's
+ * content intent is still valid, so the served edit must be re-anchored as a clean
+ * pure insertion of `return [` at the cursor, respecting the tab the user typed.
  */
-describe('NextEditCache rebase — indented insertion over user indentation', () => {
+describe('NextEditCache rebase — indented insertion over mismatched user indentation', () => {
 
 	let configService: InMemoryConfigurationService;
 	let obsWorkspace: MutableObservableWorkspace;
@@ -209,9 +207,9 @@ describe('NextEditCache rebase — indented insertion over user indentation', ()
 	// cache-time doc: empty body line inside the function
 	const docBefore = 'function familyJohn() {\n\n}\n';
 	const emptyLineOffset = 'function familyJohn() {\n'.length; // start of the empty body line
-	// current doc: the user has tabbed 4 spaces on the (empty) body line
-	const currentDoc = 'function familyJohn() {\n    \n}\n';
-	const cursorOffset = emptyLineOffset + '    '.length; // caret sits after the typed indentation
+	// current doc: the user pressed Tab (a tab character) on the (empty) body line
+	const currentDoc = 'function familyJohn() {\n\t\n}\n';
+	const cursorOffset = emptyLineOffset + '\t'.length; // caret sits after the typed tab
 
 	function makeSource(): NextEditFetchRequest {
 		const logContext = new InlineEditRequestLogContext('test', 0, undefined);
@@ -234,8 +232,8 @@ describe('NextEditCache rebase — indented insertion over user indentation', ()
 	it('serves a clean at-cursor insertion (no leading whitespace) after the user tabs', () => {
 		// Model predicts the indented `return [` on the empty body line.
 		const modelEdit = new StringReplacement(OffsetRange.emptyAt(emptyLineOffset), '    return [');
-		// The user tabbed 4 spaces on that same (empty) line.
-		const userEditSince = StringEdit.single(new StringReplacement(OffsetRange.emptyAt(emptyLineOffset), '    '));
+		// The user pressed Tab on that same (empty) line, inserting a tab character.
+		const userEditSince = StringEdit.single(new StringReplacement(OffsetRange.emptyAt(emptyLineOffset), '\t'));
 
 		const cachedEdit = cache.setKthNextEdit(
 			docId,
@@ -258,9 +256,9 @@ describe('NextEditCache rebase — indented insertion over user indentation', ()
 			[OffsetRange.emptyAt(cursorOffset)],
 		);
 
-		assert(rebaseResult.edit !== undefined, 'should rebase successfully');
+		assert(rebaseResult.edit !== undefined, 'should serve a (re-anchored) edit instead of dropping it');
 		assert(rebaseResult.edit.rebasedEdit !== undefined, 'should have a rebased edit');
-		// The indentation the user typed must not be part of the edit: a pure insertion at the cursor.
-		assert.strictEqual(rebaseResult.edit.rebasedEdit.toString(), '[28, 28) -> "return ["');
+		// The tab the user typed must not be part of the edit: a pure insertion at the cursor.
+		assert.strictEqual(rebaseResult.edit.rebasedEdit.toString(), `[${cursorOffset}, ${cursorOffset}) -> "return ["`);
 	});
 });
