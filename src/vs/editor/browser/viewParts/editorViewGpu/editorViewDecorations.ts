@@ -3,13 +3,19 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { DecorationInput, DecorationKindInput } from '@vscode/editor-view';
+import type { DecorationInput, DecorationKindInput, DecorationStrokeStyle } from '@vscode/editor-view';
 import { Color } from '../../../../base/common/color.js';
 import type { ViewModelDecoration } from '../../../common/viewModel/viewModelDecoration.js';
 
 interface IResolvedDecorationPaint {
 	readonly styleId: number;
-	readonly kind: DecorationKindInput;
+	readonly kinds: readonly DecorationKindInput[];
+}
+
+interface IBorderSide {
+	readonly color: Color;
+	readonly width: number;
+	readonly style: Exclude<DecorationStrokeStyle, 'wavy'>;
 }
 
 export function configureContentDecorationFallbackOverlay(domNode: HTMLElement): void {
@@ -60,9 +66,9 @@ export class EditorViewDecorationResolver {
 		return this.resolve(decoration, 0) !== undefined;
 	}
 
-	public resolve(decoration: ViewModelDecoration, id: number): DecorationInput | undefined {
+	public resolve(decoration: ViewModelDecoration, firstId: number): readonly DecorationInput[] | undefined {
 		const className = decoration.options.className?.trim();
-		if (!className || decoration.options.inlineClassName) {
+		if (!className) {
 			return undefined;
 		}
 
@@ -71,8 +77,7 @@ export class EditorViewDecorationResolver {
 			return undefined;
 		}
 
-		return {
-			id,
+		const range = {
 			styleId: paint.styleId,
 			zIndex: decoration.options.zIndex,
 			startLine: decoration.range.startLineNumber - 1,
@@ -85,8 +90,12 @@ export class EditorViewDecorationResolver {
 			// `linesVisibleRangesForRange(range, className === 'findMatch')`.
 			includeNewLines: className === 'findMatch',
 			showIfCollapsed: decoration.options.showIfCollapsed,
-			kind: paint.kind,
 		};
+		return paint.kinds.map((kind, index) => ({
+			id: firstId + index,
+			...range,
+			kind,
+		}));
 	}
 
 	private _resolvePaint(className: string): IResolvedDecorationPaint | undefined {
@@ -95,13 +104,13 @@ export class EditorViewDecorationResolver {
 			return cached ?? undefined;
 		}
 
-		const paint = this._readComputedPaint(className);
-		const resolved = paint ? { styleId: this._nextStyleId++, kind: paint } : undefined;
+		const kinds = this._readComputedPaint(className);
+		const resolved = kinds ? { styleId: this._nextStyleId++, kinds } : undefined;
 		this._cache.set(className, resolved ?? null);
 		return resolved;
 	}
 
-	private _readComputedPaint(className: string): DecorationKindInput | undefined {
+	private _readComputedPaint(className: string): readonly DecorationKindInput[] | undefined {
 		const window = this._editorRoot.ownerDocument.defaultView;
 		if (!window) {
 			return undefined;
@@ -121,22 +130,36 @@ export class EditorViewDecorationResolver {
 				return undefined;
 			}
 
+			const kinds: DecorationKindInput[] = [];
 			const background = this._visibleColor(style.backgroundColor);
 			const hasImage = style.backgroundImage !== 'none';
 			if (background && hasImage) {
 				return undefined;
 			}
 			if (background) {
-				return { kind: 'background', color: this._packColor(background) };
+				kinds.push({ kind: 'background', color: this._packColor(background) });
 			}
-			if (!hasImage) {
+			if (hasImage) {
+				const waveColor = this._readWaveColor(style);
+				if (!waveColor) {
+					return undefined;
+				}
+				kinds.push({
+					kind: 'underline',
+					color: this._packColor(waveColor),
+					style: 'wavy',
+					width: 3,
+					inside: true,
+				});
+			}
+			const stroke = this._readBorderPaint(style);
+			if (stroke === null) {
 				return undefined;
 			}
-
-			const waveColor = this._readWaveColor(style);
-			return waveColor
-				? { kind: 'underline', color: this._packColor(waveColor), wavy: true }
-				: undefined;
+			if (stroke) {
+				kinds.push(stroke);
+			}
+			return kinds.length > 0 ? kinds : undefined;
 		} finally {
 			this._container.remove();
 			this._probe.className = '';
@@ -144,7 +167,7 @@ export class EditorViewDecorationResolver {
 	}
 
 	private _hasUnsupportedPaint(style: CSSStyleDeclaration, baseline: CSSStyleDeclaration): boolean {
-		if (this._hasVisibleBorder(style) || this._hasVisibleOutline(style)) {
+		if (this._hasVisibleOutline(style)) {
 			return true;
 		}
 
@@ -159,15 +182,17 @@ export class EditorViewDecorationResolver {
 			'clip-path',
 			'mask-image',
 			'border-radius',
-			'padding-top',
-			'padding-right',
-			'padding-bottom',
-			'padding-left',
 			'text-decoration-line',
 		];
-		return properties.some(property =>
+		if (properties.some(property =>
 			style.getPropertyValue(property) !== baseline.getPropertyValue(property)
+		)) {
+			return true;
+		}
+		const paddingChanged = ['top', 'right', 'bottom', 'left'].some(side =>
+			style.getPropertyValue(`padding-${side}`) !== baseline.getPropertyValue(`padding-${side}`)
 		);
+		return paddingChanged && style.boxSizing !== 'border-box';
 	}
 
 	private _pseudoElementPaints(style: CSSStyleDeclaration): boolean {
@@ -188,6 +213,53 @@ export class EditorViewDecorationResolver {
 			const color = this._visibleColor(style.getPropertyValue(`border-${side}-color`));
 			return borderStyle !== 'none' && borderStyle !== 'hidden' && width > 0 && color !== undefined;
 		});
+	}
+
+	private _readBorderPaint(style: CSSStyleDeclaration): DecorationKindInput | undefined | null {
+		const hasVisibleBorder = this._hasVisibleBorder(style);
+		const sides = ['top', 'right', 'bottom', 'left'].map(side => this._readBorderSide(style, side));
+		const visibleCount = sides.filter(side => side !== undefined).length;
+		if (visibleCount === 0) {
+			return hasVisibleBorder ? null : undefined;
+		}
+
+		const bottom = sides[2];
+		if (visibleCount === 1 && bottom) {
+			return {
+				kind: 'underline',
+				color: this._packColor(bottom.color),
+				style: bottom.style,
+				width: bottom.width,
+				inside: style.boxSizing === 'border-box',
+			};
+		}
+
+		const first = sides[0];
+		if (visibleCount !== 4 || !first || style.boxSizing !== 'border-box' || first.style === 'dashed'
+			|| sides.some(side => !side
+				|| side.width !== first.width
+				|| side.style !== first.style
+				|| !side.color.equals(first.color))) {
+			return null;
+		}
+		return {
+			kind: 'border',
+			color: this._packColor(first.color),
+			style: first.style,
+			width: first.width,
+		};
+	}
+
+	private _readBorderSide(style: CSSStyleDeclaration, side: string): IBorderSide | undefined {
+		const borderStyle = style.getPropertyValue(`border-${side}-style`);
+		if (borderStyle !== 'solid' && borderStyle !== 'dotted' && borderStyle !== 'dashed') {
+			return undefined;
+		}
+		const width = Number.parseFloat(style.getPropertyValue(`border-${side}-width`));
+		const color = this._visibleColor(style.getPropertyValue(`border-${side}-color`));
+		return Number.isFinite(width) && width > 0 && color
+			? { color, width, style: borderStyle }
+			: undefined;
 	}
 
 	private _hasVisibleOutline(style: CSSStyleDeclaration): boolean {

@@ -72,7 +72,7 @@ suite('EditorViewDecorationResolver', () => {
 		`);
 		const extensionDecoration = decoration('extension-background emphasized', { showIfCollapsed: true, zIndex: 30 });
 
-		assert.deepStrictEqual(cssResolver.resolve(extensionDecoration, 7), {
+		assert.deepStrictEqual(cssResolver.resolve(extensionDecoration, 7), [{
 			id: 7,
 			styleId: 1,
 			zIndex: 30,
@@ -85,14 +85,14 @@ suite('EditorViewDecorationResolver', () => {
 			includeNewLines: false,
 			showIfCollapsed: true,
 			kind: { kind: 'background', color: 0x0a141e80 },
-		});
+		}]);
 		styleElement.textContent = '.monaco-editor .extension-background.emphasized { background-color: red; }';
-		assert.deepStrictEqual(cssResolver.resolve(extensionDecoration, 8)?.kind, {
+		assert.deepStrictEqual(cssResolver.resolve(extensionDecoration, 8)?.[0].kind, {
 			kind: 'background',
 			color: 0x0a141e80,
 		});
 		cssResolver.clear();
-		assert.deepStrictEqual(cssResolver.resolve(extensionDecoration, 9)?.kind, {
+		assert.deepStrictEqual(cssResolver.resolve(extensionDecoration, 9)?.[0].kind, {
 			kind: 'background',
 			color: 0xff0000ff,
 		});
@@ -101,8 +101,8 @@ suite('EditorViewDecorationResolver', () => {
 	test('keeps only the classic DOM newline geometry exception for findMatch', () => {
 		const cssResolver = resolver('.monaco-editor .findMatch { background-color: rgba(234, 92, 0, 0.333); }');
 		const result = cssResolver.resolve(decoration('findMatch'), 1);
-		assert.deepStrictEqual(result?.kind, { kind: 'background', color: 0xea5c0055 });
-		assert.strictEqual(result?.includeNewLines, true);
+		assert.deepStrictEqual(result?.[0].kind, { kind: 'background', color: 0xea5c0055 });
+		assert.strictEqual(result?.[0].includeNewLines, true);
 	});
 
 	test('recognizes the supported SVG wave by computed paint shape', () => {
@@ -117,23 +117,72 @@ suite('EditorViewDecorationResolver', () => {
 			}
 		`);
 
-		assert.deepStrictEqual(cssResolver.resolve(decoration('extension-wave'), 1)?.kind, {
+		assert.deepStrictEqual(cssResolver.resolve(decoration('extension-wave'), 1)?.[0].kind, {
 			kind: 'underline',
 			color: 0xf14c4cff,
-			wavy: true,
+			style: 'wavy',
+			width: 3,
+			inside: true,
 		});
 	});
 
-	test('keeps unsupported computed paint and inline text changes on the DOM fallback', () => {
+	test('resolves background and supported border paints independently', () => {
 		const cssResolver = resolver(`
-			.monaco-editor .bordered { background-color: #123456; border: 1px solid red; }
-			.monaco-editor .pseudo::before { content: ""; display: block; background-color: red; }
-			.monaco-editor .plain-background { background-color: #123456; }
+			.monaco-editor .solid-box {
+				background-color: #123456;
+				border: 2px solid rgb(255, 0, 0);
+				padding: 1px;
+				box-sizing: border-box;
+			}
+			.monaco-editor.test-theme .dotted-box {
+				border: 1px dotted rgb(0, 255, 0);
+				box-sizing: border-box;
+			}
 		`);
 
-		assert.strictEqual(cssResolver.resolve(decoration('bordered'), 1), undefined, 'bordered background');
+		assert.deepStrictEqual(cssResolver.resolve(decoration('solid-box', { inlineClassName: 'independent-inline-paint' }), 4)?.map(item => item.kind), [
+			{ kind: 'background', color: 0x123456ff },
+			{ kind: 'border', color: 0xff0000ff, style: 'solid', width: 2 },
+		]);
+		assert.deepStrictEqual(cssResolver.resolve(decoration('dotted-box'), 6)?.map(item => item.kind), [
+			{ kind: 'border', color: 0x00ff00ff, style: 'dotted', width: 1 },
+		]);
+	});
+
+	test('resolves solid, dotted and dashed bottom strokes with CSS box placement', () => {
+		const cssResolver = resolver(`
+			.monaco-editor .solid-underline { border-bottom: 2px solid rgb(255, 0, 0); }
+			.monaco-editor .dotted-underline { border-bottom: 1px dotted rgb(0, 255, 0); box-sizing: border-box; }
+			.monaco-editor .dashed-underline { border-bottom: 1px dashed rgb(0, 0, 255); box-sizing: border-box; }
+		`);
+
+		assert.deepStrictEqual([
+			cssResolver.resolve(decoration('solid-underline'), 1)?.[0].kind,
+			cssResolver.resolve(decoration('dotted-underline'), 2)?.[0].kind,
+			cssResolver.resolve(decoration('dashed-underline'), 3)?.[0].kind,
+		], [
+			{ kind: 'underline', color: 0xff0000ff, style: 'solid', width: 2, inside: false },
+			{ kind: 'underline', color: 0x00ff00ff, style: 'dotted', width: 1, inside: true },
+			{ kind: 'underline', color: 0x0000ffff, style: 'dashed', width: 1, inside: true },
+		]);
+	});
+
+	test('keeps unsupported computed paint on the DOM fallback', () => {
+		const cssResolver = resolver(`
+			.monaco-editor .mixed-border { border-top: 1px solid red; border-bottom: 2px dashed blue; }
+			.monaco-editor .double-border { background-color: #123456; border-bottom: 4px double red; }
+			.monaco-editor .dashed-border { border: 1px dashed red; box-sizing: border-box; }
+			.monaco-editor .content-box-border { border: 1px solid red; }
+			.monaco-editor .pseudo::before { content: ""; display: block; background-color: red; }
+			.monaco-editor .pseudo-border::before { content: ""; display: block; border: 2px double red; }
+		`);
+
+		assert.strictEqual(cssResolver.resolve(decoration('mixed-border'), 1), undefined, 'mixed border sides');
+		assert.strictEqual(cssResolver.resolve(decoration('double-border'), 2), undefined, 'double border');
+		assert.strictEqual(cssResolver.resolve(decoration('dashed-border'), 3), undefined, 'full dashed border');
+		assert.strictEqual(cssResolver.resolve(decoration('content-box-border'), 3), undefined, 'content-box full border');
 		assert.strictEqual(cssResolver.resolve(decoration('pseudo'), 2), undefined, 'painted pseudo-element');
+		assert.strictEqual(cssResolver.resolve(decoration('pseudo-border'), 3), undefined, 'bordered pseudo-element');
 		assert.strictEqual(cssResolver.resolve(decoration('missing-rule'), 3), undefined, 'unknown CSS');
-		assert.strictEqual(cssResolver.resolve(decoration('plain-background', { inlineClassName: 'changes-opacity' }), 4), undefined, 'inline text style');
 	});
 });

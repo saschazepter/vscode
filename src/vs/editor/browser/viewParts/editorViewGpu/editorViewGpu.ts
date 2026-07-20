@@ -752,7 +752,7 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 		for (const decoration of retained) {
 			const resolved = this._decorationResolver.resolve(decoration, decorations.length + 1);
 			if (resolved) {
-				decorations.push(resolved);
+				decorations.push(...resolved);
 			}
 		}
 		this._applyDelta({ type: 'setDecorations', decorations });
