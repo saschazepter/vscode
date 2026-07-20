@@ -149,7 +149,7 @@ class CodeMain {
 				});
 
 				// Check if Inno Setup is running. Briefly wait for the updating mutex to be released before refusing to launch.
-				const innoSetupActive = await this.checkInnoSetupMutex(productService, logService);
+				const innoSetupActive = !environmentMainService.args['skip-inno-setup-mutex'] && await this.checkInnoSetupMutex(productService, logService);
 				if (innoSetupActive) {
 					const message = `${productService.nameShort} is currently being updated. Please wait for the update to complete before launching.`;
 					instantiationService.invokeFunction(this.quit, new Error(message));

@@ -5,7 +5,7 @@
 
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
-import { formatOptions, Option, OptionDescriptions, Subcommand, parseArgs, ErrorReporter } from '../../node/argv.js';
+import { formatOptions, Option, OptionDescriptions, Subcommand, parseArgs, ErrorReporter, OPTIONS } from '../../node/argv.js';
 import { addArg } from '../../node/argvHelper.js';
 
 function o(description: string, type: 'boolean' | 'string' | 'string[]' = 'string'): Option<any> {
@@ -181,6 +181,10 @@ suite('parseArgs', () => {
 			{ testcmd: { testArg: 'foo', testX: true, '_': [] }, '_': [] },
 			[]
 		);
+	});
+
+	test('skip Inno Setup mutex', () => {
+		assert.strictEqual(parseArgs(['--skip-inno-setup-mutex'], OPTIONS)['skip-inno-setup-mutex'], true);
 	});
 
 	ensureNoDisposablesAreLeakedInTestSuite();
