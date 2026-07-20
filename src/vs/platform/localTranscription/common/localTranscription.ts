@@ -50,6 +50,14 @@ export interface ILocalTranscriptionResult {
 	readonly text: string;
 	/** True for the final result emitted after `stop`. */
 	readonly isFinal: boolean;
+	/**
+	 * The leading portion of `text` that Foundry has already finalized (its
+	 * endpointed segments). The remainder of `text` is the still-in-progress
+	 * interim tail. Lets the renderer stop shimmering finalized text as soon as
+	 * a segment is endpointed — including the last one during a trailing silence
+	 * — instead of waiting for a later interim to confirm it stopped changing.
+	 */
+	readonly finalizedText?: string;
 }
 
 

@@ -397,7 +397,7 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 					this._partialText = appendTranscriptChunk(this._partialText, text);
 				}
 				if (this._sessionActive) {
-					this._onDidTranscribe.fire({ text: this._cumulativeText(), isFinal: false });
+					this._onDidTranscribe.fire({ text: this._cumulativeText(), isFinal: false, finalizedText: this._accumulator.getText() });
 				}
 			}
 		} catch (err) {
@@ -508,7 +508,8 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 
 		const text = this._cumulativeText();
 		if (generation === this._generation) {
-			this._onDidTranscribe.fire({ text, isFinal: true });
+			// On stop everything is finalized: no shimmering tail remains.
+			this._onDidTranscribe.fire({ text, isFinal: true, finalizedText: text });
 		}
 		await this._disposeSession();
 		this._resetSessionState();
