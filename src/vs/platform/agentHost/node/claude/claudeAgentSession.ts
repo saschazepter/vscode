@@ -129,10 +129,10 @@ export class ClaudeAgentSession extends Disposable {
 	/**
 	 * Pre-materialize custom-agent selection. Mutable; flows into
 	 * `Options.agent` (resolved to the SDK agent name) on materialize
-	 * and on every rematerializer call. Mid-session changes via
+	 * and on every rebuild. Mid-session changes via
 	 * {@link setAgent} flip {@link clientCustomizationsDiff} dirty so the
-	 * next `send()` rebinds and the new agent reaches the SDK on the
-	 * rebuilt `Query`. The SDK's `Options.agent` is captured at startup
+	 * next `send()` rebuilds and the new agent reaches the SDK on the
+	 * fresh `Query`. The SDK's `Options.agent` is captured at startup
 	 * — there is no runtime control-plane equivalent.
 	 */
 	private _provisionalAgent: AgentSelection | undefined;
@@ -223,8 +223,8 @@ export class ClaudeAgentSession extends Disposable {
 	 * Phase 10 — owns the workbench-registered client-tool snapshot
 	 * (via {@link SessionClientToolsDiff.model}) plus the
 	 * "changed since last successful build" dirty bit. Read by the
-	 * agent's sendMessage diff check; used by the materialize /
-	 * rematerializer flow to pin the SDK build against a specific
+	 * agent's sendMessage diff check; used by the materialize / rebuild
+	 * flow to pin the SDK build against a specific
 	 * snapshot. See {@link SessionClientToolsDiff} for the C6 race
 	 * semantics this collaborator enforces.
 	 */
@@ -423,10 +423,11 @@ export class ClaudeAgentSession extends Disposable {
 
 	/**
 	 * Bring the session up: build SDK `Options`, start the SDK, open the
-	 * session-scoped DB ref, construct the pipeline, and attach the
-	 * rematerializer used for yield-restart (e.g. after a client-tool
-	 * snapshot change). Idempotent on re-call: extra calls throw rather
-	 * than silently re-materialize.
+	 * session-scoped DB ref, and install the pipeline. Yield-restart
+	 * rebuilds (e.g. after a client-tool snapshot change) are orchestrated
+	 * by `send()` via {@link _installPipeline}, not attached here.
+	 * Idempotent on re-call: extra calls throw rather than silently
+	 * re-materialize.
 	 *
 	 * If the supplied {@link IMaterializeContext.proxyHandle}'s underlying
 	 * `abortController` fires while `sdk.startup()` is in flight, the SDK
@@ -599,7 +600,7 @@ export class ClaudeAgentSession extends Disposable {
 
 	/**
 	 * Build the SDK tool wiring shared by the initial materialize and every
-	 * yield-restart rematerialize: the in-process MCP servers plus the
+	 * yield-restart rebuild: the in-process MCP servers plus the
 	 * auto-approve allow-list.
 	 *
 	 * The MCP servers are the workbench client tools (which round-trip to the
