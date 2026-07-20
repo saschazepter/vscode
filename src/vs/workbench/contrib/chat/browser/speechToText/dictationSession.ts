@@ -4,7 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import './media/dictationSession.css';
-import { DisposableStore, toDisposable } from '../../../../../base/common/lifecycle.js';
+import { disposableTimeout } from '../../../../../base/common/async.js';
+import { DisposableStore, MutableDisposable, toDisposable } from '../../../../../base/common/lifecycle.js';
 import { ICodeEditor } from '../../../../../editor/browser/editorBrowser.js';
 import { EditorOption } from '../../../../../editor/common/config/editorOptions.js';
 import { IEditorDecorationsCollection } from '../../../../../editor/common/editorCommon.js';
@@ -29,6 +30,14 @@ const INTERIM_SHIMMER_CLASS = 'dictation-interim-shimmer';
 const INTERIM_SETTLED_CLASS = 'dictation-interim-settled';
 
 const LOG_PREFIX = '[chat-stt-dictation]';
+
+/**
+ * How long transcription updates must pause before the still-shimmering tail is
+ * settled. Foundry keeps the last spoken segment as an interim result until more
+ * audio (or `stop`) arrives, so on a trailing silence it never sends a final for
+ * it; treat a gap this long as the user having paused and stop the shimmer.
+ */
+const IDLE_SETTLE_MS = 700;
 
 /** Number of leading characters `a` and `b` share. */
 function commonPrefixLength(a: string, b: string): number {
@@ -203,6 +212,28 @@ class LiveTranscriptInserter {
 	}
 
 	/**
+	 * Settle the whole in-progress region, stopping the shimmer on the trailing
+	 * words while keeping the not-yet-committed (placeholder) styling. Called
+	 * after a pause in speech: Foundry holds the last spoken segment as an
+	 * interim result until more audio (or `stop`) arrives, so without this the
+	 * final words would shimmer indefinitely during a trailing silence. A later
+	 * interim/final update re-applies the shimmer to any new tail.
+	 */
+	settleShimmer(): void {
+		if (this._finalized || !this._anchor || !this._end || Position.equals(this._anchor, this._end)) {
+			return;
+		}
+		this._logService.trace(`${LOG_PREFIX} settleShimmer`);
+		this._settledDecorations ??= this._editor.createDecorationsCollection();
+		this._shimmerDecorations ??= this._editor.createDecorationsCollection();
+		this._settledDecorations.set([{
+			range: Range.fromPositions(this._anchor, this._end),
+			options: { description: 'chatSpeechToText-settled', inlineClassName: INTERIM_SETTLED_CLASS },
+		}]);
+		this._shimmerDecorations.clear();
+	}
+
+	/**
 	 * Lock out further interim updates and stop shimmering immediately. Called
 	 * when the user stops talking, before the (async) final transcription
 	 * resolves, so a trailing interim transcript can neither overwrite the text
@@ -303,9 +334,13 @@ export async function startDictation(service: IChatSpeechToTextService, editor: 
 		}
 		editor.updateOptions({ placeholder: previousPlaceholder });
 	}));
+	const idleSettle = disposables.add(new MutableDisposable());
 	disposables.add(service.onDidUpdateTranscript(update => {
 		logService.trace(`${LOG_PREFIX} onDidUpdateTranscript len=${update.text.length} finalized=${update.finalizedText.length} state=${service.state}`);
 		inserter.update(update.text, true, update.finalizedText);
+		// Restart the idle timer: if no further transcript arrives, the user has
+		// paused, so stop shimmering the trailing (still-interim) words.
+		idleSettle.value = disposableTimeout(() => inserter.settleShimmer(), IDLE_SETTLE_MS);
 	}));
 	disposables.add(service.onDidChangePreparingModel(() => applyPlaceholder()));
 	disposables.add(service.onDidChangeState(state => {
