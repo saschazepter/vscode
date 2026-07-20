@@ -172,6 +172,9 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	 */
 	private _downloadNotification: { readonly report: IProgress<IProgressStep>; readonly complete: () => void; lastReported: number } | undefined;
 
+	/** Most recent model status, used to re-sync the notification on screen-reader changes. */
+	private _lastModelStatus: ILocalTranscriptionModelStatus | undefined;
+
 	private _state = ChatSpeechToTextState.Idle;
 	get state(): ChatSpeechToTextState {
 		return this._state;
@@ -434,7 +437,18 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		this._prepareStartMs = Date.now();
 		// Guarantee the download notification is dismissed no matter how the
 		// session ends (teardown, cancel, or the service being disposed).
-		this._localSessionDisposables.add(toDisposable(() => this._completeDownloadNotification()));
+		this._localSessionDisposables.add(toDisposable(() => {
+			this._lastModelStatus = undefined;
+			this._completeDownloadNotification();
+		}));
+		// The accessible progress notification is only shown to screen-reader
+		// users, so re-sync it whenever screen-reader optimization is toggled
+		// mid-preparation (a change on its own emits no model status).
+		this._localSessionDisposables.add(this._accessibilityService.onDidChangeScreenReaderOptimized(() => {
+			if (this._lastModelStatus) {
+				this._updateDownloadNotification(this._lastModelStatus);
+			}
+		}));
 		// Register the status listener BEFORE snapshotting the current status. A
 		// Downloading→Ready/Error transition can land between the snapshot and the
 		// subscription; if it did, the completion event would be missed and the
@@ -453,6 +467,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	 * idempotent.
 	 */
 	private _handleModelStatus(status: ILocalTranscriptionModelStatus): void {
+		this._lastModelStatus = status;
 		this._updateModelDownloadProgress(status);
 		this._updateDownloadNotification(status);
 		if (status.state === LocalTranscriptionModelState.Ready) {
@@ -479,29 +494,18 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	}
 
 	/**
-	 * Announce model-preparation progress to screen-reader users via a progress
-	 * notification, and keep it visible across both preparation phases so
-	 * dictation never appears to hang with no feedback:
-	 *  - `Downloading`: a determinate bar advances as bytes arrive (or an
-	 *    indeterminate "Downloading…" message before the first byte total is
-	 *    known).
-	 *  - `Loading`: the download is complete but the (often multi-second) load
-	 *    into memory is still running, so the message switches to "Loading model…"
-	 *    instead of leaving the bar stuck at a full download and then vanishing.
-	 * The notification is dismissed only once the model reaches `Ready`/`Error`.
-	 *
-	 * Sighted users get the toolbar download ring and its rich hover instead, so
-	 * the notification is only surfaced when a screen reader is active (a hover
-	 * is not reachable by assistive technologies).
+	 * Surface model-preparation progress to screen-reader users via a progress
+	 * notification that stays visible across the download and load phases.
 	 */
 	private _updateDownloadNotification(status: ILocalTranscriptionModelStatus): void {
 		const preparing = status.state === LocalTranscriptionModelState.Downloading
 			|| status.state === LocalTranscriptionModelState.Loading;
-		if (!preparing) {
+		// Only screen-reader users get this notification (sighted users get the
+		// toolbar download ring and its rich hover, which assistive technology
+		// cannot reach). Dismiss it once preparation ends or if a screen reader
+		// is no longer active.
+		if (!preparing || !this._accessibilityService.isScreenReaderOptimized()) {
 			this._completeDownloadNotification();
-			return;
-		}
-		if (!this._downloadNotification && !this._accessibilityService.isScreenReaderOptimized()) {
 			return;
 		}
 		if (!this._downloadNotification) {

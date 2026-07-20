@@ -149,7 +149,7 @@ class ToggleChatSpeechToTextAction extends Action2 {
 
 /**
  * Shown in place of the mic button while the on-device model is downloading/loading.
- * Renders a spinner; clicking it cancels an in-flight dictation (if any).
+ * Renders a cloud-download affordance; clicking it cancels an in-flight dictation (if any).
  */
 export class ChatSpeechToTextPreparingAction extends Action2 {
 	static readonly ID = 'workbench.action.chat.speechToTextPreparing';

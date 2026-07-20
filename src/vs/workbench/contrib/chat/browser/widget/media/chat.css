@@ -4630,6 +4630,13 @@ have to be updated for changes to the rules above, or to support more deeply nes
 	opacity: 0.25;
 }
 
+/* In high-contrast themes progressBar.background is the solid contrastBorder;
+	keep the track fully opaque so it stays visible against the arc. */
+.hc-black .action-item.dictation-download-item > .dictation-download-ring .dictation-download-ring-track,
+.hc-light .action-item.dictation-download-item > .dictation-download-ring .dictation-download-ring-track {
+	opacity: 1;
+}
+
 .monaco-action-bar .action-item.dictation-download-item > .dictation-download-ring .dictation-download-ring-progress {
 	fill: none;
 	stroke: var(--vscode-progressBar-background);

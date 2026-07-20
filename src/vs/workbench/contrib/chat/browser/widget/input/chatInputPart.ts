@@ -3561,9 +3561,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			hoverDelegate,
 			hiddenItemStrategy: HiddenItemStrategy.NoHide,
 			actionViewItemProvider: (action, options) => {
-				// While the on-device dictation model downloads, render the
-				// preparing affordance as a download icon wrapped by a progress
-				// ring (with a rich hover) instead of a spinning mic.
 				if (action.id === ChatSpeechToTextPreparingAction.ID && action instanceof MenuItemAction) {
 					return this.instantiationService.createInstance(DictationDownloadActionViewItem, action, options);
 				}
