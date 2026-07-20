@@ -507,21 +507,25 @@ export class ClaudeAgentSession extends Disposable {
 	 *
 	 * An abort or session-dispose landing during the `startup()` await is honored
 	 * by the post-await gate on {@link abortController} — the session-owned abort
-	 * target that replaces the pipeline's old placeholder-controller dance.
+	 * target that replaces the pipeline's old placeholder-controller dance. The
+	 * `warm` is handed to the pipeline as its sole owner: on that raced abort the
+	 * gate disposes the just-built pipeline (which tears the `warm` down), so the
+	 * session never async-disposes the `warm` itself except when the pipeline
+	 * constructor throws and no owner ever exists.
 	 */
 	private async _installPipeline(isResume: boolean, freshController: boolean): Promise<ClaudePermissionMode> {
 		if (freshController) {
 			this.abortController = new AbortController();
 		}
 		const { warm, permissionMode } = await this._startSdkQuery(isResume, this.abortController);
-		if (this.abortController.signal.aborted || this._store.isDisposed) {
-			await warm[Symbol.asyncDispose]();
-			throw new CancellationError();
-		}
 		const dbRef = this._sessionDataService.openDatabase(this._storageUri);
 		const store = new DisposableStore();
 		let pipeline: ClaudeSdkPipeline;
 		try {
+			// Hand `warm` to the pipeline immediately: from here on the pipeline is its
+			// SOLE owner (its dispose/teardown async-disposes it), so the session never
+			// touches `warm` again. The one exception is a constructor throw below —
+			// there, no owner ever came into existence, so the session disposes the orphan.
 			pipeline = store.add(this._instantiationService.createInstance(
 				ClaudeSdkPipeline,
 				this.sessionId,
@@ -544,6 +548,12 @@ export class ClaudeAgentSession extends Disposable {
 			throw err;
 		}
 		store.add(pipeline.onDidProduceSignal(s => this._onDidSessionProgress.fire(this._enrichSignalWithMcpContributor(this._enrichSignalWithCredits(s)))));
+		// An abort or session-dispose that raced `startup()`: tear the just-built pipeline
+		// down (it owns `warm`'s teardown now) and bail, rather than installing a dead one.
+		if (this.abortController.signal.aborted || this._store.isDisposed) {
+			store.dispose();
+			throw new CancellationError();
+		}
 		// Swap in the new pipeline, disposing the previous (pipeline + its signal
 		// subscription + the dbRef it transitively owns) via the store.
 		this._pipelineStore.value = store;
