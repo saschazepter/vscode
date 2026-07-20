@@ -205,6 +205,7 @@ export class NextEditCache extends Disposable {
 			absorbSubsequenceTyping: this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.InlineEditsAbsorbSubsequenceTyping, this._expService),
 			reverseAgreement: this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.InlineEditsReverseAgreement, this._expService),
 			maxImperfectAgreementLength: typeof maxImperfectAgreementLength === 'number' ? Math.max(0, maxImperfectAgreementLength) : maxImperfectAgreementLength,
+			reanchorContentOnIndentationMismatch: this._configService.getExperimentBasedConfig(ConfigKey.TeamInternal.InlineEditsReanchorContentOnIndentationMismatch, this._expService),
 		};
 	}
 
@@ -392,13 +393,16 @@ class DocumentEditCache {
 					// Tab to insert a tab character or a different number of spaces on an
 					// empty body line) makes the whole suggestion drop. The model's content
 					// intent is still valid, so re-anchor it as a clean at-cursor insertion
-					// that respects the indentation the user actually typed.
-					const reanchored = tryReanchorContentAfterIndentation(originalEdits, cachedEdit.documentBeforeEdit.value, currentDocumentContents.value, currentSelection);
-					if (reanchored) {
-						if (!cachedEdit.rejected && this.isRejectedNextEdit(currentDocumentContents, reanchored)) {
-							cachedEdit.rejected = true;
+					// that respects the indentation the user actually typed. Gated behind a
+					// setting so the behavior can be rolled out / disabled independently.
+					if (nesRebaseConfigs.reanchorContentOnIndentationMismatch) {
+						const reanchored = tryReanchorContentAfterIndentation(originalEdits, cachedEdit.documentBeforeEdit.value, currentDocumentContents.value, currentSelection);
+						if (reanchored) {
+							if (!cachedEdit.rejected && this.isRejectedNextEdit(currentDocumentContents, reanchored)) {
+								cachedEdit.rejected = true;
+							}
+							return { edit: { ...cachedEdit, rebasedEdit: reanchored, rebasedEditIndex: 0, baseCacheEntry: cachedEdit } };
 						}
-						return { edit: { ...cachedEdit, rebasedEdit: reanchored, rebasedEditIndex: 0, baseCacheEntry: cachedEdit } };
 					}
 					cachedEdit.rebaseFailed = true;
 					return {

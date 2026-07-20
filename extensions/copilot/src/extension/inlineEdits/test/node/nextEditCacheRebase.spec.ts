@@ -191,9 +191,10 @@ describe('NextEditCache rebase — Fibonacci scenario', () => {
  * The user then presses Tab to indent the line, inserting a tab character.
  *
  * Strict rebase matches indentation literally, so the tab-vs-spaces mismatch makes
- * the whole suggestion drop (`rebaseFailed`) and nothing is shown. The model's
- * content intent is still valid, so the served edit must be re-anchored as a clean
- * pure insertion of `return [` at the cursor, respecting the tab the user typed.
+ * the whole suggestion drop (`rebaseFailed`) and nothing is shown. When the
+ * `reanchorContentOnIndentationMismatch` setting is enabled, the model's still-valid
+ * content is re-anchored as a clean pure insertion of `return [` at the cursor,
+ * respecting the tab the user typed. When disabled, the suggestion is dropped.
  */
 describe('NextEditCache rebase — indented insertion over mismatched user indentation', () => {
 
@@ -216,20 +217,8 @@ describe('NextEditCache rebase — indented insertion over mismatched user inden
 		return new NextEditFetchRequest(generateUuid(), logContext, undefined, false);
 	}
 
-	beforeEach(async () => {
-		configService = new InMemoryConfigurationService(new DefaultsOnlyConfigurationService());
-		await configService.setConfig(ConfigKey.TeamInternal.InlineEditsReverseAgreement, true);
-		obsWorkspace = new MutableObservableWorkspace();
-		logService = new LogServiceImpl([]);
-		expService = new NullExperimentationService();
-
-		docId = DocumentId.create(URI.file('/test/example.ts').toString());
-		obsWorkspace.addDocument({ id: docId, initialValue: currentDoc });
-
-		cache = new NextEditCache(obsWorkspace, logService, configService, expService);
-	});
-
-	it('serves a clean at-cursor insertion (no leading whitespace) after the user tabs', () => {
+	/** Cache the model's indented prediction, then rebase it over the user's typed tab. */
+	function cacheAndRebase() {
 		// Model predicts the indented `return [` on the empty body line.
 		const modelEdit = new StringReplacement(OffsetRange.emptyAt(emptyLineOffset), '    return [');
 		// The user pressed Tab on that same (empty) line, inserting a tab character.
@@ -250,15 +239,43 @@ describe('NextEditCache rebase — indented insertion over mismatched user inden
 		assert(cachedEdit !== undefined, 'setKthNextEdit should return the cached edit');
 		assert(cachedEdit.userEditSince !== undefined, 'userEditSince should be set');
 
-		const rebaseResult = cache.tryRebaseCacheEntry(
+		return cache.tryRebaseCacheEntry(
 			cachedEdit,
 			new StringText(currentDoc),
 			[OffsetRange.emptyAt(cursorOffset)],
 		);
+	}
+
+	beforeEach(async () => {
+		configService = new InMemoryConfigurationService(new DefaultsOnlyConfigurationService());
+		await configService.setConfig(ConfigKey.TeamInternal.InlineEditsReverseAgreement, true);
+		await configService.setConfig(ConfigKey.TeamInternal.InlineEditsReanchorContentOnIndentationMismatch, true);
+		obsWorkspace = new MutableObservableWorkspace();
+		logService = new LogServiceImpl([]);
+		expService = new NullExperimentationService();
+
+		docId = DocumentId.create(URI.file('/test/example.ts').toString());
+		obsWorkspace.addDocument({ id: docId, initialValue: currentDoc });
+
+		cache = new NextEditCache(obsWorkspace, logService, configService, expService);
+	});
+
+	it('serves a clean at-cursor insertion (no leading whitespace) after the user tabs', () => {
+		const rebaseResult = cacheAndRebase();
 
 		assert(rebaseResult.edit !== undefined, 'should serve a (re-anchored) edit instead of dropping it');
 		assert(rebaseResult.edit.rebasedEdit !== undefined, 'should have a rebased edit');
 		// The tab the user typed must not be part of the edit: a pure insertion at the cursor.
 		assert.strictEqual(rebaseResult.edit.rebasedEdit.toString(), `[${cursorOffset}, ${cursorOffset}) -> "return ["`);
+	});
+
+	it('drops the suggestion when the setting is disabled', async () => {
+		await configService.setConfig(ConfigKey.TeamInternal.InlineEditsReanchorContentOnIndentationMismatch, false);
+
+		const rebaseResult = cacheAndRebase();
+
+		// Without the salvage, the tab-vs-spaces mismatch makes the rebase fail and
+		// the suggestion is dropped (nothing served).
+		assert.strictEqual(rebaseResult.edit, undefined, 'should drop the suggestion when re-anchoring is disabled');
 	});
 });
