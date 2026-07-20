@@ -526,7 +526,7 @@ export class CopilotAgentSession extends Disposable {
 	private readonly _autoApprovals = new Map<string, PermissionAutoApproval | null>();
 	private readonly _pendingAutoApprovals = new Map<string, DeferredPromise<PermissionAutoApproval | undefined>>();
 	/** Pending permission requests awaiting a renderer-side decision. */
-	private readonly _pendingPermissions = new Map<string, DeferredPromise<boolean>>();
+	private readonly _pendingPermissions = new Map<string, DeferredPromise<PermissionRequestResult>>();
 	/**
 	 * Signatures ({@link safeStringify}) of user-approved `read`/`write`
 	 * permission requests, keyed by tool call id. The Copilot CLI runtime emits
@@ -2104,7 +2104,7 @@ export class CopilotAgentSession extends Disposable {
 
 			this._logService.info(`[Copilot:${this.sessionId}] Requesting confirmation for tool call: ${toolCallId}`);
 
-			const deferred = new DeferredPromise<boolean>();
+			const deferred = new DeferredPromise<PermissionRequestResult>();
 			this._pendingPermissions.set(toolCallId, deferred);
 
 			// Auto-approve shell commands that run sandboxed by default, since the
@@ -2177,12 +2177,12 @@ export class CopilotAgentSession extends Disposable {
 				parentToolCallId,
 			});
 
-			const approved = await deferred.p;
-			this._logService.info(`[Copilot:${this.sessionId}] Permission response: toolCallId=${toolCallId}, approved=${approved}`);
-			if (approved && (request.kind === 'write' || request.kind === 'read')) {
+			const result = await deferred.p;
+			this._logService.info(`[Copilot:${this.sessionId}] Permission response: toolCallId=${toolCallId}, result=${result.kind}`);
+			if (result.kind === 'approve-once' && (request.kind === 'write' || request.kind === 'read')) {
 				this._approvedDuplicablePermissionSignatures.set(toolCallId, safeStringify(request));
 			}
-			return { kind: approved ? 'approve-once' : 'reject' };
+			return result;
 		} catch (error) {
 			this._logService.error(error, `[Copilot:${this.sessionId}] Failed to handle permission request: kind=${request.kind}, toolCallId=${request.toolCallId ?? 'missing'}`);
 			throw error;
@@ -2469,14 +2469,14 @@ export class CopilotAgentSession extends Disposable {
 		if (deferred) {
 			this._pendingPermissions.delete(requestId);
 			this._deletePendingEditContent(requestId);
-			deferred.complete(approved);
+			deferred.complete(approved ? { kind: 'approve-once' } : { kind: 'denied-interactively-by-user' });
 			return true;
 		}
 		return false;
 	}
 
 	private async _requestUnsandboxedCommandConfirmation(request: IUnsandboxedCommandConfirmationRequest): Promise<boolean> {
-		const deferred = new DeferredPromise<boolean>();
+		const deferred = new DeferredPromise<PermissionRequestResult>();
 		this._pendingPermissions.set(request.toolCallId, deferred);
 
 		const displayName = getToolDisplayName(request.toolName);
@@ -2512,7 +2512,7 @@ export class CopilotAgentSession extends Disposable {
 			parentToolCallId,
 		});
 
-		return deferred.p;
+		return (await deferred.p).kind === 'approve-once';
 	}
 
 	// ---- user input handling ------------------------------------------------
@@ -3320,6 +3320,9 @@ export class CopilotAgentSession extends Disposable {
 				// tool start) is the concise per-task tab title for the subagent's
 				// read-only peer chat — distinct even for same-type subagents.
 				taskDescription: tracked?.meta?.subagentDescription,
+				// The full delegated instruction (the spawning tool's `prompt`
+				// argument) seeds the subagent peer chat's opening request.
+				taskPrompt: typeof tracked?.parameters?.prompt === 'string' ? tracked.parameters.prompt : undefined,
 				// When the spawning tool call is itself an inner tool of
 				// another subagent, its recorded parent is the tool call one
 				// level up — the tool call in whose (subagent) chat this
@@ -4237,7 +4240,7 @@ export class CopilotAgentSession extends Disposable {
 	private _denyPendingPermissions(): void {
 		for (const [toolCallId, deferred] of this._pendingPermissions) {
 			this._deletePendingEditContent(toolCallId);
-			deferred.complete(false);
+			deferred.complete({ kind: 'reject' });
 		}
 		this._pendingPermissions.clear();
 		this._approvedDuplicablePermissionSignatures.clear();

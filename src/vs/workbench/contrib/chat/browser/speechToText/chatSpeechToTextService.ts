@@ -30,6 +30,8 @@ const SAMPLE_RATE = 16000;
 
 /** Setting that enables the dictation feature; a kill-switch for rollout. */
 const ENABLED_SETTING = 'chat.speechToText.enabled';
+/** On-device model (Whisper or Nemotron) to use for dictation. */
+const MODEL_SETTING = 'chat.speechToText.model';
 /** Setting that controls the tap-vs-hold behavior of the dictation shortcut. */
 const MODE_SETTING = 'chat.speechToText.mode';
 
@@ -76,6 +78,18 @@ export const enum ChatSpeechToTextState {
 	Transcribing = 'transcribing',
 }
 
+/** A live dictation transcript update. */
+export interface IChatDictationTranscript {
+	/** Full cumulative transcript to display. */
+	readonly text: string;
+	/**
+	 * The leading portion of `text` that is finalized (committed): it should be
+	 * rendered without the shimmer. The remainder is the in-progress interim
+	 * tail that keeps shimmering until it is finalized.
+	 */
+	readonly finalizedText: string;
+}
+
 export interface IChatSpeechToTextService {
 	readonly _serviceBrand: undefined;
 
@@ -85,9 +99,10 @@ export interface IChatSpeechToTextService {
 	/**
 	 * Fires with the cumulative transcript while recording, so callers can
 	 * render dictation live as the user speaks. The value grows monotonically
-	 * (finalized utterances plus any in-progress delta).
+	 * (finalized utterances plus any in-progress delta), and carries the
+	 * finalized (non-shimmering) portion of that transcript.
 	 */
-	readonly onDidUpdateTranscript: Event<string>;
+	readonly onDidUpdateTranscript: Event<IChatDictationTranscript>;
 
 	/**
 	 * Whether on-device speech-to-text is available on this platform. Callers
@@ -128,7 +143,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private readonly _onDidChangeState = this._register(new Emitter<ChatSpeechToTextState>());
 	readonly onDidChangeState = this._onDidChangeState.event;
 
-	private readonly _onDidUpdateTranscript = this._register(new Emitter<string>());
+	private readonly _onDidUpdateTranscript = this._register(new Emitter<IChatDictationTranscript>());
 	readonly onDidUpdateTranscript = this._onDidUpdateTranscript.event;
 
 	private readonly _onDidChangePreparingModel = this._register(new Emitter<boolean>());
@@ -361,10 +376,11 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			if (!result.isFinal) {
 				this._sessionSegments++;
 			}
-			this._onDidUpdateTranscript.fire(this._transcript);
+			this._onDidUpdateTranscript.fire({ text: this._transcript, finalizedText: result.finalizedText ?? '' });
 		}));
 		const cacheDir = joinPath(this._environmentService.cacheHome, 'chatDictationModels').fsPath;
-		await local.start({ cacheDir });
+		const model = this._getModelId();
+		await local.start({ cacheDir, model });
 
 		// The model loads in the utility process in the background (start()
 		// returns immediately). On first use it may download hundreds of MB, so
@@ -374,6 +390,11 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		if (status.state !== LocalTranscriptionModelState.Ready && status.state !== LocalTranscriptionModelState.Error) {
 			this._trackModelPreparation();
 		}
+	}
+
+	private _getModelId(): string | undefined {
+		const value = this._configurationService.getValue<string>(MODEL_SETTING);
+		return value ? value.trim() || undefined : undefined;
 	}
 
 	/**
@@ -422,12 +443,21 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	}
 
 	/**
-	 * Show a progress notification while the model is downloading, updating its
-	 * progress bar as bytes arrive, and dismiss it as soon as the model leaves
-	 * the `Downloading` state (loading into memory, ready, or errored).
+	 * Show a progress notification while the model is being prepared, and keep it
+	 * visible across both preparation phases so dictation never appears to hang
+	 * with no feedback:
+	 *  - `Downloading`: a determinate bar advances as bytes arrive (or an
+	 *    indeterminate "Downloading…" message before the first byte total is
+	 *    known).
+	 *  - `Loading`: the download is complete but the (often multi-second) load
+	 *    into memory is still running, so the message switches to "Loading model…"
+	 *    instead of leaving the bar stuck at a full download and then vanishing.
+	 * The notification is dismissed only once the model reaches `Ready`/`Error`.
 	 */
 	private _updateDownloadNotification(status: ILocalTranscriptionModelStatus): void {
-		if (status.state !== LocalTranscriptionModelState.Downloading) {
+		const preparing = status.state === LocalTranscriptionModelState.Downloading
+			|| status.state === LocalTranscriptionModelState.Loading;
+		if (!preparing) {
 			this._completeDownloadNotification();
 			return;
 		}
@@ -436,7 +466,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			let report: IProgress<IProgressStep> = Progress.None;
 			this._progressService.withProgress({
 				location: ProgressLocation.Notification,
-				title: localize('chatStt.downloadingModel', "Downloading speech-to-text model…"),
+				title: localize('chatStt.preparingModel', "Preparing speech-to-text model…"),
 				delay: 500,
 			}, progress => {
 				report = progress;
@@ -444,13 +474,28 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			});
 			this._downloadNotification = { report, complete: () => deferred.complete(), lastReported: 0 };
 		}
+		if (status.state === LocalTranscriptionModelState.Loading) {
+			// Download finished; the bar no longer moves, so make the wait
+			// self-explanatory rather than a seemingly stuck full bar.
+			this._downloadNotification.report.report({ message: localize('chatStt.loadingModel', "Loading model…") });
+			return;
+		}
 		if (typeof status.progress === 'number') {
 			const percent = Math.max(0, Math.min(100, Math.round(status.progress * 100)));
 			const increment = percent - this._downloadNotification.lastReported;
+			const message = localize('chatStt.downloadingPercent', "Downloading… {0}%", percent);
 			if (increment > 0) {
-				this._downloadNotification.report.report({ increment, total: 100 });
+				this._downloadNotification.report.report({ increment, total: 100, message });
 				this._downloadNotification.lastReported = percent;
+			} else {
+				// Keep the message fresh (e.g. while still at 0%) so the bar is
+				// never blank and unlabeled during the initial download stall.
+				this._downloadNotification.report.report({ message });
 			}
+		} else {
+			// Byte total not known yet (e.g. still contacting the model host):
+			// show an indeterminate "Downloading…" rather than a blank bar.
+			this._downloadNotification.report.report({ message: localize('chatStt.downloading', "Downloading…") });
 		}
 	}
 
