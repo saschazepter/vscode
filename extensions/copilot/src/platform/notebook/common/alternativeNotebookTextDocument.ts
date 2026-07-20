@@ -391,8 +391,19 @@ function withNotebookChangesAndEdit(cells: readonly AltCellInfo[], blockComment:
 		// `event.range` is expressed in the notebook's full cell index space (including markdown cells),
 		// but `altCells` may exclude markdown cells (`excludeMarkdownCells`). Translate the notebook range
 		// into the `altCells` index space using each cell's notebook index so we never index out of bounds.
-		const altRangeStart = altCells.filter(c => c.altCell.cell.index < event.range.start).length;
-		const altRangeEnd = altCells.filter(c => c.altCell.cell.index < event.range.end).length;
+		// `altCells` is ordered by notebook `cell.index`, so both bounds are counted in a single pass
+		// without allocating intermediate arrays.
+		let altRangeStart = 0;
+		let altRangeEnd = 0;
+		for (const c of altCells) {
+			const notebookIndex = c.altCell.cell.index;
+			if (notebookIndex < event.range.start) {
+				altRangeStart++;
+			}
+			if (notebookIndex < event.range.end) {
+				altRangeEnd++;
+			}
+		}
 
 		const removedCells = altCells.slice(altRangeStart, altRangeEnd);
 		const firstUnChangedCellIndex = altRangeStart === 0 ? -1 : altRangeStart - 1;

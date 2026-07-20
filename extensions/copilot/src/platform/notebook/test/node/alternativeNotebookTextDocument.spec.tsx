@@ -1224,7 +1224,7 @@ describe('Alternative Notebook (text) Content', () => {
 				expect(altDoc.getText()).toBe(updatedAltText);
 				return updatedAltText;
 			}
-			test(`insert code cell after leading markdown cells`, async () => {
+			test(`insert code cell after leading markdown cells`, () => {
 				const { notebook } = createNotebook(cells.concat([
 					new NotebookCellData(NotebookCellKind.Code, 'print("Foo Bar")', 'python'),
 				]));
@@ -1236,7 +1236,7 @@ describe('Alternative Notebook (text) Content', () => {
 				expect(updated).toContain('print("Hello World")');
 				expect(updated).toContain('print("Foo Bar")');
 			});
-			test(`remove code cell after leading markdown cells`, async () => {
+			test(`remove code cell after leading markdown cells`, () => {
 				const updated = getUpdatedAltText([{
 					addedCells: [],
 					range: new NotebookRange(2, 3),
