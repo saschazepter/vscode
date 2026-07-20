@@ -880,7 +880,7 @@ suite('AgentHostClientTools', () => {
 			]);
 		});
 
-		test('auto-approved client tool never enters WaitingForConfirmation (no needs-input flicker)', async () => {
+		test('protocol-confirmed client tool never enters WaitingForConfirmation (no needs-input flicker)', async () => {
 			const { handler, connection, toolsService } = createHandlerWithMocks(disposables, [testRunTaskTool], { requireConfirmation: true });
 			const sessionResource = URI.parse('agent-host-copilot:/session-1');
 			const backendSession = AgentSession.uri('copilot', 'session-1').toString();
@@ -905,8 +905,7 @@ suite('AgentHostClientTools', () => {
 				toolCallId: 'tool-call-1',
 				invocationMessage: 'Run Task',
 				toolInput: '{"task":"build"}',
-				confirmationTitle: 'Run Task',
-				_meta: { autoApproveBySetting: true },
+				confirmed: ToolCallConfirmationReason.NotNeeded,
 			} as ChatAction);
 
 			await handler.provideChatSessionContent(sessionResource, CancellationToken.None);
@@ -923,7 +922,7 @@ suite('AgentHostClientTools', () => {
 					sawWaitingForConfirmation: (toolsService.recordedStateKinds.get('tool-call-1') ?? []).includes(IChatToolInvocation.StateKind.WaitingForConfirmation),
 				},
 				{
-					preApprovedKind: ToolConfirmKind.Setting,
+					preApprovedKind: ToolConfirmKind.ConfirmationNotNeeded,
 					sawWaitingForConfirmation: false,
 				},
 			);
