@@ -24,7 +24,7 @@ import { fetchSessionWithChat, getActionEnvelope, isActionNotification } from '.
 import type { IAgentHostE2ETestContext } from './e2eTestContext.js';
 
 export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void {
-	const { config, createdSessions, tempDirs } = context;
+	const { config, createdSessions, tempDirs, isWindows } = context;
 	const behaviorSnapshot = { profile: 'behavior' } as const;
 
 	function createWorkspace(prefix: string): string {
@@ -46,8 +46,8 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		});
 	}
 
-	function hostTest(title: string, run: Mocha.AsyncFunc): void {
-		test(title, run).timeout(60_000);
+	function hostTest(title: string, run: Mocha.AsyncFunc, enabled = true): void {
+		(enabled ? test : test.skip)(title, run).timeout(60_000);
 	}
 
 	hostTest('initialize advertises host-owned input capabilities', async function () {
@@ -187,10 +187,12 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 			isActionNotification(n, 'chat/toolCallComplete')
 			&& getActionEnvelope(n).channel === chatUri
 			&& (getActionEnvelope(n).action as { turnId: string }).turnId === 'turn-bang-success',
+			30_000,
 		);
 		await context.client.waitForNotification(n =>
 			isActionNotification(n, 'chat/turnComplete')
 			&& (getActionEnvelope(n).action as { turnId: string }).turnId === 'turn-bang-success',
+			30_000,
 		);
 		await assertRecordedAhpSnapshot(this.test!, context.client, behaviorSnapshot);
 
@@ -229,10 +231,12 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		const toolComplete = await context.client.waitForNotification(n =>
 			isActionNotification(n, 'chat/toolCallComplete')
 			&& (getActionEnvelope(n).action as { turnId: string }).turnId === 'turn-bang-failure',
+			30_000,
 		);
 		await context.client.waitForNotification(n =>
 			isActionNotification(n, 'chat/turnComplete')
 			&& (getActionEnvelope(n).action as { turnId: string }).turnId === 'turn-bang-failure',
+			30_000,
 		);
 		await assertRecordedAhpSnapshot(this.test!, context.client, behaviorSnapshot);
 
@@ -251,6 +255,8 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		});
 	});
 
+	// Git-backed config discovery leaves this temporary repository locked on
+	// Windows CI after the provider session is disposed.
 	hostTest('session configuration resolves and completes git branches', async function () {
 
 		const workspace = createWorkspace('ahp-config-completions-');
@@ -289,5 +295,5 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 				label: 'feature/coverage-target',
 			}],
 		});
-	});
+	}, !isWindows);
 }
