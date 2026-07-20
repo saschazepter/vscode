@@ -11,10 +11,6 @@ export const enum TerminalResizeDimensionsOverlaySettingId {
 	Enabled = 'terminal.integrated.resizeDimensionsOverlay.enabled',
 }
 
-export interface ITerminalResizeDimensionsOverlayConfiguration {
-	enabled: boolean;
-}
-
 export const terminalResizeDimensionsOverlayConfiguration: IStringDictionary<IConfigurationPropertySchema> = {
 	[TerminalResizeDimensionsOverlaySettingId.Enabled]: {
 		markdownDescription: localize('resizeDimensionsOverlay.enabled', "Whether to show a visual overlay with the terminal's columns and rows when it is resized."),
