@@ -599,10 +599,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		// model reached a terminal state does not emit a model-prepare event.
 		this._prepareStartMs = 0;
 		this._localSessionDisposables.clear();
-		// Clear the accumulated transcript so it cannot resurface in a later
-		// session. Every session-end path (stop, cancel, error) funnels through
-		// here, making this the single point that enforces the invariant that no
-		// transcript survives the session that produced it.
+		// Do not retain transcript text beyond the session that produced it.
 		this._finalizedText = '';
 		this._deltaText = '';
 	}
