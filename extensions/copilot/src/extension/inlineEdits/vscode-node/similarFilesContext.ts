@@ -53,9 +53,9 @@ export class SimilarFilesContextService implements ISimilarFilesContextService {
 			if (!result) {
 				return undefined;
 			}
-			const { snippets, relativePathToUri, relatedFileUris } = result;
+			const { snippets, relatedFileUris } = result;
 			return snippets.map(s => {
-				const snippetUri = (s.relativePath && relativePathToUri.get(s.relativePath)) ?? uri;
+				const snippetUri = s.uri ?? uri;
 				return {
 					uri: snippetUri,
 					relativePath: s.relativePath,
@@ -70,7 +70,7 @@ export class SimilarFilesContextService implements ISimilarFilesContextService {
 		}
 	}
 
-	private async _gatherSnippets(uri: string, languageId: string, source: string, cursorOffset: number, includeRelatedFiles: boolean): Promise<{ neighborFileCount: number; snippets: RankedSnippet[]; relativePathToUri: Map<string, string>; relatedFileUris: Set<string> } | undefined> {
+	private async _gatherSnippets(uri: string, languageId: string, source: string, cursorOffset: number, includeRelatedFiles: boolean): Promise<{ neighborFileCount: number; snippets: RankedSnippet[]; relatedFileUris: Set<string> } | undefined> {
 		const completionsInstaService = this._copilotService.getOrCreateInstantiationService();
 		const telemetryData = TelemetryWithExp.createEmptyConfigForTesting();
 
@@ -104,12 +104,6 @@ export class SimilarFilesContextService implements ISimilarFilesContextService {
 		};
 
 		const neighborDocs = Array.from(docs.values());
-		const relativePathToUri = new Map<string, string>();
-		for (const doc of neighborDocs) {
-			if (doc.relativePath) {
-				relativePathToUri.set(doc.relativePath, doc.uri);
-			}
-		}
 
 		const snippets = (await getSimilarSnippets(
 			docInfo,
@@ -119,6 +113,6 @@ export class SimilarFilesContextService implements ISimilarFilesContextService {
 			.filter(s => s.snippet.length > 0)
 			.sort((a, b) => a.score - b.score);
 
-		return { neighborFileCount: docs.size, snippets, relativePathToUri, relatedFileUris };
+		return { neighborFileCount: docs.size, snippets, relatedFileUris };
 	}
 }

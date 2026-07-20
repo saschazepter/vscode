@@ -97,6 +97,7 @@ export async function getSimilarSnippets(
 					(await acc).concat(
 						(await matcher.findMatches(similarFile, options.maxSnippetsPerFile)).map(snippet => ({
 							relativePath: similarFile.relativePath,
+							uri: similarFile.uri,
 							...snippet,
 						}))
 					),

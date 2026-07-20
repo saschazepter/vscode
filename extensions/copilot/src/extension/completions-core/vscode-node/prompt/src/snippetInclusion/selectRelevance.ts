@@ -22,6 +22,13 @@ export interface ScoredSnippetMarker {
 export interface ScoredSnippet extends ScoredSnippetMarker {
 	snippet: string;
 	relativePath?: string;
+	/**
+	 * The URI of the source document the snippet came from, when known. Unlike
+	 * {@link relativePath} this is unambiguous, so consumers should prefer it to
+	 * identify a snippet's provenance (e.g. in multi-root workspaces where two
+	 * documents can share a relative path).
+	 */
+	uri?: string;
 }
 
 export enum SortOptions {
