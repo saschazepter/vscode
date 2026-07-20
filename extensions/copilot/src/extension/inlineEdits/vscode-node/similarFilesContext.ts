@@ -5,7 +5,7 @@
 
 import { getSimilarFilesOptions } from '../../completions-core/vscode-node/lib/src/experiments/similarFileOptionsProvider';
 import { getPromptOptions } from '../../completions-core/vscode-node/lib/src/prompt/prompt';
-import { NeighborSource, collectRelatedFileUris } from '../../completions-core/vscode-node/lib/src/prompt/similarFiles/neighborFiles';
+import { NeighborSource } from '../../completions-core/vscode-node/lib/src/prompt/similarFiles/neighborFiles';
 import { TelemetryWithExp } from '../../completions-core/vscode-node/lib/src/telemetry';
 import { ICompletionsTextDocumentManagerService } from '../../completions-core/vscode-node/lib/src/textDocumentManager';
 import { DocumentInfoWithOffset } from '../../completions-core/vscode-node/prompt/src/prompt';
@@ -53,32 +53,27 @@ export class SimilarFilesContextService implements ISimilarFilesContextService {
 			if (!result) {
 				return undefined;
 			}
-			const { snippets, relatedFileUris } = result;
-			return snippets.map(s => {
-				const snippetUri = s.uri;
-				return {
-					uri: snippetUri,
-					relativePath: s.relativePath,
-					snippet: s.snippet,
-					lineRange: new LineRange0Based(s.startLine, s.endLine),
-					score: s.score,
-					isFromRelatedFile: relatedFileUris.has(snippetUri),
-				};
-			});
+			const { snippets } = result;
+			return snippets.map(s => ({
+				uri: s.uri,
+				relativePath: s.relativePath,
+				snippet: s.snippet,
+				lineRange: new LineRange0Based(s.startLine, s.endLine),
+				score: s.score,
+				isFromRelatedFile: s.isFromRelatedFile ?? false,
+			}));
 		} catch {
 			return undefined;
 		}
 	}
 
-	private async _gatherSnippets(uri: string, languageId: string, source: string, cursorOffset: number, includeRelatedFiles: boolean): Promise<{ neighborFileCount: number; snippets: RankedSnippet[]; relatedFileUris: Set<string> } | undefined> {
+	private async _gatherSnippets(uri: string, languageId: string, source: string, cursorOffset: number, includeRelatedFiles: boolean): Promise<{ neighborFileCount: number; snippets: RankedSnippet[] } | undefined> {
 		const completionsInstaService = this._copilotService.getOrCreateInstantiationService();
 		const telemetryData = TelemetryWithExp.createEmptyConfigForTesting();
 
-		const { docs, neighborSource } = await completionsInstaService.invokeFunction(
+		const { docs } = await completionsInstaService.invokeFunction(
 			accessor => NeighborSource.getNeighborFilesAndTraits(accessor, uri, languageId, telemetryData, undefined, undefined, undefined, includeRelatedFiles)
 		);
-
-		const relatedFileUris = collectRelatedFileUris(neighborSource);
 
 		const promptOptions = completionsInstaService.invokeFunction(getPromptOptions, telemetryData, languageId);
 		const similarFilesOptions =
@@ -106,6 +101,6 @@ export class SimilarFilesContextService implements ISimilarFilesContextService {
 			.filter(s => s.snippet.length > 0)
 			.sort((a, b) => a.score - b.score);
 
-		return { neighborFileCount: docs.size, snippets, relatedFileUris };
+		return { neighborFileCount: docs.size, snippets };
 	}
 }

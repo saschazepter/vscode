@@ -29,6 +29,12 @@ export interface ScoredSnippet extends ScoredSnippetMarker {
 	 * documents can share a relative path).
 	 */
 	uri?: string;
+	/**
+	 * Whether the snippet's source document is a language-service "related" file
+	 * rather than an open tab. Carried through from the source file so consumers do
+	 * not have to re-classify snippets by URI.
+	 */
+	isFromRelatedFile?: boolean;
 }
 
 export enum SortOptions {

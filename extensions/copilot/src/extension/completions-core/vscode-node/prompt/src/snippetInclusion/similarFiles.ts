@@ -105,10 +105,9 @@ export async function getSimilarSnippets(
 					(await acc).concat(
 						(await matcher.findMatches(similarFile, options.maxSnippetsPerFile)).map(snippet => ({
 							...snippet,
-							// Spread first so the source file's provenance always wins and is
-							// never clobbered by a stray `uri`/`relativePath` on the match.
 							relativePath: similarFile.relativePath,
 							uri: similarFile.uri,
+							isFromRelatedFile: similarFile.isFromRelatedFile,
 						}))
 					),
 				Promise.resolve([] as SnippetWithSourceUri[])

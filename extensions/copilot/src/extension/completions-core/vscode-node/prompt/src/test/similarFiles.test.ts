@@ -487,6 +487,45 @@ suite('Test getSimilarSnippets function', function () {
 			{ uri: 'file:///root-b/shared/util', relativePath: collidingRelativePath, fromRootA: false },
 		]);
 	});
+	test('Carries isFromRelatedFile provenance from the source file onto its snippets', async function () {
+		// The related-vs-open-tab classification is decided once at the source and rides on
+		// each snippet, so consumers never have to re-classify snippets by URI.
+		const taggedFiles: SimilarFileInfo[] = [
+			{
+				relativePath: 'openTab',
+				uri: 'file:///root/openTab',
+				isFromRelatedFile: false,
+				source: dedent`
+					A
+						B
+						C
+						H
+					X
+						Y
+						Z
+					`,
+			},
+			{
+				relativePath: 'related',
+				uri: 'file:///root/related',
+				isFromRelatedFile: true,
+				source: dedent`
+			  D
+				  H
+			  `,
+			},
+		];
+
+		const snippets = await getSimilarSnippets(doc, taggedFiles, defaultSimilarFilesOptions);
+
+		const flagByUri = snippets
+			.map(s => ({ uri: s.uri, isFromRelatedFile: s.isFromRelatedFile }))
+			.sort((a, b) => a.uri.localeCompare(b.uri));
+		assert.deepStrictEqual(flagByUri, [
+			{ uri: 'file:///root/openTab', isFromRelatedFile: false },
+			{ uri: 'file:///root/related', isFromRelatedFile: true },
+		]);
+	});
 });
 
 suite('Test trimming reference document', function () {
