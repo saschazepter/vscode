@@ -22,7 +22,7 @@ import product from '../../product.json' with { type: 'json' };
 // are valid, are in dep-lists.ts
 const FAIL_BUILD_FOR_NEW_DEPENDENCIES: boolean = true;
 
-// Based on https://source.chromium.org/chromium/chromium/src/+/refs/tags/148.0.7778.271:chrome/installer/linux/BUILD.gn;l=64-80
+// Based on https://source.chromium.org/chromium/chromium/src/+/refs/tags/148.0.7778.280:chrome/installer/linux/BUILD.gn;l=64-80
 // and the Linux Archive build
 // Shared library dependencies that we already bundle.
 const bundledDeps = [
@@ -30,7 +30,14 @@ const bundledDeps = [
 	'libGLESv2.so',
 	'libvulkan.so.1',
 	'libvk_swiftshader.so',
-	'libffmpeg.so'
+	'libffmpeg.so',
+	// on-device chat dictation (foundry-local-sdk) bundles the onnxruntime,
+	// onnxruntime-genai and Foundry Local Core shared libraries next to its
+	// native addon. NOTE: exact Linux sonames must be confirmed on a Linux
+	// package build; adjust these if the dependency scanner reports them as new.
+	'libonnxruntime.so.1',
+	'libonnxruntime-genai.so',
+	'Microsoft.AI.Foundry.Local.Core.so'
 ];
 
 export async function getDependencies(packageType: 'deb' | 'rpm', buildDir: string, applicationName: string, arch: string): Promise<string[]> {
@@ -44,8 +51,8 @@ export async function getDependencies(packageType: 'deb' | 'rpm', buildDir: stri
 	}
 
 	// Get the files for which we want to find dependencies.
-	const canAsar = false; // TODO@esm ASAR disabled in ESM
-	const nativeModulesPath = path.join(buildDir, 'resources', 'app', canAsar ? 'node_modules.asar.unpacked' : 'node_modules');
+	// Native modules are unpacked next to the ASAR archive in `node_modules.asar.unpacked`.
+	const nativeModulesPath = path.join(buildDir, 'resources', 'app', 'node_modules.asar.unpacked');
 	const findResult = spawnSync('find', [nativeModulesPath, '-name', '*.node']);
 	if (findResult.status) {
 		console.error('Error finding files:');

@@ -24,6 +24,7 @@ import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { WorkbenchList } from '../../../../../platform/list/browser/listService.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
+import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { defaultButtonStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 import { status } from '../../../../../base/browser/ui/aria/aria.js';
@@ -33,6 +34,9 @@ import { IAutomationService } from '../../common/automations/automationService.j
 import { IAutomationDialogService } from '../../common/automations/automationDialogService.js';
 import { CHAT_AUTOMATIONS_ENABLED_SETTING } from '../../common/automations/automationsEnabled.js';
 import { DAYS_OF_WEEK } from '../../common/automations/schedule.js';
+import { openSessionByResource } from '../agentSessions/agentSessionsOpener.js';
+import { IEditorService } from '../../../../services/editor/common/editorService.js';
+import { IEditorGroupsService } from '../../../../services/editor/common/editorGroupsService.js';
 
 const $ = DOM.$;
 
@@ -107,6 +111,11 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 	constructor(
 		private readonly widget: AutomationsListWidget,
 		private readonly hoverService: IHoverService,
+		private readonly notificationService: INotificationService,
+		private readonly editorService: IEditorService,
+		private readonly editorGroupsService: IEditorGroupsService,
+		private readonly logService: ILogService,
+		private readonly instantiationService: IInstantiationService,
 	) { }
 
 	renderTemplate(container: HTMLElement): IAutomationRowTemplateData {
@@ -148,9 +157,12 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 		templateData.sep1.textContent = '·';
 		templateData.nextEl.textContent = formatNextRun(automation);
 		templateData.sepFolder.textContent = '·';
-		const folderLabel = this.widget.formatFolderLabel(automation.folderUri);
-		templateData.folderEl.textContent = localize('automationFolderLabel', "in {0}", folderLabel);
-		templateData.folderEl.title = automation.folderUri.toString();
+		templateData.folderEl.textContent = this.widget.formatTargetLabel(automation);
+		if (automation.target.kind === 'quickChat') {
+			templateData.folderEl.title = localize('automationQuickChatTitle', "Runs as a workspace-less chat");
+		} else {
+			templateData.folderEl.title = automation.target.folderUri.toString();
+		}
 
 		if (automation.lastRunAt) {
 			templateData.sep2.textContent = '·';
@@ -165,7 +177,17 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 		templateData.promptEl.textContent = truncate(automation.prompt, 160);
 		templateData.promptEl.title = automation.prompt;
 
+		templateData.disposables.add(DOM.addDisposableListener(templateData.row, 'click', (e) => {
+			if (DOM.isAncestor(e.target as HTMLElement, templateData.actions)) {
+				return;
+			}
+			this.widget.toggleExpanded(automation.id);
+		}));
+
 		DOM.clearNode(templateData.actions);
+		templateData.disposables.add(DOM.addDisposableListener(templateData.actions, 'click', (e) => {
+			e.stopPropagation();
+		}));
 		this.renderActions(templateData, automation, expanded, inFlight);
 
 		DOM.clearNode(templateData.historyPanel);
@@ -174,6 +196,7 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 			this.renderHistoryPanel(templateData, automation, runs);
 		}
 		templateData.historyPanel.style.display = expanded ? '' : 'none';
+		templateData.container.classList.toggle('automations-row-wrapper-expanded', expanded);
 	}
 
 	private renderActions(templateData: IAutomationRowTemplateData, automation: IAutomation, expanded: boolean, inFlight: boolean): void {
@@ -228,7 +251,7 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 		const runsList = DOM.append(panel, $('ul.automations-history-list'));
 		const visibleRuns = runs.slice(0, MAX_VISIBLE_RUNS);
 		for (const run of visibleRuns) {
-			this.renderRunRow(runsList, run);
+			this.renderRunRow(runsList, run, templateData.disposables);
 		}
 		if (runs.length > MAX_VISIBLE_RUNS) {
 			const more = DOM.append(panel, $('.automations-history-more'));
@@ -236,7 +259,7 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 		}
 	}
 
-	private renderRunRow(container: HTMLElement, run: IAutomationRun): void {
+	private renderRunRow(container: HTMLElement, run: IAutomationRun, disposables: DisposableStore): void {
 		const li = DOM.append(container, $('li.automations-history-row', {
 			'data-run-id': run.id,
 			'data-run-status': run.status,
@@ -276,6 +299,36 @@ class AutomationItemRenderer implements IListRenderer<IAutomationItemEntry, IAut
 			err.setAttribute('role', 'status');
 			err.setAttribute('aria-live', 'polite');
 		}
+
+		if (run.sessionResource) {
+			const openButton = DOM.append(li, $('span.automations-history-row-open.codicon.codicon-link-external'));
+			openButton.setAttribute('role', 'button');
+			openButton.setAttribute('tabindex', '0');
+			openButton.setAttribute('aria-label', localize('openRunSession', "Open session"));
+			disposables.add(this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), openButton, localize('openRunSession', "Open session")));
+			const openSession = (e: Event) => {
+				e.stopPropagation();
+				const sessionResource = URI.parse(run.sessionResource!);
+				this.logService.debug(`[AutomationsListWidget] Opening session: ${sessionResource.toString()}`);
+				const activeEditor = this.editorService.activeEditor;
+				const activeGroupId = this.editorGroupsService.activeGroup.id;
+				this.instantiationService.invokeFunction(openSessionByResource, sessionResource).then(() => {
+					if (activeEditor) {
+						this.editorService.closeEditor({ editor: activeEditor, groupId: activeGroupId });
+					}
+				}).catch((err) => {
+					this.logService.error(`[AutomationsListWidget] openSession failed for ${sessionResource.toString()}`, err);
+					this.notificationService.error(localize('openRunSessionFailed', "Failed to open automation session"));
+				});
+			};
+			disposables.add(DOM.addDisposableListener(openButton, 'click', openSession));
+			disposables.add(DOM.addDisposableListener(openButton, 'keydown', (e: KeyboardEvent) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					openSession(e);
+				}
+			}));
+		}
 	}
 
 	private createIconButton(container: HTMLElement, icon: ThemeIcon, tooltip: string, disabled: boolean, disposables: DisposableStore): HTMLElement {
@@ -310,7 +363,6 @@ export class AutomationsListWidget extends Disposable {
 	private readonly listContainer: HTMLElement;
 	private readonly emptyContainer: HTMLElement;
 	private list!: WorkbenchList<IAutomationListEntry>;
-	private newEmptyStateButton: Button | undefined;
 
 	private readonly newButtonHover = this._register(new MutableDisposable());
 	private readonly newEmptyStateButtonHover = this._register(new MutableDisposable());
@@ -335,6 +387,9 @@ export class AutomationsListWidget extends Disposable {
 		@ILogService private readonly logService: ILogService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@INotificationService private readonly notificationService: INotificationService,
+		@IEditorService private readonly editorService: IEditorService,
+		@IEditorGroupsService private readonly editorGroupsService: IEditorGroupsService,
 	) {
 		super();
 
@@ -371,7 +426,7 @@ export class AutomationsListWidget extends Disposable {
 
 	private createList(): void {
 		const delegate = new AutomationItemDelegate();
-		const renderer = new AutomationItemRenderer(this, this.hoverService);
+		const renderer = new AutomationItemRenderer(this, this.hoverService, this.notificationService, this.editorService, this.editorGroupsService, this.logService, this.instantiationService);
 
 		this.list = this._register(this.instantiationService.createInstance(
 			WorkbenchList<IAutomationListEntry>,
@@ -386,10 +441,7 @@ export class AutomationsListWidget extends Disposable {
 				horizontalScrolling: false,
 				accessibilityProvider: {
 					getAriaLabel: (element: IAutomationListEntry) => {
-						const a = element.automation;
-						return a.enabled
-							? localize('automationAriaLabel', "{0}, {1}", a.name, formatSchedule(a))
-							: localize('automationAriaLabelDisabled', "{0}, disabled", a.name);
+						return this.formatAriaLabel(element.automation);
 					},
 					getWidgetAriaLabel() {
 						return localize('automationsListAriaLabel', "Automations");
@@ -402,6 +454,12 @@ export class AutomationsListWidget extends Disposable {
 				}
 			}
 		));
+
+		this._register(this.list.onDidChangeSelection(() => {
+			if (this.list.getSelection().length > 0) {
+				this.list.setSelection([]);
+			}
+		}));
 	}
 
 	private updateList(items: readonly IAutomation[]): void {
@@ -418,7 +476,6 @@ export class AutomationsListWidget extends Disposable {
 		this.element.classList.remove('automations-empty');
 		this.emptyContainer.style.display = 'none';
 		this.listContainer.style.display = '';
-		this.newEmptyStateButton = undefined;
 		this.newEmptyStateButtonHover.clear();
 
 		this.displayEntries = items.map(automation => ({
@@ -445,7 +502,6 @@ export class AutomationsListWidget extends Disposable {
 		ctaButton.label = localize('automationsEmptyCta', "Create automation");
 		ctaButton.element.classList.add('automations-empty-cta');
 		this._emptyStateStore.add(ctaButton.onDidClick(() => this.openCreateDialog()));
-		this.newEmptyStateButton = ctaButton;
 		this.newEmptyStateButtonHover.value = this.hoverService.setupManagedHover(getDefaultHoverDelegate('element'), ctaButton.element, localize('newAutomationTooltip', "Create a new automation"));
 	}
 
@@ -468,10 +524,16 @@ export class AutomationsListWidget extends Disposable {
 		}
 		this.runInFlight.add(automation.id);
 		this.updateList(this.automationService.automations.get());
+		const previousRunId = this.automationService.runsFor(automation.id).get()[0]?.id;
 		try {
-			// The runner does not support cancellation yet.
-			await this.automationRunner.runOnce(automation, 'manual', 0, CancellationToken.None);
-			status(localize('automationStartedStatus', "Started automation {0}", automation.name));
+			// Manual runs do not currently expose cancellation.
+			const operation = this.automationRunner.runOnce(automation, 'manual', 0, CancellationToken.None);
+			await operation.whenDispatched;
+			const latestRun = this.automationService.runsFor(automation.id).get()[0];
+			if (latestRun && latestRun.id !== previousRunId && latestRun.status !== 'failed') {
+				status(localize('automationStartedStatus', "Started automation {0}", automation.name));
+			}
+			await operation.whenCompleted;
 		} catch (err) {
 			this.logService.error('[Automations] runNow failed unexpectedly', err);
 		} finally {
@@ -558,6 +620,21 @@ export class AutomationsListWidget extends Disposable {
 		return segments[segments.length - 1] ?? folderUri.toString();
 	}
 
+	formatTargetLabel(automation: IAutomation): string {
+		if (automation.target.kind === 'quickChat') {
+			return localize('automationQuickChatLabel', "without a workspace");
+		}
+		return localize('automationFolderLabel', "in {0}", this.formatFolderLabel(automation.target.folderUri));
+	}
+
+	formatAriaLabel(automation: IAutomation): string {
+		const schedule = formatSchedule(automation);
+		const target = this.formatTargetLabel(automation);
+		return automation.enabled
+			? localize('automationAriaLabel', "{0}, {1}, {2}", automation.name, schedule, target)
+			: localize('automationAriaLabelDisabled', "{0}, disabled, {1}, {2}", automation.name, schedule, target);
+	}
+
 	private _isEnabled(): boolean {
 		return this.configurationService.getValue<boolean>(CHAT_AUTOMATIONS_ENABLED_SETTING) === true;
 	}
@@ -639,8 +716,10 @@ export class AutomationsListWidget extends Disposable {
 		return this.displayEntries;
 	}
 
-	focusSearch(): void {
-		this.newEmptyStateButton?.focus();
+	focus(): void {
+		if (this.list.length > 0) {
+			this.list.domFocus();
+		}
 	}
 }
 
@@ -671,7 +750,7 @@ function dayName(day: number): string {
 }
 
 function formatNextRun(a: IAutomation): string {
-	if (a.schedule.interval === 'manual' || !a.nextRunAt) {
+	if (!a.enabled || a.schedule.interval === 'manual' || !a.nextRunAt) {
 		return localize('nextRunNever', "No scheduled run");
 	}
 	return localize('nextRun', "Next run {0}", formatRelativeTimeOrIso(a.nextRunAt));

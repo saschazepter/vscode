@@ -28,6 +28,8 @@ import {
 	SessionHasMultipleOpenChatsContext,
 	SessionActiveChatIsClosableContext,
 	SessionActiveChatIsDeletableContext,
+	SessionActiveChatHasSubagentsContext,
+	SessionHasGitRepositoryContext,
 } from '../../../common/contextkeys.js';
 import { ChatOriginKind, getChatCapabilities, ISession, SessionStatus } from './session.js';
 import { IActiveSession } from './sessionsManagement.js';
@@ -46,6 +48,7 @@ interface ISessionContextKeys {
 	readonly supportsRename: IContextKey<boolean>;
 	readonly supportsDelete: IContextKey<boolean>;
 	readonly workspaceIsVirtual: IContextKey<boolean>;
+	readonly hasGitRepository: IContextKey<boolean>;
 	readonly hasChanges: IContextKey<boolean>;
 	readonly hasPullRequest: IContextKey<boolean>;
 	readonly hasWorkspace: IContextKey<boolean>;
@@ -57,6 +60,7 @@ interface ISessionContextKeys {
 	readonly hasMultipleOpenChats: IContextKey<boolean>;
 	readonly activeChatIsClosable: IContextKey<boolean>;
 	readonly activeChatIsDeletable: IContextKey<boolean>;
+	readonly activeChatHasSubagents: IContextKey<boolean>;
 }
 
 /**
@@ -83,6 +87,7 @@ function getBoundKeys(contextKeyService: IContextKeyService): ISessionContextKey
 			supportsRename: SessionSupportsRenameContext.bindTo(contextKeyService),
 			supportsDelete: SessionSupportsDeleteContext.bindTo(contextKeyService),
 			workspaceIsVirtual: SessionWorkspaceIsVirtualContext.bindTo(contextKeyService),
+			hasGitRepository: SessionHasGitRepositoryContext.bindTo(contextKeyService),
 			hasChanges: SessionHasChangesContext.bindTo(contextKeyService),
 			hasPullRequest: SessionHasPullRequestContext.bindTo(contextKeyService),
 			hasWorkspace: SessionHasWorkspaceContext.bindTo(contextKeyService),
@@ -94,6 +99,7 @@ function getBoundKeys(contextKeyService: IContextKeyService): ISessionContextKey
 			hasMultipleOpenChats: SessionHasMultipleOpenChatsContext.bindTo(contextKeyService),
 			activeChatIsClosable: SessionActiveChatIsClosableContext.bindTo(contextKeyService),
 			activeChatIsDeletable: SessionActiveChatIsDeletableContext.bindTo(contextKeyService),
+			activeChatHasSubagents: SessionActiveChatHasSubagentsContext.bindTo(contextKeyService),
 		};
 		boundKeysByService.set(contextKeyService, keys);
 	}
@@ -126,7 +132,9 @@ export function setSessionContextKeys(session: ISession | undefined, contextKeyS
 	keys.supportsFork.set(capabilities?.supportsFork ?? false);
 	keys.supportsRename.set(capabilities?.supportsRename ?? false);
 	keys.supportsDelete.set(capabilities?.supportsDelete ?? false);
-	keys.workspaceIsVirtual.set(session?.workspace.read(reader)?.isVirtualWorkspace ?? true);
+	const workspace = session?.workspace.read(reader);
+	keys.workspaceIsVirtual.set(workspace?.isVirtualWorkspace ?? true);
+	keys.hasGitRepository.set(session?.hasGitRepository?.read(reader) ?? workspace?.folders.some(folder => folder.gitRepository !== undefined) ?? false);
 
 	// Mirror the changes pill: the default changeset, falling back to the session's changes.
 	const defaultChangeset = session?.changesets.read(reader)?.find(c => c.isDefault.read(reader));
@@ -192,4 +200,13 @@ export function setActiveSessionContextKeys(session: IActiveSession | undefined,
 	// it: the main chat and worker (subagent) chats report `canDelete: false`,
 	// so they are closeable but not deletable.
 	keys.activeChatIsDeletable.set(!!activeChat && getChatCapabilities(activeChat, session, reader).canDelete);
+
+	// The active chat has subagents when any tool-origin chat names it as its
+	// parent. These are listed as a separate group in the Conversations menu, so
+	// the menu must surface even when the active chat is the only committed chat.
+	const allChats = session?.chats.read(reader) ?? [];
+	keys.activeChatHasSubagents.set(!!activeChat && allChats.some(chat =>
+		chat.origin?.kind === ChatOriginKind.Tool &&
+		!!chat.origin.parentChat &&
+		isEqual(chat.origin.parentChat, activeChat.resource)));
 }
