@@ -12,6 +12,7 @@ import {
 	UnifiedDocumentReconcileOutcome,
 	UnifiedDocumentReconciler,
 } from './unifiedDocumentReconciler.js';
+import { StringEdit } from '../../../../../editor/common/core/edits/stringEdit.js';
 
 export interface IUnifiedDocumentRegistryOptions<TSource> {
 	readonly externalSource: TSource;
@@ -85,9 +86,9 @@ export class UnifiedDocumentRegistry<TSource> {
 		return this._wrap(entry, entry.reconciler.agentTransition(transition));
 	}
 
-	diskSnapshot(resource: URI, content: string): IUnifiedDocumentRegistryResult<TSource> {
+	diskSnapshot(resource: URI, content: string, edit: StringEdit): IUnifiedDocumentRegistryResult<TSource> {
 		const entry = this._getOrCreate(resource, content);
-		return this._wrap(entry, entry.reconciler.diskSnapshot(content));
+		return this._wrap(entry, entry.reconciler.diskSnapshot(content, edit));
 	}
 
 	transfer(previousResource: URI, resource: URI): IUnifiedDocumentRegistryResult<TSource> {

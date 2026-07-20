@@ -22,6 +22,7 @@ import { ILogService } from '../../../../../platform/log/common/log.js';
 import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentity.js';
 import { ISCMService } from '../../../scm/common/scm.js';
 import { ITextFileService } from '../../../../services/textfile/common/textfiles.js';
+import { IUnifiedDocumentAgentAdapterResult } from '../helpers/unifiedDocumentAdapters.js';
 import { EditTelemetryTrigger } from './editSourceTelemetry.js';
 import { IScmRepoAdapter, ScmAdapter } from './scmAdapter.js';
 import { UnifiedEditSourceTracking } from './unifiedEditSourceTracking.js';
@@ -225,7 +226,7 @@ export class AgentHostEditSourceTracking extends Disposable {
 			origin: 'agentHost',
 		});
 		const beforeResource = normalized.beforeUri ? toAgentHostUri(normalized.beforeUri, connectionAuthority) : undefined;
-		this._unifiedTracking.applyAgentEdit({
+		const reconcileResult = await this._unifiedTracking.applyAgentEdit({
 			resource,
 			previousResource: beforeResource,
 			before: beforeText,
@@ -234,6 +235,12 @@ export class AgentHostEditSourceTracking extends Disposable {
 			correlation: `${session.toString()}:${toolCallId}:${contentIndex}`,
 			kind: normalized.kind,
 		});
+		if (!shouldTrackAgentEdit(reconcileResult)) {
+			if (dirtyResource) {
+				this._logService.trace(`[AgentHostEditSourceTracking] Skipping attribution for dirty open file ${dirtyResource.toString()}`);
+			}
+			return;
+		}
 		if (dirtyResource) {
 			this._logService.trace(`[AgentHostEditSourceTracking] Skipping attribution for dirty open file ${dirtyResource.toString()}`);
 			return;
@@ -346,4 +353,11 @@ function firstLine(text: string): string {
 
 export function isDirtyOpenTextModel(resource: URI, modelService: Pick<IModelService, 'getModel'>, textFileService: Pick<ITextFileService, 'isDirty'>): boolean {
 	return modelService.getModel(resource) !== null && textFileService.isDirty(resource);
+}
+
+export function shouldTrackAgentEdit<TSource>(result: IUnifiedDocumentAgentAdapterResult<TSource>): boolean {
+	return (
+		result.transitionResult.outcome === 'applied' ||
+		result.transitionResult.outcome === 'duplicate'
+	) && result.transferResult?.outcome !== 'conflict';
 }

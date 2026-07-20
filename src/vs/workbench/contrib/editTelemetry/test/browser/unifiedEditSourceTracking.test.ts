@@ -33,7 +33,7 @@ suite('Unified Edit Source Tracking', () => {
 	test('emits mixed local and Agent Host details once per long-term window', async () => {
 		const context = createContext('base');
 		const resource = context.document.uri;
-		context.tracking.applyAgentEdit({
+		await context.tracking.applyAgentEdit({
 			resource,
 			before: 'base',
 			after: 'baseA',
@@ -126,7 +126,7 @@ suite('Unified Edit Source Tracking', () => {
 	test('reconciles the current disk snapshot before emitting retained counts', async () => {
 		const context = createContext('base');
 		const resource = context.document.uri;
-		context.tracking.applyAgentEdit({
+		await context.tracking.applyAgentEdit({
 			resource,
 			before: 'base',
 			after: 'baseABCDEFGHIJ',
@@ -147,10 +147,35 @@ suite('Unified Edit Source Tracking', () => {
 			totalModifiedCount: agentEvent.totalModifiedCount,
 		}, {
 			sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost',
-			modifiedCount: 7,
-			deltaModifiedCount: 14,
-			totalModifiedCount: 7,
+			modifiedCount: 3,
+			deltaModifiedCount: 10,
+			totalModifiedCount: 3,
 		});
+		context.disposables.dispose();
+	});
+
+	test('preserves exact model insertion counts without snapshot diffing', async () => {
+		const context = createContext('base');
+		context.setDirty(true);
+		context.document.apply(StringEditWithReason.replace(
+			OffsetRange.emptyAt(4),
+			'ABCDEFGHIJ',
+			EditSources.cursor({ kind: 'type' }),
+		));
+
+		await context.tracking.flushLongTermDetails(context.document.uri, 'hashChange', 'typescript', 'stats-1');
+
+		assert.deepStrictEqual(context.details.map(event => ({
+			sourceKey: event.sourceKey,
+			modifiedCount: event.modifiedCount,
+			deltaModifiedCount: event.deltaModifiedCount,
+			totalModifiedCount: event.totalModifiedCount,
+		})), [{
+			sourceKey: 'source:cursor-kind:type',
+			modifiedCount: 10,
+			deltaModifiedCount: 10,
+			totalModifiedCount: 10,
+		}]);
 		context.disposables.dispose();
 	});
 
@@ -160,7 +185,7 @@ suite('Unified Edit Source Tracking', () => {
 		context.document.apply(StringEditWithReason.replace(OffsetRange.ofLength(6), 'after', EditSources.reloadFromDisk()));
 
 		const pending = await context.tracking.flushLongTermDetails(resource, 'hashChange', 'typescript');
-		context.tracking.applyAgentEdit({
+		await context.tracking.applyAgentEdit({
 			resource,
 			before: 'before',
 			after: 'after',
@@ -189,6 +214,46 @@ suite('Unified Edit Source Tracking', () => {
 		context.disposables.dispose();
 	});
 
+	test('rebuilds live attribution when Agent Host claims a committed reload late', async () => {
+		const context = createContext('before');
+		const resource = context.document.uri;
+		context.document.apply(StringEditWithReason.replace(OffsetRange.ofLength(6), 'after', EditSources.reloadFromDisk()));
+		context.setDirty(true);
+		context.document.apply(StringEditWithReason.replace(
+			OffsetRange.emptyAt(5),
+			' user',
+			EditSources.cursor({ kind: 'type' }),
+		));
+		await context.tracking.applyAgentEdit({
+			resource,
+			before: 'before',
+			after: 'after',
+			source: agentSource(),
+			correlation: 'tool-1',
+			kind: 'edit',
+		});
+
+		await context.tracking.flushLongTermDetails(resource, 'hashChange', 'typescript', 'stats-1');
+
+		assert.deepStrictEqual(context.details.map(event => ({
+			sourceKey: event.sourceKey,
+			modifiedCount: event.modifiedCount,
+			deltaModifiedCount: event.deltaModifiedCount,
+		})), [
+			{
+				sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost',
+				modifiedCount: 5,
+				deltaModifiedCount: 5,
+			},
+			{
+				sourceKey: 'source:cursor-kind:type',
+				modifiedCount: 5,
+				deltaModifiedCount: 5,
+			},
+		]);
+		context.disposables.dispose();
+	});
+
 	test('emits only the top thirty retained sources in descending order', async () => {
 		const context = createContext('');
 		context.setDirty(true);
@@ -213,6 +278,63 @@ suite('Unified Edit Source Tracking', () => {
 			first: 'source:unknown-name:source-31',
 			last: 'source:unknown-name:source-2',
 			containsSmallest: false,
+		});
+		context.disposables.dispose();
+	});
+
+	test('resets compact edits and the live tracker after every flush', async () => {
+		const context = createContext('base');
+		context.setDirty(true);
+		for (let i = 0; i < 100; i++) {
+			context.document.apply(StringEditWithReason.replace(
+				OffsetRange.emptyAt(context.document.value.get().value.length),
+				'x',
+				EditSources.cursor({ kind: 'type' }),
+			));
+		}
+
+		await context.tracking.flushLongTermDetails(context.document.uri, 'hashChange', 'typescript');
+
+		assert.deepStrictEqual({
+			transitionCount: context.tracking.getSnapshot(context.document.uri)?.transitions.length,
+			trackedSources: context.tracking.project(context.document.uri)?.sources,
+			contentLength: context.tracking.getSnapshot(context.document.uri)?.content.length,
+		}, {
+			transitionCount: 0,
+			trackedSources: [],
+			contentLength: 104,
+		});
+		context.disposables.dispose();
+	});
+
+	test('does not transfer tracker state when a rename destination conflicts', async () => {
+		const context = createContext('content');
+		const previousResource = context.document.uri;
+		const resource = URI.file('C:\\repo\\existing.ts');
+		await context.tracking.applyDiskSnapshot(resource, 'existing');
+
+		const result = await context.tracking.applyAgentEdit({
+			resource,
+			previousResource,
+			before: 'content',
+			after: 'content',
+			source: agentSource(),
+			correlation: 'rename-1',
+			kind: 'rename',
+		});
+
+		assert.deepStrictEqual({
+			transferOutcome: result.transferResult?.outcome,
+			previousContent: context.tracking.getSnapshot(previousResource)?.content,
+			existingContent: context.tracking.getSnapshot(resource)?.content,
+			previousTracked: !!context.tracking.project(previousResource),
+			existingTracked: !!context.tracking.project(resource),
+		}, {
+			transferOutcome: 'conflict',
+			previousContent: 'content',
+			existingContent: 'existing',
+			previousTracked: true,
+			existingTracked: true,
 		});
 		context.disposables.dispose();
 	});

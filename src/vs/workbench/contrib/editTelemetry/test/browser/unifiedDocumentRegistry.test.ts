@@ -6,6 +6,7 @@
 import assert from 'assert';
 import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
+import { createMinimalEdit } from '../../browser/helpers/unifiedDocumentReconciler.js';
 import { UnifiedDocumentRegistry } from '../../browser/helpers/unifiedDocumentRegistry.js';
 
 suite('UnifiedDocumentRegistry', () => {
@@ -27,8 +28,8 @@ suite('UnifiedDocumentRegistry', () => {
 		const first = URI.from({ scheme: 'vscode-agent-host', authority: 'remote-one', path: '/repo/file.ts' });
 		const second = URI.from({ scheme: 'vscode-agent-host', authority: 'remote-two', path: '/repo/file.ts' });
 
-		registry.diskSnapshot(first, 'one');
-		registry.diskSnapshot(second, 'two');
+		registry.diskSnapshot(first, 'one', createMinimalEdit('one', 'one'));
+		registry.diskSnapshot(second, 'two', createMinimalEdit('two', 'two'));
 
 		assert.strictEqual(registry.size, 2);
 		assert.notStrictEqual(registry.get(first), registry.get(second));
@@ -57,8 +58,7 @@ suite('UnifiedDocumentRegistry', () => {
 					pendingReload: undefined,
 					transitions: [{
 						id: 1,
-						before: 'before',
-						after: 'after',
+						edit: createMinimalEdit('before', 'after'),
 						source: 'agent',
 						kind: 'agentHost',
 						correlation: 'agent-1',
@@ -104,8 +104,8 @@ suite('UnifiedDocumentRegistry', () => {
 		const registry = createRegistry();
 		const before = URI.file('C:\\repo\\before.ts');
 		const after = URI.file('C:\\repo\\after.ts');
-		registry.diskSnapshot(before, 'before');
-		registry.diskSnapshot(after, 'after');
+		registry.diskSnapshot(before, 'before', createMinimalEdit('before', 'before'));
+		registry.diskSnapshot(after, 'after', createMinimalEdit('after', 'after'));
 
 		assert.strictEqual(registry.transfer(before, after).outcome, 'conflict');
 		assert.strictEqual(registry.size, 2);
@@ -115,7 +115,7 @@ suite('UnifiedDocumentRegistry', () => {
 		const registry = createRegistry();
 		const before = URI.file('C:\\repo\\File.ts');
 		const after = URI.file('c:\\REPO\\file.ts');
-		registry.diskSnapshot(before, 'content');
+		registry.diskSnapshot(before, 'content', createMinimalEdit('content', 'content'));
 
 		assert.strictEqual(registry.transfer(before, after).outcome, 'duplicate');
 		assert.strictEqual(registry.size, 1);
@@ -130,6 +130,7 @@ suite('UnifiedDocumentRegistry', () => {
 		assert.strictEqual(registry.modelEdit(resource, {
 			before: 'before',
 			after: 'after',
+			edit: createMinimalEdit('before', 'after'),
 			source: 'user',
 			kind: 'model',
 			dirty: true,
@@ -140,8 +141,8 @@ suite('UnifiedDocumentRegistry', () => {
 		const registry = createRegistry();
 		const first = URI.file('C:\\repo\\first.ts');
 		const second = URI.file('C:\\repo\\second.ts');
-		registry.diskSnapshot(first, 'first');
-		registry.diskSnapshot(second, 'second');
+		registry.diskSnapshot(first, 'first', createMinimalEdit('first', 'first'));
+		registry.diskSnapshot(second, 'second', createMinimalEdit('second', 'second'));
 
 		assert.strictEqual(registry.delete(first), true);
 		assert.strictEqual(registry.delete(first), false);
@@ -167,6 +168,7 @@ function agentEdit(
 	return {
 		before,
 		after,
+		edit: createMinimalEdit(before, after),
 		source: 'agent',
 		correlation,
 		kind,

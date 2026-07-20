@@ -3,9 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable } from '../../../../../base/common/lifecycle.js';
-import { mapObservableArrayCached } from '../../../../../base/common/observable.js';
+import { Disposable, DisposableStore, MutableDisposable } from '../../../../../base/common/lifecycle.js';
+import { IObservableWithChange, ISettableObservable, mapObservableArrayCached, observableValue } from '../../../../../base/common/observable.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { AnnotatedStringEdit, StringEdit } from '../../../../../editor/common/core/edits/stringEdit.js';
+import { StringText } from '../../../../../editor/common/core/text/abstractText.js';
 import { IEditorWorkerService } from '../../../../../editor/common/services/editorWorker.js';
 import { EditSources, TextModelEditSource } from '../../../../../editor/common/textModelEditSource.js';
 import { FileOperationResult, IFileService, toFileOperationResult } from '../../../../../platform/files/common/files.js';
@@ -13,7 +15,7 @@ import { ILogService } from '../../../../../platform/log/common/log.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/uriIdentity.js';
 import { ITextFileService } from '../../../../services/textfile/common/textfiles.js';
-import { DiffService } from '../helpers/documentWithAnnotatedEdits.js';
+import { DiffService, EditKeySourceData, EditSourceData, IDocumentWithAnnotatedEdits } from '../helpers/documentWithAnnotatedEdits.js';
 import { ObservableWorkspace } from '../helpers/observableWorkspace.js';
 import {
 	applyUnifiedDocumentAgentEdit,
@@ -25,28 +27,28 @@ import {
 	IUnifiedDocumentRegistryResult,
 	UnifiedDocumentRegistry,
 } from '../helpers/unifiedDocumentRegistry.js';
-import { IUnifiedDocumentSnapshot, IUnifiedDocumentTransition } from '../helpers/unifiedDocumentReconciler.js';
+import {
+	IUnifiedDocumentSnapshot,
+	IUnifiedDocumentTransition,
+	IUnifiedDocumentTransitionChange,
+} from '../helpers/unifiedDocumentReconciler.js';
 import { IRandomService } from '../randomService.js';
 import { EditTelemetryTrigger, sendEditSourcesDetailsTelemetry } from './editSourceTelemetry.js';
+import { DocumentEditSourceTracker } from './editTracker.js';
 import {
 	IEditSourceDetailsSnapshot,
 	IEditTrackerSnapshot,
-	projectUnifiedDocumentTracker,
+	snapshotDocumentEditSourceTracker,
 	snapshotEditSourceDetails,
 } from './unifiedDocumentTrackerProjection.js';
-
-interface IUnifiedEditSourceTrackingCheckpoint {
-	readonly content: string;
-	readonly maxTransitionId: number;
-}
 
 /**
  * Owns the canonical edit stream and long-term details windows for each resource.
  */
 export class UnifiedEditSourceTracking extends Disposable {
 	private readonly _registry: UnifiedDocumentRegistry<TextModelEditSource>;
+	private readonly _trackedResources = new Map<string, UnifiedTrackedResource>();
 	private readonly _lastResults = new Map<string, IUnifiedDocumentRegistryResult<TextModelEditSource>>();
-	private readonly _longTermCheckpoints = new Map<string, IUnifiedEditSourceTrackingCheckpoint>();
 	private readonly _flushQueues = new Map<string, Promise<IEditSourceDetailsSnapshot | undefined>>();
 	private readonly _retainedAgentResources = new Set<string>();
 	private readonly _localLongTermResources = new Set<string>();
@@ -78,7 +80,7 @@ export class UnifiedEditSourceTracking extends Disposable {
 				() => this._textFileService.isDirty(document.uri),
 				change => change.reason,
 				result => {
-					this._recordResult(result.result);
+					this._applyResult(result.result);
 					if (result.inputKind === 'disconnected') {
 						this._scheduleCleanup(result.result.resource);
 					}
@@ -87,15 +89,18 @@ export class UnifiedEditSourceTracking extends Disposable {
 		}).recomputeInitiallyAndOnChange(this._store);
 	}
 
-	applyAgentEdit(edit: IUnifiedDocumentAgentEdit<TextModelEditSource>): IUnifiedDocumentAgentAdapterResult<TextModelEditSource> {
-		const result = applyUnifiedDocumentAgentEdit(this._registry, edit);
-		this._recordResult(result.transitionResult);
+	async applyAgentEdit(edit: Omit<IUnifiedDocumentAgentEdit<TextModelEditSource>, 'edit'>): Promise<IUnifiedDocumentAgentAdapterResult<TextModelEditSource>> {
+		const stringEdit = await this._computeSnapshotEdit(edit.before, edit.after);
+		const result = applyUnifiedDocumentAgentEdit(this._registry, { ...edit, edit: stringEdit });
+		this._applyResult(result.transitionResult);
+		if (result.transitionResult.outcome === 'conflict' || result.transitionResult.outcome === 'skippedDirty') {
+			this._scheduleCleanup(result.transitionResult.resource);
+		}
 		if (result.transferResult) {
-			if (edit.previousResource) {
-				this._lastResults.delete(this._key(edit.previousResource));
+			this._recordResult(result.transferResult);
+			if (result.transferResult.outcome === 'applied' && edit.previousResource) {
 				this._transferResourceState(edit.previousResource, edit.resource);
 			}
-			this._recordResult(result.transferResult);
 		}
 		return result;
 	}
@@ -122,9 +127,11 @@ export class UnifiedEditSourceTracking extends Disposable {
 		return this._localLongTermResources.has(this._key(resource));
 	}
 
-	applyDiskSnapshot(resource: URI, content: string): IUnifiedDocumentRegistryResult<TextModelEditSource> {
-		const result = this._registry.diskSnapshot(resource, content);
-		this._recordResult(result);
+	async applyDiskSnapshot(resource: URI, content: string): Promise<IUnifiedDocumentRegistryResult<TextModelEditSource>> {
+		const snapshot = this.getSnapshot(resource);
+		const edit = await this._computeSnapshotEdit(snapshot?.content ?? content, content);
+		const result = this._registry.diskSnapshot(resource, content, edit);
+		this._applyResult(result);
 		return result;
 	}
 
@@ -136,9 +143,8 @@ export class UnifiedEditSourceTracking extends Disposable {
 		return this._registry.get(resource)?.reconciler.getSnapshot();
 	}
 
-	async project(resource: URI): Promise<IEditTrackerSnapshot | undefined> {
-		const snapshot = this.getSnapshot(resource);
-		return snapshot ? projectUnifiedDocumentTracker(snapshot, (before, after) => this._diffService.computeDiff(before, after)) : undefined;
+	project(resource: URI): IEditTrackerSnapshot | undefined {
+		return this._trackedResources.get(this._key(resource))?.snapshot();
 	}
 
 	flushLongTermDetails(
@@ -168,34 +174,14 @@ export class UnifiedEditSourceTracking extends Disposable {
 		statsUuid: string,
 	): Promise<IEditSourceDetailsSnapshot | undefined> {
 		await this._synchronizeDisk(resource);
-		const snapshot = this.getSnapshot(resource);
-		if (!snapshot) {
-			return undefined;
-		}
-		const checkpoint = this._longTermCheckpoints.get(resourceKey);
-		const transitions = checkpoint
-			? snapshot.transitions.filter(transition => transition.id > checkpoint.maxTransitionId)
-			: snapshot.transitions;
-		const pendingReload = snapshot.pendingReload && (!checkpoint || snapshot.pendingReload.id > checkpoint.maxTransitionId)
-			? snapshot.pendingReload
-			: undefined;
-		if (transitions.length === 0) {
-			if (!pendingReload) {
-				this._longTermCheckpoints.set(resourceKey, createCheckpoint(snapshot.content, snapshot.transitions));
-			}
+		const reconciler = this._registry.get(resource)?.reconciler;
+		const snapshot = reconciler?.getSnapshot();
+		const trackedResource = this._trackedResources.get(resourceKey);
+		if (!reconciler || !snapshot || !trackedResource || snapshot.pendingReload || snapshot.transitions.length === 0) {
 			return undefined;
 		}
 
-		const windowSnapshot: IUnifiedDocumentSnapshot<TextModelEditSource> = {
-			...snapshot,
-			initialContent: checkpoint?.content ?? snapshot.initialContent,
-			transitions,
-			pendingReload,
-		};
-		const trackerSnapshot = await projectUnifiedDocumentTracker(
-			windowSnapshot,
-			(before, after) => this._diffService.computeDiff(before, after),
-		);
+		const trackerSnapshot = trackedResource.snapshot();
 		const details = snapshotEditSourceDetails(trackerSnapshot, 30, 'retained');
 		if (details.rows.length > 0) {
 			for (const row of details.rows) {
@@ -219,7 +205,8 @@ export class UnifiedEditSourceTracking extends Disposable {
 				}, row.origin === 'agentHost' ? row.harness === 'copilotcli' : undefined);
 			}
 		}
-		this._longTermCheckpoints.set(resourceKey, createCheckpoint(trackerSnapshot.content, transitions));
+		trackedResource.reset(snapshot.content);
+		reconciler.resetWindow();
 		return details;
 	}
 
@@ -231,14 +218,30 @@ export class UnifiedEditSourceTracking extends Disposable {
 		try {
 			const content = (await this._fileService.readFile(resource)).value.toString();
 			if (!content.includes('\0')) {
-				this.applyDiskSnapshot(resource, content);
+				await this.applyDiskSnapshot(resource, content);
 			}
 		} catch (error) {
 			if (toFileOperationResult(error) === FileOperationResult.FILE_NOT_FOUND) {
-				this.applyDiskSnapshot(resource, '');
+				await this.applyDiskSnapshot(resource, '');
 				return;
 			}
 			throw error;
+		}
+	}
+
+	private _applyResult(result: IUnifiedDocumentRegistryResult<TextModelEditSource>): void {
+		this._recordResult(result);
+		const key = this._key(result.resource);
+		let trackedResource = this._trackedResources.get(key);
+		if (!trackedResource) {
+			trackedResource = new UnifiedTrackedResource(result.reconcileResult?.snapshot.initialContent ?? '');
+			this._trackedResources.set(key, trackedResource);
+		}
+		const changes = result.reconcileResult?.changes ?? [];
+		if (changes.some(change => change.kind === 'replace')) {
+			trackedResource.rebuild(result.reconcileResult!.snapshot);
+		} else {
+			trackedResource.apply(changes);
 		}
 	}
 
@@ -249,10 +252,10 @@ export class UnifiedEditSourceTracking extends Disposable {
 	private _transferResourceState(previousResource: URI, resource: URI): void {
 		const previousKey = this._key(previousResource);
 		const key = this._key(resource);
-		const checkpoint = this._longTermCheckpoints.get(previousKey);
-		if (checkpoint) {
-			this._longTermCheckpoints.delete(previousKey);
-			this._longTermCheckpoints.set(key, checkpoint);
+		const trackedResource = this._trackedResources.get(previousKey);
+		if (trackedResource) {
+			this._trackedResources.delete(previousKey);
+			this._trackedResources.set(key, trackedResource);
 		}
 		if (this._retainedAgentResources.delete(previousKey)) {
 			this._retainedAgentResources.add(key);
@@ -272,24 +275,96 @@ export class UnifiedEditSourceTracking extends Disposable {
 			}
 			this._registry.delete(resource);
 			this._lastResults.delete(resourceKey);
-			this._longTermCheckpoints.delete(resourceKey);
+			this._trackedResources.get(resourceKey)?.dispose();
+			this._trackedResources.delete(resourceKey);
 		}, error => {
 			this._logService.error(`[UnifiedEditSourceTracking] Failed to finish resource cleanup: ${error}`);
 		});
 	}
 
+	private async _computeSnapshotEdit(before: string, after: string): Promise<StringEdit> {
+		if (before === after) {
+			return StringEdit.empty;
+		}
+		return (await this._diffService.computeDiff(before, after)).removeCommonSuffixPrefix(before);
+	}
+
 	private _key(resource: URI): string {
 		return this._uriIdentityService.extUri.getComparisonKey(this._uriIdentityService.asCanonicalUri(resource));
 	}
+
+	override dispose(): void {
+		for (const trackedResource of this._trackedResources.values()) {
+			trackedResource.dispose();
+		}
+		this._trackedResources.clear();
+		super.dispose();
+	}
 }
 
-function createCheckpoint(
-	content: string,
-	transitions: readonly IUnifiedDocumentTransition<TextModelEditSource>[],
-): IUnifiedEditSourceTrackingCheckpoint {
-	let maxTransitionId = 0;
-	for (const transition of transitions) {
-		maxTransitionId = Math.max(maxTransitionId, transition.id);
+class UnifiedTrackedResource extends Disposable {
+	private readonly _active = this._register(new MutableDisposable<DisposableStore>());
+	private _document!: UnifiedTrackingDocument;
+	private _tracker!: DocumentEditSourceTracker;
+
+	constructor(initialContent: string) {
+		super();
+		this.reset(initialContent);
 	}
-	return { content, maxTransitionId };
+
+	apply(changes: readonly IUnifiedDocumentTransitionChange<TextModelEditSource>[]): void {
+		for (const change of changes) {
+			if (change.kind !== 'append') {
+				throw new Error('Replacement changes require a tracker rebuild');
+			}
+			this._document.apply(change.before, change.after, change.transition);
+		}
+	}
+
+	rebuild(snapshot: IUnifiedDocumentSnapshot<TextModelEditSource>): void {
+		this.reset(snapshot.initialContent);
+		for (const transition of snapshot.transitions) {
+			const before = this._document.content;
+			const after = transition.edit.apply(before);
+			this._document.apply(before, after, transition);
+		}
+	}
+
+	snapshot(): IEditTrackerSnapshot {
+		this._tracker.applyPendingExternalEdits();
+		return snapshotDocumentEditSourceTracker(this._tracker, this._document.content);
+	}
+
+	reset(content: string): void {
+		const store = new DisposableStore();
+		this._document = store.add(new UnifiedTrackingDocument(content));
+		this._tracker = store.add(new DocumentEditSourceTracker(this._document, undefined));
+		this._active.value = store;
+	}
+}
+
+class UnifiedTrackingDocument extends Disposable implements IDocumentWithAnnotatedEdits<EditKeySourceData> {
+	private readonly _value: ISettableObservable<StringText, { edit: AnnotatedStringEdit<EditKeySourceData> }>;
+	readonly value: IObservableWithChange<StringText, { edit: AnnotatedStringEdit<EditKeySourceData> }>;
+
+	constructor(initialContent: string) {
+		super();
+		this.value = this._value = observableValue(this, new StringText(initialContent));
+	}
+
+	get content(): string {
+		return this._value.get().value;
+	}
+
+	apply(before: string, after: string, transition: IUnifiedDocumentTransition<TextModelEditSource>): void {
+		if (this.content !== before || transition.edit.apply(before) !== after) {
+			throw new Error('Unified transition does not connect to the tracked document');
+		}
+		const data = new EditSourceData(transition.source).toEditSourceData();
+		this._value.set(new StringText(after), undefined, { edit: transition.edit.mapData(() => data) });
+	}
+
+	waitForQueue(): Promise<void> {
+		return Promise.resolve();
+	}
 }

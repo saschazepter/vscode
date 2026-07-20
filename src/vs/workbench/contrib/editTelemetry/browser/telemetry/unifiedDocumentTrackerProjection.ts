@@ -5,14 +5,12 @@
 
 import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { IObservableWithChange, ISettableObservable, observableValue } from '../../../../../base/common/observable.js';
-import { AnnotatedStringEdit, StringEdit } from '../../../../../editor/common/core/edits/stringEdit.js';
+import { AnnotatedStringEdit } from '../../../../../editor/common/core/edits/stringEdit.js';
 import { StringText } from '../../../../../editor/common/core/text/abstractText.js';
 import { TextModelEditSource } from '../../../../../editor/common/textModelEditSource.js';
 import { EditKeySourceData, EditSourceData, IDocumentWithAnnotatedEdits } from '../helpers/documentWithAnnotatedEdits.js';
 import { IUnifiedDocumentSnapshot } from '../helpers/unifiedDocumentReconciler.js';
 import { DocumentEditSourceTracker } from './editTracker.js';
-
-export type UnifiedDocumentComputeDiff = (before: string, after: string) => Promise<StringEdit>;
 
 export interface IEditTrackerSourceSnapshot {
 	readonly sourceKey: string;
@@ -72,7 +70,6 @@ export type EditSourceDetailsOrder = 'tracker' | 'retained';
  */
 export async function projectUnifiedDocumentTracker(
 	snapshot: IUnifiedDocumentSnapshot<TextModelEditSource>,
-	computeDiff: UnifiedDocumentComputeDiff,
 ): Promise<IEditTrackerSnapshot> {
 	const store = new DisposableStore();
 	try {
@@ -80,14 +77,8 @@ export async function projectUnifiedDocumentTracker(
 		const tracker = store.add(new DocumentEditSourceTracker(document, undefined));
 		let content = snapshot.initialContent;
 		for (const transition of snapshot.transitions) {
-			if (transition.before !== content) {
-				throw new Error(`Unified transition ${transition.id} starts from unexpected content`);
-			}
-			if (transition.before !== transition.after) {
-				const edit = await computeDiff(transition.before, transition.after);
-				document.apply(edit, transition.source);
-			}
-			content = transition.after;
+			document.apply(transition);
+			content = document.content;
 		}
 		await tracker.waitForQueue();
 		tracker.applyPendingExternalEdits();
@@ -193,9 +184,13 @@ class ProjectionDocument extends Disposable implements IDocumentWithAnnotatedEdi
 		this.value = this._value = observableValue(this, new StringText(initialContent));
 	}
 
-	apply(edit: StringEdit, source: TextModelEditSource): void {
-		const data = new EditSourceData(source).toEditSourceData();
-		this._value.set(edit.applyOnText(this._value.get()), undefined, { edit: edit.mapData(() => data) });
+	get content(): string {
+		return this._value.get().value;
+	}
+
+	apply(transition: IUnifiedDocumentSnapshot<TextModelEditSource>['transitions'][number]): void {
+		const data = new EditSourceData(transition.source).toEditSourceData();
+		this._value.set(transition.edit.applyOnText(this._value.get()), undefined, { edit: transition.edit.mapData(() => data) });
 	}
 
 	waitForQueue(): Promise<void> {

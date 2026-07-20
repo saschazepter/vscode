@@ -6,6 +6,7 @@
 import { Disposable } from '../../../../../base/common/lifecycle.js';
 import { runOnChange } from '../../../../../base/common/observable.js';
 import { URI } from '../../../../../base/common/uri.js';
+import { StringEdit } from '../../../../../editor/common/core/edits/stringEdit.js';
 import { IObservableDocument, StringEditWithReason } from './observableWorkspace.js';
 import {
 	IUnifiedDocumentRegistryResult,
@@ -54,6 +55,7 @@ export class UnifiedDocumentModelAdapter<TSource> extends Disposable {
 					result: this._registry.modelEdit(this._document.uri, {
 						before,
 						after,
+						edit: change,
 						source: this._toSource(change),
 						kind: inputKind === 'reloadFromDisk' ? 'reloadFromDisk' : 'model',
 						dirty: this._isDirty(),
@@ -85,6 +87,7 @@ export interface IUnifiedDocumentAgentEdit<TSource> {
 	readonly previousResource?: URI;
 	readonly before: string;
 	readonly after: string;
+	readonly edit: StringEdit;
 	readonly source: TSource;
 	readonly correlation: string;
 	readonly kind: UnifiedDocumentAgentTransitionKind;
@@ -106,6 +109,7 @@ export function applyUnifiedDocumentAgentEdit<TSource>(
 	const transitionResult = registry.agentTransition(transitionResource, {
 		before: edit.before,
 		after: edit.after,
+		edit: edit.edit,
 		source: edit.source,
 		correlation: edit.correlation,
 		kind: edit.kind,

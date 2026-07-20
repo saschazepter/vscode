@@ -9,7 +9,7 @@ import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { ITextModel } from '../../../../../editor/common/model.js';
 import { NullLogService } from '../../../../../platform/log/common/log.js';
-import { AgentHostTrackedFile, isDirtyOpenTextModel } from '../../browser/telemetry/agentHostEditSourceTracking.js';
+import { AgentHostTrackedFile, isDirtyOpenTextModel, shouldTrackAgentEdit } from '../../browser/telemetry/agentHostEditSourceTracking.js';
 
 suite('Agent Host Edit Source Tracking', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
@@ -54,6 +54,35 @@ suite('Agent Host Edit Source Tracking', () => {
 			closedDirty: false,
 			openClean: false,
 			openDirty: true,
+		});
+
+		test('does not mutate lifecycle tracking for rejected transitions or rename transfers', () => {
+			const result = (outcome: 'applied' | 'duplicate' | 'conflict' | 'skippedDirty', transferOutcome?: 'applied' | 'duplicate' | 'conflict') => ({
+				transitionResult: {
+					outcome,
+					resource: URI.file('C:\\repo\\before.ts'),
+				},
+				transferResult: transferOutcome ? {
+					outcome: transferOutcome,
+					resource: URI.file('C:\\repo\\after.ts'),
+				} : undefined,
+			});
+
+			assert.deepStrictEqual({
+				applied: shouldTrackAgentEdit(result('applied')),
+				duplicate: shouldTrackAgentEdit(result('duplicate')),
+				transitionConflict: shouldTrackAgentEdit(result('conflict')),
+				skippedDirty: shouldTrackAgentEdit(result('skippedDirty')),
+				transferConflict: shouldTrackAgentEdit(result('applied', 'conflict')),
+				transferApplied: shouldTrackAgentEdit(result('applied', 'applied')),
+			}, {
+				applied: true,
+				duplicate: true,
+				transitionConflict: false,
+				skippedDirty: false,
+				transferConflict: false,
+				transferApplied: true,
+			});
 		});
 	});
 

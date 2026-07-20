@@ -16,6 +16,7 @@ import {
 	IUnifiedDocumentModelAdapterResult,
 	UnifiedDocumentModelAdapter,
 } from '../../browser/helpers/unifiedDocumentAdapters.js';
+import { createMinimalEdit } from '../../browser/helpers/unifiedDocumentReconciler.js';
 import { IObservableDocument, StringEditWithReason } from '../../browser/helpers/observableWorkspace.js';
 import { UnifiedDocumentRegistry } from '../../browser/helpers/unifiedDocumentRegistry.js';
 
@@ -66,6 +67,7 @@ suite('Unified Document Adapters', () => {
 			resource,
 			before: 'before',
 			after: 'after',
+			edit: createMinimalEdit('before', 'after'),
 			source: agentSource(),
 			correlation: 'tool-1',
 			kind: 'edit',
@@ -105,7 +107,7 @@ suite('Unified Document Adapters', () => {
 		const registry = createRegistry();
 		const previousResource = URI.file('C:\\repo\\before.ts');
 		const resource = URI.file('C:\\repo\\after.ts');
-		registry.diskSnapshot(previousResource, 'content');
+		registry.diskSnapshot(previousResource, 'content', createMinimalEdit('content', 'content'));
 		const reconciler = registry.get(previousResource)?.reconciler;
 
 		const result = applyUnifiedDocumentAgentEdit(registry, {
@@ -113,6 +115,7 @@ suite('Unified Document Adapters', () => {
 			previousResource,
 			before: 'content',
 			after: 'content',
+			edit: createMinimalEdit('content', 'content'),
 			source: agentSource(),
 			correlation: 'rename-1',
 			kind: 'rename',
@@ -145,6 +148,7 @@ suite('Unified Document Adapters', () => {
 			previousResource,
 			before: 'content',
 			after: 'content',
+			edit: createMinimalEdit('content', 'content'),
 			source: agentSource(),
 			correlation: 'rename-1',
 			kind: 'rename',
