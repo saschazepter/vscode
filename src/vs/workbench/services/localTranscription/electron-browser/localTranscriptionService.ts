@@ -11,11 +11,12 @@ import { ILocalTranscriptionProxyConfig, ILocalTranscriptionService, localTransc
 import { IUtilityProcessWorkerWorkbenchService } from '../../utilityProcess/electron-browser/utilityProcessWorkerWorkbenchService.js';
 
 /**
- * Platform/architecture combinations for which onnxruntime-node ships a prebuilt
- * binary and packaging keeps it (see `onnxRuntimeShippedTargets` in
- * build/gulpfile.vscode.ts). On anything else (e.g. darwin/x64, linux/armhf) the
- * native addon is absent, so on-device transcription cannot run and the feature
- * must report itself unsupported rather than showing a mic that fails on use.
+ * Platform/architecture combinations for which the Foundry Local native runtime
+ * ships a prebuilt addon and core libraries, and packaging keeps them (see the
+ * Foundry Local bundling in build/gulpfile.vscode.ts). On anything else (e.g.
+ * darwin/x64, linux/armhf) the native runtime is absent, so on-device
+ * transcription cannot run and the feature must report itself unsupported rather
+ * than showing a mic that fails on use.
  */
 const SUPPORTED_TARGETS = new Set<string>([
 	'darwin-arm64',
@@ -31,8 +32,9 @@ function isOnDeviceTranscriptionSupported(): boolean {
 
 /**
  * Renderer-side proxy for the on-device transcription service, which runs in a
- * utility process (heavy: transformers.js + native onnxruntime-node). The
- * worker is spun up lazily on first use and torn down with the window.
+ * utility process (heavy: Foundry Local native ASR runtime — onnxruntime +
+ * onnxruntime-genai). The worker is spun up lazily on first use and torn down
+ * with the window.
  */
 export class LocalTranscriptionService {
 
