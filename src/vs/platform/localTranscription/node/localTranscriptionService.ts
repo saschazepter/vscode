@@ -79,6 +79,25 @@ function transcriptSeparator(current: string, next: string): '' | ' ' {
 	return ' ';
 }
 
+/**
+ * Append a non-final (interim) transcript chunk to the current partial text.
+ * Foundry Local emits interim results for the in-progress segment as *deltas* —
+ * each carries only the newly recognized text (with its own leading/trailing
+ * spacing), NOT the cumulative partial so far — so they must be concatenated
+ * verbatim rather than replaced. Replacing would drop earlier partial words
+ * (e.g. interim "hello" then " world" must yield "hello world", not "world").
+ * Mirrors the GitHub Copilot app's `appendVoiceTranscriptChunk`.
+ */
+function appendTranscriptChunk(current: string, next: string): string {
+	if (!next.trim()) {
+		return current;
+	}
+	if (!current) {
+		return next.trimStart();
+	}
+	return `${current}${next}`;
+}
+
 interface IFinalSegment {
 	readonly order: number;
 	readonly startTime: number | null;
@@ -372,7 +391,10 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 					this._accumulator.addFinal(text, result.start_time ?? null, result.end_time ?? null);
 					this._partialText = '';
 				} else {
-					this._partialText = text;
+					// Interim results are deltas of the in-progress segment; append
+					// them (preserving their own spacing) rather than replacing, so
+					// earlier partial words are not lost.
+					this._partialText = appendTranscriptChunk(this._partialText, text);
 				}
 				if (this._sessionActive) {
 					this._onDidTranscribe.fire({ text: this._cumulativeText(), isFinal: false });
@@ -394,16 +416,22 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 	/** Finalized transcript plus the current interim tail, joined naturally. */
 	private _cumulativeText(): string {
 		const finalized = this._accumulator.getText();
-		const partial = this._partialText.trim();
+		const partial = this._partialText;
 		if (!partial) {
 			return finalized;
 		}
-		return `${finalized}${transcriptSeparator(finalized, partial)}${partial}`.trim();
+		if (!finalized) {
+			return partial;
+		}
+		return `${finalized}${transcriptSeparator(finalized, partial)}${partial}`;
 	}
 
 	private _resultText(result: LiveAudioTranscriptionResponse): string {
 		const part = result.content?.[0];
-		return (part?.text ?? part?.transcript ?? '').trim();
+		// Return the raw text (not trimmed): interim deltas carry significant
+		// leading/trailing spacing used to concatenate them. `addFinal` trims
+		// finalized segments itself.
+		return part?.text ?? part?.transcript ?? '';
 	}
 
 	async pushAudio(chunk: VSBuffer): Promise<void> {
