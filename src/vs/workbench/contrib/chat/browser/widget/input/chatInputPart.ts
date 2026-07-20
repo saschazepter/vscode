@@ -105,6 +105,8 @@ import { IChatAgentService } from '../../../common/participants/chatAgents.js';
 import { ILanguageModelToolsService } from '../../../common/tools/languageModelToolsService.js';
 import { ChatHistoryNavigator } from '../../../common/widget/chatWidgetHistoryService.js';
 import { ChatSessionPrimaryPickerAction, ChatSubmitAction, IChatExecuteActionContext, OpenDelegationPickerAction, OpenModelPickerAction, OpenModePickerAction, OpenPermissionPickerAction, OpenSessionTargetPickerAction, OpenWorkspacePickerAction } from '../../actions/chatExecuteActions.js';
+import { ChatSpeechToTextPreparingAction } from '../../actions/chatSpeechToTextActions.js';
+import { DictationDownloadActionViewItem } from '../../speechToText/dictationDownloadActionViewItem.js';
 import { AgentSessionProviders, AgentSessionTarget, getAgentSessionProvider } from '../../agentSessions/agentSessions.js';
 import { IAgentSessionsService } from '../../agentSessions/agentSessionsService.js';
 import { ChatAttachmentModel } from '../../attachments/chatAttachmentModel.js';
@@ -3558,6 +3560,15 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			},
 			hoverDelegate,
 			hiddenItemStrategy: HiddenItemStrategy.NoHide,
+			actionViewItemProvider: (action, options) => {
+				// While the on-device dictation model downloads, render the
+				// preparing affordance as a download icon wrapped by a progress
+				// ring (with a rich hover) instead of a spinning mic.
+				if (action.id === ChatSpeechToTextPreparingAction.ID && action instanceof MenuItemAction) {
+					return this.instantiationService.createInstance(DictationDownloadActionViewItem, action, options);
+				}
+				return undefined;
+			},
 		}));
 		this.executeToolbar.getElement().classList.add('chat-execute-toolbar');
 		this.executeToolbar.context = { widget } satisfies IChatExecuteActionContext;

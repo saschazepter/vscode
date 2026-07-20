@@ -20,6 +20,7 @@ import { ITelemetryService } from '../../../../../platform/telemetry/common/tele
 import { IEnvironmentService } from '../../../../../platform/environment/common/environment.js';
 import { ILocalTranscriptionModelStatus, ILocalTranscriptionService, LocalTranscriptionModelState } from '../../../../../platform/localTranscription/common/localTranscription.js';
 import { AccessibilitySignal, IAccessibilitySignalService } from '../../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
+import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
 import { AgentsVoiceStorageKeys } from '../../../agentsVoice/common/agentsVoice.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
 
@@ -107,6 +108,20 @@ export interface IChatSpeechToTextService {
 	readonly isPreparingModel: boolean;
 
 	/**
+	 * Fires whenever the on-device model download progress changes while the
+	 * model is being prepared, so callers can update a progress ring.
+	 */
+	readonly onDidChangeModelDownloadProgress: Event<void>;
+
+	/**
+	 * Fractional download progress in `[0, 1]` while the model is downloading,
+	 * or `undefined` when the fraction is not yet known (indeterminate), the
+	 * download has finished and the model is loading into memory, or no
+	 * preparation is in progress.
+	 */
+	readonly modelDownloadProgress: number | undefined;
+
+	/**
 	 * Begin capturing microphone audio in the given window and streaming it to
 	 * the on-device transcription model. Rejects if the microphone cannot be
 	 * accessed.
@@ -139,6 +154,14 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private _isPreparingModel = false;
 	get isPreparingModel(): boolean {
 		return this._isPreparingModel;
+	}
+
+	private readonly _onDidChangeModelDownloadProgress = this._register(new Emitter<void>());
+	readonly onDidChangeModelDownloadProgress = this._onDidChangeModelDownloadProgress.event;
+
+	private _modelDownloadProgress: number | undefined;
+	get modelDownloadProgress(): number | undefined {
+		return this._modelDownloadProgress;
 	}
 
 	/**
@@ -201,6 +224,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		@IEnvironmentService private readonly _environmentService: IEnvironmentService,
 		@ILocalTranscriptionService private readonly _localTranscription: ILocalTranscriptionService,
 		@IAccessibilitySignalService private readonly _accessibilitySignalService: IAccessibilitySignalService,
+		@IAccessibilityService private readonly _accessibilityService: IAccessibilityService,
 	) {
 		super();
 		this._recordingContextKey = ChatContextKeys.speechToTextRecording.bindTo(contextKeyService);
@@ -224,7 +248,18 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		}
 		this._isPreparingModel = preparing;
 		this._preparingContextKey.set(preparing);
+		if (!preparing) {
+			this._setModelDownloadProgress(undefined);
+		}
 		this._onDidChangePreparingModel.fire(preparing);
+	}
+
+	private _setModelDownloadProgress(progress: number | undefined): void {
+		if (this._modelDownloadProgress === progress) {
+			return;
+		}
+		this._modelDownloadProgress = progress;
+		this._onDidChangeModelDownloadProgress.fire();
 	}
 
 	private _logSessionTelemetry(outcome: 'completed' | 'cancelled' | 'error'): void {
@@ -412,12 +447,13 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	}
 
 	/**
-	 * Drive the spinner, download notification, and error handling from a model
-	 * status. Safe to call repeatedly and from both the status snapshot and the
-	 * change listener, since the notification and preparing-state updates are
+	 * Drive the progress ring, download notification, and error handling from a
+	 * model status. Safe to call repeatedly and from both the status snapshot and
+	 * the change listener, since the progress and preparing-state updates are
 	 * idempotent.
 	 */
 	private _handleModelStatus(status: ILocalTranscriptionModelStatus): void {
+		this._updateModelDownloadProgress(status);
 		this._updateDownloadNotification(status);
 		if (status.state === LocalTranscriptionModelState.Ready) {
 			this._logModelPrepareTelemetry(status);
@@ -430,9 +466,22 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	}
 
 	/**
-	 * Show a progress notification while the model is being prepared, and keep it
-	 * visible across both preparation phases so dictation never appears to hang
-	 * with no feedback:
+	 * Feed the toolbar progress ring: expose the download fraction while it is
+	 * known, and `undefined` (indeterminate ring) before the first byte total
+	 * arrives or once the download completes and the model is loading.
+	 */
+	private _updateModelDownloadProgress(status: ILocalTranscriptionModelStatus): void {
+		if (status.state === LocalTranscriptionModelState.Downloading && typeof status.progress === 'number') {
+			this._setModelDownloadProgress(Math.max(0, Math.min(1, status.progress)));
+		} else {
+			this._setModelDownloadProgress(undefined);
+		}
+	}
+
+	/**
+	 * Announce model-preparation progress to screen-reader users via a progress
+	 * notification, and keep it visible across both preparation phases so
+	 * dictation never appears to hang with no feedback:
 	 *  - `Downloading`: a determinate bar advances as bytes arrive (or an
 	 *    indeterminate "Downloading…" message before the first byte total is
 	 *    known).
@@ -440,12 +489,19 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	 *    into memory is still running, so the message switches to "Loading model…"
 	 *    instead of leaving the bar stuck at a full download and then vanishing.
 	 * The notification is dismissed only once the model reaches `Ready`/`Error`.
+	 *
+	 * Sighted users get the toolbar download ring and its rich hover instead, so
+	 * the notification is only surfaced when a screen reader is active (a hover
+	 * is not reachable by assistive technologies).
 	 */
 	private _updateDownloadNotification(status: ILocalTranscriptionModelStatus): void {
 		const preparing = status.state === LocalTranscriptionModelState.Downloading
 			|| status.state === LocalTranscriptionModelState.Loading;
 		if (!preparing) {
 			this._completeDownloadNotification();
+			return;
+		}
+		if (!this._downloadNotification && !this._accessibilityService.isScreenReaderOptimized()) {
 			return;
 		}
 		if (!this._downloadNotification) {
