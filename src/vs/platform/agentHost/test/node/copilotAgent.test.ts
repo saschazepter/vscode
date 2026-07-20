@@ -2534,12 +2534,11 @@ suite('CopilotAgent', () => {
 
 				// All discovery roots are returned, even if empty or non-existing
 				// Workspace root is included because AGENTS.md was created
-				assert.strictEqual(discoveredDirectories.length, 14);
+				assert.strictEqual(discoveredDirectories.length, 13);
 				const expectedUris = [
 					// workspace roots
 					workspace.toString(),
 					URI.joinPath(workspace, '.github', 'agents').toString(),
-					URI.joinPath(workspace, '.agents', 'agents').toString(),
 					URI.joinPath(workspace, '.claude', 'agents').toString(),
 					URI.joinPath(workspace, '.github', 'skills').toString(),
 					URI.joinPath(workspace, '.agents', 'skills').toString(),
@@ -2738,7 +2737,6 @@ suite('CopilotAgent', () => {
 				// All discovery roots are discovered (workspace root only if it has AGENTS.md)
 				const expectedUris = [
 					URI.joinPath(workspace, '.github', 'agents').toString(),
-					URI.joinPath(workspace, '.agents', 'agents').toString(),
 					URI.joinPath(workspace, '.claude', 'agents').toString(),
 					URI.joinPath(workspace, '.github', 'skills').toString(),
 					URI.joinPath(workspace, '.agents', 'skills').toString(),
