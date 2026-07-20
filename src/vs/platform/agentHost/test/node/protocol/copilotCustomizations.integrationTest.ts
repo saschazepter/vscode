@@ -16,7 +16,7 @@ import { join } from '../../../../../base/common/path.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { AgentHostConfigKey, type SessionCustomizationDiscoveryMode } from '../../../common/agentHostCustomizationConfig.js';
 import { ActionType, SessionCustomizationsChangedAction } from '../../../common/state/sessionActions.js';
-import { CustomizationType, ISessionWithDefaultChat, ROOT_STATE_URI, type DirectoryCustomization, type PluginCustomization } from '../../../common/state/sessionState.js';
+import { customizationId, CustomizationType, ISessionWithDefaultChat, ROOT_STATE_URI, type ClientPluginCustomization, type DirectoryCustomization, type PluginCustomization, type URI as ProtocolURI } from '../../../common/state/sessionState.js';
 import { type AhpNotification } from '../../../common/state/sessionProtocol.js';
 import { createRealSession, dispatchTurn, IAgentHostE2EProviderConfig } from './agentHostE2ETestHelpers.js';
 import { fetchSessionWithChat, getActionEnvelope, isActionNotification, IServerHandle, startRealServer, TestProtocolClient } from './testHelpers.js';
@@ -145,6 +145,16 @@ suite('Agent Host E2E — Copilot, Mocked LLM (customizations)', function () {
 		await runWorkspaceAndPluginCustomizationsTest('discover');
 	});
 
+	test('workspace and synced-bundle plugin with agents, instructions, and skills [scan]', async function () {
+		this.timeout(TEST_TIMEOUT_MS);
+		await runSyncedBundlePluginCustomizationsTest('scan');
+	});
+
+	test('workspace and synced-bundle plugin with agents, instructions, and skills [discover]', async function () {
+		this.timeout(TEST_TIMEOUT_MS);
+		await runSyncedBundlePluginCustomizationsTest('discover');
+	});
+
 	async function cleanHomeFolder() {
 		const foldersToClean = ['.copilot/agents', '.copilot/instructions', '.copilot/skills', '.copilot/hooks', '.agents', '.claude'];
 		const filesToClean = ['.copilot/copilot-instructions.md'];
@@ -154,7 +164,7 @@ suite('Agent Host E2E — Copilot, Mocked LLM (customizations)', function () {
 		]);
 	}
 
-	async function setSessionCustomizationDiscoveryMode(mode: SessionCustomizationDiscoveryMode, configuredCustomizations?: readonly { uri: string; displayName: string; description?: string }[]): Promise<void> {
+	async function setSessionCustomizationDiscoveryMode(mode: SessionCustomizationDiscoveryMode): Promise<void> {
 		client.dispatch({
 			channel: ROOT_STATE_URI,
 			clientSeq: 1,
@@ -162,14 +172,21 @@ suite('Agent Host E2E — Copilot, Mocked LLM (customizations)', function () {
 				type: ActionType.RootConfigChanged,
 				config: {
 					[AgentHostConfigKey.SessionCustomizationDiscoveryMode]: mode,
-					...(configuredCustomizations ? { [AgentHostConfigKey.Customizations]: configuredCustomizations } : {}),
 				},
 			},
 		});
 	}
 
 	async function setupSession(sessionUri: string, clientId: string, discoveryMode: SessionCustomizationDiscoveryMode, turnId = 'turn-customizations-empty-mock', configuredCustomizations?: readonly { uri: string; displayName: string; description?: string }[]): Promise<ISessionWithDefaultChat> {
-		await setSessionCustomizationDiscoveryMode(discoveryMode, configuredCustomizations);
+		await setSessionCustomizationDiscoveryMode(discoveryMode);
+		const activeClientCustomizations = configuredCustomizations?.map((customization): ClientPluginCustomization => ({
+			type: CustomizationType.Plugin,
+			id: customizationId(customization.uri),
+			uri: customization.uri as ProtocolURI,
+			name: customization.displayName,
+			nonce: '1',
+			enabled: true,
+		}));
 		client.dispatch({
 			channel: sessionUri,
 			clientSeq: 1,
@@ -178,6 +195,7 @@ suite('Agent Host E2E — Copilot, Mocked LLM (customizations)', function () {
 				activeClient: {
 					clientId: clientId,
 					tools: [],
+					customizations: activeClientCustomizations,
 				},
 			},
 		});
@@ -399,42 +417,173 @@ suite('Agent Host E2E — Copilot, Mocked LLM (customizations)', function () {
 			].join('\n')),
 		]);
 
-		const sessionUri = await createRealSession(client, COPILOT_CONFIG, 'real-sdk-customizations-workspace-plugin-mock', createdSessions, URI.file(workspaceDir));
-		await setupSession(sessionUri, 'real-sdk-customizations-workspace-plugin-client-mock', discoveryMode, 'turn-customizations-workspace-plugin-mock', configuredCustomizations);
+		const clientId = 'real-sdk-customizations-workspace-plugin-client-mock';
+		const sessionUri = await createRealSession(client, COPILOT_CONFIG, clientId, createdSessions, URI.file(workspaceDir));
+		await setupSession(sessionUri, clientId, discoveryMode, 'turn-customizations-workspace-plugin-mock', configuredCustomizations);
 		await waitForPluginCustomizationUpdate(sessionUri, pluginUri);
 		const session = await fetchSessionWithChat(client, sessionUri);
 		assert.ok(session.customizations);
 
-		const workspaceAgentDirectory = session.customizations.find((customization): customization is DirectoryCustomization =>
-			customization.type === CustomizationType.Directory &&
-			customization.contents === CustomizationType.Agent &&
-			customization.uri === URI.file(workspaceAgentsDir).toString()
-		);
-		assert.ok(workspaceAgentDirectory);
-		assert.deepStrictEqual((workspaceAgentDirectory.children ?? []).map(child => child.name).sort((a, b) => a.localeCompare(b)), ['Workspace Agent']);
+		const mappedCustomizations = session.customizations
+			.map(customization => ({
+				type: customization.type,
+				contents: customization.type === CustomizationType.Directory ? customization.contents : undefined,
+				uri: customization.uri,
+				children: customization.type === CustomizationType.Directory
+					? (customization.children ?? []).map(child => child.uri).sort((a, b) => a.localeCompare(b))
+					: customization.type === CustomizationType.Plugin
+						? (customization.children ?? []).map(child => ({ type: child.type, name: child.name })).sort((a, b) => a.name.localeCompare(b.name))
+						: undefined,
+			}))
+			.filter(builtInCustomizations)
+			.sort((a, b) => a.uri.localeCompare(b.uri));
 
-		const pluginCustomization = session.customizations.find((customization): customization is PluginCustomization =>
-			customization.type === CustomizationType.Plugin && customization.uri === pluginUri
-		);
-		assert.ok(pluginCustomization);
-		const pluginChildren = (pluginCustomization.children ?? [])
-			.map(child => ({ type: child.type, name: child.name }))
-			.sort((a, b) => a.name.localeCompare(b.name));
-		const expectedPluginChildren = [
-			{ type: CustomizationType.Agent, name: 'Plugin Agent' },
-			{ type: CustomizationType.Rule, name: 'plugin' },
-			{ type: CustomizationType.Skill, name: 'plugin-skill' },
-		].sort((a, b) => a.name.localeCompare(b.name));
-		assert.deepStrictEqual(pluginChildren, expectedPluginChildren);
+		const expectedCustomizations = [
+			{ type: CustomizationType.Directory, contents: CustomizationType.Agent, uri: URI.file(join(workspaceDir, '.claude', 'agents')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Agent, uri: URI.file(join(workspaceDir, '.github', 'agents')).toString(), children: [URI.file(workspaceAgentFile).toString()] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Skill, uri: URI.file(join(userHomeDir, '.agents', 'skills')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Agent, uri: URI.file(join(userHomeDir, '.copilot', 'agents')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Hook, uri: URI.file(join(workspaceDir, '.github', 'hooks')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Hook, uri: URI.file(join(userHomeDir, '.copilot', 'hooks')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Rule, uri: URI.file(join(workspaceDir, '.github', 'instructions')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Rule, uri: URI.file(join(userHomeDir, '.copilot', 'instructions')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Skill, uri: URI.file(join(workspaceDir, '.agents', 'skills')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Skill, uri: URI.file(join(workspaceDir, '.claude', 'skills')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Skill, uri: URI.file(join(workspaceDir, '.github', 'skills')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Skill, uri: URI.file(join(userHomeDir, '.copilot', 'skills')).toString(), children: [] },
+			{
+				type: CustomizationType.Plugin,
+				contents: undefined,
+				uri: pluginUri,
+				children: [
+					{ type: CustomizationType.Agent, name: 'Plugin Agent' },
+					{ type: CustomizationType.Rule, name: 'plugin' },
+					{ type: CustomizationType.Skill, name: 'plugin-skill' },
+				].sort((a, b) => a.name.localeCompare(b.name)),
+			},
+		].sort((a, b) => a.uri.localeCompare(b.uri));
+
+		assert.deepStrictEqual(mappedCustomizations, expectedCustomizations);
+	}
+
+	async function runSyncedBundlePluginCustomizationsTest(discoveryMode: SessionCustomizationDiscoveryMode): Promise<void> {
+		const workspaceDir = await mkdtemp(`${tmpdir()}/ahp-customizations-workspace-synced-plugin-mock-`);
+		tempDirs.push(workspaceDir);
+		const syncedBundleDir = await mkdtemp(`${tmpdir()}/ahp-synced-customizations-plugin-mock-`);
+		tempDirs.push(syncedBundleDir);
+
+		const workspaceAgentsDir = join(workspaceDir, '.github', 'agents');
+		const workspaceAgentFile = join(workspaceAgentsDir, 'workspace.agent.md');
+		const pluginDir = join(syncedBundleDir, 'copilot-synced-customizations');
+		const pluginManifestFile = join(pluginDir, '.plugin', 'plugin.json');
+		const pluginAgentFile = join(pluginDir, 'agents', 'bundled-user.agent.md');
+		const pluginSkillFile = join(pluginDir, 'skills', 'bundled-extension-skill', 'SKILL.md');
+		const pluginUserInstructionFile = join(pluginDir, 'rules', 'bundled-user.instructions.md');
+		const pluginExtensionInstructionFile = join(pluginDir, 'rules', 'bundled-extension.instructions.md');
+		const pluginUri = URI.file(pluginDir).toString();
+		const configuredCustomizations = [{ uri: pluginUri, displayName: 'VS Code Synced Data' }];
+
+		await Promise.all([
+			mkdir(workspaceAgentsDir, { recursive: true }),
+			mkdir(join(pluginDir, '.plugin'), { recursive: true }),
+			mkdir(join(pluginDir, 'agents'), { recursive: true }),
+			mkdir(join(pluginDir, 'skills', 'bundled-extension-skill'), { recursive: true }),
+			mkdir(join(pluginDir, 'rules'), { recursive: true }),
+		]);
+		await Promise.all([
+			writeFile(workspaceAgentFile, [
+				'---',
+				'name: Workspace Agent',
+				'description: Workspace-level test agent',
+				'---',
+				'You are a workspace test agent.',
+			].join('\n')),
+			writeFile(pluginManifestFile, JSON.stringify({ name: 'VS Code Synced Data', description: 'Customization data synced from VS Code' }, undefined, 2)),
+			writeFile(pluginAgentFile, [
+				'---',
+				'name: Bundled User Agent',
+				'description: Bundled user-level agent',
+				'---',
+				'You are a bundled user agent.',
+			].join('\n')),
+			writeFile(pluginSkillFile, [
+				'---',
+				'name: bundled-extension-skill',
+				'description: Bundled extension-level skill',
+				'---',
+				'Return a bundled extension greeting.',
+			].join('\n')),
+			writeFile(pluginUserInstructionFile, 'Prefer bundled user defaults.'),
+			writeFile(pluginExtensionInstructionFile, 'Prefer bundled extension defaults.'),
+		]);
+
+		const clientId = 'real-sdk-customizations-workspace-synced-plugin-client-mock';
+		const sessionUri = await createRealSession(client, COPILOT_CONFIG, clientId, createdSessions, URI.file(workspaceDir));
+		await setupSession(sessionUri, clientId, discoveryMode, 'turn-customizations-workspace-synced-plugin-mock', configuredCustomizations);
+		await waitForPluginCustomizationUpdate(sessionUri, pluginUri);
+		const session = await fetchSessionWithChat(client, sessionUri);
+		assert.ok(session.customizations);
+
+		const mappedCustomizations = session.customizations
+			.map(customization => ({
+				type: customization.type,
+				contents: customization.type === CustomizationType.Directory ? customization.contents : undefined,
+				uri: customization.uri,
+				children: customization.type === CustomizationType.Directory
+					? (customization.children ?? []).map(child => child.uri).sort((a, b) => a.localeCompare(b))
+					: customization.type === CustomizationType.Plugin
+						? (customization.children ?? []).map(child => ({ type: child.type, name: child.name })).sort((a, b) => a.name.localeCompare(b.name))
+						: undefined,
+			}))
+			.filter(builtInCustomizations)
+			.sort((a, b) => a.uri.localeCompare(b.uri));
+
+		const expectedCustomizations = [
+			{ type: CustomizationType.Directory, contents: CustomizationType.Agent, uri: URI.file(join(workspaceDir, '.claude', 'agents')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Agent, uri: URI.file(join(workspaceDir, '.github', 'agents')).toString(), children: [URI.file(workspaceAgentFile).toString()] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Skill, uri: URI.file(join(userHomeDir, '.agents', 'skills')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Agent, uri: URI.file(join(userHomeDir, '.copilot', 'agents')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Hook, uri: URI.file(join(workspaceDir, '.github', 'hooks')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Hook, uri: URI.file(join(userHomeDir, '.copilot', 'hooks')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Rule, uri: URI.file(join(workspaceDir, '.github', 'instructions')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Rule, uri: URI.file(join(userHomeDir, '.copilot', 'instructions')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Skill, uri: URI.file(join(workspaceDir, '.agents', 'skills')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Skill, uri: URI.file(join(workspaceDir, '.claude', 'skills')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Skill, uri: URI.file(join(workspaceDir, '.github', 'skills')).toString(), children: [] },
+			{ type: CustomizationType.Directory, contents: CustomizationType.Skill, uri: URI.file(join(userHomeDir, '.copilot', 'skills')).toString(), children: [] },
+			{
+				type: CustomizationType.Plugin,
+				contents: undefined,
+				uri: pluginUri,
+				children: [
+					{ type: CustomizationType.Agent, name: 'Bundled User Agent' },
+					{ type: CustomizationType.Rule, name: 'bundled-extension' },
+					{ type: CustomizationType.Rule, name: 'bundled-user' },
+					{ type: CustomizationType.Skill, name: 'bundled-extension-skill' },
+				].sort((a, b) => a.name.localeCompare(b.name)),
+			},
+		].sort((a, b) => a.uri.localeCompare(b.uri));
+
+		assert.deepStrictEqual(mappedCustomizations, expectedCustomizations);
 	}
 
 	async function waitForPluginCustomizationUpdate(sessionUri: string, pluginUri: string): Promise<void> {
 		const notificationHasPluginUpdate = (notification: AhpNotification): boolean => {
-			if (!isSettledCustomizationsNotification(notification, sessionUri)) {
-				return false;
+			if (isSettledCustomizationsNotification(notification, sessionUri)) {
+				const action = getActionEnvelope(notification).action as SessionCustomizationsChangedAction;
+				if (action.customizations.some(customization =>
+					customization.type === CustomizationType.Plugin &&
+					customization.uri === pluginUri
+				)) {
+					return true;
+				}
 			}
-			const action = getActionEnvelope(notification).action as SessionCustomizationsChangedAction;
-			return action.customizations.some(customization => customization.type === CustomizationType.Plugin && customization.uri === pluginUri);
+			if (isActionNotification(notification, ActionType.SessionCustomizationUpdated) && getActionEnvelope(notification).channel === sessionUri) {
+				const action = getActionEnvelope(notification).action as { customization: PluginCustomization };
+				return action.customization.type === CustomizationType.Plugin
+					&& action.customization.uri === pluginUri;
+			}
+			return false;
 		};
 		const existingMatch = client.receivedNotifications().find(notification => notificationHasPluginUpdate(notification));
 		if (existingMatch) {
