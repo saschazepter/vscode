@@ -115,6 +115,7 @@ Agents do **not** maintain the chat catalog, persist membership, or know about t
 - Dispatches user-driven chat lifecycle (`createChat`, `disposeChat`) to `chats.*`.
 - Disposes and releases every catalog chat in stable order: peers first, default last.
 - Fans session config changes out to concrete chats for chat-addressed providers.
+- Supplies the owning session's resolved context (`IAgentCreateChatOptions.inheritedContext` = `{ workingDirectory, config }`) when creating an additional chat, so the agent stands up the new chat's backing without reading it back from the parent session's own state (`_buildInheritedChatContext`). The working directory is the AH-resolved worktree/folder; model/agent continue through the client + draft path.
 - Persists and restores the orchestrator-owned peer-chat catalog (`PEER_CHATS_METADATA_KEY` in the session database, serialized per session via `_peerChatCatalogWrites`).
 - Suppresses a peer chat's separately-enumerable backing SDK session (when `IAgentCreateChatResult.backingSession` is set): marks it via `_markPeerChatBacking` and filters it out of `listSessions` (invariant I7).
 - Routes harness-spawned chats into the catalog (`_onChatSpawned`, `_onChatEnded`).
@@ -353,36 +354,37 @@ Codex never recognizes or derives a default-chat URI. `chats.createChat` and `ch
 
 ## 7. Session Ownership (T2/T4) — the orchestrator owns the Session
 
-**Status: implemented — the orchestrator drives every harness through the chat surface unconditionally.**
+**Status: implemented — the orchestrator owns the Session; the agent only ever creates chats.**
 
 Earlier the agent harness co-owned the *Session* type: it implemented
 `createSession`/`disposeSession`/`listSessions`/`getSessionMetadata` and kept an
 outer per-session grouping. T2/T4 makes the orchestrator own the Session concept
 entirely — identity, lifecycle, and grouping — while the agent talks only in
-chats. The tension that made this "contested" (session provisioning is
-agent-specific, so relocating it would leak agent logic into `AgentService`,
-violating §1) is resolved by a seam: **the orchestrator owns the session
-concept; the agent still runs its provisioning, but invoked through the chat
-surface rather than a Session-typed method.**
+chats and one dedicated session-provisioning method.
+
+Session *creation* and *chat* creation are distinct operations, so they are
+distinct methods on the agent — the orchestrator does **not** overload
+`chats.createChat` to also provision a session. `chats.createChat` has exactly
+one meaning: add an additional chat to an already-provisioned session.
 
 ### The seam
 
-- **Create.** `AgentService._provisionSessionViaDefaultChat` allocates the session
-  URI (reusing a client-supplied one), derives the default-chat URI
-  (`buildDefaultChatUri`), and calls `agent.chats.createChat(defaultChatUri, {
-  newSession })`. The agent-specific provisioning (working directory /
-  scratch dir, git project probe, permission mode, provisional SDK construction)
-  runs *inside* creating that default chat — it never moves into the
-  orchestrator. The agent returns `IAgentCreateChatResult.provision`
-  (`{ workingDirectory?, project?, provisional? }`), which the orchestrator maps
-  back to the legacy `IAgentCreateSessionResult` shape so provisional /
-  `onDidMaterializeSession` / deferred-`sessionAdded` semantics are preserved.
-  The orchestrator's `defaultChatUri` is the authority: `_provisionDefaultChat`
-  threads it straight into `createSession` (its optional `defaultChat` argument),
-  which seeds the session entry with that URI verbatim rather than decoding it to
-  a session and re-deriving the identical URI. Copilot has no synchronous create
-  seed (it stores a provisional session and materializes on first send), so it
-  has no provision round-trip to thread.
+- **Create.** `AgentService._createProviderSession` provisions the session by
+  calling the agent's dedicated `createSession(config)` and then binding its
+  default chat with `chats.bindSessionChat(buildDefaultChatUri(session), …)` —
+  the same path fork/import already used. The agent-specific provisioning
+  (working directory / scratch dir, git project probe, permission mode,
+  provisional SDK construction) runs inside `createSession` and returns an
+  `IAgentCreateSessionResult` (`{ session, workingDirectory?, project?,
+  provisional? }`), preserving provisional / `onDidMaterializeSession` /
+  deferred-`sessionAdded` semantics. There is **no** `newSession` payload on
+  `createChat`, and no `provision` result on `IAgentCreateChatResult`; the agent
+  never distinguishes "a chat for a new session" from "a chat for an existing
+  session".
+- **Add a chat.** `AgentService.createChat` dispatches to `chats.createChat` /
+  `chats.fork` for additional chats only, supplying the owning session's resolved
+  context via `IAgentCreateChatOptions.inheritedContext` (`{ workingDirectory,
+  config }`) so the agent never reads it back from the parent session.
 - **Dispose/release.** `AgentService` reads the authoritative chat catalog and
   calls `chats.disposeChat` (or optional `chats.releaseChat`) for every chat,
   peers first and the default last. Each chat hook is exact; an agent never
@@ -405,13 +407,13 @@ AH supplies both the chat URI and its owning session explicitly on every `create
 
 ### Storage-preservation
 
-The seam is the single path for every harness — there is no per-agent opt-in
-flag; the orchestrator always provisions/disposes/enumerates through the chat
-surface, and every harness (Claude, Copilot, Codex) implements it. It is
-**storage-preserving**: session URIs (and the derived `sdkSessionId == session raw
-id`, invariant I3) are unchanged, agents read/write the same SDK stores, and
-`providerData` / `PEER_CHATS_METADATA_KEY` formats are untouched. There is no data
-migration.
+The seam is uniform for every harness — there is no per-agent opt-in flag; the
+orchestrator always provisions via `createSession` + `bindSessionChat`, and
+disposes/enumerates through the chat surface, and every harness (Claude, Copilot,
+Codex) implements it. It is **storage-preserving**: session URIs (and the derived
+`sdkSessionId == session raw id`, invariant I3) are unchanged, agents read/write
+the same SDK stores, and `providerData` / `PEER_CHATS_METADATA_KEY` formats are
+untouched. There is no data migration.
 
 ### Interface surface
 
@@ -419,15 +421,12 @@ migration.
 superseded by `listConversations` and `chats.getMessages`. Each harness keeps
 those as private methods its own chat/conversation bridge delegates to.
 
-`createSession` and `disposeSession` remain on `IAgent`: they are the
-session-lifecycle provisioning primitives the chat-surface bridge delegates to
-(`chats.createChat({ newSession })` / `chats.disposeChat(defaultChat)`).
-`createSession` is additionally still called directly for the **fork/import**
-create path. This is a permanent, by-design exception rather than debt: a fork's
-session id is minted server-side by the SDK (`sessions.fork`), so the orchestrator
-cannot pre-allocate the session URI the way the provisioning seam requires. The
-fork/import caller therefore stays on `createSession` and adopts the
-server-minted id after the fact.
+`createSession` and `disposeSession` remain on `IAgent`. `createSession` is the
+single session-provisioning primitive: the orchestrator calls it to provision a
+session (then binds the default chat with `chats.bindSessionChat`), for the
+non-fork create path and the **fork/import** path alike. `chats.createChat` never
+provisions a session — it only adds additional chats. `disposeSession` is
+superseded by iterating the catalog and calling `chats.disposeChat` per chat.
 
 Per-session metadata lookup is exposed as `getConversationMetadata(chat)` (renamed
 from `getSessionMetadata`): it is addressed by a chat URI and returns the same

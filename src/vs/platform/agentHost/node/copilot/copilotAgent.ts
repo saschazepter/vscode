@@ -38,7 +38,7 @@ import { CopilotCliConfigKey, copilotCliConfigSchema, type CopilotSdkLogLevelSet
 import { AgentHostMcpServersConfigKey, AgentHostPreferLongContextEnabledConfigKey, AgentHostSessionSyncEnabledConfigKey, AgentHostSystemProxyEnabledConfigKey, AutoApproveLevel, SessionMode, migrateLegacyAutopilotConfig, platformRootSchema, platformSessionSchema, type AgentHostMcpServers } from '../../common/agentHostSchema.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { decodeProviderData, encodeProviderData, type IPersistedChat } from '../agentChatBackings.js';
-import { AgentSession, AgentSignal, AuthenticateParams, IActiveClient, IAgent, IAgentChatContext, IAgentChatDataChange, IAgentChats, IAgentLegacyChat, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentHostNetworkEndpoint, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentProvisionSession, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal, resolveAgentChatContext } from '../../common/agentService.js';
+import { AgentSession, AgentSignal, AuthenticateParams, IActiveClient, IAgent, IAgentChatContext, IAgentChatDataChange, IAgentChats, IAgentLegacyChat, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentHostNetworkEndpoint, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal, resolveAgentChatContext } from '../../common/agentService.js';
 import { getReasoningEffortDescription, getReasoningEffortLabel } from '../../common/reasoningEffort.js';
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
 import { IAgentHostOTelService } from '../../common/otel/agentHostOTelService.js';
@@ -1498,9 +1498,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 	 */
 	readonly chats: IAgentChats = {
 		createChat: (chat: URI, context: URI | IAgentChatContext, options?: IAgentCreateChatOptions): Promise<IAgentCreateChatResult | void> => {
-			if (options?.newSession) {
-				return this._provisionSessionChat(chat, options.newSession);
-			}
 			return this._createChat(chat, resolveAgentChatContext(context, chat), options);
 		},
 		fork: (chat: URI, context: URI | IAgentChatContext, source: IAgentCreateChatForkSource, options?: IAgentCreateChatOptions): Promise<IAgentCreateChatResult | void> => {
@@ -1525,15 +1522,12 @@ export class CopilotAgent extends Disposable implements IAgent {
 	};
 
 	async createSession(config?: IAgentCreateSessionConfig): Promise<IAgentCreateSessionResult> {
-		return this._createSession(config ?? {}, { kind: 'unbound' });
+		return this._createSession(config ?? {});
 	}
 
 	private async _createSession(
 		sessionConfig: IAgentCreateSessionConfig,
-		target: { readonly kind: 'unbound' } | { readonly kind: 'chat'; readonly chat: URI },
 	): Promise<IAgentCreateSessionResult> {
-		const chat = target.kind === 'chat' ? target.chat : undefined;
-
 		this._logService.info(`[Copilot] Creating session... ${sessionConfig.model ? `model=${sessionConfig.model.id}` : ''}`);
 		const sessionId = sessionConfig.session ? AgentSession.id(sessionConfig.session) : generateUuid();
 		// Workspace-less is inferred at create from an absent input
@@ -1594,7 +1588,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 				}
 
 				// Resume the forked session so the SDK loads the forked history
-				const agentSession = await this._resumeSession(newSessionId, chat);
+				const agentSession = await this._resumeSession(newSessionId);
 
 				// Remap turn IDs to match the new protocol turn IDs
 				if (sessionConfig.fork!.turnIdMapping) {
@@ -1623,7 +1617,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		}
 
 		if (sessionConfig.importConversation) {
-			return this._importConversation(sessionConfig, sessionId, workingDirectory, chat);
+			return this._importConversation(sessionConfig, sessionId, workingDirectory, undefined);
 		}
 
 		// Non-fork path: create a *provisional* session. The Copilot SDK
@@ -1641,9 +1635,6 @@ export class CopilotAgent extends Disposable implements IAgent {
 		// This guards against client retries that race a successful first
 		// message.
 		if (this._findAnySession(sessionId)) {
-			if (chat && this._isUnboundSession(sessionId)) {
-				this._bindSessionChat(sessionId, chat);
-			}
 			this._logService.info(`[Copilot] createSession is a no-op: session already materialized: ${sessionUri.toString()}`);
 			const project = await projectFromCopilotContext({ cwd: workingDirectory.fsPath }, this._gitService);
 			return { session: sessionUri, workingDirectory, ...(project ? { project } : {}) };
@@ -1692,30 +1683,9 @@ export class CopilotAgent extends Disposable implements IAgent {
 				workspaceless: isWorkspaceless,
 			});
 		}
-		if (chat) {
-			this._bindSessionChat(sessionId, chat);
-		}
 
 		this._logService.info(`[Copilot] Session created (provisional): ${sessionUri.toString()}`);
 		return { session: sessionUri, workingDirectory, provisional: true, ...(project ? { project } : {}) };
-	}
-
-	private async _provisionSessionChat(chat: URI, provision: IAgentProvisionSession): Promise<IAgentCreateChatResult> {
-		const created = await this._createSession({
-			session: provision.session,
-			...(provision.model !== undefined ? { model: provision.model } : {}), ...(provision.agent !== undefined ? { agent: provision.agent } : {}),
-			...(provision.workingDirectory !== undefined ? { workingDirectory: provision.workingDirectory } : {}),
-			...(provision.config !== undefined ? { config: provision.config } : {}),
-			...(provision.activeClient !== undefined ? { activeClient: provision.activeClient } : {}),
-			...(provision.progressToken !== undefined ? { progressToken: provision.progressToken } : {}),
-		}, { kind: 'chat', chat });
-		return {
-			provision: {
-				...(created.workingDirectory !== undefined ? { workingDirectory: created.workingDirectory } : {}),
-				...(created.project !== undefined ? { project: created.project } : {}),
-				...(created.provisional !== undefined ? { provisional: created.provisional } : {}),
-			},
-		};
 	}
 
 	private async _bindSessionChatOnRestore(chat: URI, session: URI): Promise<void> {
@@ -2225,13 +2195,13 @@ export class CopilotAgent extends Disposable implements IAgent {
 				return;
 			}
 			const model = options?.model;
-			// Resolve the owning session so the new chat inherits its working
-			// directory scope. The parent may be provisional (no SDK session
-			// yet); in that case use its provisional working directory.
-			const parentEntry = this._findAnySession(sessionId);
-			const workingDirectory = parentEntry?.workingDirectory
-				?? this._provisionalSessions.get(sessionId)?.workingDirectory
-				?? (await this._readSessionMetadata(session)).workingDirectory;
+			// The orchestrator supplies the owning session's resolved working
+			// directory; the new chat inherits it without reading the parent's
+			// SDK session / metadata back.
+			const workingDirectory = options?.inheritedContext?.workingDirectory;
+			if (!workingDirectory) {
+				throw new Error(`[Copilot] createChat: missing inherited working directory for session ${session.toString()}`);
+			}
 			const client = await this._ensureClient();
 			const chatSdkId = generateUuid();
 			// Chat bindings share the owning session's ActiveClient so that

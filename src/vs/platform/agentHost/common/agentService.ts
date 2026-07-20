@@ -942,35 +942,24 @@ export interface IAgentCreateChatOptions {
 	 */
 	readonly fork?: IAgentCreateChatForkSource;
 	/**
-	 * Present only when this `createChat` is the vehicle for creating the chat's
-	 * owning session (this chat is its default chat): the agent stands up the
-	 * session's SDK conversation and session-scoped infrastructure while creating
-	 * the addressed chat. Absent when adding an additional chat to an
-	 * already-existing session, whose infrastructure the agent inherits rather
-	 * than provisions.
+	 * The owning session's resolved context, supplied by the orchestrator when
+	 * adding an additional chat to an existing session. The agent uses these
+	 * values to stand up the new chat's backing conversation and MUST NOT read
+	 * them back from the parent session's own state.
 	 */
-	readonly newSession?: IAgentProvisionSession;
+	readonly inheritedContext?: IAgentInheritedChatContext;
 }
 
 /**
- * Session-provisioning intent carried on {@link IAgentCreateChatOptions.newSession}.
- * Mirrors the agent-specific fields of the legacy `IAgentCreateSessionConfig`;
- * the session URI is explicit and the chat URI is the `createChat` argument.
+ * The owning session's resolved context the orchestrator passes to an agent
+ * when creating an additional chat, so the agent never resolves it from the
+ * parent session.
  */
-export interface IAgentProvisionSession {
-	/**
-	 * The owning session URI. The agent binds the addressed chat to the
-	 * session's SDK conversation and storage scope using this host-supplied
-	 * value; no catalog role is derived from the chat URI shape.
-	 */
-	readonly session: URI;
-	readonly model?: ModelSelection;
-	readonly agent?: AgentSelection;
-	/** Requested working directory; the agent may resolve a different one (e.g. worktree/scratch). */
-	readonly workingDirectory?: URI;
+export interface IAgentInheritedChatContext {
+	/** The AH-resolved working directory (worktree or folder) the chat runs in. */
+	readonly workingDirectory: URI;
+	/** The owning session's config values, for provider-specific setting resolution (e.g. permissions). */
 	readonly config?: Record<string, unknown>;
-	readonly activeClient?: SessionActiveClient;
-	readonly progressToken?: string;
 }
 
 /** Identifies a source chat and turn to fork a new chat from. */
@@ -1005,20 +994,6 @@ export interface IAgentCreateChatResult {
 	 * separately-enumerable backing session.
 	 */
 	readonly backingSession?: URI;
-	/**
-	 * Provisioning outcome, set only when this `createChat` also provisioned the
-	 * owning session. Mirrors the legacy `IAgentCreateSessionResult`.
-	 */
-	readonly provision?: IAgentProvisionResult;
-}
-
-/** Outcome of provisioning the owning session via {@link IAgentCreateChatResult.provision}. */
-export interface IAgentProvisionResult {
-	/** The resolved working directory, which may differ from the requested one (e.g. worktree). */
-	readonly workingDirectory?: URI;
-	readonly project?: IAgentSessionProjectInfo;
-	/** `true` when the agent allocated only a placeholder, materialized lazily on first send. */
-	readonly provisional?: boolean;
 }
 
 /** Payload of {@link IAgent.onDidChangeChatData}. */
@@ -1145,13 +1120,16 @@ export namespace SubagentChatSignal {
  */
 export interface IAgentChats {
 	/**
-	 * Create a fresh concrete chat within `session`, sharing the session's
-	 * working directory, model, agent, and customizations. `chat` is the
+	 * Create a fresh additional chat within an already-provisioned `session`,
+	 * inheriting the session's working directory and config via
+	 * {@link IAgentCreateChatOptions.inheritedContext}. `chat` is the
 	 * client-chosen channel URI the new chat is addressed by. The orchestrator
 	 * supplies the owning session plus the provider-owned persistence scope via
 	 * `context`, so the agent never has to recover either by parsing `chat`.
-	 * Returns the opaque {@link IAgentCreateChatResult} blob to persist for
-	 * restore (or `void` when the agent keeps no resumable backing).
+	 * The session itself is provisioned separately via {@link IAgent.createSession}
+	 * (then bound with {@link bindSessionChat}), so this method never creates a
+	 * session. Returns the opaque {@link IAgentCreateChatResult} blob to persist
+	 * for restore (or `void` when the agent keeps no resumable backing).
 	 */
 	createChat(chat: URI, context: URI | IAgentChatContext, options?: IAgentCreateChatOptions): Promise<IAgentCreateChatResult | void>;
 

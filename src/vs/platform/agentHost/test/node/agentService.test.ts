@@ -3148,8 +3148,12 @@ suite('AgentService (node dispatcher)', () => {
 			override readonly chats: IAgentChats = {
 				createChat: async (chat: URI, context: URI | IAgentChatContext, options?: IAgentCreateChatOptions) => {
 					const { session } = resolveAgentChatContext(context, chat);
-					this.chatCalls.push({ op: 'createChat', args: [session.toString(), chat.toString(), options?.title ?? '', options?.newSession?.model?.id ?? ''] });
+					this.chatCalls.push({ op: 'createChat', args: [session.toString(), chat.toString(), options?.title ?? '', options?.model?.id ?? ''] });
 					return { providerData: 'pd' };
+				},
+				bindSessionChat: async (chat: URI, context: URI | IAgentChatContext) => {
+					const { session } = resolveAgentChatContext(context, chat);
+					this.chatCalls.push({ op: 'bindSessionChat', args: [session.toString(), chat.toString()] });
 				},
 				fork: async (chat: URI, context: URI | IAgentChatContext, source: IAgentCreateChatForkSource) => {
 					const { session } = resolveAgentChatContext(context, chat);
@@ -3173,7 +3177,7 @@ suite('AgentService (node dispatcher)', () => {
 			};
 		}
 
-		test('createSession/createChat/disposeChat/disposeSession all route through the chat surface', async () => {
+		test('session provisioning routes through createSession + bindSessionChat; chats route through the chat surface', async () => {
 			const agent = disposables.add(new ChatSurfaceAgent('copilot'));
 			service.registerProvider(agent);
 
@@ -3184,22 +3188,24 @@ suite('AgentService (node dispatcher)', () => {
 			await service.disposeSession(session);
 
 			const defaultChatUri = buildDefaultChatUri(session);
-			// Session create/dispose route through the chat surface, not the
-			// legacy session-addressed methods.
+			// Session provisioning uses the dedicated createSession method (then
+			// binds its default chat); only additional chats and disposal route
+			// through the chat surface. The legacy session-addressed createChat is
+			// never used.
 			assert.deepStrictEqual({
 				sessionCreate: agent.sessionCreateCalls.map(s => s.toString()),
 				sessionDispose: agent.sessionDisposeCalls.map(s => s.toString()),
 				legacyCreateChat: agent.legacyCreateChatCalls.length,
 				chatOps: agent.chatCalls.map(c => c.op),
-				provisionChatArgs: agent.chatCalls.filter(c => c.op === 'createChat')[0]?.args,
-				peerChatArgs: agent.chatCalls.filter(c => c.op === 'createChat')[1]?.args,
+				bindDefaultChatArgs: agent.chatCalls.filter(c => c.op === 'bindSessionChat')[0]?.args,
+				peerChatArgs: agent.chatCalls.filter(c => c.op === 'createChat')[0]?.args,
 				disposeChatArgs: agent.chatCalls.filter(c => c.op === 'disposeChat').map(c => c.args[0]),
 			}, {
-				sessionCreate: [],
+				sessionCreate: [session.toString()],
 				sessionDispose: [],
 				legacyCreateChat: 0,
-				chatOps: ['createChat', 'createChat', 'disposeChat', 'disposeChat'],
-				provisionChatArgs: [session.toString(), defaultChatUri, '', 'model-1'],
+				chatOps: ['bindSessionChat', 'createChat', 'disposeChat', 'disposeChat'],
+				bindDefaultChatArgs: [session.toString(), defaultChatUri],
 				peerChatArgs: [session.toString(), chatUri.toString(), 'Peer', ''],
 				disposeChatArgs: [chatUri.toString(), defaultChatUri],
 			});

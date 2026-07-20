@@ -26,7 +26,7 @@ import { createSchema, platformSessionSchema, schemaProperty } from '../../commo
 import { ClaudePermissionMode, ClaudeSessionConfigKey, narrowClaudePermissionMode } from '../../common/claudeSessionConfigKeys.js';
 import { createClaudeThinkingLevelSchema, isClaudeEffortLevel } from '../../common/claudeModelConfig.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
-import { AgentProvider, AgentSession, AgentSignal, CLAUDE_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChatContext, IAgentChatDataChange, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentProvisionSession, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, SubagentChatSignal, resolveAgentChatContext } from '../../common/agentService.js';
+import { AgentProvider, AgentSession, AgentSignal, CLAUDE_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChatContext, IAgentChatDataChange, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, SubagentChatSignal, resolveAgentChatContext } from '../../common/agentService.js';
 import { ensureWorkspacelessScratchDir } from '../workspacelessScratchDir.js';
 import { ActionType, AuthRequiredReason, type AuthRequiredParams } from '../../common/state/sessionActions.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
@@ -988,9 +988,6 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	 */
 	readonly chats: IAgentChats = {
 		createChat: (chat, context, options) => {
-			if (options?.newSession) {
-				return this._provisionChat(chat, context, options.newSession);
-			}
 			return this._createChat(chat, resolveAgentChatContext(context, chat), options);
 		},
 		fork: (chat, context, source: IAgentCreateChatForkSource, options?: IAgentCreateChatOptions) =>
@@ -1318,8 +1315,10 @@ export class ClaudeAgent extends Disposable implements IAgent {
 				result = { providerData: encodeProviderData(_toPersistedChat(existing)), backingSession: AgentSession.uri(this.id, existing.sdkSessionId) };
 				return;
 			}
-			const parentSession = await this._resolveParentSession(context.session, parentSessionId);
-			const model = options?.model ?? parentSession.model;
+			// Model/agent arrive via the client (model) and the draft path
+			// (agent) — never read back from the parent session. The permission
+			// mode is inherited from the orchestrator-supplied config.
+			const model = options?.model;
 
 			let sdkSessionId: string | undefined;
 			if (options?.fork) {
@@ -1336,36 +1335,15 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			result = { providerData: encodeProviderData(_toPersistedChat(binding)), backingSession: AgentSession.uri(this.id, sdkSessionId) };
 
 			// Seed the chat's own metadata overlay so a later lazy resume (this
-			// process or a restart) inherits the session's settings.
+			// process or a restart) inherits the session's permission mode.
+			const permissionMode = narrowClaudePermissionMode(options?.inheritedContext?.config?.[ClaudeSessionConfigKey.PermissionMode]);
 			await this._metadataStore.write(context.resource, {
 				...(model ? { model } : {}),
-				...(parentSession.agent ? { agent: parentSession.agent } : {}),
-				...(parentSession.permissionMode ? { permissionMode: parentSession.permissionMode } : {}),
+				...(permissionMode ? { permissionMode } : {}),
 			});
 			this._logService.info(`[Claude] Created chat binding ${chat.toString()} for context ${context.session.toString()}${options?.fork ? ' (forked)' : ''}`);
 		});
 		return result;
-	}
-
-	private async _provisionChat(chat: URI, _context: URI | IAgentChatContext, provision: IAgentProvisionSession): Promise<IAgentCreateChatResult> {
-		// The host supplies the owning session URI and the chat URI AH is stamping
-		// with the session's storage scope (`chat`); the agent binds it verbatim
-		// without inferring anything from the URI's shape.
-		const created = await this._createSession({
-			session: provision.session,
-			...(provision.model !== undefined ? { model: provision.model } : {}), ...(provision.agent !== undefined ? { agent: provision.agent } : {}),
-			...(provision.workingDirectory !== undefined ? { workingDirectory: provision.workingDirectory } : {}),
-			...(provision.config !== undefined ? { config: provision.config } : {}),
-			...(provision.activeClient !== undefined ? { activeClient: provision.activeClient } : {}),
-			...(provision.progressToken !== undefined ? { progressToken: provision.progressToken } : {}),
-		}, { kind: 'chat', chat });
-		return {
-			provision: {
-				...(created.workingDirectory !== undefined ? { workingDirectory: created.workingDirectory } : {}),
-				...(created.project !== undefined ? { project: created.project } : {}),
-				...(created.provisional !== undefined ? { provisional: created.provisional } : {}),
-			},
-		};
 	}
 
 	/**

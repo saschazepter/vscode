@@ -23,7 +23,7 @@ import { IProductService } from '../../../product/common/productService.js';
 import { createSchema, platformRootSchema, platformSessionSchema, schemaProperty, AgentHostMcpServersConfigKey, type ISchemaProperty, type SessionMode } from '../../common/agentHostSchema.js';
 import { createPricingMetaFromBilling, normalizeCAPIBilling } from '../../common/agentModelPricing.js';
 import { getReasoningEffortDescription, getReasoningEffortLabel } from '../../common/reasoningEffort.js';
-import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentSession, AgentSignal, CODEX_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChatContext, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentProvisionSession, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, resolveAgentChatContext, type AgentProvider, type AuthenticateParams } from '../../common/agentService.js';
+import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentSession, AgentSignal, CODEX_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChatContext, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, resolveAgentChatContext, type AgentProvider, type AuthenticateParams } from '../../common/agentService.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { ActionType, isChatAction, type SessionAction, type ChatAction } from '../../common/state/sessionActions.js';
@@ -2372,10 +2372,7 @@ export class CodexAgent extends Disposable implements IAgent {
 	 * already bound to that session.
 	 */
 	readonly chats: IAgentChats = {
-		createChat: (chat: URI, _context: URI | IAgentChatContext, options?: IAgentCreateChatOptions): Promise<IAgentCreateChatResult | void> => {
-			if (options?.newSession) {
-				return this._provisionChat(chat, options.newSession);
-			}
+		createChat: (_chat: URI, _context: URI | IAgentChatContext, _options?: IAgentCreateChatOptions): Promise<IAgentCreateChatResult | void> => {
 			throw new Error('Codex agent does not support creating additional conversations');
 		},
 		fork: (_chat: URI, _context: URI | IAgentChatContext, _source: IAgentCreateChatForkSource, _options?: IAgentCreateChatOptions): Promise<IAgentCreateChatResult | void> => {
@@ -2415,12 +2412,11 @@ export class CodexAgent extends Disposable implements IAgent {
 	};
 
 	createSession(config: IAgentCreateSessionConfig = {}): Promise<IAgentCreateSessionResult> {
-		return this._createSession(config, { kind: 'unbound' });
+		return this._createSession(config);
 	}
 
 	private async _createSession(
 		config: IAgentCreateSessionConfig,
-		target: { readonly kind: 'unbound' } | { readonly kind: 'chat'; readonly chat: URI },
 	): Promise<IAgentCreateSessionResult> {
 		this._logService.info(`[Codex DEBUG] createSession session=${config.session?.toString() ?? '(none)'} model=${config.model?.id ?? '(none)'} cwd=${config.workingDirectory?.toString() ?? '(none)'}`);
 		this._ensureAuthenticated();
@@ -2457,12 +2453,11 @@ export class CodexAgent extends Disposable implements IAgent {
 		}
 
 		const clientToolSet = new ActiveClientToolSet();
-		const chatChannel = target.kind === 'chat' ? target.chat : undefined;
 		const session: ICodexSession = {
 			sessionId,
 			threadId: undefined,
 			sessionUri,
-			chatChannel,
+			chatChannel: undefined,
 			workingDirectory: config.workingDirectory,
 			managedWorkingDirectory: undefined,
 			mapState: createCodexSessionMapState(new Set(this._serverToolHost?.toolNames ?? []), clientToolSet),
@@ -2495,31 +2490,11 @@ export class CodexAgent extends Disposable implements IAgent {
 			clientCustomizations: new CodexClientCustomizationStore(),
 		};
 		this._sessions.set(sessionId, session);
-		if (chatChannel) { this._sessionIdByChatUri.set(chatChannel.toString(), sessionId); }
 		this._schedulePrewarm(session);
 		return {
 			session: sessionUri,
 			workingDirectory: config.workingDirectory,
 			provisional: true,
-		};
-	}
-
-	private async _provisionChat(chat: URI, provision: IAgentProvisionSession): Promise<IAgentCreateChatResult> {
-		const created = await this._createSession({
-			session: provision.session,
-			...(provision.model !== undefined ? { model: provision.model } : {}),
-			...(provision.agent !== undefined ? { agent: provision.agent } : {}),
-			...(provision.workingDirectory !== undefined ? { workingDirectory: provision.workingDirectory } : {}),
-			...(provision.config !== undefined ? { config: provision.config } : {}),
-			...(provision.activeClient !== undefined ? { activeClient: provision.activeClient } : {}),
-			...(provision.progressToken !== undefined ? { progressToken: provision.progressToken } : {}),
-		}, { kind: 'chat', chat });
-		return {
-			provision: {
-				...(created.workingDirectory !== undefined ? { workingDirectory: created.workingDirectory } : {}),
-				...(created.project !== undefined ? { project: created.project } : {}),
-				...(created.provisional !== undefined ? { provisional: created.provisional } : {}),
-			},
 		};
 	}
 

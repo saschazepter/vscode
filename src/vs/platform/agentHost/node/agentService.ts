@@ -20,7 +20,7 @@ import { FileChangeType, FileOperationError, FileOperationResult, FileSystemProv
 import { InstantiationService } from '../../instantiation/common/instantiationService.js';
 import { ServiceCollection } from '../../instantiation/common/serviceCollection.js';
 import { ILogService } from '../../log/common/log.js';
-import { AgentProvider, AgentSession, AgentSignal, AgentHostSessionReleaseGraceMsEnvVar, IAgent, IAgentChatContext, IAgentChatDataChange, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentProvisionSession, IAgentHostAuthTokenRequest, IAgentHostNetworkDiagnosticsInfo, IAgentHostNetworkEndpoint, IAgentHostNetworkFetchResult, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSpawnChatEvent, AuthenticateParams, AuthenticateResult, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../common/agentService.js';
+import { AgentProvider, AgentSession, AgentSignal, AgentHostSessionReleaseGraceMsEnvVar, IAgent, IAgentChatContext, IAgentChatDataChange, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentInheritedChatContext, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentHostAuthTokenRequest, IAgentHostNetworkDiagnosticsInfo, IAgentHostNetworkEndpoint, IAgentHostNetworkFetchResult, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSpawnChatEvent, AuthenticateParams, AuthenticateResult, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../common/agentService.js';
 import { ISessionDataService, SESSION_ATTACHMENTS_DIRNAME } from '../common/sessionDataService.js';
 import { SessionConfigKey } from '../common/sessionConfigKeys.js';
 import { parseChangesetUri } from '../common/changesetUri.js';
@@ -1265,19 +1265,13 @@ export class AgentService extends Disposable implements IAgentService {
 
 		let created: IAgentCreateSessionResult | undefined;
 		try {
-			// Provision a session by creating its default chat; fork/import still
-			// use the session-addressed create path.
-			if (!config?.fork && !config?.importConversation) {
-				created = await this._provisionSessionViaDefaultChat(provider, config);
-			} else {
-				// Fork/import mint the session id server-side, so the session-backed chat
-				// cannot be addressed up front. Bind it explicitly once the session
-				// URI is known, before any client can subscribe/send — the agent
-				// then addresses the session-backed chat uniformly by its chat URI.
-				created = await provider.createSession(config ? this._toProviderConfig(config) : undefined);
-				const defaultChatUri = URI.parse(buildDefaultChatUri(created.session));
-				await provider.chats.bindSessionChat?.(defaultChatUri, this._chatContext(created.session, defaultChatUri));
-			}
+			// Provision the session through the agent's dedicated createSession
+			// method, then bind its default chat — the same path fork/import
+			// uses. The agent stands up the session's infrastructure; the chat
+			// surface is reserved for adding additional chats to it.
+			created = await provider.createSession(config ? this._toProviderConfig(config) : undefined);
+			const defaultChatUri = URI.parse(buildDefaultChatUri(created.session));
+			await provider.chats.bindSessionChat?.(defaultChatUri, this._chatContext(created.session, defaultChatUri));
 			if (deferWorktreeCreation && created.provisional) {
 				this._worktree?.notePending(AgentSession.id(created.session));
 			}
@@ -1288,34 +1282,6 @@ export class AgentService extends Disposable implements IAgentService {
 				this._worktree?.clearPending(requestedSessionId);
 			}
 		}
-	}
-
-	/**
-	 * Provision a session by driving the agent's chat surface: the orchestrator
-	 * allocates the session URI and default-chat URI, then maps the agent's
-	 * {@link IAgentProvisionResult} back to {@link IAgentCreateSessionResult}.
-	 */
-	private async _provisionSessionViaDefaultChat(provider: IAgent, config: IAgentCreateSessionConfig | undefined): Promise<IAgentCreateSessionResult> {
-		const sessionUri = config?.session ?? AgentSession.uri(provider.id, generateUuid());
-		const defaultChatUri = URI.parse(buildDefaultChatUri(sessionUri));
-		const providerConfig = config?.config !== undefined ? this._toProviderConfig({ config: config.config }).config : undefined;
-		const newSession: IAgentProvisionSession = {
-			session: sessionUri,
-			...(config?.model !== undefined ? { model: config.model } : {}),
-			...(config?.agent !== undefined ? { agent: config.agent } : {}),
-			...(config?.workingDirectory !== undefined ? { workingDirectory: config.workingDirectory } : {}),
-			...(providerConfig !== undefined ? { config: providerConfig } : {}),
-			...(config?.activeClient !== undefined ? { activeClient: config.activeClient } : {}),
-			...(config?.progressToken !== undefined ? { progressToken: config.progressToken } : {}),
-		};
-		const result = await provider.chats.createChat(defaultChatUri, this._chatContext(sessionUri, defaultChatUri), { newSession });
-		const provision = result ? result.provision : undefined;
-		return {
-			session: sessionUri,
-			...(provision?.workingDirectory !== undefined ? { workingDirectory: provision.workingDirectory } : {}),
-			...(provision?.project !== undefined ? { project: provision.project } : {}),
-			...(provision?.provisional !== undefined ? { provisional: provision.provisional } : {}),
-		};
 	}
 
 	private _getSessionChatsInTeardownOrder(session: URI): URI[] {
@@ -1448,13 +1414,36 @@ export class AgentService extends Disposable implements IAgentService {
 	 * the session), so no default-chat resolution is needed.
 	 */
 	private _createChat(provider: IAgent, chat: URI, session: URI, options: IAgentCreateChatOptions | undefined): Promise<IAgentCreateChatResult | void> {
-		const convOptions: IAgentCreateChatOptions | undefined = options && (options.title !== undefined || options.model !== undefined)
-			? { ...(options.title !== undefined ? { title: options.title } : {}), ...(options.model !== undefined ? { model: options.model } : {}) }
+		const inheritedContext = this._buildInheritedChatContext(session);
+		const convOptions: IAgentCreateChatOptions | undefined = (options?.title !== undefined || options?.model !== undefined || inheritedContext)
+			? {
+				...(options?.title !== undefined ? { title: options.title } : {}),
+				...(options?.model !== undefined ? { model: options.model } : {}),
+				...(inheritedContext ? { inheritedContext } : {}),
+			}
 			: undefined;
 		const context = this._chatContext(session, chat);
 		return options?.fork
 			? provider.chats.fork(chat, context, options.fork, convOptions)
 			: provider.chats.createChat(chat, context, convOptions);
+	}
+
+	/**
+	 * Resolve the owning session's context so the orchestrator can hand it to an
+	 * agent creating an additional chat, sparing the agent from reading it back
+	 * out of the parent session. The working directory prefers the AH-resolved
+	 * worktree; config is the session's current config values.
+	 */
+	private _buildInheritedChatContext(session: URI): IAgentInheritedChatContext | undefined {
+		const state = this._stateManager.getSessionState(session.toString());
+		const rawWorkingDirectory = state?.workingDirectory;
+		const workingDirectory = this._worktree?.getResolvedWorktree(AgentSession.id(session))
+			?? (typeof rawWorkingDirectory === 'string' ? URI.parse(rawWorkingDirectory) : rawWorkingDirectory);
+		if (!workingDirectory) {
+			return undefined;
+		}
+		const config = this._configurationService.getSessionConfigValues(session.toString());
+		return { workingDirectory, ...(config && Object.keys(config).length > 0 ? { config } : {}) };
 	}
 
 	private async _disposeChat(provider: IAgent, chat: URI): Promise<void> {

@@ -3519,7 +3519,7 @@ suite('CopilotAgent', () => {
 				};
 
 				const model: ModelSelection = { id: 'gpt-x' };
-				const result = await agent.chats.createChat(chatUri, session, { model });
+				const result = await agent.chats.createChat(chatUri, session, { model, inheritedContext: { workingDirectory: URI.file('/workspace') } });
 
 				const db = sessionDataService.openDatabase(session);
 				const raw = await db.object.getMetadata('copilot.chats');
@@ -3603,7 +3603,7 @@ suite('CopilotAgent', () => {
 
 				const chatUri = URI.parse(buildChatUri(session, 'peer-fork'));
 				await agent.chats.bindSessionChat!(defaultChatUri(session), session);
-				const result = await agent.chats.fork(chatUri, session, { source: URI.parse(buildDefaultChatUri(session)), turnId: 't1' });
+				const result = await agent.chats.fork(chatUri, session, { source: URI.parse(buildDefaultChatUri(session)), turnId: 't1' }, { inheritedContext: { workingDirectory: URI.file('/workspace') } });
 
 				const db = sessionDataService.openDatabase(session);
 				const raw = await db.object.getMetadata('copilot.chats');
@@ -3778,8 +3778,8 @@ suite('CopilotAgent', () => {
 				};
 				const peerAUri = URI.parse(buildChatUri(session, 'peer-a'));
 				const peerBUri = URI.parse(buildChatUri(session, 'peer-b'));
-				const resA = await agent1.chats.createChat(peerAUri, session, {});
-				const resB = await agent1.chats.createChat(peerBUri, session, {});
+				const resA = await agent1.chats.createChat(peerAUri, session, { inheritedContext: { workingDirectory: URI.file('/workspace') } });
+				const resB = await agent1.chats.createChat(peerBUri, session, { inheritedContext: { workingDirectory: URI.file('/workspace') } });
 				providerData['peer-a'] = resA!.providerData!;
 				providerData['peer-b'] = resB!.providerData!;
 			} finally {
@@ -4051,7 +4051,7 @@ suite('CopilotAgent', () => {
 				const chatUri = URI.parse(buildChatUri(session, 'peer-a'));
 
 				stubBackingSession(agent);
-				const result = await agent.chats.createChat(chatUri, session, { model: { id: 'gpt-x' } });
+				const result = await agent.chats.createChat(chatUri, session, { model: { id: 'gpt-x' }, inheritedContext: { workingDirectory: URI.file('/workspace') } });
 
 				assert.deepStrictEqual({
 					tracked: hasLiveChat(agent, chatUri),
@@ -4086,7 +4086,7 @@ suite('CopilotAgent', () => {
 				const chatUri = URI.parse(buildChatUri(session, 'peer-fork'));
 				await agent.chats.bindSessionChat!(defaultChatUri(session), session);
 				const source: IAgentCreateChatForkSource = { source: URI.parse(buildDefaultChatUri(session)), turnId: 't1' };
-				const result = await agent.chats.fork(chatUri, session, source);
+				const result = await agent.chats.fork(chatUri, session, source, { inheritedContext: { workingDirectory: URI.file('/workspace') } });
 
 				assert.deepStrictEqual({
 					forkArgs,

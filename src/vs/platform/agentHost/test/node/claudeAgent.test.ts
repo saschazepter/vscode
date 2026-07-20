@@ -7098,9 +7098,8 @@ suite('ClaudeAgent — Phase 11 customizations', () => {
 		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
 		const session = AgentSession.uri('claude', 'release-session');
 		const defaultChat = defaultChatUri(session);
-		await agent.chats.createChat(defaultChat, session, {
-			newSession: { session, workingDirectory: URI.file('/work') },
-		});
+		await agent.createSession({ session, workingDirectory: URI.file('/work') });
+		await agent.chats.bindSessionChat!(defaultChat, session);
 		const additionalChat = URI.parse(buildChatUri(session, 'additional'));
 		const additionalResult = await agent.chats.createChat(additionalChat, session);
 		const additionalId = AgentSession.id(additionalResult!.backingSession!);
