@@ -99,15 +99,7 @@ const NEW_CHAT_INPUT_FONT_FAMILY = 'system-ui, -apple-system, sans-serif';
 /** True while focus is in an Agents window composer that supports dictation. */
 const SessionsChatInputHasDictationFocus = new RawContextKey<boolean>('sessionsChatInputHasDictationFocus', false, localize('sessionsChatInputHasDictationFocus', "True when focus is in an Agents window chat composer that supports dictation."));
 
-/**
- * The composer a dictation shortcut should target. Tracked at module scope
- * because the Cmd/Ctrl+I keybinding is registered globally: the composer is not
- * an `IChatWidget`, so the shared Dictate action can't reach it, and a raw
- * editor `onKeyDown` handler loses the chord to `editor.action.triggerSuggest`
- * (bound to Cmd/Ctrl+I at `EditorContrib` weight). Routing through the
- * keybinding service lets this outrank Trigger Suggest, matching the main
- * window chat input.
- */
+/** The focused composer targeted by the globally registered dictation shortcut. */
 let activeDictationComposer: NewChatInputWidget | undefined;
 
 KeybindingsRegistry.registerCommandAndKeybindingRule({
