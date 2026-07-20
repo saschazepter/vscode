@@ -10,6 +10,8 @@ import { AgentHostE2EServerLease, type IAgentHostE2EProviderConfig, removeTempDi
 import type { TestProtocolClient } from '../../serverIntegrationTestHelpers.js';
 import { defineCoreTests } from './coreSuite.js';
 import { defineFileOperationsTests } from './fileOperationsSuite.js';
+import { defineHostFeaturesTests } from './hostFeaturesSuite.js';
+import { defineStateOperationsTests } from './stateOperationsSuite.js';
 import { defineSubagentTests } from './subagentSuite.js';
 import { defineTurnLifecycleTests } from './turnLifecycleSuite.js';
 import { defineWorkspaceTests } from './workspaceSuite.js';
@@ -81,6 +83,8 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 		});
 
 		defineCoreTests(context);
+		defineHostFeaturesTests(context);
+		defineStateOperationsTests(context);
 		defineFileOperationsTests(context);
 		defineTurnLifecycleTests(context);
 		defineWorkspaceTests(context);
