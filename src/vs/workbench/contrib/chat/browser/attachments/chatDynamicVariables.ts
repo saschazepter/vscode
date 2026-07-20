@@ -15,7 +15,7 @@ import { Action2, registerAction2 } from '../../../../../platform/actions/common
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
-import { IChatRequestVariableValue, IDynamicVariable } from '../../common/attachments/chatVariables.js';
+import { IChatRequestVariableValue, IDynamicVariable, toAttachedContextDynamicVariable } from '../../common/attachments/chatVariables.js';
 import { IChatWidget } from '../chat.js';
 import { IChatWidgetContrib } from '../widget/chatWidget.js';
 
@@ -152,6 +152,11 @@ export class ChatDynamicVariableModel extends Disposable implements IChatWidgetC
 	addReference(ref: IDynamicVariable): void {
 		if (!isValidEditorRange(ref.range)) {
 			return;
+		}
+
+		const existingAttachment = this.widget.input.attachmentModel.attachments.find(attachment => attachment.id === ref.id && !attachment.range);
+		if (existingAttachment) {
+			ref = toAttachedContextDynamicVariable(existingAttachment, ref.range);
 		}
 
 		this._variables.push(ref);

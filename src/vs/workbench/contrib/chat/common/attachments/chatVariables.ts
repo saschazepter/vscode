@@ -7,11 +7,12 @@ import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { IRange } from '../../../../../editor/common/core/range.js';
+import { IOffsetRange } from '../../../../../editor/common/core/ranges/offsetRange.js';
 import { Location } from '../../../../../editor/common/languages.js';
 import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IChatModel } from '../model/chatModel.js';
 import { IChatContentReference, IChatProgressMessage } from '../chatService/chatService.js';
-import { IDiagnosticVariableEntryFilterData, StringChatContextValue } from './chatVariableEntries.js';
+import { IDiagnosticVariableEntryFilterData, StringChatContextValue, type IChatRequestVariableEntry } from './chatVariableEntries.js';
 import { ToolAndToolSetEnablementMap } from '../tools/languageModelToolsService.js';
 
 export interface IChatVariableData {
@@ -58,6 +59,7 @@ export interface IDynamicVariable {
 	modelDescription?: string;
 	isFile?: boolean;
 	isDirectory?: boolean;
+	attachment?: IDynamicVariableAttachment;
 	data: IChatRequestVariableValue;
 	/**
 	 * Implementation-defined metadata that flows through to the resulting
@@ -66,4 +68,29 @@ export interface IDynamicVariable {
 	 * to chat input completions.
 	 */
 	_meta?: Record<string, unknown>;
+}
+
+export function toAttachedContextDynamicVariable(entry: IChatRequestVariableEntry, range: IRange): IDynamicVariable {
+	return {
+		id: entry.id,
+		fullName: entry.name,
+		icon: entry.icon,
+		modelDescription: entry.modelDescription,
+		isFile: entry.kind === 'file',
+		isDirectory: entry.kind === 'directory',
+		range,
+		data: undefined,
+	};
+}
+
+type WithoutRange<T> = T extends IChatRequestVariableEntry ? Omit<T, 'range'> : never;
+export type IDynamicVariableAttachment = WithoutRange<IChatRequestVariableEntry>;
+
+export function toDynamicVariableAttachment(entry: IChatRequestVariableEntry): IDynamicVariableAttachment {
+	const { range, ...attachment } = entry;
+	return attachment;
+}
+
+export function fromDynamicVariableAttachment(attachment: IDynamicVariableAttachment, range: IOffsetRange): IChatRequestVariableEntry {
+	return { ...attachment, range };
 }

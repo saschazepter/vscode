@@ -79,6 +79,7 @@ export function getAccessibilityHelpText(type: 'panelChat' | 'inlineChat' | 'qui
 			content.push(localize('chat.agentHostApprovalsPicker', 'When an agent session exposes approval presets, use Tab to reach the Approvals picker and choose how it handles workspace access, commands, and the internet.'));
 		}
 		content.push(localize('chat.requestHistory', 'In the input box, use up and down arrows to navigate your request history. Edit input and use enter or the submit button to run a new request.'));
+		content.push(localize('chat.attachments.inlineReferences', 'To mention an attached context item at a specific position without removing it from the attached context, type # or @ and select the attachment from the suggestions.'));
 		content.push(localize('chat.attachments.removal', 'To remove attached contexts, focus an attachment and press Delete or Backspace.'));
 		content.push(localize('workbench.action.chat.toggleSpeechToText', 'To dictate your request into the input box using on-device speech-to-text, invoke the Dictate command{0}. Invoke it again to stop; recording start and stop are indicated by accessibility signals.', '<keybinding:workbench.action.chat.toggleSpeechToText>'));
 		content.push(localize('workbench.action.chat.cancelSpeechToText', 'While dictating, invoke the Cancel Dictation command{0} to stop and discard the dictated text.', '<keybinding:workbench.action.chat.cancelSpeechToText>'));

@@ -9,7 +9,7 @@ import { IOffsetRange, OffsetRange } from '../../../../../editor/common/core/ran
 import { IRange, Range } from '../../../../../editor/common/core/range.js';
 import { IChatAgentCommand, IChatAgentData, IChatAgentService, reviveSerializedAgent } from '../participants/chatAgents.js';
 import { IChatSlashData } from '../participants/chatSlashCommands.js';
-import { IChatRequestProblemsVariable, IChatRequestVariableValue } from '../attachments/chatVariables.js';
+import { fromDynamicVariableAttachment, IChatRequestProblemsVariable, IChatRequestVariableValue, IDynamicVariableAttachment } from '../attachments/chatVariables.js';
 import { ChatAgentLocation } from '../constants.js';
 import { IToolData } from '../tools/languageModelToolsService.js';
 import { IChatRequestToolEntry, IChatRequestToolSetEntry, IChatRequestVariableEntry, IDiagnosticVariableEntryFilterData } from '../attachments/chatVariableEntries.js';
@@ -208,7 +208,7 @@ export class ChatRequestSlashPromptPart implements IParsedChatRequestPart {
 export class ChatRequestDynamicVariablePart implements IParsedChatRequestPart {
 	static readonly Kind = 'dynamic';
 	readonly kind = ChatRequestDynamicVariablePart.Kind;
-	constructor(readonly range: OffsetRange, readonly editorRange: IRange, readonly text: string, readonly id: string, readonly modelDescription: string | undefined, readonly data: IChatRequestVariableValue, readonly fullName?: string, readonly icon?: ThemeIcon, readonly isFile?: boolean, readonly isDirectory?: boolean, readonly _meta?: Record<string, unknown>) { }
+	constructor(readonly range: OffsetRange, readonly editorRange: IRange, readonly text: string, readonly id: string, readonly modelDescription: string | undefined, readonly data: IChatRequestVariableValue, readonly fullName?: string, readonly icon?: ThemeIcon, readonly isFile?: boolean, readonly isDirectory?: boolean, readonly _meta?: Record<string, unknown>, readonly attachment?: IDynamicVariableAttachment) { }
 
 	get referenceText(): string {
 		return this.text.replace(chatVariableLeader, '');
@@ -221,6 +221,10 @@ export class ChatRequestDynamicVariablePart implements IParsedChatRequestPart {
 	toVariableEntry(): IChatRequestVariableEntry {
 		if (this.id === 'vscode.problems') {
 			return IDiagnosticVariableEntryFilterData.toEntry((this.data as IChatRequestProblemsVariable).filter);
+		}
+
+		if (this.attachment) {
+			return fromDynamicVariableAttachment(this.attachment, this.range);
 		}
 
 		return { kind: this.isDirectory ? 'directory' : this.isFile ? 'file' : 'generic', id: this.id, name: this.referenceText, range: this.range, value: this.data, fullName: this.fullName, icon: this.icon, _meta: this._meta };
@@ -303,7 +307,8 @@ export function reviveParsedChatRequest(serialized: IParsedChatRequest): IParsed
 					(part as ChatRequestDynamicVariablePart).icon,
 					(part as ChatRequestDynamicVariablePart).isFile,
 					(part as ChatRequestDynamicVariablePart).isDirectory,
-					(part as ChatRequestDynamicVariablePart)._meta
+					(part as ChatRequestDynamicVariablePart)._meta,
+					revive((part as ChatRequestDynamicVariablePart).attachment)
 				);
 			} else {
 				throw new Error(`Unknown chat request part: ${part.kind}`);
