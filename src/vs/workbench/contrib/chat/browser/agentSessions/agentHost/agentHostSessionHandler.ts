@@ -277,11 +277,17 @@ function getClientToolPreApproval(toolCall: ToolCallState): ConfirmedReason | un
 		return { type: ToolConfirmKind.Setting, id: SessionConfigKey.AutoApprove };
 	}
 
+	// Only trust `Running` and `AuthRequired` as evidence of a genuine
+	// approval: they can only be entered after the agent host confirmed the
+	// call, so their `confirmed` reason is authoritative. `Completed` and
+	// `PendingResultConfirmation` are excluded because the reducer
+	// synthesizes a `NotNeeded` confirmation when a `ChatToolCallComplete`
+	// arrives while the call is still `PendingConfirmation`, which would
+	// otherwise let us falsely confirm and execute a call that was never
+	// approved.
 	switch (toolCall.status) {
 		case ToolCallStatus.Running:
 		case ToolCallStatus.AuthRequired:
-		case ToolCallStatus.PendingResultConfirmation:
-		case ToolCallStatus.Completed:
 			switch (toolCall.confirmed) {
 				case ToolCallConfirmationReason.NotNeeded:
 					return { type: ToolConfirmKind.ConfirmationNotNeeded };
