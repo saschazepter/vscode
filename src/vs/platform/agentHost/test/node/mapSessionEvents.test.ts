@@ -581,6 +581,7 @@ suite('mapSessionEvents — subagent routing', () => {
 			{ type: 'assistant.message', data: { messageId: 'm2', content: '', toolRequests: [{ toolCallId: 'tc-task', name: 'task' }] } },
 			{ type: 'tool.execution_start', data: { toolCallId: 'tc-task', toolName: 'task', arguments: { description: 'explore', agentName: 'explore' } } },
 			{ type: 'subagent.started', agentId: 'agent-1', data: { toolCallId: 'tc-task', agentName: 'explore', agentDisplayName: 'Explore', agentDescription: 'Explores' } },
+			{ type: 'user.message', agentId: 'agent-1', data: { interactionId: 'subagent-prompt', content: 'Inspect the implementation.' } },
 			// Inner subagent message + tool call, tagged only with the
 			// envelope-level agentId (no data.parentToolCallId).
 			{ type: 'assistant.message', agentId: 'agent-1', data: { messageId: 'm3', content: '', toolRequests: [{ toolCallId: 'tc-inner', name: 'bash' }] } },
@@ -607,6 +608,7 @@ suite('mapSessionEvents — subagent routing', () => {
 		const subagentTurns = subagentTurnsByToolCallId.get('tc-task');
 		assert.ok(subagentTurns, 'Expected subagent turns for tc-task');
 		assert.strictEqual(subagentTurns!.length, 1);
+		assert.strictEqual(subagentTurns![0].message.text, 'Inspect the implementation.');
 		assert.deepStrictEqual(partKinds(subagentTurns![0].responseParts), [
 			{ kind: ResponsePartKind.ToolCall },
 			{ kind: ResponsePartKind.Markdown, content: 'Subagent is done.' },

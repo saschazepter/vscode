@@ -2439,6 +2439,19 @@ suite('CopilotAgentSession', () => {
 			assert.strictEqual(turnStarted, undefined, 'synthetic user messages should not promote steering to a turn');
 		});
 
+		test('does not flip turns for subagent user messages', async () => {
+			const { session, mockSession, signals } = await createAgentSession(disposables);
+			session.resetTurnState('turn-original');
+
+			await session.sendSteering({ id: 'steer-1', message: { text: 'focus on tests', origin: { kind: MessageKind.User } } });
+			mockSession.fire('user.message', {
+				content: 'focus on tests',
+			} as SessionEventPayload<'user.message'>['data'], { agentId: 'agent-1' });
+
+			const turnStarted = signals.find(s => s.kind === 'action' && (s as IAgentActionSignal).action.type === ActionType.ChatTurnStarted);
+			assert.strictEqual(turnStarted, undefined, 'subagent user messages should not promote root steering to a turn');
+		});
+
 		test('does not flip turns when the user.message content does not match', async () => {
 			const { session, mockSession, signals } = await createAgentSession(disposables);
 			session.resetTurnState('turn-original');
@@ -6145,6 +6158,24 @@ suite('CopilotAgentSession', () => {
 
 			assert.strictEqual(telemetryService.events.filter(e => e.eventName === 'agentHost.instructionsCollected').length, 0);
 			assert.strictEqual(mockSession.getInstructionSourcesCallCount, 0, 'should short-circuit before the RPC');
+		});
+
+		test('skips subagent user messages', async () => {
+			const telemetryService = new CapturingTelemetryService();
+			const { mockSession } = await createAgentSession(disposables, { telemetryService });
+
+			mockSession.fire('user.message', {
+				content: 'delegated prompt',
+			} as SessionEventPayload<'user.message'>['data'], { agentId: 'agent-1' });
+			await timeout(0);
+
+			assert.deepStrictEqual({
+				events: telemetryService.events.filter(e => e.eventName === 'agentHost.instructionsCollected'),
+				getSourcesCalls: mockSession.getInstructionSourcesCallCount,
+			}, {
+				events: [],
+				getSourcesCalls: 0,
+			});
 		});
 
 		test('does not emit or leak an unhandled rejection when getSources throws', async () => {
