@@ -100,7 +100,10 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 	}
 
 	function stateTest(title: string, run: Mocha.AsyncFunc): void {
-		test(title, run).timeout(60_000);
+		test(title, function () {
+			this.timeout(60_000);
+			return run.call(this);
+		});
 	}
 
 	stateTest('client title change updates session state', async function () {

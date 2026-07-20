@@ -47,7 +47,10 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 	}
 
 	function hostTest(title: string, run: Mocha.AsyncFunc, enabled = true): void {
-		(enabled ? test : test.skip)(title, run).timeout(60_000);
+		(enabled ? test : test.skip)(title, function () {
+			this.timeout(60_000);
+			return run.call(this);
+		});
 	}
 
 	hostTest('initialize advertises host-owned input capabilities', async function () {
