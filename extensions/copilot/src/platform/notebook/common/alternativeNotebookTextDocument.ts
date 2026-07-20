@@ -397,12 +397,15 @@ function withNotebookChangesAndEdit(cells: readonly AltCellInfo[], blockComment:
 		let altRangeEnd = 0;
 		for (const c of altCells) {
 			const notebookIndex = c.altCell.cell.index;
+			// `altCells` is ordered ascending by notebook `cell.index`, so once we reach a cell at or
+			// beyond `event.range.end` neither bound can grow further — stop iterating.
+			if (notebookIndex >= event.range.end) {
+				break;
+			}
 			if (notebookIndex < event.range.start) {
 				altRangeStart++;
 			}
-			if (notebookIndex < event.range.end) {
-				altRangeEnd++;
-			}
+			altRangeEnd++;
 		}
 
 		const removedCells = altCells.slice(altRangeStart, altRangeEnd);
