@@ -221,7 +221,7 @@ export class TextSearchQuickAccess extends PickerQuickAccessProvider<ITextSearch
 		// file match has not been expanded/loaded), in which case selecting or revealing it
 		// throws `TreeError [SearchView] Tree element not found`. Guard on `hasNode` before
 		// touching the tree and fall back to focusing the search widget otherwise.
-		if (currentElem && viewer?.hasNode(currentElem)) {
+		if (currentElem && viewer && viewer.hasNode(currentElem)) {
 			viewer.setFocus([currentElem], getSelectionKeyboardEvent());
 			viewer.setSelection([currentElem], getSelectionKeyboardEvent());
 			viewer.reveal(currentElem);
