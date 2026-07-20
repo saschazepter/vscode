@@ -83,7 +83,7 @@ import { IChatStatusItemService } from '../../../../workbench/contrib/chat/brows
 import { handleTerminalCommandPaste, isTerminalCommandInput } from '../../../../workbench/contrib/chat/browser/chatTerminalCommandPaste.js';
 import { getChatSessionType } from '../../../../workbench/contrib/chat/common/model/chatUri.js';
 import { ChatSpeechToTextState, IChatSpeechToTextService } from '../../../../workbench/contrib/chat/browser/speechToText/chatSpeechToTextService.js';
-import { isDictating, startDictation, stopDictation } from '../../../../workbench/contrib/chat/browser/speechToText/dictationSession.js';
+import { runDictationShortcut } from '../../../../workbench/contrib/chat/browser/actions/chatSpeechToTextActions.js';
 import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 
 
@@ -99,11 +99,13 @@ const NEW_CHAT_INPUT_FONT_FAMILY = 'system-ui, -apple-system, sans-serif';
 /** True while focus is in an Agents window composer that supports dictation. */
 const SessionsChatInputHasDictationFocus = new RawContextKey<boolean>('sessionsChatInputHasDictationFocus', false, localize('sessionsChatInputHasDictationFocus', "True when focus is in an Agents window chat composer that supports dictation."));
 
-/** The focused composer targeted by the globally registered dictation shortcut. */
+const TOGGLE_DICTATION_COMMAND_ID = 'sessions.action.chat.toggleDictation';
+
+/** Composer the dictation shortcut targets (the composer isn't an `IChatWidget`). */
 let activeDictationComposer: NewChatInputWidget | undefined;
 
 KeybindingsRegistry.registerCommandAndKeybindingRule({
-	id: 'sessions.action.chat.toggleDictation',
+	id: TOGGLE_DICTATION_COMMAND_ID,
 	weight: KeybindingWeight.WorkbenchContrib + 1,
 	when: ContextKeyExpr.and(
 		SessionsChatInputHasDictationFocus,
@@ -815,7 +817,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 			}
 		}));
 
-		const toggle = () => this._toggleDictation();
+		const toggle = () => this.toggleDictation();
 		// A styled div doesn't get Enter/Space activation or touch tap for free;
 		// wire them explicitly so the button is keyboard- and touch-accessible.
 		this._register(Gesture.addTarget(button));
@@ -835,33 +837,21 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 	}
 
 	/**
-	 * Toggle on-device dictation into this composer's editor. Invoked by the
-	 * Cmd/Ctrl+I keybinding (see {@link SessionsChatInputHasDictationFocus}),
-	 * which routes here because the composer isn't an `IChatWidget`.
+	 * Toggle on-device dictation into this composer's editor, honoring the
+	 * tap-vs-hold `chat.speechToText.mode` setting. Shared by the mic button and
+	 * the Cmd/Ctrl+I chord ({@link TOGGLE_DICTATION_COMMAND_ID}); the shared
+	 * Dictate action can't target this composer since it isn't an `IChatWidget`.
 	 */
-	toggleDictation(): void {
-		void this._toggleDictation();
-	}
-
-	/**
-	 * Toggle on-device dictation into this composer's editor. Shared by the mic
-	 * button and the Cmd/Ctrl+I chord. The global Dictate action can't target
-	 * this composer (it isn't an IChatWidget), so routing is handled here.
-	 */
-	private async _toggleDictation(): Promise<void> {
-		const sttService = this.chatSpeechToTextService;
-		if (isDictating()) {
-			await stopDictation();
+	async toggleDictation(): Promise<void> {
+		if (!this._editor) {
 			return;
 		}
-		if (!sttService.isConfigured || sttService.state !== ChatSpeechToTextState.Idle || !this._editor) {
-			return;
-		}
-		const domNode = this._editor.getDomNode();
-		if (!domNode) {
-			return;
-		}
-		await startDictation(sttService, this._editor, dom.getWindow(domNode), this.logService);
+		await runDictationShortcut({
+			speechService: this.chatSpeechToTextService,
+			keybindingService: this.keybindingService,
+			configurationService: this.configurationService,
+			logService: this.logService,
+		}, TOGGLE_DICTATION_COMMAND_ID, this._editor);
 	}
 
 	// --- Input History (IHistoryNavigationWidget) ---
