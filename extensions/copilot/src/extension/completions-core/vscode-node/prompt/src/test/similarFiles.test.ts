@@ -446,6 +446,47 @@ suite('Test getSimilarSnippets function', function () {
 		const correctSnippetLocations: number[][] = [];
 		assert.deepStrictEqual(snippetLocations, correctSnippetLocations);
 	});
+	test('Preserves each source document uri when relativePath collides (multi-root)', async function () {
+		// Two neighbor files from different workspace roots that reduce to the SAME
+		// relativePath. A snippet's provenance must come from its distinct `uri`, not the
+		// shared `relativePath`, otherwise a multi-root workspace can conflate the two.
+		const collidingRelativePath = 'shared/util';
+		const filesSharingRelativePath: SimilarFileInfo[] = [
+			{
+				relativePath: collidingRelativePath,
+				uri: 'file:///root-a/shared/util',
+				source: dedent`
+					A
+						B
+						C
+						H
+					X
+						Y
+						Z
+					`,
+			},
+			{
+				relativePath: collidingRelativePath,
+				uri: 'file:///root-b/shared/util',
+				source: dedent`
+			  D
+				  H
+			  `,
+			},
+		];
+
+		const snippets = await getSimilarSnippets(doc, filesSharingRelativePath, defaultSimilarFilesOptions);
+
+		// Both files contribute a snippet; correlate each by a token unique to its source
+		// ('X' only exists in root-a) and assert the uri is its true origin, not conflated.
+		const provenance = snippets
+			.map(s => ({ uri: s.uri, relativePath: s.relativePath, fromRootA: s.snippet.includes('X') }))
+			.sort((a, b) => a.uri.localeCompare(b.uri));
+		assert.deepStrictEqual(provenance, [
+			{ uri: 'file:///root-a/shared/util', relativePath: collidingRelativePath, fromRootA: true },
+			{ uri: 'file:///root-b/shared/util', relativePath: collidingRelativePath, fromRootA: false },
+		]);
+	});
 });
 
 suite('Test trimming reference document', function () {
