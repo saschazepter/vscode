@@ -128,7 +128,7 @@ export class AhpSnapshotRecorder {
 				if (message.id !== undefined) {
 					(direction === 'c2s' ? clientRequests : serverRequests).set(message.id, message.method);
 				}
-				if (message.method === 'root/sessionSummaryChanged') {
+				if (message.method === 'root/sessionSummaryChanged' || message.method === 'notifications/tools/list_changed') {
 					continue;
 				}
 				if (message.method === 'dispatchAction' || message.method === 'action') {
