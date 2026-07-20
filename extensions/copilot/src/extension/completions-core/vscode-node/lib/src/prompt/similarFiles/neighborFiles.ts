@@ -50,6 +50,23 @@ export function isRelatedNeighboringFileType(type: NeighboringFileType): boolean
 }
 
 /**
+ * Collects the URIs of the neighboring files that came from a language-service
+ * "related" source (see {@link isRelatedNeighboringFileType}) rather than from an
+ * open tab or a cursor/workspace heuristic.
+ */
+export function collectRelatedFileUris(neighborSource: Map<NeighboringFileType, string[]>): Set<string> {
+	const relatedFileUris = new Set<string>();
+	for (const [type, uris] of neighborSource) {
+		if (isRelatedNeighboringFileType(type)) {
+			for (const uri of uris) {
+				relatedFileUris.add(uri);
+			}
+		}
+	}
+	return relatedFileUris;
+}
+
+/**
  * We found out that considering
  * all **open** neighbor files (independent of the language) was not helpful. However, some
  * specific languages (e.g. frontend frameworks) benefit from this approach. Leaving this

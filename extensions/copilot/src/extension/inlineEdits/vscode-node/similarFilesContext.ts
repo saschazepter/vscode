@@ -5,7 +5,7 @@
 
 import { getSimilarFilesOptions } from '../../completions-core/vscode-node/lib/src/experiments/similarFileOptionsProvider';
 import { getPromptOptions } from '../../completions-core/vscode-node/lib/src/prompt/prompt';
-import { NeighborSource, isRelatedNeighboringFileType } from '../../completions-core/vscode-node/lib/src/prompt/similarFiles/neighborFiles';
+import { NeighborSource, collectRelatedFileUris } from '../../completions-core/vscode-node/lib/src/prompt/similarFiles/neighborFiles';
 import { TelemetryWithExp } from '../../completions-core/vscode-node/lib/src/telemetry';
 import { ICompletionsTextDocumentManagerService } from '../../completions-core/vscode-node/lib/src/textDocumentManager';
 import { DocumentInfoWithOffset } from '../../completions-core/vscode-node/prompt/src/prompt';
@@ -78,14 +78,7 @@ export class SimilarFilesContextService implements ISimilarFilesContextService {
 			accessor => NeighborSource.getNeighborFilesAndTraits(accessor, uri, languageId, telemetryData, undefined, undefined, undefined, includeRelatedFiles)
 		);
 
-		const relatedFileUris = new Set<string>();
-		for (const [type, uris] of neighborSource) {
-			if (isRelatedNeighboringFileType(type)) {
-				for (const relatedUri of uris) {
-					relatedFileUris.add(relatedUri);
-				}
-			}
-		}
+		const relatedFileUris = collectRelatedFileUris(neighborSource);
 
 		const promptOptions = completionsInstaService.invokeFunction(getPromptOptions, telemetryData, languageId);
 		const similarFilesOptions =
