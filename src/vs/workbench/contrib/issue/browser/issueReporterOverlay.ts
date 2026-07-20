@@ -7,7 +7,7 @@ import { KeybindingLabel } from '../../../../base/browser/ui/keybindingLabel/key
 import { ResolvedKeybinding } from '../../../../base/common/keybindings.js';
 import { OS } from '../../../../base/common/platform.js';
 import './media/issueReporterOverlay.css';
-import { $, addDisposableListener, append, disposableWindowInterval, EventType, getWindow } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, append, DisposableResizeObserver, disposableWindowInterval, EventType, getWindow } from '../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { Button } from '../../../../base/browser/ui/button/button.js';
 import { IContextMenuProvider } from '../../../../base/browser/contextmenu.js';
@@ -20,7 +20,7 @@ import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { MarkdownString } from '../../../../base/common/htmlContent.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
-import { DisposableStore, toDisposable } from '../../../../base/common/lifecycle.js';
+import { DisposableStore, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { IMarkdownRendererService } from '../../../../platform/markdown/browser/markdownRenderer.js';
 import { IContextViewService } from '../../../../platform/contextview/browser/contextView.js';
@@ -41,6 +41,17 @@ interface ISimilarIssue {
 	readonly html_url: string;
 	readonly title: string;
 	readonly state?: string;
+}
+
+interface IFloatingBarDragState {
+	readonly pointerStartX: number;
+	readonly pointerStartY: number;
+	readonly barStartX: number;
+	readonly barStartY: number;
+	pointerX: number;
+	pointerY: number;
+	barWidth: number;
+	barHeight: number;
 }
 
 const enum WizardStep {
@@ -154,6 +165,7 @@ export class IssueReporterOverlay {
 	private readonly model: IssueReporterModel;
 	private visible = false;
 	private floatingBar: HTMLElement | undefined;
+	private floatingBarDragState: IFloatingBarDragState | undefined;
 	private previewOpened = false;
 	private previewedDraftKey: string | undefined;
 	private closeButton: Button | undefined;
@@ -173,6 +185,7 @@ export class IssueReporterOverlay {
 		private readonly refreshPerformanceInfo?: () => Promise<void>,
 		/** Returns the user's currently-bound keybinding for the given command id, or undefined when unbound. */
 		private readonly resolveKeybinding?: (commandId: string) => ResolvedKeybinding | undefined,
+		private readonly resizeObserverCtor?: typeof ResizeObserver,
 	) {
 		this._hideToolbarInScreenshots = initialHideToolbar;
 		const hasStandaloneExtensionData = !!data.data && !data.extensionId;
@@ -428,42 +441,59 @@ export class IssueReporterOverlay {
 
 		mountTarget.appendChild(this.floatingBar);
 
-		// Dragging (clamped to window bounds)
-		let dragStartX = 0;
-		let dragStartY = 0;
-		let barStartX = 0;
-		let barStartY = 0;
-
 		const onPointerMove = (e: PointerEvent) => {
-			const dx = e.clientX - dragStartX;
-			const dy = e.clientY - dragStartY;
-			const barW = this.floatingBar!.offsetWidth;
-			const barH = this.floatingBar!.offsetHeight;
-			const maxX = targetWindow.innerWidth - barW;
-			const maxY = targetWindow.innerHeight - barH;
-			const newX = Math.max(0, Math.min(barStartX + dx, maxX));
-			const newY = Math.max(0, Math.min(barStartY + dy, maxY));
-			this.floatingBar!.style.left = `${newX}px`;
-			this.floatingBar!.style.top = `${newY}px`;
-			this.floatingBar!.style.right = 'auto';
+			if (!this.floatingBarDragState) {
+				return;
+			}
+			this.floatingBarDragState.pointerX = e.clientX;
+			this.floatingBarDragState.pointerY = e.clientY;
+			this.updateFloatingBarDragPosition();
 		};
 
+		const dragListeners = this.disposables.add(new MutableDisposable<DisposableStore>());
 		const onPointerUp = () => {
 			dragArea.classList.remove('dragged');
-			targetWindow.document.removeEventListener('pointermove', onPointerMove);
-			targetWindow.document.removeEventListener('pointerup', onPointerUp);
+			this.floatingBarDragState = undefined;
+			dragListeners.clear();
 		};
 
 		this.disposables.add(addDisposableListener(dragArea, EventType.POINTER_DOWN, (e: PointerEvent) => {
 			e.preventDefault();
+			onPointerUp();
 			dragArea.classList.add('dragged');
-			dragStartX = e.clientX;
-			dragStartY = e.clientY;
 			const rect = this.floatingBar!.getBoundingClientRect();
-			barStartX = rect.left;
-			barStartY = rect.top;
-			targetWindow.document.addEventListener('pointermove', onPointerMove);
-			targetWindow.document.addEventListener('pointerup', onPointerUp);
+			const dragWindow = getWindow(this.floatingBar!);
+			this.floatingBarDragState = {
+				pointerStartX: e.clientX,
+				pointerStartY: e.clientY,
+				barStartX: rect.left,
+				barStartY: rect.top,
+				pointerX: e.clientX,
+				pointerY: e.clientY,
+				barWidth: rect.width,
+				barHeight: rect.height,
+			};
+			this.floatingBar!.style.right = 'auto';
+			const listeners = new DisposableStore();
+			listeners.add(addDisposableListener(dragWindow.document, EventType.POINTER_MOVE, onPointerMove));
+			listeners.add(addDisposableListener(dragWindow.document, EventType.POINTER_UP, onPointerUp));
+			listeners.add(addDisposableListener(dragWindow.document, 'pointercancel', onPointerUp));
+			const resizeObserver = listeners.add(new DisposableResizeObserver('IssueReporterOverlay.floatingBarDrag', entries => {
+				const entry = entries.find(entry => entry.target === this.floatingBar);
+				if (!entry || !this.floatingBarDragState) {
+					return;
+				}
+				const size = entry.borderBoxSize[0];
+				if (size) {
+					this.floatingBarDragState.barWidth = size.inlineSize;
+					this.floatingBarDragState.barHeight = size.blockSize;
+					this.updateFloatingBarDragPosition();
+				} else {
+					this.refreshFloatingBarDragGeometry();
+				}
+			}, dragWindow, { resizeObserverCtor: this.resizeObserverCtor }));
+			listeners.add(resizeObserver.observe(this.floatingBar!, { box: 'border-box' }));
+			dragListeners.value = listeners;
 		}));
 
 		// Keep the bar fully within the visible viewport when the window is
@@ -476,6 +506,10 @@ export class IssueReporterOverlay {
 				return;
 			}
 			const rect = this.floatingBar.getBoundingClientRect();
+			if (this.floatingBarDragState) {
+				this.floatingBarDragState.barWidth = rect.width;
+				this.floatingBarDragState.barHeight = rect.height;
+			}
 			const winW = targetWindow.innerWidth;
 			const winH = targetWindow.innerHeight;
 			const margin = 8;
@@ -509,6 +543,30 @@ export class IssueReporterOverlay {
 		this.disposables.add(toDisposable(() => {
 			this.floatingBar?.remove();
 		}));
+	}
+
+	private updateFloatingBarDragPosition(): void {
+		if (!this.floatingBar || !this.floatingBarDragState) {
+			return;
+		}
+		const targetWindow = getWindow(this.floatingBar);
+		const state = this.floatingBarDragState;
+		const maxX = targetWindow.innerWidth - state.barWidth;
+		const maxY = targetWindow.innerHeight - state.barHeight;
+		const newX = Math.max(0, Math.min(state.barStartX + state.pointerX - state.pointerStartX, maxX));
+		const newY = Math.max(0, Math.min(state.barStartY + state.pointerY - state.pointerStartY, maxY));
+		this.floatingBar.style.left = `${newX}px`;
+		this.floatingBar.style.top = `${newY}px`;
+	}
+
+	private refreshFloatingBarDragGeometry(): void {
+		if (!this.floatingBar || !this.floatingBarDragState) {
+			return;
+		}
+		const rect = this.floatingBar.getBoundingClientRect();
+		this.floatingBarDragState.barWidth = rect.width;
+		this.floatingBarDragState.barHeight = rect.height;
+		this.updateFloatingBarDragPosition();
 	}
 
 	private updateCaptureStripVisibility(): void {
@@ -2552,6 +2610,7 @@ ${rows.map(row => row.map(value => this.escapeMarkdownTableCell(value ?? '')).jo
 
 		this.updateScreenshotThumbnails();
 		this.updateAttachmentButtons();
+		this.refreshFloatingBarDragGeometry();
 	}
 
 	addRecording(filePath: string, durationMs: number, thumbnailDataUrl?: string): void {
