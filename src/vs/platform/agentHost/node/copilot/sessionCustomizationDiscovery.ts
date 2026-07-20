@@ -113,7 +113,7 @@ const INSTRUCTION_FILE_SUFFIX = '.instructions.md';
 const HOOK_FILE_SUFFIX = '.json';
 const SKILL_FILENAME = 'SKILL.md';
 const README_FILENAME = 'README.md';
-const CUSTOMIZATION_DISCOVERY_DEBUG_LOG_PATH = '/tmp/copilot-customization-discovery-debug.log';
+const CUSTOMIZATION_DISCOVERY_DEBUG_LOG_PATH = undefined; //'/tmp/copilot-customization-discovery-debug.log';
 const AGENT_INSTRUCTION_FILENAMES = new Set(['agents.md', 'claude.md', 'gemini.md', 'copilot-instructions.md']);
 
 interface ISearchRoot {
