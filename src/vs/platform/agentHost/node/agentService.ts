@@ -1299,7 +1299,7 @@ export class AgentService extends Disposable implements IAgentService {
 		const sessionUri = config?.session ?? AgentSession.uri(provider.id, generateUuid());
 		const defaultChatUri = URI.parse(buildDefaultChatUri(sessionUri));
 		const providerConfig = config?.config !== undefined ? this._toProviderConfig({ config: config.config }).config : undefined;
-		const provisionSession: IAgentProvisionSession = {
+		const newSession: IAgentProvisionSession = {
 			session: sessionUri,
 			...(config?.model !== undefined ? { model: config.model } : {}),
 			...(config?.agent !== undefined ? { agent: config.agent } : {}),
@@ -1308,7 +1308,7 @@ export class AgentService extends Disposable implements IAgentService {
 			...(config?.activeClient !== undefined ? { activeClient: config.activeClient } : {}),
 			...(config?.progressToken !== undefined ? { progressToken: config.progressToken } : {}),
 		};
-		const result = await provider.chats.createChat(defaultChatUri, this._chatContext(sessionUri, defaultChatUri), { provisionSession });
+		const result = await provider.chats.createChat(defaultChatUri, this._chatContext(sessionUri, defaultChatUri), { newSession });
 		const provision = result ? result.provision : undefined;
 		return {
 			session: sessionUri,
@@ -1342,12 +1342,8 @@ export class AgentService extends Disposable implements IAgentService {
 	}
 
 	private async _releaseSession(provider: IAgent, session: URI, chats: readonly URI[]): Promise<void> {
-		if (provider.chats.releaseChat) {
-			for (const chat of chats) {
-				await provider.chats.releaseChat(chat);
-			}
-		} else {
-			await provider.releaseSession?.(session);
+		for (const chat of chats) {
+			await provider.chats.releaseChat(chat);
 		}
 	}
 

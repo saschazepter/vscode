@@ -2989,12 +2989,88 @@ suite('CopilotAgent', () => {
 			const sessionDataService = disposables.add(new TestSessionDataService());
 			const client = new TestCopilotClient([]);
 			client.deleteSession = async () => { throw new Error('boom'); };
+			// The SDK session still exists, so the delete failure is genuine.
+			client.getSessionMetadata = async id => sdkSession(id);
 			const agent = createTestAgent(disposables, { sessionDataService, copilotClient: client });
 			try {
 				await agent.authenticate('https://api.github.com', 'token');
 
 				const session = AgentSession.uri('copilotcli', 'persisted-session-2');
 				await assert.rejects(() => agent.disposeSession(session), /boom/);
+			} finally {
+				await disposeAgent(agent);
+			}
+		});
+
+		test('disposeChat keeps a live chat backing when SDK deletion fails', async () => {
+			const sessionDataService = disposables.add(new TestSessionDataService());
+			const client = new TestCopilotClient([]);
+			client.deleteSession = async () => { throw new Error('boom'); };
+			// The SDK session still exists, so the delete failure is genuine.
+			client.getSessionMetadata = async id => sdkSession(id);
+			const agent = createTestAgent(disposables, { sessionDataService, copilotClient: client });
+			try {
+				await agent.authenticate('https://api.github.com', 'token');
+
+				const session = AgentSession.uri('copilotcli', 'persisted-session-live');
+				const chatUri = URI.parse(buildDefaultChatUri(session));
+				let disposed = false;
+				setDefaultSessionStub(agent, AgentSession.id(session), {
+					sessionId: AgentSession.id(session),
+					sessionUri: session,
+					chatChannelUri: chatUri,
+					destroySession: async () => { },
+					dispose: () => { disposed = true; },
+				}, chatUri);
+
+				await assert.rejects(() => agent.chats.disposeChat(chatUri, exactChatContext(session, chatUri)), /boom/);
+
+				assert.deepStrictEqual({
+					tracked: hasLiveChat(agent, chatUri),
+					backing: chatBindings(agent).get(chatUri.toString()),
+					disposed,
+				}, {
+					tracked: true,
+					backing: { sdkSessionId: AgentSession.id(session) },
+					disposed: false,
+				});
+			} finally {
+				await disposeAgent(agent);
+			}
+		});
+
+		test('disposeChat completes idempotently when the SDK session was already deleted', async () => {
+			const sessionDataService = disposables.add(new TestSessionDataService());
+			// `getSessionMetadata` returns undefined for every id (session already gone).
+			const client = new TestCopilotClient([]);
+			client.deleteSession = async () => { throw new Error('session not found'); };
+			const agent = createTestAgent(disposables, { sessionDataService, copilotClient: client });
+			try {
+				await agent.authenticate('https://api.github.com', 'token');
+
+				const session = AgentSession.uri('copilotcli', 'persisted-session-gone');
+				const chatUri = URI.parse(buildDefaultChatUri(session));
+				let disposed = false;
+				setDefaultSessionStub(agent, AgentSession.id(session), {
+					sessionId: AgentSession.id(session),
+					sessionUri: session,
+					chatChannelUri: chatUri,
+					destroySession: async () => { },
+					dispose: () => { disposed = true; },
+				}, chatUri);
+
+				// A confirmed-gone SDK session is swallowed so a retried teardown completes.
+				await agent.chats.disposeChat(chatUri, exactChatContext(session, chatUri));
+
+				assert.deepStrictEqual({
+					tracked: hasLiveChat(agent, chatUri),
+					backing: chatBindings(agent).get(chatUri.toString()),
+					disposed,
+				}, {
+					tracked: false,
+					backing: undefined,
+					disposed: true,
+				});
 			} finally {
 				await disposeAgent(agent);
 			}
@@ -3584,6 +3660,41 @@ suite('CopilotAgent', () => {
 			}
 		});
 
+		test('sendMessage on an addressed chat resumes the addressed binding even when the parent session is provisional', async () => {
+			const sessionDataService = disposables.add(new TestSessionDataService());
+			const agent = createTestAgent(disposables, { sessionDataService, copilotClient: new TestCopilotClient([]) });
+			try {
+				await agent.authenticate('https://api.github.com', 'token');
+				const session = AgentSession.uri('copilotcli', 'route-provisional-peer');
+				const chatUri = URI.parse(buildChatUri(session, 'peer-a'));
+				await agent.createSession({ session, workingDirectory: URI.file('/workspace') });
+				await agent.materializeChat(chatUri, session, JSON.stringify({ sdkSessionId: 'peer-sdk-id' }));
+
+				const internals = agent as unknown as ChatInternals;
+				const launches: { kind: string; sessionId: string; chat: string | undefined }[] = [];
+				internals._createAgentSession = (launchPlan, _dir, _ac, identity) => {
+					launches.push({ kind: launchPlan.kind, sessionId: launchPlan.sessionId, chat: identity?.chatChannelUri.toString() });
+					const built = makeFakeChatSession(session, launchPlan.sessionId, undefined, launchPlan.shellManager);
+					(built.fake as { chatChannelUri?: URI }).chatChannelUri = identity?.chatChannelUri;
+					return built.fake;
+				};
+
+				await agent.chats.sendMessage(chatUri, 'hello peer', undefined, undefined, undefined, undefined, exactChatContext(session, chatUri));
+
+				assert.deepStrictEqual({
+					launches,
+					tracked: hasLiveChat(agent, chatUri),
+					parentResumeCalls: (agent as TestableCopilotAgent).resumeCalls,
+				}, {
+					launches: [{ kind: 'resume', sessionId: 'peer-sdk-id', chat: chatUri.toString() }],
+					tracked: true,
+					parentResumeCalls: [],
+				});
+			} finally {
+				await disposeAgent(agent);
+			}
+		});
+
 		test('sendMessage throws for a chat with no backing chat', async () => {
 			const agent = createTestAgent(disposables);
 			try {
@@ -4102,7 +4213,7 @@ suite('CopilotAgent', () => {
 				const peerChat = URI.parse(buildChatUri(session, 'peer-release'));
 				const peerRec = installFake(agent, peerChat.toString(), 'chat', session);
 
-				await agent.chats.releaseChat!(peerChat);
+				await agent.chats.releaseChat(peerChat);
 
 				assert.deepStrictEqual({
 					defaultDisposed: defaultRec.disposed,

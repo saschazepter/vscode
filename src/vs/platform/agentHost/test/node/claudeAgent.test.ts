@@ -44,10 +44,10 @@ import { IFileService } from '../../../files/common/files.js';
 import { InMemoryFileSystemProvider } from '../../../files/common/inMemoryFilesystemProvider.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { INativeEnvironmentService } from '../../../environment/common/environment.js';
-import { IAgentChatDataChange, IAgentMaterializeSessionEvent, IAgentSpawnChatEvent, AgentSession, AgentSignal, GITHUB_COPILOT_PROTECTED_RESOURCE } from '../../common/agentService.js';
+import { IAgentChatContext, IAgentChatDataChange, IAgentMaterializeSessionEvent, IAgentSpawnChatEvent, AgentSession, AgentSignal, GITHUB_COPILOT_PROTECTED_RESOURCE } from '../../common/agentService.js';
 import { AgentFeedbackAttachmentDisplayKind } from '../../common/meta/agentFeedbackAttachments.js';
 import { ActionType, type AuthRequiredParams } from '../../common/state/sessionActions.js';
-import { CustomizationLoadStatus, CustomizationType, MessageAttachmentKind, MessageKind, ResponsePartKind, ChatInputResponseKind, SessionStatus, ToolResultContentType, buildChatUri, buildDefaultChatUri, buildSubagentChatUri, buildSubagentSessionUri, customizationId, isDefaultChatUri, parseDefaultChatUri, parseRequiredSessionUriFromChatUri, type ClientPluginCustomization, type Customization, type PluginCustomization } from '../../common/state/sessionState.js';
+import { CustomizationLoadStatus, CustomizationType, MessageAttachmentKind, MessageKind, ResponsePartKind, ChatInputResponseKind, SessionStatus, ToolResultContentType, buildChatUri, buildDefaultChatUri, buildSubagentChatUri, buildSubagentSessionUri, customizationId, isDefaultChatUri, parseDefaultChatUri, parseRequiredSessionUriFromChatUri, resolveChatUri, type ClientPluginCustomization, type Customization, type PluginCustomization } from '../../common/state/sessionState.js';
 import { ISessionDataService } from '../../common/sessionDataService.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { ProtectedResourceMetadata, ChatInputAnswerState, ChatInputAnswerValueKind, ToolCallStatus, type SessionConfigState, type ChatInputRequest, type ToolDefinition } from '../../common/state/protocol/state.js';
@@ -844,18 +844,45 @@ function createTestContext(
 		configService.updateRootConfig(overrides.rootConfig);
 	}
 	const agent = disposables.add(instantiationService.createInstance(ClaudeAgent));
+	const toChatContext = (chat: URI, context?: URI | IAgentChatContext): IAgentChatContext => {
+		if (context && !URI.isUri(context)) {
+			return context;
+		}
+		const session = context ?? (chat.scheme === 'ahp-chat' ? URI.parse(parseRequiredSessionUriFromChatUri(chat.toString())) : chat);
+		return { session, resource: resolveChatUri(session, chat) };
+	};
 	const createSession = agent.createSession.bind(agent);
 	agent.createSession = async config => {
 		const created = await createSession(config);
-		await agent.chats.bindSessionChat?.(defaultChatUri(created.session), created.session);
+		await agent.chats.bindSessionChat?.(defaultChatUri(created.session), { session: created.session, resource: created.session });
 		return created;
 	};
-	const chats = agent.chats as { sendMessage: typeof agent.chats.sendMessage };
-	const sendMessage = chats.sendMessage.bind(agent.chats);
-	chats.sendMessage = (chat, prompt, workingDirectory, attachments, turnId, senderClientId, session) => {
-		const contextSession = session ?? (chat.scheme === 'ahp-chat' ? URI.parse(parseRequiredSessionUriFromChatUri(chat.toString())) : chat);
-		return sendMessage(chat, prompt, workingDirectory, attachments, turnId, senderClientId, contextSession);
+	const chats = agent.chats as {
+		createChat: typeof agent.chats.createChat;
+		fork: typeof agent.chats.fork;
+		bindSessionChat?: typeof agent.chats.bindSessionChat;
+		sendMessage: typeof agent.chats.sendMessage;
+		changeModel: typeof agent.chats.changeModel;
+		changeAgent: typeof agent.chats.changeAgent;
+		getMessages: typeof agent.chats.getMessages;
 	};
+	const createChat = chats.createChat.bind(agent.chats);
+	chats.createChat = (chat, context, options) => createChat(chat, toChatContext(chat, context), options);
+	const fork = chats.fork.bind(agent.chats);
+	chats.fork = (chat, context, source, options) => fork(chat, toChatContext(chat, context), source, options);
+	const bindSessionChat = chats.bindSessionChat?.bind(agent.chats);
+	if (bindSessionChat) {
+		chats.bindSessionChat = (chat, context) => bindSessionChat(chat, toChatContext(chat, context));
+	}
+	const sendMessage = chats.sendMessage.bind(agent.chats);
+	chats.sendMessage = (chat, prompt, workingDirectory, attachments, turnId, senderClientId, context) =>
+		sendMessage(chat, prompt, workingDirectory, attachments, turnId, senderClientId, toChatContext(chat, context));
+	const changeModel = chats.changeModel.bind(agent.chats);
+	chats.changeModel = (chat, model, context) => changeModel(chat, model, toChatContext(chat, context));
+	const changeAgent = chats.changeAgent.bind(agent.chats);
+	chats.changeAgent = (chat, nextAgent, context) => changeAgent(chat, nextAgent, toChatContext(chat, context));
+	const getMessages = chats.getMessages.bind(agent.chats);
+	chats.getMessages = (chat, context) => getMessages(chat, toChatContext(chat, context));
 	return { agent, proxy, api, sdk, sessionData, stateManager, configService, instantiationService, fileService };
 }
 
@@ -3046,6 +3073,7 @@ suite('ClaudeAgent', () => {
 
 		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
 		const created = await agent.createSession({ workingDirectory: URI.file('/work') });
+		await agent.chats.bindSessionChat?.(defaultChatUri(created.session), { session: created.session, resource: created.session });
 		const sessionId = AgentSession.id(created.session);
 		sdk.nextQueryMessages = [makeSystemInitMessage(sessionId), makeResultSuccess(sessionId)];
 
@@ -4318,6 +4346,7 @@ suite('ClaudeAgent', () => {
 
 		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
 		const created = await agent.createSession({ workingDirectory: URI.file('/work') });
+		await agent.chats.bindSessionChat?.(defaultChatUri(created.session), { session: created.session, resource: created.session });
 		const sessionId = AgentSession.id(created.session);
 		sdk.nextQueryMessages = [makeSystemInitMessage(sessionId), makeResultSuccess(sessionId)];
 
@@ -6970,7 +6999,7 @@ suite('ClaudeAgent — Phase 11 customizations', () => {
 		const additionalId = AgentSession.id(result!.backingSession!);
 		sdk.nextQueryMessages = [makeSystemInitMessage(additionalId), makeResultSuccess(additionalId)];
 		await agent.chats.sendMessage(chat, 'first', undefined, undefined, 'turn-1');
-		await agent.chats.releaseChat!(chat);
+		await agent.chats.releaseChat(chat);
 
 		configService.updateSessionConfig(created.session.toString(), { permissionMode: 'bypassPermissions' });
 		agent.onChatConfigChanged(chat, { permissionMode: 'bypassPermissions' });
@@ -7070,7 +7099,7 @@ suite('ClaudeAgent — Phase 11 customizations', () => {
 		const session = AgentSession.uri('claude', 'release-session');
 		const defaultChat = defaultChatUri(session);
 		await agent.chats.createChat(defaultChat, session, {
-			provisionSession: { session, workingDirectory: URI.file('/work') },
+			newSession: { session, workingDirectory: URI.file('/work') },
 		});
 		const additionalChat = URI.parse(buildChatUri(session, 'additional'));
 		const additionalResult = await agent.chats.createChat(additionalChat, session);
@@ -7080,7 +7109,7 @@ suite('ClaudeAgent — Phase 11 customizations', () => {
 		sdk.nextQueryMessages = [makeSystemInitMessage(additionalId), makeResultSuccess(additionalId)];
 		await agent.chats.sendMessage(additionalChat, 'additional', undefined, undefined, 'turn-additional');
 
-		await agent.chats.releaseChat!(additionalChat);
+		await agent.chats.releaseChat(additionalChat);
 
 		assert.deepStrictEqual({
 			liveChats: listLiveChats(agent),
@@ -7090,7 +7119,7 @@ suite('ClaudeAgent — Phase 11 customizations', () => {
 			backings: [additionalChat.toString()],
 		});
 
-		await agent.chats.releaseChat!(defaultChat);
+		await agent.chats.releaseChat(defaultChat);
 
 		assert.deepStrictEqual({
 			liveChats: listLiveChats(agent),

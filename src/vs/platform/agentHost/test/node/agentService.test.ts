@@ -22,7 +22,7 @@ import { hasKey } from '../../../../base/common/types.js';
 import { NullLogService } from '../../../log/common/log.js';
 import { FileService } from '../../../files/common/fileService.js';
 import { InMemoryFileSystemProvider } from '../../../files/common/inMemoryFilesystemProvider.js';
-import { AgentSession, GITHUB_COPILOT_PROTECTED_RESOURCE, IRestoredSubagentSession, SubagentChatSignal, type IAgent, type IAgentChatDataChange, type IAgentChats, type IAgentCreateChatForkSource, type IAgentCreateChatOptions, type IAgentCreateChatResult, type IAgentCreateSessionResult, type IAgentLegacyChat, type IAgentSessionMetadata, type IAgentSpawnChatEvent } from '../../common/agentService.js';
+import { AgentSession, GITHUB_COPILOT_PROTECTED_RESOURCE, IRestoredSubagentSession, SubagentChatSignal, resolveAgentChatContext, type IAgent, type IAgentChatContext, type IAgentChatDataChange, type IAgentChats, type IAgentCreateChatForkSource, type IAgentCreateChatOptions, type IAgentCreateChatResult, type IAgentCreateSessionResult, type IAgentLegacyChat, type IAgentSessionMetadata, type IAgentSpawnChatEvent } from '../../common/agentService.js';
 import { ISessionDatabase, ISessionDataService } from '../../common/sessionDataService.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { SessionDatabase } from '../../node/sessionDatabase.js';
@@ -2894,12 +2894,15 @@ suite('AgentService (node dispatcher)', () => {
 		test('restoreSession preserves peer chat catalog order regardless of load timing', async () => {
 			class MultiChatAgent extends MockAgent {
 				override async createChat(_session: URI, _chat: URI): Promise<void> { }
-				override async getSessionMessages(session: URI): Promise<readonly Turn[]> {
-					// Resolve in the reverse of catalog order so a resolution-order
-					// append would scramble the catalog; the restore must keep a,b,c.
-					const delays: Record<string, number> = { 'peer-a': 30, 'peer-b': 15, 'peer-c': 0 };
-					await timeout(delays[parseChatUri(session)?.chatId ?? ''] ?? 0);
-					return [];
+				constructor(provider: 'copilot' = 'copilot') {
+					super(provider);
+					this.chats.getMessages = async (chat: URI) => {
+						// Resolve in the reverse of catalog order so a resolution-order
+						// append would scramble the catalog; the restore must keep a,b,c.
+						const delays: Record<string, number> = { 'peer-a': 30, 'peer-b': 15, 'peer-c': 0 };
+						await timeout(delays[parseChatUri(chat)?.chatId ?? ''] ?? 0);
+						return [];
+					};
 				}
 			}
 			const db = new TestSessionDatabase();
@@ -3143,11 +3146,13 @@ suite('AgentService (node dispatcher)', () => {
 			}
 
 			override readonly chats: IAgentChats = {
-				createChat: async (chat: URI, session: URI, options?: IAgentCreateChatOptions) => {
-					this.chatCalls.push({ op: 'createChat', args: [session.toString(), chat.toString(), options?.title ?? '', options?.provisionSession?.model?.id ?? ''] });
+				createChat: async (chat: URI, context: URI | IAgentChatContext, options?: IAgentCreateChatOptions) => {
+					const { session } = resolveAgentChatContext(context, chat);
+					this.chatCalls.push({ op: 'createChat', args: [session.toString(), chat.toString(), options?.title ?? '', options?.newSession?.model?.id ?? ''] });
 					return { providerData: 'pd' };
 				},
-				fork: async (chat: URI, session: URI, source: IAgentCreateChatForkSource) => {
+				fork: async (chat: URI, context: URI | IAgentChatContext, source: IAgentCreateChatForkSource) => {
+					const { session } = resolveAgentChatContext(context, chat);
 					this.chatCalls.push({ op: 'fork', args: [session.toString(), chat.toString(), source.source.toString(), source.turnId] });
 					return { providerData: 'pd-fork' };
 				},
@@ -3642,21 +3647,24 @@ suite('AgentService (node dispatcher)', () => {
 				override async createChat(_session: URI, _chat: URI): Promise<{ providerData?: string }> {
 					return { providerData: 'blob-1' };
 				}
-				async materializeChat(chat: URI, _session: URI, providerData: string | undefined): Promise<void> {
-					materializeOrder.push({ call: 'materialize', uri: chat.toString(), providerData });
+				constructor(provider: 'copilot' = 'copilot') {
+					super(provider);
+					this.chats.getMessages = async (chat: URI) => {
+						if (chat.scheme === 'ahp-chat') {
+							materializeOrder.push({ call: 'getMessages', uri: chat.toString() });
+							return [{
+								id: 'peer-turn-1',
+								state: TurnState.Complete,
+								message: { text: 'hi peer', origin: { kind: MessageKind.User } },
+								responseParts: [],
+								usage: undefined,
+							}];
+						}
+						return [];
+					};
 				}
-				override async getSessionMessages(session: URI): Promise<readonly Turn[]> {
-					if (session.scheme === 'ahp-chat') {
-						materializeOrder.push({ call: 'getMessages', uri: session.toString() });
-						return [{
-							id: 'peer-turn-1',
-							state: TurnState.Complete,
-							message: { text: 'hi peer', origin: { kind: MessageKind.User } },
-							responseParts: [],
-							usage: undefined,
-						}];
-					}
-					return [];
+				async materializeChat(chat: URI, _context: URI | IAgentChatContext, providerData: string | undefined): Promise<void> {
+					materializeOrder.push({ call: 'materialize', uri: chat.toString(), providerData });
 				}
 			}
 			const db = new TestSessionDatabase();
@@ -3771,25 +3779,28 @@ suite('AgentService (node dispatcher)', () => {
 			class LegacyAgent extends MockAgent {
 				listLegacyCallCount = 0;
 				override async createChat(): Promise<IAgentCreateChatResult | void> { }
-				async materializeChat(): Promise<void> { }
+				constructor(provider: 'copilot' = 'copilot') {
+					super(provider);
+					this.chats.getMessages = async (chat: URI) => {
+						if (chat.scheme === 'ahp-chat') {
+							return [{
+								id: `${parseChatUri(chat)?.chatId}-turn`,
+								state: TurnState.Complete,
+								message: { text: 'legacy hi', origin: { kind: MessageKind.User } },
+								responseParts: [],
+								usage: undefined,
+							}];
+						}
+						return [];
+					};
+				}
+				async materializeChat(_chat: URI, _context: URI | IAgentChatContext, _providerData?: string): Promise<void> { }
 				async listLegacyChats(session: URI): Promise<readonly IAgentLegacyChat[]> {
 					this.listLegacyCallCount++;
 					return [
 						{ uri: URI.parse(buildChatUri(session, 'legacy-a')), providerData: 'lp-a' },
 						{ uri: URI.parse(buildChatUri(session, 'legacy-b')), providerData: 'lp-b' },
 					];
-				}
-				override async getSessionMessages(session: URI): Promise<readonly Turn[]> {
-					if (session.scheme === 'ahp-chat') {
-						return [{
-							id: `${parseChatUri(session)?.chatId}-turn`,
-							state: TurnState.Complete,
-							message: { text: 'legacy hi', origin: { kind: MessageKind.User } },
-							responseParts: [],
-							usage: undefined,
-						}];
-					}
-					return [];
 				}
 			}
 			const db = new TestSessionDatabase();

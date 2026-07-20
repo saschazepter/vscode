@@ -942,15 +942,18 @@ export interface IAgentCreateChatOptions {
 	 */
 	readonly fork?: IAgentCreateChatForkSource;
 	/**
-	 * Set only when this `createChat` provisions its owning session. The agent
-	 * stands up the SDK conversation and session-scoped infrastructure while
-	 * creating the addressed chat.
+	 * Present only when this `createChat` is the vehicle for creating the chat's
+	 * owning session (this chat is its default chat): the agent stands up the
+	 * session's SDK conversation and session-scoped infrastructure while creating
+	 * the addressed chat. Absent when adding an additional chat to an
+	 * already-existing session, whose infrastructure the agent inherits rather
+	 * than provisions.
 	 */
-	readonly provisionSession?: IAgentProvisionSession;
+	readonly newSession?: IAgentProvisionSession;
 }
 
 /**
- * Session-provisioning intent carried on {@link IAgentCreateChatOptions.provisionSession}.
+ * Session-provisioning intent carried on {@link IAgentCreateChatOptions.newSession}.
  * Mirrors the agent-specific fields of the legacy `IAgentCreateSessionConfig`;
  * the session URI is explicit and the chat URI is the `createChat` argument.
  */
@@ -1174,7 +1177,7 @@ export interface IAgentChats {
 	bindSessionChat?(chat: URI, context: URI | IAgentChatContext): Promise<void>;
 
 	/** Release the addressed chat's in-memory backing without deleting durable data. */
-	releaseChat?(chat: URI): Promise<void>;
+	releaseChat(chat: URI): Promise<void>;
 
 	/**
 	 * Send a user message into `chat`; on first send, the host passes the resolved

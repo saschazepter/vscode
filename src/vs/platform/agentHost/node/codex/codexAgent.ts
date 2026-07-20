@@ -2373,8 +2373,8 @@ export class CodexAgent extends Disposable implements IAgent {
 	 */
 	readonly chats: IAgentChats = {
 		createChat: (chat: URI, _context: URI | IAgentChatContext, options?: IAgentCreateChatOptions): Promise<IAgentCreateChatResult | void> => {
-			if (options?.provisionSession) {
-				return this._provisionChat(chat, options.provisionSession);
+			if (options?.newSession) {
+				return this._provisionChat(chat, options.newSession);
 			}
 			throw new Error('Codex agent does not support creating additional conversations');
 		},
@@ -2389,6 +2389,12 @@ export class CodexAgent extends Disposable implements IAgent {
 			if (!session) { return; }
 			await this.disposeSession(session);
 			this._sessionIdByChatUri.delete(chat.toString());
+		},
+		releaseChat: async (chat: URI): Promise<void> => {
+			const session = this._resolveConversationSession(chat);
+			if (session) {
+				await this.releaseSession(session);
+			}
 		},
 		sendMessage: (chat: URI, prompt: string, workingDirectory: URI | undefined, attachments?: readonly MessageAttachment[], turnId?: string, _senderClientId?: string, context?: URI | IAgentChatContext): Promise<void> => {
 			return this._sendMessage(chat, prompt, attachments, turnId, workingDirectory, context);

@@ -48,7 +48,7 @@ import { IAgentHostProxyResolver } from '../agentHostProxyResolver.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
 import { ProtectedResourceMetadata, type AgentSelection, type ChildCustomizationType, type ConfigPropertySchema, type ConfigSchema, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
 import { ActionType, type SessionAction } from '../../common/state/sessionActions.js';
-import { AgentCustomization, CustomizationLoadStatus, CustomizationType, RuleCustomization, ChatInputResponseKind, SkillCustomization, customizationId, buildChatUri, buildDefaultChatUri, parseChatUri, parseSubagentSessionUri, AH_META_WORKSPACELESS_DB_KEY, type ChildCustomization, type ClientPluginCustomization, type Customization, type DirectoryCustomization, type HookCustomization, type MessageAttachment, type PendingMessage, type PluginCustomization, type PolicyState, type ChatInputAnswer, type ToolCallResult, type Turn } from '../../common/state/sessionState.js';
+import { AgentCustomization, CustomizationLoadStatus, CustomizationType, RuleCustomization, ChatInputResponseKind, SkillCustomization, customizationId, buildChatUri, parseChatUri, parseSubagentSessionUri, AH_META_WORKSPACELESS_DB_KEY, type ChildCustomization, type ClientPluginCustomization, type Customization, type DirectoryCustomization, type HookCustomization, type MessageAttachment, type PendingMessage, type PluginCustomization, type PolicyState, type ChatInputAnswer, type ToolCallResult, type Turn } from '../../common/state/sessionState.js';
 import { ActiveClientToolSet } from '../activeClientState.js';
 import { IAgentConfigurationService } from '../agentConfigurationService.js';
 import { IAgentHostGitHubEndpointService } from '../agentHostGitHubEndpointService.js';
@@ -1421,16 +1421,21 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 	private _isUnboundSession(sessionId: string): boolean {
 		const session = this._findAnySession(sessionId);
-		return !!session && !this._chatBindings.has(session.chatChannelUri.toString());
+		const chatChannelUri = session?.chatChannelUri;
+		return !!chatChannelUri && !this._chatBindings.has(chatChannelUri.toString());
 	}
 
 	private _findLiveSessionForChat(sessionId: string, chatKey: string): CopilotAgentSession | undefined {
 		for (const entry of this._chatEntriesBySdkId.values()) {
 			const candidate = entry.chatSession;
-			if (this._chatBindings.has(candidate.chatChannelUri.toString())) {
+			const candidateChatChannelUri = candidate.chatChannelUri;
+			if (!candidateChatChannelUri) {
 				continue;
 			}
-			if (chatKey === candidate.chatChannelUri.toString() || candidate.sessionId === sessionId) {
+			if (this._chatBindings.has(candidateChatChannelUri.toString())) {
+				continue;
+			}
+			if (chatKey === candidateChatChannelUri.toString() || candidate.sessionId === sessionId) {
 				return candidate;
 			}
 		}
@@ -1491,8 +1496,8 @@ export class CopilotAgent extends Disposable implements IAgent {
 	 */
 	readonly chats: IAgentChats = {
 		createChat: (chat: URI, context: URI | IAgentChatContext, options?: IAgentCreateChatOptions): Promise<IAgentCreateChatResult | void> => {
-			if (options?.provisionSession) {
-				return this._provisionSessionChat(chat, options.provisionSession);
+			if (options?.newSession) {
+				return this._provisionSessionChat(chat, options.newSession);
 			}
 			return this._createChat(chat, resolveAgentChatContext(context, chat), options);
 		},
@@ -1966,14 +1971,13 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 	private async _sendMessage(chat: URI, prompt: string, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string, workingDirectory?: URI, operationContext?: URI | IAgentChatContext): Promise<void> {
 		const context = this._resolveChatContext(chat, operationContext);
+		const isSessionScoped = isEqual(context.resource, context.session);
 		await this._sessionSequencer.queue(context.sequencerKey, async () => {
 			await this._activeClients.get(context.session)?.pluginController.retryFailedClientSyncIfNeeded();
 
-			let entry: CopilotAgentSession | undefined;
-			if (this._provisionalSessions.has(context.sessionId)) {
+			let entry: CopilotAgentSession | undefined = this._resolveChatContext(chat, operationContext).target;
+			if (!entry && isSessionScoped && this._provisionalSessions.has(context.sessionId)) {
 				entry = await this._materializeProvisional(context.sessionId, workingDirectory);
-			} else {
-				entry = this._resolveChatContext(chat, operationContext).target;
 			}
 
 			// If the active client's config changed (tools or plugins),
@@ -2114,7 +2118,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 	private async _getChatMessages(chat: URI, sessionOrContext?: URI | IAgentChatContext): Promise<readonly Turn[]> {
 		const context = this._resolveChatContext(chat, sessionOrContext);
-		if (this._provisionalSessions.has(context.sessionId)) {
+		if (this._provisionalSessions.has(context.sessionId) && isEqual(context.resource, context.session)) {
 			return [];
 		}
 		const entry = await this._sessionSequencer.queue(context.sequencerKey, async () => {
@@ -2299,6 +2303,9 @@ export class CopilotAgent extends Disposable implements IAgent {
 		if (context.sdkSessionId) {
 			return this._materializeChatBinding(context);
 		}
+		if (!isEqual(context.resource, context.session)) {
+			return undefined;
+		}
 		return this._resumeSession(context.sessionId, isEqual(context.chat, context.session) ? undefined : context.chat).catch(() => undefined);
 	}
 
@@ -2349,13 +2356,19 @@ export class CopilotAgent extends Disposable implements IAgent {
 			const binding = current.sdkSessionId ? this._chatBindings.get(chatKey) : await this._resolveChatBinding(current.session, chat);
 			const provisional = this._provisionalSessions.get(sessionId);
 			const isSessionScoped = operationContext ? isEqual(current.resource, current.session) : current.sdkSessionId === sessionId;
+			const isProvisionalSessionScoped = !!provisional && isSessionScoped;
 			const isWorkspaceless = isSessionScoped
 				? provisional
 					? provisional.workspaceless === true
 					: (await this._readSessionMetadata(current.session).catch(() => undefined))?.workspaceless === true
 				: false;
+			const sdkSessionId = target?.sessionId ?? binding?.sdkSessionId ?? (isSessionScoped && !provisional ? sessionId : undefined);
 
-			if (provisional && isSessionScoped) {
+			if (sdkSessionId && !isProvisionalSessionScoped) {
+				await this._deleteSdkSession(sdkSessionId, chatKey);
+			}
+
+			if (isProvisionalSessionScoped) {
 				this._provisionalSessions.delete(sessionId);
 			}
 			this._chatBindings.delete(chatKey);
@@ -2364,22 +2377,32 @@ export class CopilotAgent extends Disposable implements IAgent {
 				await this._destroyLiveSession(target, true);
 			}
 
-			const sdkSessionId = target?.sessionId ?? binding?.sdkSessionId;
-			if (sdkSessionId && !provisional) {
-				try {
-					const client = await this._ensureClient();
-					await client.deleteSession(sdkSessionId);
-				} catch (err) {
-					this._logService.warn(`[Copilot] Failed to delete SDK session for chat ${chatKey}: ${err instanceof Error ? err.message : String(err)}`);
-				}
-			}
-
 			if (isWorkspaceless && !this._hasLiveSiblingChats(sessionId)) {
 				await this._cleanupWorkspacelessScratchDir(this._workspacelessScratchDir(sessionId), sessionId);
 			}
 
 			this._maybeDisposeActiveClient(sessionId);
 		});
+	}
+
+	/**
+	 * Deletes an SDK session, tolerating one that was already removed. The SDK's
+	 * `deleteSession` throws for both a genuine failure and a missing session, so
+	 * a real failure is propagated (preserving routing/state for a retry) while a
+	 * confirmed-gone session is swallowed to keep a partially-completed multi-chat
+	 * teardown retry-safe.
+	 */
+	private async _deleteSdkSession(sdkSessionId: string, chatKey: string): Promise<void> {
+		const client = await this._ensureClient();
+		try {
+			await client.deleteSession(sdkSessionId);
+		} catch (err) {
+			// Only a session the SDK confirms is gone is safe to swallow; if we can't confirm, propagate.
+			if (await client.getSessionMetadata(sdkSessionId).then(metadata => !!metadata, () => true)) {
+				throw err;
+			}
+			this._logService.info(`[Copilot] SDK session ${sdkSessionId} already deleted; chat ${chatKey} disposal is idempotent`);
+		}
 	}
 
 	private async _releaseChat(chat: URI): Promise<void> {
@@ -2525,10 +2548,10 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 	async truncateSession(session: URI, turnId: string | undefined, chat: URI, contextOrSession?: URI | IAgentChatContext): Promise<void> {
 		const sessionId = AgentSession.id(session);
-		if (this._provisionalSessions.has(sessionId)) {
+		const resolved = this._resolveChatContext(chat, contextOrSession ?? { session, resource: session });
+		if (this._provisionalSessions.has(sessionId) && isEqual(resolved.resource, resolved.session)) {
 			return;
 		}
-		const resolved = this._resolveChatContext(chat, contextOrSession ?? { session, resource: session });
 		await this._sessionSequencer.queue(resolved.sequencerKey, async () => {
 			this._logService.info(`[Copilot:${sessionId}] Truncating chat ${chat.toString()}${turnId !== undefined ? ` at turnId=${turnId}` : ' (all turns)'}`);
 
@@ -2761,7 +2784,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 	 */
 	private _createAgentSession(launchPlan: CopilotSessionLaunchPlan, customizationDirectory: URI | undefined, activeClient: ActiveClient, identity?: ICopilotAgentSessionIdentity): CopilotAgentSession {
 		const sessionUri = identity?.sessionUri ?? AgentSession.uri(this.id, launchPlan.sessionId);
-		const chatChannelUri = identity?.chatChannelUri ?? this._findBoundSessionChatUri(launchPlan.sessionId) ?? URI.parse(buildDefaultChatUri(sessionUri));
+		const chatChannelUri = identity?.chatChannelUri ?? this._findBoundSessionChatUri(launchPlan.sessionId) ?? sessionUri;
 
 		const agentSession = this._instantiationService.createInstance(
 			CopilotAgentSession,
@@ -2820,8 +2843,9 @@ export class CopilotAgent extends Disposable implements IAgent {
 		} catch (error) {
 			this._logService.warn(`[Copilot:${chatSession.sessionId}] Failed to destroy session before cleanup: ${error instanceof Error ? error.message : String(error)}`);
 		}
-		if (!preserveRouting && this._chatBindings.get(chatSession.chatChannelUri.toString())?.sdkSessionId === chatSession.sessionId) {
-			this._chatBindings.delete(chatSession.chatChannelUri.toString());
+		const chatChannelUri = chatSession.chatChannelUri;
+		if (!preserveRouting && chatChannelUri && this._chatBindings.get(chatChannelUri.toString())?.sdkSessionId === chatSession.sessionId) {
+			this._chatBindings.delete(chatChannelUri.toString());
 		}
 		this._chatEntriesBySdkId.deleteAndDispose(chatSession.sessionId);
 	}

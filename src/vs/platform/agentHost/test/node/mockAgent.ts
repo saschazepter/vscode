@@ -236,7 +236,7 @@ export class MockAgent implements IAgent {
 		const session = context ? resolveAgentChatContext(context, chat).session : (() => {
 			const sessionStr = parseDefaultChatUri(chat);
 			if (sessionStr === undefined) {
-				throw new Error(`Mock agent provisionSession: malformed default chat URI ${chat.toString()}`);
+				throw new Error(`Mock agent newSession: malformed default chat URI ${chat.toString()}`);
 			}
 			return URI.parse(sessionStr);
 		})();
@@ -259,8 +259,8 @@ export class MockAgent implements IAgent {
 
 	readonly chats: IAgentChats = {
 		createChat: (chatUri: URI, context: URI | IAgentChatContext, options?: IAgentCreateChatOptions): Promise<IAgentCreateChatResult | void> => {
-			if (options?.provisionSession) {
-				return this._provisionDefaultChat(chatUri, options.provisionSession, context);
+			if (options?.newSession) {
+				return this._provisionDefaultChat(chatUri, options.newSession, context);
 			}
 			return this.createChat(resolveAgentChatContext(context, chatUri).session, chatUri, options);
 		},
@@ -273,6 +273,10 @@ export class MockAgent implements IAgent {
 			}
 			const { session, chat } = this._resolveChatTarget(chatUri);
 			return this.disposeChat(session, chat);
+		},
+		releaseChat: (chatUri: URI): Promise<void> => {
+			const { session } = this._resolveChatTarget(chatUri);
+			return this.releaseSession(session);
 		},
 		sendMessage: (chatUri: URI, prompt: string, _workingDirectory: URI | undefined, attachments?: readonly MessageAttachment[], turnId?: string, senderClientId?: string, context?: URI | IAgentChatContext): Promise<void> => {
 			const { session, chat } = this._resolveChatTarget(chatUri, context);
@@ -950,7 +954,7 @@ export class ScriptedMockAgent implements IAgent {
 		const session = context ? resolveAgentChatContext(context, chat).session : (() => {
 			const sessionStr = parseDefaultChatUri(chat);
 			if (sessionStr === undefined) {
-				throw new Error(`Scripted mock provisionSession: malformed default chat URI ${chat.toString()}`);
+				throw new Error(`Scripted mock newSession: malformed default chat URI ${chat.toString()}`);
 			}
 			return URI.parse(sessionStr);
 		})();
@@ -973,8 +977,8 @@ export class ScriptedMockAgent implements IAgent {
 
 	readonly chats: IAgentChats = {
 		createChat: (chat: URI, context: URI | IAgentChatContext, options?: IAgentCreateChatOptions): Promise<IAgentCreateChatResult | void> => {
-			if (options?.provisionSession) {
-				return this._provisionDefaultChat(chat, options.provisionSession, context);
+			if (options?.newSession) {
+				return this._provisionDefaultChat(chat, options.newSession, context);
 			}
 			throw new Error('Scripted mock agent does not support multiple chats');
 		},
@@ -987,6 +991,7 @@ export class ScriptedMockAgent implements IAgent {
 			}
 			return Promise.resolve();
 		},
+		releaseChat: async (): Promise<void> => { },
 		sendMessage: (chatUri: URI, prompt: string, _workingDirectory: URI | undefined, attachments?: readonly MessageAttachment[], turnId?: string, _senderClientId?: string, context?: URI | IAgentChatContext): Promise<void> => {
 			const { session, chat } = this._resolveChatTarget(chatUri, context);
 			return this.sendMessage(session, chat, prompt, attachments, turnId);

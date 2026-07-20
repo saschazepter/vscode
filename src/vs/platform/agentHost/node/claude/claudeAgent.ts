@@ -411,9 +411,12 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			?? boundTarget?.sessionUri
 			?? (binding ? AgentSession.uri(this.id, binding.sdkSessionId) : chat);
 		const sessionId = AgentSession.id(session);
+		const sessionAddressedTarget = !binding && chatKey === session.toString()
+			? this._findAnySession(sessionId)
+			: undefined;
 		const target = binding
 			? boundTarget
-			: this._findLiveSessionForChat(sessionId, chatKey);
+			: sessionAddressedTarget ?? this._findLiveSessionForChat(sessionId, chatKey);
 		const sdkSessionId = binding?.sdkSessionId ?? target?.sessionId;
 		return {
 			session,
@@ -985,8 +988,8 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	 */
 	readonly chats: IAgentChats = {
 		createChat: (chat, context, options) => {
-			if (options?.provisionSession) {
-				return this._provisionChat(chat, context, options.provisionSession);
+			if (options?.newSession) {
+				return this._provisionChat(chat, context, options.newSession);
 			}
 			return this._createChat(chat, resolveAgentChatContext(context, chat), options);
 		},
@@ -1136,6 +1139,9 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		try {
 			await session.materialize({ transport, canUseTool, onElicitation, isResume: false, resource, workingDirectory, serverToolHost: this._serverToolHost });
 			await this._persistSessionOverlay(resource, session, transport.kind);
+			if (session.abortController.signal.aborted) {
+				throw new CancellationError();
+			}
 		} catch (err) {
 			this._deleteSession(session);
 			throw err;
@@ -1277,8 +1283,9 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	}
 
 	private async _disposeLiveSession(session: ClaudeAgentSession): Promise<void> {
+		session.abortController.abort();
 		if (!session.isPipelineReady) {
-			session.abortController.abort();
+			// Nothing else to tear down yet.
 		} else {
 			session.abort();
 		}
@@ -1488,7 +1495,8 @@ export class ClaudeAgent extends Disposable implements IAgent {
 	 * parsing the chat URI.
 	 */
 	private async _resolveChatSdkId(context: IResolvedClaudeChatContext): Promise<string | undefined> {
-		return context.sdkSessionId;
+		return context.sdkSessionId
+			?? (context.chat.toString() === context.session.toString() ? context.sessionId : undefined);
 	}
 
 	/**
@@ -1536,6 +1544,9 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			return this._materializeProvisional(context.sessionId, workingDirectory);
 		}
 		if (this._chatBindings.has(context.chatKey)) {
+			if (context.sdkSessionId === context.sessionId && context.resource.toString() === context.session.toString()) {
+				return this._resumeSession(context.sessionId, context.session, context.chat, context.resource);
+			}
 			return this._materializeChatLocked(context);
 		}
 		return this._resumeSession(context.sessionId, context.session, context.chat, context.resource);
@@ -2198,15 +2209,12 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		// lose its endpoint. See `IClaudeProxyHandle` doc in
 		// `claudeProxyService.ts`.
 		//
-		// Step 1: abort every provisional AbortController. These are
-		// the same controllers wired into `Options.abortController` at
+		// Step 1: abort every session AbortController. These are the
+		// same controllers wired into `Options.abortController` at
 		// materialize time (sdk.d.ts:982), so any in-flight
 		// `await sdk.startup()` will reject and any sequencer-queued
-		// `_materializeProvisional` continuation will trip its
-		// post-startup or post-customization-write abort gates,
-		// disposing the WarmQuery without ever reaching registration. Without this step, dispose during a
-		// concurrent first `sendMessage` could orphan a WarmQuery
-		// subprocess. (Copilot reviewer: dispose lifecycle.)
+		// materialize continuation will trip its abort gates without
+		// reaching registration.
 		//
 		// Step 2: `super.dispose()` synchronously disposes both chat maps.
 		//
@@ -2214,9 +2222,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		// wrapper-before-proxy ordering invariant. This is locked by
 		// test "dispose disposes the proxy handle and is idempotent".
 		for (const chat of this._allLiveSessions()) {
-			if (!chat.isPipelineReady) {
-				chat.abortController.abort();
-			}
+			chat.abortController.abort();
 		}
 		super.dispose();
 		this._proxyHandle?.dispose();

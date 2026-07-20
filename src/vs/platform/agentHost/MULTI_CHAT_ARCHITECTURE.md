@@ -370,7 +370,7 @@ surface rather than a Session-typed method.**
 - **Create.** `AgentService._provisionSessionViaDefaultChat` allocates the session
   URI (reusing a client-supplied one), derives the default-chat URI
   (`buildDefaultChatUri`), and calls `agent.chats.createChat(defaultChatUri, {
-  provisionSession })`. The agent-specific provisioning (working directory /
+  newSession })`. The agent-specific provisioning (working directory /
   scratch dir, git project probe, permission mode, provisional SDK construction)
   runs *inside* creating that default chat — it never moves into the
   orchestrator. The agent returns `IAgentCreateChatResult.provision`
@@ -421,7 +421,7 @@ those as private methods its own chat/conversation bridge delegates to.
 
 `createSession` and `disposeSession` remain on `IAgent`: they are the
 session-lifecycle provisioning primitives the chat-surface bridge delegates to
-(`chats.createChat({ provisionSession })` / `chats.disposeChat(defaultChat)`).
+(`chats.createChat({ newSession })` / `chats.disposeChat(defaultChat)`).
 `createSession` is additionally still called directly for the **fork/import**
 create path. This is a permanent, by-design exception rather than debt: a fork's
 session id is minted server-side by the SDK (`sessions.fork`), so the orchestrator
