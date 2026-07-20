@@ -615,6 +615,32 @@ suite('mapSessionEvents — subagent routing', () => {
 		]);
 	});
 
+	test('drops subagent user messages whose agentId cannot be mapped', async () => {
+		const events: ISessionEvent[] = [
+			{ type: 'user.message', id: 'root-message', data: { interactionId: 'm1', content: 'Continue the task' } },
+			{ type: 'user.message', id: 'orphan-subagent-message', agentId: 'unknown-agent', data: { interactionId: 'm2', content: 'Delegated prompt' } },
+			{ type: 'assistant.message', data: { messageId: 'm3', content: 'Done.' } },
+		];
+
+		const { turns, subagentTurnsByToolCallId } = await mapSessionEvents(session, undefined, toSessionEvents(events));
+
+		assert.deepStrictEqual({
+			turns: turns.map(turn => ({
+				id: turn.id,
+				message: turn.message.text,
+				parts: partKinds(turn.responseParts),
+			})),
+			subagentTurns: [...subagentTurnsByToolCallId],
+		}, {
+			turns: [{
+				id: 'root-message',
+				message: 'Continue the task',
+				parts: [{ kind: ResponsePartKind.Markdown, content: 'Done.' }],
+			}],
+			subagentTurns: [],
+		});
+	});
+
 	test('routes subagent skill events into the subagent transcript', async () => {
 		const events: ISessionEvent[] = [
 			{ type: 'user.message', data: { interactionId: 'm1', content: 'spawn a subagent' } },

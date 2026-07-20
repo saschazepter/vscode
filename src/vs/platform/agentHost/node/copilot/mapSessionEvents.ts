@@ -387,6 +387,9 @@ export async function mapSessionEvents(
 				// User messages carry no deprecated `parentToolCallId`; route
 				// sub-agent user messages by the envelope `agentId` only.
 				const parentToolCallId = resolveParentToolCallId(e.agentId, undefined);
+				if (e.agentId && !parentToolCallId) {
+					continue;
+				}
 				if (parentToolCallId) {
 					const builder = ensureSubagentBuilder(parentToolCallId);
 					builder.message = {
