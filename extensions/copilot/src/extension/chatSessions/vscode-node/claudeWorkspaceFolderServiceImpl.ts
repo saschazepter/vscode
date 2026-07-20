@@ -99,11 +99,13 @@ export class ClaudeWorkspaceFolderService extends Disposable implements IClaudeW
 		}
 
 		const originalRef = result.mergeBaseCommit ?? 'HEAD';
-		let boundedChanges = result.changes;
-		if (boundedChanges.length > MAX_CHANGES_PER_SESSION) {
-			this._logService.warn(`[ClaudeWorkspaceFolderService] Truncating workspace changes for ${cwd} from ${boundedChanges.length} to ${MAX_CHANGES_PER_SESSION} entries to avoid oversized session items`);
-			boundedChanges = boundedChanges.slice(0, MAX_CHANGES_PER_SESSION);
+		const totalChanges = result.changes.length;
+		if (totalChanges > MAX_CHANGES_PER_SESSION) {
+			this._logService.warn(`[ClaudeWorkspaceFolderService] Truncating workspace changes for folder "${path.basename(cwd)}" from ${totalChanges} to ${MAX_CHANGES_PER_SESSION} entries to avoid oversized session items`);
 		}
+		const boundedChanges = totalChanges > MAX_CHANGES_PER_SESSION
+			? result.changes.slice(0, MAX_CHANGES_PER_SESSION)
+			: result.changes;
 		const changes = boundedChanges.map(change => new vscode.ChatSessionChangedFile(
 			vscode.Uri.file(change.filePath),
 			change.originalFilePath
