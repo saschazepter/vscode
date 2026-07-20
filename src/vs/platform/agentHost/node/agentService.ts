@@ -1342,8 +1342,19 @@ export class AgentService extends Disposable implements IAgentService {
 	}
 
 	private async _releaseSession(provider: IAgent, session: URI, chats: readonly URI[]): Promise<void> {
+		// Release every catalog chat even if one rejects: idle eviction has
+		// already dropped the session state, so a chat leaf skipped here would
+		// remain resident indefinitely. Visit all, then surface the first error.
+		let firstError: unknown;
 		for (const chat of chats) {
-			await provider.chats.releaseChat(chat);
+			try {
+				await provider.chats.releaseChat(chat);
+			} catch (err) {
+				firstError ??= err;
+			}
+		}
+		if (firstError !== undefined) {
+			throw firstError;
 		}
 	}
 

@@ -331,6 +331,14 @@ function isCopilotSdkToolOutputTempFile(filePath: string, tmpDir: string): boole
 export interface ICopilotAgentSessionOptions {
 	readonly sessionUri: URI;
 	readonly chatChannelUri: URI;
+	/**
+	 * The host-chosen persistence/config scope for this chat (the
+	 * {@link IAgentChatContext.resource}): the session URI for a session's
+	 * default chat, or the concrete chat URI for an additional chat. Stored
+	 * verbatim; when omitted (internal resume/unbound paths that carry no
+	 * explicit resource) it falls back to a one-time URI-shape inference.
+	 */
+	readonly resource?: URI;
 	readonly rawSessionId: string;
 	readonly onDidSessionProgress: Emitter<AgentSignal>;
 	readonly sessionLauncher: ICopilotSessionLauncher;
@@ -509,6 +517,13 @@ export class CopilotAgentSession extends Disposable {
 	readonly sessionId: string;
 	readonly sessionUri: URI;
 	private _chatChannelUri: URI;
+	/**
+	 * Persistence/config scope for this chat, fixed at construction. It is the
+	 * host-supplied {@link IAgentChatContext.resource} when available, and is
+	 * NOT re-derived from the (mutable) routing channel — so an explicitly
+	 * chosen resource is preserved across a later {@link bindChatChannel}.
+	 */
+	private readonly _storageUri: URI;
 
 	get chatChannelUri(): URI {
 		return this._chatChannelUri;
@@ -664,10 +679,6 @@ export class CopilotAgentSession extends Disposable {
 	/** Bridges SDK-reported MCP server state into AHP customization actions. */
 	private readonly _mcpCustomizations: McpCustomizationController;
 
-	private get _storageUri(): URI {
-		return isDefaultChatUri(this._chatChannelUri) ? this.sessionUri : this._chatChannelUri;
-	}
-
 	/**
 	 * Fans MCP server notifications (today: `notifications/tools/list_changed`)
 	 * up to the agent and on to the protocol server. Fired by the
@@ -724,6 +735,9 @@ export class CopilotAgentSession extends Disposable {
 		this.sessionUri = options.sessionUri;
 		this._slashCommandProvider = new CopilotSlashCommandProvider(() => this._wrapper.session.rpc.commands.list({ includeBuiltins: true, includeSkills: true, includeClientCommands: true }).then(c => c.commands), this._logService);
 		this._chatChannelUri = options.chatChannelUri;
+		// Persistence scope: honor the host-supplied resource; otherwise fall
+		// back once to the URI-shape inference (default chat → session scope).
+		this._storageUri = options.resource ?? (isDefaultChatUri(this._chatChannelUri) ? this.sessionUri : this._chatChannelUri);
 		this._onDidSessionProgress = options.onDidSessionProgress;
 		this._sessionLauncher = options.sessionLauncher;
 		this._launchPlan = options.launchPlan;

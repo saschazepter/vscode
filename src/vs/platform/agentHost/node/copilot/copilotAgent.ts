@@ -186,6 +186,8 @@ interface IResolvedCopilotChatContext {
 interface ICopilotAgentSessionIdentity {
 	readonly sessionUri: URI;
 	readonly chatChannelUri: URI;
+	/** Host-chosen persistence/config scope (the {@link IAgentChatContext.resource}). */
+	readonly resource: URI;
 }
 
 function toRestrictedTelemetryEndpoint(endpoint: string | undefined): string | undefined {
@@ -2073,21 +2075,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		// load the parent's events once and extract the child's filtered turns.
 		const subagentInfo = parseSubagentSessionUri(session);
 		if (subagentInfo) {
-			// Walk up the subagent chain to find the root session-backed leaf.
-			let rootSession = subagentInfo.parentSession;
-			let parentParsed;
-			while ((parentParsed = parseSubagentSessionUri(rootSession))) {
-				rootSession = parentParsed.parentSession;
-			}
-			const rootSessionId = AgentSession.id(rootSession);
-			const parentEntry = this._findAnySession(rootSessionId) ?? await this._resumeSession(rootSessionId, this._findBoundSessionChatUri(rootSessionId)).catch(err => {
-				this._logService.warn(`[Copilot:${rootSessionId}] Failed to resume root for subagent restore`, err);
-				return undefined;
-			});
-			if (!parentEntry) {
-				return [];
-			}
-			return parentEntry.getSubagentMessages(subagentInfo.toolCallId);
+			return this._getSubagentMessages(subagentInfo);
 		}
 
 		const sessionId = AgentSession.id(session);
@@ -2117,6 +2105,14 @@ export class CopilotAgent extends Disposable implements IAgent {
 	}
 
 	private async _getChatMessages(chat: URI, sessionOrContext?: URI | IAgentChatContext): Promise<readonly Turn[]> {
+		// A subagent child session (`<parent>/subagent/<toolCallId>`) is addressed
+		// through the chat surface on the persisted replay/restore path; extract
+		// its filtered turns from the parent's event log rather than resolving it
+		// as a regular chat binding (which has none, so it would return empty).
+		const subagentInfo = parseSubagentSessionUri(chat);
+		if (subagentInfo) {
+			return this._getSubagentMessages(subagentInfo);
+		}
 		const context = this._resolveChatContext(chat, sessionOrContext);
 		if (this._provisionalSessions.has(context.sessionId) && isEqual(context.resource, context.session)) {
 			return [];
@@ -2131,6 +2127,30 @@ export class CopilotAgent extends Disposable implements IAgent {
 			});
 		});
 		return entry ? entry.getMessages() : [];
+	}
+
+	/**
+	 * Reconstruct a subagent child session's turns from its root parent's event
+	 * log. Shared by the chat surface ({@link _getChatMessages}) and the legacy
+	 * {@link getSessionMessages} so both restore paths route subagents
+	 * identically.
+	 */
+	private async _getSubagentMessages(subagentInfo: { readonly parentSession: URI; readonly toolCallId: string }): Promise<readonly Turn[]> {
+		// Walk up the subagent chain to find the root session-backed leaf.
+		let rootSession = subagentInfo.parentSession;
+		let parentParsed;
+		while ((parentParsed = parseSubagentSessionUri(rootSession))) {
+			rootSession = parentParsed.parentSession;
+		}
+		const rootSessionId = AgentSession.id(rootSession);
+		const parentEntry = this._findAnySession(rootSessionId) ?? await this._resumeSession(rootSessionId, this._findBoundSessionChatUri(rootSessionId)).catch(err => {
+			this._logService.warn(`[Copilot:${rootSessionId}] Failed to resume root for subagent restore`, err);
+			return undefined;
+		});
+		if (!parentEntry) {
+			return [];
+		}
+		return parentEntry.getSubagentMessages(subagentInfo.toolCallId);
 	}
 
 	async getSubagentSessions(session: URI): Promise<readonly IRestoredSubagentSession[]> {
@@ -2270,7 +2290,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			}
 			let agentSession: CopilotAgentSession | undefined;
 			try {
-				agentSession = this._createAgentSession(launchPlan, workingDirectory, activeClient, { sessionUri: session, chatChannelUri: chat });
+				agentSession = this._createAgentSession(launchPlan, workingDirectory, activeClient, { sessionUri: session, chatChannelUri: chat, resource: context.resource });
 				await agentSession.initializeSession();
 				if (options?.fork?.turnIdMapping) {
 					await agentSession.remapTurnIds(options.fork.turnIdMapping);
@@ -2534,7 +2554,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		};
 		let agentSession: CopilotAgentSession | undefined;
 		try {
-			agentSession = this._createAgentSession(launchPlan, workingDirectory, activeClient, { sessionUri: session, chatChannelUri: chat });
+			agentSession = this._createAgentSession(launchPlan, workingDirectory, activeClient, { sessionUri: session, chatChannelUri: chat, resource: context.resource });
 			await agentSession.initializeSession();
 			this._registerLiveChat(chat, agentSession, activeClient);
 			this._logService.info(`[Copilot] Resumed chat binding ${chatKey} for context ${session.toString()}`);
@@ -2791,6 +2811,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			{
 				sessionUri,
 				chatChannelUri,
+				...(identity?.resource ? { resource: identity.resource } : {}),
 				rawSessionId: launchPlan.sessionId,
 				onDidSessionProgress: this._onDidSessionProgress,
 				sessionLauncher: this._sessionLauncher,
