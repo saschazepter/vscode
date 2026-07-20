@@ -31,8 +31,9 @@ export interface ScoredSnippet extends ScoredSnippetMarker {
 	uri?: string;
 	/**
 	 * Whether the snippet's source document is a language-service "related" file
-	 * rather than an open tab. Carried through from the source file so consumers do
-	 * not have to re-classify snippets by URI.
+	 * rather than an open tab. Optional here because snippets produced by the matcher
+	 * don't yet carry provenance; `getSimilarSnippets` normalizes it and guarantees it
+	 * on its return type.
 	 */
 	isFromRelatedFile?: boolean;
 }

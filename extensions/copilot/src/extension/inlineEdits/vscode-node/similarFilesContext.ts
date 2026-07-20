@@ -15,7 +15,7 @@ import { ICopilotInlineCompletionItemProviderService } from '../../completions/c
 import { LineRange0Based } from '../../xtab/common/lineRange';
 import { INeighborFileSnippet, ISimilarFilesContextService } from '../../xtab/common/similarFilesContextService';
 
-type RankedSnippet = SnippetWithProviderInfo & { uri: string; relativePath?: string };
+type RankedSnippet = SnippetWithProviderInfo & { uri: string; isFromRelatedFile: boolean; relativePath?: string };
 
 export class SimilarFilesContextService implements ISimilarFilesContextService {
 
@@ -60,7 +60,7 @@ export class SimilarFilesContextService implements ISimilarFilesContextService {
 				snippet: s.snippet,
 				lineRange: new LineRange0Based(s.startLine, s.endLine),
 				score: s.score,
-				isFromRelatedFile: s.isFromRelatedFile ?? false,
+				isFromRelatedFile: s.isFromRelatedFile,
 			}));
 		} catch {
 			return undefined;
