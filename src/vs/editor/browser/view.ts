@@ -58,6 +58,7 @@ import { IColorTheme, getThemeTypeSelector } from '../../platform/theme/common/t
 import { ViewGpuContext } from './gpu/viewGpuContext.js';
 import { ViewLinesGpu } from './viewParts/viewLinesGpu/viewLinesGpu.js';
 import { EditorViewGpu, EDITOR_VIEW_GPU_CAPABILITIES, type EditorViewGpuCapabilities } from './viewParts/editorViewGpu/editorViewGpu.js';
+import { configureContentDecorationFallbackOverlay } from './viewParts/editorViewGpu/editorViewDecorations.js';
 import { DynamicViewOverlay } from './view/dynamicViewOverlay.js';
 import { AbstractEditContext } from './controller/editContext/editContext.js';
 import { IClipboardCopyEvent, IClipboardPasteEvent } from './controller/editContext/clipboardUtils.js';
@@ -197,7 +198,7 @@ export class View extends ViewEventHandler {
 		if (gpuAcceleration === 'on') {
 			this._viewGpuContext = this._instantiationService.createInstance(ViewGpuContext, this._context);
 		} else if (gpuAcceleration === 'editorView') {
-			this._editorViewGpu = new EditorViewGpu(this._context);
+			this._editorViewGpu = new EditorViewGpu(this._context, this.domNode.domNode);
 			this._viewParts.push(this._editorViewGpu);
 		}
 		// In `editorView` mode the `@vscode/editor-view` (Rust/WASM) canvas draws
@@ -240,7 +241,15 @@ export class View extends ViewEventHandler {
 		if (!gpu?.selection) { contentOverlays.push(new SelectionsOverlay(this._context)); }
 		if (!gpu?.indentGuides) { contentOverlays.push(new IndentGuidesOverlay(this._context)); }
 		if (!gpu?.decorations) {
-			contentOverlays.push(new DecorationsOverlay(this._context));
+			contentOverlays.push(new DecorationsOverlay(
+				this._context,
+				gpu?.supportedContentDecorations && this._editorViewGpu
+					? decoration => !this._editorViewGpu!.ownsContentDecoration(decoration)
+					: undefined,
+				gpu?.supportedContentDecorations && this._editorViewGpu
+					? requests => this._editorViewGpu!.layoutContentDecorationRanges(requests)
+					: undefined,
+			));
 		}
 		if (!gpu?.whitespace) {
 			contentOverlays.push(new WhitespaceOverlay(this._context));
@@ -327,6 +336,11 @@ export class View extends ViewEventHandler {
 		}
 
 		if (contentViewOverlays) {
+			if (gpu?.supportedContentDecorations) {
+				// The renderer canvas is opaque. Keep the selectively filtered
+				// fallback overlay above it so unsupported CSS remains visible.
+				configureContentDecorationFallbackOverlay(contentViewOverlays.getDomNode().domNode);
+			}
 			this._linesContent.appendChild(contentViewOverlays.getDomNode());
 		}
 		if (rulers && 'domNode' in rulers) {

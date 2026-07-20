@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { EditorView, EditorViewConfig, CursorInput, CursorStyle, LineInput, ModelDeltaInput, SelectionInput, TokenInput } from '@vscode/editor-view';
+import type { EditorView, EditorViewConfig, CursorInput, CursorStyle, DecorationInput, DecorationRangeInput, LineInput, ModelDeltaInput, SelectionInput, TokenInput } from '@vscode/editor-view';
 import { getActiveWindow, WindowIntervalTimer } from '../../../../base/browser/dom.js';
 import { createFastDomNode, type FastDomNode } from '../../../../base/browser/fastDomNode.js';
 import { Color } from '../../../../base/common/color.js';
@@ -12,7 +12,7 @@ import { resolveAmdNodeModulePath } from '../../../../amdX.js';
 import { editorBackground, editorForeground, editorSelectionBackground, editorInactiveSelection } from '../../../../platform/theme/common/colorRegistry.js';
 import { isHighContrast } from '../../../../platform/theme/common/theme.js';
 import { editorActiveLineNumber, editorGutter, editorLineNumbers, editorLineHighlight, editorLineHighlightBorder, editorInactiveLineHighlight, editorCursorForeground, editorCursorBackground, editorMultiCursorPrimaryForeground, editorMultiCursorPrimaryBackground, editorMultiCursorSecondaryForeground, editorMultiCursorSecondaryBackground, editorWhitespaces, editorIndentGuide1, editorIndentGuide2, editorIndentGuide3, editorIndentGuide4, editorIndentGuide5, editorIndentGuide6, editorActiveIndentGuide1, editorActiveIndentGuide2, editorActiveIndentGuide3, editorActiveIndentGuide4, editorActiveIndentGuide5, editorActiveIndentGuide6 } from '../../../common/core/editorColorRegistry.js';
-import { EditorOption, RenderLineNumbersType, TextEditorCursorBlinkingStyle, TextEditorCursorStyle } from '../../../common/config/editorOptions.js';
+import { EditorFontLigatures, EditorOption, RenderLineNumbersType, TextEditorCursorBlinkingStyle, TextEditorCursorStyle } from '../../../common/config/editorOptions.js';
 import { Position } from '../../../common/core/position.js';
 import { TokenizationRegistry } from '../../../common/languages.js';
 import { HorizontalGuidesState } from '../../../common/textModelGuides.js';
@@ -21,7 +21,11 @@ import type * as viewEvents from '../../../common/viewEvents.js';
 import type { ViewContext } from '../../../common/viewModel/viewContext.js';
 import { HorizontalPosition, type RenderingContext, type RestrictedRenderingContext } from '../../view/renderingContext.js';
 import { ViewPart } from '../../view/viewPart.js';
+import { Range } from '../../../common/core/range.js';
+import type { ViewModelDecoration } from '../../../common/viewModel/viewModelDecoration.js';
+import { EditorViewDecorationResolver } from './editorViewDecorations.js';
 import { EditorViewModelSync } from './editorViewModelSync.js';
+import type { IContentDecorationLineRange, IContentDecorationRangeRequest } from '../decorations/decorations.js';
 import type { IEditorViewLineWidthProvider } from '../viewLines/viewLines.js';
 import type { IViewLineHitTestProvider } from '../../controller/mouseHandler.js';
 
@@ -49,6 +53,11 @@ export interface EditorViewGpuCapabilities {
 	readonly indentGuides: boolean;
 	/** Gutter line numbers (`LineNumbersOverlay`). */
 	readonly lineNumbers: boolean;
+	/**
+	 * Supported content decoration paints are GPU-owned individually; the DOM
+	 * overlay remains mounted for every unsupported class/style.
+	 */
+	readonly supportedContentDecorations: boolean;
 	/**
 	 * Content/margin decorations: squiggles and inline/line decorations
 	 * (`DecorationsOverlay`, `LinesDecorationsOverlay`,
@@ -82,6 +91,7 @@ export const EDITOR_VIEW_GPU_CAPABILITIES: EditorViewGpuCapabilities = {
 	whitespace: true,
 	indentGuides: true,
 	lineNumbers: true,
+	supportedContentDecorations: true,
 	decorations: false,
 	rulers: false,
 	minimap: false,
@@ -117,6 +127,8 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 	 * and executes the plan it produces.
 	 */
 	private readonly _sync = new EditorViewModelSync(EditorViewGpu.MAX_LINES);
+	private readonly _decorationResolver: EditorViewDecorationResolver;
+	private _decorationsDirty = true;
 	/** View line (1-based) holding the primary cursor; its number is highlighted. */
 	private _activeLineNumber = 1;
 	/** Current selections in renderer coordinates (0-based line, 0-based UTF-16 column). */
@@ -149,14 +161,16 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 	/** Flat-blink half-period, matching `ViewCursors.BLINK_INTERVAL`. */
 	private static readonly BLINK_INTERVAL = 500;
 
-	constructor(context: ViewContext) {
+	constructor(context: ViewContext, editorRoot: HTMLElement) {
 		super(context);
+		this._decorationResolver = new EditorViewDecorationResolver(editorRoot);
 
 		this.canvas = createFastDomNode(document.createElement('canvas'));
 		this.canvas.setClassName('editorView-experimental-canvas');
 		this.canvas.setPosition('absolute');
 		this.canvas.setTop(0);
 		this.canvas.setLeft(0);
+		this.canvas.domNode.style.zIndex = '0';
 		// Let pointer input fall through to the DOM editor underneath, which
 		// remains the source of truth and drives our sync while this is a
 		// read-only proof of concept.
@@ -210,6 +224,9 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 		const fontInfo = options.get(EditorOption.fontInfo);
 		const layoutInfo = options.get(EditorOption.layoutInfo);
 		const wrappingInfo = options.get(EditorOption.wrappingInfo);
+		const fontLigatures = options.get(EditorOption.fontLigatures) !== EditorFontLigatures.OFF;
+		const hasVerifiedAsciiCellWidth =
+			fontInfo.isMonospace || fontInfo.fontFamily.trim().toLowerCase() === 'monospace';
 		const guideColors = [
 			[editorIndentGuide1, editorActiveIndentGuide1],
 			[editorIndentGuide2, editorActiveIndentGuide2],
@@ -228,8 +245,8 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 			fontFamily: fontInfo.fontFamily,
 			fontSize: fontInfo.fontSize,
 			lineHeight: fontInfo.lineHeight,
-			fontLigatures: !!options.get(EditorOption.fontLigatures),
-			monospaceWidth: fontInfo.isMonospace ? fontInfo.spaceWidth : undefined,
+			fontLigatures,
+			monospaceWidth: !fontLigatures && hasVerifiedAsciiCellWidth ? fontInfo.spaceWidth : undefined,
 			// Match the DOM editor's geometry so text/line-numbers land at the
 			// same x offset: reserve exactly the editor's content-left as the
 			// gutter, and expand tabs by the model's tab size.
@@ -679,6 +696,69 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 		this._applyDelta({ type: 'setIndentGuides', start, counts, activeLevels });
 	}
 
+	public ownsContentDecoration(decoration: ViewModelDecoration): boolean {
+		return this._decorationResolver.ownsContentDecoration(decoration);
+	}
+
+	public layoutContentDecorationRanges(requests: readonly IContentDecorationRangeRequest[]): readonly (readonly IContentDecorationLineRange[])[] {
+		if (!this._editorView || requests.length === 0) {
+			return requests.map(() => []);
+		}
+		const { width, height, dpr } = this._measure();
+		this._editorView.setConfig(this._buildConfig());
+		this._syncModel();
+		this._editorView.setViewport({
+			width,
+			height,
+			scrollTop: this._context.viewLayout.getCurrentScrollTop(),
+			scrollLeft: this._context.viewLayout.getCurrentScrollLeft(),
+			devicePixelRatio: dpr,
+		});
+		const ranges: DecorationRangeInput[] = requests.map(request => ({
+			startLine: request.range.startLineNumber - 1,
+			startColumn: request.range.startColumn - 1,
+			endLine: request.range.endLineNumber - 1,
+			endColumn: request.range.endColumn - 1,
+			includeNewLines: request.includeNewLines,
+		}));
+		return this._editorView.decorationRanges(ranges).map(lines => lines.map(line => ({
+			lineNumber: line.line + 1,
+			left: line.left,
+			width: line.width,
+			continuesOnNextLine: line.continuesOnNextLine,
+		})));
+	}
+
+	private _syncDecorations(): void {
+		if (!this._decorationsDirty) {
+			return;
+		}
+
+		const lineCount = Math.min(this._context.viewModel.getLineCount(), EditorViewGpu.MAX_LINES);
+		if (lineCount === 0) {
+			this._applyDelta({ type: 'setDecorations', decorations: [] });
+			this._decorationsDirty = false;
+			return;
+		}
+
+		const range = new Range(
+			1,
+			this._context.viewModel.getLineMinColumn(1),
+			lineCount,
+			this._context.viewModel.getLineMaxColumn(lineCount),
+		);
+		const retained = this._context.viewModel.getDecorationsInViewport(range);
+		const decorations: DecorationInput[] = [];
+		for (const decoration of retained) {
+			const resolved = this._decorationResolver.resolve(decoration, decorations.length + 1);
+			if (resolved) {
+				decorations.push(resolved);
+			}
+		}
+		this._applyDelta({ type: 'setDecorations', decorations });
+		this._decorationsDirty = false;
+	}
+
 	// --- rendering -----------------------------------------------------------
 
 	private _present(): void {
@@ -700,6 +780,7 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 		const scrollLeft = this._context.viewLayout.getCurrentScrollLeft();
 		this._editorView.setConfig(this._buildConfig());
 		this._syncModel();
+		this._syncDecorations();
 		this._syncIndentGuides(scrollTop, height);
 		this._editorView.setViewport({
 			width,
@@ -831,24 +912,33 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 	public override onFlushed(e: viewEvents.ViewFlushedEvent): boolean {
 		// The whole model was replaced (e.g. a different document).
 		this._sync.scheduleFullReload();
+		this._decorationsDirty = true;
+		return true;
+	}
+	public override onDecorationsChanged(e: viewEvents.ViewDecorationsChangedEvent): boolean {
+		this._decorationsDirty = true;
 		return true;
 	}
 	public override onLineMappingChanged(e: viewEvents.ViewLineMappingChangedEvent): boolean {
 		// View↔model line mapping changed (word wrap / folding): view lines are
 		// remapped wholesale, so incremental tracking no longer applies.
 		this._sync.scheduleFullReload();
+		this._decorationsDirty = true;
 		return true;
 	}
 	public override onLinesChanged(e: viewEvents.ViewLinesChangedEvent): boolean {
 		this._recordEdit(sync => sync.onLinesChanged(e.fromLineNumber, e.count, this._context.viewModel.getLineCount()));
+		this._decorationsDirty = true;
 		return true;
 	}
 	public override onLinesDeleted(e: viewEvents.ViewLinesDeletedEvent): boolean {
 		this._recordEdit(sync => sync.onLinesDeleted(e.fromLineNumber, e.toLineNumber, this._context.viewModel.getLineCount()));
+		this._decorationsDirty = true;
 		return true;
 	}
 	public override onLinesInserted(e: viewEvents.ViewLinesInsertedEvent): boolean {
 		this._recordEdit(sync => sync.onLinesInserted(e.fromLineNumber, e.toLineNumber, this._context.viewModel.getLineCount()));
+		this._decorationsDirty = true;
 		return true;
 	}
 	public override onScrollChanged(e: viewEvents.ViewScrollChangedEvent): boolean {
@@ -858,6 +948,8 @@ export class EditorViewGpu extends ViewPart implements IEditorViewLineWidthProvi
 		// Base colors are re-pushed via config every present, but token foreground
 		// colors are baked into per-line tokens, so rebuild them all.
 		this._sync.scheduleFullReload();
+		this._decorationResolver.clear();
+		this._decorationsDirty = true;
 		return true;
 	}
 	public override onTokensChanged(e: viewEvents.ViewTokensChangedEvent): boolean {
