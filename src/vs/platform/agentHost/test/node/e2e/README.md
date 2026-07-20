@@ -46,7 +46,7 @@ flowchart LR
     agent -- HTTP /v1/messages, /responses --> proxy[CapiReplayProxy]
     proxy -- replay: recorded SSE --> agent
     proxy -. record: forward .-> capi[(real CAPI)]
-    proxy <--> fixture[(per-test YAML fixture)]
+    proxy <--> fixture[(per-test or shared-empty YAML fixture)]
 ```
 
 Key properties:
@@ -66,7 +66,7 @@ Key properties:
 | `providers/` | Deterministic provider entry points and provider-specific scenarios. Live Codex scenarios are isolated in `codexAgentHostLive.integrationTest.ts`. |
 | `suites/` | Cross-provider scenarios grouped by behavior. Add new shared scenarios to the closest existing suite; add a suite module when a new behavior area emerges. |
 | `harness/` | Record/replay, AHP snapshots, shared turn drivers, and server lifecycle. |
-| `captures/*.yaml` | The committed fixtures, one per `(provider, test)`. |
+| `captures/*.yaml` | Committed model fixtures, plus one shared strict empty fixture for tests that declare no model traffic. |
 | `providers/__snapshots__/` | Semantic AHP snapshots for deterministic provider tests. |
 
 Use these deterministic E2E tests when the value comes from running the bundled provider process with realistic captured model behavior: SDK event ordering, tool schemas and execution, provider persistence, protocol-to-provider mapping, or cross-provider parity. Use `../providerIntegration/` for a real provider with a synthetic local LLM, `../protocol/` when `ScriptedMockAgent` can express the AHP contract precisely, and an ordinary unit test when no server process is required.
@@ -75,7 +75,9 @@ Use these deterministic E2E tests when the value comes from running the bundled 
 
 ## Fixture format
 
-Fixtures live in `captures/` and are named `${provider}-${slugified-test-title}.yaml`. They are intentionally minimal and human-reviewable:
+Model-backed fixtures live in `captures/` and are named `${provider}-${slugified-test-title}.yaml`. Tests registered with `hostOnlyTest(...)` instead use `captures/empty.yaml` in strict replay mode. Any unexpected model request is therefore a hard cache miss, including during fixture-recording runs, without creating one empty file per host-only test.
+
+Fixtures are intentionally minimal and human-reviewable:
 
 ```yaml
 version: 1
@@ -227,10 +229,12 @@ Guidelines:
 
 1. **The fixture name is derived from the test title** (`${provider}-${slug}.yaml`). Renaming a test orphans its fixture — re-record after renaming.
 2. **Drive with `client.waitForNotification(...)`** and assert on protocol actions. Don't wait on wall-clock timing.
-3. **Add the test, then record**: write the test, run once with `AGENT_HOST_UPDATE_SNAPSHOTS=1` to capture AHP snapshots and LLM fixtures for every enabled provider, review, commit.
+3. **Choose the model boundary explicitly**: register tests that must make no model requests with `hostOnlyTest(context, ...)`; otherwise add the test normally and run once with `AGENT_HOST_UPDATE_SNAPSHOTS=1` to capture AHP snapshots and LLM fixtures for every enabled provider.
 4. **Keep prompts deterministic and minimal** — fewer model turns = smaller, more robust fixtures.
 5. Register a new shared suite from `suites/agentHostE2ESuites.ts`. **Provider-specific** assertions stay in that provider's entry point.
 6. If the behavior can't replay deterministically (real-time streaming, mid-turn aborts, concurrency), gate it — see below.
+
+`hostOnlyTest(...)` applies the shared timeout and records the title with the suite harness before Mocha runs. The harness routes that title to the shared empty fixture. Do not use it merely to avoid recording a prompt: it is an executable assertion that the full provider stack reaches the tested behavior without crossing the model boundary.
 
 ### AHP traffic snapshots
 

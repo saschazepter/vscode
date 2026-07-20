@@ -31,6 +31,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 		let suiteDataDir: string | undefined;
 		const createdSessions: string[] = [];
 		const tempDirs: string[] = [];
+		const noModelTrafficTestTitles = new Set<string>();
 		const context: IAgentHostE2ETestContext = {
 			config,
 			get client() { return client; },
@@ -40,6 +41,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			stableNewScenarioResponse,
 			isWindows,
 			runRecordOnlyTests: RUN_RECORD_ONLY_TESTS,
+			registerNoModelTrafficTest: title => noModelTrafficTestTitles.add(title),
 		};
 
 		suiteSetup(async function () {
@@ -71,7 +73,8 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			if (!lease) {
 				throw new Error('Agent Host E2E server lease was not initialized.');
 			}
-			({ client } = await lease.acquire(this.currentTest?.title ?? 'unknown'));
+			const title = this.currentTest?.title ?? 'unknown';
+			({ client } = await lease.acquire(title, noModelTrafficTestTitles.has(title) ? 'none' : 'recorded'));
 		});
 
 		teardown(async function () {

@@ -21,7 +21,7 @@ import {
 } from '../harness/agentHostE2ETestHarness.js';
 import { assertRecordedAhpSnapshot } from '../harness/ahpSnapshot.js';
 import { fetchSessionWithChat, getActionEnvelope, isActionNotification } from '../../serverIntegrationTestHelpers.js';
-import type { IAgentHostE2ETestContext } from './e2eTestContext.js';
+import { hostOnlyTest, type IAgentHostE2ETestContext } from './e2eTestContext.js';
 
 export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void {
 	const { config, createdSessions, tempDirs, isWindows } = context;
@@ -46,14 +46,7 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		});
 	}
 
-	function hostTest(title: string, run: Mocha.AsyncFunc, enabled = true): void {
-		(enabled ? test : test.skip)(title, function () {
-			this.timeout(60_000);
-			return run.call(this);
-		});
-	}
-
-	hostTest('initialize advertises host-owned input capabilities', async function () {
+	hostOnlyTest(context, 'initialize advertises host-owned input capabilities', async function () {
 
 		const result = await context.client.call<InitializeResult>('initialize', {
 			channel: ROOT_STATE_URI,
@@ -70,7 +63,7 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		});
 	});
 
-	hostTest('workspace file completions are filtered, attached, and cached', async function () {
+	hostOnlyTest(context, 'workspace file completions are filtered, attached, and cached', async function () {
 
 		const workspace = createWorkspace('ahp-file-completions-');
 		const sourceDirectory = join(workspace, 'src');
@@ -110,7 +103,7 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		});
 	});
 
-	hostTest('workspace file completions ignore plain text', async function () {
+	hostOnlyTest(context, 'workspace file completions ignore plain text', async function () {
 
 		const workspace = createWorkspace('ahp-empty-completions-');
 		writeFileSync(join(workspace, 'visible.txt'), 'visible\n');
@@ -121,7 +114,7 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		assert.deepStrictEqual(result, { items: [] });
 	});
 
-	hostTest('rename completion appears after a locally renamed turn', async function () {
+	hostOnlyTest(context, 'rename completion appears after a locally renamed turn', async function () {
 
 		const sessionUri = await createSession('rename-completion');
 		const before = await getCompletions(sessionUri, '/r');
@@ -151,7 +144,7 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		assert.match(getMarkdownResponseText(context.client), /Renamed: Coverage Session/);
 	});
 
-	hostTest('an empty rename command completes without changing the title', async function () {
+	hostOnlyTest(context, 'an empty rename command completes without changing the title', async function () {
 
 		const sessionUri = await createSession('empty-rename');
 		const before = await fetchSessionWithChat(context.client, sessionUri);
@@ -180,7 +173,7 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 
 	// Successful bang-command completion depends on POSIX shell command
 	// detection; Windows emits output but never reaches tool completion.
-	hostTest('a bang command runs locally and exposes terminal output', async function () {
+	hostOnlyTest(context, 'a bang command runs locally and exposes terminal output', async function () {
 
 		const sessionUri = await createSession('bang-success');
 		const chatUri = buildDefaultChatUri(sessionUri);
@@ -226,7 +219,7 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		});
 	}, !isWindows);
 
-	hostTest('a failing bang command reports its exit code', async function () {
+	hostOnlyTest(context, 'a failing bang command reports its exit code', async function () {
 
 		const sessionUri = await createSession('bang-failure');
 
@@ -262,7 +255,7 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 
 	// Git-backed config discovery leaves this temporary repository locked on
 	// Windows CI after the provider session is disposed.
-	hostTest('session configuration resolves and completes git branches', async function () {
+	hostOnlyTest(context, 'session configuration resolves and completes git branches', async function () {
 
 		const workspace = createWorkspace('ahp-config-completions-');
 		execSync('git init', { cwd: workspace });
