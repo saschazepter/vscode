@@ -1836,6 +1836,14 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._uiResourceByBackendId.clear();
 		this._liveReplyKeys.clear();
 		this._lastShownSessionId = undefined;
+		// Terminal disconnect: drop the user-picked routing target and the
+		// always-on pending-confirmation snapshot too. Otherwise a later
+		// reconnect (e.g. from a different, newly focused session) would re-pin
+		// voice to the previously targeted session - re-lighting its input glow
+		// and misrouting the next utterance to it instead of resolving its
+		// pending confirmation.
+		this._targetSession.set(undefined, undefined);
+		this._pendingToolConfirmations.set([], undefined);
 		// Terminal disconnect: drop embedder-driven active-session state too, so a
 		// later reconnect starts from focus-based detection until the embedder
 		// re-asserts the active session (rather than pinning a stale one and
@@ -1963,6 +1971,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		this._pendingNarrationRetries.clear();
 		this._deferredNarrations.clear();
 		this._narratedConfirmation.clear();
+		// Terminal disconnect (no reconnect): drop the user-picked routing target
+		// and pending-confirmation snapshot so a later connect() doesn't re-pin
+		// voice to this evicted session (see disconnect() for the same reset).
+		this._targetSession.set(undefined, undefined);
+		this._pendingToolConfirmations.set([], undefined);
 		transaction(tx => {
 			this._isConnecting.set(false, tx);
 			this._isReconnecting.set(false, tx);
