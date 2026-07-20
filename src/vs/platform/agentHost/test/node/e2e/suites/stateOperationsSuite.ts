@@ -87,8 +87,23 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		await context.client.call('disposeTerminal', { channel: terminalUri });
 	}
 
-	test('client title change updates session state', async function () {
-		this.timeout(60_000);
+	async function withTerminal<T>(
+		prefix: string,
+		run: (terminal: Awaited<ReturnType<typeof createTerminal>>) => Promise<T>,
+	): Promise<T> {
+		const terminal = await createTerminal(prefix);
+		try {
+			return await run(terminal);
+		} finally {
+			await disposeTerminal(terminal.terminalUri);
+		}
+	}
+
+	function stateTest(title: string, run: Mocha.AsyncFunc): void {
+		test(title, run).timeout(60_000);
+	}
+
+	stateTest('client title change updates session state', async function () {
 		const { sessionUri } = await createSession('title-change');
 
 		await dispatchAndWait(sessionUri, 1, { type: ActionType.SessionTitleChanged, title: 'Direct AHP Title' });
@@ -96,8 +111,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		assert.strictEqual((await sessionState(sessionUri)).title, 'Direct AHP Title');
 	});
 
-	test('marking a session read sets the read status flag', async function () {
-		this.timeout(60_000);
+	stateTest('marking a session read sets the read status flag', async function () {
 		const { sessionUri } = await createSession('read-set');
 
 		await dispatchAndWait(sessionUri, 1, { type: ActionType.SessionIsReadChanged, isRead: true });
@@ -105,8 +119,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		assert.ok((await sessionState(sessionUri)).status & SessionStatus.IsRead);
 	});
 
-	test('marking a session unread clears the read status flag', async function () {
-		this.timeout(60_000);
+	stateTest('marking a session unread clears the read status flag', async function () {
 		const { sessionUri } = await createSession('read-clear');
 		await dispatchAndWait(sessionUri, 1, { type: ActionType.SessionIsReadChanged, isRead: true });
 
@@ -115,8 +128,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		assert.strictEqual((await sessionState(sessionUri)).status & SessionStatus.IsRead, 0);
 	});
 
-	test('archiving a session sets the archived status flag', async function () {
-		this.timeout(60_000);
+	stateTest('archiving a session sets the archived status flag', async function () {
 		const { sessionUri } = await createSession('archive-set');
 
 		await dispatchAndWait(sessionUri, 1, { type: ActionType.SessionIsArchivedChanged, isArchived: true });
@@ -124,8 +136,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		assert.ok((await sessionState(sessionUri)).status & SessionStatus.IsArchived);
 	});
 
-	test('unarchiving a session clears the archived status flag', async function () {
-		this.timeout(60_000);
+	stateTest('unarchiving a session clears the archived status flag', async function () {
 		const { sessionUri } = await createSession('archive-clear');
 		await dispatchAndWait(sessionUri, 1, { type: ActionType.SessionIsArchivedChanged, isArchived: true });
 
@@ -134,8 +145,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		assert.strictEqual((await sessionState(sessionUri)).status & SessionStatus.IsArchived, 0);
 	});
 
-	test('session config changes merge with existing values', async function () {
-		this.timeout(60_000);
+	stateTest('session config changes merge with existing values', async function () {
 		const { sessionUri } = await createSession('config-merge');
 		const before = await sessionState(sessionUri);
 
@@ -150,8 +160,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		});
 	});
 
-	test('session config replacement drops previous values', async function () {
-		this.timeout(60_000);
+	stateTest('session config replacement drops previous values', async function () {
 		const { sessionUri } = await createSession('config-replace');
 
 		await dispatchAndWait(sessionUri, 1, {
@@ -165,8 +174,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		});
 	});
 
-	test('active client set adds a session participant', async function () {
-		this.timeout(60_000);
+	stateTest('active client set adds a session participant', async function () {
 		const { sessionUri, clientId } = await createSession('active-client-add');
 
 		await dispatchAndWait(sessionUri, 1, {
@@ -181,8 +189,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		}]);
 	});
 
-	test('active client set replaces an existing participant', async function () {
-		this.timeout(60_000);
+	stateTest('active client set replaces an existing participant', async function () {
 		const { sessionUri, clientId } = await createSession('active-client-update');
 		await dispatchAndWait(sessionUri, 1, {
 			type: ActionType.SessionActiveClientSet,
@@ -197,8 +204,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		assert.deepStrictEqual((await sessionState(sessionUri)).activeClients.map(client => client.displayName), ['After']);
 	});
 
-	test('active client removal removes the session participant', async function () {
-		this.timeout(60_000);
+	stateTest('active client removal removes the session participant', async function () {
 		const { sessionUri, clientId } = await createSession('active-client-remove');
 		await dispatchAndWait(sessionUri, 1, {
 			type: ActionType.SessionActiveClientSet,
@@ -210,8 +216,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		assert.deepStrictEqual((await sessionState(sessionUri)).activeClients, []);
 	});
 
-	test('draft change stores a user message', async function () {
-		this.timeout(60_000);
+	stateTest('draft change stores a user message', async function () {
 		const { chatUri } = await createSession('draft-set');
 		const draft = userMessage('draft text');
 
@@ -220,8 +225,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		assert.deepStrictEqual((await chatState(chatUri)).draft, draft);
 	});
 
-	test('draft change replaces the previous message', async function () {
-		this.timeout(60_000);
+	stateTest('draft change replaces the previous message', async function () {
 		const { chatUri } = await createSession('draft-replace');
 		await dispatchAndWait(chatUri, 1, { type: ActionType.ChatDraftChanged, draft: userMessage('before') });
 
@@ -230,8 +234,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		assert.deepStrictEqual((await chatState(chatUri)).draft, userMessage('after'));
 	});
 
-	test('clearing a draft removes it from chat state', async function () {
-		this.timeout(60_000);
+	stateTest('clearing a draft removes it from chat state', async function () {
 		const { chatUri } = await createSession('draft-clear');
 		await dispatchAndWait(chatUri, 1, { type: ActionType.ChatDraftChanged, draft: userMessage('draft') });
 
@@ -240,8 +243,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		assert.strictEqual((await chatState(chatUri)).draft, undefined);
 	});
 
-	test('removing a missing queued message leaves chat state unchanged', async function () {
-		this.timeout(60_000);
+	stateTest('removing a missing queued message leaves chat state unchanged', async function () {
 		const { chatUri } = await createSession('queue-remove-missing');
 
 		await dispatchAndWait(chatUri, 1, {
@@ -253,8 +255,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		assert.strictEqual((await chatState(chatUri)).queuedMessages, undefined);
 	});
 
-	test('reordering a missing queue leaves chat state unchanged', async function () {
-		this.timeout(60_000);
+	stateTest('reordering a missing queue leaves chat state unchanged', async function () {
 		const { chatUri } = await createSession('queue-reorder-missing');
 
 		await dispatchAndWait(chatUri, 1, {
@@ -265,8 +266,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		assert.strictEqual((await chatState(chatUri)).queuedMessages, undefined);
 	});
 
-	test('truncating at a missing turn leaves history unchanged', async function () {
-		this.timeout(60_000);
+	stateTest('truncating at a missing turn leaves history unchanged', async function () {
 		const { chatUri } = await createSession('truncate-missing');
 		const before = await chatState(chatUri);
 
@@ -278,8 +278,7 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		assert.deepStrictEqual((await chatState(chatUri)).turns, before.turns);
 	});
 
-	test('cancelling a missing turn leaves the chat idle', async function () {
-		this.timeout(60_000);
+	stateTest('cancelling a missing turn leaves the chat idle', async function () {
 		const { chatUri } = await createSession('cancel-missing');
 
 		await dispatchAndWait(chatUri, 1, {
@@ -295,10 +294,8 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		);
 	});
 
-	test('createTerminal exposes requested dimensions cwd and claim', async function () {
-		this.timeout(60_000);
-		const { terminalUri, clientId, workspace } = await createTerminal('terminal-create');
-		try {
+	stateTest('createTerminal exposes requested dimensions cwd and claim', async function () {
+		await withTerminal('terminal-create', async ({ terminalUri, clientId, workspace }) => {
 			const state = await terminalState(terminalUri);
 			assert.deepStrictEqual({
 				cwd: state.cwd,
@@ -311,27 +308,19 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 				rows: 30,
 				claim: { kind: TerminalClaimKind.Client, clientId },
 			});
-		} finally {
-			await disposeTerminal(terminalUri);
-		}
+		});
 	});
 
-	test('terminal resize updates terminal dimensions', async function () {
-		this.timeout(60_000);
-		const { terminalUri } = await createTerminal('terminal-resize');
-		try {
+	stateTest('terminal resize updates terminal dimensions', async function () {
+		await withTerminal('terminal-resize', async ({ terminalUri }) => {
 			await dispatchAndWait(terminalUri, 1, { type: ActionType.TerminalResized, cols: 120, rows: 40 });
 			const state = await terminalState(terminalUri);
 			assert.deepStrictEqual({ cols: state.cols, rows: state.rows }, { cols: 120, rows: 40 });
-		} finally {
-			await disposeTerminal(terminalUri);
-		}
+		});
 	});
 
-	test('terminal title change is broadcast', async function () {
-		this.timeout(60_000);
-		const { terminalUri } = await createTerminal('terminal-title');
-		try {
+	stateTest('terminal title change is broadcast', async function () {
+		await withTerminal('terminal-title', async ({ terminalUri }) => {
 			context.client.clearReceived();
 			context.client.dispatch({
 				channel: terminalUri,
@@ -344,27 +333,19 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 				&& (getActionEnvelope(n).action as { title: string }).title === 'Renamed Terminal',
 			);
 			assert.strictEqual((getActionEnvelope(notification).action as { title: string }).title, 'Renamed Terminal');
-		} finally {
-			await disposeTerminal(terminalUri);
-		}
+		});
 	});
 
-	test('terminal claim can transfer from the client to the session', async function () {
-		this.timeout(60_000);
-		const { sessionUri, terminalUri } = await createTerminal('terminal-claim');
-		try {
+	stateTest('terminal claim can transfer from the client to the session', async function () {
+		await withTerminal('terminal-claim', async ({ sessionUri, terminalUri }) => {
 			const claim: TerminalClaim = { kind: TerminalClaimKind.Session, session: sessionUri };
 			await dispatchAndWait(terminalUri, 1, { type: ActionType.TerminalClaimed, claim });
 			assert.deepStrictEqual((await terminalState(terminalUri)).claim, claim);
-		} finally {
-			await disposeTerminal(terminalUri);
-		}
+		});
 	});
 
-	test('terminal input reaches the shell and produces output', async function () {
-		this.timeout(60_000);
-		const { terminalUri } = await createTerminal('terminal-input');
-		try {
+	stateTest('terminal input reaches the shell and produces output', async function () {
+		await withTerminal('terminal-input', async ({ terminalUri }) => {
 			context.client.clearReceived();
 			context.client.dispatch({
 				channel: terminalUri,
@@ -384,13 +365,10 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 				.map(part => part.type === 'command' ? part.output : part.value)
 				.join('');
 			assert.match(output, /(?:^|\D)42(?:\D|$)/);
-		} finally {
-			await disposeTerminal(terminalUri);
-		}
+		});
 	});
 
-	test('disposeTerminal removes the terminal from root state', async function () {
-		this.timeout(60_000);
+	stateTest('disposeTerminal removes the terminal from root state', async function () {
 		const { terminalUri } = await createTerminal('terminal-dispose');
 
 		await disposeTerminal(terminalUri);
@@ -400,21 +378,16 @@ export function defineStateOperationsTests(context: IAgentHostE2ETestContext): v
 		assert.strictEqual(state.terminals?.some(terminal => terminal.resource === terminalUri) ?? false, false);
 	});
 
-	test('creating a duplicate terminal resource is rejected', async function () {
-		this.timeout(60_000);
-		const { terminalUri, clientId } = await createTerminal('terminal-duplicate');
-		try {
+	stateTest('creating a duplicate terminal resource is rejected', async function () {
+		await withTerminal('terminal-duplicate', async ({ terminalUri, clientId }) => {
 			await assert.rejects(context.client.call('createTerminal', {
 				channel: terminalUri,
 				claim: { kind: TerminalClaimKind.Client, clientId },
 			}));
-		} finally {
-			await disposeTerminal(terminalUri);
-		}
+		});
 	});
 
-	test('subscribing to an unknown terminal is rejected', async function () {
-		this.timeout(60_000);
+	stateTest('subscribing to an unknown terminal is rejected', async function () {
 		await createSession('terminal-unknown');
 		const terminalUri = URI.from({ scheme: 'agenthost-terminal', authority: 'e2e', path: `/${generateUuid()}` }).toString();
 

@@ -46,8 +46,11 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		});
 	}
 
-	test('initialize advertises host-owned input capabilities', async function () {
-		this.timeout(60_000);
+	function hostTest(title: string, run: Mocha.AsyncFunc): void {
+		test(title, run).timeout(60_000);
+	}
+
+	hostTest('initialize advertises host-owned input capabilities', async function () {
 
 		const result = await context.client.call<InitializeResult>('initialize', {
 			channel: ROOT_STATE_URI,
@@ -64,8 +67,7 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		});
 	});
 
-	test('workspace file completions are filtered, attached, and cached', async function () {
-		this.timeout(60_000);
+	hostTest('workspace file completions are filtered, attached, and cached', async function () {
 
 		const workspace = createWorkspace('ahp-file-completions-');
 		const sourceDirectory = join(workspace, 'src');
@@ -105,8 +107,7 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		});
 	});
 
-	test('workspace file completions ignore plain text', async function () {
-		this.timeout(60_000);
+	hostTest('workspace file completions ignore plain text', async function () {
 
 		const workspace = createWorkspace('ahp-empty-completions-');
 		writeFileSync(join(workspace, 'visible.txt'), 'visible\n');
@@ -117,8 +118,7 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		assert.deepStrictEqual(result, { items: [] });
 	});
 
-	test('rename completion appears after a locally renamed turn', async function () {
-		this.timeout(60_000);
+	hostTest('rename completion appears after a locally renamed turn', async function () {
 
 		const sessionUri = await createSession('rename-completion');
 		const before = await getCompletions(sessionUri, '/r');
@@ -148,8 +148,7 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		assert.match(getMarkdownResponseText(context.client), /Renamed: Coverage Session/);
 	});
 
-	test('an empty rename command completes without changing the title', async function () {
-		this.timeout(60_000);
+	hostTest('an empty rename command completes without changing the title', async function () {
 
 		const sessionUri = await createSession('empty-rename');
 		const before = await fetchSessionWithChat(context.client, sessionUri);
@@ -176,8 +175,7 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		});
 	});
 
-	test('a bang command runs locally and exposes terminal output', async function () {
-		this.timeout(60_000);
+	hostTest('a bang command runs locally and exposes terminal output', async function () {
 
 		const sessionUri = await createSession('bang-success');
 		const chatUri = buildDefaultChatUri(sessionUri);
@@ -221,8 +219,7 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		});
 	});
 
-	test('a failing bang command reports its exit code', async function () {
-		this.timeout(60_000);
+	hostTest('a failing bang command reports its exit code', async function () {
 
 		const sessionUri = await createSession('bang-failure');
 
@@ -254,8 +251,7 @@ export function defineHostFeaturesTests(context: IAgentHostE2ETestContext): void
 		});
 	});
 
-	test('session configuration resolves and completes git branches', async function () {
-		this.timeout(60_000);
+	hostTest('session configuration resolves and completes git branches', async function () {
 
 		const workspace = createWorkspace('ahp-config-completions-');
 		execSync('git init', { cwd: workspace });
