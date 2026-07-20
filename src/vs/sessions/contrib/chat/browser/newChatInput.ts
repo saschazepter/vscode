@@ -26,11 +26,12 @@ import { SuggestController } from '../../../../editor/contrib/suggest/browser/su
 import { SnippetController2 } from '../../../../editor/contrib/snippet/browser/snippetController2.js';
 import { PlaceholderTextContribution } from '../../../../editor/contrib/placeholderText/browser/placeholderTextContribution.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { ServiceCollection } from '../../../../platform/instantiation/common/serviceCollection.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
+import { KeybindingsRegistry, KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { AccessibilityVerbositySettingId } from '../../../../workbench/contrib/accessibility/browser/accessibilityConfiguration.js';
 import { AccessibilityCommandId } from '../../../../workbench/contrib/accessibility/common/accessibilityCommands.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -83,6 +84,7 @@ import { handleTerminalCommandPaste, isTerminalCommandInput } from '../../../../
 import { getChatSessionType } from '../../../../workbench/contrib/chat/common/model/chatUri.js';
 import { ChatSpeechToTextState, IChatSpeechToTextService } from '../../../../workbench/contrib/chat/browser/speechToText/chatSpeechToTextService.js';
 import { isDictating, startDictation, stopDictation } from '../../../../workbench/contrib/chat/browser/speechToText/dictationSession.js';
+import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 
 
 const OPEN_OTEL_SETTINGS_COMMAND = 'github.copilot.chat.otel.openSettings';
@@ -93,6 +95,31 @@ const STORAGE_KEY_DRAFT_STATE = 'sessions.draftState';
 const MIN_EDITOR_HEIGHT = 50;
 const MAX_EDITOR_HEIGHT = 200;
 const NEW_CHAT_INPUT_FONT_FAMILY = 'system-ui, -apple-system, sans-serif';
+
+/** True while focus is in an Agents window composer that supports dictation. */
+const SessionsChatInputHasDictationFocus = new RawContextKey<boolean>('sessionsChatInputHasDictationFocus', false, localize('sessionsChatInputHasDictationFocus', "True when focus is in an Agents window chat composer that supports dictation."));
+
+/**
+ * The composer a dictation shortcut should target. Tracked at module scope
+ * because the Cmd/Ctrl+I keybinding is registered globally: the composer is not
+ * an `IChatWidget`, so the shared Dictate action can't reach it, and a raw
+ * editor `onKeyDown` handler loses the chord to `editor.action.triggerSuggest`
+ * (bound to Cmd/Ctrl+I at `EditorContrib` weight). Routing through the
+ * keybinding service lets this outrank Trigger Suggest, matching the main
+ * window chat input.
+ */
+let activeDictationComposer: NewChatInputWidget | undefined;
+
+KeybindingsRegistry.registerCommandAndKeybindingRule({
+	id: 'sessions.action.chat.toggleDictation',
+	weight: KeybindingWeight.WorkbenchContrib + 1,
+	when: ContextKeyExpr.and(
+		SessionsChatInputHasDictationFocus,
+		ContextKeyExpr.has(ChatContextKeys.speechToTextConfigured.key),
+	),
+	primary: KeyMod.CtrlCmd | KeyCode.KeyI,
+	handler: () => activeDictationComposer?.toggleDictation(),
+});
 
 interface IDraftState {
 	inputText: string;
@@ -570,8 +597,24 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 			}
 		}));
 
-		this._register(this._editor.onDidFocusEditorWidget(() => this._onDidFocus.fire()));
-		this._register(this._editor.onDidBlurEditorWidget(() => this._onDidBlur.fire()));
+		const dictationFocusKey = SessionsChatInputHasDictationFocus.bindTo(inputScopedContextKeyService);
+		this._register(this._editor.onDidFocusEditorWidget(() => {
+			dictationFocusKey.set(true);
+			activeDictationComposer = this;
+			this._onDidFocus.fire();
+		}));
+		this._register(this._editor.onDidBlurEditorWidget(() => {
+			dictationFocusKey.set(false);
+			if (activeDictationComposer === this) {
+				activeDictationComposer = undefined;
+			}
+			this._onDidBlur.fire();
+		}));
+		this._register(toDisposable(() => {
+			if (activeDictationComposer === this) {
+				activeDictationComposer = undefined;
+			}
+		}));
 
 		this._register(this._editor.onKeyDown(e => {
 			if (e.keyCode === KeyCode.Enter && !e.shiftKey && !e.ctrlKey && !e.altKey) {
@@ -594,13 +637,6 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 				e.preventDefault();
 				e.stopPropagation();
 				this._contextAttachments.showPicker(this.options.getContextFolderUri());
-			}
-			// Cmd+I / Ctrl+I — dictate into the input using on-device speech-to-text.
-			// The global Dictate action can't reach this composer, so route here.
-			if (this.chatSpeechToTextService.isConfigured && e.equals(KeyMod.CtrlCmd | KeyCode.KeyI)) {
-				e.preventDefault();
-				e.stopPropagation();
-				void this._toggleDictation();
 			}
 		}));
 
@@ -804,6 +840,15 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 				void toggle();
 			}
 		}));
+	}
+
+	/**
+	 * Toggle on-device dictation into this composer's editor. Invoked by the
+	 * Cmd/Ctrl+I keybinding (see {@link SessionsChatInputHasDictationFocus}),
+	 * which routes here because the composer isn't an `IChatWidget`.
+	 */
+	toggleDictation(): void {
+		void this._toggleDictation();
 	}
 
 	/**
