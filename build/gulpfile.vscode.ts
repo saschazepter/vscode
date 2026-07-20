@@ -30,6 +30,7 @@ import { compileNonNativeExtensionsBuildTask, compileNativeExtensionsBuildTask, 
 import { copyCodiconsTask } from './lib/compilation.ts';
 import { ensureCopilotPlatformPackage, getCopilotExcludeFilter, getCopilotRuntimePrebuildFiles, getCopilotTgrepExcludeFilter, getMxcExcludeFilter, getRipgrepExcludeFilter, prepareBuiltInCopilotRipgrepShim } from './lib/copilot.ts';
 import { ensureOSProxyResolverPlatformPackage, getOSProxyResolverExcludeFilter, getOSProxyResolverPlatformFiles } from './lib/osProxyResolver.ts';
+import { ensureFoundryLocalCorePackage } from './lib/foundryLocal.ts';
 import { readAgentSdkResults } from './agent-sdk/common.ts';
 import { useEsbuildTranspile } from './buildConfig.ts';
 import { promisify } from 'util';
@@ -236,10 +237,11 @@ function computeChecksum(filename: string): string {
 }
 
 // foundry-local-sdk (on-device chat dictation) ships prebuilt N-API addons for
-// every platform/arch inside its tarball. Keep only the target build's addon so
-// we don't bloat each package with unused native code. (The native core
-// libraries under foundry-local-core/ are fetched at install time for the host
-// RID only, so they need no per-target filtering here.)
+// every platform/arch inside its tarball, and its native core libraries are
+// fetched per-RID into `foundry-local-core/<platform>-<arch>/` (the host RID at
+// install time, plus the target RID via `ensureFoundryLocalCorePackage` during
+// packaging). Keep only the target build's addon and core libraries so we don't
+// bloat each package with unused — or host-mismatched — native code.
 const foundryLocalShippedTargets: readonly [string, string][] = [
 	['darwin', 'arm64'],
 	['linux', 'x64'],
@@ -252,7 +254,10 @@ function getFoundryLocalExcludeFilter(platform: string, arch: string): string[] 
 		'**',
 		...foundryLocalShippedTargets
 			.filter(([p, a]) => !(p === platform && a === arch))
-			.map(([p, a]) => `!**/foundry-local-sdk/prebuilds/${p}-${a}/**`),
+			.flatMap(([p, a]) => [
+				`!**/foundry-local-sdk/prebuilds/${p}-${a}/**`,
+				`!**/foundry-local-sdk/foundry-local-core/${p}-${a}/**`,
+			]),
 	];
 }
 
@@ -366,6 +371,9 @@ function packageTask(platform: string, arch: string, sourceFolderName: string, d
 		const copilotRuntimePrebuilds = gulp.src(getCopilotRuntimePrebuildFiles(platform, arch), { base: '.', dot: true, allowEmpty: true });
 		ensureOSProxyResolverPlatformPackage(platform, arch);
 		const osProxyResolverPlatformPackage = gulp.src(getOSProxyResolverPlatformFiles(platform, arch), { base: '.', dot: true, allowEmpty: true });
+		// Fetch the target-RID Foundry Local core libraries (on-device dictation).
+		// npm only installs the host RID's libraries; cross-builds need the target's.
+		ensureFoundryLocalCorePackage(platform, arch);
 		const deps = es.merge(cleanedDeps, copilotRuntimePrebuilds, osProxyResolverPlatformPackage)
 			.pipe(filter(getCopilotExcludeFilter(platform, arch)))
 			.pipe(filter(getCopilotTgrepExcludeFilter(platform, arch)))

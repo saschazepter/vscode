@@ -52,21 +52,6 @@ export interface ILocalTranscriptionResult {
 	readonly isFinal: boolean;
 }
 
-/**
- * Proxy/TLS settings forwarded from the renderer's configuration so the first-use
- * model download can honour corporate proxies and strict-SSL. The transcription
- * worker is a DI-less utility process with no access to `IConfigurationService`
- * or `IRequestService`, so the renderer reads the relevant `http.*` settings and
- * hands them across. Mirrors the values `RequestService` itself reads.
- */
-export interface ILocalTranscriptionProxyConfig {
-	/** Value of `http.proxy`, when configured. */
-	readonly url?: string;
-	/** Value of `http.proxyStrictSSL` (defaults to strict when unset). */
-	readonly strictSSL?: boolean;
-	/** Value of `http.proxyAuthorization`, when configured. */
-	readonly authorization?: string;
-}
 
 /**
  * On-device speech-to-text using a downloaded model. Transcription runs through
@@ -105,11 +90,15 @@ export interface ILocalTranscriptionService {
 	 * Ensure the model is downloaded/loaded (idempotent) and begin a new
 	 * transcription session. `cacheDir` is where model files are stored. `model`
 	 * selects the on-device Foundry Local model; when omitted the service default
-	 * is used. `language` optionally hints the spoken language. `proxy` carries
-	 * the renderer's `http.*` settings so a first-use download can traverse a
-	 * corporate proxy.
+	 * is used. `language` optionally hints the spoken language.
+	 *
+	 * NOTE: Foundry Local performs the first-use model download itself and does
+	 * not currently expose a hook for VS Code's `http.proxy`/`http.proxyStrictSSL`
+	 * settings, so those are not honoured for the model download. Behind a
+	 * corporate proxy the first-use download may fail until Foundry Local gains a
+	 * supported proxy mechanism.
 	 */
-	start(options: { readonly cacheDir: string; readonly model?: string; readonly language?: string; readonly proxy?: ILocalTranscriptionProxyConfig }): Promise<void>;
+	start(options: { readonly cacheDir: string; readonly model?: string; readonly language?: string }): Promise<void>;
 
 	/** Append captured audio (raw little-endian PCM16 mono 16 kHz). */
 	pushAudio(chunk: VSBuffer): Promise<void>;

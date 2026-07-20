@@ -2277,6 +2277,25 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration).
 			return pairs;
 		}
 	},
+	{
+		// The on-device dictation runtime moved to Foundry Local; the old
+		// transformers.js/onnxruntime model IDs no longer resolve and would fail
+		// with an unknown-model error. Map any explicitly-stored legacy value to
+		// the new default so existing users keep working.
+		key: 'chat.speechToText.model',
+		migrateFn: (value: unknown) => {
+			const legacyModelIds = [
+				'onnx-community/whisper-tiny',
+				'onnx-community/whisper-base',
+				'onnx-community/whisper-small',
+				'onnx-community/nemotron-3.5-asr-streaming-0.6b-onnx-int4',
+			];
+			if (typeof value === 'string' && legacyModelIds.includes(value)) {
+				return { value: 'nemotron-speech-streaming-en-0.6b' };
+			}
+			return [];
+		}
+	},
 ]);
 
 class ChatResolverContribution extends Disposable {

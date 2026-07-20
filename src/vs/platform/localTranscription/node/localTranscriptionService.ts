@@ -8,7 +8,6 @@ import { Disposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
 import {
 	ILocalTranscriptionModelStatus,
-	ILocalTranscriptionProxyConfig,
 	ILocalTranscriptionResult,
 	ILocalTranscriptionService,
 	LocalTranscriptionModelState,
@@ -67,17 +66,80 @@ function classifyModelError(message: string): string {
 	return 'unknown';
 }
 
-/** Join two transcript fragments with a single separating space, trimming edges. */
-function joinTranscript(a: string, b: string): string {
-	const left = a.trim();
-	const right = b.trim();
-	if (!left) {
-		return right;
+/**
+ * Choose the separator to place between two transcript fragments. Mirrors the
+ * GitHub Copilot app's joining rule: no space if the left already ends in an
+ * opener/whitespace or the right begins with whitespace or closing punctuation,
+ * otherwise a single space.
+ */
+function transcriptSeparator(current: string, next: string): '' | ' ' {
+	if (!current || !next || /[\s([{]$/.test(current) || /^\s|^[,.;:!?)}\]'"]/.test(next)) {
+		return '';
 	}
-	if (!right) {
-		return left;
+	return ' ';
+}
+
+interface IFinalSegment {
+	readonly order: number;
+	readonly startTime: number | null;
+	readonly endTime: number | null;
+	text: string;
+}
+
+/**
+ * Accumulates the cumulative transcript from Foundry Local's per-segment
+ * streaming results. Foundry emits results whose text is scoped to a single
+ * endpointed segment (NOT the whole session), and re-emits the same segment
+ * multiple times as it refines the hypothesis — so finalized segments must be
+ * keyed (by their start/end time) and replaced on refinement, then the distinct
+ * segments joined in time order. Blindly appending every `is_final` result would
+ * duplicate words. Mirrors the GitHub Copilot app's `VoiceTranscriptAccumulator`.
+ */
+class TranscriptAccumulator {
+	private readonly _segments = new Map<string, IFinalSegment>();
+	private _nextOrder = 0;
+
+	/** Record a finalized segment, replacing an earlier revision of the same one. */
+	addFinal(text: string, startTime: number | null, endTime: number | null): void {
+		const normalized = text.trim();
+		if (!normalized) {
+			return;
+		}
+		const key = (startTime !== null || endTime !== null)
+			? `${startTime ?? 'na'}:${endTime ?? 'na'}`
+			: `untimed:${this._nextOrder}`;
+		const existing = this._segments.get(key);
+		if (existing) {
+			existing.text = normalized;
+			return;
+		}
+		this._segments.set(key, { order: this._nextOrder, startTime, endTime, text: normalized });
+		this._nextOrder++;
 	}
-	return `${left} ${right}`;
+
+	/** The cumulative finalized transcript, segments joined in time order. */
+	getText(): string {
+		return [...this._segments.values()]
+			.sort((a, b) => {
+				if (a.startTime !== null && b.startTime !== null) {
+					return a.startTime - b.startTime;
+				}
+				if (a.startTime !== null) {
+					return -1;
+				}
+				if (b.startTime !== null) {
+					return 1;
+				}
+				return a.order - b.order;
+			})
+			.reduce((text, seg) => `${text}${transcriptSeparator(text, seg.text)}${seg.text}`, '')
+			.trim();
+	}
+
+	reset(): void {
+		this._segments.clear();
+		this._nextOrder = 0;
+	}
 }
 
 /**
@@ -116,10 +178,16 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 	private _openPromise: Promise<void> | undefined;
 	private _sessionActive = false;
 
-	/** Cumulative finalized transcript for the active session. */
-	private _finalizedText = '';
+	/** Cumulative finalized transcript, accumulated per timed segment. */
+	private readonly _accumulator = new TranscriptAccumulator();
 	/** Latest interim (not-yet-finalized) segment text. */
 	private _partialText = '';
+	/**
+	 * Set when the native streaming session fails mid-recording (its result
+	 * stream throws). `stop()` rethrows this so the renderer treats the session
+	 * as failed instead of reporting the partial transcript as a success.
+	 */
+	private _runtimeError: Error | undefined;
 
 	/**
 	 * PCM chunks captured before the model finished loading and the session
@@ -151,15 +219,16 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 		this._onDidChangeModelStatus.fire(status);
 	}
 
-	async start(options: { cacheDir: string; model?: string; language?: string; proxy?: ILocalTranscriptionProxyConfig }): Promise<void> {
+	async start(options: { cacheDir: string; model?: string; language?: string }): Promise<void> {
 		// Reset any prior session before starting a new one.
 		await this._disposeSession();
 		this._generation++;
 		const generation = this._generation;
 		this._sessionActive = true;
-		this._finalizedText = '';
+		this._accumulator.reset();
 		this._partialText = '';
 		this._pendingChunks = [];
+		this._runtimeError = undefined;
 
 		const model = options.model ?? DEFAULT_MODEL;
 		const language = options.language;
@@ -286,8 +355,11 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 
 	/**
 	 * Drain the session's result stream, maintaining a cumulative transcript.
-	 * Foundry emits per-segment results flagged `is_final`; finalized segments are
-	 * appended to the running transcript and interim segments update the tail.
+	 * Foundry emits per-segment results flagged `is_final`; a finalized segment is
+	 * recorded (and replaced if later refined) in the accumulator, while a
+	 * non-final result is the interim tail of the segment currently being spoken.
+	 * Each update fires the full cumulative transcript so the renderer can shimmer
+	 * the interim tail and solidify finalized text.
 	 */
 	private async _consume(session: LiveAudioTranscriptionSession, generation: number): Promise<void> {
 		try {
@@ -297,19 +369,36 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 				}
 				const text = this._resultText(result);
 				if (result.is_final) {
-					this._finalizedText = joinTranscript(this._finalizedText, text);
+					this._accumulator.addFinal(text, result.start_time ?? null, result.end_time ?? null);
 					this._partialText = '';
 				} else {
 					this._partialText = text;
 				}
-				const cumulative = joinTranscript(this._finalizedText, this._partialText);
 				if (this._sessionActive) {
-					this._onDidTranscribe.fire({ text: cumulative, isFinal: false });
+					this._onDidTranscribe.fire({ text: this._cumulativeText(), isFinal: false });
 				}
 			}
-		} catch {
-			// Stream errors surface via stop()/the error status; nothing to emit here.
+		} catch (err) {
+			// A native streaming/push failure terminates the stream. If it happened
+			// while recording (not during our own teardown), record it and surface
+			// an error status so the renderer tears the session down and informs the
+			// user; stop() also rethrows it rather than reporting a false success.
+			if (generation === this._generation && this._sessionActive) {
+				const error = err instanceof Error ? err : new Error(String(err));
+				this._runtimeError = error;
+				this._setStatus({ state: LocalTranscriptionModelState.Error, error: error.message, errorCode: 'runtime' });
+			}
 		}
+	}
+
+	/** Finalized transcript plus the current interim tail, joined naturally. */
+	private _cumulativeText(): string {
+		const finalized = this._accumulator.getText();
+		const partial = this._partialText.trim();
+		if (!partial) {
+			return finalized;
+		}
+		return `${finalized}${transcriptSeparator(finalized, partial)}${partial}`.trim();
 	}
 
 	private _resultText(result: LiveAudioTranscriptionResponse): string {
@@ -327,11 +416,11 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 		const pcm = new Uint8Array(bytes.byteLength);
 		pcm.set(bytes);
 		if (this._session) {
-			try {
-				await this._session.append(pcm);
-			} catch {
-				// Session ended underneath us (e.g. native error); drop the chunk.
-			}
+			// Let an append rejection propagate: the renderer's pushAudio().catch
+			// fails the session so dictation doesn't silently continue while every
+			// subsequent chunk is dropped. Late failures after stop() are ignored
+			// by the renderer.
+			await this._session.append(pcm);
 		} else {
 			// Model still loading / session not open yet: buffer until it is.
 			this._pendingChunks.push(pcm);
@@ -342,10 +431,12 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 		const generation = this._generation;
 		this._sessionActive = false;
 
-		// On first use the model may still be downloading/loading when the user
-		// stops. Wait for the session to open (or fail) so the whole recording is
-		// transcribed instead of being dropped.
-		if (!this._session && this._openPromise) {
+		// Always wait for the in-flight session open to settle. `_session` is
+		// assigned before `_openSession` finishes flushing the buffered audio it
+		// captured during model load, so stopping right after the session opens
+		// must not race that flush — otherwise `session.stop()` can reject the
+		// remaining appends and return a truncated transcript.
+		if (this._openPromise) {
 			try {
 				await this._openPromise;
 			} catch {
@@ -360,7 +451,7 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 		const session = this._session;
 		if (!session) {
 			// Model never finished loading; nothing to transcribe.
-			const text = joinTranscript(this._finalizedText, this._partialText).trim();
+			const text = this._cumulativeText();
 			this._resetSessionState();
 			return text;
 		}
@@ -378,7 +469,16 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 			} catch { /* consumer swallows its own errors */ }
 		}
 
-		const text = joinTranscript(this._finalizedText, this._partialText).trim();
+		// The native stream failed mid-recording: fail the stop rather than
+		// reporting the partial transcript as a successful dictation result.
+		const runtimeError = this._runtimeError;
+		if (runtimeError && generation === this._generation) {
+			await this._disposeSession();
+			this._resetSessionState();
+			throw runtimeError;
+		}
+
+		const text = this._cumulativeText();
 		if (generation === this._generation) {
 			this._onDidTranscribe.fire({ text, isFinal: true });
 		}
@@ -413,8 +513,9 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 
 	private _resetSessionState(): void {
 		this._sessionActive = false;
-		this._finalizedText = '';
+		this._accumulator.reset();
 		this._partialText = '';
 		this._pendingChunks = [];
+		this._runtimeError = undefined;
 	}
 }
