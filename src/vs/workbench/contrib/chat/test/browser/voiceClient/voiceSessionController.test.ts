@@ -32,6 +32,7 @@ import { IVoiceSessionController, VoiceSessionController } from '../../../browse
 import { IVoiceToolDispatchService } from '../../../browser/voiceClient/voiceToolDispatchService.js';
 import { IChatService } from '../../../common/chatService/chatService.js';
 import { IVoiceClientService, IVoiceTranscription } from '../../../common/voiceClient/voiceClientService.js';
+import { IChatModel } from '../../../common/model/chatModel.js';
 import { IVoicePlaybackService } from '../../../common/voicePlaybackService.js';
 import { MockChatService } from '../../common/chatService/mockChatService.js';
 
@@ -77,6 +78,41 @@ class TestChatService extends mock<IChatService>() {
 	override getSession(): undefined { return undefined; }
 }
 
+/**
+ * Chat service whose tracked models can be driven from a test, so the
+ * controller's always-on pending-confirmation tracker can be exercised.
+ */
+class ControllableChatService extends mock<IChatService>() {
+	override readonly chatModels = observableValue<readonly IChatModel[]>('chatModels', []);
+	private readonly _sessions = new Map<string, IChatModel>();
+	override getSession(resource: URI): IChatModel | undefined { return this._sessions.get(resource.toString()); }
+	setModels(models: readonly IChatModel[]): void {
+		this._sessions.clear();
+		for (const model of models) {
+			this._sessions.set(model.sessionResource.toString(), model);
+		}
+		this.chatModels.set(models, undefined);
+	}
+}
+
+/**
+ * Minimal chat model that the tracker reads as having one pending tool
+ * confirmation on its last request.
+ */
+function pendingConfirmationModel(resource: URI): IChatModel {
+	const response = {
+		isPendingConfirmation: observableValue<{ detail?: string } | undefined>('pending', { detail: 'Needs approval' }),
+		response: { value: [] as readonly { kind: string }[] },
+	};
+	const lastRequest = { response };
+	return {
+		sessionResource: resource,
+		title: 'Chat',
+		getRequests: () => [lastRequest],
+		lastRequestObs: observableValue('lastRequest', lastRequest),
+	} as unknown as IChatModel;
+}
+
 class TestChatWidgetService extends mock<IChatWidgetService>() {
 	override readonly onDidChangeFocusedSession = Event.None;
 	override readonly onDidAddWidget = Event.None;
@@ -96,7 +132,7 @@ suite('VoiceSessionController', () => {
 		sinon.restore();
 	});
 
-	function createController(voiceClientService: TestVoiceClientService): IVoiceSessionController {
+	function createController(voiceClientService: TestVoiceClientService, chatService: IChatService = new TestChatService()): IVoiceSessionController {
 		return store.add(new VoiceSessionController(
 			voiceClientService,
 			new class extends mock<IMicCaptureService>() {
@@ -115,7 +151,7 @@ suite('VoiceSessionController', () => {
 			}(),
 			new class extends mock<IVoicePlaybackService>() { }(),
 			new TestAgentSessionsService(),
-			new TestChatService(),
+			chatService,
 			new class extends mock<ICommandService>() {
 				override async executeCommand(): Promise<undefined> { return undefined; }
 			}(),
@@ -225,6 +261,52 @@ suite('VoiceSessionController', () => {
 		// expected, so it must not clobber that reply's state.
 		assert.strictEqual(pendingSolicitedNarrations.size, 0);
 		assert.strictEqual(controller.statusText.get(), 'Tap to start');
+	});
+
+	test('explicit disconnect clears routing target and pending confirmations and the tracker cannot repopulate them before reconnect', () => {
+		const voiceClientService = new TestVoiceClientService();
+		const chatService = new ControllableChatService();
+		const controller = createController(voiceClientService, chatService);
+
+		const target = URI.parse('agent-host-copilot:/session-1');
+		controller.setTargetSession(target);
+		chatService.setModels([pendingConfirmationModel(URI.parse('agent-host-copilot:/session-1'))]);
+
+		// Precondition: the tracker sees the pending confirmation and the target
+		// is pinned.
+		assert.strictEqual(controller.pendingToolConfirmations.get().length, 1);
+		assert.strictEqual(controller.targetSession.get()?.toString(), target.toString());
+
+		controller.disconnect('explicit');
+
+		// Cleared by the teardown...
+		assert.strictEqual(controller.targetSession.get(), undefined);
+		assert.strictEqual(controller.pendingToolConfirmations.get().length, 0);
+
+		// ...and a later model update cannot make the always-on tracker
+		// repopulate the snapshot from the still-pending old session.
+		chatService.setModels([pendingConfirmationModel(URI.parse('agent-host-copilot:/session-1'))]);
+		assert.strictEqual(controller.pendingToolConfirmations.get().length, 0);
+	});
+
+	test('fatal disconnect clears routing target and pending confirmations and the tracker cannot repopulate them before reconnect', () => {
+		const voiceClientService = new TestVoiceClientService();
+		const chatService = new ControllableChatService();
+		const controller = createController(voiceClientService, chatService);
+		const handleFatalDisconnect = Reflect.get(controller, '_handleFatalDisconnect') as (code: number, reason: string) => void;
+
+		controller.setTargetSession(URI.parse('agent-host-copilot:/session-1'));
+		chatService.setModels([pendingConfirmationModel(URI.parse('agent-host-copilot:/session-1'))]);
+		assert.strictEqual(controller.pendingToolConfirmations.get().length, 1);
+
+		// 4008 = another window took over the single voice session (terminal).
+		handleFatalDisconnect.call(controller, 4008, 'taken over');
+
+		assert.strictEqual(controller.targetSession.get(), undefined);
+		assert.strictEqual(controller.pendingToolConfirmations.get().length, 0);
+
+		chatService.setModels([pendingConfirmationModel(URI.parse('agent-host-copilot:/session-1'))]);
+		assert.strictEqual(controller.pendingToolConfirmations.get().length, 0);
 	});
 });
 

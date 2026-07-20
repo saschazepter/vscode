@@ -570,8 +570,18 @@ export class AgentsVoiceWidget extends Disposable {
 			this._register(reshowDisposable);
 		}
 
-		// Start waveform animation
-		this._startWaveformAnimation();
+		// Run the 60Hz waveform/glow loop only while there is something to
+		// animate (onboarding, listening, or speaking). Idle/disconnected render
+		// no glow, so keeping a frame loop alive then would burn CPU for nothing.
+		this._register(autorun(reader => {
+			const onboarding = this._showOnboarding.read(reader);
+			const voiceState = this._voiceState.read(reader);
+			if (onboarding || voiceState === 'listening' || voiceState === 'speaking') {
+				this._startWaveformAnimation();
+			} else {
+				this._stopWaveformAnimation();
+			}
+		}));
 		this._register(toDisposable(() => this._stopWaveformAnimation()));
 	}
 
@@ -1043,17 +1053,10 @@ export class AgentsVoiceWidget extends Disposable {
 			this._animationFrameId = getWindow(this.container).requestAnimationFrame(animate);
 			const onboarding = this._showOnboarding.get();
 			const voiceState = this._voiceState.get();
-			const glowActive = onboarding || voiceState === 'speaking' || voiceState === 'listening';
-
-			if (!glowActive) {
-				this._glowDiv.style.display = 'none';
-				if (this._inputBoxContainer) {
-					this._inputBoxContainer.style.borderColor = 'var(--vscode-input-border, transparent)';
-					this._inputBoxContainer.style.boxShadow = 'none';
-				}
-				if (this._inputBoxMicBtn) {
-					this._inputBoxMicBtn.style.boxShadow = 'none';
-				}
+			// The reactive autorun starts/stops this loop; guard against a frame
+			// that races a transition to a non-glowing state (styles are cleared
+			// by _stopWaveformAnimation()).
+			if (!(onboarding || voiceState === 'listening' || voiceState === 'speaking')) {
 				return;
 			}
 
@@ -1105,6 +1108,16 @@ export class AgentsVoiceWidget extends Disposable {
 		if (this._animationFrameId !== undefined) {
 			getWindow(this.container).cancelAnimationFrame(this._animationFrameId);
 			this._animationFrameId = undefined;
+		}
+		// Clear any glow left by the last rendered frame so idle/disconnected
+		// shows no residual glow now that the loop no longer runs while idle.
+		this._glowDiv.style.display = 'none';
+		if (this._inputBoxContainer) {
+			this._inputBoxContainer.style.borderColor = 'var(--vscode-input-border, transparent)';
+			this._inputBoxContainer.style.boxShadow = 'none';
+		}
+		if (this._inputBoxMicBtn) {
+			this._inputBoxMicBtn.style.boxShadow = 'none';
 		}
 	}
 }

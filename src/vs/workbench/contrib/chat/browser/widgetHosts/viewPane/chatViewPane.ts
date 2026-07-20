@@ -518,7 +518,10 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		this._register(autorun(reader => {
 			const connected = this.voiceSessionController.isConnected.read(reader);
 			const voiceState = this.voiceSessionController.voiceState.read(reader);
-			if (connected && (voiceState === 'idle' || voiceState === 'listening' || voiceState === 'speaking')) {
+			// Only run the per-frame glow loop for states that actually render a
+			// glow. Idle renders none, so keeping the loop alive then would burn a
+			// requestAnimationFrame callback every frame for nothing.
+			if (connected && isGlowingVoiceState(voiceState)) {
 				startGlowAnimation();
 			} else {
 				stopGlowAnimation();
