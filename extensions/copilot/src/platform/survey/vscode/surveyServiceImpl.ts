@@ -162,7 +162,7 @@ export class SurveyService implements ISurveyService {
 
 	private async promptSurvey(surveyType: 'churn' | 'usage'): Promise<void> {
 		const usage = await this.getUsageData();
-		const source = this.lastSource || '';
+		const source = surveyType === 'churn' ? 'churn' : this.lastSource || '';
 		const language = this.lastLanguageId || '';
 		const firstSeenInDays = Math.floor((Date.now() - usage.firstActive) / (1000 * 60 * 60 * 24));
 		/* __GDPR__
