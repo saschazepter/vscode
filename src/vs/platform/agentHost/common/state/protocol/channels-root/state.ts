@@ -108,6 +108,17 @@ export interface AgentCapabilities {
 	 * forking; set {@link MultipleChatsCapability.fork} to also allow forking.
 	 */
 	multipleChats?: MultipleChatsCapability;
+	/**
+	 * The session's agent can be granted tool access to more than one working
+	 * directory. The directories are treated as equal peers except where the
+	 * agent advertises {@link MultipleWorkingDirectoriesCapability.immutablePrimary}
+	 * (some backends pin their first directory as a fixed process root).
+	 *
+	 * When absent, clients MUST NOT mutate a session's or chat's working-directory
+	 * set and MUST NOT set more than one entry in
+	 * {@link CreateSessionParams.workingDirectories}.
+	 */
+	multipleWorkingDirectories?: MultipleWorkingDirectoriesCapability;
 }
 
 /**
@@ -122,6 +133,27 @@ export interface MultipleChatsCapability {
 	 * Forking always implies multi-chat support.
 	 */
 	fork?: boolean;
+}
+
+/**
+ * Options for the {@link AgentCapabilities.multipleWorkingDirectories} capability.
+ *
+ * @category Root State
+ */
+export interface MultipleWorkingDirectoriesCapability {
+	/**
+	 * The agent's **first** working directory (index `0` of
+	 * {@link CreateSessionParams.workingDirectories}) is an immutable primary:
+	 * it is fixed for the lifetime of the session — clients MUST NOT remove or
+	 * reorder it. Additional directories after it remain equal peers that can be
+	 * added and removed freely.
+	 *
+	 * Advertised by backends whose agent process is rooted at a single directory
+	 * that cannot change once the session has started (e.g. the SDK's primary
+	 * `workingDirectory`). When absent or `false`, all directories are equal
+	 * peers and any of them may be removed.
+	 */
+	immutablePrimary?: boolean;
 }
 
 /**

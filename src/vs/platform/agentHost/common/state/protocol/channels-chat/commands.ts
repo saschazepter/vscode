@@ -40,6 +40,17 @@ export interface CreateChatParams extends BaseParams {
 	initialMessage?: Message;
 	/** Optional source chat and turn to fork from. */
 	source?: ChatForkSource;
+	/**
+	 * Initial working-directory subset for this chat. Every entry MUST be
+	 * present in the owning session's `workingDirectories`; the server MUST
+	 * reject any entry that is not. When absent, the chat inherits the full
+	 * session set. Forked chats (`source`) inherit the source chat's
+	 * `workingDirectories`; this field is ignored for forked chats.
+	 *
+	 * A client MUST NOT supply this field unless the agent advertises
+	 * {@link AgentCapabilities.multipleWorkingDirectories}.
+	 */
+	workingDirectories?: URI[];
 }
 
 // ─── disposeChat ─────────────────────────────────────────────────────────────

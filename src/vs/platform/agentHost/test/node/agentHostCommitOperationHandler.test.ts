@@ -148,7 +148,7 @@ function setup(disposables: Pick<DisposableStore, 'add'>, gitService: TestGitSer
 		status: SessionStatus.Idle,
 		createdAt: new Date(1).toISOString(),
 		modifiedAt: new Date(1).toISOString(),
-		workingDirectory: URI.file('/repo').toString(),
+		workingDirectories: [URI.file('/repo').toString()],
 	});
 	stateManager.setSessionMeta(session.toString(), withSessionGitState(undefined, {
 		branchName: 'feature/test',

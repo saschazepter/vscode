@@ -137,7 +137,7 @@ class SessionSummaryNotifier extends Disposable {
 		if (current.modifiedAt !== lastNotified.modifiedAt) { changes.modifiedAt = current.modifiedAt; }
 		if (current.project !== lastNotified.project) { changes.project = current.project; }
 		if (current.changes !== lastNotified.changes) { changes.changes = current.changes; }
-		if (current.workingDirectory !== lastNotified.workingDirectory) { changes.workingDirectory = current.workingDirectory; }
+		if (current.workingDirectories !== lastNotified.workingDirectories) { changes.workingDirectories = current.workingDirectories; }
 		if (current._meta !== lastNotified._meta) { changes._meta = current._meta; }
 
 		this._lastNotified.set(session, current);
@@ -344,7 +344,7 @@ export class AgentHostStateManager extends Disposable {
 		};
 		if (state.activity !== undefined) { summary.activity = state.activity; }
 		if (state.project !== undefined) { summary.project = state.project; }
-		if (state.workingDirectory !== undefined) { summary.workingDirectory = state.workingDirectory; }
+		if (state.workingDirectories !== undefined) { summary.workingDirectories = state.workingDirectories; }
 		if (state.annotations !== undefined) { summary.annotations = state.annotations; }
 		if (entry.changes !== undefined) { summary.changes = entry.changes; }
 		if (state._meta !== undefined) { summary._meta = state._meta; }
@@ -361,7 +361,7 @@ export class AgentHostStateManager extends Disposable {
 			&& a.status === b.status
 			&& a.activity === b.activity
 			&& a.project === b.project
-			&& a.workingDirectory === b.workingDirectory
+			&& a.workingDirectories?.[0] === b.workingDirectories?.[0]
 			&& a.annotations === b.annotations
 			&& a._meta === b._meta;
 	}
@@ -608,7 +608,7 @@ export class AgentHostStateManager extends Disposable {
 		// directory / project. We don't need to schedule a
 		// `SessionSummaryChanged` flush because the upcoming `SessionAdded`
 		// notification carries the complete summary already.
-		entry.state = { ...entry.state, project: summary.project, workingDirectory: summary.workingDirectory };
+		entry.state = { ...entry.state, project: summary.project, workingDirectories: summary.workingDirectories };
 		entry.modifiedAt = summary.modifiedAt;
 		entry.changes = summary.changes;
 		const full = this._toSummary(key, entry);

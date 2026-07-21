@@ -219,6 +219,7 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 		// Simulate the server's eager active-client claim: if the caller
 		// provided activeClient, seed the session state so subscribers see it.
 		if (config?.activeClient) {
+			const resolvedWorkingDir = (this.nextResolvedWorkingDirectory ?? config.workingDirectory)?.toString();
 			const summary: SessionSummary = {
 				resource: session.toString(),
 				provider: 'copilot',
@@ -226,7 +227,7 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 				status: SessionStatus.Idle,
 				createdAt: new Date().toISOString(),
 				modifiedAt: new Date().toISOString(),
-				workingDirectory: (this.nextResolvedWorkingDirectory ?? config.workingDirectory)?.toString(),
+				workingDirectories: resolvedWorkingDir ? [resolvedWorkingDir] : undefined,
 			};
 			const state: SessionState = {
 				...this._withDefaultChatCatalog(createSessionState(summary), session.toString()),
@@ -484,7 +485,7 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 			status: seeded?.status ?? SessionStatus.Idle,
 			createdAt: new Date().toISOString(),
 			modifiedAt: new Date().toISOString(),
-			workingDirectory: seeded?.workingDirectory,
+			workingDirectories: seeded?.workingDirectories,
 			project: seeded?.project,
 		};
 		const chatSummary = createDefaultChatSummary(sessionSummary, chatUriStr);
@@ -509,7 +510,7 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 			status: state.status,
 			createdAt: new Date().toISOString(),
 			modifiedAt: new Date().toISOString(),
-			workingDirectory: state.workingDirectory,
+			workingDirectories: state.workingDirectories,
 			project: state.project,
 		};
 		const chatUri = buildDefaultChatUri(resource);

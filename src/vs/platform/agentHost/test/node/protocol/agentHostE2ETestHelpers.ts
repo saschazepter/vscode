@@ -1049,7 +1049,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 
 			const subscribeResult = await client.call<SubscribeResult>('subscribe', { channel: sessionUri }, 30_000);
 			const sessionState = subscribeResult.snapshot!.state as SessionState;
-			assert.strictEqual(sessionState.workingDirectory, workingDirUri,
+			assert.strictEqual(sessionState.workingDirectories?.[0], workingDirUri,
 				`subscribe snapshot summary should carry the requested working directory`);
 		});
 
@@ -1127,10 +1127,10 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			);
 			const addedSummary = (addedNotif.params as SessionAddedParams).summary;
 
-			assert.ok(addedSummary.workingDirectory, 'sessionAdded notification should have a workingDirectory');
-			assert.ok(addedSummary.workingDirectory!.includes('.worktrees'),
-				`workingDirectory should be under the .worktrees folder, got: ${addedSummary.workingDirectory}`);
-			const resolvedWorkingDirectoryPath = URI.parse(addedSummary.workingDirectory!).fsPath;
+			assert.ok(addedSummary.workingDirectories?.[0], 'sessionAdded notification should have a workingDirectory');
+			assert.ok(addedSummary.workingDirectories?.[0]!.includes('.worktrees'),
+				`workingDirectory should be under the .worktrees folder, got: ${addedSummary.workingDirectories?.[0]}`);
+			const resolvedWorkingDirectoryPath = URI.parse(addedSummary.workingDirectories?.[0]!).fsPath;
 
 			await client.waitForNotification(
 				n => isActionNotification(n, 'chat/turnComplete') || isActionNotification(n, 'chat/error'),
