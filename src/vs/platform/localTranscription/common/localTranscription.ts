@@ -100,11 +100,13 @@ export interface ILocalTranscriptionService {
 	 * selects the on-device Foundry Local model; when omitted the service default
 	 * is used. `language` optionally hints the spoken language.
 	 *
-	 * NOTE: Foundry Local performs the first-use model download itself and does
-	 * not currently expose a hook for VS Code's `http.proxy`/`http.proxyStrictSSL`
-	 * settings, so those are not honoured for the model download. Behind a
-	 * corporate proxy the first-use download may fail until Foundry Local gains a
-	 * supported proxy mechanism.
+	 * NOTE: the native-runtime provisioning legs (addon tarball + core libraries)
+	 * honor the standard proxy environment variables (`HTTPS_PROXY`/`HTTP_PROXY`/
+	 * `ALL_PROXY`, with `NO_PROXY`). Foundry Local performs the first-use *model*
+	 * download itself inside the native core and can only honor an OS-level proxy;
+	 * neither leg is wired to VS Code's `http.proxy`/`http.proxyStrictSSL`
+	 * settings yet, so a proxy that is configured only in VS Code (not in the
+	 * environment) is not applied.
 	 */
 	start(options: { readonly cacheDir: string; readonly model?: string; readonly language?: string }): Promise<void>;
 

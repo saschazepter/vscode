@@ -29,10 +29,14 @@ import { CancellationError } from '../../../base/common/errors.js';
  *   <cacheRoot>/<sdkVersion>/prebuilds/<platformKey>/foundry_local_napi.node
  *   <cacheRoot>/<sdkVersion>/foundry-local-core/<platformKey>/<core libraries>
  *
- * NOTE: downloads use plain `https` (npm registry for the addon tarball, NuGet
- * — via the SDK's own installer — for the core libraries) and do not honor VS
- * Code's proxy settings. This matches the SDK's bundled installer and the
- * Foundry Local model download, which have the same limitation.
+ * NOTE: the two JavaScript download legs — the npm-registry addon tarball and
+ * the NuGet core-library fetch (via the SDK's own installer) — honor the
+ * standard proxy environment variables (`HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`,
+ * with `NO_PROXY`), matching how the GitHub desktop app's Rust
+ * `foundry-local-sdk` reaches these endpoints. The Foundry Local model download
+ * runs inside the native core and can only honor an OS-level proxy — a
+ * limitation shared with the desktop app. VS Code's `http.proxy` *setting* is
+ * not yet bridged into this utility process; that remains a possible follow-up.
  */
 
 /**
@@ -296,7 +300,12 @@ async function ensureCoreLibraries(coreDir: string, nodeRequire: NodeJS.Require)
 	];
 
 	await fs.promises.mkdir(coreDir, { recursive: true });
-	await runInstall(artifacts, { binDir: coreDir });
+	const restoreProxy = await applyGlobalProxyForNuget();
+	try {
+		await runInstall(artifacts, { binDir: coreDir });
+	} finally {
+		restoreProxy();
+	}
 }
 
 /** The core library filenames required for the current platform. Exported for tests. */
@@ -315,10 +324,94 @@ function hasAllCoreLibraries(coreDir: string): boolean {
 	return requiredCoreLibraryNames().every(name => fs.existsSync(join(coreDir, name)));
 }
 
+/**
+ * Resolve the proxy URL to use for `targetUrl` from the standard proxy
+ * environment variables, or `undefined` when the request should go direct.
+ *
+ * Mirrors the env-var handling of the GitHub desktop app's Rust
+ * `foundry-local-sdk` (reqwest/ureq): for an `https:` target it prefers
+ * `HTTPS_PROXY`, for an `http:` target `HTTP_PROXY`, each falling back to
+ * `ALL_PROXY` (all case-insensitive), and it skips the proxy when the host
+ * matches `NO_PROXY`. `env` defaults to `process.env`; it is a parameter so the
+ * resolution can be unit-tested without mutating global environment state.
+ */
+export function resolveProxyUrl(targetUrl: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+	let parsed: URL;
+	try {
+		parsed = new URL(targetUrl);
+	} catch {
+		return undefined;
+	}
+	const scheme = parsed.protocol === 'http:'
+		? (env.HTTP_PROXY ?? env.http_proxy)
+		: (env.HTTPS_PROXY ?? env.https_proxy);
+	const proxy = scheme ?? env.ALL_PROXY ?? env.all_proxy;
+	if (!proxy) {
+		return undefined;
+	}
+	const noProxy = env.NO_PROXY ?? env.no_proxy;
+	if (noProxy && isNoProxyHost(noProxy, parsed.hostname)) {
+		return undefined;
+	}
+	return proxy;
+}
+
+/** Whether `hostname` matches any entry in a `NO_PROXY` list. */
+function isNoProxyHost(noProxy: string, hostname: string): boolean {
+	const host = hostname.toLowerCase();
+	return noProxy.split(',').some(raw => {
+		const entry = raw.trim().toLowerCase().replace(/^\./, '');
+		if (!entry) {
+			return false;
+		}
+		return entry === '*' || host === entry || host.endsWith(`.${entry}`);
+	});
+}
+
+/**
+ * A proxy `Agent` for `targetUrl` built from the environment, or `undefined`
+ * when no proxy applies. `https-proxy-agent` is a `node_modules` package, so it
+ * is imported dynamically like the other runtime-only dependencies here.
+ */
+async function resolveProxyAgent(targetUrl: string): Promise<import('http').Agent | undefined> {
+	const proxyUrl = resolveProxyUrl(targetUrl);
+	if (!proxyUrl) {
+		return undefined;
+	}
+	const { HttpsProxyAgent } = await import('https-proxy-agent');
+	return new HttpsProxyAgent(proxyUrl);
+}
+
+/**
+ * Temporarily route `https.globalAgent` — used by the SDK installer's bare
+ * `https.get(url, cb)` NuGet downloads — through the env-configured proxy so
+ * corporate proxies are honored without patching third-party SDK code. Returns
+ * a function that restores the previous global agent; no-ops when no proxy
+ * applies.
+ */
+async function applyGlobalProxyForNuget(): Promise<() => void> {
+	const agent = await resolveProxyAgent('https://api.nuget.org/');
+	if (!agent) {
+		return () => { /* nothing to restore */ };
+	}
+	const https = await import('https');
+	const previous = https.globalAgent;
+	// `HttpsProxyAgent` extends `http.Agent`, not `https.Agent`; the cast only
+	// satisfies the field's declared type.
+	https.globalAgent = agent as unknown as typeof previous;
+	return () => {
+		https.globalAgent = previous;
+	};
+}
+
 /** Download `url` to `dest`, following redirects, honoring cancellation. */
 async function downloadFile(url: string, dest: string, token: CancellationToken): Promise<void> {
 	// `https` is a slow-to-load builtin; import it lazily at runtime.
 	const https = await import('https');
+	// A single proxy agent tunnels to whatever host each request (including any
+	// redirect target) addresses, so resolving it once from the initial URL is
+	// sufficient. `undefined` means "go direct".
+	const agent = await resolveProxyAgent(url);
 	return new Promise<void>((resolve, reject) => {
 		let settled = false;
 		let timer: ReturnType<typeof setTimeout> | undefined;
@@ -358,7 +451,7 @@ async function downloadFile(url: string, dest: string, token: CancellationToken)
 				return;
 			}
 			armTimeout();
-			activeRequest = https.get(currentUrl, response => {
+			activeRequest = https.get(currentUrl, { agent }, response => {
 				armTimeout();
 				const status = response.statusCode ?? 0;
 				if (status >= 300 && status < 400 && response.headers.location) {

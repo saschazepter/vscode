@@ -17,6 +17,7 @@ import {
 	isRuntimeProvisioned,
 	promoteDir,
 	requiredCoreLibraryNames,
+	resolveProxyUrl,
 } from '../../node/foundryLocalRuntime.js';
 
 flakySuite('FoundryLocalRuntime', () => {
@@ -108,5 +109,35 @@ flakySuite('FoundryLocalRuntime', () => {
 		await promoteDir(from, to);
 
 		assert.strictEqual(fs.readFileSync(join(to, 'file'), 'utf8'), 'winner');
+	});
+
+	test('resolveProxyUrl: honors scheme-specific vars, ALL_PROXY fallback, and NO_PROXY', () => {
+		const actual = {
+			none: resolveProxyUrl('https://api.nuget.org/', {}),
+			httpsForHttps: resolveProxyUrl('https://api.nuget.org/', { HTTPS_PROXY: 'http://proxy:8080' }),
+			httpForHttp: resolveProxyUrl('http://example.com/', { HTTP_PROXY: 'http://proxy:8080', HTTPS_PROXY: 'http://secure:8080' }),
+			lowercase: resolveProxyUrl('https://api.nuget.org/', { https_proxy: 'http://proxy:8080' }),
+			allProxyFallback: resolveProxyUrl('https://api.nuget.org/', { ALL_PROXY: 'http://proxy:8080' }),
+			httpsIgnoresHttpProxy: resolveProxyUrl('https://api.nuget.org/', { HTTP_PROXY: 'http://proxy:8080' }),
+			noProxyExact: resolveProxyUrl('https://api.nuget.org/', { HTTPS_PROXY: 'http://proxy:8080', NO_PROXY: 'api.nuget.org' }),
+			noProxySuffix: resolveProxyUrl('https://api.nuget.org/', { HTTPS_PROXY: 'http://proxy:8080', NO_PROXY: '.nuget.org' }),
+			noProxyWildcard: resolveProxyUrl('https://api.nuget.org/', { HTTPS_PROXY: 'http://proxy:8080', NO_PROXY: '*' }),
+			noProxyMiss: resolveProxyUrl('https://api.nuget.org/', { HTTPS_PROXY: 'http://proxy:8080', NO_PROXY: 'example.com' }),
+			invalidUrl: resolveProxyUrl('not a url', { HTTPS_PROXY: 'http://proxy:8080' }),
+		};
+
+		assert.deepStrictEqual(actual, {
+			none: undefined,
+			httpsForHttps: 'http://proxy:8080',
+			httpForHttp: 'http://proxy:8080',
+			lowercase: 'http://proxy:8080',
+			allProxyFallback: 'http://proxy:8080',
+			httpsIgnoresHttpProxy: undefined,
+			noProxyExact: undefined,
+			noProxySuffix: undefined,
+			noProxyWildcard: undefined,
+			noProxyMiss: 'http://proxy:8080',
+			invalidUrl: undefined,
+		});
 	});
 });
