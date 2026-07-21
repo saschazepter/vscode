@@ -727,6 +727,10 @@ export async function startRealServer(options?: { readonly claudeSdkRoot?: strin
 			...(options?.homeDir ? {
 				HOME: options.homeDir,
 				USERPROFILE: options.homeDir,
+				XDG_CONFIG_HOME: join(options.homeDir, '.config'),
+				COPILOT_HOME: join(options.homeDir, '.copilot'),
+				CLAUDE_CONFIG_DIR: undefined,
+				CODEX_HOME: undefined,
 			} : {}),
 			// Codex defaults to disabled; opt it in for the agent host e2e suite when a
 			// codex SDK root is supplied so the provider actually registers.
