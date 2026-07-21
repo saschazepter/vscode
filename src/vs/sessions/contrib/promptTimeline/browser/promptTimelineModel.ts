@@ -113,14 +113,6 @@ function promptsEqual(a: readonly PromptItem[], b: readonly PromptItem[]): boole
 		p.requestId === b[i].requestId && p.text === b[i].text && p.timestamp === b[i].timestamp);
 }
 
-/** A user prompt entry (used by the keyboard "Go to Prompt" picker, independent of rail density). */
-export interface PromptEntry {
-	readonly requestId: string;
-	readonly text: string;
-	readonly timestamp: number;
-	readonly stat?: PromptDiffStat;
-}
-
 /** The prompt currently pinned by the sticky header, with its 1-based position among all prompts. */
 export interface IActivePrompt {
 	readonly text: string;
@@ -431,16 +423,43 @@ export class PromptTimelineModel extends Disposable {
 		});
 	}
 
-	/** Reveals the request with the given id near the top of the transcript. */
-	reveal(requestId: string): void {
-		const item = this.widget.viewModel?.getItems().find(i => isRequestVM(i) && i.id === requestId);
-		if (item) {
-			this.widget.reveal(item, 0);
+	/**
+	 * Reveals the request with the given id. By default it is aligned to the top of the transcript.
+	 * When `pin` is set, the row *following* the request (its response) is aligned to the top instead,
+	 * leaving the request scrolled just above the viewport so the sticky header keeps it pinned and
+	 * names it — revealing the request itself at the top would land it exactly at the fold, which
+	 * unpins it and hides the header.
+	 */
+	reveal(requestId: string, pin?: boolean): void {
+		const items = this.widget.viewModel?.getItems();
+		const index = items?.findIndex(i => isRequestVM(i) && i.id === requestId) ?? -1;
+		if (items && index >= 0) {
+			const target = pin ? (items[index + 1] ?? items[index]) : items[index];
+			this.widget.reveal(target, 0);
 		}
 		// Normalize to the owning tick's representative id so the active highlight
 		// works even when the id is a mid-bucket prompt (picker).
 		const owningTick = this._baseTicks.get().find(t => t.allRequestIds.includes(requestId));
 		this._activeRequestId.set(owningTick?.requestId ?? requestId, undefined);
+	}
+
+	/**
+	 * Reveal the prompt `delta` positions away from the active one (`-1` = previous, `+1` = next),
+	 * clamped to the ends of the prompt list. Used by the sticky header's navigation buttons; keeps
+	 * the target prompt pinned so the header stays visible and updates to name it.
+	 */
+	navigate(delta: number): void {
+		const prompts = this._prompts.get();
+		if (prompts.length === 0) {
+			return;
+		}
+		const id = this._activePromptId.get();
+		const current = id ? prompts.findIndex(p => p.requestId === id) : 0;
+		const base = current < 0 ? 0 : current;
+		const target = Math.max(0, Math.min(prompts.length - 1, base + delta));
+		if (target !== base) {
+			this.reveal(prompts[target].requestId, true);
+		}
 	}
 
 	/** The changed files for a tick's prompts, aggregated per file (for the hover card / drill-down). */
@@ -555,19 +574,6 @@ export class PromptTimelineModel extends Disposable {
 		} catch {
 			return false;
 		}
-	}
-
-	/**
-	 * All user prompts (with diff stats where available) for the picker,
-	 * independent of the rail's bucketing. Stats are resolved one-shot, so
-	 * agent-host prompts not currently observed by the rail fall back to their
-	 * timestamp in the picker rather than holding a subscription per prompt.
-	 */
-	getAllPrompts(): readonly PromptEntry[] {
-		return this._prompts.get().map(prompt => {
-			const stat = this._statForRequests([prompt.requestId]);
-			return stat ? { ...prompt, stat } : { ...prompt };
-		});
 	}
 
 	/**
