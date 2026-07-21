@@ -93,6 +93,10 @@ suite('git smoke test', function () {
 		}
 
 		assert.strictEqual(submodule.rootUri.fsPath, submodulePath);
+
+		const onDidCloseRepository = eventToPromise(git.onDidCloseRepository);
+		await commands.executeCommand('git.close', submodule);
+		await onDidCloseRepository;
 	});
 
 	test('reflects working tree changes', async function () {
