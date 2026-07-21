@@ -1,0 +1,65 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import { toDisposable, type IDisposable } from '../../../../base/common/lifecycle.js';
+import { URI } from '../../../../base/common/uri.js';
+import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+import type { ChatAgentLocation, ChatModeKind } from '../common/constants.js';
+
+export const IChatSubmitRequestHandlerService = createDecorator<IChatSubmitRequestHandlerService>('chatSubmitRequestHandlerService');
+
+/** A chat input submission before it is sent to the selected chat session. */
+export interface IChatSubmitRequest {
+	readonly sessionResource: URI;
+	readonly input: string;
+	readonly mode: ChatModeKind;
+	readonly location: ChatAgentLocation;
+	readonly isUserQuery: boolean;
+}
+
+/** Result returned by a pre-submit handler that accepted a request. */
+export type ChatSubmitRequestHandling =
+	| { readonly kind: 'handled'; readonly clearInput?: boolean };
+
+/** Handler offered a chat input submission before the normal send path. */
+export interface IChatSubmitRequestHandler {
+	readonly id: string;
+	tryHandle(request: IChatSubmitRequest): Promise<ChatSubmitRequestHandling | undefined>;
+}
+
+/** Registry for provider-specific pre-submit chat handlers. */
+export interface IChatSubmitRequestHandlerService {
+	readonly _serviceBrand: undefined;
+	register(handler: IChatSubmitRequestHandler): IDisposable;
+	tryHandle(request: IChatSubmitRequest): Promise<ChatSubmitRequestHandling | undefined>;
+}
+
+/** Default sequential first-match implementation of the submit handler registry. */
+export class ChatSubmitRequestHandlerService implements IChatSubmitRequestHandlerService {
+
+	declare readonly _serviceBrand: undefined;
+
+	private readonly _handlers: IChatSubmitRequestHandler[] = [];
+
+	register(handler: IChatSubmitRequestHandler): IDisposable {
+		this._handlers.push(handler);
+		return toDisposable(() => {
+			const index = this._handlers.indexOf(handler);
+			if (index >= 0) {
+				this._handlers.splice(index, 1);
+			}
+		});
+	}
+
+	async tryHandle(request: IChatSubmitRequest): Promise<ChatSubmitRequestHandling | undefined> {
+		for (const handler of this._handlers) {
+			const result = await handler.tryHandle(request);
+			if (result) {
+				return result;
+			}
+		}
+		return undefined;
+	}
+}
