@@ -20,6 +20,7 @@ import { AGENT_HOST_ENABLED_CONTEXT_KEY, IAgentHostEnablementService } from '../
 // IAgentHostEnablementService. The string is needed here only to register
 // and apply the policy.
 const agentHostEnabledSettingId = 'chat.agentHost.enabled';
+const chatAIDisabledSettingId = 'chat.disableAIFeatures';
 
 // Add the `policy` block to `chat.agentHost.enabled`. The base registration
 // (type, default, description) is done in the common layer as a side-effect of
@@ -70,14 +71,19 @@ export class AgentHostEnablementService extends Disposable implements IAgentHost
 		this._enabledContextKey.set(this.enabled.get());
 
 		this._register(configurationService.onDidChangeConfiguration(event => {
-			if (event.source === ConfigurationTarget.DEFAULT && event.affectsConfiguration(agentHostEnabledSettingId)) {
+			if (
+				(event.source === ConfigurationTarget.DEFAULT && event.affectsConfiguration(agentHostEnabledSettingId))
+				|| event.affectsConfiguration(chatAIDisabledSettingId)
+			) {
 				this._updateEnabled(configurationService);
 			}
 		}));
 	}
 
 	private _readEnabled(configurationService: IConfigurationService): boolean {
-		return !isWeb && (configurationService.getValue<boolean>(agentHostEnabledSettingId) ?? false);
+		return !isWeb
+			&& (configurationService.getValue<boolean>(agentHostEnabledSettingId) ?? false)
+			&& configurationService.getValue<boolean>(chatAIDisabledSettingId) !== true;
 	}
 
 	private _updateEnabled(configurationService: IConfigurationService): void {

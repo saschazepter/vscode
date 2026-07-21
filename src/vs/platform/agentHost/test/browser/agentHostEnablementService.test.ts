@@ -8,27 +8,31 @@ import { autorun } from '../../../../base/common/observable.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { AgentHostEnablementService } from '../../browser/agentHostEnablementService.js';
 import { AGENT_HOST_ENABLED_CONTEXT_KEY } from '../../common/agentHostEnablementService.js';
-import { ConfigurationTarget, IConfigurationChangeEvent } from '../../../configuration/common/configuration.js';
+import { ConfigurationTarget, IConfigurationChangeEvent, IConfigurationOverrides } from '../../../configuration/common/configuration.js';
 import { TestConfigurationService } from '../../../configuration/test/common/testConfigurationService.js';
 import { MockContextKeyService } from '../../../keybinding/test/common/mockKeybindingService.js';
 
 class AgentHostTestConfigurationService extends TestConfigurationService {
 
-	constructor(private enabled: boolean) {
+	private readonly values = new Map<string, boolean>();
+
+	constructor(agentHostEnabled: boolean, aiDisabled = false) {
 		super();
+		this.values.set('chat.agentHost.enabled', agentHostEnabled);
+		this.values.set('chat.disableAIFeatures', aiDisabled);
 	}
 
-	override getValue<T>(): T | undefined {
-		return this.enabled as T;
+	override getValue<T>(arg1?: string | IConfigurationOverrides): T | undefined {
+		return (typeof arg1 === 'string' ? this.values.get(arg1) : undefined) as T | undefined;
 	}
 
-	setEnabled(enabled: boolean, source: ConfigurationTarget): void {
-		this.enabled = enabled;
+	setValue(key: string, value: boolean, source: ConfigurationTarget): void {
+		this.values.set(key, value);
 		const event: IConfigurationChangeEvent = {
 			source,
-			affectedKeys: new Set(),
-			change: { keys: [], overrides: [] },
-			affectsConfiguration: () => true,
+			affectedKeys: new Set([key]),
+			change: { keys: [key], overrides: [] },
+			affectsConfiguration: candidate => candidate === key,
 		};
 		this.onDidChangeConfigurationEmitter.fire(event);
 	}
@@ -37,12 +41,12 @@ class AgentHostTestConfigurationService extends TestConfigurationService {
 suite('AgentHostEnablementService', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
 
-	function createService(enabled: boolean): {
+	function createService(enabled: boolean, aiDisabled = false): {
 		readonly service: AgentHostEnablementService;
 		readonly configurationService: AgentHostTestConfigurationService;
 		readonly contextKeyService: MockContextKeyService;
 	} {
-		const configurationService = new AgentHostTestConfigurationService(enabled);
+		const configurationService = new AgentHostTestConfigurationService(enabled, aiDisabled);
 		disposables.add(configurationService.onDidChangeConfigurationEmitter);
 		const contextKeyService = disposables.add(new MockContextKeyService());
 		const service = disposables.add(new AgentHostEnablementService(configurationService, contextKeyService));
@@ -58,6 +62,17 @@ suite('AgentHostEnablementService', () => {
 			enabled: true,
 			contextKey: true,
 		});
+
+		test('is disabled when AI features are disabled', () => {
+			const { service, contextKeyService } = createService(true, true);
+			assert.deepStrictEqual({
+				enabled: service.enabled.get(),
+				contextKey: contextKeyService.getContextKeyValue(AGENT_HOST_ENABLED_CONTEXT_KEY.key),
+			}, {
+				enabled: false,
+				contextKey: false,
+			});
+		});
 	});
 
 	test('updates when an experiment default changes', () => {
@@ -65,7 +80,7 @@ suite('AgentHostEnablementService', () => {
 		const changes: boolean[] = [];
 		disposables.add(autorun(reader => changes.push(service.enabled.read(reader))));
 
-		configurationService.setEnabled(true, ConfigurationTarget.DEFAULT);
+		configurationService.setValue('chat.agentHost.enabled', true, ConfigurationTarget.DEFAULT);
 
 		assert.deepStrictEqual({
 			enabled: service.enabled.get(),
@@ -83,7 +98,7 @@ suite('AgentHostEnablementService', () => {
 		const changes: boolean[] = [];
 		disposables.add(autorun(reader => changes.push(service.enabled.read(reader))));
 
-		configurationService.setEnabled(true, ConfigurationTarget.USER);
+		configurationService.setValue('chat.agentHost.enabled', true, ConfigurationTarget.USER);
 
 		assert.deepStrictEqual({
 			enabled: service.enabled.get(),
@@ -93,6 +108,42 @@ suite('AgentHostEnablementService', () => {
 			enabled: false,
 			contextKey: false,
 			changes: [false],
+		});
+	});
+
+	test('does not enable from experiment while AI features are disabled', () => {
+		const { service, configurationService, contextKeyService } = createService(false, true);
+		const changes: boolean[] = [];
+		disposables.add(autorun(reader => changes.push(service.enabled.read(reader))));
+
+		configurationService.setValue('chat.agentHost.enabled', true, ConfigurationTarget.DEFAULT);
+
+		assert.deepStrictEqual({
+			enabled: service.enabled.get(),
+			contextKey: contextKeyService.getContextKeyValue(AGENT_HOST_ENABLED_CONTEXT_KEY.key),
+			changes,
+		}, {
+			enabled: false,
+			contextKey: false,
+			changes: [false],
+		});
+	});
+
+	test('can enable when AI features are re-enabled', () => {
+		const { service, configurationService, contextKeyService } = createService(true, true);
+		const changes: boolean[] = [];
+		disposables.add(autorun(reader => changes.push(service.enabled.read(reader))));
+
+		configurationService.setValue('chat.disableAIFeatures', false, ConfigurationTarget.USER);
+
+		assert.deepStrictEqual({
+			enabled: service.enabled.get(),
+			contextKey: contextKeyService.getContextKeyValue(AGENT_HOST_ENABLED_CONTEXT_KEY.key),
+			changes,
+		}, {
+			enabled: true,
+			contextKey: true,
+			changes: [false, true],
 		});
 	});
 });
