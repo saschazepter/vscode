@@ -5,7 +5,7 @@
 
 import * as assert from 'assert';
 import { Application, Chat, Logger } from '../../../../automation';
-import { dumpFailureDiagnostics, getCopilotSmokeTestEnv, getMockLlmServerPath, installAllHandlers, MockLlmServer } from '../../utils';
+import { dumpFailureDiagnostics, getCopilotSmokeTestEnv, getMockLlmServerPath, installAllHandlers, MockLlmServer, preseedChatExtensionEnablement } from '../../utils';
 import { runInTerminalScenario, shellEchoResponseMatcher, shellEchoScenario } from './shellScenarios';
 
 /**
@@ -130,7 +130,7 @@ export function setup(logger: Logger) {
 					...copilotEnv,
 				},
 			};
-		});
+		}, app => preseedChatExtensionEnablement(app.userDataPath));
 
 		before(async function () {
 			const app = this.app as Application;
