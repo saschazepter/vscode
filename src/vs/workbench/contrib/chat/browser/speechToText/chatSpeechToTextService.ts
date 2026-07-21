@@ -29,6 +29,46 @@ export const IChatSpeechToTextService = createDecorator<IChatSpeechToTextService
 /** Sample rate (Hz) of the PCM16 audio streamed to the transcription backend. */
 const SAMPLE_RATE = 16000;
 
+/** Registered name of the audio worklet that captures raw PCM from the mic. */
+const PCM_CAPTURE_PROCESSOR = 'vscode-chat-stt-pcm-capture';
+
+/** Number of samples buffered in the worklet before a chunk is posted to the main thread. */
+const PCM_CAPTURE_CHUNK_SIZE = 4096;
+
+/**
+ * Source of the audio worklet used to capture microphone PCM. It runs on the
+ * dedicated audio rendering thread (unlike the deprecated `ScriptProcessorNode`,
+ * whose `onaudioprocess` callback runs on the main thread and gets throttled or
+ * stops entirely), buffers samples into fixed-size chunks and transfers them to
+ * the main thread for encoding/streaming.
+ */
+const PCM_CAPTURE_WORKLET_SOURCE = `
+class PcmCaptureProcessor extends AudioWorkletProcessor {
+	constructor() {
+		super();
+		this._chunkSize = ${PCM_CAPTURE_CHUNK_SIZE};
+		this._buffer = new Float32Array(this._chunkSize);
+		this._offset = 0;
+	}
+	process(inputs) {
+		const channel = inputs[0] && inputs[0][0];
+		if (channel) {
+			for (let i = 0; i < channel.length; i++) {
+				this._buffer[this._offset++] = channel[i];
+				if (this._offset === this._chunkSize) {
+					const chunk = this._buffer;
+					this.port.postMessage(chunk, [chunk.buffer]);
+					this._buffer = new Float32Array(this._chunkSize);
+					this._offset = 0;
+				}
+			}
+		}
+		return true;
+	}
+}
+registerProcessor('${PCM_CAPTURE_PROCESSOR}', PcmCaptureProcessor);
+`;
+
 /** Setting that enables the dictation feature; a kill-switch for rollout. */
 const ENABLED_SETTING = 'chat.speechToText.enabled';
 /** On-device model (Whisper or Nemotron) to use for dictation. */
@@ -187,7 +227,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private _mediaStream: MediaStream | undefined;
 	private _audioContext: AudioContext | undefined;
 	private _sourceNode: MediaStreamAudioSourceNode | undefined;
-	private _processorNode: ScriptProcessorNode | undefined;
+	private _workletNode: AudioWorkletNode | undefined;
 
 	private readonly _localSessionDisposables = this._register(new DisposableStore());
 
@@ -369,7 +409,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		}
 
 		try {
-			this._startCapture(window, stream);
+			await this._startCapture(window, stream);
 		} catch (err) {
 			// Capture setup (AudioContext/nodes) can fail after the mic and the
 			// utility-process session are already live; make sure both are torn
@@ -627,33 +667,47 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		}
 	}
 
-	private _startCapture(window: Window & typeof globalThis, stream: MediaStream): void {
+	private async _startCapture(window: Window & typeof globalThis, stream: MediaStream): Promise<void> {
 		const ctx = new window.AudioContext({ sampleRate: SAMPLE_RATE });
 		this._audioContext = ctx;
 		// The context is created several awaits after the user gesture (mic
 		// acquisition + model startup), so it can start suspended; resume it or
-		// `onaudioprocess` never fires and no audio is streamed.
+		// the worklet never runs and no audio is streamed.
 		ctx.resume().catch(() => { /* ignore */ });
 		const source = ctx.createMediaStreamSource(stream);
 		this._sourceNode = source;
 
-		const processor = ctx.createScriptProcessor(4096, 1, 1);
-		this._processorNode = processor;
+		// Load the capture worklet from a blob URL. The renderer's `script-src`
+		// CSP allows `blob:`, and worklet modules fall back to `script-src`.
+		const moduleUrl = URL.createObjectURL(new Blob([PCM_CAPTURE_WORKLET_SOURCE], { type: 'application/javascript' }));
+		try {
+			await ctx.audioWorklet.addModule(moduleUrl);
+		} finally {
+			URL.revokeObjectURL(moduleUrl);
+		}
 
-		processor.onaudioprocess = e => {
-			const samples = e.inputBuffer.getChannelData(0);
+		// The session may have been torn down while the module was loading.
+		if (this._audioContext !== ctx) {
+			return;
+		}
+
+		const node = new window.AudioWorkletNode(ctx, PCM_CAPTURE_PROCESSOR, { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1 });
+		this._workletNode = node;
+
+		node.port.onmessage = e => {
+			const samples = e.data as Float32Array;
 			this._localTranscription.pushAudio(encodeRawPcm16Buffer(samples)).catch(err => this._onAudioPushError(err));
 		};
 
-		source.connect(processor);
-		processor.connect(ctx.destination);
+		source.connect(node);
+		node.connect(ctx.destination);
 	}
 
 	private _stopCapture(): void {
-		if (this._processorNode) {
-			this._processorNode.onaudioprocess = null;
-			try { this._processorNode.disconnect(); } catch { /* ignore */ }
-			this._processorNode = undefined;
+		if (this._workletNode) {
+			this._workletNode.port.onmessage = null;
+			try { this._workletNode.disconnect(); } catch { /* ignore */ }
+			this._workletNode = undefined;
 		}
 		try { this._sourceNode?.disconnect(); } catch { /* ignore */ }
 		this._sourceNode = undefined;
