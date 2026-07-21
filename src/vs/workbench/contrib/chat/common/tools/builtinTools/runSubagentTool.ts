@@ -5,11 +5,10 @@
 
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
-import { Emitter, type Event } from '../../../../../../base/common/event.js';
+import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { IJSONSchema, IJSONSchemaMap } from '../../../../../../base/common/jsonSchema.js';
 import { Disposable, DisposableStore } from '../../../../../../base/common/lifecycle.js';
-import type { URI } from '../../../../../../base/common/uri.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { generateUuid } from '../../../../../../base/common/uuid.js';
 import { localize } from '../../../../../../nls.js';
@@ -20,9 +19,9 @@ import { IProductService } from '../../../../../../platform/product/common/produ
 import { ChatRequestVariableSet } from '../../attachments/chatVariableEntries.js';
 import { isByokModel } from '../../chatSelectedModel.js';
 import { IChatProgress, IChatService } from '../../chatService/chatService.js';
-import { ChatAgentLocation, ChatConfiguration, ChatModeKind } from '../../constants.js';
+import { ChatAgentLocation, ChatConfiguration, ChatModeKind, GeneralPurposeAgentName } from '../../constants.js';
 import { COPILOT_VENDOR_ID, ILanguageModelChatMetadata, ILanguageModelsService } from '../../languageModels.js';
-import type { ChatModel, IChatRequestModeInstructions } from '../../model/chatModel.js';
+import { ChatModel, IChatRequestModeInstructions } from '../../model/chatModel.js';
 import { getChatSessionType } from '../../model/chatUri.js';
 import { IChatAgentRequest, IChatAgentResult, IChatAgentService } from '../../participants/chatAgents.js';
 import { ComputeAutomaticInstructions } from '../../promptSyntax/computeAutomaticInstructions.js';
@@ -90,10 +89,15 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 		@IProductService private readonly productService: IProductService,
 	) {
 		super();
+
+		this._register(Event.filter(this.configurationService.onDidChangeConfiguration, e =>
+			e.affectsConfiguration(ChatConfiguration.GeneralPurposeAgentEnabled)
+		)(() => this._onDidUpdateToolData.fire()));
 	}
 
 	getToolData(): IToolData {
 		const modelDescription = BaseModelDescription;
+		const generalPurposeAgentEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.GeneralPurposeAgentEnabled);
 
 		const properties: IJSONSchemaMap = {
 			prompt: {
@@ -107,17 +111,24 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 		};
 		properties.agentName = {
 			type: 'string',
-			description: 'Optional name of a specific agent to invoke. If not provided, uses the current agent.'
+			description: generalPurposeAgentEnabled
+				? 'Name of the agent to invoke.'
+				: 'Optional name of a specific agent to invoke. If not provided, uses the current agent.'
 		};
 		properties.model = {
 			type: 'string',
 			description: 'Optional model for the subagent. Format: "Model Name (Vendor)", vendor is usually "copilot". Only use to enforce a specific model.',
 		};
 
+		const required: string[] = ['prompt', 'description'];
+		if (generalPurposeAgentEnabled) {
+			required.push('agentName');
+		}
+
 		const inputSchema: IJSONSchema & { properties: IJSONSchemaMap } = {
 			type: 'object',
 			properties,
-			required: ['prompt', 'description']
+			required
 		};
 		const runSubagentToolData: IToolData = {
 			id: RunSubagentTool.Id,
@@ -164,12 +175,14 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 			let modeInstructions: IChatRequestModeInstructions | undefined;
 			let subagent: ICustomAgent | undefined;
 			let resolvedModelName: string | undefined;
-			const currentModeInstructions = request.modeInfo?.modeInstructions;
 
-			const subAgentName = this.normalizeRequestedAgentName(args.agentName);
-			const effectiveSubAgentName = subAgentName ?? currentModeInstructions?.name;
+			const subAgentName = args.agentName;
+			// Defensive: model may omit agentName despite schema requiring it
+			const gpEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.GeneralPurposeAgentEnabled);
+			const isGeneralPurpose = gpEnabled && (!subAgentName || subAgentName === GeneralPurposeAgentName);
+			const effectiveSubAgentName = isGeneralPurpose ? GeneralPurposeAgentName : subAgentName;
 
-			if (subAgentName) {
+			if (subAgentName && !isGeneralPurpose) {
 				subagent = await this.getSubAgentByName(subAgentName);
 				if (subagent) {
 					// Check the pre-resolved model cache from prepareToolInvocation
@@ -210,11 +223,11 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 					};
 				} else {
 					this._resolvedModels.delete(invocation.callId);
-					throw new Error(`Requested agent '${subAgentName}' not found. Try again with the correct agent name, or omit agentName to use the current agent.`);
+					const baseHint = ' Try again with the correct agent name, or omit agentName to use the current agent.';
+					const gpHint = gpEnabled ? ` Additionally, you can use '${GeneralPurposeAgentName}' for a full-capability agent.` : '';
+					throw new Error(`Requested agent '${subAgentName}' not found.${baseHint}${gpHint}`);
 				}
 			} else {
-				modeInstructions = currentModeInstructions;
-
 				// No subagent name - clean up any cached entry and resolve model from explicit parameter or main model
 				const cached = this._resolvedModels.get(invocation.callId);
 				if (cached) {
@@ -553,10 +566,11 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 
 	async prepareToolInvocation(context: IToolInvocationPreparationContext, _token: CancellationToken): Promise<IPreparedToolInvocation | undefined> {
 		const args = context.parameters as IRunSubagentToolInputParams;
-		const requestedAgentName = this.normalizeRequestedAgentName(args.agentName);
 
-		const subagent = requestedAgentName ? await this.getSubAgentByName(requestedAgentName) : undefined;
-		const currentModeInstructions = context.chatSessionResource ? this.getCurrentModeInstructions(context.chatSessionResource) : undefined;
+		// Defensive: model may omit agentName despite schema requiring it
+		const gpEnabled = this.configurationService.getValue<boolean>(ChatConfiguration.GeneralPurposeAgentEnabled);
+		const isGeneralPurpose = gpEnabled && (!args.agentName || args.agentName === GeneralPurposeAgentName);
+		const subagent = (args.agentName && !isGeneralPurpose) ? await this.getSubAgentByName(args.agentName) : undefined;
 
 		// Resolve the model early and cache it for invoke()
 		const resolved = this.resolveSubagentModel(subagent, context.modelId, args.model);
@@ -567,23 +581,10 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 			toolSpecificData: {
 				kind: 'subagent',
 				description: args.description,
-				agentName: subagent?.name ?? requestedAgentName ?? currentModeInstructions?.name,
+				agentName: isGeneralPurpose ? GeneralPurposeAgentName : (subagent?.name ?? args.agentName),
 				prompt: args.prompt,
 				modelName: resolved.resolvedModelName,
 			},
 		};
-	}
-
-	private normalizeRequestedAgentName(agentName: string | undefined): string | undefined {
-		const normalized = agentName?.trim();
-		return normalized ? normalized : undefined;
-	}
-
-	private getCurrentModeInstructions(sessionResource: URI): IChatRequestModeInstructions | undefined {
-		if (typeof this.chatService.getSession !== 'function') {
-			return undefined;
-		}
-		const model = this.chatService.getSession(sessionResource) as ChatModel | undefined;
-		return model?.getRequests().at(-1)?.modeInfo?.modeInstructions;
 	}
 }
