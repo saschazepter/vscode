@@ -53,15 +53,33 @@ export function areDiscoveredDirectoriesEqual(a: readonly IDiscoveredDirectory[]
 		return false;
 	}
 
+	// Sort a and b by type and URI so we can compare them in order.
+	const sortedA = [...a].sort(compareDiscoveredDirectory);
+	const sortedB = [...b].sort(compareDiscoveredDirectory);
+
 	for (let i = 0; i < a.length; i++) {
-		const left = a[i];
-		const right = b[i];
+		const left = sortedA[i];
+		const right = sortedB[i];
 		if (left.type !== right.type || left.uri.toString() !== right.uri.toString() || !areDiscoveredFilesEqual(left.files, right.files)) {
 			return false;
 		}
 	}
 
 	return true;
+}
+
+export function deDuplicateDiscoveredDirectories(entries: readonly IDiscoveredDirectory[]): readonly IDiscoveredDirectory[] {
+	// Preserve the order.
+	const result: IDiscoveredDirectory[] = [];
+	const seen = new ResourceSet();
+	for (const entry of entries) {
+		if (!seen.has(entry.uri)) {
+			seen.add(entry.uri);
+			result.push(entry);
+		}
+	}
+
+	return result;
 }
 
 function compareDiscoveredDirectory(a: IDiscoveredDirectory, b: IDiscoveredDirectory): number {
