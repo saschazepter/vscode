@@ -86,21 +86,28 @@ export class ChatOutlineEntry {
 
 /**
  * Builds the response-level child entries (markdown headings and file edits) for
- * a response, in document order. Each child reveals the response row.
+ * a response, in document order. Each child reveals the response row. File edits
+ * are de-duplicated by URI since an agent may edit the same file repeatedly.
  */
 export function buildResponseChildren(response: IChatResponseViewModel, nextSortIndex: () => number): ChatOutlineEntry[] {
 	const children: ChatOutlineEntry[] = [];
 	let headingIndex = 0;
 	let editIndex = 0;
+	const seenEdits = new Set<string>();
 
 	const addFileEdit = (uri: URI | undefined) => {
 		if (!uri) {
 			return;
 		}
+		const key = uri.toString();
+		if (seenEdits.has(key)) {
+			return;
+		}
+		seenEdits.add(key);
 		children.push(new ChatOutlineEntry(
 			`${response.id}#edit${editIndex++}`,
 			nextSortIndex(),
-			basename(uri) || uri.toString(),
+			basename(uri) || key,
 			Codicon.symbolFile,
 			ChatOutlineEntryKind.FileEdit,
 			response,
@@ -129,6 +136,9 @@ export function buildResponseChildren(response: IChatResponseViewModel, nextSort
 			}
 			case 'textEditGroup':
 			case 'notebookEditGroup':
+			// Agent-host sessions surface file edits as `externalEdit` parts
+			// rather than edit groups.
+			case 'externalEdit':
 				addFileEdit(part.uri);
 				break;
 			case 'workspaceEdit':

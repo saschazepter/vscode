@@ -97,6 +97,10 @@ suite('ChatOutline', () => {
 			{ kind: 'markdownContent', content: { value: '# Title\n\nsome text\n\n## Section' } },
 			{ kind: 'textEditGroup', uri: URI.file('/a/foo.ts') },
 			{ kind: 'workspaceEdit', edits: [{ newResource: URI.file('/a/bar.ts') }] },
+			// Agent-host edits arrive as `externalEdit`; the same file edited twice
+			// must collapse to one entry.
+			{ kind: 'externalEdit', uri: URI.file('/a/baz.ts') },
+			{ kind: 'externalEdit', uri: URI.file('/a/baz.ts') },
 		]);
 
 		const children = buildResponseChildren(response, () => sortIndex++);
@@ -106,6 +110,7 @@ suite('ChatOutline', () => {
 			{ label: 'Section', kind: ChatOutlineEntryKind.Heading },
 			{ label: 'foo.ts', kind: ChatOutlineEntryKind.FileEdit },
 			{ label: 'bar.ts', kind: ChatOutlineEntryKind.FileEdit },
+			{ label: 'baz.ts', kind: ChatOutlineEntryKind.FileEdit },
 		]);
 	});
 
