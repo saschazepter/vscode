@@ -76,7 +76,7 @@ import { ILanguageModelToolsService, isToolSet } from '../../common/tools/langua
 import { getCleanPromptName } from '../../common/promptSyntax/config/promptFileLocations.js';
 import { IChatContextService } from '../contextContrib/chatContextService.js';
 import { IChatImageCarouselService } from '../chatImageCarouselService.js';
-import { getOrCreateImageThumbnail } from '../chatImageUtils.js';
+import { CHAT_IMAGE_HOVER_THUMBNAIL_MAX_SIZE, getOrCreateImageThumbnail } from '../chatImageUtils.js';
 
 const commonHoverOptions: Partial<IHoverOptions> = {
 	style: HoverStyle.Pointer,
@@ -599,14 +599,6 @@ export class ImageAttachmentWidget extends AbstractChatAttachmentWidget {
 	}
 }
 
-/**
- * Maximum width/height (in pixels) of the downscaled image rendered in the hover
- * preview. The preview is capped at ~350px by CSS, so 768px keeps it crisp on
- * high-DPI displays. The same thumbnail is reused for the pill to avoid decoding
- * and resizing the original bitmap twice.
- */
-const IMAGE_HOVER_THUMBNAIL_MAX_SIZE = 768;
-
 function createImageElements(resource: URI | undefined, name: string, fullName: string,
 	element: HTMLElement,
 	buffer: ArrayBuffer | Uint8Array,
@@ -695,7 +687,7 @@ function createImageElements(resource: URI | undefined, name: string, fullName: 
 		// only once, and the UI keeps a small object URL for steady-state rendering.
 		const previewImageUrl = disposable.add(new MutableDisposable<IDisposable>());
 		const renderPreviewImage = async () => {
-			const thumbnail = await getOrCreateImageThumbnail(cacheKey, data, IMAGE_HOVER_THUMBNAIL_MAX_SIZE);
+			const thumbnail = await getOrCreateImageThumbnail(cacheKey, data, CHAT_IMAGE_HOVER_THUMBNAIL_MAX_SIZE);
 			if (disposable.isDisposed) {
 				return;
 			}

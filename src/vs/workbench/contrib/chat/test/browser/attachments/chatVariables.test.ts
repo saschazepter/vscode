@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { decodeBase64 } from '../../../../../../base/common/buffer.js';
 import { Emitter } from '../../../../../../base/common/event.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { URI } from '../../../../../../base/common/uri.js';
@@ -322,6 +323,74 @@ suite('ChatDynamicVariableModel', () => {
 			serializedAttachment: undefined,
 			requestData: attachment.value,
 			requestAttachment: attachment,
+		});
+	});
+
+	test('shows attachment paths and image previews in reference hovers', async () => {
+		const folderAttachment = createMockAttachment({
+			id: 'folder',
+			name: 'assets',
+			kind: 'directory',
+			value: URI.file('/workspace/assets'),
+		});
+		const imageAttachment = createMockAttachment({
+			id: 'image',
+			name: 'screenshot.png',
+			kind: 'image',
+			value: decodeBase64('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=').buffer,
+			mimeType: 'image/png',
+			references: [{ reference: URI.file('/workspace/screenshot.png'), kind: 'reference' }],
+		});
+		const attachments = [folderAttachment, imageAttachment];
+		const onDidChangeModelContent = store.add(new Emitter<{ changes: readonly unknown[] }>());
+		const onDidChangeActiveInputEditor = store.add(new Emitter<void>());
+		const onDidChangeAttachments = store.add(new Emitter<{ deleted: readonly string[]; added: readonly IChatRequestVariableEntry[]; updated: readonly IChatRequestVariableEntry[] }>());
+		let folderHover = '';
+		let resolveImageHover!: () => void;
+		const imageHoverReady = new Promise<void>(resolve => resolveImageHover = resolve);
+		const widget = {
+			input: {
+				attachmentModel: {
+					attachments,
+					onDidChange: onDidChangeAttachments.event,
+				},
+			},
+			inputEditor: {
+				onDidChangeModelContent: onDidChangeModelContent.event,
+				getModel: () => ({
+					getValueInRange: () => '#attachment',
+					getDecorationRange: () => new Range(1, 1, 1, 20),
+				}),
+				setDecorationsByType: (_owner: string, _type: string, decorations: Array<{ hoverMessage?: { value: string } }>) => {
+					for (const decoration of decorations) {
+						const value = decoration.hoverMessage?.value ?? '';
+						if (value.includes('workspace/assets')) {
+							folderHover = value;
+						}
+						if (value.includes('data:image/png;base64,')) {
+							resolveImageHover();
+						}
+					}
+					return decorations.map((_, index) => String(index));
+				},
+			},
+			onDidChangeActiveInputEditor: onDidChangeActiveInputEditor.event,
+			refreshParsedInput: () => { },
+		} as unknown as IChatWidget;
+		const model = store.add(new ChatDynamicVariableModel(widget, {
+			getUriLabel: (uri: URI) => uri.path.slice(1),
+		} as unknown as ILabelService));
+
+		model.addReference(toAttachedContextDynamicVariable(folderAttachment, new Range(1, 1, 1, 20)));
+		model.addReference(toAttachedContextDynamicVariable(imageAttachment, new Range(2, 1, 2, 20)));
+		await imageHoverReady;
+
+		assert.deepStrictEqual({
+			folderHover,
+			hasImageReference: model.variables.some(variable => variable.id === imageAttachment.id),
+		}, {
+			folderHover: 'workspace/assets',
+			hasImageReference: true,
 		});
 	});
 });
