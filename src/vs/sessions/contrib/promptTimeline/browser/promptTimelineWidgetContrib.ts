@@ -7,9 +7,9 @@ import { addDisposableListener, EventType, getWindow } from '../../../../base/br
 import { IMouseWheelEvent, StandardWheelEvent } from '../../../../base/browser/mouseEvent.js';
 import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { autorun } from '../../../../base/common/observable.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { IQuickInputService } from '../../../../platform/quickinput/common/quickInput.js';
 import { IChatWidget } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { IChatWidgetContrib, ChatWidget } from '../../../../workbench/contrib/chat/browser/widget/chatWidget.js';
 import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
@@ -43,7 +43,7 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 		private readonly widget: IChatWidget,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
-		@IQuickInputService private readonly quickInputService: IQuickInputService,
+		@ICommandService private readonly commandService: ICommandService,
 	) {
 		super();
 
@@ -151,16 +151,16 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 	/**
 	 * Mounts the flat sticky header that pins the current prompt to the top of the transcript. It shows
 	 * only once that prompt's row has scrolled above the viewport (via {@link PromptTimelineModel.activePinned}).
-	 * Its previous/next buttons step through prompts; activating the label opens Go to Symbol (`@`), whose
-	 * built-in chat support lists this transcript's prompts so any of them can be jumped to.
+	 * Its previous/next toolbar actions step through prompts; activating the label opens Go to Symbol
+	 * (`@`), whose built-in chat support lists this transcript's prompts so any of them can be jumped to.
 	 */
 	private _createStickyHeader(model: PromptTimelineModel): void {
-		const sticky = this._enablement.add(new PromptTimelineStickyHeader(this.widget.domNode));
+		const sticky = this._enablement.add(this.instantiationService.createInstance(PromptTimelineStickyHeader, this.widget.domNode));
 		this._enablement.add(sticky.onDidActivate(() => {
-			// Open the standard Go to Symbol quick access. Its built-in chat handling lists the focused
-			// chat's prompts (the sticky header lives inside the chat, so it holds focus on click), giving
-			// the same "jump to a prompt" experience without a bespoke picker.
-			this.quickInputService.quickAccess.show('@');
+			// Launch the standard Go to Symbol command. Its built-in chat handling lists the focused
+			// chat's prompts (the sticky header lives inside the chat, so it holds focus on click), and
+			// it opens with `ItemActivation.NONE` so nothing is previewed/revealed until the user picks.
+			void this.commandService.executeCommand('workbench.action.gotoSymbol');
 		}));
 		this._enablement.add(sticky.onDidNavigate(delta => model.navigate(delta)));
 		this._enablement.add(autorun(reader => {

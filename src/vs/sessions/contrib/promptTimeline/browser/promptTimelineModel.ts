@@ -101,6 +101,9 @@ const MAX_SIGNAL = 60;
 /** Seed pixels-per-signal-unit, used only until a row of that kind has been measured. */
 const PRIOR_PX_PER_UNIT: Record<PromptItemKind, number> = { request: 18, response: 20, other: 40 };
 
+/** Scroll distance (px) a button navigation's landing offset may drift before the pin is treated as scrolled away. */
+const NAV_ANCHOR_TOLERANCE = 4;
+
 /** First non-empty line of a prompt, trimmed and length-capped for previews. */
 function getPromptPreview(text: string): string {
 	const firstLine = text.split('\n').map(l => l.trim()).find(l => l.length > 0) ?? '';
@@ -173,12 +176,27 @@ export class PromptTimelineModel extends Disposable {
 	private readonly _activePromptId: ISettableObservable<string | undefined> = observableValue<string | undefined>(this, undefined);
 
 	/** True once the active prompt's own row has scrolled above the viewport top (drives the sticky header). */
-	private readonly _activePinned: ISettableObservable<boolean> = observableValue<boolean>(this, false);
+	private readonly _scrollPinned: ISettableObservable<boolean> = observableValue<boolean>(this, false);
+
+	/**
+	 * The prompt the sticky header is pinned to by button navigation, overriding the scroll-derived state.
+	 * Set when Previous/Next is used and cleared once the user scrolls away from where navigation landed
+	 * (see {@link _navAnchorScrollTop}). Needed because navigating to a prompt near the end can't scroll it
+	 * above the fold — the list clamps at its maximum offset — so the scroll-derived pin would drop and hide
+	 * the header (and its Previous button) right after the jump.
+	 */
+	private readonly _navPinnedId: ISettableObservable<string | undefined> = observableValue<string | undefined>(this, undefined);
+	/** The (clamped) scrollTop at which the current navigation landed; scrolling away from it clears {@link _navPinnedId}. */
+	private _navAnchorScrollTop = 0;
+
+	/** Whether the sticky header should be pinned: scrolled off the top, or held there by button navigation. */
+	private readonly _activePinned = derived(this, reader => this._navPinnedId.read(reader) !== undefined || this._scrollPinned.read(reader));
 	get activePinned(): IObservable<boolean> { return this._activePinned; }
 
 	/** The active prompt with its 1-based position among all (unbucketed) prompts, for the sticky header. */
 	private readonly _activePrompt = derived<IActivePrompt | undefined>(this, reader => {
-		const id = this._activePromptId.read(reader);
+		// A navigation pin names its target; otherwise the prompt scrolled to the top.
+		const id = this._navPinnedId.read(reader) ?? this._activePromptId.read(reader);
 		if (id === undefined) {
 			return undefined;
 		}
@@ -363,9 +381,10 @@ export class PromptTimelineModel extends Disposable {
 		const items = this.widget.viewModel?.getItems();
 		if (!items || ticks.length === 0) {
 			transaction(tx => {
+				this._navPinnedId.set(undefined, tx);
 				this._activeRequestId.set(undefined, tx);
 				this._activePromptId.set(undefined, tx);
-				this._activePinned.set(false, tx);
+				this._scrollPinned.set(false, tx);
 			});
 			return;
 		}
@@ -374,6 +393,9 @@ export class PromptTimelineModel extends Disposable {
 		// viewport top. Positions come from the list's layout height model, so
 		// off-screen prompts resolve correctly (not just rendered ones).
 		const scrollTop = this.widget.scrollTop;
+		// A button navigation holds the header pinned to its target until the user scrolls away from
+		// where it landed; recompute the scroll-derived state regardless so it is ready to take over.
+		const navPinned = this._navPinnedId.get() !== undefined && Math.abs(scrollTop - this._navAnchorScrollTop) <= NAV_ANCHOR_TOLERANCE;
 		const threshold = 24;
 		let activeRequestId: string | undefined;
 		let activeTimestamp = 0;
@@ -393,9 +415,12 @@ export class PromptTimelineModel extends Disposable {
 			// Scrolled above the oldest prompt: the oldest tick is the active one
 			// (the loop advances oldest -> newest as you scroll down). Nothing is pinned yet.
 			transaction(tx => {
+				if (!navPinned) {
+					this._navPinnedId.set(undefined, tx);
+				}
 				this._activeRequestId.set(ticks.at(0)?.requestId, tx);
 				this._activePromptId.set(this._prompts.get().at(0)?.requestId, tx);
-				this._activePinned.set(false, tx);
+				this._scrollPinned.set(false, tx);
 			});
 			return;
 		}
@@ -416,10 +441,13 @@ export class PromptTimelineModel extends Disposable {
 		// viewport top; the small epsilon avoids flicker as its top crosses the edge.
 		const pinned = activeTop < scrollTop - 2;
 		transaction(tx => {
+			if (!navPinned) {
+				this._navPinnedId.set(undefined, tx);
+			}
 			this._activeRequestId.set((activeTick ?? ticks[ticks.length - 1]).requestId, tx);
 			// The sticky header names the exact current prompt (unbucketed), not the bucket representative.
 			this._activePromptId.set(activeRequestId, tx);
-			this._activePinned.set(pinned, tx);
+			this._scrollPinned.set(pinned, tx);
 		});
 	}
 
@@ -444,22 +472,30 @@ export class PromptTimelineModel extends Disposable {
 	}
 
 	/**
-	 * Reveal the prompt `delta` positions away from the active one (`-1` = previous, `+1` = next),
-	 * clamped to the ends of the prompt list. Used by the sticky header's navigation buttons; keeps
-	 * the target prompt pinned so the header stays visible and updates to name it.
+	 * Reveal the prompt `delta` positions away from the one the header currently names (`-1` = previous,
+	 * `+1` = next), clamped to the ends of the prompt list. Used by the sticky header's navigation buttons:
+	 * it pins the header to the target (see {@link _navPinnedId}) so the header stays visible and names it
+	 * even when the target is near the end and can't be scrolled above the fold.
 	 */
 	navigate(delta: number): void {
 		const prompts = this._prompts.get();
 		if (prompts.length === 0) {
 			return;
 		}
-		const id = this._activePromptId.get();
+		// Step from the prompt the header currently shows (the navigation pin, else the scroll-active one).
+		const id = this._navPinnedId.get() ?? this._activePromptId.get();
 		const current = id ? prompts.findIndex(p => p.requestId === id) : 0;
 		const base = current < 0 ? 0 : current;
 		const target = Math.max(0, Math.min(prompts.length - 1, base + delta));
-		if (target !== base) {
-			this.reveal(prompts[target].requestId, true);
+		if (target === base) {
+			return;
 		}
+		const targetId = prompts[target].requestId;
+		this.reveal(targetId, true);
+		// Remember where the reveal landed (clamped) so a later user scroll away from it clears the pin,
+		// and pin the header to the target so it survives the bottom-boundary case.
+		this._navAnchorScrollTop = this.widget.scrollTop;
+		this._navPinnedId.set(targetId, undefined);
 	}
 
 	/** The changed files for a tick's prompts, aggregated per file (for the hover card / drill-down). */

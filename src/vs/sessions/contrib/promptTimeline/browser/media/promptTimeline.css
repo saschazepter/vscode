@@ -54,7 +54,8 @@
  * A flat, opaque band pinned to the top of the transcript (editor "sticky scroll" pattern): it
  * shares the transcript surface, carries only a hairline bottom border and a soft downward shadow,
  * and names the prompt currently scrolled off the top. Independent of the rail: `.hidden` (toggled
- * in JS once a prompt is pinned) drives the reveal, so it also works in header-only mode. */
+ * in JS once a prompt is pinned, alongside the `inert` attribute) drives the reveal, so it also
+ * works in header-only mode. */
 .prompt-timeline-sticky {
 	position: absolute;
 	top: 0;
@@ -134,46 +135,27 @@
 	text-overflow: ellipsis;
 }
 
+/* The label is the picker target, so underline the prompt text on hover/focus to distinguish it from
+ * the static header. Underline (rather than a background) keeps the text aligned with the prompts below. */
+.prompt-timeline-sticky-label-button:hover .prompt-timeline-sticky-label,
+.prompt-timeline-sticky-label-button:focus-visible .prompt-timeline-sticky-label {
+	text-decoration: underline;
+}
+
 .prompt-timeline-sticky-count {
 	flex: 0 0 auto;
 	color: var(--vscode-descriptionForeground);
 	font-variant-numeric: tabular-nums;
 }
 
-/* Previous/next buttons that step through prompts. */
+/* Hosts the Previous/Next toolbar; the toolbar supplies its own theming and spacing. */
 .prompt-timeline-sticky-nav {
 	display: flex;
 	align-items: center;
-	gap: 2px;
 	flex: 0 0 auto;
 }
 
-.prompt-timeline-sticky-nav-button {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 22px;
-	height: 22px;
-	padding: 0;
-	border: none;
-	border-radius: 4px;
-	background: none;
-	color: var(--vscode-descriptionForeground);
-	cursor: pointer;
-}
-
-.prompt-timeline-sticky-nav-button:hover:not(:disabled) {
-	background: var(--vscode-toolbar-hoverBackground);
-	color: var(--vscode-foreground);
-}
-
-.prompt-timeline-sticky-nav-button:disabled {
-	opacity: 0.4;
-	cursor: default;
-}
-
-.prompt-timeline-sticky-label-button:focus-visible,
-.prompt-timeline-sticky-nav-button:focus-visible {
+.prompt-timeline-sticky-label-button:focus-visible {
 	outline: 1px solid var(--vscode-focusBorder);
 	outline-offset: -1px;
 }
