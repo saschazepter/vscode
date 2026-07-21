@@ -1070,7 +1070,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 				waitForConfiguredModel: true,
 				desiredModelResolution,
 				desiredReason: ModelSelectionReason.Remembered,
-				fallbackModel: persistedSelection ? findDefaultModel(models, this.location) : undefined,
+				fallbackModel: findDefaultModel(models, this.location),
 				fallbackReason: ModelSelectionReason.FirstAvailable,
 			});
 		};
