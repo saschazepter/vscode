@@ -33,10 +33,11 @@ import { CancellationError } from '../../../base/common/errors.js';
  * the NuGet core-library fetch (via the SDK's own installer) — honor the
  * standard proxy environment variables (`HTTPS_PROXY`/`HTTP_PROXY`/`ALL_PROXY`,
  * with `NO_PROXY`), matching how the GitHub desktop app's Rust
- * `foundry-local-sdk` reaches these endpoints. The Foundry Local model download
- * runs inside the native core and can only honor an OS-level proxy — a
- * limitation shared with the desktop app. VS Code's `http.proxy` *setting* is
- * not yet bridged into this utility process; that remains a possible follow-up.
+ * `foundry-local-sdk` reaches these endpoints. VS Code's `http.proxy`/
+ * `http.noProxy` settings are applied as these same environment variables
+ * before provisioning (see `LocalTranscriptionService.start`), so a proxy
+ * configured only in VS Code is honored here and by the native model download
+ * too. TLS-intercepting proxies rely on the CA being in the OS trust store.
  */
 
 /**

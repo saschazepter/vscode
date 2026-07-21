@@ -262,7 +262,13 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 		this._onDidChangeModelStatus.fire(status);
 	}
 
-	async start(options: { cacheDir: string; model?: string; language?: string }): Promise<void> {
+	async start(options: { cacheDir: string; model?: string; language?: string; proxyUrl?: string; noProxy?: string }): Promise<void> {
+		// Bridge VS Code's `http.proxy`/`http.noProxy` settings into this process's
+		// environment before any first-use download, so both our own fetches and
+		// the native Foundry Local model download route through the configured
+		// proxy (they read the OS/env proxy, not VS Code settings directly).
+		this._applyProxyEnv(options.proxyUrl, options.noProxy);
+
 		// Reset any prior session before starting a new one.
 		await this._disposeSession();
 		this._generation++;
@@ -279,6 +285,24 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 		// session open; buffer audio until the session is ready, then flush it.
 		this._openPromise = this._openSession(options.cacheDir, model, language, generation);
 		this._openPromise.catch(() => { /* status already reported */ });
+	}
+
+	/**
+	 * Apply VS Code's proxy settings as the standard proxy environment variables
+	 * for this process, so every download leg (our fetches and the native model
+	 * download) honors a proxy configured only in VS Code (not in the OS
+	 * environment). A blank/undefined `proxyUrl` leaves any inherited environment
+	 * proxy untouched.
+	 */
+	private _applyProxyEnv(proxyUrl: string | undefined, noProxy: string | undefined): void {
+		if (!proxyUrl) {
+			return;
+		}
+		process.env.HTTPS_PROXY = proxyUrl;
+		process.env.HTTP_PROXY = proxyUrl;
+		if (noProxy) {
+			process.env.NO_PROXY = noProxy;
+		}
 	}
 
 	/**

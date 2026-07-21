@@ -100,15 +100,16 @@ export interface ILocalTranscriptionService {
 	 * selects the on-device Foundry Local model; when omitted the service default
 	 * is used. `language` optionally hints the spoken language.
 	 *
-	 * NOTE: the native-runtime provisioning legs (addon tarball + core libraries)
-	 * honor the standard proxy environment variables (`HTTPS_PROXY`/`HTTP_PROXY`/
-	 * `ALL_PROXY`, with `NO_PROXY`). Foundry Local performs the first-use *model*
-	 * download itself inside the native core and can only honor an OS-level proxy;
-	 * neither leg is wired to VS Code's `http.proxy`/`http.proxyStrictSSL`
-	 * settings yet, so a proxy that is configured only in VS Code (not in the
-	 * environment) is not applied.
+	 * `proxyUrl`/`noProxy` bridge VS Code's `http.proxy`/`http.noProxy` settings
+	 * into this utility process: when set, they are applied as the standard proxy
+	 * environment variables before any download, so all provisioning legs — the
+	 * addon tarball and NuGet core libraries (our own fetches) and the native
+	 * Foundry Local *model* download — route through the proxy. When they are
+	 * omitted, the process's inherited OS environment proxy vars still apply.
+	 * TLS-intercepting proxies must have their CA in the OS trust store (matching
+	 * `@vscode/proxy-agent` and the GitHub desktop app).
 	 */
-	start(options: { readonly cacheDir: string; readonly model?: string; readonly language?: string }): Promise<void>;
+	start(options: { readonly cacheDir: string; readonly model?: string; readonly language?: string; readonly proxyUrl?: string; readonly noProxy?: string }): Promise<void>;
 
 	/** Append captured audio (raw little-endian PCM16 mono 16 kHz). */
 	pushAudio(chunk: VSBuffer): Promise<void>;
