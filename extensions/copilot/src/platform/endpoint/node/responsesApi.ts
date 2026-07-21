@@ -45,10 +45,14 @@ export function getResponsesApiCompactionThreshold(configService: IConfiguration
 		: 50000;
 }
 
+export function getVerbosityForModelSyncBasedOnExp(configService: IConfigurationService, expService: IExperimentationService, endpoint: IChatEndpoint): 'low' | 'medium' | 'high' | undefined {
+	return getVerbosityForModelSync(endpoint, configService.getExperimentBasedConfig(ConfigKey.EnableGpt56Verbosity, expService));
+}
+
 export function createResponsesRequestBody(accessor: ServicesAccessor, options: ICreateEndpointBodyOptions, model: string, endpoint: IChatEndpoint): IEndpointBody {
 	const configService = accessor.get(IConfigurationService);
 	const expService = accessor.get(IExperimentationService);
-	const verbosity = getVerbosityForModelSync(endpoint);
+	const verbosity = getVerbosityForModelSyncBasedOnExp(configService, expService, endpoint);
 	const compactThreshold = getResponsesApiCompactionThreshold(configService, expService, endpoint);
 	// compaction supported for all the models but works well for codex models and any future models after 5.3
 
@@ -123,6 +127,7 @@ export function createResponsesRequestBody(accessor: ServicesAccessor, options: 
 		? new Map(options.requestOptions.tools.map(t => [t.function.name, t]))
 		: undefined;
 	const shouldLoadToolFromToolSearch = shouldDeferTools ? (name: string) => !toolDeferralService!.isNonDeferredTool(name) : undefined;
+	const promptCacheBreakpointsEnabled = configService.getExperimentBasedConfig(ConfigKey.ResponsesApiPromptCacheBreakpointEnabled, expService);
 
 	const body: IEndpointBody = {
 		model,
@@ -130,7 +135,7 @@ export function createResponsesRequestBody(accessor: ServicesAccessor, options: 
 			toolsMap,
 			shouldLoadToolFromToolSearch,
 			modeChanged,
-			supportsCacheBreakpoints: modelSupportCacheBreakPoints(endpoint),
+			supportsCacheBreakpoints: promptCacheBreakpointsEnabled && modelSupportCacheBreakPoints(endpoint),
 		}),
 		stream: true,
 		tools: finalTools.length > 0 ? finalTools : undefined,
@@ -454,19 +459,19 @@ function rawMessagesToResponseAPI(modelId: string, messages: readonly Raw.ChatMe
 						// todod@connor4312: hack while responses API only supports text output from tools
 						input.push({ type: 'function_call_output', call_id: message.toolCallId, output: asText });
 						if (asImages.length) {
-							input.push({ role: 'user', content: [{ type: 'input_text', text: 'Image associated with the above tool call:' }, ...asImages] });
+							input.push({ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Image associated with the above tool call:' }, ...asImages] });
 						}
 						if (asFiles.length) {
-							input.push({ role: 'user', content: [{ type: 'input_text', text: 'PDF associated with the above tool call:' }, ...asFiles] });
+							input.push({ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'PDF associated with the above tool call:' }, ...asFiles] });
 						}
 					}
 				}
 				break;
 			case Raw.ChatRole.User:
-				input.push({ role: 'user', content: message.content.map(rawContentToResponsesContent).filter(isDefined) });
+				input.push({ type: 'message', role: 'user', content: message.content.map(rawContentToResponsesContent).filter(isDefined) });
 				break;
 			case Raw.ChatRole.System:
-				input.push({ role: 'system', content: message.content.map(rawContentToResponsesContent).filter(isDefined) });
+				input.push({ type: 'message', role: 'system', content: message.content.map(rawContentToResponsesContent).filter(isDefined) });
 				break;
 		}
 
@@ -1173,7 +1178,16 @@ export class OpenAIResponsesProcessor {
 
 		switch (chunk.type) {
 			case 'error':
-				return onProgress({ text: '', copilotErrors: [{ agent: 'openai', code: chunk.code || 'unknown', message: chunk.message, type: 'error', identifier: chunk.param || undefined }] });
+				// Surface the error as a progress delta, but also produce a terminal
+				// completion so the request resolves to a meaningful server error
+				// instead of collapsing into the generic "Response contained no
+				// choices" fallback when the stream ends without a terminal event.
+				onProgress({ text: '', copilotErrors: [{ agent: 'openai', code: chunk.code || 'unknown', message: chunk.message, type: 'error', identifier: chunk.param || undefined }] });
+				return this.buildTerminalCompletion(
+					{ output: [] } as unknown as CapiResponseTerminalEvent['response'],
+					FinishedCompletionReason.ServerError,
+					{ error: mapResponsesApiError({ code: chunk.code, message: chunk.message } as OpenAI.Responses.ResponseError) }
+				);
 			case 'response.output_text.delta': {
 				const capiChunk: CapiResponsesTextDeltaEvent = chunk;
 				// When text arrives from a new output item, emit a paragraph

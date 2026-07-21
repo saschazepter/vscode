@@ -3,20 +3,26 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import './media/openSubagentChat.css';
+import { $ } from '../../../../../base/browser/dom.js';
+import { BaseActionViewItem, IActionViewItemOptions } from '../../../../../base/browser/ui/actionbar/actionViewItems.js';
+import { IAction } from '../../../../../base/common/actions.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { Emitter } from '../../../../../base/common/event.js';
-import { Disposable } from '../../../../../base/common/lifecycle.js';
+import { Disposable, MutableDisposable } from '../../../../../base/common/lifecycle.js';
+import { autorun, IReader } from '../../../../../base/common/observable.js';
+import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
-import { localize2 } from '../../../../../nls.js';
+import { localize, localize2 } from '../../../../../nls.js';
 import { IActionViewItemService } from '../../../../../platform/actions/browser/actionViewItemService.js';
 import { Action2, MenuId, MenuItemAction, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { parseChatUri, parseSubagentSessionUri } from '../../../../../platform/agentHost/common/state/sessionState.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../../workbench/common/contributions.js';
-import { SessionHeaderMetaActionViewItem } from '../../../../browser/parts/sessionHeaderMetaActionViewItem.js';
 import { ISessionsService } from '../../../../services/sessions/browser/sessionsService.js';
-import { IChat } from '../../../../services/sessions/common/session.js';
+import { IActiveSession } from '../../../../services/sessions/common/sessionsManagement.js';
+import { IChat, SessionStatus } from '../../../../services/sessions/common/session.js';
 
 // "Open Subagent" affordance for agent host worker (subagent) chats.
 //
@@ -78,12 +84,54 @@ function ownerSessionPath(resource: string): string | undefined {
 	return parseSubagentSessionUri(resource)?.parentSession.path;
 }
 
+/**
+ * Finds the surfaced peer chat (and its owning session) for a subagent chat
+ * resource across the active + visible sessions, constrained to the owning
+ * session when derivable so a `chatId` that collides across visible sessions
+ * can't match the wrong tab. Reactive when a {@link IReader} is provided.
+ */
+function findSubagentChat(sessionsService: ISessionsService, resource: string, reader: IReader | undefined): { readonly session: IActiveSession; readonly chat: IChat } | undefined {
+	const chatId = chatIdFromResource(resource);
+	const ownerPath = ownerSessionPath(resource);
+	const allSessions = [sessionsService.activeSession.read(reader), ...sessionsService.visibleSessions.read(reader)]
+		.filter((s): s is IActiveSession => !!s);
+	const candidates = ownerPath
+		? allSessions.filter(s => s.resource.path === ownerPath)
+		: allSessions;
+	for (const session of candidates) {
+		const chat = session.chats.read(reader).find(c => matchesResource(c, resource, chatId));
+		if (chat) {
+			return { session, chat };
+		}
+	}
+	return undefined;
+}
+
+/**
+ * Toolbar context forwarded by the subagent header (`ChatSubagentContentPart`).
+ * A bare resource string is also accepted for backwards compatibility.
+ */
+interface IOpenSubagentChatContext {
+	readonly chatResource: string;
+	readonly agentName?: string;
+}
+
+function contextChatResource(context: unknown): string | undefined {
+	if (typeof context === 'string') {
+		return context;
+	}
+	if (context && typeof context === 'object' && typeof (context as IOpenSubagentChatContext).chatResource === 'string') {
+		return (context as IOpenSubagentChatContext).chatResource;
+	}
+	return undefined;
+}
+
 class OpenSubagentChatAction extends Action2 {
 	constructor() {
 		super({
 			id: OPEN_SUBAGENT_CHAT_ACTION_ID,
 			title: localize2('chat.subagent.openChat', "Open Subagent"),
-			icon: Codicon.linkExternal,
+			icon: Codicon.commentDiscussion,
 			// Contextual: invoked from a specific subagent's header toolbar, which
 			// forwards that subagent's chat resource. Not a palette command.
 			f1: false,
@@ -91,40 +139,143 @@ class OpenSubagentChatAction extends Action2 {
 		});
 	}
 
-	override async run(accessor: ServicesAccessor, resource?: string): Promise<void> {
+	override async run(accessor: ServicesAccessor, context?: string | IOpenSubagentChatContext): Promise<void> {
+		const resource = contextChatResource(context);
 		if (!resource) {
 			return;
 		}
 		const logService = accessor.get(ILogService);
 		const sessionsService = accessor.get(ISessionsService);
-		const chatId = chatIdFromResource(resource);
-		const ownerPath = ownerSessionPath(resource);
 
 		// The pill is clicked from within the lead chat's transcript, so the
-		// subagent peer normally lives in the currently active session; fall back
-		// to scanning all visible sessions in case the active slot differs. When
-		// the owning session is derivable, constrain to it so a `chatId` that
-		// collides across visible sessions can't open the wrong tab.
-		const allSessions = [sessionsService.activeSession.get(), ...sessionsService.visibleSessions.get()]
-			.filter((s): s is NonNullable<typeof s> => !!s);
-		const candidates = ownerPath
-			? allSessions.filter(s => s.resource.path === ownerPath)
-			: allSessions;
-
-		for (const session of candidates) {
-			const chat = session.chats.get().find(c => matchesResource(c, resource, chatId));
-			if (chat) {
-				await sessionsService.openChat(session, chat.resource);
-				return;
-			}
+		// subagent peer normally lives in the currently active session; the finder
+		// falls back to scanning all visible sessions in case the active slot
+		// differs.
+		const match = findSubagentChat(sessionsService, resource, undefined);
+		if (match) {
+			await sessionsService.openChat(match.session, match.chat.resource);
+			return;
 		}
 
 		const active = sessionsService.activeSession.get();
 		const available = active?.chats.get().map(c => c.resource.toString()).join(', ') ?? '(none)';
-		logService.warn(`[Sessions] Cannot open subagent chat for resource '${resource}' (chatId='${chatId}'). Available chats: ${available}`);
+		logService.warn(`[Sessions] Cannot open subagent chat for resource '${resource}' (chatId='${chatIdFromResource(resource)}'). Available chats: ${available}`);
 	}
 }
 registerAction2(OpenSubagentChatAction);
+
+/**
+ * Renders the "Open Subagent" pill as a standalone chip (styled like the chat
+ * file/diff pill). See SESSIONS.md and `./media/openSubagentChat.css` for details.
+ */
+class OpenSubagentChatActionViewItem extends BaseActionViewItem {
+
+	private _resolvedTitle: string | undefined;
+	private readonly _titleTracker = this._register(new MutableDisposable());
+	private _labelElement: HTMLElement | undefined;
+
+	constructor(
+		context: unknown,
+		action: IAction,
+		options: IActionViewItemOptions,
+		@ISessionsService private readonly sessionsService: ISessionsService,
+	) {
+		super(context, action, options);
+	}
+
+	override render(container: HTMLElement): void {
+		// Base render wires mouse click on the container; the actionbar wires
+		// keyboard (Enter/Space) via `doTrigger`, so both dispatch the action.
+		super.render(container);
+		container.classList.add('chat-subagent-pill-widget');
+		// The ActionBar creates the `<li>` with role="presentation"; mark it as an
+		// actionable control for screen readers.
+		container.setAttribute('role', 'button');
+
+		const icon = $('span.chat-subagent-pill-icon');
+		icon.appendChild($('span.chat-subagent-pill-spinner.codicon.codicon-loading.codicon-modifier-spin'));
+		icon.appendChild($(`span.chat-subagent-pill-open-icon${ThemeIcon.asCSSSelector(Codicon.commentDiscussion)}`));
+		this._labelElement = $('span.chat-subagent-pill-label');
+		container.append(icon, this._labelElement);
+		this._labelElement.textContent = this._labelText();
+
+		this._updateTitleTracker();
+		this.updateTooltip();
+		this.updateEnabled();
+	}
+
+	override setActionContext(newContext: unknown): void {
+		super.setActionContext(newContext);
+		this._updateTitleTracker();
+	}
+
+	/**
+	 * Tracks the resolved subagent chat's title and running state. The pill's
+	 * spinner reflects the subagent chat's **own** {@link SessionStatus.InProgress}
+	 * status rather than the parent `.chat-subagent-part`'s `chat-thinking-active`
+	 * class: the spawning tool call completes as soon as the subagent is
+	 * dispatched, so that class stops early while the worker keeps running.
+	 */
+	private _updateTitleTracker(): void {
+		const resource = contextChatResource(this._context);
+		if (!resource) {
+			this._titleTracker.clear();
+			this._setResolvedTitle(undefined);
+			this._setRunning(false);
+			return;
+		}
+		this._titleTracker.value = autorun(reader => {
+			const chat = findSubagentChat(this.sessionsService, resource, reader)?.chat;
+			this._setResolvedTitle(chat?.title.read(reader) || undefined);
+			this._setRunning(chat?.status.read(reader) === SessionStatus.InProgress);
+		});
+	}
+
+	private _setRunning(running: boolean): void {
+		this.element?.classList.toggle('chat-subagent-running', running);
+	}
+
+	private _setResolvedTitle(title: string | undefined): void {
+		if (title !== this._resolvedTitle) {
+			this._resolvedTitle = title;
+			if (this._labelElement) {
+				this._labelElement.textContent = this._labelText();
+			}
+			this.updateTooltip();
+		}
+	}
+
+	private _labelText(): string {
+		return this._resolvedTitle || this._action.label;
+	}
+
+	protected override getTooltip(): string | undefined {
+		return this._action.tooltip || this._action.label || undefined;
+	}
+
+	protected override updateEnabled(): void {
+		if (!this.element) {
+			return;
+		}
+		const enabled = this._action.enabled;
+		this.element.classList.toggle('disabled', !enabled);
+		this.element.setAttribute('aria-disabled', String(!enabled));
+	}
+
+	protected override updateAriaLabel(): void {
+		if (!this.element) {
+			return;
+		}
+		const ariaLabel = this._resolvedTitle
+			? localize('chat.subagent.openChat.aria', "Open subagent chat: {0}", this._resolvedTitle)
+			: this.getTooltip();
+		if (ariaLabel) {
+			this.element.setAttribute('aria-label', ariaLabel);
+		} else {
+			this.element.removeAttribute('aria-label');
+		}
+	}
+}
 
 /**
  * Renders the "Open Subagent" action contributed into the subagent header
@@ -152,7 +303,7 @@ class OpenSubagentChatActionViewItemContribution extends Disposable implements I
 			if (!(action instanceof MenuItemAction)) {
 				return undefined;
 			}
-			return instantiationService.createInstance(SessionHeaderMetaActionViewItem, undefined, action, options);
+			return instantiationService.createInstance(OpenSubagentChatActionViewItem, undefined, action, options);
 		}, onDidRegister.event));
 		onDidRegister.fire();
 	}
