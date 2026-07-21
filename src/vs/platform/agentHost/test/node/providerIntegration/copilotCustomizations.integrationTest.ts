@@ -231,6 +231,10 @@ suite('Agent Host Provider Integration — Copilot Customizations', function () 
 		client.clearReceived();
 		dispatchTurn(client, sessionUri, turnId, 'hello', 2);
 		await client.waitForNotification(n => isActionNotification(n, 'chat/turnComplete'), NOTIFICATION_TIMEOUT_MS);
+		await client.waitForNotification(
+			n => isActionNotification(n, ActionType.SessionReady) && getActionEnvelope(n).channel === sessionUri,
+			NOTIFICATION_TIMEOUT_MS,
+		);
 
 		return await fetchSessionWithChat(client, sessionUri);
 	}
