@@ -262,12 +262,12 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 		this._onDidChangeModelStatus.fire(status);
 	}
 
-	async start(options: { cacheDir: string; model?: string; language?: string; proxyUrl?: string; noProxy?: string }): Promise<void> {
-		// Bridge VS Code's `http.proxy`/`http.noProxy` settings into this process's
-		// environment before any first-use download, so both our own fetches and
-		// the native Foundry Local model download route through the configured
-		// proxy (they read the OS/env proxy, not VS Code settings directly).
-		this._applyProxyEnv(options.proxyUrl, options.noProxy);
+	async start(options: { cacheDir: string; model?: string; language?: string; proxyUrl?: string; noProxy?: string; proxyStrictSSL?: boolean; proxyAuthorization?: string }): Promise<void> {
+		// Bridge VS Code's proxy settings into this process's environment before any
+		// first-use download, so both our own fetches and the native Foundry Local
+		// model download route through the configured proxy (they read the OS/env
+		// proxy, not VS Code settings directly).
+		this._applyProxyEnv(options.proxyUrl, options.noProxy, options.proxyStrictSSL, options.proxyAuthorization);
 
 		// Reset any prior session before starting a new one.
 		await this._disposeSession();
@@ -288,21 +288,68 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 	}
 
 	/**
-	 * Apply VS Code's proxy settings as the standard proxy environment variables
-	 * for this process, so every download leg (our fetches and the native model
-	 * download) honors a proxy configured only in VS Code (not in the OS
-	 * environment). A blank/undefined `proxyUrl` leaves any inherited environment
-	 * proxy untouched.
+	 * Apply VS Code's proxy settings as environment variables for this process, so
+	 * every download leg (our fetches and the native model download) honors a proxy
+	 * configured only in VS Code (not in the OS environment):
+	 * - `http.proxy`/`http.noProxy` → `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY`.
+	 * - `http.proxyAuthorization` (a `Basic <base64>` value) → folded into the proxy
+	 *   URL's userinfo so both our `HttpsProxyAgent` and the native HTTP stack send
+	 *   `Proxy-Authorization`. Non-`Basic` schemes (e.g. Negotiate/NTLM) cannot be
+	 *   carried this way and are left to OS-level auth.
+	 * - `http.proxyStrictSSL === false` → disable TLS certificate verification for
+	 *   the Node download legs. The native model leg still requires the CA in the OS
+	 *   trust store.
+	 *
+	 * A blank/undefined `proxyUrl` leaves any inherited environment proxy untouched.
 	 */
-	private _applyProxyEnv(proxyUrl: string | undefined, noProxy: string | undefined): void {
+	private _applyProxyEnv(proxyUrl: string | undefined, noProxy: string | undefined, proxyStrictSSL: boolean | undefined, proxyAuthorization: string | undefined): void {
+		if (proxyStrictSSL === false) {
+			// Covers both Node legs uniformly (our fetch and the SDK's bare
+			// `https.get` NuGet install); scoped to this dedicated utility process.
+			process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+		}
 		if (!proxyUrl) {
 			return;
 		}
-		process.env.HTTPS_PROXY = proxyUrl;
-		process.env.HTTP_PROXY = proxyUrl;
+		const effectiveProxyUrl = this._embedProxyCredentials(proxyUrl, proxyAuthorization);
+		process.env.HTTPS_PROXY = effectiveProxyUrl;
+		process.env.HTTP_PROXY = effectiveProxyUrl;
 		if (noProxy) {
 			process.env.NO_PROXY = noProxy;
 		}
+	}
+
+	/**
+	 * Fold a `Basic <base64>` `http.proxyAuthorization` value into `proxyUrl`'s
+	 * userinfo so proxy credentials survive the env-var bridge to every leg.
+	 * Returns `proxyUrl` unchanged when there is nothing to add or the header is
+	 * not a decodable `Basic` credential or the URL already carries credentials.
+	 */
+	private _embedProxyCredentials(proxyUrl: string, proxyAuthorization: string | undefined): string {
+		if (!proxyAuthorization) {
+			return proxyUrl;
+		}
+		const basic = /^Basic\s+(?<token>[A-Za-z0-9+/=]+)$/i.exec(proxyAuthorization.trim());
+		if (!basic?.groups?.token) {
+			return proxyUrl;
+		}
+		let parsed: URL;
+		try {
+			parsed = new URL(proxyUrl);
+		} catch {
+			return proxyUrl;
+		}
+		if (parsed.username || parsed.password) {
+			return proxyUrl;
+		}
+		const decoded = Buffer.from(basic.groups.token, 'base64').toString('utf8');
+		const separator = decoded.indexOf(':');
+		if (separator < 0) {
+			return proxyUrl;
+		}
+		parsed.username = encodeURIComponent(decoded.slice(0, separator));
+		parsed.password = encodeURIComponent(decoded.slice(separator + 1));
+		return parsed.toString();
 	}
 
 	/**

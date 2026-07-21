@@ -37,7 +37,9 @@ import { CancellationError } from '../../../base/common/errors.js';
  * `http.noProxy` settings are applied as these same environment variables
  * before provisioning (see `LocalTranscriptionService.start`), so a proxy
  * configured only in VS Code is honored here and by the native model download
- * too. TLS-intercepting proxies rely on the CA being in the OS trust store.
+ * too; `http.proxyAuthorization` (Basic) is folded into the proxy URL and
+ * `http.proxyStrictSSL === false` disables TLS verification for these Node legs.
+ * TLS-intercepting proxies otherwise rely on the CA being in the OS trust store.
  */
 
 /**

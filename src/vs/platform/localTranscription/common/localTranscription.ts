@@ -106,10 +106,16 @@ export interface ILocalTranscriptionService {
 	 * addon tarball and NuGet core libraries (our own fetches) and the native
 	 * Foundry Local *model* download — route through the proxy. When they are
 	 * omitted, the process's inherited OS environment proxy vars still apply.
-	 * TLS-intercepting proxies must have their CA in the OS trust store (matching
-	 * `@vscode/proxy-agent` and the GitHub desktop app).
+	 *
+	 * `proxyStrictSSL === false` (VS Code's `http.proxyStrictSSL`) disables TLS
+	 * certificate verification for the JavaScript download legs. `proxyAuthorization`
+	 * (VS Code's `http.proxyAuthorization`, a `Basic <base64>` value) is folded into
+	 * the proxy URL's credentials so both our fetches and the native model download
+	 * authenticate to the proxy. TLS-intercepting proxies otherwise rely on the CA
+	 * being in the OS trust store (matching `@vscode/proxy-agent` and the desktop
+	 * app).
 	 */
-	start(options: { readonly cacheDir: string; readonly model?: string; readonly language?: string; readonly proxyUrl?: string; readonly noProxy?: string }): Promise<void>;
+	start(options: { readonly cacheDir: string; readonly model?: string; readonly language?: string; readonly proxyUrl?: string; readonly noProxy?: string; readonly proxyStrictSSL?: boolean; readonly proxyAuthorization?: string }): Promise<void>;
 
 	/** Append captured audio (raw little-endian PCM16 mono 16 kHz). */
 	pushAudio(chunk: VSBuffer): Promise<void>;

@@ -76,24 +76,28 @@ export class LocalTranscriptionService {
 
 	getModelStatus() { return this._getProxy().getModelStatus(); }
 	start(options: { cacheDir: string; model?: string; language?: string }) {
-		const { proxyUrl, noProxy } = this._resolveProxyConfig();
-		return this._getProxy().start({ cacheDir: options.cacheDir, model: options.model, language: options.language, proxyUrl, noProxy });
+		const { proxyUrl, noProxy, proxyStrictSSL, proxyAuthorization } = this._resolveProxyConfig();
+		return this._getProxy().start({ cacheDir: options.cacheDir, model: options.model, language: options.language, proxyUrl, noProxy, proxyStrictSSL, proxyAuthorization });
 	}
 	pushAudio(chunk: Parameters<ILocalTranscriptionService['pushAudio']>[0]) { return this._getProxy().pushAudio(chunk); }
 	stop() { return this._getProxy().stop(); }
 	cancel() { return this._getProxy().cancel(); }
 
 	/**
-	 * Read VS Code's `http.proxy`/`http.noProxy` settings so the utility process
-	 * can honor a proxy configured only in VS Code (not in the OS environment).
-	 * Returns empty values when unset, in which case the process's inherited
-	 * environment proxy still applies.
+	 * Read VS Code's `http.proxy`/`http.noProxy`/`http.proxyStrictSSL`/
+	 * `http.proxyAuthorization` settings so the utility process can honor a proxy
+	 * configured only in VS Code (not in the OS environment). Returns empty values
+	 * when unset, in which case the process's inherited environment proxy still
+	 * applies and TLS verification stays on.
 	 */
-	private _resolveProxyConfig(): { proxyUrl: string | undefined; noProxy: string | undefined } {
+	private _resolveProxyConfig(): { proxyUrl: string | undefined; noProxy: string | undefined; proxyStrictSSL: boolean | undefined; proxyAuthorization: string | undefined } {
 		const proxyUrl = this.configurationService.getValue<string>('http.proxy')?.trim() || undefined;
 		const noProxyList = this.configurationService.getValue<string[]>('http.noProxy');
 		const noProxy = Array.isArray(noProxyList) && noProxyList.length ? noProxyList.join(',') : undefined;
-		return { proxyUrl, noProxy };
+		const strictSSL = this.configurationService.getValue<boolean>('http.proxyStrictSSL');
+		const proxyStrictSSL = strictSSL === false ? false : undefined;
+		const proxyAuthorization = this.configurationService.getValue<string>('http.proxyAuthorization')?.trim() || undefined;
+		return { proxyUrl, noProxy, proxyStrictSSL, proxyAuthorization };
 	}
 }
 
