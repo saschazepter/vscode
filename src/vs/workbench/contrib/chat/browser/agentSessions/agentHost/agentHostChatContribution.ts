@@ -3,9 +3,13 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { raceTimeout } from '../../../../../../base/common/async.js';
+import { CancellationTokenSource } from '../../../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Event } from '../../../../../../base/common/event.js';
 import { Disposable, DisposableMap, DisposableStore, toDisposable } from '../../../../../../base/common/lifecycle.js';
+import { autorun, waitForState } from '../../../../../../base/common/observable.js';
+import { mark } from '../../../../../../base/common/performance.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { localize } from '../../../../../../nls.js';
 import { affectsAgentHostProviderPreference, IAgentHostService, shouldSurfaceLocalAgentHostProvider, type AgentProvider } from '../../../../../../platform/agentHost/common/agentService.js';
@@ -35,6 +39,8 @@ import { IAgentHostActiveClientService } from './agentHostActiveClientService.js
 import { AICustomizationManagementSection } from '../../../common/aiCustomizationWorkspaceService.js';
 
 const LOCAL_AGENT_HOST_SESSION_TYPE_PREFIX = 'agent-host-';
+const AGENT_HOST_ENABLEMENT_WAIT_TIMEOUT = 5_000;
+const AGENT_HOST_ACTIVATION_WAIT_TIMEOUT = 10_000;
 
 Registry.as<IAsyncChatSessionActivationRegistry>(ChatSessionsExtensions.AsyncActivation).register({
 	matchSessionType: sessionType => isLocalAgentHostTarget(sessionType),
@@ -43,8 +49,23 @@ Registry.as<IAsyncChatSessionActivationRegistry>(ChatSessionsExtensions.AsyncAct
 
 async function waitForLocalAgentHostActivation(accessor: ServicesAccessor, sessionType: string): Promise<boolean> {
 	const agentHostEnablementService = accessor.get(IAgentHostEnablementService);
-	if (!agentHostEnablementService.enabled) {
-		return false;
+	const agentHostService = accessor.get(IAgentHostService);
+	const configurationService = accessor.get(IConfigurationService);
+	const environmentService = accessor.get(IWorkbenchEnvironmentService);
+	if (!agentHostEnablementService.enabled.get()) {
+		const cts = new CancellationTokenSource();
+		try {
+			const enabled = await raceTimeout(
+				waitForState(agentHostEnablementService.enabled, value => value, undefined, cts.token),
+				AGENT_HOST_ENABLEMENT_WAIT_TIMEOUT,
+				() => cts.cancel(),
+			);
+			if (!enabled) {
+				return false;
+			}
+		} finally {
+			cts.dispose(true);
+		}
 	}
 
 	const provider = getLocalAgentHostProviderForSessionType(sessionType);
@@ -52,9 +73,6 @@ async function waitForLocalAgentHostActivation(accessor: ServicesAccessor, sessi
 		return false;
 	}
 
-	const agentHostService = accessor.get(IAgentHostService);
-	const configurationService = accessor.get(IConfigurationService);
-	const environmentService = accessor.get(IWorkbenchEnvironmentService);
 	while (true) {
 		const rootState = agentHostService.rootState.value;
 		if (rootState instanceof Error) {
@@ -64,10 +82,17 @@ async function waitForLocalAgentHostActivation(accessor: ServicesAccessor, sessi
 			return rootState.agents.some(agent => agent.provider === provider && shouldSurfaceLocalAgentHostProvider(agent.provider, configurationService, environmentService.isSessionsWindow));
 		}
 
-		const changed = await Promise.race([
-			Event.toPromise(agentHostService.rootState.onDidChange).then(() => true),
-			Event.toPromise(agentHostService.onAgentHostExit).then(() => false),
-		]);
+		const rootStateChanged = Event.toPromise(agentHostService.rootState.onDidChange);
+		const agentHostExited = Event.toPromise(agentHostService.onAgentHostExit);
+		const changed = await raceTimeout(Promise.race([
+			rootStateChanged.then(() => true),
+			agentHostExited.then(() => false),
+		]), AGENT_HOST_ACTIVATION_WAIT_TIMEOUT, () => {
+			rootStateChanged.cancel();
+			agentHostExited.cancel();
+		});
+		rootStateChanged.cancel();
+		agentHostExited.cancel();
 		if (!changed) {
 			return false;
 		}
@@ -103,6 +128,9 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 
 	private readonly _isSessionsWindow: boolean;
 	private readonly _enableSmokeTestDriver: boolean;
+	private _initialized = false;
+	private _didRegisterInitialAgents = false;
+	private _didStartInitialAuthentication = false;
 
 	constructor(
 		@IAgentHostService private readonly _agentHostService: IAgentHostService,
@@ -112,7 +140,7 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		@ILogService private readonly _logService: ILogService,
 		@ILanguageModelsService private readonly _languageModelsService: ILanguageModelsService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
-		@IAgentHostFileSystemService _agentHostFileSystemService: IAgentHostFileSystemService,
+		@IAgentHostFileSystemService private readonly _agentHostFileSystemService: IAgentHostFileSystemService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@ICustomizationHarnessService private readonly _customizationHarnessService: ICustomizationHarnessService,
 		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
@@ -123,11 +151,20 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		this._isSessionsWindow = environmentService.isSessionsWindow;
 		this._enableSmokeTestDriver = !!environmentService.enableSmokeTestDriver;
 
-		if (!agentHostEnablementService.enabled) {
+		this._register(autorun(reader => {
+			if (agentHostEnablementService.enabled.read(reader)) {
+				this._initialize();
+			}
+		}));
+	}
+
+	private _initialize(): void {
+		if (this._initialized) {
 			return;
 		}
-
-		this._register(_agentHostFileSystemService.registerAuthority('local', this._agentHostService));
+		this._initialized = true;
+		mark('code/willInitializeAgentHostContribution');
+		this._register(this._agentHostFileSystemService.registerAuthority('local', this._agentHostService));
 
 		// React to root state changes (agent discovery / removal)
 		this._register(this._agentHostService.rootState.onDidChange(rootState => {
@@ -179,6 +216,10 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 	private _handleRootStateChange(rootState: RootState): void {
 		const allowed = rootState.agents.filter(a => this._shouldRegisterAgent(a.provider));
 		const incoming = new Set(allowed.map(a => a.provider));
+		const isInitialRegistration = allowed.length > 0 && !this._didRegisterInitialAgents;
+		if (isInitialRegistration) {
+			mark('code/willRegisterAgentHostProviders');
+		}
 
 		// Remove agents that are no longer present OR no longer allowed
 		for (const [provider] of this._agentRegistrations) {
@@ -204,6 +245,11 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 				const modelProvider = this._modelProviders.get(agent.provider);
 				modelProvider?.updateModels(agent.models);
 			}
+		}
+
+		if (isInitialRegistration) {
+			this._didRegisterInitialAgents = true;
+			mark('code/didRegisterAgentHostProviders');
 		}
 	}
 
@@ -305,22 +351,38 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 	 * Resolves tokens via the standard VS Code authentication service.
 	 */
 	private async _authenticateWithServer(agents: readonly AgentInfo[]): Promise<void> {
+		const isInitialAuthentication = agents.length > 0 && !this._didStartInitialAuthentication;
+		if (isInitialAuthentication) {
+			this._didStartInitialAuthentication = true;
+			mark('code/willAuthenticateAgentHost');
+		}
+
+		let authenticationSucceeded = false;
 		this._agentHostService.setAuthenticationPending(true);
 		try {
 			const testToken = this._getScenarioAutomationToken();
 			if (testToken !== undefined) {
 				await this._seedTestToken(agents, testToken);
+				authenticationSucceeded = true;
 				return;
 			}
 			await this._instantiationService.invokeFunction(authenticateProtectedResources, agents, {
 				authTokenCache: this._authTokenCache,
 				logPrefix: '[AgentHost]',
+				performanceMarkPrefix: isInitialAuthentication ? 'code/initialAgentHostAuthentication' : undefined,
 				authenticate: request => this._agentHostService.authenticate(request),
 			});
+			authenticationSucceeded = true;
 		} catch (err) {
 			this._logService.error('[AgentHost] Failed to authenticate with server', err);
 		} finally {
 			this._agentHostService.setAuthenticationPending(false);
+			if (isInitialAuthentication) {
+				mark('code/didSettleAgentHostAuthentication');
+				if (authenticationSucceeded) {
+					mark('code/didBecomeAgentHostUsable');
+				}
+			}
 		}
 	}
 

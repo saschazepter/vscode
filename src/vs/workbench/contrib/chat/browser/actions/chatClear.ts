@@ -51,12 +51,12 @@ export async function clearChatEditor(accessor: ServicesAccessor, chatEditorInpu
 				// swap, consuming the migration marker only here where it is applied.
 				// Otherwise fall back to the computed default.
 				const currentSessionType = currentResource ? getChatSessionType(currentResource) : undefined;
-				const resolved = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, workspaceContextService.getWorkspace(), agentHostEnablementService.enabled, { currentSessionType });
+				const resolved = resolveDefaultNewChatSessionType(configurationService, chatSessionsService, storageService, workspaceContextService.getWorkspace(), agentHostEnablementService.enabled.get(), { currentSessionType });
 				if (resolved.isPreferCopilotHarnessSwap) {
 					markPreferredCopilotHarness(storageService);
 					resource = URI.from({ scheme: resolved.sessionType, path: `/untitled-${generateUuid()}` });
 				} else {
-					resource = getDefaultNewChatSessionResource(configurationService, chatSessionsService, storageService, workspaceContextService.getWorkspace(), agentHostEnablementService.enabled);
+					resource = getDefaultNewChatSessionResource(configurationService, chatSessionsService, storageService, workspaceContextService.getWorkspace(), agentHostEnablementService.enabled.get());
 				}
 			}
 		}

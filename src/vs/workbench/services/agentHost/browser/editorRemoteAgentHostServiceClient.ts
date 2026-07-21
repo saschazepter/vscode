@@ -9,9 +9,9 @@
 // can subscribe to `rootState` etc. immediately; the actual transport
 // connection (and AHP handshake) happens asynchronously in the background.
 
-import { Emitter, Event } from '../../../../base/common/event.js';
+import { Emitter, Event, Relay } from '../../../../base/common/event.js';
 import { Disposable, IReference } from '../../../../base/common/lifecycle.js';
-import { IObservable, ISettableObservable, observableValue, constObservable } from '../../../../base/common/observable.js';
+import { autorun, IObservable, ISettableObservable, observableValue } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -53,55 +53,91 @@ export class EditorRemoteAgentHostServiceClient extends Disposable implements IA
 	readonly authenticationPending: IObservable<boolean> = this._authenticationPending;
 	private _authenticationSettled = false;
 
-	private readonly _protocolClient: RemoteAgentHostProtocolClient | undefined;
-	private readonly _noopRootState: IAgentSubscription<RootState> = {
-		value: undefined,
-		verifiedValue: undefined,
-		onDidChange: Event.None,
-		onWillApplyAction: Event.None,
-		onDidApplyAction: Event.None,
-	};
+	private readonly _initializeResult = observableValue<InitializeResult | undefined>(this, undefined);
+	readonly initializeResult: IObservable<InitializeResult | undefined> = this._initializeResult;
+	private readonly _onDidNotification = this._register(new Relay<INotification>());
+	readonly onDidNotification = this._onDidNotification.event;
+	private readonly _onDidAction = this._register(new Relay<ActionEnvelope>());
+	readonly onDidAction = this._onDidAction.event;
+	private readonly _onMcpNotification = this._register(new Relay<IMcpNotification>());
+	readonly onMcpNotification = this._onMcpNotification.event;
+	private _protocolClient: RemoteAgentHostProtocolClient | undefined;
+	private readonly _rootStateOnDidChange = this._register(new Relay<RootState>());
+	private readonly _rootStateOnDidError = this._register(new Relay<Error>());
+	private readonly _rootStateOnWillApplyAction = this._register(new Relay<ActionEnvelope>());
+	private readonly _rootStateOnDidApplyAction = this._register(new Relay<ActionEnvelope>());
+	private readonly _rootState: IAgentSubscription<RootState>;
 	private _connectStarted = false;
+	private _remoteConnectionWait: Promise<void> | undefined;
 
 	constructor(
-		@IRemoteAgentService remoteAgentService: IRemoteAgentService,
-		@IAgentHostEnablementService agentHostEnablementService: IAgentHostEnablementService,
-		@IInstantiationService instantiationService: IInstantiationService,
+		@IRemoteAgentService private readonly _remoteAgentService: IRemoteAgentService,
+		@IAgentHostEnablementService private readonly _agentHostEnablementService: IAgentHostEnablementService,
+		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 		@ILogService private readonly _logService: ILogService,
 	) {
 		super();
 
-		const enabled = agentHostEnablementService.enabled;
-		const connection = remoteAgentService.getConnection();
-		this._logService.info(`${LOG_PREFIX} Initializing (enabled=${enabled}, remoteAuthority=${connection?.remoteAuthority ?? 'none'})`);
+		const that = this;
+		this._rootState = {
+			get value() { return that._protocolClient?.rootState.value; },
+			get verifiedValue() { return that._protocolClient?.rootState.verifiedValue; },
+			onDidChange: this._rootStateOnDidChange.event,
+			onDidError: this._rootStateOnDidError.event,
+			onWillApplyAction: this._rootStateOnWillApplyAction.event,
+			onDidApplyAction: this._rootStateOnDidApplyAction.event,
+		};
 
-		if (!enabled) {
-			this._logService.info(`${LOG_PREFIX} Disabled via "chat.agentHost.enabled" or web runtime. Not connecting.`);
-			this.setAuthenticationPending(false);
-			return;
+		this._register(autorun(reader => {
+			if (this._agentHostEnablementService.enabled.read(reader)) {
+				this.startAgentHost();
+			} else {
+				this._logService.info(`${LOG_PREFIX} Disabled via "chat.agentHost.enabled" or web runtime. Not connecting.`);
+			}
+		}));
+	}
+
+	private _ensureProtocolClient(): boolean {
+		if (this._protocolClient) {
+			return true;
 		}
+		const connection = this._remoteAgentService.getConnection();
+		this._logService.info(`${LOG_PREFIX} Initializing (remoteAuthority=${connection?.remoteAuthority ?? 'none'})`);
 		if (!connection) {
-			this._logService.warn(`${LOG_PREFIX} No remote agent connection available. Not connecting.`);
-			this.setAuthenticationPending(false);
-			return;
+			this._logService.warn(`${LOG_PREFIX} No remote agent connection available. Waiting for the remote environment.`);
+			this._waitForRemoteConnection();
+			return false;
 		}
 
-		// Create the protocol client eagerly so consumers can subscribe to
-		// rootState etc. before the AHP handshake completes. The transport's
-		// `connect()` will be awaited by `_connect()` below.
 		const channel = connection.getChannel(AgentHostIpcChannels.RemoteProxy);
 		const transport = new AgentHostIpcChannelTransport(channel);
 		const address = `vscode-remote://${connection.remoteAuthority}`;
-		this._protocolClient = this._register(instantiationService.createInstance(RemoteAgentHostProtocolClient, address, transport, undefined));
+		this._protocolClient = this._register(this._instantiationService.createInstance(RemoteAgentHostProtocolClient, address, transport, undefined));
+		this._rootStateOnDidChange.input = this._protocolClient.rootState.onDidChange;
+		this._rootStateOnDidError.input = this._protocolClient.rootState.onDidError ?? Event.None;
+		this._rootStateOnWillApplyAction.input = this._protocolClient.rootState.onWillApplyAction;
+		this._rootStateOnDidApplyAction.input = this._protocolClient.rootState.onDidApplyAction;
+		this._onDidNotification.input = this._protocolClient.onDidNotification;
+		this._onDidAction.input = this._protocolClient.onDidAction;
+		this._onMcpNotification.input = this._protocolClient.onMcpNotification;
+		this._register(autorun(reader => this._initializeResult.set(this._protocolClient!.initializeResult.read(reader), undefined)));
 		this._register(this._protocolClient.onDidClose(() => {
 			this._logService.info(`${LOG_PREFIX} Protocol client closed`);
 			this._onAgentHostExit.fire(0);
 		}));
+		return true;
+	}
 
-		// Kick off the connect in the background. Failures are logged; callers
-		// that need a connected client (e.g. session creation) will see the
-		// failure surface as a rejected promise from the protocol client.
-		this._connect().catch(err => this._logService.warn(`${LOG_PREFIX} Connect failed`, err));
+	private _waitForRemoteConnection(): void {
+		this._remoteConnectionWait ??= this._remoteAgentService.getRawEnvironment().then(() => {
+			this._remoteConnectionWait = undefined;
+			if (this._agentHostEnablementService.enabled.get()) {
+				this.startAgentHost();
+			}
+		}, error => {
+			this._remoteConnectionWait = undefined;
+			this._logService.warn(`${LOG_PREFIX} Failed while waiting for the remote environment`, error);
+		});
 	}
 
 	private async _connect(): Promise<void> {
@@ -134,6 +170,13 @@ export class EditorRemoteAgentHostServiceClient extends Disposable implements IA
 		this._authenticationPending.set(pending, undefined);
 	}
 
+	startAgentHost(): void {
+		if (!this._ensureProtocolClient()) {
+			return;
+		}
+		this._connect().catch(err => this._logService.warn(`${LOG_PREFIX} Connect failed`, err));
+	}
+
 	async restartAgentHost(): Promise<void> {
 		// The remote owns the agent host process lifecycle.
 	}
@@ -154,24 +197,8 @@ export class EditorRemoteAgentHostServiceClient extends Disposable implements IA
 		return this._protocolClient?.clientId ?? '';
 	}
 
-	get initializeResult(): IObservable<InitializeResult | undefined> {
-		return this._protocolClient?.initializeResult ?? constObservable(undefined);
-	}
-
 	get rootState(): IAgentSubscription<RootState> {
-		return this._protocolClient?.rootState ?? this._noopRootState;
-	}
-
-	get onDidNotification(): Event<INotification> {
-		return this._protocolClient?.onDidNotification ?? Event.None;
-	}
-
-	get onDidAction(): Event<ActionEnvelope> {
-		return this._protocolClient?.onDidAction ?? Event.None;
-	}
-
-	get onMcpNotification(): Event<IMcpNotification> {
-		return this._protocolClient?.onMcpNotification ?? Event.None;
+		return this._rootState;
 	}
 
 	getSubscription<T extends StateComponents>(kind: T, resource: URI, owner: string): IReference<IAgentSubscription<ComponentToState[T]>> {

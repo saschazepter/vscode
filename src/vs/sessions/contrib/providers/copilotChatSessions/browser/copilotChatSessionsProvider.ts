@@ -10,7 +10,7 @@ import { CancellationError } from '../../../../../base/common/errors.js';
 import { IMarkdownString, MarkdownString, markdownStringEqual } from '../../../../../base/common/htmlContent.js';
 import { Disposable, DisposableStore, IDisposable, DisposableMap, MutableDisposable } from '../../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../../base/common/network.js';
-import { autorun, constObservable, derived, derivedOpts, IObservable, IObservableSignal, IReader, ISettableObservable, ITransaction, observableSignal, observableValue, observableValueOpts, transaction } from '../../../../../base/common/observable.js';
+import { autorun, constObservable, derived, derivedOpts, IObservable, IObservableSignal, IReader, ISettableObservable, ITransaction, observableSignal, observableValue, observableValueOpts, runOnChange, transaction } from '../../../../../base/common/observable.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
@@ -1511,7 +1511,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			return false;
 		}
 		const preferAgentHost = this.configurationService.getValue<boolean>(ClaudePreferAgentHostAgentsSettingId) ?? false;
-		if (this.agentHostEnablementService.enabled && preferAgentHost) {
+		if (this.agentHostEnablementService.enabled.get() && preferAgentHost) {
 			return false;
 		}
 		return true;
@@ -1527,7 +1527,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	 */
 	private _isCopilotCliAvailable(): boolean {
 		const hideExtensionHost = this.configurationService.getValue<boolean>(ChatConfiguration.CopilotCliHideExtensionHostAgents) ?? false;
-		if (this.agentHostEnablementService.enabled && hideExtensionHost) {
+		if (this.agentHostEnablementService.enabled.get() && hideExtensionHost) {
 			return false;
 		}
 		return true;
@@ -1566,6 +1566,12 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			}
 			this._onDidChangeSessionTypes.fire();
 			this._refreshSessionCache();
+		}));
+		this._register(runOnChange(this.agentHostEnablementService.enabled, enabled => {
+			if (enabled) {
+				this._onDidChangeSessionTypes.fire();
+				this._refreshSessionCache();
+			}
 		}));
 
 		this.browseActions = [

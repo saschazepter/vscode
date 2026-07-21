@@ -7,6 +7,7 @@ import { DeferredPromise } from '../../../base/common/async.js';
 import { Emitter, Relay } from '../../../base/common/event.js';
 import { Disposable, DisposableStore, IReference } from '../../../base/common/lifecycle.js';
 import { IObservable, ISettableObservable, observableValue } from '../../../base/common/observable.js';
+import { mark } from '../../../base/common/performance.js';
 import { generateUuid } from '../../../base/common/uuid.js';
 import { getDelayedChannel, IChannelServer, ProxyChannel } from '../../../base/parts/ipc/common/ipc.js';
 import { Client as MessagePortClient } from '../../../base/parts/ipc/common/ipc.mp.js';
@@ -76,6 +77,9 @@ export class LocalAgentHostServiceClient extends Disposable implements IAgentHos
 	private _authenticationSettled = false;
 	private _completionTriggerCharactersOnce: Promise<readonly string[]> | undefined;
 	private readonly _initializeResult: ISettableObservable<InitializeResult | undefined> = observableValue('agentHostInitializeResult', undefined);
+	private _connectPromise: Promise<void> | undefined;
+	private _didStartInitialSessionList = false;
+	private _didCompleteInitialSessionList = false;
 
 	setAuthenticationPending(pending: boolean): void {
 		// Sticky: once the first authentication pass settles, never surface
@@ -163,9 +167,21 @@ export class LocalAgentHostServiceClient extends Disposable implements IAgentHos
 			}
 		}));
 
-		if (agentHostEnablementService.enabled) {
-			this._connect();
+		if (agentHostEnablementService.enabled.get()) {
+			this.startAgentHost();
 		}
+	}
+
+	startAgentHost(): void {
+		if (this._connectPromise) {
+			return;
+		}
+
+		mark('code/willStartAgentHost');
+		this._connectPromise = this._connect().catch(error => {
+			this._connectPromise = undefined;
+			this._logService.error('[AgentHost:renderer] Failed to connect to agent host', error);
+		});
 	}
 
 	private async _connect(): Promise<void> {
@@ -228,11 +244,13 @@ export class LocalAgentHostServiceClient extends Disposable implements IAgentHos
 		}));
 		this._onMcpNotification.input = this._proxy.onMcpNotification;
 		this._logService.info('[AgentHost:renderer] Direct MessagePort connection established');
+		mark('code/didConnectAgentHost');
 		this._onAgentHostStart.fire();
 
 		// Subscribe to root state
 		this.subscribe(URI.parse(ROOT_STATE_URI)).then(snapshot => {
 			this._subscriptionManager.handleRootSnapshot(snapshot.state as RootState, snapshot.fromSeq);
+			mark('code/didLoadAgentHostRootState');
 		}).catch(err => {
 			this._logService.error('[AgentHost:renderer] Failed to subscribe to root state', err);
 		});
@@ -321,7 +339,17 @@ export class LocalAgentHostServiceClient extends Disposable implements IAgentHos
 		return this._proxy.diagnosticsFetch(url);
 	}
 	listSessions(): Promise<IAgentSessionMetadata[]> {
-		return this._proxy.listSessions();
+		if (!this._didStartInitialSessionList) {
+			this._didStartInitialSessionList = true;
+			mark('code/willListAgentHostSessions');
+		}
+		return this._proxy.listSessions().then(sessions => {
+			if (!this._didCompleteInitialSessionList) {
+				this._didCompleteInitialSessionList = true;
+				mark('code/didListAgentHostSessions');
+			}
+			return sessions;
+		});
 	}
 	createSession(config?: IAgentCreateSessionConfig): Promise<URI> {
 		const promise = this._proxy.createSession(config);
