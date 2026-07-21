@@ -3203,7 +3203,6 @@ class SessionDiscoveredEntry extends Disposable {
 	private _directories: readonly IDiscoveredDirectory[] | undefined;
 	private _settled: Promise<void>;
 	private readonly _fileService: IFileService;
-
 	constructor(
 		workingDirectories: URI[],
 		userHome: URI,
@@ -3212,7 +3211,11 @@ class SessionDiscoveredEntry extends Disposable {
 		instantiationService: IInstantiationService,
 	) {
 		super();
-		this._discoveries = workingDirectories.map(dir => this._register(instantiationService.createInstance(SessionCustomizationDiscovery, dir, userHome)));
+		const primaryWorkingDirectory = workingDirectories.length > 0 ? workingDirectories[0] : undefined;
+		// In Copilot Agent, hooks are only supported in the primary working directory.
+		// Hence ignore hooks from other working directories.
+		const skipSearchingForHooks = (dir: URI) => !isEqual(dir, primaryWorkingDirectory);
+		this._discoveries = workingDirectories.map(dir => this._register(instantiationService.createInstance(SessionCustomizationDiscovery, dir, userHome, { skipWorkspaceHooks: skipSearchingForHooks(dir) })));
 		this._fileService = instantiationService.invokeFunction(accessor => accessor.get(IFileService));
 		this._settled = this._queueRefresh(false, 0);
 		this._discoveries.forEach(discovery => {
