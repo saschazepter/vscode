@@ -67,7 +67,8 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 					localize('workbench.editor.showTabs.none', "The editor title area is not displayed."),
 				],
 				'description': localize('showEditorTabs', "Controls whether opened editors should show as individual tabs, one single large tab or if the title area should not be shown."),
-				'default': 'multiple'
+				'default': 'multiple',
+				agentsWindow: { default: 'multiple', readOnly: true }
 			},
 			[LayoutSettings.EDITOR_ACTIONS_LOCATION]: {
 				'type': 'string',
@@ -99,7 +100,8 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 			'workbench.editor.highlightModifiedTabs': {
 				'type': 'boolean',
 				'markdownDescription': localize({ comment: ['{0}, {1} will be a setting name rendered as a link'], key: 'highlightModifiedTabs' }, "Controls whether a top border is drawn on tabs for editors that have unsaved changes. This value is ignored when {0} is not set to {1}.", '`#workbench.editor.showTabs#`', `multiple`),
-				'default': false
+				'default': false,
+				agentsWindow: { default: false, readOnly: true }
 			},
 			'workbench.editor.decorations.badges': {
 				'type': 'boolean',
@@ -248,7 +250,8 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 				'type': 'string',
 				'enum': ['default', 'compact'],
 				'default': 'default',
-				'markdownDescription': localize({ comment: ['{0}, {1} will be a setting name rendered as a link'], key: 'workbench.editor.tabHeight' }, "Controls the height of editor tabs. Also applies to the title control bar when {0} is not set to {1}.", '`#workbench.editor.showTabs#`', '`multiple`')
+				'markdownDescription': localize({ comment: ['{0}, {1} will be a setting name rendered as a link'], key: 'workbench.editor.tabHeight' }, "Controls the height of editor tabs. Also applies to the title control bar when {0} is not set to {1}.", '`#workbench.editor.showTabs#`', '`multiple`'),
+				agentsWindow: { default: 'default', readOnly: true }
 			},
 			'workbench.editor.pinnedTabSizing': {
 				'type': 'string',

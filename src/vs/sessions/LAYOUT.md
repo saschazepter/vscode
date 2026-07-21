@@ -241,6 +241,8 @@ The entire third-pane redesign is gated behind the experimental setting `session
 
 ## 6. Feature Support
 
+The Agents Window uses the standard multi-tab control and supports familiar tab customizations including wrapping, sizing, pinned-tab layout, scrollbar behavior, labels, icons, indices, and decorations. Three settings are fixed because they conflict with the Agents Window tab strip: `workbench.editor.showTabs` is always `multiple`, `window.density.editorTabHeight` is always `default`, and `workbench.editor.highlightModifiedTabs` is disabled because the custom tab style intentionally omits modified borders.
+
 | Feature | Supported | Notes |
 |---------|-----------|-------|
 | Sidebar / Aux Bar / Panel toggle | ✅ | Fixed positions (sidebar: left, panel: bottom) |

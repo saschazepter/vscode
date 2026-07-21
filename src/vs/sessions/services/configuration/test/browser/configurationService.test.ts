@@ -28,6 +28,7 @@ import { getWorkspaceIdentifier } from '../../../../../platform/workspaces/commo
 import { Event } from '../../../../../base/common/event.js';
 import { IUserDataProfileService } from '../../../../../workbench/services/userDataProfile/common/userDataProfile.js';
 import { IConfigurationCache } from '../../../../../workbench/services/configuration/common/configuration.js';
+import '../../../../../workbench/browser/workbench.contribution.js';
 
 const ROOT = URI.file('tests').with({ scheme: 'vscode-tests' });
 
@@ -529,6 +530,37 @@ suite('Sessions ConfigurationService', () => {
 			/read-only in the Agents window/
 		);
 	}));
+
+	test('editor tab settings use fixed Agents Window defaults', () => {
+		const properties = configurationRegistry.getConfigurationProperties();
+		assert.deepStrictEqual({
+			showTabs: {
+				value: testObject.getValue('workbench.editor.showTabs'),
+				override: properties['workbench.editor.showTabs'].agentsWindow
+			},
+			highlightModifiedTabs: {
+				value: testObject.getValue('workbench.editor.highlightModifiedTabs'),
+				override: properties['workbench.editor.highlightModifiedTabs'].agentsWindow
+			},
+			editorTabHeight: {
+				value: testObject.getValue('window.density.editorTabHeight'),
+				override: properties['window.density.editorTabHeight'].agentsWindow
+			}
+		}, {
+			showTabs: {
+				value: 'multiple',
+				override: { default: 'multiple', readOnly: true }
+			},
+			highlightModifiedTabs: {
+				value: false,
+				override: { default: false, readOnly: true }
+			},
+			editorTabHeight: {
+				value: 'default',
+				override: { default: 'default', readOnly: true }
+			}
+		});
+	});
 
 	// #endregion
 });
