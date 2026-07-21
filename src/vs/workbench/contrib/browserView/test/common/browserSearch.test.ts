@@ -125,6 +125,18 @@ suite('BrowserSearch - resolveAddressBarInput', () => {
 		assert.deepStrictEqual(actual, inputs.map(() => 'unknown'));
 	});
 
+	test('whitespace in the userinfo with an IP-literal host is still a URL', () => {
+		// Chromium's AutocompleteInput::Parse classifies IPv4/IPv6 hosts as URL
+		// before it applies the "space in the username" heuristic, so these stay
+		// URLs even though a domain host with a space in the userinfo is `unknown`.
+		const inputs = [
+			'user name@127.0.0.1',
+			'user name@[::1]',
+		];
+		const actual = inputs.map((i) => resolveAddressBarInputType(i));
+		assert.deepStrictEqual(actual, inputs.map(() => 'url'));
+	});
+
 	test('ambiguous inputs return unknown', () => {
 		const inputs = [
 			'cats', // single word

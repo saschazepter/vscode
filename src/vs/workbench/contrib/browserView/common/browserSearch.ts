@@ -383,6 +383,11 @@ export function resolveAddressBarInputType(rawInput: string): AddressBarInputKin
 	// (Whitespace in the host is already rejected above via HOST_CHARS_REGEX;
 	// whitespace in the path/query/fragment is allowed and percent-encoded when
 	// navigating.)
+	//
+	// This is intentionally placed *after* the IPv4/IPv6 host returns above:
+	// Chromium's `AutocompleteInput::Parse` classifies IP-literal hosts as URL
+	// (lines 440/442) before it applies the username-space heuristic (line 521),
+	// so `user name@127.0.0.1` and `user name@[::1]` stay URLs.
 	if (userinfo !== undefined && /\s/.test(userinfo) && !isHttpScheme) {
 		return 'unknown';
 	}
