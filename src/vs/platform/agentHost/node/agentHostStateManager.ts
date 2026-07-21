@@ -361,7 +361,7 @@ export class AgentHostStateManager extends Disposable {
 			&& a.status === b.status
 			&& a.activity === b.activity
 			&& a.project === b.project
-			&& a.workingDirectories?.[0] === b.workingDirectories?.[0]
+			&& a.workingDirectories === b.workingDirectories
 			&& a.annotations === b.annotations
 			&& a._meta === b._meta;
 	}

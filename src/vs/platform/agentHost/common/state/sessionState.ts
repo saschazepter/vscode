@@ -659,12 +659,13 @@ export function createDefaultChatSummary(session: SessionSummary, chatUri: Proto
 		origin: { kind: ChatOriginKind.User },
 	};
 	if (session.activity !== undefined) { summary.activity = session.activity; }
-	// `workingDirectory` is deliberately NOT copied: per the protocol it is a
-	// per-chat OVERRIDE and, when absent, the chat inherits the session's
-	// working directory (see `mergeSessionWithDefaultChat`). Seeding it here
-	// would denormalize the session default onto every chat as a fake override,
-	// which then goes stale when the session's working directory is resolved
-	// later (e.g. a worktree resolved at materialization).
+	// `workingDirectories` is deliberately NOT copied: per the protocol it is a
+	// per-chat SUBSET override and, when absent, the chat inherits the session's
+	// full set of working directories (see `mergeSessionWithDefaultChat`).
+	// Seeding it here would denormalize the session default onto every chat as a
+	// fake override, which then goes stale when the session's working
+	// directories are resolved later (e.g. a worktree resolved at
+	// materialization).
 	return summary;
 }
 
@@ -877,17 +878,18 @@ export function isAhpChatChannel(uri: string): boolean {
 
 /**
  * A single chat's effective session context: the shared {@link SessionState}
- * (working directory, active clients, config, customizations/MCP scope, …)
+ * (working directories, active clients, config, customizations/MCP scope, …)
  * resolved for one chat and merged with that chat's conversation contents.
  *
  * The protocol moved turns and pending state off the session and onto a
- * per-chat channel, and lets a chat override session defaults (e.g.
- * {@link ChatState.workingDirectory}). This composite recombines the session
- * with one of its chats — default or peer — so consumers read the chat's
- * effective context and conversation through one object without walking back to
- * the session to re-derive shared state. The inherited
- * {@link SessionState.workingDirectory} carries the chat's *effective* working
- * directory (its own override when present, else the session default).
+ * per-chat channel, and lets a chat override the session's working directories
+ * with a subset (e.g. {@link ChatState.workingDirectories}). This composite
+ * recombines the session with one of its chats — default or peer — so consumers
+ * read the chat's effective context and conversation through one object without
+ * walking back to the session to re-derive shared state. The inherited
+ * {@link SessionState.workingDirectories} carries the chat's *effective*
+ * working directories (its own subset override when present, else the session's
+ * full set).
  */
 export interface ISessionWithDefaultChat extends SessionState {
 	/** Completed turns of this chat. */
@@ -905,7 +907,7 @@ export interface ISessionWithDefaultChat extends SessionState {
 /**
  * Projects a {@link SessionState} and one of its {@link ChatState | chats}
  * (default or peer) into that chat's {@link ISessionWithDefaultChat | effective
- * session context}. Per-chat overrides (currently the working directory) are
+ * session context}. Per-chat overrides (currently the working directories) are
  * layered over the session defaults, and the conversation fields are taken from
  * the chat. When the chat state is absent (e.g. not yet hydrated) the
  * conversation fields default to empty and the session defaults apply.
