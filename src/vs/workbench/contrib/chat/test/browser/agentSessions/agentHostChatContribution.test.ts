@@ -2544,7 +2544,7 @@ suite('AgentHostChatContribution', () => {
 					status: SessionStatus.Idle,
 					createdAt: new Date(1000).toISOString(),
 					modifiedAt: new Date(2000).toISOString(),
-					workingDirectory: URI.file('/other/workspace').toString(),
+					workingDirectories: [URI.file('/other/workspace').toString()],
 				},
 			} as INotification);
 
@@ -2561,7 +2561,7 @@ suite('AgentHostChatContribution', () => {
 					status: SessionStatus.Idle,
 					createdAt: new Date(1000).toISOString(),
 					modifiedAt: new Date(2000).toISOString(),
-					workingDirectory: URI.file('/workspace/root/sub').toString(),
+					workingDirectories: [URI.file('/workspace/root/sub').toString()],
 				},
 			} as INotification);
 
