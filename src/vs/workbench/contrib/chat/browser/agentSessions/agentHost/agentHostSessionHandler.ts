@@ -2429,7 +2429,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		const initial = part$.get().toolCall;
 		const contributor = initial.contributor;
 		if (contributor?.kind === ToolCallContributorKind.Client && contributor.clientId === this._config.connection.clientId) {
-			this._setupClientToolCall(initial, part$, store, opts);
+			this._setupClientToolCall(initial, part$, store, opts, subagentContext);
 		} else if (contributor?.kind === ToolCallContributorKind.Client) {
 			this._setupOtherClientToolCall(initial, part$, store, opts);
 		} else {
@@ -2522,81 +2522,18 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		if (adopted) {
 			invocation = adopted;
 		} else if (initial.status === ToolCallStatus.Streaming) {
-			invocation = toolCallStateToStreamingInvocation(initial, subAgentInvocationId);
+			invocation = toolCallStateToStreamingInvocation(initial, subAgentInvocationId, opts.backendSession, this._config.connectionAuthority, opts.sessionResource.authority);
 			opts.sink([invocation]);
 		} else {
 			invocation = toolCallStateToInvocation(initial, subAgentInvocationId, opts.backendSession, this._config.connectionAuthority, opts.sessionResource.authority);
 			opts.sink([invocation]);
 		}
 
-		const tryObserveSubagent = (tc: ToolCallState) => {
-			if (subagentContext.observedToolIds.has(toolCallId)) {
-				return;
-			}
-			// Only observe a tool once it has started running (or finished).
-			if (tc.status !== ToolCallStatus.Running && tc.status !== ToolCallStatus.Completed) {
-				return;
-			}
-			// Observe as a subagent if the tool is a known subagent-spawning
-			// tool (from `_meta.toolKind`/name) or already carries a Subagent
-			// content block (older restored snapshots). We deliberately do NOT
-			// *require* the content block: the child chat URI is derived from
-			// the tool call id alone (see `_observeSubagentSession`), so the
-			// block is not needed to subscribe. This keeps observation robust
-			// even when the discovery content block never reaches this chat —
-			// e.g. an agent host that does not route it to the immediate
-			// parent chat of a nested subagent, or a restored snapshot that
-			// predates it. Gating on the block would otherwise leave such a
-			// nested subagent — and any client tools it calls — unobserved,
-			// hanging the session.
-			if (!isSubagentTool(tc) && !getToolSubagentContent(tc)) {
-				return;
-			}
-			subagentContext.observedToolIds.add(toolCallId);
-			if (invocation.toolSpecificData?.kind === 'subagent') {
-				invocation.toolSpecificData.isActive = true;
-				invocation.notifyToolSpecificDataChanged();
-			}
-
-			// Track this subagent's own running credit (AIC) total so it can be
-			// surfaced on the subagent tool's hover and persisted via its
-			// `toolSpecificData`. The parent turn's reported cost already
-			// includes this subagent (the agent host folds subagent usage into
-			// the parent turn), so it is NOT re-added to the parent here.
-			const perInvocationCredits = observableValue<number>('subagentInvocationCredits', 0);
-			store.add(autorun(reader => {
-				const total = perInvocationCredits.read(reader);
-				if (total > 0 && invocation.toolSpecificData?.kind === 'subagent' && invocation.toolSpecificData.credits !== total) {
-					invocation.toolSpecificData.credits = total;
-					invocation.notifyToolSpecificDataChanged();
-				}
-			}));
-
-			// Track the model this subagent ran on so it can be surfaced on
-			// the subagent tool's hover (mirrors the local subagent path).
-			const perInvocationModel = observableValue<string | undefined>('subagentInvocationModel', undefined);
-			store.add(autorun(reader => {
-				const modelName = perInvocationModel.read(reader);
-				if (modelName && invocation.toolSpecificData?.kind === 'subagent' && invocation.toolSpecificData.modelName !== modelName) {
-					invocation.toolSpecificData.modelName = modelName;
-					invocation.notifyToolSpecificDataChanged();
-				}
-			}));
-
-			// Group descendant tool calls under the root subagent so the
-			// renderer nests the whole tree under one container; for the
-			// top-level subagent the root is this tool call itself.
-			const rootInvocationId = subAgentInvocationId ?? toolCallId;
-			const childChatUri = (invocation.toolSpecificData?.kind === 'subagent' && invocation.toolSpecificData.chatResource)
-				|| buildSubagentChatUri(opts.backendSession.toString(), toolCallId);
-			this._observeSubagentSession(opts.sessionResource, opts.backendSession, toolCallId, childChatUri, rootInvocationId, invocation, opts.sink, store, subagentContext, perInvocationCredits, perInvocationModel);
-		};
-
 		// Hook up a tool first observed after it already entered confirmation.
 		if (initial.status === ToolCallStatus.PendingConfirmation && !IChatToolInvocation.isComplete(invocation)) {
 			this._awaitToolConfirmation(invocation, toolCallId, opts.backendSession, opts.turnId, opts.cancellationToken, () => confirmationOptions, opts.chatURI);
 		}
-		tryObserveSubagent(initial);
+		this._tryObserveSubagentToolCall(initial, invocation, store, opts, subagentContext);
 
 		// Reuse the invocation whenever a tool enters confirmation to avoid duplicate cards.
 		let previousStatus: ToolCallStatus | undefined = initial.status;
@@ -2643,7 +2580,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				updateRunningToolSpecificData(invocation, tc, opts.backendSession, this._config.connectionAuthority);
 			}
 
-			tryObserveSubagent(tc);
+			this._tryObserveSubagentToolCall(tc, invocation, store, opts, subagentContext);
 
 			if ((status === ToolCallStatus.Completed || status === ToolCallStatus.Cancelled) && !IChatToolInvocation.isComplete(invocation)) {
 				// Revive terminal before finalizing — handles the case where
@@ -2681,6 +2618,63 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	}
 
 	/**
+	 * Observes the child chat for any subagent-spawning tool, including client-provided delegated tasks.
+	 */
+	private _tryObserveSubagentToolCall(
+		toolCall: ToolCallState,
+		invocation: ChatToolInvocation,
+		store: DisposableStore,
+		opts: IObserveTurnOptions,
+		subagentContext: ISubagentContext,
+	): void {
+		const toolCallId = toolCall.toolCallId;
+		if (subagentContext.observedToolIds.has(toolCallId)) {
+			return;
+		}
+		if (toolCall.status !== ToolCallStatus.Running && toolCall.status !== ToolCallStatus.Completed) {
+			return;
+		}
+		if (!isSubagentTool(toolCall) && !getToolSubagentContent(toolCall)) {
+			return;
+		}
+
+		if (invocation.toolSpecificData?.kind !== 'subagent') {
+			const prepared = toolCallStateToPreparedInvocation(toolCall, opts.backendSession, this._config.connectionAuthority, opts.sessionResource.authority);
+			if (prepared.toolSpecificData?.kind !== 'subagent') {
+				return;
+			}
+			invocation.toolSpecificData = prepared.toolSpecificData;
+		}
+
+		subagentContext.observedToolIds.add(toolCallId);
+		invocation.toolSpecificData.isActive = true;
+		invocation.notifyToolSpecificDataChanged();
+
+		const perInvocationCredits = observableValue<number>('subagentInvocationCredits', 0);
+		store.add(autorun(reader => {
+			const total = perInvocationCredits.read(reader);
+			if (total > 0 && invocation.toolSpecificData?.kind === 'subagent' && invocation.toolSpecificData.credits !== total) {
+				invocation.toolSpecificData.credits = total;
+				invocation.notifyToolSpecificDataChanged();
+			}
+		}));
+
+		const perInvocationModel = observableValue<string | undefined>('subagentInvocationModel', undefined);
+		store.add(autorun(reader => {
+			const modelName = perInvocationModel.read(reader);
+			if (modelName && invocation.toolSpecificData?.kind === 'subagent' && invocation.toolSpecificData.modelName !== modelName) {
+				invocation.toolSpecificData.modelName = modelName;
+				invocation.notifyToolSpecificDataChanged();
+			}
+		}));
+
+		const rootInvocationId = opts.subAgentInvocationId ?? toolCallId;
+		const childChatUri = invocation.toolSpecificData.chatResource
+			|| buildSubagentChatUri(opts.backendSession.toString(), toolCallId);
+		this._observeSubagentSession(opts.sessionResource, opts.backendSession, toolCallId, childChatUri, rootInvocationId, invocation, opts.sink, store, subagentContext, perInvocationCredits, perInvocationModel);
+	}
+
+	/**
 	 * Per-call setup for a client-provided tool. Eagerly creates a streaming
 	 * {@link ChatToolInvocation} so the UI has a handle, then invokes the
 	 * tool once parameters are available. The inner autorun on `part$` is
@@ -2693,6 +2687,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		part$: IObservable<ToolCallResponsePart>,
 		store: DisposableStore,
 		opts: IObserveTurnOptions,
+		subagentContext: ISubagentContext,
 	): void {
 		const toolCallId = initial.toolCallId;
 		const toolName = initial.toolName;
@@ -2743,6 +2738,14 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			}, opts.chatURI);
 			return;
 		}
+
+		if (isSubagentTool(initial)) {
+			const prepared = toolCallStateToPreparedInvocation(initial, opts.backendSession, this._config.connectionAuthority, opts.sessionResource.authority);
+			if (prepared.toolSpecificData?.kind === 'subagent') {
+				invocation.toolSpecificData = prepared.toolSpecificData;
+			}
+		}
+		this._tryObserveSubagentToolCall(initial, invocation, store, opts, subagentContext);
 
 		const cts = new CancellationTokenSource();
 		store.add(toDisposable(() => cts.dispose(true)));
@@ -2830,6 +2833,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		store.add(autorun(reader => {
 			const tc = part$.read(reader).toolCall;
 			const state = invocation.state.read(reader);
+			this._tryObserveSubagentToolCall(tc, invocation, store, opts, subagentContext);
 			if (state.type === IChatToolInvocation.StateKind.WaitingForConfirmation && shouldAutoApproveClientToolCall(tc)) {
 				state.confirm({ type: ToolConfirmKind.Setting, id: SessionConfigKey.AutoApprove });
 			}
