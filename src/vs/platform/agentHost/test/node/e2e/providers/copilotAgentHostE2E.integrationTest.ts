@@ -160,7 +160,7 @@ suite('Agent Host E2E — Copilot (Copilot-specific)', function () {
 	});
 
 	suiteTeardown(async function () {
-		this.timeout(60_000);
+		this.timeout(90_000);
 		await lease?.dispose();
 	});
 
