@@ -156,17 +156,8 @@ export interface ICopilotConfigSlashCommandState {
 }
 
 /**
- * Decides whether a single config-action option should be offered given the
- * session's current config `state`. Keep-text (prompt/objective) forms are
- * always offered; pure toggles are hidden when applying them would be a no-op
- * on the axis they target:
- *
- *  - `autoApprove` axis: the bypass forms (`/yolo`, `/yolo on`, ...) are hidden
- *    while already bypassing; the `off` form is hidden while not bypassing.
- *  - `mode` axis: `/autopilot on` is hidden while already in autopilot;
- *    `/autopilot off` is only offered while in autopilot.
- *
- * When `state` is undefined (current values unknown) every option is offered.
+ * Returns whether the option should be offered for the current session state.
+ * Unknown state and keep-text options are always offered.
  */
 function shouldOfferOption(option: IConfigSlashOption, state: ICopilotConfigSlashCommandState | undefined): boolean {
 	// Keep-text forms carry a typed prompt/objective and are always relevant.
