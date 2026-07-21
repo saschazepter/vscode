@@ -7,7 +7,7 @@ import assert from 'assert';
 import { Color } from '../../../../../base/common/color.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { Registry } from '../../../../../platform/registry/common/platform.js';
-import { ColorIdentifier, Extensions as ThemingExtensions, IColorRegistry } from '../../../../../platform/theme/common/colorRegistry.js';
+import { ColorIdentifier, Extensions as ThemingExtensions, IColorRegistry, isColorDefaults } from '../../../../../platform/theme/common/colorRegistry.js';
 import { ColorScheme } from '../../../../../platform/theme/common/theme.js';
 import { IColorTheme } from '../../../../../platform/theme/common/themeService.js';
 import '../../browser/suggestWidget.js';
@@ -42,6 +42,13 @@ suite('SuggestWidgetColors', () => {
 			}
 			return firstColor.equals(secondColor);
 		};
+		const defaultsReferenceMatch = (id: ColorIdentifier, referencedId: ColorIdentifier) => {
+			const contribution = colorRegistry.getColors().find(color => color.id === id);
+			if (!contribution || !isColorDefaults(contribution.defaults)) {
+				return false;
+			}
+			return contribution.defaults.dark === referencedId && contribution.defaults.light === referencedId;
+		};
 
 		assert.deepStrictEqual({
 			highContrast: [ColorScheme.HIGH_CONTRAST_DARK, ColorScheme.HIGH_CONTRAST_LIGHT].map(type => ({
@@ -53,7 +60,7 @@ suite('SuggestWidgetColors', () => {
 			normal: [ColorScheme.DARK, ColorScheme.LIGHT].map(type => ({
 				backgroundUsesQuickInput: colorsMatch(type, 'editorSuggestWidget.selectedBackground', 'quickInputList.focusBackground'),
 				foregroundUsesQuickInput: colorsMatch(type, 'editorSuggestWidget.selectedForeground', 'quickInputList.focusForeground'),
-				iconUsesQuickInput: colorsMatch(type, 'editorSuggestWidget.selectedIconForeground', 'quickInputList.focusIconForeground'),
+				iconUsesQuickInput: defaultsReferenceMatch('editorSuggestWidget.selectedIconForeground', 'quickInputList.focusIconForeground'),
 				highlightUsesListFocus: colorsMatch(type, 'editorSuggestWidget.focusHighlightForeground', 'list.focusHighlightForeground')
 			}))
 		}, {
