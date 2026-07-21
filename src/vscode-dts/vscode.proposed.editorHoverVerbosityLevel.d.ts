@@ -5,21 +5,18 @@
 
 declare module 'vscode' {
 
+	export interface HoverOptions {
+		canIncreaseVerbosity?: boolean;
+		canDecreaseVerbosity?: boolean;
+	}
+
 	/**
 	 * A hover represents additional information for a symbol or word. Hovers are
 	 * rendered in a tooltip-like widget.
 	 */
-	export class VerboseHover extends Hover {
+	export class Hover2 extends Hover {
 
-		/**
-		 * Can increase the verbosity of the hover
-		 */
-		canIncreaseVerbosity?: boolean;
-
-		/**
-		 * Can decrease the verbosity of the hover
-		 */
-		canDecreaseVerbosity?: boolean;
+		options?: HoverOptions;
 
 		/**
 		 * Creates a new hover object.
@@ -27,31 +24,15 @@ declare module 'vscode' {
 		 * @param contents The contents of the hover.
 		 * @param range The range to which the hover applies.
 		 */
-		constructor(contents: MarkdownString | MarkedString | Array<MarkdownString | MarkedString>, range?: Range, canIncreaseVerbosity?: boolean, canDecreaseVerbosity?: boolean);
+		constructor(contents: MarkdownString | MarkedString | Array<MarkdownString | MarkedString>, range?: Range, options?: HoverOptions);
 	}
 
 	export interface HoverContext {
 
-		/**
-		 * The delta by which to increase/decrease the hover verbosity level
-		 */
-		readonly verbosityDelta?: number;
+		// We think this should be required, but to prevent breaking changes, we're making it optional for now.
+		// undefined for initially show, +/- this gets set
+		readonly verbosityDepth?: number; // defaults to 0
 
-		/**
-		 * The previous hover sent for the same position
-		 */
-		readonly previousHover?: Hover;
-	}
-
-	export enum HoverVerbosityAction {
-		/**
-		 * Increase the hover verbosity
-		 */
-		Increase = 0,
-		/**
-		 * Decrease the hover verbosity
-		 */
-		Decrease = 1
 	}
 
 	/**

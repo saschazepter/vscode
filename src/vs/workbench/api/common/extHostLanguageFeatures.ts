@@ -274,19 +274,14 @@ class HoverAdapter {
 		private readonly _provider: vscode.HoverProvider,
 	) { }
 
-	async provideHover(resource: URI, position: IPosition, context: languages.HoverContext<{ id: number }> | undefined, token: CancellationToken): Promise<extHostProtocol.HoverWithId | undefined> {
+	async provideHover(resource: URI, position: IPosition, context: languages.HoverContext | undefined, token: CancellationToken): Promise<extHostProtocol.HoverWithId | undefined> {
 
 		const doc = this._documents.getDocument(resource);
 		const pos = typeConvert.Position.to(position);
 
 		let value: vscode.Hover | null | undefined;
 		if (context && context.verbosityRequest) {
-			const previousHoverId = context.verbosityRequest.previousHover.id;
-			const previousHover = this._hoverMap.get(previousHoverId);
-			if (!previousHover) {
-				throw new Error(`Hover with id ${previousHoverId} not found`);
-			}
-			const hoverContext: vscode.HoverContext = { verbosityDelta: context.verbosityRequest.verbosityDelta, previousHover };
+			const hoverContext: vscode.HoverContext = { verbosityDepth: context.verbosityRequest.verbosityDepth };
 			value = await this._provider.provideHover(doc, pos, token, hoverContext);
 		} else {
 			value = await this._provider.provideHover(doc, pos, token);
@@ -2354,7 +2349,7 @@ export class ExtHostLanguageFeatures extends CoreDisposable implements extHostPr
 		return this._createDisposable(handle);
 	}
 
-	$provideHover(handle: number, resource: UriComponents, position: IPosition, context: languages.HoverContext<{ id: number }> | undefined, token: CancellationToken,): Promise<extHostProtocol.HoverWithId | undefined> {
+	$provideHover(handle: number, resource: UriComponents, position: IPosition, context: languages.HoverContext | undefined, token: CancellationToken,): Promise<extHostProtocol.HoverWithId | undefined> {
 		return this._withAdapter(handle, HoverAdapter, adapter => adapter.provideHover(URI.revive(resource), position, context, token), undefined, token);
 	}
 

@@ -200,7 +200,7 @@ export class Hover {
 }
 
 @es5ClassCompat
-export class VerboseHover extends Hover {
+export class Hover2 extends Hover {
 
 	public canIncreaseVerbosity: boolean | undefined;
 	public canDecreaseVerbosity: boolean | undefined;

@@ -272,11 +272,10 @@ export class MainThreadLanguageFeatures extends Disposable implements MainThread
 		});
 		*/
 		this._registrations.set(handle, this._languageFeaturesService.hoverProvider.register(selector, {
-			provideHover: async (model: ITextModel, position: EditorPosition, token: CancellationToken, context?: languages.HoverContext<HoverWithId>): Promise<HoverWithId | undefined> => {
-				const serializedContext: languages.HoverContext<{ id: number }> = {
+			provideHover: async (model: ITextModel, position: EditorPosition, token: CancellationToken, context?: languages.HoverContext): Promise<HoverWithId | undefined> => {
+				const serializedContext: languages.HoverContext = {
 					verbosityRequest: context?.verbosityRequest ? {
-						verbosityDelta: context.verbosityRequest.verbosityDelta,
-						previousHover: { id: context.verbosityRequest.previousHover.id }
+						verbosityDepth: context.verbosityRequest.verbosityDepth,
 					} : undefined,
 				};
 				const hover = await this._proxy.$provideHover(handle, model.uri, position, serializedContext, token);
