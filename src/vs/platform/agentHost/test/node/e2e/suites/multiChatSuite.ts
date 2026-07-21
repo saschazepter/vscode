@@ -4,22 +4,25 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
-import { mkdtempSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from '../../../../../../base/common/path.js';
 import { URI } from '../../../../../../base/common/uri.js';
-import { ActionType } from '../../../../common/state/sessionActions.js';
+import { ActionType, type ChatErrorAction, type ChatToolCallReadyAction } from '../../../../common/state/sessionActions.js';
 import { CompletionItemKind, type CompletionsResult, type ListSessionsResult, type SubscribeResult } from '../../../../common/state/protocol/commands.js';
 import {
 	buildChatUri,
 	buildDefaultChatUri,
 	isAhpChatChannel,
+	MessageAttachmentKind,
 	MessageKind,
 	parseRequiredSessionUriFromChatUri,
 	ResponsePartKind,
 	ROOT_STATE_URI,
 	SessionStatus,
+	ToolCallConfirmationReason,
 	type ChatState,
+	type MessageAttachment,
 	type RootState,
 	type SessionState,
 } from '../../../../common/state/sessionState.js';
@@ -87,8 +90,8 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		}
 	}
 
-	function providerTest(title: string, run: Mocha.AsyncFunc): void {
-		(config.supportsMultipleChats ? test : test.skip)(title, function () {
+	function providerTest(title: string, run: Mocha.AsyncFunc, enabled = config.supportsMultipleChats): void {
+		(enabled ? test : test.skip)(title, function () {
 			this.timeout(180_000);
 			return run.call(this);
 		});
@@ -139,7 +142,13 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		});
 	}
 
-	async function driveTurn(chatUri: string, turnId: string, text: string, clientSeq: number): Promise<string> {
+	async function driveTurn(
+		chatUri: string,
+		turnId: string,
+		text: string,
+		clientSeq: number,
+		attachments?: readonly MessageAttachment[],
+	): Promise<string> {
 		context.client.clearReceived();
 		context.client.dispatch({
 			channel: chatUri,
@@ -148,15 +157,45 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 				type: ActionType.ChatTurnStarted,
 				turnId,
 				startedAt: '2025-01-01T00:00:00.000Z',
-				message: { text, origin: { kind: MessageKind.User } },
+				message: { text, origin: { kind: MessageKind.User }, ...(attachments ? { attachments: [...attachments] } : {}) },
 			},
 		});
-		await context.client.waitForNotification(n =>
-			isActionNotification(n, 'chat/turnComplete')
-			&& getActionEnvelope(n).channel === chatUri
-			&& (getActionEnvelope(n).action as { turnId: string }).turnId === turnId,
-			90_000,
-		);
+		const seen = new Set<object>();
+		let nextClientSeq = clientSeq + 1;
+		while (true) {
+			const notification = await context.client.waitForNotification(n => {
+				if (seen.has(n as object)
+					|| (!isActionNotification(n, 'chat/toolCallReady')
+						&& !isActionNotification(n, 'chat/turnComplete')
+						&& !isActionNotification(n, 'chat/error'))
+				) {
+					return false;
+				}
+				return getActionEnvelope(n).channel === chatUri;
+			}, 90_000);
+			seen.add(notification as object);
+			if (isActionNotification(notification, 'chat/error')) {
+				const action = getActionEnvelope(notification).action as ChatErrorAction;
+				throw new Error(`Peer chat error during ${turnId}: ${JSON.stringify(action.error)}`);
+			}
+			if (isActionNotification(notification, 'chat/turnComplete')) {
+				break;
+			}
+			const action = getActionEnvelope(notification).action as ChatToolCallReadyAction;
+			if (!action.confirmed) {
+				context.client.dispatch({
+					channel: chatUri,
+					clientSeq: nextClientSeq++,
+					action: {
+						type: ActionType.ChatToolCallConfirmed,
+						turnId,
+						toolCallId: action.toolCallId,
+						approved: true,
+						confirmed: ToolCallConfirmationReason.UserAction,
+					},
+				});
+			}
+		}
 
 		const markdownPartIds = new Set<string>();
 		const pieces: string[] = [];
@@ -417,5 +456,326 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		await context.client.call('disposeChat', { channel: peer }, 30_000);
 
 		assert.strictEqual((await sessionState(sessionUri)).chats.some(chat => chat.resource === peer), false);
+	});
+
+	hostOnlyTest(context, 'peer rename command updates the peer title and records a local turn', async function () {
+		const { sessionUri } = await createSession('local-rename');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+
+		await driveTurn(peer, 'peer-rename', '/rename Renamed Peer', 1);
+
+		const state = await chatState(peer);
+		assert.deepStrictEqual({
+			title: state.title,
+			messages: state.turns.map(turn => turn.message.text),
+		}, {
+			title: 'Renamed Peer',
+			messages: ['/rename Renamed Peer'],
+		});
+	}, config.supportsMultipleChats);
+
+	hostOnlyTest(context, 'empty peer rename command leaves the peer title unchanged', async function () {
+		const { sessionUri } = await createSession('local-empty-rename');
+		const peer = await createPeer(sessionUri, 'peer');
+		await rename(peer, 'Original Peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+
+		await driveTurn(peer, 'peer-empty-rename', '/rename', 2);
+
+		assert.strictEqual((await chatState(peer)).title, 'Original Peer');
+	}, config.supportsMultipleChats);
+
+	hostOnlyTest(context, 'failing peer bang command records a failed terminal tool call', async function () {
+		const { sessionUri } = await createSession('local-bang-failure');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+
+		await driveTurn(peer, 'peer-bang-failure', '!node -e "process.exit(7)"', 1);
+
+		const toolCalls = (await chatState(peer)).turns.flatMap(turn => turn.responseParts)
+			.filter(part => part.kind === ResponsePartKind.ToolCall)
+			.map(part => part.toolCall);
+		assert.ok(toolCalls.some(toolCall => toolCall.status === 'completed' && !toolCall.success));
+	}, config.supportsMultipleChats);
+
+	providerTest('peer chat reads a file from the parent workspace', async function () {
+		const { sessionUri, workspace } = await createSession('read-file');
+		const file = join(workspace, 'peer-note.txt');
+		writeFileSync(file, 'PEER_FILE_VALUE');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+
+		const response = await driveTurn(peer, 'peer-read', `Read the file at ${file} and reply with its exact contents only.`, 1);
+
+		assert.match(response, /PEER_FILE_VALUE/);
+	});
+
+	providerTest('peer chat reads a file from a nested directory', async function () {
+		const { sessionUri, workspace } = await createSession('read-nested-file');
+		mkdirSync(join(workspace, 'nested'));
+		const file = join(workspace, 'nested', 'peer.txt');
+		writeFileSync(file, 'PEER_NESTED_READ');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+
+		const response = await driveTurn(peer, 'peer-read-nested', `Read the file at ${file} and reply with its exact contents only.`, 1);
+
+		assert.match(response, /PEER_NESTED_READ/);
+	});
+
+	providerTest('peer chat creates a file in the parent workspace', async function () {
+		const { sessionUri, workspace } = await createSession('create-file');
+		const file = join(workspace, 'peer-created.txt');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+
+		await driveTurn(peer, 'peer-create', `Create the file at ${file} containing exactly PEER_CREATED.`, 1);
+
+		assert.strictEqual(readFileSync(file, 'utf8'), 'PEER_CREATED');
+	});
+
+	providerTest('peer chat edits an existing workspace file', async function () {
+		const { sessionUri, workspace } = await createSession('edit-file');
+		const file = join(workspace, 'peer-edit.txt');
+		writeFileSync(file, 'BEFORE_PEER');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+
+		await driveTurn(peer, 'peer-edit', `Replace the complete contents of ${file} with AFTER_PEER.`, 1);
+
+		assert.strictEqual(readFileSync(file, 'utf8').trim(), 'AFTER_PEER');
+	});
+
+	providerTest('peer chat creates a file in a nested directory', async function () {
+		const { sessionUri, workspace } = await createSession('nested-create');
+		const file = join(workspace, 'peer-output', 'report.txt');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+
+		await driveTurn(peer, 'peer-nested-create', `Create the file at ${file} containing exactly PEER_NESTED.`, 1);
+
+		assert.strictEqual(readFileSync(file, 'utf8'), 'PEER_NESTED');
+	});
+
+	providerTest('peer chat handles a missing workspace file without an error', async function () {
+		const { sessionUri, workspace } = await createSession('missing-file');
+		const file = join(workspace, 'peer-missing.txt');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+
+		const response = await driveTurn(peer, 'peer-missing', `Try to read ${file}. If it does not exist, reply exactly "missing".`, 1);
+
+		assert.match(response, /missing/i);
+	});
+
+	providerTest('peer chat reads a filename containing spaces', async function () {
+		const { sessionUri, workspace } = await createSession('spaces');
+		const file = join(workspace, 'peer file.txt');
+		writeFileSync(file, 'PEER_SPACED');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+
+		const response = await driveTurn(peer, 'peer-spaces', `Read the file at ${file} and reply with its exact contents only.`, 1);
+
+		assert.match(response, /PEER_SPACED/);
+	});
+
+	providerTest('two peer chats write distinct workspace files', async function () {
+		const { sessionUri, workspace } = await createSession('two-writers');
+		const firstFile = join(workspace, 'first-peer.txt');
+		const secondFile = join(workspace, 'second-peer.txt');
+		const first = await createPeer(sessionUri, 'first');
+		const second = await createPeer(sessionUri, 'second');
+		await context.client.call<SubscribeResult>('subscribe', { channel: first });
+		await context.client.call<SubscribeResult>('subscribe', { channel: second });
+
+		await driveTurn(first, 'first-write', `Create the file at ${firstFile} containing exactly FIRST_PEER.`, 1);
+		await driveTurn(second, 'second-write', `Create the file at ${secondFile} containing exactly SECOND_PEER.`, 10);
+
+		assert.deepStrictEqual({
+			first: readFileSync(firstFile, 'utf8'),
+			second: readFileSync(secondFile, 'utf8'),
+		}, {
+			first: 'FIRST_PEER',
+			second: 'SECOND_PEER',
+		});
+	});
+
+	// Claude's shared SDK process loses its `host` MCP server after the preceding peer-lifecycle sequence.
+	providerTest('fresh peer chat does not inherit default chat context', async function () {
+		const { sessionUri, defaultChatUri } = await createSession('fresh-context');
+		await driveTurn(defaultChatUri, 'default-secret', 'Remember the code word DEFAULTSECRET. Reply exactly "ready".', 1);
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+
+		await driveTurn(peer, 'peer-fresh-context', 'Reply exactly "fresh".', 10);
+		const messages = observedModelMessages(context.observedModelRequestBodies.at(-1) ?? '');
+
+		assert.strictEqual(messages.some(message => message.content.includes('DEFAULTSECRET')), false);
+	}, config.supportsMultipleChats && config.provider !== 'claude');
+
+	providerTest('two peer chats keep independent provider contexts', async function () {
+		const { sessionUri } = await createSession('two-contexts');
+		const first = await createPeer(sessionUri, 'first');
+		const second = await createPeer(sessionUri, 'second');
+		await context.client.call<SubscribeResult>('subscribe', { channel: first });
+		await context.client.call<SubscribeResult>('subscribe', { channel: second });
+		await driveTurn(first, 'first-context', 'Remember the code word ALPHA_PEER. Reply exactly "ready".', 1);
+		await driveTurn(second, 'second-context', 'Remember the code word BETA_PEER. Reply exactly "ready".', 10);
+
+		await driveTurn(first, 'first-followup', 'Reply exactly "first".', 20);
+		const firstMessages = observedModelMessages(context.observedModelRequestBodies.at(-1) ?? '');
+		await driveTurn(second, 'second-followup', 'Reply exactly "second".', 30);
+		const secondMessages = observedModelMessages(context.observedModelRequestBodies.at(-1) ?? '');
+
+		assert.deepStrictEqual({
+			firstHasAlpha: firstMessages.some(message => message.content.includes('ALPHA_PEER')),
+			firstHasBeta: firstMessages.some(message => message.content.includes('BETA_PEER')),
+			secondHasBeta: secondMessages.some(message => message.content.includes('BETA_PEER')),
+			secondHasAlpha: secondMessages.some(message => message.content.includes('ALPHA_PEER')),
+		}, {
+			firstHasAlpha: true,
+			firstHasBeta: false,
+			secondHasBeta: true,
+			secondHasAlpha: false,
+		});
+	});
+
+	providerTest('peer provider context survives unsubscribe and resubscribe', async function () {
+		const { sessionUri } = await createSession('resume-context');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+		await driveTurn(peer, 'peer-resume-1', 'Remember the code word RESUME_PEER. Reply exactly "ready".', 1);
+		context.client.notify('unsubscribe', { channel: peer });
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+
+		await driveTurn(peer, 'peer-resume-2', 'Reply exactly "resumed".', 10);
+		const messages = observedModelMessages(context.observedModelRequestBodies.at(-1) ?? '');
+
+		assert.ok(messages.some(message => message.content.includes('RESUME_PEER')));
+	});
+
+	providerTest('recreated peer chat starts with fresh provider context', async function () {
+		const { sessionUri } = await createSession('reset-context');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+		await driveTurn(peer, 'peer-old-context', 'Remember the code word OLD_PEER. Reply exactly "ready".', 1);
+		await context.client.call('disposeChat', { channel: peer }, 30_000);
+		await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+
+		await driveTurn(peer, 'peer-new-context', 'Reply exactly "new".', 10);
+		const messages = observedModelMessages(context.observedModelRequestBodies.at(-1) ?? '');
+
+		assert.strictEqual(messages.some(message => message.content.includes('OLD_PEER')), false);
+	});
+
+	forkProviderTest('unknown-turn fork does not inherit source provider context', async function () {
+		const { sessionUri, defaultChatUri } = await createSession('unknown-fork-context');
+		await driveTurn(defaultChatUri, 'source-secret', 'Remember the code word SOURCE_SECRET. Reply exactly "ready".', 1);
+		const peer = await createPeer(sessionUri, 'fork', { chat: defaultChatUri, turnId: 'missing-turn' });
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+
+		await driveTurn(peer, 'fresh-fork-turn', 'Reply exactly "fresh".', 10);
+		const messages = observedModelMessages(context.observedModelRequestBodies.at(-1) ?? '');
+
+		assert.strictEqual(messages.some(message => message.content.includes('SOURCE_SECRET')), false);
+	});
+
+	providerTest('peer simple attachment reaches the provider request', async function () {
+		const { sessionUri } = await createSession('simple-attachment');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+		const attachments: MessageAttachment[] = [{
+			type: MessageAttachmentKind.Simple,
+			label: 'peer-note.txt',
+			displayKind: 'document',
+			modelRepresentation: 'PEER_SIMPLE_ATTACHMENT',
+		}];
+
+		await driveTurn(peer, 'peer-simple-attachment', 'Reply exactly "attachment".', 1, attachments);
+
+		assert.ok((context.observedModelRequestBodies.at(-1) ?? '').includes('PEER_SIMPLE_ATTACHMENT'));
+	});
+
+	providerTest('peer simple attachment without a model representation is omitted from the provider request', async function () {
+		const { sessionUri } = await createSession('simple-attachment-omitted');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+		const attachments: MessageAttachment[] = [{
+			type: MessageAttachmentKind.Simple,
+			label: 'PEER_OMITTED_ATTACHMENT',
+		}];
+
+		await driveTurn(peer, 'peer-simple-attachment-omitted', 'Reply exactly "attachment".', 1, attachments);
+
+		assert.strictEqual((context.observedModelRequestBodies.at(-1) ?? '').includes('PEER_OMITTED_ATTACHMENT'), false);
+	});
+
+	providerTest('peer multiple simple attachments reach the provider request', async function () {
+		const { sessionUri } = await createSession('multiple-attachments');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+		const attachments: MessageAttachment[] = [
+			{
+				type: MessageAttachmentKind.Simple,
+				label: 'first',
+				modelRepresentation: 'PEER_FIRST_ATTACHMENT',
+			},
+			{
+				type: MessageAttachmentKind.Simple,
+				label: 'second',
+				modelRepresentation: 'PEER_SECOND_ATTACHMENT',
+			},
+		];
+
+		await driveTurn(peer, 'peer-multiple-attachments', 'Reply exactly "attachments".', 1, attachments);
+
+		const request = context.observedModelRequestBodies.at(-1) ?? '';
+		assert.ok(request.includes('PEER_FIRST_ATTACHMENT') && request.includes('PEER_SECOND_ATTACHMENT'));
+	});
+
+	providerTest('peer resource attachment reaches the provider request', async function () {
+		const { sessionUri, workspace } = await createSession('resource-attachment');
+		const file = join(workspace, 'peer-resource.txt');
+		writeFileSync(file, 'PEER_RESOURCE_ATTACHMENT');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+		const attachments: MessageAttachment[] = [{
+			type: MessageAttachmentKind.Resource,
+			uri: URI.file(file).toString(),
+			label: 'peer-resource.txt',
+			displayKind: 'document',
+		}];
+
+		await driveTurn(peer, 'peer-resource-attachment', 'Reply exactly "attachment".', 1, attachments);
+
+		assert.ok((context.observedModelRequestBodies.at(-1) ?? '').includes('peer-resource.txt'));
+	});
+
+	providerTest('peer resource selection attachment includes its line reference', async function () {
+		const { sessionUri, workspace } = await createSession('resource-selection');
+		const file = join(workspace, 'peer-selection.txt');
+		writeFileSync(file, 'first\nsecond\nthird');
+		const peer = await createPeer(sessionUri, 'peer');
+		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
+		const attachments: MessageAttachment[] = [{
+			type: MessageAttachmentKind.Resource,
+			uri: URI.file(file).toString(),
+			label: 'peer-selection.txt',
+			displayKind: 'selection',
+			selection: {
+				range: {
+					start: { line: 1, character: 0 },
+					end: { line: 1, character: 6 },
+				},
+			},
+		}];
+
+		await driveTurn(peer, 'peer-resource-selection', 'Reply exactly "selection".', 1, attachments);
+
+		const request = context.observedModelRequestBodies.at(-1) ?? '';
+		assert.ok(request.includes('peer-selection.txt') && (request.includes('peer-selection.txt:2') || request.includes('(line 2)')));
 	});
 }
