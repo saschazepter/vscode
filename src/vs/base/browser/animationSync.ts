@@ -162,6 +162,7 @@ export function pauseCSSAnimationsWhenHidden(element: HTMLElement, options: IPau
 					state.observer.disconnect();
 					state.visibilityListener.dispose();
 					animationVisibilityObservers.delete(window);
+					disposeUnregisterWindowListenerIfUnused();
 				}
 			});
 		}
@@ -187,4 +188,12 @@ function disposeVisibilityObserverIfEmpty(targetWindow: CodeWindow, state: IAnim
 	state.observer.disconnect();
 	state.visibilityListener.dispose();
 	animationVisibilityObservers.delete(targetWindow);
+	disposeUnregisterWindowListenerIfUnused();
+}
+
+function disposeUnregisterWindowListenerIfUnused(): void {
+	if (animationVisibilityObservers.size === 0) {
+		unregisterWindowListener?.dispose();
+		unregisterWindowListener = undefined;
+	}
 }

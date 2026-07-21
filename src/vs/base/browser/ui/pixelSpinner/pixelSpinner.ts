@@ -5,6 +5,7 @@
 
 import { h } from '../../dom.js';
 import { pauseCSSAnimationsWhenHidden } from '../../animationSync.js';
+import { IDisposable } from '../../../common/lifecycle.js';
 import './pixelSpinner.css';
 
 export interface IPixelSpinnerOptions {
@@ -25,6 +26,10 @@ export interface IPixelSpinnerOptions {
 	readonly variant?: 'grid' | 'ring';
 }
 
+export interface IPixelSpinner extends IDisposable {
+	readonly element: HTMLElement;
+}
+
 /**
  * Creates a small pixel-art style spinner. Color is driven by `currentColor`,
  * so consumers can control the visual color via the parent element's `color`
@@ -34,9 +39,9 @@ export interface IPixelSpinnerOptions {
  *
  * @param parent Optional parent to append the spinner to.
  * @param options Optional spinner configuration.
- * @returns The spinner root element.
+ * @returns The spinner and its root element.
  */
-export function createPixelSpinner(parent?: HTMLElement, options?: IPixelSpinnerOptions): HTMLElement {
+export function createPixelSpinner(parent?: HTMLElement, options?: IPixelSpinnerOptions): IPixelSpinner {
 	const variant = options?.variant ?? 'grid';
 	const rootClass = variant === 'ring' ? 'span.monaco-pixel-spinner.monaco-pixel-spinner-ring' : 'span.monaco-pixel-spinner';
 	const root = h(rootClass).root;
@@ -50,8 +55,11 @@ export function createPixelSpinner(parent?: HTMLElement, options?: IPixelSpinner
 		root.appendChild(h('span.monaco-pixel-spinner-dot').root);
 	}
 	parent?.appendChild(root);
-	trackSpinner(root);
-	return root;
+	const animationTracking = trackSpinner(root);
+	return {
+		element: root,
+		dispose: () => animationTracking.dispose(),
+	};
 }
 
 
@@ -66,8 +74,8 @@ const SPINNER_ANIMATION_NAMES = new Set([
 	'monaco-pixel-spinner-ring-pulse',
 ]);
 
-function trackSpinner(root: HTMLElement): void {
-	pauseCSSAnimationsWhenHidden(root, {
+function trackSpinner(root: HTMLElement): IDisposable {
+	return pauseCSSAnimationsWhenHidden(root, {
 		pausedClass: PAUSED_CLASS,
 		subtree: true,
 		animationNames: SPINNER_ANIMATION_NAMES,
