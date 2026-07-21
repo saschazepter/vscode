@@ -9,6 +9,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/c
 import { AgentHostEnablementService } from '../../browser/agentHostEnablementService.js';
 import { AGENT_HOST_ENABLED_CONTEXT_KEY } from '../../common/agentHostEnablementService.js';
 import { ConfigurationTarget, IConfigurationChangeEvent, IConfigurationOverrides } from '../../../configuration/common/configuration.js';
+import { ChatAIDisabledSettingId } from '../../../chat/common/chatSettings.js';
 import { TestConfigurationService } from '../../../configuration/test/common/testConfigurationService.js';
 import { MockContextKeyService } from '../../../keybinding/test/common/mockKeybindingService.js';
 
@@ -19,7 +20,7 @@ class AgentHostTestConfigurationService extends TestConfigurationService {
 	constructor(agentHostEnabled: boolean, aiDisabled = false) {
 		super();
 		this.values.set('chat.agentHost.enabled', agentHostEnabled);
-		this.values.set('chat.disableAIFeatures', aiDisabled);
+		this.values.set(ChatAIDisabledSettingId, aiDisabled);
 	}
 
 	override getValue<T>(arg1?: string | IConfigurationOverrides): T | undefined {
@@ -134,7 +135,7 @@ suite('AgentHostEnablementService', () => {
 		const changes: boolean[] = [];
 		disposables.add(autorun(reader => changes.push(service.enabled.read(reader))));
 
-		configurationService.setValue('chat.disableAIFeatures', false, ConfigurationTarget.USER);
+		configurationService.setValue(ChatAIDisabledSettingId, false, ConfigurationTarget.USER);
 
 		assert.deepStrictEqual({
 			enabled: service.enabled.get(),

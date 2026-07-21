@@ -11,6 +11,7 @@ import { PolicyCategory } from '../../../base/common/policy.js';
 import * as nls from '../../../nls.js';
 import { ConfigurationTarget, IConfigurationService } from '../../configuration/common/configuration.js';
 import { Extensions as ConfigurationExtensions, IConfigurationNode, IConfigurationRegistry } from '../../configuration/common/configurationRegistry.js';
+import { ChatAIDisabledSettingId } from '../../chat/common/chatSettings.js';
 import { IContextKey, IContextKeyService } from '../../contextkey/common/contextkey.js';
 import { InstantiationType, registerSingleton } from '../../instantiation/common/extensions.js';
 import { Registry } from '../../registry/common/platform.js';
@@ -20,7 +21,6 @@ import { AGENT_HOST_ENABLED_CONTEXT_KEY, IAgentHostEnablementService } from '../
 // IAgentHostEnablementService. The string is needed here only to register
 // and apply the policy.
 const agentHostEnabledSettingId = 'chat.agentHost.enabled';
-const chatAIDisabledSettingId = 'chat.disableAIFeatures';
 
 // Add the `policy` block to `chat.agentHost.enabled`. The base registration
 // (type, default, description) is done in the common layer as a side-effect of
@@ -73,7 +73,7 @@ export class AgentHostEnablementService extends Disposable implements IAgentHost
 		this._register(configurationService.onDidChangeConfiguration(event => {
 			if (
 				(event.source === ConfigurationTarget.DEFAULT && event.affectsConfiguration(agentHostEnabledSettingId))
-				|| event.affectsConfiguration(chatAIDisabledSettingId)
+				|| event.affectsConfiguration(ChatAIDisabledSettingId)
 			) {
 				this._updateEnabled(configurationService);
 			}
@@ -83,7 +83,7 @@ export class AgentHostEnablementService extends Disposable implements IAgentHost
 	private _readEnabled(configurationService: IConfigurationService): boolean {
 		return !isWeb
 			&& (configurationService.getValue<boolean>(agentHostEnabledSettingId) ?? false)
-			&& configurationService.getValue<boolean>(chatAIDisabledSettingId) !== true;
+			&& configurationService.getValue<boolean>(ChatAIDisabledSettingId) !== true;
 	}
 
 	private _updateEnabled(configurationService: IConfigurationService): void {
