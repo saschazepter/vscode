@@ -1242,6 +1242,20 @@ export class ProtocolServerHandler extends Disposable {
 				query: params.query,
 			});
 		},
+		readAgentAccount: async (_client, params) => {
+			return this._agentService.readAgentAccount(params.provider);
+		},
+		startAgentAccountLogin: async (_client, params) => {
+			return this._agentService.startAgentAccountLogin(params.provider, params.method);
+		},
+		cancelAgentAccountLogin: async (_client, params) => {
+			await this._agentService.cancelAgentAccountLogin(params.provider, params.loginId);
+			return null;
+		},
+		logoutAgentAccount: async (_client, params) => {
+			await this._agentService.logoutAgentAccount(params.provider);
+			return null;
+		},
 		completions: async (_client, params) => {
 			return this._agentService.completions(params);
 		},

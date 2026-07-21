@@ -89,6 +89,24 @@ export interface AgentInfo {
 	 * id.
 	 */
 	capabilities?: AgentCapabilities;
+	/** Current provider account state, when account management is supported. */
+	account?: AgentAccountState;
+}
+
+/** Account state exposed by an agent provider without revealing credentials. */
+export interface AgentAccountState {
+	/** Provider-specific usage source, such as `copilot` or `openai`. */
+	usageSource: string;
+	/** Current authentication lifecycle state. */
+	status: 'signedOut' | 'signingIn' | 'signedIn' | 'error';
+	/** Authentication mechanism for a signed-in account. */
+	authType?: 'chatgpt' | 'apiKey' | 'other';
+	/** Provider-specific subscription plan identifier. */
+	planType?: string;
+	/** Last account-management error, if any. */
+	error?: string;
+	/** Login operation currently owned by the provider. */
+	loginId?: string;
 }
 
 /**
@@ -108,6 +126,11 @@ export interface AgentCapabilities {
 	 * forking; set {@link MultipleChatsCapability.fork} to also allow forking.
 	 */
 	multipleChats?: MultipleChatsCapability;
+	/** The provider supports the root account-management commands. */
+	accountManagement?: {
+		/** Login mechanisms accepted by the provider. */
+		loginMethods: ('browser' | 'deviceCode')[];
+	};
 }
 
 /**

@@ -210,3 +210,38 @@ export interface SessionConfigCompletionsResult {
 	/** Matching value items */
 	items: SessionConfigValueItem[];
 }
+
+// ─── Agent account management ───────────────────────────────────────────────
+
+export interface ReadAgentAccountParams extends BaseParams {
+	channel: 'ahp-root://';
+	provider: string;
+}
+
+export interface StartAgentAccountLoginParams extends BaseParams {
+	channel: 'ahp-root://';
+	provider: string;
+	method: 'browser' | 'deviceCode';
+}
+
+export type StartAgentAccountLoginResult = {
+	type: 'browser';
+	loginId: string;
+	authUrl: string;
+} | {
+	type: 'deviceCode';
+	loginId: string;
+	verificationUrl: string;
+	userCode: string;
+};
+
+export interface CancelAgentAccountLoginParams extends BaseParams {
+	channel: 'ahp-root://';
+	provider: string;
+	loginId: string;
+}
+
+export interface LogoutAgentAccountParams extends BaseParams {
+	channel: 'ahp-root://';
+	provider: string;
+}

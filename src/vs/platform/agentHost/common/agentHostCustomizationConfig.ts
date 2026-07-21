@@ -8,6 +8,9 @@ import { createSchema, schemaProperty } from './agentHostSchema.js';
 import { CustomizationType, type Customization, type PluginCustomization } from './state/protocol/state.js';
 import { customizationId } from './state/sessionState.js';
 
+export const codexUsageSources = ['copilot', 'openai'] as const;
+export type CodexUsageSource = typeof codexUsageSources[number];
+
 /**
  * Well-known root-config keys used by the platform to configure agent-host
  * customizations.
@@ -27,6 +30,7 @@ export const enum AgentHostConfigKey {
 	 * the user's own credentials (BYO Anthropic — Phase 19).
 	 */
 	ClaudeUseCopilotProxy = 'claudeUseCopilotProxy',
+	CodexUsageSource = 'codexUsageSource',
 	/**
 	 * Optional GitHub Enterprise base URI (e.g. `https://ghe.example.com` for a
 	 * GitHub Enterprise Server, or `https://tenant.ghe.com` for GitHub Enterprise
@@ -88,6 +92,13 @@ export const agentHostCustomizationConfigSchema = createSchema({
 		title: localize('agentHost.config.claudeUseCopilotProxy.title', "Route Claude Through Copilot"),
 		description: localize('agentHost.config.claudeUseCopilotProxy.description', "When enabled (the default), the Claude agent routes all requests through GitHub Copilot. When disabled, Claude talks to Anthropic directly using your own credentials (API key or Claude subscription)."),
 		default: true,
+	}),
+	[AgentHostConfigKey.CodexUsageSource]: schemaProperty<CodexUsageSource>({
+		type: 'string',
+		title: localize('agentHost.config.codexUsageSource.title', "Codex Usage Source"),
+		description: localize('agentHost.config.codexUsageSource.description', "Choose whether Codex usage is routed through GitHub Copilot or authenticated directly with your OpenAI account."),
+		default: 'copilot',
+		enum: [...codexUsageSources],
 	}),
 	[AgentHostConfigKey.GithubEnterpriseUri]: schemaProperty<string>({
 		type: 'string',

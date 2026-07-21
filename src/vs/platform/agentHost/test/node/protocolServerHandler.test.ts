@@ -12,7 +12,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/c
 import { NullLogService } from '../../../log/common/log.js';
 import { FileType } from '../../../files/common/files.js';
 import { type IAgentCreateSessionConfig, type IAgentHostNetworkDiagnosticsInfo, type IAgentHostNetworkFetchResult, type IAgentResolveSessionConfigParams, type IAgentService, type IAgentSessionConfigCompletionsParams, type IAgentSessionMetadata, type AuthenticateParams, type AuthenticateResult } from '../../common/agentService.js';
-import { CompletionsParams, CompletionsResult, ContentEncoding, ListSessionsResult, ResourceReadResult, ResolveSessionConfigResult, SessionConfigCompletionsResult, ResourceMkdirParams, ResourceMkdirResult, ResourceResolveParams, ResourceResolveResult, ResourceCopyParams, ResourceCopyResult } from '../../common/state/protocol/commands.js';
+import { CompletionsParams, CompletionsResult, ContentEncoding, ListSessionsResult, ResourceReadResult, ResolveSessionConfigResult, SessionConfigCompletionsResult, ResourceMkdirParams, ResourceMkdirResult, ResourceResolveParams, ResourceResolveResult, ResourceCopyParams, ResourceCopyResult, type StartAgentAccountLoginResult } from '../../common/state/protocol/commands.js';
 import { ActionType, type IRootConfigChangedAction, type SessionAction, type TerminalAction, type ClientAnnotationsAction, type ProgressParams } from '../../common/state/sessionActions.js';
 import { PROTOCOL_VERSION } from '../../common/state/protocol/version/registry.js';
 import { isJsonRpcNotification, isJsonRpcRequest, isJsonRpcResponse, JSON_RPC_INTERNAL_ERROR, JsonRpcErrorCodes, ProtocolError, AhpErrorCodes, AHP_UNSUPPORTED_PROTOCOL_VERSION, AHP_SESSION_NOT_FOUND, type AhpNotification, type InitializeResult, type ProtocolMessage, type ReconnectResult, type ResourceListResult, type ResourceWriteParams, type ResourceWriteResult, type IStateSnapshot } from '../../common/state/sessionProtocol.js';
@@ -151,6 +151,10 @@ class MockAgentService implements IAgentService {
 	async getNetworkDiagnosticsInfo(): Promise<IAgentHostNetworkDiagnosticsInfo> { return { version: 'test', os: 'test', arch: 'test', proxySettings: {}, proxyEnv: {}, endpoints: [] }; }
 	async diagnosticsFetch(url: string): Promise<IAgentHostNetworkFetchResult> { return { url }; }
 	async authenticate(_params: AuthenticateParams): Promise<AuthenticateResult> { return { authenticated: true }; }
+	async readAgentAccount(_provider: string) { return { usageSource: 'test', status: 'signedOut' as const }; }
+	async startAgentAccountLogin(_provider: string, _method: 'browser' | 'deviceCode'): Promise<StartAgentAccountLoginResult> { throw new Error('Not supported'); }
+	async cancelAgentAccountLogin(_provider: string, _loginId: string): Promise<void> { }
+	async logoutAgentAccount(_provider: string): Promise<void> { }
 	getAuthToken(): string | undefined { return undefined; }
 	async resourceWrite(_params: ResourceWriteParams): Promise<ResourceWriteResult> { return {}; }
 	async resourceList(uri: URI): Promise<ResourceListResult> {
@@ -1767,6 +1771,41 @@ suite('ProtocolServerHandler', () => {
 
 		assert.ok(!resp.error, `unexpected error: ${resp.error?.message}`);
 		assert.deepStrictEqual(resp.result, {});
+	});
+
+	test('agent account commands forward provider, login method, and login id', async () => {
+		const calls: unknown[] = [];
+		agentService.readAgentAccount = async provider => {
+			calls.push(['read', provider]);
+			return { usageSource: 'openai', status: 'signedOut' };
+		};
+		agentService.startAgentAccountLogin = async (provider, method) => {
+			calls.push(['start', provider, method]);
+			return { type: 'deviceCode', loginId: 'login-1', verificationUrl: 'https://example.com/device', userCode: 'ABCD' };
+		};
+		agentService.cancelAgentAccountLogin = async (provider, loginId) => { calls.push(['cancel', provider, loginId]); };
+		agentService.logoutAgentAccount = async provider => { calls.push(['logout', provider]); };
+
+		const transport = connectClient('client-account');
+		transport.sent.length = 0;
+		const responses = [2, 3, 4, 5].map(id => waitForResponse(transport, id));
+		transport.simulateMessage(request(2, 'readAgentAccount', { channel: 'ahp-root://', provider: 'codex' }));
+		transport.simulateMessage(request(3, 'startAgentAccountLogin', { channel: 'ahp-root://', provider: 'codex', method: 'deviceCode' }));
+		transport.simulateMessage(request(4, 'cancelAgentAccountLogin', { channel: 'ahp-root://', provider: 'codex', loginId: 'login-1' }));
+		transport.simulateMessage(request(5, 'logoutAgentAccount', { channel: 'ahp-root://', provider: 'codex' }));
+
+		assert.deepStrictEqual((await Promise.all(responses)).map(response => (response as { readonly result?: unknown }).result), [
+			{ usageSource: 'openai', status: 'signedOut' },
+			{ type: 'deviceCode', loginId: 'login-1', verificationUrl: 'https://example.com/device', userCode: 'ABCD' },
+			null,
+			null,
+		]);
+		assert.deepStrictEqual(calls, [
+			['read', 'codex'],
+			['start', 'codex', 'deviceCode'],
+			['cancel', 'codex', 'login-1'],
+			['logout', 'codex'],
+		]);
 	});
 
 	test('extension request preserves ProtocolError code and data', async () => {

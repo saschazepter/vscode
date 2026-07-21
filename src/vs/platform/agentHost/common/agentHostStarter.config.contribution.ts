@@ -17,6 +17,7 @@ import {
 	AgentHostCodexAgentEnabledSettingId,
 	AgentHostCodexAgentSdkRootSettingId,
 	AgentHostCodexAgentCodexHomeSettingId,
+	AgentHostCodexAgentUsageSourceSettingId,
 	AgentHostOTelCaptureContentSettingId,
 	AgentHostOTelDbSpanExporterEnabledSettingId,
 	AgentHostOTelEnabledSettingId,
@@ -139,10 +140,21 @@ configurationRegistry.registerConfiguration({
 				localization: {
 					description: {
 						key: 'chat.agentHost.codexAgent.enabled.policy',
-						value: nls.localize('chat.agentHost.codexAgent.enabled.policy', "Enable Codex Agent sessions in VS Code. Start and resume agentic coding sessions powered by OpenAI Codex SDK. Uses your existing Copilot subscription."),
+						value: nls.localize('chat.agentHost.codexAgent.enabled.policy', "Enable Codex Agent sessions in VS Code. Start and resume agentic coding sessions powered by OpenAI Codex. Usage can be routed through GitHub Copilot or authenticated directly with an OpenAI account."),
 					}
 				}
 			},
+		},
+		[AgentHostCodexAgentUsageSourceSettingId]: {
+			type: 'string',
+			description: nls.localize('chat.agentHost.codexAgent.usageSource', "Controls whether Codex uses your GitHub Copilot subscription or authenticates directly with OpenAI. This setting affects all Codex agent-host sessions on the host. Use the Codex usage control in the new-session toolbar or run 'Codex: Manage Usage and Account' to sign in with ChatGPT."),
+			default: 'copilot',
+			enum: ['copilot', 'openai'],
+			enumDescriptions: [
+				nls.localize('chat.agentHost.codexAgent.usageSource.copilot', "Use GitHub Copilot quota and authentication."),
+				nls.localize('chat.agentHost.codexAgent.usageSource.openai', "Use Codex-managed OpenAI authentication, including ChatGPT subscription access or API-key billing."),
+			],
+			tags: ['experimental'],
 		},
 		[AgentHostCodexAgentSdkRootSettingId]: {
 			type: 'string',
