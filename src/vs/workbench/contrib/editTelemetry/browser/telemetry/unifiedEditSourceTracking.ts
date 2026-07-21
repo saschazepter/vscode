@@ -177,7 +177,7 @@ export class UnifiedEditSourceTracking extends Disposable {
 		const reconciler = this._registry.get(resource)?.reconciler;
 		const snapshot = reconciler?.getSnapshot();
 		const trackedResource = this._trackedResources.get(resourceKey);
-		if (!reconciler || !snapshot || !trackedResource || snapshot.pendingReload || snapshot.transitions.length === 0) {
+		if (!reconciler || !snapshot || !trackedResource || snapshot.pendingReload || snapshot.pendingAgentTransitions || snapshot.transitions.length === 0) {
 			return undefined;
 		}
 
@@ -212,7 +212,7 @@ export class UnifiedEditSourceTracking extends Disposable {
 
 	private async _synchronizeDisk(resource: URI): Promise<void> {
 		const snapshot = this.getSnapshot(resource);
-		if (snapshot?.model?.dirty || snapshot?.pendingReload || !this._fileService.hasProvider(resource)) {
+		if (snapshot?.model?.dirty || snapshot?.pendingReload || snapshot?.pendingAgentTransitions || !this._fileService.hasProvider(resource)) {
 			return;
 		}
 		try {

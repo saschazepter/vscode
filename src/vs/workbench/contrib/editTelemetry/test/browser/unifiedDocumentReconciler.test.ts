@@ -24,6 +24,49 @@ suite('UnifiedDocumentReconciler', () => {
 		});
 	});
 
+	test('deduplicates an Agent Host transition chain followed by one model reload', () => {
+		const reconciler = createReconciler('a');
+		reconciler.modelConnected({ content: 'a', dirty: false });
+		reconciler.agentTransition(agentEdit('a', 'ab', 'agent-1'));
+		reconciler.agentTransition(agentEdit('ab', 'abc', 'agent-2'));
+
+		const reloadResult = reconciler.modelEdit(reloadEdit('a', 'abc'));
+
+		assert.deepStrictEqual({
+			reloadOutcome: reloadResult.outcome,
+			reloadChanges: reloadResult.changes,
+			snapshot: snapshotSummary(reconciler),
+		}, {
+			reloadOutcome: 'duplicate',
+			reloadChanges: [],
+			snapshot: {
+				content: 'abc',
+				diskContent: 'abc',
+				pendingReload: false,
+				transitionKinds: ['agentHost', 'agentHost'],
+			},
+		});
+	});
+
+	test('deduplicates a recent Agent Host transition subchain', () => {
+		const reconciler = createReconciler('');
+		reconciler.modelConnected({ content: '', dirty: false });
+		reconciler.agentTransition(agentEdit('', 'a', 'agent-0'));
+		reconciler.modelEdit(reloadEdit('', 'a'));
+		reconciler.agentTransition(agentEdit('a', 'ab', 'agent-1'));
+		reconciler.agentTransition(agentEdit('ab', 'abc', 'agent-2'));
+
+		const reloadResult = reconciler.modelEdit(reloadEdit('a', 'abc'));
+
+		assert.deepStrictEqual({
+			reloadOutcome: reloadResult.outcome,
+			transitionKinds: reloadResult.snapshot.transitions.map(transition => transition.kind),
+		}, {
+			reloadOutcome: 'duplicate',
+			transitionKinds: ['agentHost', 'agentHost', 'agentHost'],
+		});
+	});
+
 	test('reattributes model reload followed by Agent Host', () => {
 		const reconciler = createReconciler('before');
 		reconciler.modelConnected({ content: 'before', dirty: false });
@@ -51,6 +94,211 @@ suite('UnifiedDocumentReconciler', () => {
 				pendingReload: false,
 				transitionKinds: ['agentHost'],
 			},
+		});
+	});
+
+	test('reattributes one pending reload from an Agent Host transition chain', () => {
+		const reconciler = createReconciler('a');
+		reconciler.modelConnected({ content: 'a', dirty: false });
+
+		const reloadResult = reconciler.modelEdit(reloadEdit('a', 'abc'));
+		const firstAgentResult = reconciler.agentTransition(agentEdit('a', 'ab', 'agent-1'));
+		const secondAgentResult = reconciler.agentTransition(agentEdit('ab', 'abc', 'agent-2'));
+
+		assert.deepStrictEqual({
+			reload: {
+				outcome: reloadResult.outcome,
+				changes: reloadResult.changes,
+			},
+			firstAgent: {
+				outcome: firstAgentResult.outcome,
+				changes: firstAgentResult.changes,
+			},
+			secondAgent: {
+				outcome: secondAgentResult.outcome,
+				changes: secondAgentResult.changes.map(change => ({
+					kind: change.kind,
+					before: change.before,
+					after: change.after,
+				})),
+			},
+			snapshot: snapshotSummary(reconciler),
+		}, {
+			reload: {
+				outcome: 'applied',
+				changes: [],
+			},
+			firstAgent: {
+				outcome: 'applied',
+				changes: [],
+			},
+			secondAgent: {
+				outcome: 'applied',
+				changes: [
+					{ kind: 'append', before: 'a', after: 'ab' },
+					{ kind: 'append', before: 'ab', after: 'abc' },
+				],
+			},
+			snapshot: {
+				content: 'abc',
+				diskContent: 'abc',
+				pendingReload: false,
+				transitionKinds: ['agentHost', 'agentHost'],
+			},
+		});
+	});
+
+	test('splits an incomplete Agent Host chain from the external reload remainder', () => {
+		const reconciler = createReconciler('a');
+		reconciler.modelConnected({ content: 'a', dirty: false });
+		reconciler.modelEdit(reloadEdit('a', 'abc'));
+		reconciler.agentTransition(agentEdit('a', 'ab', 'agent-1'));
+
+		const diskResult = diskSnapshot(reconciler, 'abc');
+		const lateAgentResult = reconciler.agentTransition(agentEdit('ab', 'abc', 'agent-2'));
+
+		assert.deepStrictEqual({
+			diskChanges: diskResult.changes.map(change => ({
+				kind: change.kind,
+				before: change.before,
+				after: change.after,
+				transitionKind: change.transition.kind,
+			})),
+			lateAgent: {
+				outcome: lateAgentResult.outcome,
+				changes: lateAgentResult.changes.map(change => change.kind),
+			},
+			transitions: reconciler.getSnapshot().transitions.map(transition => ({
+				kind: transition.kind,
+				correlation: transition.correlation,
+			})),
+		}, {
+			diskChanges: [
+				{ kind: 'append', before: 'a', after: 'ab', transitionKind: 'agentHost' },
+				{ kind: 'append', before: 'ab', after: 'abc', transitionKind: 'reloadFromDisk' },
+			],
+			lateAgent: {
+				outcome: 'applied',
+				changes: ['replace'],
+			},
+			transitions: [
+				{ kind: 'agentHost', correlation: 'agent-1' },
+				{ kind: 'agentHost', correlation: 'agent-2' },
+			],
+		});
+	});
+
+	test('replaces one committed external reload with a late Agent Host transition chain', () => {
+		const reconciler = createReconciler('a');
+		reconciler.modelConnected({ content: 'a', dirty: false });
+		reconciler.modelEdit(reloadEdit('a', 'abc'));
+		diskSnapshot(reconciler, 'abc');
+
+		const firstAgentResult = reconciler.agentTransition(agentEdit('a', 'ab', 'agent-1'));
+		const secondAgentResult = reconciler.agentTransition(agentEdit('ab', 'abc', 'agent-2'));
+
+		assert.deepStrictEqual({
+			firstAgent: {
+				outcome: firstAgentResult.outcome,
+				changes: firstAgentResult.changes,
+			},
+			secondAgent: {
+				outcome: secondAgentResult.outcome,
+				changes: secondAgentResult.changes.map(change => change.kind),
+			},
+			transitions: reconciler.getSnapshot().transitions.map(transition => ({
+				kind: transition.kind,
+				correlation: transition.correlation,
+			})),
+		}, {
+			firstAgent: {
+				outcome: 'applied',
+				changes: [],
+			},
+			secondAgent: {
+				outcome: 'applied',
+				changes: ['replace', 'append'],
+			},
+			transitions: [
+				{ kind: 'agentHost', correlation: 'agent-1' },
+				{ kind: 'agentHost', correlation: 'agent-2' },
+			],
+		});
+	});
+
+	test('splits a late incomplete Agent Host chain when a model edit interrupts it', () => {
+		const reconciler = createReconciler('a');
+		reconciler.modelConnected({ content: 'a', dirty: false });
+		reconciler.modelEdit(reloadEdit('a', 'abc'));
+		diskSnapshot(reconciler, 'abc');
+		reconciler.agentTransition(agentEdit('a', 'ab', 'agent-1'));
+
+		const modelResult = reconciler.modelEdit(modelEdit('abc', 'abcd'));
+
+		assert.deepStrictEqual({
+			outcome: modelResult.outcome,
+			changes: modelResult.changes.map(change => ({
+				kind: change.kind,
+				before: change.before,
+				after: change.after,
+				transitionKind: change.transition.kind,
+			})),
+			transitions: reconciler.getSnapshot().transitions.map(transition => ({
+				kind: transition.kind,
+				correlation: transition.correlation,
+			})),
+		}, {
+			outcome: 'applied',
+			changes: [
+				{ kind: 'replace', before: 'a', after: 'ab', transitionKind: 'agentHost' },
+				{ kind: 'append', before: 'ab', after: 'abc', transitionKind: 'reloadFromDisk' },
+				{ kind: 'append', before: 'abc', after: 'abcd', transitionKind: 'model' },
+			],
+			transitions: [
+				{ kind: 'agentHost', correlation: 'agent-1' },
+				{ kind: 'reloadFromDisk', correlation: undefined },
+				{ kind: 'model', correlation: undefined },
+			],
+		});
+	});
+
+	test('preserves the external endpoint when a late Agent Host prefix follows a model edit', () => {
+		const reconciler = createReconciler('a');
+		reconciler.modelConnected({ content: 'a', dirty: false });
+		reconciler.modelEdit(reloadEdit('a', 'abc'));
+		diskSnapshot(reconciler, 'abc');
+		reconciler.modelEdit(modelEdit('abc', 'abcd'));
+
+		const agentResult = reconciler.agentTransition(agentEdit('a', 'ab', 'agent-1'));
+		const diskResult = diskSnapshot(reconciler, 'abcd');
+		const snapshot = reconciler.getSnapshot();
+		let projectedContent = snapshot.initialContent;
+		for (const transition of snapshot.transitions) {
+			projectedContent = transition.edit.apply(projectedContent);
+		}
+
+		assert.deepStrictEqual({
+			agentPending: agentResult.snapshot.pendingAgentTransitions,
+			diskOutcome: diskResult.outcome,
+			diskChanges: diskResult.changes.map(change => ({
+				kind: change.kind,
+				before: change.before,
+				after: change.after,
+				transitionKind: change.transition.kind,
+			})),
+			pendingAgentTransitions: snapshot.pendingAgentTransitions,
+			transitionKinds: snapshot.transitions.map(transition => transition.kind),
+			projectedContent,
+		}, {
+			agentPending: true,
+			diskOutcome: 'duplicate',
+			diskChanges: [
+				{ kind: 'replace', before: 'a', after: 'ab', transitionKind: 'agentHost' },
+				{ kind: 'append', before: 'ab', after: 'abc', transitionKind: 'reloadFromDisk' },
+			],
+			pendingAgentTransitions: false,
+			transitionKinds: ['agentHost', 'reloadFromDisk', 'model'],
+			projectedContent: 'abcd',
 		});
 	});
 

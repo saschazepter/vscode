@@ -56,6 +56,7 @@ suite('UnifiedDocumentRegistry', () => {
 					diskContent: 'after',
 					model: undefined,
 					pendingReload: undefined,
+					pendingAgentTransitions: false,
 					transitions: [{
 						id: 1,
 						edit: createMinimalEdit('before', 'after'),

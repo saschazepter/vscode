@@ -214,6 +214,55 @@ suite('Unified Edit Source Tracking', () => {
 		context.disposables.dispose();
 	});
 
+	test('waits for a late Agent Host transition chain before flushing', async () => {
+		const context = createContext('a');
+		const resource = context.document.uri;
+		context.document.apply(StringEditWithReason.replace(OffsetRange.ofLength(1), 'abc', EditSources.reloadFromDisk()));
+		context.setDiskContent('abc');
+		await context.tracking.applyDiskSnapshot(resource, 'abc');
+		await context.tracking.applyAgentEdit({
+			resource,
+			before: 'a',
+			after: 'ab',
+			source: agentSource(),
+			correlation: 'tool-1',
+			kind: 'edit',
+		});
+
+		const pending = await context.tracking.flushLongTermDetails(resource, 'hashChange', 'typescript');
+		const pendingSnapshot = context.tracking.getSnapshot(resource);
+		await context.tracking.applyAgentEdit({
+			resource,
+			before: 'ab',
+			after: 'abc',
+			source: agentSource(),
+			correlation: 'tool-2',
+			kind: 'edit',
+		});
+		const attributed = await context.tracking.flushLongTermDetails(resource, 'hashChange', 'typescript', 'stats-1');
+
+		assert.deepStrictEqual({
+			pending,
+			pendingAgentTransitions: pendingSnapshot?.pendingAgentTransitions,
+			pendingTransitionKinds: pendingSnapshot?.transitions.map(transition => transition.kind),
+			attributed: attributed?.rows.map(row => ({
+				sourceKey: row.sourceKey,
+				modifiedCount: row.modifiedCount,
+			})),
+			eventCount: context.details.length,
+		}, {
+			pending: undefined,
+			pendingAgentTransitions: true,
+			pendingTransitionKinds: ['reloadFromDisk'],
+			attributed: [{
+				sourceKey: 'source:Chat.applyEdits-$modelId:model-$harness:copilotcli-$origin:agentHost',
+				modifiedCount: 2,
+			}],
+			eventCount: 1,
+		});
+		context.disposables.dispose();
+	});
+
 	test('rebuilds live attribution when Agent Host claims a committed reload late', async () => {
 		const context = createContext('before');
 		const resource = context.document.uri;

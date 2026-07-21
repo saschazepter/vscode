@@ -65,6 +65,7 @@ export interface IUnifiedDocumentSnapshot<TSource> {
 	readonly diskContent: string;
 	readonly model: IUnifiedDocumentModelState | undefined;
 	readonly pendingReload: IUnifiedDocumentPendingReload<TSource> | undefined;
+	readonly pendingAgentTransitions: boolean;
 	readonly transitions: readonly IUnifiedDocumentTransition<TSource>[];
 }
 
@@ -80,6 +81,10 @@ interface IRecentTransition<TSource> {
 	readonly transition: IUnifiedDocumentTransition<TSource>;
 }
 
+interface IRecentExternalTransition<TSource> extends IRecentTransition<TSource> {
+	readonly after: string;
+}
+
 interface IAgentCorrelation {
 	readonly beforeId: string;
 	readonly afterId: string;
@@ -87,6 +92,7 @@ interface IAgentCorrelation {
 }
 
 const MAX_AGENT_CORRELATIONS = 128;
+const MAX_RECENT_AGENT_TRANSITIONS = 128;
 
 /**
  * Reconciles model, Agent Host, and disk observations into one canonical edit sequence.
@@ -100,7 +106,10 @@ export class UnifiedDocumentReconciler<TSource> {
 	private readonly _transitions: IUnifiedDocumentTransition<TSource>[] = [];
 	private readonly _agentCorrelations = new Map<string, IAgentCorrelation>();
 	private _recentAgentTransition: IRecentTransition<TSource> | undefined;
-	private _recentExternalTransition: IRecentTransition<TSource> | undefined;
+	private readonly _recentAgentTransitions: IRecentTransition<TSource>[] = [];
+	private _recentExternalTransition: IRecentExternalTransition<TSource> | undefined;
+	private readonly _recentExternalAgentTransitions: IUnifiedDocumentAgentTransition<TSource>[] = [];
+	private readonly _pendingReloadAgentTransitions: IUnifiedDocumentAgentTransition<TSource>[] = [];
 	private _nextTransitionId = 1;
 
 	constructor(
@@ -118,24 +127,21 @@ export class UnifiedDocumentReconciler<TSource> {
 		}
 
 		this._model = { ...state };
+		const changes = this._commitRecentExternalAgentTransitions();
 		if (state.content === this._content) {
-			return this._result('applied');
+			return this._result('applied', changes);
 		}
 		if (state.dirty) {
-			return this._result('skippedDirty');
+			return this._result('skippedDirty', changes);
 		}
-		if (
-			this._recentAgentTransition?.beforeId === contentId(state.content) &&
-			this._recentAgentTransition.afterId === contentId(this._content) &&
-			this._diskContent === this._content
-		) {
-			return this._result('applied');
+		if (this._isRecentAgentTransition(state.content, this._content) && this._diskContent === this._content) {
+			return this._result('applied', changes);
 		}
 		if (state.content !== this._diskContent) {
-			return this._result('conflict');
+			return this._result('conflict', changes);
 		}
 
-		const changes = this._commitPendingReload();
+		changes.push(...this._commitPendingReload());
 		changes.push(this._appendTransition(
 			this._content,
 			state.content,
@@ -159,26 +165,27 @@ export class UnifiedDocumentReconciler<TSource> {
 		if (!this._model || this._model.content !== edit.before) {
 			return this._result('conflict');
 		}
+		const recentExternalChanges = this._commitRecentExternalAgentTransitions();
 
 		if (edit.kind === 'reloadFromDisk') {
-			if (isSameContentTransition(this._recentAgentTransition, edit) && this._content === edit.after && this._diskContent === edit.after) {
+			if (this._isRecentAgentTransition(edit.before, edit.after) && this._content === edit.after && this._diskContent === edit.after) {
 				this._model = { content: edit.after, dirty: edit.dirty };
 				this._diskContent = edit.after;
-				return this._result('duplicate');
+				return this._result('duplicate', recentExternalChanges);
 			}
 			if (isSameContentTransition(this._recentExternalTransition, edit) && this._content === edit.after && this._diskContent === edit.after) {
 				this._model = { content: edit.after, dirty: edit.dirty };
-				return this._result('duplicate');
+				return this._result('duplicate', recentExternalChanges);
 			}
 			if (isSameContentTransition(this._pendingReload, edit)) {
 				this._model = { content: edit.after, dirty: edit.dirty };
 				this._diskContent = edit.after;
 				this._content = edit.after;
-				return this._result('duplicate');
+				return this._result('duplicate', recentExternalChanges);
 			}
 		}
 
-		const changes = this._commitPendingReload();
+		const changes = [...recentExternalChanges, ...this._commitPendingReload()];
 		if (this._content !== edit.before) {
 			this._model = { content: edit.after, dirty: edit.dirty };
 			if (edit.kind === 'reloadFromDisk') {
@@ -196,6 +203,7 @@ export class UnifiedDocumentReconciler<TSource> {
 				after: edit.after,
 				transition: this._createTransition(edit.edit, edit.source, edit.kind),
 			};
+			this._pendingReloadAgentTransitions.length = 0;
 			return this._result('applied', changes);
 		}
 
@@ -231,31 +239,17 @@ export class UnifiedDocumentReconciler<TSource> {
 				return this._result('applied', [replacement]);
 			}
 		}
-
-		const pendingReload = this._pendingReload;
-		if (pendingReload && isSameContentTransition(pendingReload, transition)) {
-			const appliedTransition: IUnifiedDocumentTransition<TSource> = {
-				...pendingReload.transition,
-				edit: transition.edit,
-				source: transition.source,
-				kind: 'agentHost',
-				correlation: transition.correlation,
-				agentKind: transition.kind,
-			};
-			this._pendingReload = undefined;
-			this._transitions.push(appliedTransition);
-			this._recentAgentTransition = createRecentTransition(transition.before, transition.after, appliedTransition);
-			this._recentExternalTransition = undefined;
-			this._recordAgentCorrelation(transition, 'applied');
-			return this._result('applied', [{
-				kind: 'append',
-				before: transition.before,
-				after: transition.after,
-				transition: appliedTransition,
-			}]);
+		const recentExternalAgentResult = this._applyRecentExternalAgentTransition(transition);
+		if (recentExternalAgentResult) {
+			return recentExternalAgentResult;
 		}
 
-		const changes = this._commitPendingReload();
+		const pendingReloadResult = this._applyPendingReloadAgentTransition(transition);
+		if (pendingReloadResult) {
+			return pendingReloadResult;
+		}
+
+		const changes = [...this._commitRecentExternalAgentTransitions(), ...this._commitPendingReload()];
 		if (this._model?.dirty) {
 			if (this._diskContent === transition.before) {
 				this._diskContent = transition.after;
@@ -278,13 +272,14 @@ export class UnifiedDocumentReconciler<TSource> {
 	}
 
 	diskSnapshot(content: string, edit: StringEdit): IUnifiedDocumentReconcileResult<TSource> {
+		const recentExternalChanges = this._commitRecentExternalAgentTransitions();
 		if (this._pendingReload && content === this._pendingReload.after) {
-			const changes = this._commitPendingReload();
+			const changes = [...recentExternalChanges, ...this._commitPendingReload()];
 			this._diskContent = content;
 			return this._result('applied', changes);
 		}
 
-		const changes = this._commitPendingReload();
+		const changes = [...recentExternalChanges, ...this._commitPendingReload()];
 		if (content === this._diskContent && content === this._content) {
 			return this._result('duplicate', changes);
 		}
@@ -314,6 +309,7 @@ export class UnifiedDocumentReconciler<TSource> {
 		this._initialContent = this._content;
 		this._transitions.length = 0;
 		this._recentExternalTransition = undefined;
+		this._recentExternalAgentTransitions.length = 0;
 	}
 
 	getSnapshot(): IUnifiedDocumentSnapshot<TSource> {
@@ -326,6 +322,7 @@ export class UnifiedDocumentReconciler<TSource> {
 				...this._pendingReload,
 				transition: { ...this._pendingReload.transition },
 			} : undefined,
+			pendingAgentTransitions: this._pendingReloadAgentTransitions.length > 0 || this._recentExternalAgentTransitions.length > 0,
 			transitions: this._transitions.map(transition => ({ ...transition })),
 		};
 	}
@@ -336,8 +333,23 @@ export class UnifiedDocumentReconciler<TSource> {
 		}
 		const pendingReload = this._pendingReload;
 		this._pendingReload = undefined;
+		const agentTransitions = this._pendingReloadAgentTransitions.splice(0);
+		if (agentTransitions.length > 0) {
+			const changes = agentTransitions.map(transition => this._appendAgentTransition(transition));
+			const agentAfter = agentTransitions[agentTransitions.length - 1].after;
+			if (agentAfter !== pendingReload.after) {
+				changes.push(this._appendTransition(
+					agentAfter,
+					pendingReload.after,
+					createMinimalEdit(agentAfter, pendingReload.after),
+					this._externalSource,
+					'reloadFromDisk',
+				));
+			}
+			return changes;
+		}
 		this._transitions.push(pendingReload.transition);
-		this._recentExternalTransition = createRecentTransition(
+		this._recentExternalTransition = createRecentExternalTransition(
 			pendingReload.before,
 			pendingReload.after,
 			pendingReload.transition,
@@ -375,10 +387,12 @@ export class UnifiedDocumentReconciler<TSource> {
 		this._transitions.push(transition);
 		const recent = createRecentTransition(before, after, transition);
 		if (kind === 'agentHost') {
-			this._recentAgentTransition = recent;
+			this._recordRecentAgentTransition(recent);
 			this._recentExternalTransition = undefined;
+			this._recentExternalAgentTransitions.length = 0;
 		} else if (kind === 'reloadFromDisk' || kind === 'diskSnapshot') {
-			this._recentExternalTransition = recent;
+			this._recentExternalTransition = createRecentExternalTransition(before, after, transition);
+			this._recentExternalAgentTransitions.length = 0;
 		}
 		return { kind: 'append', before, after, transition: { ...transition } };
 	}
@@ -417,14 +431,157 @@ export class UnifiedDocumentReconciler<TSource> {
 			agentKind: agentTransition.kind,
 		};
 		this._transitions[index] = replacement;
-		this._recentAgentTransition = createRecentTransition(agentTransition.before, agentTransition.after, replacement);
+		this._recordRecentAgentTransition(createRecentTransition(agentTransition.before, agentTransition.after, replacement));
 		this._recentExternalTransition = undefined;
+		this._recentExternalAgentTransitions.length = 0;
 		return {
 			kind: 'replace',
 			before: agentTransition.before,
 			after: agentTransition.after,
 			transition: { ...replacement },
 		};
+	}
+
+	private _applyPendingReloadAgentTransition(
+		transition: IUnifiedDocumentAgentTransition<TSource>,
+	): IUnifiedDocumentReconcileResult<TSource> | undefined {
+		const pendingReload = this._pendingReload;
+		if (!pendingReload || this._pendingReloadAgentTransitions.length >= MAX_RECENT_AGENT_TRANSITIONS) {
+			return undefined;
+		}
+		const expectedBefore = this._pendingReloadAgentTransitions.length > 0
+			? this._pendingReloadAgentTransitions[this._pendingReloadAgentTransitions.length - 1].after
+			: pendingReload.before;
+		if (transition.before !== expectedBefore) {
+			return undefined;
+		}
+
+		this._pendingReloadAgentTransitions.push(transition);
+		this._recordAgentCorrelation(transition, 'applied');
+		if (transition.after !== pendingReload.after) {
+			return this._result('applied');
+		}
+
+		this._pendingReload = undefined;
+		const agentTransitions = this._pendingReloadAgentTransitions.splice(0);
+		return this._result('applied', agentTransitions.map(agentTransition => this._appendAgentTransition(agentTransition)));
+	}
+
+	private _isRecentAgentTransition(before: string, after: string): boolean {
+		if (isSameContentTransition(this._recentAgentTransition, { before, after })) {
+			return true;
+		}
+		const last = this._recentAgentTransitions[this._recentAgentTransitions.length - 1];
+		if (!last || last.afterId !== contentId(after)) {
+			return false;
+		}
+		const beforeId = contentId(before);
+		return this._recentAgentTransitions.some(transition => transition.beforeId === beforeId);
+	}
+
+	private _recordRecentAgentTransition(transition: IRecentTransition<TSource>): void {
+		const previous = this._recentAgentTransitions[this._recentAgentTransitions.length - 1];
+		if (previous && previous.afterId !== transition.beforeId) {
+			this._recentAgentTransitions.length = 0;
+		}
+		this._recentAgentTransitions.push(transition);
+		if (this._recentAgentTransitions.length > MAX_RECENT_AGENT_TRANSITIONS) {
+			this._recentAgentTransitions.shift();
+		}
+		this._recentAgentTransition = transition;
+	}
+
+	private _applyRecentExternalAgentTransition(
+		transition: IUnifiedDocumentAgentTransition<TSource>,
+	): IUnifiedDocumentReconcileResult<TSource> | undefined {
+		const recentExternalTransition = this._recentExternalTransition;
+		if (!recentExternalTransition || this._recentExternalAgentTransitions.length >= MAX_RECENT_AGENT_TRANSITIONS) {
+			return undefined;
+		}
+		const correlated = this._recentExternalAgentTransitions.find(candidate => candidate.correlation === transition.correlation);
+		if (correlated) {
+			return this._result(isSameContentTransition(correlated, transition) ? 'duplicate' : 'conflict');
+		}
+		const expectedBeforeId = this._recentExternalAgentTransitions.length > 0
+			? contentId(this._recentExternalAgentTransitions[this._recentExternalAgentTransitions.length - 1].after)
+			: recentExternalTransition.beforeId;
+		if (contentId(transition.before) !== expectedBeforeId) {
+			return undefined;
+		}
+
+		this._recentExternalAgentTransitions.push(transition);
+		if (contentId(transition.after) !== recentExternalTransition.afterId) {
+			return this._result('applied');
+		}
+
+		const changes = this._replaceExternalWithAgentTransitions(recentExternalTransition, this._recentExternalAgentTransitions.splice(0));
+		return changes ? this._result('applied', changes) : undefined;
+	}
+
+	private _commitRecentExternalAgentTransitions(): IUnifiedDocumentTransitionChange<TSource>[] {
+		const recentExternalTransition = this._recentExternalTransition;
+		if (!recentExternalTransition) {
+			this._recentExternalAgentTransitions.length = 0;
+			return [];
+		}
+		if (this._recentExternalAgentTransitions.length === 0) {
+			return [];
+		}
+		return this._replaceExternalWithAgentTransitions(recentExternalTransition, this._recentExternalAgentTransitions.splice(0)) ?? [];
+	}
+
+	private _replaceExternalWithAgentTransitions(
+		existing: IRecentExternalTransition<TSource>,
+		agentTransitions: IUnifiedDocumentAgentTransition<TSource>[],
+	): IUnifiedDocumentTransitionChange<TSource>[] | undefined {
+		const index = this._transitions.findIndex(transition => transition.id === existing.transition.id);
+		if (index < 0 || agentTransitions.length === 0) {
+			return undefined;
+		}
+
+		const replacements = agentTransitions.map((agentTransition, agentIndex): IUnifiedDocumentTransition<TSource> => ({
+			...(agentIndex === 0 ? existing.transition : this._createTransition(agentTransition.edit, agentTransition.source, 'agentHost')),
+			edit: agentTransition.edit,
+			source: agentTransition.source,
+			kind: 'agentHost',
+			correlation: agentTransition.correlation,
+			agentKind: agentTransition.kind,
+		}));
+		const changes: IUnifiedDocumentTransitionChange<TSource>[] = replacements.map((replacement, replacementIndex) => ({
+			kind: replacementIndex === 0 ? 'replace' : 'append',
+			before: agentTransitions[replacementIndex].before,
+			after: agentTransitions[replacementIndex].after,
+			transition: { ...replacement },
+		}));
+		const agentAfter = agentTransitions[agentTransitions.length - 1].after;
+		if (contentId(agentAfter) !== existing.afterId) {
+			const externalRemainder = this._createTransition(
+				createMinimalEdit(agentAfter, existing.after),
+				existing.transition.source,
+				existing.transition.kind,
+			);
+			replacements.push(externalRemainder);
+			changes.push({
+				kind: 'append',
+				before: agentAfter,
+				after: existing.after,
+				transition: { ...externalRemainder },
+			});
+			this._recentExternalTransition = createRecentExternalTransition(agentAfter, existing.after, externalRemainder);
+		} else {
+			this._recentExternalTransition = undefined;
+		}
+
+		this._transitions.splice(index, 1, ...replacements);
+		for (let agentIndex = 0; agentIndex < agentTransitions.length; agentIndex++) {
+			this._recordRecentAgentTransition(createRecentTransition(
+				agentTransitions[agentIndex].before,
+				agentTransitions[agentIndex].after,
+				replacements[agentIndex],
+			));
+			this._recordAgentCorrelation(agentTransitions[agentIndex], 'applied');
+		}
+		return changes;
 	}
 
 	private _recordAgentCorrelation(transition: IUnifiedDocumentAgentTransition<TSource>, outcome: UnifiedDocumentReconcileOutcome): void {
@@ -480,6 +637,17 @@ function createRecentTransition<TSource>(
 		beforeId: contentId(before),
 		afterId: contentId(after),
 		transition,
+	};
+}
+
+function createRecentExternalTransition<TSource>(
+	before: string,
+	after: string,
+	transition: IUnifiedDocumentTransition<TSource>,
+): IRecentExternalTransition<TSource> {
+	return {
+		...createRecentTransition(before, after, transition),
+		after,
 	};
 }
 

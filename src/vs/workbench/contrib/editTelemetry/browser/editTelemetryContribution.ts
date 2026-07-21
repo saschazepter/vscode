@@ -4,12 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { autorun, derived } from '../../../../base/common/observable.js';
+import { autorun, derived, observableFromEvent } from '../../../../base/common/observable.js';
+import { Event } from '../../../../base/common/event.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { observableConfigValue } from '../../../../platform/observable/common/platformObservableUtils.js';
-import { ITelemetryService, TelemetryLevel, telemetryLevelEnabled } from '../../../../platform/telemetry/common/telemetry.js';
+import { ITelemetryService, TELEMETRY_CRASH_REPORTER_SETTING_ID, TELEMETRY_OLD_SETTING_ID, TELEMETRY_SETTING_ID, TelemetryLevel, telemetryLevelEnabled } from '../../../../platform/telemetry/common/telemetry.js';
 import { AnnotatedDocuments } from './helpers/annotatedDocuments.js';
 import { EditTrackingFeature } from './telemetry/editSourceTrackingFeature.js';
 import { VSCodeWorkspace } from './helpers/vscodeObservableWorkspace.js';
@@ -31,9 +32,18 @@ export class EditTelemetryContribution extends Disposable {
 		const annotatedDocuments = derived(reader => reader.store.add(instantiationService.createInstance(AnnotatedDocuments, workspace.read(reader))));
 
 		const editSourceTrackingEnabled = observableConfigValue(EDIT_TELEMETRY_SETTING_ID, true, configurationService);
+		const usageTelemetryEnabled = observableFromEvent(
+			this,
+			Event.filter(configurationService.onDidChangeConfiguration, event =>
+				event.affectsConfiguration(TELEMETRY_SETTING_ID) ||
+				event.affectsConfiguration(TELEMETRY_OLD_SETTING_ID) ||
+				event.affectsConfiguration(TELEMETRY_CRASH_REPORTER_SETTING_ID)
+			),
+			() => telemetryLevelEnabled(telemetryService, TelemetryLevel.USAGE)
+		);
 		this._register(autorun(r => {
 			const enabled = editSourceTrackingEnabled.read(r);
-			if (!enabled || !telemetryLevelEnabled(telemetryService, TelemetryLevel.USAGE)) {
+			if (!enabled || !usageTelemetryEnabled.read(r)) {
 				return;
 			}
 			r.store.add(instantiationService.createInstance(EditTrackingFeature, workspace.read(r), annotatedDocuments.read(r)));
