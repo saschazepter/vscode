@@ -230,6 +230,46 @@ suite('ModelSelection', () => {
 		});
 	});
 
+	test('switching untitled drafts for the same provider restores the incoming draft model', () => {
+		assert.deepStrictEqual(summarize(transition({
+			session: { modelId: first.identifier },
+			models: {
+				configuredModel: second.metadata.id,
+				desiredModelResolution: { kind: 'available', model: first },
+			},
+			previous: {
+				currentModel: second,
+				currentReason: ModelSelectionReason.ConfiguredDefault,
+				lastPushedChatKey: 'chat:previous',
+			},
+		})), {
+			current: first.identifier,
+			pending: undefined,
+			effect: 'none',
+			applied: undefined,
+			reason: undefined,
+			lastPushedChatKey: 'chat:one',
+		});
+	});
+
+	test('same-chat automatic selection still upgrades to the configured default', () => {
+		assert.deepStrictEqual(summarize(transition({
+			session: { modelId: first.identifier },
+			models: { configuredModel: second.metadata.id },
+			previous: {
+				currentModel: first,
+				currentReason: ModelSelectionReason.FirstAvailable,
+			},
+		})), {
+			current: second.identifier,
+			pending: undefined,
+			effect: 'apply',
+			applied: second.identifier,
+			reason: ModelSelectionReason.ConfiguredDefault,
+			lastPushedChatKey: 'chat:one',
+		});
+	});
+
 	test('does not reapply an unchanged configured model for the same chat', () => {
 		assert.deepStrictEqual([
 			summarize(transition({

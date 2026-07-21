@@ -2710,6 +2710,9 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 				this._modelSelectionController.endSessionSwitch();
 			}
 		});
+
+		// Runs after the incoming view model is assigned so model resolution uses the incoming session pool.
+		this._modelSelectionController.applyConfiguredDefault();
 	}
 
 	private resetPendingDelegationForViewModelChange(transaction: ITransaction): void {
