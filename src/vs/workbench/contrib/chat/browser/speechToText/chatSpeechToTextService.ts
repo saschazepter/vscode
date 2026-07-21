@@ -79,18 +79,6 @@ export const enum ChatSpeechToTextState {
 	Transcribing = 'transcribing',
 }
 
-/** A live dictation transcript update. */
-export interface IChatDictationTranscript {
-	/** Full cumulative transcript to display. */
-	readonly text: string;
-	/**
-	 * The leading portion of `text` that is finalized (committed): it should be
-	 * rendered without the shimmer. The remainder is the in-progress interim
-	 * tail that keeps shimmering until it is finalized.
-	 */
-	readonly finalizedText: string;
-}
-
 export interface IChatSpeechToTextService {
 	readonly _serviceBrand: undefined;
 
@@ -100,10 +88,9 @@ export interface IChatSpeechToTextService {
 	/**
 	 * Fires with the cumulative transcript while recording, so callers can
 	 * render dictation live as the user speaks. The value grows monotonically
-	 * (finalized utterances plus any in-progress delta), and carries the
-	 * finalized (non-shimmering) portion of that transcript.
+	 * (finalized utterances plus any in-progress delta).
 	 */
-	readonly onDidUpdateTranscript: Event<IChatDictationTranscript>;
+	readonly onDidUpdateTranscript: Event<string>;
 
 	/**
 	 * Whether on-device speech-to-text is available on this platform. Callers
@@ -158,7 +145,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private readonly _onDidChangeState = this._register(new Emitter<ChatSpeechToTextState>());
 	readonly onDidChangeState = this._onDidChangeState.event;
 
-	private readonly _onDidUpdateTranscript = this._register(new Emitter<IChatDictationTranscript>());
+	private readonly _onDidUpdateTranscript = this._register(new Emitter<string>());
 	readonly onDidUpdateTranscript = this._onDidUpdateTranscript.event;
 
 	private readonly _onDidChangePreparingModel = this._register(new Emitter<boolean>());
@@ -418,7 +405,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			if (!result.isFinal) {
 				this._sessionSegments++;
 			}
-			this._onDidUpdateTranscript.fire({ text: this._transcript, finalizedText: result.finalizedText ?? '' });
+			this._onDidUpdateTranscript.fire(this._transcript);
 		}));
 		const cacheDir = joinPath(this._environmentService.cacheHome, 'chatDictationModels').fsPath;
 		const model = this._getModelId();
