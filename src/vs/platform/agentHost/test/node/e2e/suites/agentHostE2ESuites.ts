@@ -8,6 +8,7 @@ import type { TestProtocolClient } from '../../serverIntegrationTestHelpers.js';
 import { defineCoreTests } from './coreSuite.js';
 import { defineFileOperationsTests } from './fileOperationsSuite.js';
 import { defineHostFeaturesTests } from './hostFeaturesSuite.js';
+import { defineMultiChatTests } from './multiChatSuite.js';
 import { defineStateOperationsTests } from './stateOperationsSuite.js';
 import { defineSubagentTests } from './subagentSuite.js';
 import { defineTurnLifecycleTests } from './turnLifecycleSuite.js';
@@ -38,6 +39,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 			isWindows,
 			runRecordOnlyTests: RUN_RECORD_ONLY_TESTS,
 			registerNoModelTrafficTest: title => noModelTrafficTestTitles.add(title),
+			get observedModelRequestBodies() { return lease?.observedModelRequestBodies ?? []; },
 		};
 
 		suiteSetup(async function () {
@@ -76,6 +78,7 @@ export function defineAgentHostE2ETests(config: IAgentHostE2EProviderConfig): vo
 
 		defineCoreTests(context);
 		defineHostFeaturesTests(context);
+		defineMultiChatTests(context);
 		defineStateOperationsTests(context);
 		defineFileOperationsTests(context);
 		defineTurnLifecycleTests(context);

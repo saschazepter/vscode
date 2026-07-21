@@ -236,6 +236,11 @@ export interface IAgentHostE2EProviderConfig {
 	 * shared test prompt doesn't reliably drive it to `ExitPlanMode`.
 	 */
 	readonly supportsPlanMode: boolean;
+	/** Whether the provider supports additional peer chats and chat forks. */
+	readonly supportsMultipleChats: boolean;
+	readonly supportsChatFork: boolean;
+	/** Whether provider-backed fork context can be tested end-to-end. */
+	readonly supportsChatForkE2E: boolean;
 
 	/**
 	 * The github token to use. If not provided, the test will attempt to resolve it from the environment or `gh auth token`.
@@ -644,6 +649,10 @@ export class AgentHostE2EServerLease {
 		);
 		await this._client.connect();
 		return { server: this._server, client: this._client };
+	}
+
+	get observedModelRequestBodies(): readonly string[] {
+		return this._server?.capiReplay?.observedModelRequestBodies ?? [];
 	}
 
 	/**
