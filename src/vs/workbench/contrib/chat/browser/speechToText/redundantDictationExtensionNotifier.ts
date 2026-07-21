@@ -42,7 +42,7 @@ export class RedundantDictationExtensionNotifier implements IWorkbenchContributi
 	private static readonly EXTENSION_ID = 'ms-vscode.vscode-speech';
 
 	/** Application-scoped flag so the prompt fires at most once per machine. */
-	private static readonly STORAGE_KEY = 'chat.dictation.redundantExtensionPromptShown';
+	private static readonly STORAGE_KEY = 'chat.dictation.redundantExtensionPromptShown.v2';
 
 	constructor(
 		@ILocalTranscriptionService private readonly localTranscriptionService: ILocalTranscriptionService,
@@ -95,8 +95,6 @@ export class RedundantDictationExtensionNotifier implements IWorkbenchContributi
 			return;
 		}
 
-		// Guard now so the prompt is shown at most once regardless of the outcome.
-		this.markShown();
 		this.telemetryService.publicLog2<RedundantDictationExtensionPromptEvent, RedundantDictationExtensionPromptClassification>('chat.dictation.redundantExtensionPrompt', { action: 'shown' });
 
 		const displayName = extension.displayName || extension.identifier.id;
@@ -107,6 +105,8 @@ export class RedundantDictationExtensionNotifier implements IWorkbenchContributi
 				{
 					label: localize('disableExtension', "Disable Extension"),
 					run: async () => {
+						// Guard so the prompt is not shown again once the user has responded.
+						this.markShown();
 						this.telemetryService.publicLog2<RedundantDictationExtensionPromptEvent, RedundantDictationExtensionPromptClassification>('chat.dictation.redundantExtensionPrompt', { action: 'disable' });
 						try {
 							await this.extensionsWorkbenchService.setEnablement(extension!, EnablementState.DisabledGlobally);
@@ -118,12 +118,18 @@ export class RedundantDictationExtensionNotifier implements IWorkbenchContributi
 				{
 					label: localize('keepExtension', "Keep"),
 					run: () => {
+						// Guard so the prompt is not shown again once the user has responded.
+						this.markShown();
 						this.telemetryService.publicLog2<RedundantDictationExtensionPromptEvent, RedundantDictationExtensionPromptClassification>('chat.dictation.redundantExtensionPrompt', { action: 'keep' });
 					}
 				}
 			],
 			{
+				// Keep the notification visible until the user makes a choice so it is not missed.
+				sticky: true,
 				onCancel: () => {
+					// Guard so the prompt is not shown again once the user has dismissed it.
+					this.markShown();
 					this.telemetryService.publicLog2<RedundantDictationExtensionPromptEvent, RedundantDictationExtensionPromptClassification>('chat.dictation.redundantExtensionPrompt', { action: 'dismissed' });
 				}
 			}
