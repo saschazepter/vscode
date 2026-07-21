@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { IconLabel, IIconLabelValueOptions } from '../../../../base/browser/ui/iconLabel/iconLabel.js';
+import { renderAsPlaintext } from '../../../../base/browser/markdownRenderer.js';
 import { IListVirtualDelegate } from '../../../../base/browser/ui/list/list.js';
 import { IListAccessibilityProvider } from '../../../../base/browser/ui/list/listWidget.js';
 import { IDataSource, ITreeNode, ITreeRenderer } from '../../../../base/browser/ui/tree/tree.js';
@@ -12,6 +13,8 @@ import { Emitter, Event } from '../../../../base/common/event.js';
 import { createMatches, FuzzyScore } from '../../../../base/common/filters.js';
 import { escapeIcons } from '../../../../base/common/iconLabels.js';
 import { Disposable, DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
+import { marked } from '../../../../base/common/marked/marked.js';
+import { basename } from '../../../../base/common/resources.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
@@ -19,9 +22,9 @@ import { IEditorOptions } from '../../../../platform/editor/common/editor.js';
 import { IWorkbenchDataTreeOptions } from '../../../../platform/list/browser/listService.js';
 import { IBreadcrumbsDataSource, IBreadcrumbsOutlineElement, IOutline, IOutlineComparator, IOutlineListConfig, IQuickPickDataSource, IQuickPickOutlineElement, OutlineChangeEvent, OutlineTarget } from '../../../services/outline/browser/outline.js';
 import { ChatTreeItem, IChatWidget } from './chat.js';
-import { IChatRequestViewModel, isRequestVM } from '../common/model/chatViewModel.js';
-import { isChatFollowup } from '../common/chatService/chatService.js';
 import { getExplicitFileOrImageAttachmentSummary } from '../common/attachments/chatVariableEntries.js';
+import { isChatFollowup } from '../common/chatService/chatService.js';
+import { IChatRequestViewModel, IChatResponseViewModel, isRequestVM, isResponseVM } from '../common/model/chatViewModel.js';
 
 /**
  * Derives the display label for a chat request. Reads the prompt text the same
@@ -48,29 +51,95 @@ export function getChatRequestLabel(request: IChatRequestViewModel, index: numbe
 	return getExplicitFileOrImageAttachmentSummary(request.variables) ?? localize('chatOutline.emptyRequest', "Request {0}", index + 1);
 }
 
+export const enum ChatOutlineEntryKind {
+	Request = 'request',
+	Heading = 'heading',
+	FileEdit = 'fileEdit',
+}
+
 /**
- * A single navigable element in a chat outline. Each entry maps to a user
- * request (prompt) in the chat, acting as the top-level "symbol" the user can
- * jump to via Go to Symbol, the Outline pane, and Breadcrumbs.
+ * A single navigable element in a chat outline. Top-level entries map to user
+ * requests (prompts); their children map to meaningful items inside the
+ * response (markdown headings and file edits). Selecting an entry reveals its
+ * chat row (the request row for a request, the response row for a child).
  */
 export class ChatOutlineEntry {
 
+	readonly children: ChatOutlineEntry[] = [];
+	parent: ChatOutlineEntry | undefined;
+
 	constructor(
-		readonly index: number,
-		readonly element: IChatRequestViewModel,
+		readonly id: string,
+		readonly sortIndex: number,
+		readonly label: string,
+		readonly icon: ThemeIcon,
+		readonly kind: ChatOutlineEntryKind,
+		/** The chat row revealed when this entry is picked. */
+		readonly revealTarget: ChatTreeItem,
 	) { }
 
-	get id(): string {
-		return this.element.id;
+	addChild(child: ChatOutlineEntry): void {
+		child.parent = this;
+		this.children.push(child);
+	}
+}
+
+/**
+ * Builds the response-level child entries (markdown headings and file edits) for
+ * a response, in document order. Each child reveals the response row.
+ */
+export function buildResponseChildren(response: IChatResponseViewModel, nextSortIndex: () => number): ChatOutlineEntry[] {
+	const children: ChatOutlineEntry[] = [];
+	let headingIndex = 0;
+	let editIndex = 0;
+
+	const addFileEdit = (uri: URI | undefined) => {
+		if (!uri) {
+			return;
+		}
+		children.push(new ChatOutlineEntry(
+			`${response.id}#edit${editIndex++}`,
+			nextSortIndex(),
+			basename(uri) || uri.toString(),
+			Codicon.symbolFile,
+			ChatOutlineEntryKind.FileEdit,
+			response,
+		));
+	};
+
+	for (const part of response.response.value) {
+		switch (part.kind) {
+			case 'markdownContent': {
+				for (const token of marked.lexer(part.content.value, { gfm: true })) {
+					if (token.type === 'heading') {
+						const text = renderAsPlaintext({ value: token.raw }).replace(/\s+/g, ' ').trim();
+						if (text.length > 0) {
+							children.push(new ChatOutlineEntry(
+								`${response.id}#h${headingIndex++}`,
+								nextSortIndex(),
+								text,
+								Codicon.symbolString,
+								ChatOutlineEntryKind.Heading,
+								response,
+							));
+						}
+					}
+				}
+				break;
+			}
+			case 'textEditGroup':
+			case 'notebookEditGroup':
+				addFileEdit(part.uri);
+				break;
+			case 'workspaceEdit':
+				for (const edit of part.edits) {
+					addFileEdit(edit.newResource ?? edit.oldResource);
+				}
+				break;
+		}
 	}
 
-	get icon(): ThemeIcon {
-		return Codicon.commentDiscussion;
-	}
-
-	get label(): string {
-		return getChatRequestLabel(this.element, this.index);
-	}
+	return children;
 }
 
 class ChatOutlineVirtualDelegate implements IListVirtualDelegate<ChatOutlineEntry> {
@@ -126,10 +195,10 @@ class ChatOutlineAccessibility implements IListAccessibilityProvider<ChatOutline
 
 class ChatOutlineComparator implements IOutlineComparator<ChatOutlineEntry> {
 	compareByPosition(a: ChatOutlineEntry, b: ChatOutlineEntry): number {
-		return a.index - b.index;
+		return a.sortIndex - b.sortIndex;
 	}
 	compareByType(a: ChatOutlineEntry, b: ChatOutlineEntry): number {
-		return a.index - b.index;
+		return a.kind === b.kind ? a.sortIndex - b.sortIndex : a.kind.localeCompare(b.kind);
 	}
 	compareByName(a: ChatOutlineEntry, b: ChatOutlineEntry): number {
 		return a.label.localeCompare(b.label);
@@ -138,32 +207,44 @@ class ChatOutlineComparator implements IOutlineComparator<ChatOutlineEntry> {
 
 class ChatOutlineTreeDataSource implements IDataSource<ChatOutline, ChatOutlineEntry> {
 	getChildren(element: ChatOutline | ChatOutlineEntry): Iterable<ChatOutlineEntry> {
-		if (element instanceof ChatOutline) {
-			return element.entries;
-		}
-		return [];
+		return element instanceof ChatOutline ? element.entries : element.children;
 	}
 }
 
 class ChatOutlineQuickPickDataSource implements IQuickPickDataSource<ChatOutlineEntry> {
 	constructor(private readonly _outline: ChatOutline) { }
 	getQuickPickElements(): IQuickPickOutlineElement<ChatOutlineEntry>[] {
-		return this._outline.entries.map(entry => ({
-			element: entry,
-			// Codicons cannot be passed via `iconClasses` in this quick pick (only
-			// file icons can); embed the icon inline in the label instead and
-			// escape only the request text so `$(...)` in it stays literal.
-			label: `$(${entry.icon.id}) ${escapeIcons(entry.label)}`,
-			ariaLabel: entry.label,
-		}));
+		const result: IQuickPickOutlineElement<ChatOutlineEntry>[] = [];
+		const flatten = (entries: readonly ChatOutlineEntry[]) => {
+			for (const entry of entries) {
+				result.push({
+					element: entry,
+					// Codicons cannot be passed via `iconClasses` in this quick pick
+					// (only file icons can); embed the icon inline in the label
+					// instead and escape only the text so `$(...)` stays literal.
+					label: `$(${entry.icon.id}) ${escapeIcons(entry.label)}`,
+					ariaLabel: entry.label,
+					// Show the owning request as context for response children.
+					description: entry.parent ? entry.parent.label : undefined,
+				});
+				flatten(entry.children);
+			}
+		};
+		flatten(this._outline.entries);
+		return result;
 	}
 }
 
 class ChatOutlineBreadcrumbsDataSource implements IBreadcrumbsDataSource<ChatOutlineEntry> {
 	constructor(private readonly _outline: ChatOutline) { }
 	getBreadcrumbElements(): readonly IBreadcrumbsOutlineElement<ChatOutlineEntry>[] {
-		const active = this._outline.activeElement;
-		return active ? [{ element: active, label: active.label }] : [];
+		const path: IBreadcrumbsOutlineElement<ChatOutlineEntry>[] = [];
+		let entry = this._outline.activeElement;
+		while (entry) {
+			path.unshift({ element: entry, label: entry.label });
+			entry = entry.parent;
+		}
+		return path;
 	}
 }
 
@@ -220,8 +301,8 @@ export class ChatOutline implements IOutline<ChatOutlineEntry> {
 		if (viewModel) {
 			this._viewModelDisposables.add(viewModel.onDidChange(() => {
 				// The view model fires on every response update (including each
-				// streamed chunk). Request symbols don't change during streaming,
-				// so only refresh the outline when the entries actually change.
+				// streamed chunk). The signature check below keeps the outline
+				// stable unless the request/heading/edit set actually changes.
 				if (this._recomputeEntries()) {
 					this._onDidChange.fire({});
 				}
@@ -233,14 +314,30 @@ export class ChatOutline implements IOutline<ChatOutlineEntry> {
 	private _recomputeEntries(): boolean {
 		const items = this._widget.viewModel?.getItems() ?? [];
 		const entries: ChatOutlineEntry[] = [];
-		let index = 0;
+		let sortIndex = 0;
+		const nextSortIndex = () => sortIndex++;
+
+		let requestIndex = 0;
+		let current: ChatOutlineEntry | undefined;
 		for (const item of items) {
 			if (isRequestVM(item)) {
-				entries.push(new ChatOutlineEntry(index++, item));
+				current = new ChatOutlineEntry(
+					item.id,
+					nextSortIndex(),
+					getChatRequestLabel(item, requestIndex++),
+					Codicon.commentDiscussion,
+					ChatOutlineEntryKind.Request,
+					item,
+				);
+				entries.push(current);
+			} else if (isResponseVM(item) && current) {
+				for (const child of buildResponseChildren(item, nextSortIndex)) {
+					current.addChild(child);
+				}
 			}
 		}
 
-		const signature = entries.map(entry => `${entry.id}\u0000${entry.label}`).join('\u0001');
+		const signature = entries.map(serializeEntrySignature).join('\u0001');
 		if (signature === this._entriesSignature) {
 			return false;
 		}
@@ -267,17 +364,27 @@ export class ChatOutline implements IOutline<ChatOutlineEntry> {
 		if (!focus) {
 			return undefined;
 		}
-		return this._entries.find(entry => entry.element === focus);
+		// A focused request matches its own entry; a focused response matches its
+		// first child (so breadcrumbs show the request path), else the request.
+		for (const entry of this._entries) {
+			if (entry.revealTarget === focus) {
+				return entry;
+			}
+			const child = entry.children.find(c => c.revealTarget === focus);
+			if (child) {
+				return child;
+			}
+		}
+		return undefined;
 	}
 
 	reveal(entry: ChatOutlineEntry, _options: IEditorOptions, _sideBySide: boolean, _select: boolean): void {
-		const item: ChatTreeItem = entry.element;
-		this._widget.reveal(item);
-		this._widget.focus(item);
+		this._widget.reveal(entry.revealTarget);
+		this._widget.focus(entry.revealTarget);
 	}
 
 	preview(entry: ChatOutlineEntry): IDisposable {
-		this._widget.reveal(entry.element);
+		this._widget.reveal(entry.revealTarget);
 		return Disposable.None;
 	}
 
@@ -290,3 +397,7 @@ export class ChatOutline implements IOutline<ChatOutlineEntry> {
 	}
 }
 
+function serializeEntrySignature(entry: ChatOutlineEntry): string {
+	const children = entry.children.map(serializeEntrySignature).join('\u0002');
+	return `${entry.id}\u0000${entry.label}\u0000${children}`;
+}

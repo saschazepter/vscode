@@ -9,9 +9,9 @@ import { DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { OutlineTarget } from '../../../../services/outline/browser/outline.js';
-import { ChatOutline, getChatRequestLabel } from '../../browser/chatOutline.js';
+import { buildResponseChildren, ChatOutline, ChatOutlineEntryKind, getChatRequestLabel } from '../../browser/chatOutline.js';
 import { ChatTreeItem, IChatWidget } from '../../browser/chat.js';
-import { IChatRequestViewModel } from '../../common/model/chatViewModel.js';
+import { IChatRequestViewModel, IChatResponseViewModel } from '../../common/model/chatViewModel.js';
 import { IChatRequestVariableEntry } from '../../common/attachments/chatVariableEntries.js';
 
 function req(message: object, variables: IChatRequestVariableEntry[] = []): IChatRequestViewModel {
@@ -22,12 +22,17 @@ function reqVM(id: string, text: string): IChatRequestViewModel {
 	return { id, message: { text, parts: [{ text }] }, variables: [] } as unknown as IChatRequestViewModel;
 }
 
+function respVM(id: string, value: object[]): IChatResponseViewModel {
+	// `setVote` presence is what `isResponseVM` keys off.
+	return { id, setVote: () => { }, response: { value } } as unknown as IChatResponseViewModel;
+}
+
 class TestViewModel {
 	readonly onChange = new Emitter<null>();
 	readonly onDidChange: Event<null> = this.onChange.event;
 	readonly sessionResource = URI.parse('chat-session:/test');
-	items: IChatRequestViewModel[] = [];
-	getItems(): IChatRequestViewModel[] {
+	items: ChatTreeItem[] = [];
+	getItems(): ChatTreeItem[] {
 		return this.items;
 	}
 }
@@ -50,7 +55,7 @@ class TestWidget {
 	}
 }
 
-function setup(store: Pick<DisposableStore, 'add'>, items: IChatRequestViewModel[]) {
+function setup(store: Pick<DisposableStore, 'add'>, items: ChatTreeItem[]) {
 	const viewModel = new TestViewModel();
 	viewModel.items = items;
 	store.add(viewModel.onChange);
@@ -86,22 +91,63 @@ suite('ChatOutline', () => {
 		]);
 	});
 
-	test('quick pick escapes codicon markup in request text', () => {
-		const { outline } = setup(store, [reqVM('r1', '$(bug) fix')]);
+	test('buildResponseChildren extracts headings and file edits in order', () => {
+		let sortIndex = 0;
+		const response = respVM('resp1', [
+			{ kind: 'markdownContent', content: { value: '# Title\n\nsome text\n\n## Section' } },
+			{ kind: 'textEditGroup', uri: URI.file('/a/foo.ts') },
+			{ kind: 'workspaceEdit', edits: [{ newResource: URI.file('/a/bar.ts') }] },
+		]);
 
-		const [element] = outline.config.quickPickDataSource.getQuickPickElements();
+		const children = buildResponseChildren(response, () => sortIndex++);
 
-		assert.ok(element.label.includes('\\$(bug)'), element.label);
-		assert.strictEqual(element.ariaLabel, '$(bug) fix');
+		assert.deepStrictEqual(children.map(child => ({ label: child.label, kind: child.kind })), [
+			{ label: 'Title', kind: ChatOutlineEntryKind.Heading },
+			{ label: 'Section', kind: ChatOutlineEntryKind.Heading },
+			{ label: 'foo.ts', kind: ChatOutlineEntryKind.FileEdit },
+			{ label: 'bar.ts', kind: ChatOutlineEntryKind.FileEdit },
+		]);
 	});
 
-	test('only fires onDidChange when request entries change', () => {
+	test('requests become top-level entries with response children', () => {
+		const { outline } = setup(store, [
+			reqVM('r1', 'first'),
+			respVM('resp1', [{ kind: 'markdownContent', content: { value: '## Heading A' } }]),
+			reqVM('r2', 'second'),
+			respVM('resp2', [{ kind: 'textEditGroup', uri: URI.file('/a/edit.ts') }]),
+		]);
+
+		assert.deepStrictEqual(outline.entries.map(entry => ({
+			label: entry.label,
+			children: entry.children.map(child => child.label),
+		})), [
+			{ label: 'first', children: ['Heading A'] },
+			{ label: 'second', children: ['edit.ts'] },
+		]);
+	});
+
+	test('quick pick flattens children and escapes codicon markup', () => {
+		const { outline } = setup(store, [
+			reqVM('r1', '$(bug) fix'),
+			respVM('resp1', [{ kind: 'markdownContent', content: { value: '## Details' } }]),
+		]);
+
+		const elements = outline.config.quickPickDataSource.getQuickPickElements();
+
+		assert.deepStrictEqual(elements.map(e => ({ ariaLabel: e.ariaLabel, description: e.description })), [
+			{ ariaLabel: '$(bug) fix', description: undefined },
+			{ ariaLabel: 'Details', description: '$(bug) fix' },
+		]);
+		assert.ok(elements[0].label.includes('\\$(bug)'), elements[0].label);
+	});
+
+	test('only fires onDidChange when entries change', () => {
 		const { viewModel, outline } = setup(store, [reqVM('r1', 'first'), reqVM('r2', 'second')]);
 
 		let changes = 0;
 		store.add(outline.onDidChange(() => changes++));
 
-		// A response-only view-model update (same requests) must not refresh the outline.
+		// A view-model update with the same requests/children must not refresh.
 		viewModel.onChange.fire(null);
 		assert.strictEqual(changes, 0);
 
@@ -115,14 +161,20 @@ suite('ChatOutline', () => {
 
 	test('reveal and preview navigate the chat widget', () => {
 		const request = reqVM('r1', 'first');
-		const { widget, outline } = setup(store, [request]);
-		const entry = outline.entries[0];
+		const response = respVM('resp1', [{ kind: 'markdownContent', content: { value: '## Child' } }]);
+		const { widget, outline } = setup(store, [request, response]);
+		const requestEntry = outline.entries[0];
+		const childEntry = requestEntry.children[0];
 
-		outline.reveal(entry, {}, false, false);
+		outline.reveal(requestEntry, {}, false, false);
 		assert.deepStrictEqual(widget.revealed, [request]);
 		assert.deepStrictEqual(widget.focused, [request]);
 
-		store.add(outline.preview(entry));
-		assert.deepStrictEqual(widget.revealed, [request, request]);
+		// A child reveals the response row.
+		outline.reveal(childEntry, {}, false, false);
+		assert.deepStrictEqual(widget.revealed, [request, response]);
+
+		store.add(outline.preview(childEntry));
+		assert.deepStrictEqual(widget.revealed, [request, response, response]);
 	});
 });
