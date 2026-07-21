@@ -71,10 +71,11 @@ export function areDiscoveredDirectoriesEqual(a: readonly IDiscoveredDirectory[]
 export function deDuplicateDiscoveredDirectories(entries: readonly IDiscoveredDirectory[]): readonly IDiscoveredDirectory[] {
 	// Preserve the order.
 	const result: IDiscoveredDirectory[] = [];
-	const seen = new ResourceSet();
+	const seen = new Set<string>();
 	for (const entry of entries) {
-		if (!seen.has(entry.uri)) {
-			seen.add(entry.uri);
+		const key = `${entry.type}:${entry.uri.toString()}`;
+		if (!seen.has(key)) {
+			seen.add(key);
 			result.push(entry);
 		}
 	}

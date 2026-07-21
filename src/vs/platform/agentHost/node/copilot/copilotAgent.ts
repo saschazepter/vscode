@@ -1868,7 +1868,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		// Anchor the customization directory (best-effort, idempotent) so
 		// session-discovered customizations surface alongside this client's,
 		// mirroring the previous eager resolution in `setClientCustomizations`.
-		if (!activeClient.pluginController.directories) {
+		if (!activeClient.pluginController.directories.length) {
 			this._getSessionCustomizationDirectory(session).then(
 				directory => activeClient.pluginController.setDirectories(directory ? [directory] : []),
 				() => { /* best-effort anchoring */ },
