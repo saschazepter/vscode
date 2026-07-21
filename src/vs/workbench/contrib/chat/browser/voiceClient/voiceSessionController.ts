@@ -2571,11 +2571,34 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 		return text;
 	}
 
+	/**
+	 * Whether this controller's window currently has OS focus. In multi-window
+	 * setups (e.g. an editor window + the agents window) each window has its own
+	 * controller/WebSocket, so without this gate every open window would re-arm
+	 * hands-free auto-listen and reply simultaneously. Only the focused window
+	 * should keep listening (#8507).
+	 */
+	private _isWindowFocused(): boolean {
+		try {
+			return this._window?.document.hasFocus() ?? false;
+		} catch {
+			return false;
+		}
+	}
+
 	/** Re-enter listening via synthetic short tap. */
 	private _enterAutoListen(source: 'auto' | 'connect' = 'auto'): void {
 		this._clearAutoListenTimer();
 		if (this._autoListenSuppressed || !this._isConnected.get() || this._pttHeld) {
 			this.logService.trace(`[voice] _enterAutoListen skipped: suppressed=${this._autoListenSuppressed} connected=${this._isConnected.get()} pttHeld=${this._pttHeld}`);
+			return;
+		}
+		// In multi-window hands-free, only the focused window keeps auto-listening
+		// so two windows don't both listen and reply at once (#8507). The 'connect'
+		// source is a user gesture in the connecting (focused) window, so it isn't
+		// gated here.
+		if (source === 'auto' && !this._isWindowFocused()) {
+			this.logService.trace('[voice] _enterAutoListen skipped: window not focused (multi-window hands-free)');
 			return;
 		}
 		// Don't enter listening if audio is still playing or queued.
@@ -2621,6 +2644,11 @@ export class VoiceSessionController extends Disposable implements IVoiceSessionC
 	 */
 	private _startBargeInListen(): void {
 		if (!this._isHandsFreeEnabled() || !this._isConnected.get() || this._pttHeld || this._autoListenSuppressed || !this._window) {
+			return;
+		}
+		// Only barge-in listen in the focused window so background windows don't
+		// also open a mic during playback (#8507).
+		if (!this._isWindowFocused()) {
 			return;
 		}
 		this._clearAutoListenTimer();
