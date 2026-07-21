@@ -31,14 +31,14 @@ export class ExtHostEmbeddings implements ExtHostEmbeddingsShape {
 
 	registerEmbeddingsProvider(_extension: IExtensionDescription, embeddingsModel: string, provider: vscode.EmbeddingsProvider): IDisposable {
 		if (this._registeredModels.has(embeddingsModel)) {
-			throw new Error('An embeddings provider for this model is already registered');
+			throw new Error(`An embeddings provider for model '${embeddingsModel}' is already registered`);
 		}
 
 		const handle = this._handlePool++;
 
-		this._registeredModels.add(embeddingsModel);
 		this._proxy.$registerEmbeddingProvider(handle, embeddingsModel);
 		this._provider.set(handle, { id: embeddingsModel, provider });
+		this._registeredModels.add(embeddingsModel);
 
 		return toDisposable(() => {
 			this._registeredModels.delete(embeddingsModel);
