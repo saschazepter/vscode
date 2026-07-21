@@ -125,6 +125,18 @@ suite('BrowserSearch - resolveAddressBarInput', () => {
 		assert.deepStrictEqual(actual, inputs.map(() => 'unknown'));
 	});
 
+	test('an explicit http(s) scheme keeps whitespace-userinfo input a URL', () => {
+		// The scheme-less cases above are `unknown`, but an explicit http(s)
+		// scheme wins (the `!isHttpScheme` exception on the userinfo guard),
+		// matching Chromium's explicit-scheme → URL rule.
+		const inputs = [
+			'http://user name@example.com',
+			'https://user name@example.com',
+		];
+		const actual = inputs.map((i) => resolveAddressBarInputType(i));
+		assert.deepStrictEqual(actual, inputs.map(() => 'url'));
+	});
+
 	test('whitespace in the userinfo with an IP-literal host is still a URL', () => {
 		// Chromium's AutocompleteInput::Parse classifies IPv4/IPv6 hosts as URL
 		// before it applies the "space in the username" heuristic, so these stay
