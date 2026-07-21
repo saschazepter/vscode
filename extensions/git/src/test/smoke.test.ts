@@ -50,6 +50,18 @@ suite('git smoke test', function () {
 		cp.execSync('git add .', { cwd });
 		cp.execSync('git commit -m "initial commit"', { cwd });
 
+		const submoduleSource = path.join(cwd, '.git', 'submodule-source');
+		fs.mkdirSync(submoduleSource);
+		fs.writeFileSync(path.join(submoduleSource, 'README.md'), 'submodule', 'utf8');
+		cp.execFileSync('git', ['init', '-b', 'main'], { cwd: submoduleSource });
+		cp.execFileSync('git', ['config', 'user.name', 'testuser'], { cwd: submoduleSource });
+		cp.execFileSync('git', ['config', 'user.email', 'monacotools@example.com'], { cwd: submoduleSource });
+		cp.execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: submoduleSource });
+		cp.execFileSync('git', ['add', '.'], { cwd: submoduleSource });
+		cp.execFileSync('git', ['commit', '-m', 'initial commit'], { cwd: submoduleSource });
+		cp.execFileSync('git', ['-c', 'protocol.file.allow=always', 'submodule', 'add', submoduleSource, 'folder1/moduleA'], { cwd });
+		cp.execSync('git commit -m "add nested submodule"', { cwd });
+
 		// make sure git is activated
 		const ext = extensions.getExtension<GitExtension>('vscode.git');
 		await ext?.activate();
@@ -61,10 +73,26 @@ suite('git smoke test', function () {
 			await onDidOpenRepository;
 		}
 
-		assert.strictEqual(git.repositories.length, 1);
-		assert.strictEqual(git.repositories[0].rootUri.fsPath, cwd);
+		repository = git.repositories.find(repository => repository.rootUri.fsPath === cwd)!;
+		assert(repository);
+	});
 
-		repository = git.repositories[0];
+	test('detects nested submodules', async function () {
+		const submodulePath = file('folder1/moduleA');
+		let submodule = git.repositories.find(repository => repository.rootUri.fsPath === submodulePath);
+
+		if (!submodule) {
+			submodule = await new Promise<Repository>(resolve => {
+				const disposable = git.onDidOpenRepository(repository => {
+					if (repository.rootUri.fsPath === submodulePath) {
+						disposable.dispose();
+						resolve(repository);
+					}
+				});
+			});
+		}
+
+		assert.strictEqual(submodule.rootUri.fsPath, submodulePath);
 	});
 
 	test('reflects working tree changes', async function () {

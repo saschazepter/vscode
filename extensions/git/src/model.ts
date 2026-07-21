@@ -8,7 +8,7 @@ import TelemetryReporter from '@vscode/extension-telemetry';
 import { IRepositoryResolver, Repository, RepositoryState } from './repository';
 import { memoize, sequentialize, debounce } from './decorators';
 import { dispose, anyEvent, filterEvent, isDescendant, Limiter, pathEquals, toDisposable, eventToPromise } from './util';
-import { Git } from './git';
+import { Git, Submodule } from './git';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fromGitUri } from './uri';
@@ -699,7 +699,7 @@ export class Model implements IRepositoryResolver, IBranchProtectionProviderRegi
 			const gitRepository = this.git.open(repositoryRoot, repositoryRootRealPath, dotGit, this.logger);
 			const repository = new Repository(gitRepository, this, this, this, this, this, this, this.globalState, this.logger, this.telemetryReporter, this._repositoryCache);
 
-			this.open(repository);
+			this.open(repository, () => gitRepository.getSubmodules());
 			this._closedRepositoriesManager.deleteRepository(repository.root);
 
 			this.logger.info(`[Model][openRepository] Opened repository (path): ${repository.root}`);
@@ -770,7 +770,7 @@ export class Model implements IRepositoryResolver, IBranchProtectionProviderRegi
 		return false;
 	}
 
-	private open(repository: Repository): void {
+	private open(repository: Repository, getInitialSubmodules: () => Promise<Submodule[]>): void {
 		this.logger.trace(`[Model][open] Repository: ${repository.root}`);
 
 		const onDidDisappearRepository = filterEvent(repository.onDidChangeState, state => state === RepositoryState.Disposed);
@@ -795,18 +795,18 @@ export class Model implements IRepositoryResolver, IBranchProtectionProviderRegi
 			.getConfiguration('git', Uri.file(repository.root))
 			.get<number>('detectWorktreesLimit') as number;
 
-		const checkForSubmodules = () => {
+		const checkForSubmodules = (submodules = repository.submodules) => {
 			if (!shouldDetectSubmodules) {
 				this.logger.trace('[Model][open] Automatic detection of git submodules is not enabled.');
 				return;
 			}
 
-			if (repository.submodules.length > submodulesLimit) {
-				window.showWarningMessage(l10n.t('The "{0}" repository has {1} submodules which won\'t be opened automatically. You can still open each one individually by opening a file within.', path.basename(repository.root), repository.submodules.length));
+			if (submodules.length > submodulesLimit) {
+				window.showWarningMessage(l10n.t('The "{0}" repository has {1} submodules which won\'t be opened automatically. You can still open each one individually by opening a file within.', path.basename(repository.root), submodules.length));
 				statusListener.dispose();
 			}
 
-			repository.submodules
+			submodules
 				.slice(0, submodulesLimit)
 				.map(r => path.join(repository.root, r.path))
 				.forEach(p => {
@@ -856,7 +856,9 @@ export class Model implements IRepositoryResolver, IBranchProtectionProviderRegi
 			updateMergeChanges();
 			this.onDidChangeActiveTextEditor();
 		});
-		checkForSubmodules();
+		if (shouldDetectSubmodules) {
+			getInitialSubmodules().then(checkForSubmodules, err => this.logger.trace(`[Model][open] Initial submodule detection failed. Error:${err}`));
+		}
 		checkForWorktrees();
 		this.onDidChangeActiveTextEditor();
 
