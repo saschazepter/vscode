@@ -7,6 +7,7 @@ import assert from 'assert';
 import { DeferredPromise } from '../../../../../base/common/async.js';
 import { Event } from '../../../../../base/common/event.js';
 import { Disposable } from '../../../../../base/common/lifecycle.js';
+import { constObservable } from '../../../../../base/common/observable.js';
 import type { IChannel, IServerChannel } from '../../../../../base/parts/ipc/common/ipc.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { IAgentHostEnablementService } from '../../../../../platform/agentHost/common/agentHostEnablementService.js';
@@ -81,11 +82,23 @@ suite('EditorRemoteAgentHostServiceClient', () => {
 			clientId: 'test-client',
 			connect: async () => { connectCalls++; },
 			onDidClose: Event.None,
+			onDidNotification: Event.None,
+			onDidAction: Event.None,
+			onMcpNotification: Event.None,
+			initializeResult: constObservable(undefined),
+			rootState: {
+				value: undefined,
+				verifiedValue: undefined,
+				onDidChange: Event.None,
+				onDidError: Event.None,
+				onWillApplyAction: Event.None,
+				onDidApplyAction: Event.None,
+			},
 			dispose: () => { },
 		};
 		const instantiationService = disposables.add(new TestInstantiationService(new ServiceCollection(
 			[IRemoteAgentService, remoteAgentService],
-			[IAgentHostEnablementService, { _serviceBrand: undefined, enabled: true }],
+			[IAgentHostEnablementService, { _serviceBrand: undefined, enabled: constObservable(true) }],
 			[ILogService, new NullLogService()],
 		)));
 		instantiationService.stubInstance(RemoteAgentHostProtocolClient, protocolClient);
