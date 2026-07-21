@@ -115,11 +115,7 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 	handler: () => activeDictationComposer?.toggleDictation(),
 });
 
-// The new-session composer isn't an `IChatWidget`, so it doesn't set the
-// `inChatInput` context key that the workbench `agentsVoice.startVoiceInChat`
-// keybinding is scoped to. Re-bind the same chord here, scoped to composer
-// focus, so Voice Mode can be started with the keyboard from the new-session
-// view too. The command id is preserved so push-to-talk hold mode keeps working.
+// Preserve the command id so push-to-talk hold mode can track this chord.
 KeybindingsRegistry.registerKeybindingRule({
 	id: 'agentsVoice.startVoiceInChat',
 	weight: KeybindingWeight.WorkbenchContrib + 1,
