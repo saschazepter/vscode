@@ -2748,13 +2748,14 @@ export class CopilotAgent extends Disposable implements IAgent {
 	}
 
 	private _getOrCreateActiveClient(session: URI, directory: URI | undefined): ActiveClient {
+		const directories = directory ? [directory] : [];
 		let client = this._activeClients.get(session);
 		if (!client) {
-			const pluginController = this._plugins.createSessionController(session, directory);
+			const pluginController = this._plugins.createSessionController(session, directories);
 			client = this._instantiationService.createInstance(ActiveClient, session, pluginController, this._onDidSessionProgress);
 			this._activeClients.set(session, client);
 		} else if (directory) {
-			client.pluginController.setDirectories(directory ? [directory] : []);
+			client.pluginController.setDirectories(directories);
 		}
 		return client;
 	}
@@ -3524,12 +3525,12 @@ class PluginController extends Disposable {
 
 	/**
 	 * Construct a per-session controller bound to the given customization
-	 * directory. The returned controller is a {@link Disposable} owned by
+	 * directories. The returned controller is a {@link Disposable} owned by
 	 * the caller; disposing it releases the session's disk-discovery
 	 * watchers and detaches from this controller's change event.
 	 */
-	public createSessionController(session: URI, directory: URI | undefined): SessionPluginController {
-		return this.instantiationService.createInstance(SessionPluginController, this, session, directory ? [directory] : []);
+	public createSessionController(session: URI, directories: URI[]): SessionPluginController {
+		return this.instantiationService.createInstance(SessionPluginController, this, session, directories);
 	}
 
 	/**
