@@ -12,7 +12,7 @@ import { userInfo } from 'os';
 import { fileURLToPath } from 'url';
 import { WebSocket } from 'ws';
 import { CapiReplayProxy, type CapiReplayMode } from './e2e/harness/capiReplayProxy.js';
-import { dirname, resolve as resolvePath } from '../../../../base/common/path.js';
+import { dirname, join, resolve as resolvePath } from '../../../../base/common/path.js';
 import { URI } from '../../../../base/common/uri.js';
 import {
 	ContentEncoding,
