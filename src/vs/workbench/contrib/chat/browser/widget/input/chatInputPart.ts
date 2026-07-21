@@ -1574,6 +1574,15 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			}
 			this._syncFromModel(state, forSessionResource);
 		}));
+
+		// A configured default model (`chat.defaultModel`) is the default for every
+		// NEW conversation and must win even when the freshly bound input model already
+		// carries a selection spilled over from the previous session. The draft-based
+		// overrides above only fire while seeding from an absent state, so re-apply here
+		// after the model->view autorun is wired (so it is not overwritten by the sync).
+		// The call no-ops unless the session is empty and the user has not picked a model
+		// in this conversation, so a reopened conversation keeps its saved model.
+		this._applyConfiguredDefaultForEmptySession();
 	}
 
 	private _getPersistedEmptyInputState(): IChatModelInputState | undefined {
