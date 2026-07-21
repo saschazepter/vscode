@@ -96,9 +96,33 @@ suite('BrowserSearch - resolveAddressBarInput', () => {
 			'a&b?c=d', // invalid host char `&`
 			'0.1.2.3', // IPv4 with first octet 0 (not 0.0.0.0)
 			'[:::::::]', // malformed IPv6
+			'foo bar/baz', // whitespace in the host, bare path
 		];
 		const actual = inputs.map((i) => resolveAddressBarInputType(i));
 		assert.deepStrictEqual(actual, inputs.map(() => 'query'));
+	});
+
+	test('whitespace in the path/query/fragment is a URL (percent-encoded later)', () => {
+		const inputs = [
+			'http://localhost:8888/my file.php', // the reported issue
+			'https://example.com/my file.php',
+			'localhost:8888/my file.php', // scheme-less host:port
+			'example.com/foo bar', // scheme-less host with known TLD
+			'example.com?q=hello world', // space in the query
+			'example.com/a#frag ment', // space in the fragment
+		];
+		const actual = inputs.map((i) => resolveAddressBarInputType(i));
+		assert.deepStrictEqual(actual, inputs.map(() => 'url'));
+	});
+
+	test('whitespace in the userinfo is unknown (defaults to search)', () => {
+		const inputs = [
+			'user name@example.com',
+			'user name@example.com/',
+			'user name@localhost',
+		];
+		const actual = inputs.map((i) => resolveAddressBarInputType(i));
+		assert.deepStrictEqual(actual, inputs.map(() => 'unknown'));
 	});
 
 	test('ambiguous inputs return unknown', () => {
