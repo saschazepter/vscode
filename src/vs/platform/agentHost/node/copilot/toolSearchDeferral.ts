@@ -22,10 +22,11 @@ export function agentHostModelSupportsToolSearch(modelId: string | undefined): b
 	}
 	const id = modelId.toLowerCase();
 	const normalizedId = id.replace(/\./g, '-');
-	const isGpt56 = id === 'gpt-5.6-sol' || id === 'gpt-5.6-terra' || id === 'gpt-5.6-luna';
-	if (normalizedId === 'gpt-5-4' || normalizedId === 'gpt-5-5' || isGpt56) {
-		return true;
-	}
+	// Disabled due to an SDK issue with the GPT tool search tool.
+	// const isGpt56 = id === 'gpt-5.6-sol' || id === 'gpt-5.6-terra' || id === 'gpt-5.6-luna';
+	// if (normalizedId === 'gpt-5-4' || normalizedId === 'gpt-5-5' || isGpt56) {
+	// 	return true;
+	// }
 	if (!normalizedId.startsWith('claude') || normalizedId.startsWith('claude-haiku')) {
 		return false;
 	}

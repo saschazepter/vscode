@@ -42,9 +42,9 @@ suite('toolSearchDeferral', () => {
 			}
 		});
 
-		test('supports the same OpenAI model families as the extension', () => {
+		test('rejects OpenAI model families due to an SDK issue', () => {
 			for (const id of ['gpt-5.4', 'gpt-5.5', 'gpt-5-4', 'gpt-5-5', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
-				assert.strictEqual(agentHostModelSupportsToolSearch(id), true, id);
+				assert.strictEqual(agentHostModelSupportsToolSearch(id), false, id);
 			}
 		});
 
