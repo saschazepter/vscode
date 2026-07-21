@@ -7,7 +7,6 @@ import { IconLabel, IIconLabelValueOptions } from '../../../../base/browser/ui/i
 import { IListVirtualDelegate } from '../../../../base/browser/ui/list/list.js';
 import { IListAccessibilityProvider } from '../../../../base/browser/ui/list/listWidget.js';
 import { IDataSource, ITreeNode, ITreeRenderer } from '../../../../base/browser/ui/tree/tree.js';
-import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { createMatches, FuzzyScore } from '../../../../base/common/filters.js';
@@ -18,23 +17,23 @@ import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
 import { IEditorOptions } from '../../../../platform/editor/common/editor.js';
 import { IWorkbenchDataTreeOptions } from '../../../../platform/list/browser/listService.js';
-import { IEditorPane } from '../../../common/editor.js';
-import { IBreadcrumbsDataSource, IBreadcrumbsOutlineElement, IOutline, IOutlineComparator, IOutlineCreator, IOutlineListConfig, IOutlineService, IQuickPickDataSource, IQuickPickOutlineElement, OutlineChangeEvent, OutlineTarget } from '../../../services/outline/browser/outline.js';
+import { IBreadcrumbsDataSource, IBreadcrumbsOutlineElement, IOutline, IOutlineComparator, IOutlineListConfig, IQuickPickDataSource, IQuickPickOutlineElement, OutlineChangeEvent, OutlineTarget } from '../../../services/outline/browser/outline.js';
 import { ChatTreeItem, IChatWidget } from './chat.js';
-import { ChatEditor } from './widgetHosts/editor/chatEditor.js';
 import { IChatRequestViewModel, isRequestVM } from '../common/model/chatViewModel.js';
 import { isChatFollowup } from '../common/chatService/chatService.js';
+import { getExplicitFileOrImageAttachmentSummary } from '../common/attachments/chatVariableEntries.js';
 
 /**
  * Derives the display label for a chat request. Reads the prompt text the same
  * way the chat list renders it (followup message, else the parsed request
  * parts) rather than relying on `messageText`, which some providers (e.g.
- * agent-host sessions) leave empty. Collapses whitespace so multi-line prompts
- * render on a single row. Returns raw text; callers that render into an
- * icon-parsing surface (e.g. the quick pick) must escape `$(...)` codicon
- * markup themselves via `escapeIcons`.
+ * agent-host sessions) leave empty. When there is no prompt text, falls back to
+ * an attachment summary (matching the chat list) and finally a numbered label.
+ * Collapses whitespace so multi-line prompts render on a single row. Returns raw
+ * text; callers that render into an icon-parsing surface (e.g. the quick pick)
+ * must escape `$(...)` codicon markup themselves via `escapeIcons`.
  */
-function getChatRequestLabel(request: IChatRequestViewModel, index: number): string {
+export function getChatRequestLabel(request: IChatRequestViewModel, index: number): string {
 	const message = request.message;
 	let raw: string;
 	if (isChatFollowup(message)) {
@@ -43,7 +42,10 @@ function getChatRequestLabel(request: IChatRequestViewModel, index: number): str
 		raw = message.text || (Array.isArray(message.parts) ? message.parts.map(part => part.text).join('') : '');
 	}
 	const text = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : '';
-	return text.length > 0 ? text : localize('chatOutline.emptyRequest', "Request {0}", index + 1);
+	if (text.length > 0) {
+		return text;
+	}
+	return getExplicitFileOrImageAttachmentSummary(request.variables) ?? localize('chatOutline.emptyRequest', "Request {0}", index + 1);
 }
 
 /**
@@ -51,7 +53,7 @@ function getChatRequestLabel(request: IChatRequestViewModel, index: number): str
  * request (prompt) in the chat, acting as the top-level "symbol" the user can
  * jump to via Go to Symbol, the Outline pane, and Breadcrumbs.
  */
-class ChatOutlineEntry {
+export class ChatOutlineEntry {
 
 	constructor(
 		readonly index: number,
@@ -183,9 +185,11 @@ export class ChatOutline implements IOutline<ChatOutlineEntry> {
 		this._recomputeEntries();
 
 		this._disposables.add(this._widget.onDidChangeViewModel(() => {
-			this._recomputeEntries();
+			const changed = this._recomputeEntries();
 			this._registerViewModelListener();
-			this._onDidChange.fire({});
+			if (changed) {
+				this._onDidChange.fire({});
+			}
 		}));
 		this._registerViewModelListener();
 
@@ -215,13 +219,18 @@ export class ChatOutline implements IOutline<ChatOutlineEntry> {
 		const viewModel = this._widget.viewModel;
 		if (viewModel) {
 			this._viewModelDisposables.add(viewModel.onDidChange(() => {
-				this._recomputeEntries();
-				this._onDidChange.fire({});
+				// The view model fires on every response update (including each
+				// streamed chunk). Request symbols don't change during streaming,
+				// so only refresh the outline when the entries actually change.
+				if (this._recomputeEntries()) {
+					this._onDidChange.fire({});
+				}
 			}));
 		}
 	}
 
-	private _recomputeEntries(): void {
+	private _entriesSignature = '';
+	private _recomputeEntries(): boolean {
 		const items = this._widget.viewModel?.getItems() ?? [];
 		const entries: ChatOutlineEntry[] = [];
 		let index = 0;
@@ -230,7 +239,15 @@ export class ChatOutline implements IOutline<ChatOutlineEntry> {
 				entries.push(new ChatOutlineEntry(index++, item));
 			}
 		}
+
+		const signature = entries.map(entry => `${entry.id}\u0000${entry.label}`).join('\u0001');
+		if (signature === this._entriesSignature) {
+			return false;
+		}
+
 		this._entries = entries;
+		this._entriesSignature = signature;
+		return true;
 	}
 
 	get entries(): ChatOutlineEntry[] {
@@ -273,28 +290,3 @@ export class ChatOutline implements IOutline<ChatOutlineEntry> {
 	}
 }
 
-export class ChatOutlineCreator implements IOutlineCreator<ChatEditor, ChatOutlineEntry> {
-
-	static readonly ID = 'chat.chatOutlineCreator';
-
-	readonly dispose: () => void;
-
-	constructor(
-		@IOutlineService outlineService: IOutlineService,
-	) {
-		const reg = outlineService.registerOutlineCreator(this);
-		this.dispose = () => reg.dispose();
-	}
-
-	matches(candidate: IEditorPane): candidate is ChatEditor {
-		return candidate instanceof ChatEditor;
-	}
-
-	async createOutline(editor: ChatEditor, target: OutlineTarget, _token: CancellationToken): Promise<IOutline<ChatOutlineEntry> | undefined> {
-		const widget = editor.widget;
-		if (!widget) {
-			return undefined;
-		}
-		return new ChatOutline(widget, target);
-	}
-}

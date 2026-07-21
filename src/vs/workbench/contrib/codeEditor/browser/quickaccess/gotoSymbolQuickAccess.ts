@@ -35,10 +35,9 @@ import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contex
 import { accessibilityHelpIsShown, accessibleViewIsShown } from '../../../accessibility/browser/accessibilityConfiguration.js';
 import { matchesFuzzyIconAware, parseLabelWithIcons } from '../../../../../base/common/iconLabels.js';
 import { isAncestorOfActiveElement } from '../../../../../base/browser/dom.js';
-import { IChatWidget, IChatWidgetService } from '../../../chat/browser/chat.js';
+import { ChatOutline, IChatWidget, IChatWidgetService } from '../../../chat/browser/chat.js';
 import { ISymbolVariableEntry } from '../../../chat/common/attachments/chatVariableEntries.js';
 import { isRequestVM } from '../../../chat/common/model/chatViewModel.js';
-import { ChatOutline } from '../../../chat/browser/chatOutline.js';
 
 /**
  * A single navigable entry backing the "no text editor" symbol picks (chat
