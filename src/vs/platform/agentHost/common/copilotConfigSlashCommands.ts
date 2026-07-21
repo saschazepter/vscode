@@ -144,11 +144,60 @@ export function isCopilotConfigSlashCommand(command: string): boolean {
 }
 
 /**
+ * The current session-config state used to filter config-action slash command
+ * completions so only the state-changing forms are offered (e.g. `/autopilot on`
+ * is hidden while already in autopilot mode).
+ */
+export interface ICopilotConfigSlashCommandState {
+	/** The session's current `mode` axis value (e.g. `interactive` / `plan` / `autopilot`). */
+	readonly mode?: string;
+	/** The session's current `autoApprove` axis value (e.g. `default` / `autoApprove`). */
+	readonly autoApprove?: string;
+}
+
+/**
+ * Decides whether a single config-action option should be offered given the
+ * session's current config `state`. Keep-text (prompt/objective) forms are
+ * always offered; pure toggles are hidden when applying them would be a no-op
+ * on the axis they target:
+ *
+ *  - `autoApprove` axis: the bypass forms (`/yolo`, `/yolo on`, ...) are hidden
+ *    while already bypassing; the `off` form is hidden while not bypassing.
+ *  - `mode` axis: `/autopilot on` is hidden while already in autopilot;
+ *    `/autopilot off` is only offered while in autopilot.
+ *
+ * When `state` is undefined (current values unknown) every option is offered.
+ */
+function shouldOfferOption(option: IConfigSlashOption, state: ICopilotConfigSlashCommandState | undefined): boolean {
+	// Keep-text forms carry a typed prompt/objective and are always relevant.
+	if (option.argumentHint !== undefined || !state) {
+		return true;
+	}
+	const autoApproveTarget = option.config[SessionConfigKey.AutoApprove];
+	if (autoApproveTarget !== undefined) {
+		const isBypass = state.autoApprove === AUTO_APPROVE_BYPASS;
+		return autoApproveTarget === AUTO_APPROVE_BYPASS ? !isBypass : isBypass;
+	}
+	const modeTarget = option.config[SessionConfigKey.Mode];
+	if (modeTarget === MODE_AUTOPILOT) {
+		return state.mode !== MODE_AUTOPILOT;
+	}
+	if (modeTarget === MODE_INTERACTIVE) {
+		return state.mode === MODE_AUTOPILOT;
+	}
+	return true;
+}
+
+/**
  * Returns the flattened completion items (one per command form) whose command
  * name matches `typed` (the text after the leading `/`, case-insensitive prefix).
  * When `typed` is empty, all items are returned.
+ *
+ * When `state` (the session's current config values) is provided, pure toggle
+ * forms that would be a no-op are filtered out so only the state-changing forms
+ * are offered (see {@link shouldOfferOption}).
  */
-export function getCopilotConfigSlashCommandItems(typed: string): ICopilotConfigSlashCommandItem[] {
+export function getCopilotConfigSlashCommandItems(typed: string, state?: ICopilotConfigSlashCommandState): ICopilotConfigSlashCommandItem[] {
 	const typedLower = typed.trim().toLowerCase();
 	const items: ICopilotConfigSlashCommandItem[] = [];
 	for (const command of getConfigSlashCommands()) {
@@ -156,6 +205,9 @@ export function getCopilotConfigSlashCommandItems(typed: string): ICopilotConfig
 			continue;
 		}
 		for (const option of command.options) {
+			if (!shouldOfferOption(option, state)) {
+				continue;
+			}
 			// Keep-text items (those expecting a typed argument) insert `/command `
 			// and show the argument hint; pure toggles insert nothing (the display
 			// comes from `label`).
