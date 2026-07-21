@@ -22,7 +22,7 @@
  * dictated region, so a blinking cursor there is distracting as transcript text
  * streams in. Hide it for the duration of the session. */
 .monaco-editor.dictation-hide-cursor .cursors-layer > .cursor {
-	display: none;
+	display: none !important;
 }
 
 .monaco-editor .dictation-interim-settled {
