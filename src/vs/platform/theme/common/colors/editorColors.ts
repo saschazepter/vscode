@@ -304,11 +304,11 @@ export const diffOverviewRulerRemoved = registerColor('diffEditorOverview.remove
 
 
 export const diffInsertedOutline = registerColor('diffEditor.insertedTextBorder',
-	null,
+	{ dark: null, light: null, hcDark: '#33ff2eff', hcLight: '#374E06' },
 	nls.localize('diffEditorInsertedOutline', 'Outline color for the text that got inserted.'));
 
 export const diffRemovedOutline = registerColor('diffEditor.removedTextBorder',
-	null,
+	{ dark: null, light: null, hcDark: '#FF008F', hcLight: '#AD0707' },
 	nls.localize('diffEditorRemovedOutline', 'Outline color for text that got removed.'));
 
 
