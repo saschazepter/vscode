@@ -292,7 +292,16 @@ suite('AgentHostClientTools', () => {
 							throw new CancellationError();
 						}
 					} else {
-						toolInvocation?.transitionFromStreaming(undefined, invocation.parameters, { type: ToolConfirmKind.ConfirmationNotNeeded });
+						const prepared = toolInvocation?.toolSpecificData?.kind === 'subagent'
+							? {
+								invocationMessage: 'Delegating task',
+								toolSpecificData: {
+									kind: 'subagent' as const,
+									description: 'Prepared delegated task',
+								},
+							}
+							: undefined;
+						toolInvocation?.transitionFromStreaming(prepared, invocation.parameters, { type: ToolConfirmKind.ConfirmationNotNeeded });
 					}
 					const result: IToolResult = { content: [{ kind: 'text', value: 'done' }] };
 					await toolInvocation?.didExecuteTool(result);
@@ -1285,11 +1294,17 @@ suite('AgentHostClientTools', () => {
 			const childInvocations = progress.filter((part): part is ChatToolInvocation =>
 				part instanceof ChatToolInvocation && part.toolCallId === 'child-tool-1');
 			assert.deepStrictEqual({
-				parentIsSubagent: parentInvocation?.toolSpecificData?.kind === 'subagent',
+				parent: parentInvocation?.toolSpecificData,
 				childCount: childInvocations.length,
 				childSubAgentInvocationId: childInvocations[0]?.subAgentInvocationId,
 			}, {
-				parentIsSubagent: true,
+				parent: {
+					kind: 'subagent',
+					description: undefined,
+					agentName: undefined,
+					chatResource: subagentChat,
+					isActive: true,
+				},
 				childCount: 1,
 				childSubAgentInvocationId: parentToolCallId,
 			});

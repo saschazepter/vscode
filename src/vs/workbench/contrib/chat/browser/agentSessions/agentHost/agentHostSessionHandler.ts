@@ -2700,26 +2700,44 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		subagentContext: ISubagentContext,
 	): void {
 		const toolCallId = toolCall.toolCallId;
-		if (subagentContext.observedToolIds.has(toolCallId)) {
+		const hasSubagentContent = (toolCall.status === ToolCallStatus.Running || toolCall.status === ToolCallStatus.Completed)
+			&& !!getToolSubagentContent(toolCall);
+		if (!isSubagentTool(toolCall) && !hasSubagentContent) {
+			return;
+		}
+
+		const isObserved = subagentContext.observedToolIds.has(toolCallId);
+		const currentData = invocation.toolSpecificData?.kind === 'subagent' ? invocation.toolSpecificData : undefined;
+		const prepared = toolCallStateToPreparedInvocation(toolCall, opts.backendSession, this._config.connectionAuthority, opts.sessionResource.authority);
+		const protocolData = prepared.toolSpecificData?.kind === 'subagent' ? prepared.toolSpecificData : undefined;
+		if (!protocolData) {
+			return;
+		}
+		if (!currentData
+			|| currentData.chatResource !== protocolData.chatResource
+			|| currentData.description !== protocolData.description
+			|| currentData.agentName !== protocolData.agentName) {
+			invocation.toolSpecificData = {
+				...currentData,
+				...protocolData,
+				isActive: currentData?.isActive ?? isObserved,
+			};
+			invocation.notifyToolSpecificDataChanged();
+		}
+
+		if (isObserved) {
 			return;
 		}
 		if (toolCall.status !== ToolCallStatus.Running && toolCall.status !== ToolCallStatus.Completed) {
 			return;
 		}
-		if (!isSubagentTool(toolCall) && !getToolSubagentContent(toolCall)) {
+
+		const subagentData = invocation.toolSpecificData;
+		if (subagentData?.kind !== 'subagent') {
 			return;
 		}
-
-		if (invocation.toolSpecificData?.kind !== 'subagent') {
-			const prepared = toolCallStateToPreparedInvocation(toolCall, opts.backendSession, this._config.connectionAuthority, opts.sessionResource.authority);
-			if (prepared.toolSpecificData?.kind !== 'subagent') {
-				return;
-			}
-			invocation.toolSpecificData = prepared.toolSpecificData;
-		}
-
 		subagentContext.observedToolIds.add(toolCallId);
-		invocation.toolSpecificData.isActive = true;
+		subagentData.isActive = true;
 		invocation.notifyToolSpecificDataChanged();
 
 		const perInvocationCredits = observableValue<number>('subagentInvocationCredits', 0);
@@ -2741,7 +2759,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		}));
 
 		const rootInvocationId = opts.subAgentInvocationId ?? toolCallId;
-		const childChatUri = invocation.toolSpecificData.chatResource
+		const childChatUri = subagentData.chatResource
 			|| buildSubagentChatUri(opts.backendSession.toString(), toolCallId);
 		this._observeSubagentSession(opts.sessionResource, opts.backendSession, toolCallId, childChatUri, rootInvocationId, invocation, opts.sink, store, subagentContext, perInvocationCredits, perInvocationModel);
 	}
