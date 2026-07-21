@@ -2713,13 +2713,19 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		if (!protocolData) {
 			return;
 		}
+		const chatResource = protocolData.chatResource ?? currentData?.chatResource;
+		const description = protocolData.description ?? currentData?.description;
+		const agentName = protocolData.agentName ?? currentData?.agentName;
 		if (!currentData
-			|| currentData.chatResource !== protocolData.chatResource
-			|| currentData.description !== protocolData.description
-			|| currentData.agentName !== protocolData.agentName) {
+			|| currentData.chatResource !== chatResource
+			|| currentData.description !== description
+			|| currentData.agentName !== agentName) {
 			invocation.toolSpecificData = {
 				...currentData,
 				...protocolData,
+				chatResource,
+				description,
+				agentName,
 				isActive: currentData?.isActive ?? isObserved,
 			};
 			invocation.notifyToolSpecificDataChanged();
