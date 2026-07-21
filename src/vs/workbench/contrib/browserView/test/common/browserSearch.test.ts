@@ -104,7 +104,7 @@ suite('BrowserSearch - resolveAddressBarInput', () => {
 
 	test('whitespace in the path/query/fragment is a URL (percent-encoded later)', () => {
 		const inputs = [
-			'http://localhost:8888/my file.php', // the reported issue
+			'http://localhost:8888/my file.php', // space in path, explicit scheme (issue #326784)
 			'https://example.com/my file.php',
 			'localhost:8888/my file.php', // scheme-less host:port
 			'example.com/foo bar', // scheme-less host with known TLD
