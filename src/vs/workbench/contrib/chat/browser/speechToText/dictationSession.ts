@@ -363,6 +363,10 @@ export async function stopDictation(): Promise<void> {
 	} finally {
 		active.logService.trace(`${LOG_PREFIX} stopDictation dispose`);
 		active.disposables.dispose();
+		// Return focus to the dictation editor so the caret (just un-hidden by
+		// disposing the hide-cursor class) reappears immediately at the end of the
+		// inserted transcript, ready for the user to continue typing.
+		active.editor.focus();
 	}
 }
 
