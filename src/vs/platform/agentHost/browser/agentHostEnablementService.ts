@@ -61,8 +61,9 @@ export class AgentHostEnablementService extends Disposable implements IAgentHost
 	readonly enabled: IObservable<boolean>;
 
 	constructor(
-		@IConfigurationService configurationService: IConfigurationService,
-		@IContextKeyService contextKeyService: IContextKeyService,
+		private readonly _isWebRuntime: boolean,
+		configurationService: IConfigurationService,
+		contextKeyService: IContextKeyService,
 	) {
 		super();
 		this._enabled = observableValue(this, this._readEnabled(configurationService));
@@ -81,7 +82,7 @@ export class AgentHostEnablementService extends Disposable implements IAgentHost
 	}
 
 	private _readEnabled(configurationService: IConfigurationService): boolean {
-		return !isWeb
+		return !this._isWebRuntime
 			&& (configurationService.getValue<boolean>(agentHostEnabledSettingId) ?? false)
 			&& configurationService.getValue<boolean>(ChatAIDisabledSettingId) !== true;
 	}
@@ -97,4 +98,13 @@ export class AgentHostEnablementService extends Disposable implements IAgentHost
 	}
 }
 
-registerSingleton(IAgentHostEnablementService, AgentHostEnablementService, InstantiationType.Eager);
+class BrowserAgentHostEnablementService extends AgentHostEnablementService {
+	constructor(
+		@IConfigurationService configurationService: IConfigurationService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+	) {
+		super(isWeb, configurationService, contextKeyService);
+	}
+}
+
+registerSingleton(IAgentHostEnablementService, BrowserAgentHostEnablementService, InstantiationType.Eager);

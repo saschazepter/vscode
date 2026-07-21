@@ -50,7 +50,7 @@ suite('AgentHostEnablementService', () => {
 		const configurationService = new AgentHostTestConfigurationService(enabled, aiDisabled);
 		disposables.add(configurationService.onDidChangeConfigurationEmitter);
 		const contextKeyService = disposables.add(new MockContextKeyService());
-		const service = disposables.add(new AgentHostEnablementService(configurationService, contextKeyService));
+		const service = disposables.add(new AgentHostEnablementService(false, configurationService, contextKeyService));
 		return { service, configurationService, contextKeyService };
 	}
 
@@ -63,16 +63,16 @@ suite('AgentHostEnablementService', () => {
 			enabled: true,
 			contextKey: true,
 		});
+	});
 
-		test('is disabled when AI features are disabled', () => {
-			const { service, contextKeyService } = createService(true, true);
-			assert.deepStrictEqual({
-				enabled: service.enabled.get(),
-				contextKey: contextKeyService.getContextKeyValue(AGENT_HOST_ENABLED_CONTEXT_KEY.key),
-			}, {
-				enabled: false,
-				contextKey: false,
-			});
+	test('is disabled when AI features are disabled', () => {
+		const { service, contextKeyService } = createService(true, true);
+		assert.deepStrictEqual({
+			enabled: service.enabled.get(),
+			contextKey: contextKeyService.getContextKeyValue(AGENT_HOST_ENABLED_CONTEXT_KEY.key),
+		}, {
+			enabled: false,
+			contextKey: false,
 		});
 	});
 
