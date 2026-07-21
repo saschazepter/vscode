@@ -589,7 +589,7 @@ configurationRegistry.registerConfiguration({
 			default: '',
 			markdownDescription: nls.localize('chat.defaultModel.description', "The default model for new chat conversations. Use \"auto\" to let Copilot pick a model, a model family name (such as \"opus\" or \"gemini\") to use the latest available model in that family, or a full model id. You can still switch the model within a conversation; each new conversation starts at this model."),
 			experiment: {
-				mode: 'startup'
+				mode: 'auto'
 			},
 			policy: {
 				name: 'ChatDefaultModel',
