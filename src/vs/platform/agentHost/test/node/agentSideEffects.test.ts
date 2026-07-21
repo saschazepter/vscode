@@ -1433,9 +1433,14 @@ suite('AgentSideEffects', () => {
 			}]);
 		});
 
-		test('preserves the turn id of a provider-initiated turn', () => {
+		test('preserves the turn id of a provider-initiated turn when idle', () => {
 			setupSession();
 			startTurn('turn-1');
+			stateManager.dispatchServerAction(defaultChatUri, {
+				type: ActionType.ChatTurnComplete,
+				turnId: 'turn-1',
+				duration: 1000,
+			});
 			disposables.add(sideEffects.registerProgressListener(agent));
 
 			agent.fireProgress({
@@ -1461,6 +1466,30 @@ suite('AgentSideEffects', () => {
 				turnId: 'provider-turn',
 				message: 'provider notification',
 				responseParts: [{ kind: ResponsePartKind.Markdown, id: 'provider-part', content: 'provider response' }],
+			});
+		});
+
+		test('does not replace an active turn with a stale turn start', () => {
+			setupSession();
+			startTurn('turn-2');
+			disposables.add(sideEffects.registerProgressListener(agent));
+
+			agent.fireProgress({
+				kind: 'action', resource: URI.parse(defaultChatUri),
+				action: {
+					type: ActionType.ChatTurnStarted,
+					turnId: 'turn-1',
+					startedAt: '2025-01-01T00:00:00.000Z',
+					message: { text: 'stale request', origin: { kind: MessageKind.User } },
+				},
+			});
+
+			assert.deepStrictEqual({
+				turnId: stateManager.getSessionState(defaultChatUri)?.activeTurn?.id,
+				message: stateManager.getSessionState(defaultChatUri)?.activeTurn?.message.text,
+			}, {
+				turnId: 'turn-2',
+				message: 'hello',
 			});
 		});
 
@@ -1934,6 +1963,10 @@ suite('AgentSideEffects', () => {
 			stateManager.dispatchClientAction(defaultChatUri, cancelAction, { clientId: 'test', clientSeq: 2 });
 			sideEffects.handleAction(defaultChatUri, cancelAction);
 
+			const truncateAction = { type: ActionType.ChatTruncated as const };
+			stateManager.dispatchClientAction(defaultChatUri, truncateAction, { clientId: 'test', clientSeq: 3 });
+			sideEffects.handleAction(defaultChatUri, truncateAction);
+
 			agent.fireProgress({
 				kind: 'action', resource: URI.parse(defaultChatUri),
 				action: { type: ActionType.ChatTurnComplete, turnId: 'turn-1', duration: 2000 },
@@ -1942,6 +1975,7 @@ suite('AgentSideEffects', () => {
 			// The queued message must NOT auto-start, and must remain queued.
 			assert.strictEqual(agent.sendMessageCalls.length, 0, 'cancelling must not drain queued messages');
 			const state = stateManager.getSessionState(sessionUri.toString());
+			assert.strictEqual(state?.turns.length, 0, 'the cancelled turn should no longer be retained in history');
 			assert.strictEqual(state?.queuedMessages?.length, 1, 'queued message should remain for manual dequeue');
 			assert.strictEqual(state?.queuedMessages?.[0].id, 'q-after-abort');
 		});

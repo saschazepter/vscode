@@ -41,7 +41,6 @@ import {
 	SessionStatus,
 	ToolCallStatus,
 	ToolResultContentType,
-	TurnState,
 	type ErrorInfo,
 	type ISessionWithDefaultChat,
 	type Message,
@@ -138,6 +137,7 @@ export class AgentSideEffects extends Disposable {
 	private readonly _localCommands: AgentHostLocalCommands;
 
 	private readonly _subagentChats = new NKeyMap<ISubagentSessionRef, [ProtocolURI, string]>();
+	private readonly _cancelledTurnIds = new Map<ProtocolURI, Set<string>>();
 
 	/**
 	 * Buffers signals whose `parentToolCallId` references a subagent
@@ -198,6 +198,14 @@ export class AgentSideEffects extends Disposable {
 		// Listen for these envelopes and notify the agent directly.
 		this._register(this._stateManager.onDidEmitEnvelope(envelope => {
 			if (isAhpChatChannel(envelope.channel) && isChatAction(envelope.action)) {
+				if (envelope.action.type === ActionType.ChatTurnCancelled) {
+					let turnIds = this._cancelledTurnIds.get(envelope.channel);
+					if (!turnIds) {
+						turnIds = new Set();
+						this._cancelledTurnIds.set(envelope.channel, turnIds);
+					}
+					turnIds.add(envelope.action.turnId);
+				}
 				this._syncSessionInputNeededForChatAction(envelope.channel, envelope.action);
 			}
 			if (!envelope.origin && envelope.action.type === ActionType.ChatToolCallComplete) {
@@ -602,12 +610,9 @@ export class AgentSideEffects extends Disposable {
 		}
 		if (signal.kind === 'action') {
 			const action = signal.action;
-			if (action.type === ActionType.ChatTurnComplete) {
-				const existingTurn = this._stateManager.getSessionState(sessionKey)?.turns.find(turn => turn.id === action.turnId);
-				if (existingTurn?.state === TurnState.Cancelled) {
-					this._logService.trace(`[AgentSideEffects] Dropping completion for cancelled turn ${action.turnId} on ${sessionKey}`);
-					return;
-				}
+			if (action.type === ActionType.ChatTurnComplete && this._cancelledTurnIds.get(sessionKey)?.has(action.turnId)) {
+				this._logService.trace(`[AgentSideEffects] Dropping completion for cancelled turn ${action.turnId} on ${sessionKey}`);
+				return;
 			}
 			this._stateManager.dispatchServerAction(sessionKey, action);
 			if (action.type === ActionType.ChatTurnComplete) {
@@ -635,7 +640,7 @@ export class AgentSideEffects extends Disposable {
 		if (action.type !== ActionType.ChatTruncated && hasKey(action, { turnId: true }) && action.turnId !== turnId) {
 			if (turnIdRouting === 'remap') {
 				action = { ...action, turnId };
-			} else if (action.type !== ActionType.ChatTurnStarted) {
+			} else {
 				this._logService.trace(`[AgentSideEffects] Dropping stale ${action.type} for ${sessionKey}: producerTurnId=${action.turnId}, activeTurnId=${turnId}`);
 				return;
 			}
@@ -967,6 +972,11 @@ export class AgentSideEffects extends Disposable {
 	 * Removes all subagent chats for a given parent session from the state manager.
 	 */
 	removeSubagentSessions(parentSession: ProtocolURI): void {
+		for (const chatUri of this._cancelledTurnIds.keys()) {
+			if (parseRequiredSessionUriFromChatUri(chatUri) === parentSession) {
+				this._cancelledTurnIds.delete(chatUri);
+			}
+		}
 		const parentChatURIs = new Set<ProtocolURI>();
 		for (const subagent of this._subagentChats.values()) {
 			if (subagent.sessionUri === parentSession) {
