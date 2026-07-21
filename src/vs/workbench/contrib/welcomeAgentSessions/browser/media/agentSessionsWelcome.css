@@ -14,7 +14,7 @@
 .agentSessionsWelcome-scrollable {
 	height: 100%;
 	display: flex !important;
-	align-items: center;
+	align-items: safe center;
 	justify-content: center;
 }
 
@@ -26,6 +26,16 @@
 	max-width: 900px;
 	width: 100%;
 	box-sizing: border-box;
+}
+
+.agentSessionsWelcome.height-constrained .agentSessionsWelcome-content {
+	padding-block: 20px;
+}
+
+.agentSessionsWelcome.height-constrained .agentSessionsWelcome-chatSection,
+.agentSessionsWelcome.height-constrained .agentSessionsWelcome-sessionsSection,
+.agentSessionsWelcome.height-constrained .agentSessionsWelcome-footer {
+	margin-top: 16px;
 }
 
 /* Header */
