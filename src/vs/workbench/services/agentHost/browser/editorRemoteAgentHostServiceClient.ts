@@ -109,10 +109,9 @@ export class EditorRemoteAgentHostServiceClient extends Disposable implements IA
 			return false;
 		}
 
-		const channel = connection.getChannel(AgentHostIpcChannels.RemoteProxy);
-		const transport = new AgentHostIpcChannelTransport(channel);
+		const createTransport = () => new AgentHostIpcChannelTransport(connection.getChannel(AgentHostIpcChannels.RemoteProxy));
 		const address = `vscode-remote://${connection.remoteAuthority}`;
-		this._protocolClient = this._register(this._instantiationService.createInstance(RemoteAgentHostProtocolClient, address, transport, undefined));
+		this._protocolClient = this._register(this._instantiationService.createInstance(RemoteAgentHostProtocolClient, address, createTransport, undefined));
 		this._rootStateOnDidChange.input = this._protocolClient.rootState.onDidChange;
 		this._rootStateOnDidError.input = this._protocolClient.rootState.onDidError ?? Event.None;
 		this._rootStateOnWillApplyAction.input = this._protocolClient.rootState.onWillApplyAction;
@@ -146,6 +145,7 @@ export class EditorRemoteAgentHostServiceClient extends Disposable implements IA
 		}
 		this._connectStarted = true;
 		this._logService.info(`${LOG_PREFIX} Connecting to remote agent host...`);
+		await this._remoteAgentService.getRawEnvironment();
 		await this._protocolClient.connect();
 		this._logService.info(`${LOG_PREFIX} Connected; clientId=${this._protocolClient.clientId}`);
 		this._onAgentHostStart.fire();
