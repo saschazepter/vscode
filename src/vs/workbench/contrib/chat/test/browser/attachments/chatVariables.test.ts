@@ -4,9 +4,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { Emitter } from '../../../../../../base/common/event.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { Range } from '../../../../../../editor/common/core/range.js';
+import { ILabelService } from '../../../../../../platform/label/common/label.js';
 import { IDynamicVariable, toAttachedContextDynamicVariable } from '../../../common/attachments/chatVariables.js';
 import { IChatWidget } from '../../../browser/chat.js';
 import { applyPromptAttachmentReferences, getDynamicVariablesForWidget, getSelectedToolAndToolSetsForWidget, isReferenceToExistingAttachment } from '../../../browser/attachments/chatVariables.js';
@@ -266,6 +268,60 @@ suite('applyPromptAttachmentReferences', () => {
 			requestMimeType: 'image/png',
 			requestReferences: [{ reference: URI.file('/screenshot.png'), kind: 'reference' }],
 			requestRange: { start: 7, endExclusive: 24 },
+		});
+	});
+});
+
+suite('ChatDynamicVariableModel', () => {
+	const store = ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('retains attachment payload outside serialized input state after backing attachment is removed', () => {
+		const attachment = createMockAttachment({
+			kind: 'image',
+			value: new Uint8Array([1, 2, 3]),
+			mimeType: 'image/png',
+		});
+		const attachments = [attachment];
+		const onDidChangeModelContent = store.add(new Emitter<{ changes: readonly unknown[] }>());
+		const onDidChangeActiveInputEditor = store.add(new Emitter<void>());
+		const onDidChangeAttachments = store.add(new Emitter<{ deleted: readonly string[]; added: readonly IChatRequestVariableEntry[]; updated: readonly IChatRequestVariableEntry[] }>());
+		const widget = {
+			input: {
+				attachmentModel: {
+					attachments,
+					onDidChange: onDidChangeAttachments.event,
+				},
+			},
+			inputEditor: {
+				onDidChangeModelContent: onDidChangeModelContent.event,
+				getModel: () => undefined,
+				setDecorationsByType: () => [],
+			},
+			onDidChangeActiveInputEditor: onDidChangeActiveInputEditor.event,
+			refreshParsedInput: () => { },
+		} as unknown as IChatWidget;
+		const model = store.add(new ChatDynamicVariableModel(widget, {
+			getUriLabel: () => '',
+		} as unknown as ILabelService));
+
+		model.addReference(toAttachedContextDynamicVariable(attachment, new Range(1, 1, 1, 20)));
+		attachments.length = 0;
+		onDidChangeAttachments.fire({ deleted: [attachment.id], added: [], updated: [] });
+
+		const inputState: Record<string, unknown> = {};
+		model.getInputState(inputState);
+		const serializedReference = (inputState[ChatDynamicVariableModel.ID] as IDynamicVariable[])[0];
+		const requestReference = model.variables[0];
+		assert.deepStrictEqual({
+			serializedData: serializedReference.data,
+			serializedAttachment: serializedReference.attachment,
+			requestData: requestReference.data,
+			requestAttachment: requestReference.attachment,
+		}, {
+			serializedData: undefined,
+			serializedAttachment: undefined,
+			requestData: attachment.value,
+			requestAttachment: attachment,
 		});
 	});
 });

@@ -15,7 +15,8 @@ import { Action2, registerAction2 } from '../../../../../platform/actions/common
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
-import { IChatRequestVariableValue, IDynamicVariable, toAttachedContextDynamicVariable } from '../../common/attachments/chatVariables.js';
+import { IChatRequestVariableEntry } from '../../common/attachments/chatVariableEntries.js';
+import { IChatRequestVariableValue, IDynamicVariable, toAttachedContextDynamicVariable, toDynamicVariableAttachment } from '../../common/attachments/chatVariables.js';
 import { IChatWidget } from '../chat.js';
 import { IChatWidgetContrib } from '../widget/chatWidget.js';
 
@@ -27,6 +28,7 @@ export class ChatDynamicVariableModel extends Disposable implements IChatWidgetC
 	public static readonly ID = 'chatDynamicVariableModel';
 
 	private _variables: IDynamicVariable[] = [];
+	private readonly _attachmentReferences = new Map<string, IChatRequestVariableEntry>();
 
 	private readonly _onDidChangeReferences = this._register(new Emitter<void>());
 	/**
@@ -40,7 +42,14 @@ export class ChatDynamicVariableModel extends Disposable implements IChatWidgetC
 	readonly onDidChangeReferences: Event<void> = this._onDidChangeReferences.event;
 
 	get variables(): ReadonlyArray<IDynamicVariable> {
-		return [...this._variables];
+		return this._variables.map(variable => {
+			const attachment = this._attachmentReferences.get(variable.id);
+			return attachment ? {
+				...variable,
+				attachment: toDynamicVariableAttachment(attachment),
+				data: attachment.value,
+			} : variable;
+		});
 	}
 
 	get id() {
@@ -61,6 +70,13 @@ export class ChatDynamicVariableModel extends Disposable implements IChatWidgetC
 		this._register(widget.onDidChangeActiveInputEditor(() => {
 			this._subscribeToEditor();
 			this.updateDecorations();
+		}));
+		this._register(widget.input.attachmentModel.onDidChange(e => {
+			for (const attachment of [...e.added, ...e.updated]) {
+				if (this._attachmentReferences.has(attachment.id)) {
+					this._attachmentReferences.set(attachment.id, attachment);
+				}
+			}
 		}));
 	}
 
@@ -117,6 +133,7 @@ export class ChatDynamicVariableModel extends Disposable implements IChatWidgetC
 
 			// cleanup disposable variables
 			dispose(removed.filter(isDisposable));
+			this.pruneAttachmentReferences();
 
 			if (didChange || removed.length > 0) {
 				this.widget.refreshParsedInput();
@@ -128,7 +145,7 @@ export class ChatDynamicVariableModel extends Disposable implements IChatWidgetC
 	}
 
 	getInputState(contrib: Record<string, unknown>): void {
-		contrib[ChatDynamicVariableModel.ID] = this.variables;
+		contrib[ChatDynamicVariableModel.ID] = [...this._variables];
 	}
 
 	setInputState(contrib: Readonly<Record<string, unknown>>): void {
@@ -156,6 +173,7 @@ export class ChatDynamicVariableModel extends Disposable implements IChatWidgetC
 
 		const existingAttachment = this.widget.input.attachmentModel.attachments.find(attachment => attachment.id === ref.id && !attachment.range);
 		if (existingAttachment) {
+			this._attachmentReferences.set(existingAttachment.id, existingAttachment);
 			ref = toAttachedContextDynamicVariable(existingAttachment, ref.range);
 		}
 
@@ -188,6 +206,15 @@ export class ChatDynamicVariableModel extends Disposable implements IChatWidgetC
 		}
 	}
 
+	private pruneAttachmentReferences(): void {
+		const referencedIds = new Set(this._variables.map(variable => variable.id));
+		for (const id of this._attachmentReferences.keys()) {
+			if (!referencedIds.has(id)) {
+				this._attachmentReferences.delete(id);
+			}
+		}
+	}
+
 	private getHoverForReference(ref: IDynamicVariable): IMarkdownString | undefined {
 		const value = ref.data;
 		if (URI.isUri(value)) {
@@ -210,6 +237,7 @@ export class ChatDynamicVariableModel extends Disposable implements IChatWidgetC
 				variable.dispose();
 			}
 		}
+		this._attachmentReferences.clear();
 	}
 
 	public override dispose() {
