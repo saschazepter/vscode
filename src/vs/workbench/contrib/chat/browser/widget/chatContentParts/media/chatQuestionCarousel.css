@@ -328,6 +328,12 @@
 			background-color: var(--vscode-list-inactiveSelectionBackground, var(--vscode-list-hoverBackground));
 		}
 
+		/* Multi-select: show a focus indicator on the keyboard-focused row so the active checkbox is visible while navigating with the up/down arrow keys */
+		.chat-question-list-item.multi-select:focus {
+			outline: 1px solid var(--vscode-focusBorder);
+			outline-offset: -1px;
+		}
+
 		/* Checkbox for multi-select */
 		.chat-question-list-checkbox {
 			flex-shrink: 0;
