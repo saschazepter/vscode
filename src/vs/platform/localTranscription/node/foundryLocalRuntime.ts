@@ -64,13 +64,17 @@ export type FoundryLocalRuntimeProgress = (message: string) => void;
 /** De-dupes concurrent provisioning requests targeting the same cache dir. */
 const inFlight = new Map<string, Promise<string>>();
 
+/** Abort a download after this long without any connection/response progress. */
+const DOWNLOAD_INACTIVITY_TIMEOUT_MS = 60_000;
+
 /**
  * Ensure the Foundry Local native runtime (addon + core libraries) is present
  * in `<cacheRoot>`, downloading it if necessary. Returns the versioned override
  * directory to set as `VSCODE_FOUNDRY_LOCAL_NATIVE_DIR` before loading the SDK.
  *
- * Idempotent: once a version is fully provisioned a `.complete` marker is
- * written and subsequent calls return immediately without touching the network.
+ * Idempotent: once a version is fully provisioned a per-platform `.complete`
+ * marker is written and subsequent calls return immediately (after verifying the
+ * payload) without touching the network.
  */
 export async function ensureFoundryLocalRuntime(cacheRoot: string, token: CancellationToken, onProgress?: FoundryLocalRuntimeProgress): Promise<string> {
 	const platformKey = foundryLocalPlatformKey();
@@ -94,35 +98,144 @@ export async function ensureFoundryLocalRuntime(cacheRoot: string, token: Cancel
 }
 
 async function doEnsure(overrideDir: string, platformKey: string, sdkVersion: string, nodeRequire: NodeJS.Require, token: CancellationToken, onProgress?: FoundryLocalRuntimeProgress): Promise<string> {
-	const markerPath = join(overrideDir, '.complete');
-	if (fs.existsSync(markerPath)) {
+	const addonPath = foundryAddonPath(overrideDir, platformKey);
+	const coreDir = foundryCoreDir(overrideDir, platformKey);
+	// The completion marker is per-platform: the shared `<cacheRoot>/<version>`
+	// dir can hold payloads for multiple architectures (e.g. a win32-arm64
+	// machine running x64 VS Code under emulation, then arm64 VS Code). Verify
+	// the target-specific payload as well as the marker, so a different arch's
+	// marker never short-circuits this arch's provisioning and a stale/partially
+	// deleted cache is repaired rather than trusted.
+	if (isRuntimeProvisioned(overrideDir, platformKey)) {
 		return overrideDir;
 	}
 
-	const addonPath = join(overrideDir, 'prebuilds', platformKey, 'foundry_local_napi.node');
-	const coreDir = join(overrideDir, 'foundry-local-core', platformKey);
+	// Fail fast (before any download) when the host can't actually load the
+	// addon — e.g. Linux with glibc older than the addon requires — so users see
+	// a clear "unsupported" error instead of a large download that crashes on
+	// native import.
+	assertRuntimeLoadable(platformKey);
 
-	if (!fs.existsSync(addonPath)) {
-		onProgress?.('Downloading dictation runtime…');
-		await ensureAddon(addonPath, platformKey, sdkVersion, token);
+	onProgress?.('Downloading dictation runtime…');
+
+	// The cache is shared by the utility processes of every open VS Code window,
+	// so provision into a process-unique staging dir and atomically promote each
+	// payload directory into place. Two concurrent first-use downloads therefore
+	// never write to the same final path; whichever process wins the rename is
+	// the published copy and the loser accepts it as success.
+	const staging = join(overrideDir, `.staging-${process.pid}-${randomSuffix()}`);
+	const stagingAddon = join(staging, 'prebuilds', platformKey, 'foundry_local_napi.node');
+	const stagingCore = join(staging, 'foundry-local-core', platformKey);
+	try {
+		await ensureAddon(stagingAddon, platformKey, sdkVersion, token);
+		throwIfCancelled(token);
+		await ensureCoreLibraries(stagingCore, nodeRequire);
+		throwIfCancelled(token);
+
+		if (!fs.existsSync(stagingAddon) || !hasAllCoreLibraries(stagingCore)) {
+			throw new Error('Foundry Local native runtime download completed but expected files are missing.');
+		}
+
+		await promoteDir(dirname(stagingAddon), dirname(addonPath));
+		await promoteDir(stagingCore, coreDir);
+	} finally {
+		await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => { /* best effort */ });
 	}
 
-	throwIfCancelled(token);
-
-	if (!hasAllCoreLibraries(coreDir)) {
-		onProgress?.('Downloading dictation runtime…');
-		await ensureCoreLibraries(coreDir, nodeRequire);
-	}
-
-	throwIfCancelled(token);
-
-	// Final integrity check before publishing the completion marker.
+	// Verify the published payload — ours or a concurrent winner's — is complete.
 	if (!fs.existsSync(addonPath) || !hasAllCoreLibraries(coreDir)) {
-		throw new Error('Foundry Local native runtime download completed but expected files are missing.');
+		throw new Error('Foundry Local native runtime is incomplete after provisioning.');
 	}
 
-	await fs.promises.writeFile(markerPath, `${sdkVersion}\n`);
+	await fs.promises.writeFile(foundryMarkerPath(overrideDir, platformKey), `${sdkVersion}\n`).catch(() => { /* best effort marker */ });
 	return overrideDir;
+}
+
+/** Path of the per-platform completion marker inside a versioned override dir. */
+function foundryMarkerPath(overrideDir: string, platformKey: string): string {
+	return join(overrideDir, `.complete-${platformKey}`);
+}
+
+/** Path of the prebuilt N-API addon inside a versioned override dir. */
+function foundryAddonPath(overrideDir: string, platformKey: string): string {
+	return join(overrideDir, 'prebuilds', platformKey, 'foundry_local_napi.node');
+}
+
+/** Directory of the native core libraries inside a versioned override dir. */
+function foundryCoreDir(overrideDir: string, platformKey: string): string {
+	return join(overrideDir, 'foundry-local-core', platformKey);
+}
+
+/**
+ * Whether `<overrideDir>` holds a complete, verified runtime for `platformKey`:
+ * the per-platform marker AND the actual addon + all core libraries. A marker
+ * alone is insufficient (it can belong to a different architecture, or the
+ * payload can be partially deleted). Exported for tests.
+ */
+export function isRuntimeProvisioned(overrideDir: string, platformKey: string): boolean {
+	return fs.existsSync(foundryMarkerPath(overrideDir, platformKey))
+		&& fs.existsSync(foundryAddonPath(overrideDir, platformKey))
+		&& hasAllCoreLibraries(foundryCoreDir(overrideDir, platformKey));
+}
+
+/**
+ * Atomically move the fully-staged directory `from` to `to`. If another process
+ * already promoted the same payload (the destination exists), keep the existing
+ * copy — the caller re-verifies completeness afterwards. Exported for tests.
+ */
+export async function promoteDir(from: string, to: string): Promise<void> {
+	await fs.promises.mkdir(dirname(to), { recursive: true });
+	try {
+		await fs.promises.rename(from, to);
+	} catch (err) {
+		// A concurrent winner already created `to` (EEXIST/ENOTEMPTY), or the
+		// staging dir is on a different filesystem. If a copy is already present,
+		// accept it; otherwise surface the failure.
+		if (fs.existsSync(to)) {
+			return;
+		}
+		throw err;
+	}
+}
+
+function randomSuffix(): string {
+	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Minimum glibc version the Foundry Local addon requires on Linux. */
+const MIN_GLIBC: readonly [number, number] = [2, 34];
+
+/**
+ * Throw a classified error if this host cannot load the downloaded addon. Only
+ * Linux is gated (on glibc): the prebuilt addon needs GLIBC_2.34, newer than VS
+ * Code's minimum supported distros, so downloading + loading it there would
+ * crash. Non-glibc / undetectable systems are left to fail at load time.
+ */
+function assertRuntimeLoadable(platformKey: string): void {
+	if (!platformKey.startsWith('linux-')) {
+		return;
+	}
+	const glibc = detectGlibcVersion();
+	if (glibc && (glibc[0] < MIN_GLIBC[0] || (glibc[0] === MIN_GLIBC[0] && glibc[1] < MIN_GLIBC[1]))) {
+		const err = new Error(`On-device dictation requires glibc ${MIN_GLIBC[0]}.${MIN_GLIBC[1]} or newer, but this system has glibc ${glibc[0]}.${glibc[1]}.`);
+		(err as Error & { code?: string }).code = 'ERR_FOUNDRY_UNSUPPORTED_LIBC';
+		throw err;
+	}
+}
+
+/** Best-effort runtime glibc version via Node's diagnostic report, if available. */
+function detectGlibcVersion(): [number, number] | undefined {
+	try {
+		const report = (process as unknown as { report?: { getReport?(): { header?: { glibcVersionRuntime?: string } } } }).report;
+		const version = report?.getReport?.()?.header?.glibcVersionRuntime;
+		const match = typeof version === 'string' ? /^(\d+)\.(\d+)/.exec(version) : null;
+		if (match) {
+			return [Number(match[1]), Number(match[2])];
+		}
+	} catch {
+		// Diagnostic report unavailable (e.g. non-glibc build); can't gate.
+	}
+	return undefined;
 }
 
 /**
@@ -186,16 +299,20 @@ async function ensureCoreLibraries(coreDir: string, nodeRequire: NodeJS.Require)
 	await runInstall(artifacts, { binDir: coreDir });
 }
 
-/** Whether all three required core libraries already exist in `coreDir`. */
-function hasAllCoreLibraries(coreDir: string): boolean {
+/** The core library filenames required for the current platform. Exported for tests. */
+export function requiredCoreLibraryNames(): string[] {
 	const ext = process.platform === 'win32' ? '.dll' : process.platform === 'darwin' ? '.dylib' : '.so';
 	const prefix = process.platform === 'win32' ? '' : 'lib';
-	const required = [
+	return [
 		`Microsoft.AI.Foundry.Local.Core${ext}`,
 		`${prefix}onnxruntime${ext}`,
 		`${prefix}onnxruntime-genai${ext}`,
 	];
-	return required.every(name => fs.existsSync(join(coreDir, name)));
+}
+
+/** Whether all required core libraries already exist in `coreDir`. */
+function hasAllCoreLibraries(coreDir: string): boolean {
+	return requiredCoreLibraryNames().every(name => fs.existsSync(join(coreDir, name)));
 }
 
 /** Download `url` to `dest`, following redirects, honoring cancellation. */
@@ -203,24 +320,51 @@ async function downloadFile(url: string, dest: string, token: CancellationToken)
 	// `https` is a slow-to-load builtin; import it lazily at runtime.
 	const https = await import('https');
 	return new Promise<void>((resolve, reject) => {
-		const cleanup = () => {
-			file.close();
-			fs.promises.rm(dest, { force: true }).catch(() => { /* best effort */ });
-		};
+		let settled = false;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		let activeRequest: import('http').ClientRequest | undefined;
 		const file = fs.createWriteStream(dest);
-		const request = (currentUrl: string, redirectsLeft: number): void => {
-			if (token.isCancellationRequested) {
-				cleanup();
-				reject(new CancellationError());
+
+		const finish = (err?: Error) => {
+			if (settled) {
 				return;
 			}
-			https.get(currentUrl, response => {
+			settled = true;
+			if (timer) {
+				clearTimeout(timer);
+			}
+			activeRequest?.destroy();
+			if (!err) {
+				resolve();
+				return;
+			}
+			// Remove the partial file before surfacing the failure.
+			file.close(() => fs.promises.rm(dest, { force: true }).catch(() => { /* best effort */ }).finally(() => reject(err)));
+		};
+		// `https.get` has no default timeout, so a stalled connection/response
+		// would hang forever (and, via `stop()` awaiting the open promise, hang
+		// dictation shutdown). Bound it with an inactivity timeout that resets on
+		// progress and tears the request/partial file down when it fires.
+		const armTimeout = () => {
+			if (timer) {
+				clearTimeout(timer);
+			}
+			timer = setTimeout(() => finish(new Error(`Timed out downloading ${url}.`)), DOWNLOAD_INACTIVITY_TIMEOUT_MS);
+		};
+
+		const request = (currentUrl: string, redirectsLeft: number): void => {
+			if (token.isCancellationRequested) {
+				finish(new CancellationError());
+				return;
+			}
+			armTimeout();
+			activeRequest = https.get(currentUrl, response => {
+				armTimeout();
 				const status = response.statusCode ?? 0;
 				if (status >= 300 && status < 400 && response.headers.location) {
 					response.resume();
 					if (redirectsLeft <= 0) {
-						cleanup();
-						reject(new Error(`Too many redirects downloading ${url}.`));
+						finish(new Error(`Too many redirects downloading ${url}.`));
 						return;
 					}
 					request(new URL(response.headers.location, currentUrl).toString(), redirectsLeft - 1);
@@ -228,16 +372,17 @@ async function downloadFile(url: string, dest: string, token: CancellationToken)
 				}
 				if (status !== 200) {
 					response.resume();
-					cleanup();
-					reject(new Error(`Download failed with status ${status}: ${currentUrl}`));
+					finish(new Error(`Download failed with status ${status}: ${currentUrl}`));
 					return;
 				}
+				response.on('data', armTimeout);
+				response.on('error', err => finish(err));
 				response.pipe(file);
-				file.on('finish', () => file.close(err => err ? reject(err) : resolve()));
-				response.on('error', err => { cleanup(); reject(err); });
-			}).on('error', err => { cleanup(); reject(err); });
+				file.on('finish', () => file.close(err => err ? finish(err) : finish()));
+			});
+			activeRequest.on('error', err => finish(err));
 		};
-		file.on('error', err => { cleanup(); reject(err); });
+		file.on('error', err => finish(err));
 		request(url, 5);
 	});
 }

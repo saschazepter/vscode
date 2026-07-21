@@ -364,23 +364,32 @@ async function main() {
 			continue;
 		}
 		const content = fs.readFileSync(coreInteropFile, 'utf8');
-		if (content.includes('VSCODE_FOUNDRY_LOCAL_NATIVE_DIR')) {
-			continue; // already patched
-		}
+		// Apply the addon and core patches independently. They previously shared
+		// a single `VSCODE_FOUNDRY_LOCAL_NATIVE_DIR` presence check, so if only
+		// one SDK needle changed the file was left half-patched and every later
+		// run skipped it entirely — and since packaging removes both native
+		// fallbacks, a missing half makes shipped dictation unusable. Use a
+		// distinct marker per half and apply whichever is absent.
+		const addonMarker = '// VSCODE_PATCH:foundry-addon-native-dir';
+		const coreMarker = '// VSCODE_PATCH:foundry-core-native-dir';
 		const addonNeedle = `    const platformKey = \`\${platform}-\${arch}\`;\n    // The prebuilt addon ships inside the SDK package under prebuilds/<platform>/\n    const sdkRoot = path.resolve(__dirname, '..', '..');`;
-		const addonReplacement = `    const platformKey = \`\${platform}-\${arch}\`;\n    // VS Code patch: prefer the on-demand native runtime cache when present.\n    const overrideDir = process.env.VSCODE_FOUNDRY_LOCAL_NATIVE_DIR;\n    if (overrideDir) {\n        const overridePath = path.join(overrideDir, 'prebuilds', platformKey, 'foundry_local_napi.node');\n        if (fs.existsSync(overridePath)) {\n            return require(overridePath);\n        }\n    }\n    // The prebuilt addon ships inside the SDK package under prebuilds/<platform>/\n    const sdkRoot = path.resolve(__dirname, '..', '..');`;
+		const addonReplacement = `    const platformKey = \`\${platform}-\${arch}\`;\n    ${addonMarker}: prefer the on-demand native runtime cache when present.\n    const overrideDir = process.env.VSCODE_FOUNDRY_LOCAL_NATIVE_DIR;\n    if (overrideDir) {\n        const overridePath = path.join(overrideDir, 'prebuilds', platformKey, 'foundry_local_napi.node');\n        if (fs.existsSync(overridePath)) {\n            return require(overridePath);\n        }\n    }\n    // The prebuilt addon ships inside the SDK package under prebuilds/<platform>/\n    const sdkRoot = path.resolve(__dirname, '..', '..');`;
 		const coreNeedle = `        const platformKey = \`\${platform}-\${arch}\`;\n        // Resolve the native binary directory at foundry-local-core/<platform>,`;
-		const coreReplacement = `        const platformKey = \`\${platform}-\${arch}\`;\n        // VS Code patch: prefer the on-demand native runtime cache when present.\n        const overrideDir = process.env.VSCODE_FOUNDRY_LOCAL_NATIVE_DIR;\n        if (overrideDir) {\n            const overrideExt = CoreInterop._getLibraryExtension();\n            const overrideCorePath = path.join(overrideDir, 'foundry-local-core', platformKey, \`Microsoft.AI.Foundry.Local.Core\${overrideExt}\`);\n            if (fs.existsSync(overrideCorePath)) {\n                config.params['FoundryLocalCorePath'] = overrideCorePath;\n                return overrideCorePath;\n            }\n        }\n        // Resolve the native binary directory at foundry-local-core/<platform>,`;
+		const coreReplacement = `        const platformKey = \`\${platform}-\${arch}\`;\n        ${coreMarker}: prefer the on-demand native runtime cache when present.\n        const overrideDir = process.env.VSCODE_FOUNDRY_LOCAL_NATIVE_DIR;\n        if (overrideDir) {\n            const overrideExt = CoreInterop._getLibraryExtension();\n            const overrideCorePath = path.join(overrideDir, 'foundry-local-core', platformKey, \`Microsoft.AI.Foundry.Local.Core\${overrideExt}\`);\n            if (fs.existsSync(overrideCorePath)) {\n                config.params['FoundryLocalCorePath'] = overrideCorePath;\n                return overrideCorePath;\n            }\n        }\n        // Resolve the native binary directory at foundry-local-core/<platform>,`;
 		let patched = content;
-		if (patched.includes(addonNeedle)) {
-			patched = patched.replace(addonNeedle, addonReplacement);
-		} else {
-			log(dir || '.', 'WARNING: foundry-local-sdk coreInterop.js loadAddon shape changed; skipped addon override patch');
+		if (!patched.includes(addonMarker)) {
+			if (patched.includes(addonNeedle)) {
+				patched = patched.replace(addonNeedle, addonReplacement);
+			} else {
+				log(dir || '.', 'WARNING: foundry-local-sdk coreInterop.js loadAddon shape changed; skipped addon override patch');
+			}
 		}
-		if (patched.includes(coreNeedle)) {
-			patched = patched.replace(coreNeedle, coreReplacement);
-		} else {
-			log(dir || '.', 'WARNING: foundry-local-sdk coreInterop.js _resolveDefaultCorePath shape changed; skipped core override patch');
+		if (!patched.includes(coreMarker)) {
+			if (patched.includes(coreNeedle)) {
+				patched = patched.replace(coreNeedle, coreReplacement);
+			} else {
+				log(dir || '.', 'WARNING: foundry-local-sdk coreInterop.js _resolveDefaultCorePath shape changed; skipped core override patch');
+			}
 		}
 		if (content !== patched) {
 			fs.writeFileSync(coreInteropFile, patched);

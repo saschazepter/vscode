@@ -229,6 +229,17 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 	private _pendingChunks: Uint8Array[] = [];
 
 	/**
+	 * Serializes every `session.append()` through a single FIFO chain. Both the
+	 * buffered-backlog flush and live `pushAudio()` enqueue here, so audio is
+	 * always appended to native core in capture order — even across the first-use
+	 * handoff — and `stop()` can await this to guarantee the final chunk lands
+	 * before `session.stop()` drains the stream. The stored tail swallows
+	 * rejections so one failed append doesn't break ordering for the rest; the
+	 * real (rejectable) promise is returned to callers that need to observe it.
+	 */
+	private _appendChain: Promise<void> = Promise.resolve();
+
+	/**
 	 * Monotonically bumped whenever a session starts or is reset, so a slow
 	 * session opened for one recording can detect that it is now stale and avoid
 	 * emitting its transcript into a later session.
@@ -309,13 +320,22 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 			this._consumePromise = this._consume(session, generation);
 
 			// Flush any audio captured before the session was ready, in order.
+			// Enqueue synchronously (no `await` before the loop completes) so the
+			// entire backlog is queued ahead of any live `pushAudio()` append —
+			// exposing `_session` above must not let a freshly captured chunk jump
+			// ahead of the buffered backlog.
 			const buffered = this._pendingChunks;
 			this._pendingChunks = [];
 			for (const chunk of buffered) {
 				if (generation !== this._generation) {
 					break;
 				}
-				await session.append(chunk);
+				this._enqueueAppend(session, generation, chunk).catch(err => {
+					if (generation === this._generation) {
+						const message = String(err instanceof Error ? err.message : err);
+						this._setStatus({ state: LocalTranscriptionModelState.Error, error: message, errorCode: classifyModelError(message) });
+					}
+				});
 			}
 		} catch (err) {
 			if (generation === this._generation) {
@@ -324,6 +344,23 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 			}
 			throw err;
 		}
+	}
+
+	/**
+	 * Append `chunk` to `session` after every previously enqueued append has
+	 * completed, preserving capture order. Returns a promise that rejects if this
+	 * particular append fails (for callers that must surface it); the internal
+	 * chain continues regardless so ordering is preserved for later chunks.
+	 */
+	private _enqueueAppend(session: LiveAudioTranscriptionSession, generation: number, chunk: Uint8Array): Promise<void> {
+		const result = this._appendChain.then(() => {
+			if (generation !== this._generation || this._session !== session) {
+				return; // superseded/reset; drop stale append
+			}
+			return session.append(chunk);
+		});
+		this._appendChain = result.catch(() => { /* keep the chain alive after a failed append */ });
+		return result;
 	}
 
 	/**
@@ -466,11 +503,13 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 		const pcm = new Uint8Array(bytes.byteLength);
 		pcm.set(bytes);
 		if (this._session) {
-			// Let an append rejection propagate: the renderer's pushAudio().catch
-			// fails the session so dictation doesn't silently continue while every
-			// subsequent chunk is dropped. Late failures after stop() are ignored
-			// by the renderer.
-			await this._session.append(pcm);
+			// Route through the shared append queue so this live chunk lands
+			// after any still-draining buffered backlog (preserving order across
+			// the first-use handoff). Let a rejection propagate: the renderer's
+			// pushAudio().catch fails the session so dictation doesn't silently
+			// continue while every subsequent chunk is dropped. Late failures
+			// after stop() are ignored by the renderer.
+			await this._enqueueAppend(this._session, this._generation, pcm);
 		} else {
 			// Model still loading / session not open yet: buffer until it is.
 			this._pendingChunks.push(pcm);
@@ -507,6 +546,13 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 		}
 
 		try {
+			// Drain every queued append (buffered backlog + live chunks) so the
+			// final captured audio reaches native core before we stop — otherwise
+			// `stop()` can complete the stream while the tail append is still
+			// pending, truncating the transcript.
+			try {
+				await this._appendChain;
+			} catch { /* individual append failures already surfaced */ }
 			// `stop()` drains any buffered audio, emits final results into the
 			// stream, then completes it — so the consumer loop ends after this.
 			await session.stop();
@@ -567,6 +613,7 @@ export class LocalTranscriptionService extends Disposable implements ILocalTrans
 		this._accumulator.reset();
 		this._partialText = '';
 		this._pendingChunks = [];
+		this._appendChain = Promise.resolve();
 		this._runtimeError = undefined;
 	}
 }
