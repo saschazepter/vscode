@@ -40,7 +40,7 @@ export function defineWorkspaceTests(context: IAgentHostE2ETestContext): void {
 		await context.client.call('authenticate', { channel: ROOT_STATE_URI, resource: 'https://api.github.com', token: resolveGitHubToken() }, 30_000);
 
 		const sessionUri = URI.from({ scheme: config.scheme, path: `/${generateUuid()}` }).toString();
-		await context.client.call('createSession', { channel: sessionUri, provider: config.provider, workingDirectory: workingDirUri }, 30_000);
+		await context.client.call('createSession', { channel: sessionUri, provider: config.provider, workingDirectories: [workingDirUri] }, 30_000);
 		createdSessions.push(sessionUri);
 
 		const subscribeResult = await context.client.call<SubscribeResult>('subscribe', { channel: sessionUri }, 30_000);
@@ -86,7 +86,7 @@ export function defineWorkspaceTests(context: IAgentHostE2ETestContext): void {
 
 		const sessionUri = URI.from({ scheme: config.scheme, path: `/${generateUuid()}` }).toString();
 		await context.client.call('createSession', {
-			channel: sessionUri, provider: config.provider, workingDirectory: workingDirUri,
+			channel: sessionUri, provider: config.provider, workingDirectories: [workingDirUri],
 			config: { isolation: 'worktree', branch: defaultBranch },
 		});
 		createdSessions.push(sessionUri);
