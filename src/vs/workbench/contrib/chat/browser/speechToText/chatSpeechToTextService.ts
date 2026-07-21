@@ -156,6 +156,8 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		return this._isPreparingModel;
 	}
 
+	private _isStarting = false;
+
 	private readonly _onDidChangeModelDownloadProgress = this._register(new Emitter<void>());
 	readonly onDidChangeModelDownloadProgress = this._onDidChangeModelDownloadProgress.event;
 
@@ -183,6 +185,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private readonly _recordingContextKey: IContextKey<boolean>;
 	private readonly _configuredContextKey: IContextKey<boolean>;
 	private readonly _preparingContextKey: IContextKey<boolean>;
+	private readonly _startingContextKey: IContextKey<boolean>;
 
 	private _mediaStream: MediaStream | undefined;
 	private _audioContext: AudioContext | undefined;
@@ -233,6 +236,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		this._recordingContextKey = ChatContextKeys.speechToTextRecording.bindTo(contextKeyService);
 		this._configuredContextKey = ChatContextKeys.speechToTextConfigured.bindTo(contextKeyService);
 		this._preparingContextKey = ChatContextKeys.speechToTextPreparing.bindTo(contextKeyService);
+		this._startingContextKey = ChatContextKeys.speechToTextStarting.bindTo(contextKeyService);
 		this._updateConfiguredContextKey();
 		this._register(this._configurationService.onDidChangeConfiguration(e => {
 			if (e.affectsConfiguration(ENABLED_SETTING)) {
@@ -251,10 +255,29 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		}
 		this._isPreparingModel = preparing;
 		this._preparingContextKey.set(preparing);
+		if (preparing) {
+			// The determinate download ring takes over the toolbar slot, so drop
+			// the plain "starting" spinner to avoid showing both affordances.
+			this._setStarting(false);
+		}
 		if (!preparing) {
 			this._setModelDownloadProgress(undefined);
 		}
 		this._onDidChangePreparingModel.fire(preparing);
+	}
+
+	/**
+	 * Toggle the transient "starting" spinner shown from the moment dictation is
+	 * triggered until it is actually listening (or the determinate download ring
+	 * takes over). This covers the microphone-acquisition and session-open gap so
+	 * the toolbar mic does not sit static while nothing appears to happen.
+	 */
+	private _setStarting(starting: boolean): void {
+		if (this._isStarting === starting) {
+			return;
+		}
+		this._isStarting = starting;
+		this._startingContextKey.set(starting);
 	}
 
 	private _setModelDownloadProgress(progress: number | undefined): void {
@@ -344,6 +367,12 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		this._sessionSegments = 0;
 		this._sessionErrorCode = '';
 
+		// Show a plain spinner from the moment dictation is triggered so the
+		// wait until we are actually listening (microphone acquisition + session
+		// open) reads as active. If the model still needs downloading/loading,
+		// the determinate download ring takes over (see _setPreparingModel).
+		this._setStarting(true);
+
 		let stream: MediaStream;
 		try {
 			stream = await this._acquireStream(window);
@@ -383,6 +412,12 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			throw err;
 		}
 		this._setState(ChatSpeechToTextState.Recording);
+		// If the model is ready we are now listening, so retire the "starting"
+		// spinner. When it is still preparing, the download ring already took
+		// over and clears itself once the model becomes ready.
+		if (!this._isPreparingModel) {
+			this._setStarting(false);
+		}
 		// Only cue "recording started" once we are actually listening. If the
 		// model is still downloading/loading, defer the cue until it becomes
 		// ready (see _handleModelStatus), so it lands with the "Listening…"
@@ -665,6 +700,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 
 	private _teardown(): void {
 		this._stopCapture();
+		this._setStarting(false);
 		this._setPreparingModel(false);
 		this._completeDownloadNotification();
 		// Drop any in-progress preparation timing; a session torn down before the

@@ -32,6 +32,8 @@ import { cancelDictation, isDictating, startDictation, stopDictation } from '../
 export const ChatSpeechToTextConfigured = ContextKeyExpr.and(ChatContextKeys.enabled, ContextKeyExpr.has(ChatContextKeys.speechToTextConfigured.key));
 /** True while the on-device model is downloading/loading (the mic shows a spinner instead). */
 export const ChatSpeechToTextPreparing = ContextKeyExpr.has(ChatContextKeys.speechToTextPreparing.key);
+/** True while dictation is starting up (mic + session open) before listening is ready. */
+export const ChatSpeechToTextStarting = ContextKeyExpr.has(ChatContextKeys.speechToTextStarting.key);
 
 
 /** Releases shorter than this are treated as an accidental tap and discarded. */
@@ -137,7 +139,7 @@ class ToggleChatSpeechToTextAction extends Action2 {
 			menu: [{
 				id: MenuId.ChatExecute,
 				order: -11,
-				when: ContextKeyExpr.and(ChatSpeechToTextConfigured, ChatSpeechToTextPreparing.negate()),
+				when: ContextKeyExpr.and(ChatSpeechToTextConfigured, ChatSpeechToTextPreparing.negate(), ChatSpeechToTextStarting.negate()),
 				group: 'navigation',
 			}],
 			keybinding: {
@@ -193,6 +195,40 @@ export class ChatSpeechToTextPreparingAction extends Action2 {
 				id: MenuId.ChatExecute,
 				order: -11,
 				when: ContextKeyExpr.and(ChatSpeechToTextConfigured, ChatSpeechToTextPreparing),
+				group: 'navigation',
+			}],
+		});
+	}
+
+	async run(): Promise<void> {
+		if (isDictating()) {
+			cancelDictation();
+		}
+	}
+}
+
+/**
+ * Shown in place of the mic button while dictation is starting up (acquiring the
+ * microphone and opening the session) before listening is ready. Renders a plain
+ * spinner — matching Voice Mode's "Connecting…" affordance — so the brief wait
+ * reads as active. Distinct from {@link ChatSpeechToTextPreparingAction}, which
+ * shows a determinate download ring while the on-device model downloads/loads.
+ */
+export class ChatSpeechToTextConnectingAction extends Action2 {
+	static readonly ID = 'workbench.action.chat.speechToTextConnecting';
+
+	constructor() {
+		super({
+			id: ChatSpeechToTextConnectingAction.ID,
+			title: localize2('chat.speechToText.connecting', "Starting Dictation…"),
+			category: CHAT_CATEGORY,
+			f1: false,
+			icon: Codicon.loading,
+			precondition: ChatSpeechToTextStarting,
+			menu: [{
+				id: MenuId.ChatExecute,
+				order: -11,
+				when: ContextKeyExpr.and(ChatSpeechToTextConfigured, ChatSpeechToTextStarting, ChatSpeechToTextPreparing.negate()),
 				group: 'navigation',
 			}],
 		});
@@ -355,6 +391,7 @@ export function registerChatSpeechToTextActions(): DisposableStore {
 	const store = new DisposableStore();
 	store.add(registerAction2(ToggleChatSpeechToTextAction));
 	store.add(registerAction2(ChatSpeechToTextPreparingAction));
+	store.add(registerAction2(ChatSpeechToTextConnectingAction));
 	store.add(registerAction2(HoldToSpeechToTextAction));
 	store.add(registerAction2(CancelChatSpeechToTextAction));
 	store.add(registerAction2(SelectSpeechToTextMicrophoneAction));
