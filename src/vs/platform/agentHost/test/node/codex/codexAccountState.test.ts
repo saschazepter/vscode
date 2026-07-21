@@ -5,7 +5,7 @@
 
 import * as assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
-import { codexAccountStateForUsageSource, codexAccountStateFromResponse, resolveCodexUsageSourceAfterAccountRead } from '../../../node/codex/codexAccountState.js';
+import { codexAccountStateForUsageSource, codexAccountStateFromResponse, codexProtectedResourcesForUsageSource, resolveCodexUsageSourceAfterAccountRead } from '../../../node/codex/codexAccountState.js';
 
 suite('CodexAccountState', () => {
 	ensureNoDisposablesAreLeakedInTestSuite();
@@ -47,5 +47,15 @@ suite('CodexAccountState', () => {
 			{ usageSource: 'copilot', status: 'signedIn', authType: 'chatgpt', planType: 'plus' },
 			{ usageSource: 'openai', status: 'signedIn', authType: 'apiKey' },
 		]);
+	});
+
+	test('preloads an optional Copilot token while OpenAI is active', () => {
+		const copilot = { resource: 'https://api.github.com', required: true };
+		const repo = { resource: 'https://api.github.com/repos', required: false };
+		assert.deepStrictEqual(codexProtectedResourcesForUsageSource('openai', copilot, repo), [
+			{ resource: 'https://api.github.com', required: false },
+			repo,
+		]);
+		assert.deepStrictEqual(codexProtectedResourcesForUsageSource('copilot', copilot, repo), [copilot, repo]);
 	});
 });

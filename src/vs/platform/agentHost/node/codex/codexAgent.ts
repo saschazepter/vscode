@@ -61,7 +61,7 @@ import { buildUserInputRequest, emptyUserInputResponse, userInputResponseFromAns
 import { replayThreadToTurns } from './codexReplayMapper.js';
 import { CodexSessionMetadataStore } from './codexSessionMetadataStore.js';
 import { buildCodexLaunchConfig, buildCodexResumeParams } from './codexLaunchConfig.js';
-import { codexAccountStateForUsageSource, codexAccountStateFromResponse, resolveCodexUsageSourceAfterAccountRead } from './codexAccountState.js';
+import { codexAccountStateForUsageSource, codexAccountStateFromResponse, codexProtectedResourcesForUsageSource, resolveCodexUsageSourceAfterAccountRead } from './codexAccountState.js';
 import { CodexSessionConfigKey, CODEX_DEFAULT_PERMISSIONS_PRESET, CODEX_PERMISSIONS_PRESETS, collaborationModeKind, migrateCodexPermissionValues, narrowAdditionalDirectories, narrowBoolean, narrowPersonality, narrowReasoningEffort, narrowReasoningSummary, narrowWebSearchMode, resolveCodexPermissions, type CodexApprovalPolicy, type CodexPermissionsPreset, type ICodexResolvedPermissions } from './codexSessionConfigKeys.js';
 import type { ReasoningEffort } from './protocol/generated/ReasoningEffort.js';
 import type { ReasoningSummary } from './protocol/generated/ReasoningSummary.js';
@@ -901,13 +901,11 @@ export class CodexAgent extends Disposable implements IAgent {
 	// #region Auth
 
 	getProtectedResources(): ProtectedResourceMetadata[] {
-		if (this._usageSource === 'openai') {
-			return [this._gitHubEndpointService.getRepoResource()];
-		}
-		return [
+		return codexProtectedResourcesForUsageSource(
+			this._usageSource,
 			this._gitHubEndpointService.getCopilotResource(),
-			this._gitHubEndpointService.getRepoResource()
-		];
+			this._gitHubEndpointService.getRepoResource(),
+		);
 	}
 
 	async authenticate(resource: string, token: string): Promise<boolean> {

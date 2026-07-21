@@ -39,6 +39,7 @@ import { IsSessionsWindowContext } from '../../workbench/common/contextkeys.js';
 import { IWorkbenchEnvironmentService } from '../../workbench/services/environment/common/environmentService.js';
 import { Menus } from './menus.js';
 import { isAgentHostProvider, type IAgentHostSessionsProvider } from '../common/agentHostSessionsProvider.js';
+import { activateOpenAIAccount } from '../common/codexAccountFlow.js';
 import { SessionTypeContext } from '../common/contextkeys.js';
 import type { IActiveSession } from '../services/sessions/common/sessionsManagement.js';
 import { ISessionContext } from '../services/sessions/browser/sessionContext.js';
@@ -282,15 +283,18 @@ class CodexAccountActionViewItem extends BaseActionViewItem {
 				await confirmLogoutAndUseCopilot(this._configurationService, this._notificationService, this._dialogService, provider);
 				return;
 			}
-			if (action === 'signIn') {
+			if (action === 'signIn' || action === 'openai') {
 				try {
-					await signIn({
-						openerService: this._openerService,
-						clipboardService: this._clipboardService,
-						notificationService: this._notificationService,
-						progressService: this._progressService,
-					}, provider);
-					await setUsageSource(this._configurationService, this._notificationService, provider, 'openai');
+					await activateOpenAIAccount(
+						() => setUsageSource(this._configurationService, this._notificationService, provider, 'openai'),
+						() => provider.readAgentAccount(CODEX_AGENT_PROVIDER_ID),
+						() => signIn({
+							openerService: this._openerService,
+							clipboardService: this._clipboardService,
+							notificationService: this._notificationService,
+							progressService: this._progressService,
+						}, provider),
+					);
 				} catch (error) {
 					if (provider.getAgentInfo(CODEX_AGENT_PROVIDER_ID)?.account?.usageSource !== 'copilot') {
 						await setUsageSource(this._configurationService, this._notificationService, provider, 'copilot');
@@ -298,17 +302,6 @@ class CodexAccountActionViewItem extends BaseActionViewItem {
 					throw error;
 				}
 				return;
-			}
-			if (action === 'openai') {
-				const currentAccount = await provider.readAgentAccount(CODEX_AGENT_PROVIDER_ID);
-				if (currentAccount.status !== 'signedIn') {
-					await signIn({
-						openerService: this._openerService,
-						clipboardService: this._clipboardService,
-						notificationService: this._notificationService,
-						progressService: this._progressService,
-					}, provider);
-				}
 			}
 			if (provider.getAgentInfo(CODEX_AGENT_PROVIDER_ID)?.account?.usageSource !== action) {
 				await setUsageSource(this._configurationService, this._notificationService, provider, action);
@@ -499,19 +492,23 @@ async function manageCodexAccount(accessor: ServicesAccessor, providerId?: strin
 	if (picked.action === 'current') {
 		return;
 	}
-	if (picked.action === 'copilot' || picked.action === 'openai') {
+	if (picked.action === 'copilot') {
 		await setUsageSource(configurationService, notificationService, provider, picked.action);
-		if (picked.action === 'openai') {
-			const account = await provider.readAgentAccount(CODEX_AGENT_PROVIDER_ID);
-			if (account.status === 'signedOut') {
-				await signIn(signInServices, provider);
-			}
-		}
 		return;
 	}
-	if (picked.action === 'signIn') {
-		await signIn(signInServices, provider);
-		await setUsageSource(configurationService, notificationService, provider, 'openai');
+	if (picked.action === 'signIn' || picked.action === 'openai') {
+		try {
+			await activateOpenAIAccount(
+				() => setUsageSource(configurationService, notificationService, provider, 'openai'),
+				() => provider.readAgentAccount(CODEX_AGENT_PROVIDER_ID),
+				() => signIn(signInServices, provider),
+			);
+		} catch (error) {
+			if (provider.getAgentInfo(CODEX_AGENT_PROVIDER_ID)?.account?.usageSource !== 'copilot') {
+				await setUsageSource(configurationService, notificationService, provider, 'copilot');
+			}
+			throw error;
+		}
 		return;
 	}
 	await confirmLogoutAndUseCopilot(configurationService, notificationService, dialogService, provider);

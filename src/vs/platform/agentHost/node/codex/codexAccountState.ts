@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import type { AgentAccountState } from '../../common/state/protocol/channels-root/state.js';
+import type { ProtectedResourceMetadata } from '../../common/state/protocol/common/state.js';
 import type { CodexUsageSource } from '../../common/agentHostCustomizationConfig.js';
 import type { GetAccountResponse } from './protocol/generated/v2/GetAccountResponse.js';
 
@@ -26,4 +27,15 @@ export function resolveCodexUsageSourceAfterAccountRead(source: CodexUsageSource
 
 export function codexAccountStateForUsageSource(source: CodexUsageSource, openAIAccount: AgentAccountState): AgentAccountState {
 	return source === 'openai' ? openAIAccount : { ...openAIAccount, usageSource: 'copilot' };
+}
+
+export function codexProtectedResourcesForUsageSource(
+	source: CodexUsageSource,
+	copilotResource: ProtectedResourceMetadata,
+	repoResource: ProtectedResourceMetadata,
+): ProtectedResourceMetadata[] {
+	return [
+		source === 'openai' ? { ...copilotResource, required: false } : copilotResource,
+		repoResource,
+	];
 }
