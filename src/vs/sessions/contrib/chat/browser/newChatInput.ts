@@ -966,9 +966,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 				isUserQuery: true,
 			});
 			if (preSubmitResult) {
-				if (preSubmitResult.clearInput !== false) {
-					this._editor.getModel()?.setValue('');
-				}
+				this._editor.getModel()?.setValue('');
 				return;
 			}
 		}

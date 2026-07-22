@@ -6,7 +6,7 @@
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { parseLeadingSlashCommand } from '../../../../platform/agentHost/common/agentHostSlashCommand.js';
 import { resolveCopilotConfigSlashCommandOnSend } from '../../../../platform/agentHost/common/copilotConfigSlashCommands.js';
-import { IChatSubmitRequestHandlerService, type ChatSubmitRequestHandling, type IChatSubmitRequest } from '../../../../workbench/contrib/chat/browser/chatSubmitRequestHandlerService.js';
+import { IChatSubmitRequestHandlerService, type IChatSubmitRequest } from '../../../../workbench/contrib/chat/browser/chatSubmitRequestHandlerService.js';
 import { applyAgentHostCompletionAction } from '../../../../workbench/contrib/chat/browser/agentHostCompletionAction.js';
 import { SessionType } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { getChatSessionType } from '../../../../workbench/contrib/chat/common/model/chatUri.js';
@@ -35,31 +35,31 @@ export class SessionsCopilotConfigSlashSubmitHandlerContribution extends Disposa
 		}));
 	}
 
-	private async _tryHandle(request: IChatSubmitRequest): Promise<ChatSubmitRequestHandling | undefined> {
+	private async _tryHandle(request: IChatSubmitRequest): Promise<boolean> {
 		if (getChatSessionType(request.sessionResource) !== SessionType.AgentHostCopilot) {
-			return undefined;
+			return false;
 		}
 		const slashCommand = parseLeadingSlashCommand(request.input);
 		const configAction = slashCommand ? resolveCopilotConfigSlashCommandOnSend(slashCommand.command, slashCommand.rawRest) : undefined;
 		if (!configAction) {
-			return undefined;
+			return false;
 		}
 		const session = this._sessionsManagementService.getSession(request.sessionResource);
 		const providerId = session?.providerId ?? request.providerId;
 		const sessionId = session?.sessionId ?? request.sessionId;
 		if (!providerId || !sessionId) {
-			return undefined;
+			return false;
 		}
 		const provider = this._sessionsProvidersService.getProvider(providerId);
 		if (!provider || !isAgentHostProvider(provider)) {
-			return undefined;
+			return false;
 		}
 		const applied = await applyAgentHostCompletionAction({ applyConfig: configAction.applyConfig }, this._dialogService, this._storageService, async config => {
 			await Promise.all(Object.entries(config).map(([key, value]) => provider.setSessionConfigValue(sessionId, key, value)));
 		});
 		if (!applied) {
-			return { kind: 'handled', clearInput: false };
+			return false;
 		}
-		return configAction.strippedPrompt ? undefined : { kind: 'handled' };
+		return !configAction.strippedPrompt;
 	}
 }

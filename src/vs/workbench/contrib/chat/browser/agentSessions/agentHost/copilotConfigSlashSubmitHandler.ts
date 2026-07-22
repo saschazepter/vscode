@@ -12,7 +12,7 @@ import { IDialogService } from '../../../../../../platform/dialogs/common/dialog
 import { IStorageService } from '../../../../../../platform/storage/common/storage.js';
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 import { IWorkbenchContribution } from '../../../../../common/contributions.js';
-import { IChatSubmitRequestHandlerService, type ChatSubmitRequestHandling, type IChatSubmitRequest } from '../../chatSubmitRequestHandlerService.js';
+import { IChatSubmitRequestHandlerService, type IChatSubmitRequest } from '../../chatSubmitRequestHandlerService.js';
 import { SessionType } from '../../../common/chatSessionsService.js';
 import { getChatSessionType } from '../../../common/model/chatUri.js';
 import { IAgentHostSessionWorkingDirectoryResolver } from './agentHostSessionWorkingDirectoryResolver.js';
@@ -51,13 +51,13 @@ export class CopilotConfigSlashSubmitHandlerContribution extends Disposable impl
 		}));
 	}
 
-	private async _tryHandle(request: IChatSubmitRequest): Promise<ChatSubmitRequestHandling | undefined> {
+	private async _tryHandle(request: IChatSubmitRequest): Promise<boolean> {
 		if (getChatSessionType(request.sessionResource) !== SessionType.AgentHostCopilot) {
-			return undefined;
+			return false;
 		}
 		const configAction = resolveCopilotConfigSlashSubmit(request.input);
 		if (!configAction) {
-			return undefined;
+			return false;
 		}
 		const applied = await applyAgentHostSubmitConfig(request.sessionResource, configAction.applyConfig, {
 			agentHostService: this._agentHostService,
@@ -69,8 +69,8 @@ export class CopilotConfigSlashSubmitHandlerContribution extends Disposable impl
 			storageService: this._storageService,
 		});
 		if (!applied) {
-			return { kind: 'handled', clearInput: false };
+			return false;
 		}
-		return configAction.strippedPrompt ? undefined : { kind: 'handled' };
+		return !configAction.strippedPrompt;
 	}
 }

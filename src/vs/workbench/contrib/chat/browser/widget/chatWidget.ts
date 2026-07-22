@@ -2693,7 +2693,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			isUserQuery,
 		});
 		if (preSubmitResult) {
-			if (preSubmitResult.clearInput !== false && isUserQuery) {
+			if (isUserQuery) {
 				this.setInput('');
 			}
 			return;

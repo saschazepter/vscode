@@ -21,21 +21,17 @@ export interface IChatSubmitRequest {
 	readonly isUserQuery: boolean;
 }
 
-/** Result returned by a pre-submit handler that accepted a request. */
-export type ChatSubmitRequestHandling =
-	| { readonly kind: 'handled'; readonly clearInput?: boolean };
-
 /** Handler offered a chat input submission before the normal send path. */
 export interface IChatSubmitRequestHandler {
 	readonly id: string;
-	tryHandle(request: IChatSubmitRequest): Promise<ChatSubmitRequestHandling | undefined>;
+	tryHandle(request: IChatSubmitRequest): Promise<boolean>;
 }
 
 /** Registry for provider-specific pre-submit chat handlers. */
 export interface IChatSubmitRequestHandlerService {
 	readonly _serviceBrand: undefined;
 	register(handler: IChatSubmitRequestHandler): IDisposable;
-	tryHandle(request: IChatSubmitRequest): Promise<ChatSubmitRequestHandling | undefined>;
+	tryHandle(request: IChatSubmitRequest): Promise<boolean>;
 }
 
 /** Default sequential first-match implementation of the submit handler registry. */
@@ -55,13 +51,12 @@ export class ChatSubmitRequestHandlerService implements IChatSubmitRequestHandle
 		});
 	}
 
-	async tryHandle(request: IChatSubmitRequest): Promise<ChatSubmitRequestHandling | undefined> {
+	async tryHandle(request: IChatSubmitRequest): Promise<boolean> {
 		for (const handler of this._handlers) {
-			const result = await handler.tryHandle(request);
-			if (result) {
-				return result;
+			if (await handler.tryHandle(request)) {
+				return true;
 			}
 		}
-		return undefined;
+		return false;
 	}
 }

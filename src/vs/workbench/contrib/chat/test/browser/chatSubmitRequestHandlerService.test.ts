@@ -20,21 +20,21 @@ suite('ChatSubmitRequestHandlerService', () => {
 			id: 'first',
 			async tryHandle() {
 				calls.push('first');
-				return undefined;
+				return false;
 			},
 		}));
 		store.add(service.register({
 			id: 'second',
 			async tryHandle() {
 				calls.push('second');
-				return { kind: 'handled' };
+				return true;
 			},
 		}));
 		store.add(service.register({
 			id: 'third',
 			async tryHandle() {
 				calls.push('third');
-				return { kind: 'handled' };
+				return true;
 			},
 		}));
 
@@ -47,7 +47,7 @@ suite('ChatSubmitRequestHandlerService', () => {
 		});
 
 		assert.deepStrictEqual({ result, calls }, {
-			result: { kind: 'handled' },
+			result: true,
 			calls: ['first', 'second'],
 		});
 	});
