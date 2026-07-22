@@ -472,6 +472,18 @@ export class PromptTimelineModel extends Disposable {
 	}
 
 	/**
+	 * Reveals the prompt the sticky header currently names — the one held by button navigation, else the
+	 * prompt scrolled to the top. Used when the header's label is activated so it jumps straight to that
+	 * prompt (aligned to the top of the transcript) instead of opening a picker.
+	 */
+	revealActivePrompt(): void {
+		const id = this._navPinnedId.get() ?? this._activePromptId.get();
+		if (id !== undefined) {
+			this.reveal(id);
+		}
+	}
+
+	/**
 	 * Reveal the prompt `delta` positions away from the one the header currently names (`-1` = previous,
 	 * `+1` = next), clamped to the ends of the prompt list. Used by the sticky header's navigation buttons:
 	 * it pins the header to the target (see {@link _navPinnedId}) so the header stays visible and names it
