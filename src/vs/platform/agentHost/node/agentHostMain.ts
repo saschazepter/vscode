@@ -85,6 +85,7 @@ import { registerPendingEditContentProvider } from './copilot/pendingEditContent
 import { join } from '../../../base/common/path.js';
 import { createAgentHostTelemetryService } from './agentHostTelemetryService.js';
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
+import ErrorTelemetry from '../../telemetry/node/errorTelemetry.js';
 
 // Entry point for the agent host utility process.
 // Sets up IPC, logging, and registers agent providers (Copilot).
@@ -165,6 +166,7 @@ async function startAgentHost(): Promise<void> {
 		proxyResolver = networkServices.proxyResolver;
 		const fetchFn = proxyResolver.fetch.bind(proxyResolver);
 		const telemetryService = await createAgentHostTelemetryService({ environmentService, productService, fileService, loggerService, logService, disposables, fetchFn, requestService: networkServices.requestService });
+		disposables.add(new ErrorTelemetry(telemetryService));
 		diServices.set(ITelemetryService, telemetryService);
 		instantiationService = new InstantiationService(diServices);
 		const fileMonitorService = disposables.add(instantiationService.createInstance(AgentHostFileMonitorService));
