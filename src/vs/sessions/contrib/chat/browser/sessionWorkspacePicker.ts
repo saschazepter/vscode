@@ -976,7 +976,7 @@ export class WorkspacePicker extends Disposable {
 		// own recent history (not VS Code's global recents) so restoration never
 		// seeds a new session from a folder merely opened in another window.
 		try {
-			for (const recent of this.recentWorkspacesService.getOwnRecentWorkspaces()) {
+			for (const recent of this.recentWorkspacesService.getRecentWorkspaces(false)) {
 				if (this._isProviderUnavailable(recent.providerId)) {
 					continue;
 				}
@@ -998,7 +998,7 @@ export class WorkspacePicker extends Disposable {
 	 */
 	private _restoreCheckedWorkspace(): IResolvedFolderWorkspace | undefined {
 		try {
-			return this.recentWorkspacesService.getOwnRecentWorkspaces().find(recent => recent.checked);
+			return this.recentWorkspacesService.getRecentWorkspaces(false).find(recent => recent.checked);
 		} catch {
 			return undefined;
 		}
