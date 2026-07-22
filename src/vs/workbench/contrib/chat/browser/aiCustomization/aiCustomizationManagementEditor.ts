@@ -38,6 +38,7 @@ import { IOpenerService } from '../../../../../platform/opener/common/opener.js'
 import { basename, dirname, isEqual } from '../../../../../base/common/resources.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { AICustomizationManagementEditorInput } from './aiCustomizationManagementEditorInput.js';
+import { aiCustomizationManagementSectionRegistry, IAICustomizationManagementSectionWidget } from './aiCustomizationManagementSectionRegistry.js';
 import { AICustomizationListWidget } from './aiCustomizationListWidget.js';
 import { IAICustomizationItemsModel, ITEMS_MODEL_SECTIONS } from './aiCustomizationItemsModel.js';
 import { McpListWidget } from './mcpListWidget.js';
@@ -292,6 +293,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 	private automationsContentContainer: HTMLElement | undefined;
 	private modelsContentContainer: HTMLElement | undefined;
 	private toolsContentContainer: HTMLElement | undefined;
+	private readonly contributedSectionContainers = new Map<AICustomizationManagementSection, HTMLElement>();
+	private readonly contributedSectionWidgets = new Map<AICustomizationManagementSection, IAICustomizationManagementSectionWidget>();
 	private modelsFooterElement: HTMLElement | undefined;
 
 	// Embedded editor state
@@ -442,9 +445,10 @@ export class AICustomizationManagementEditor extends EditorPane {
 			[AICustomizationManagementSection.Tools]: { label: localize('tools', "Tools"), icon: toolsIcon, description: localize('toolsDesc', "Enable or disable groups of language model tools available to chat.") },
 		};
 		for (const id of this.workspaceService.managementSections) {
-			const info = sectionInfo[id];
+			const contribution = aiCustomizationManagementSectionRegistry.get(id);
+			const info = contribution ?? sectionInfo[id];
 			if (info) {
-				this.allSections.push({ id, ...info, count: 0 });
+				this.allSections.push({ id, label: info.label, icon: info.icon, description: info.description, count: 0 });
 			}
 		}
 		this.rebuildVisibleSections();
@@ -460,6 +464,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 	protected override createEditor(parent: HTMLElement): void {
 		this.editorDisposables.clear();
+		this.contributedSectionContainers.clear();
+		this.contributedSectionWidgets.clear();
 		this.container = DOM.append(parent, $('.ai-customization-management-editor'));
 
 		this.createSplitView();
@@ -579,7 +585,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		this.sections.length = 0;
 		for (const s of this.allSections) {
-			if (!hidden.has(s.id)) {
+			const contribution = aiCustomizationManagementSectionRegistry.get(s.id);
+			if (!hidden.has(s.id) && (!contribution || contribution.supportsHarness(activeId))) {
 				this.sections.push(s);
 			}
 		}
@@ -994,6 +1001,15 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.automationsContentContainer = DOM.append(contentInner, $('.automations-content-container'));
 			this.automationsListWidget = this.editorDisposables.add(this.instantiationService.createInstance(AutomationsListWidget));
 			this.automationsContentContainer.appendChild(this.automationsListWidget.element);
+		}
+
+		for (const section of this.workspaceService.managementSections) {
+			const contribution = aiCustomizationManagementSectionRegistry.get(section);
+			if (!contribution) {
+				continue;
+			}
+			const container = DOM.append(contentInner, $('.contributed-section-container'));
+			this.contributedSectionContainers.set(section, container);
 		}
 
 		// Embedded editor container
@@ -1693,6 +1709,13 @@ export class AICustomizationManagementEditor extends EditorPane {
 		if (this.toolsDetailContainer) {
 			this.toolsDetailContainer.style.display = isToolsDetailMode ? '' : 'none';
 		}
+		for (const [section, container] of this.contributedSectionContainers) {
+			const visible = !isEditorMode && !isMigrationMode && !isDetailMode && this.selectedSection === section;
+			container.style.display = visible ? '' : 'none';
+			if (visible) {
+				this.ensureContributedSectionWidget(section);
+			}
+		}
 		if (this.editorContentContainer) {
 			this.editorContentContainer.style.display = isEditorMode ? '' : 'none';
 		}
@@ -1704,6 +1727,25 @@ export class AICustomizationManagementEditor extends EditorPane {
 				this.layout(this.dimension);
 			}
 		}
+	}
+
+	private ensureContributedSectionWidget(section: AICustomizationManagementSection): IAICustomizationManagementSectionWidget | undefined {
+		const existing = this.contributedSectionWidgets.get(section);
+		if (existing) {
+			return existing;
+		}
+		const contribution = aiCustomizationManagementSectionRegistry.get(section);
+		const container = this.contributedSectionContainers.get(section);
+		if (!contribution || !container) {
+			return undefined;
+		}
+		const widget = contribution.create(this.instantiationService, container);
+		this.contributedSectionWidgets.set(section, widget);
+		this.editorDisposables.add(widget);
+		if (this.dimension) {
+			widget.layout?.(this.dimension);
+		}
+		return widget;
 	}
 
 	/**
@@ -1885,6 +1927,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.splitViewContainer.style.height = `${dimension.height}px`;
 			this.splitView.layout(dimension.width, dimension.height);
 		}
+		for (const widget of this.contributedSectionWidgets.values()) {
+			widget.layout?.(dimension);
+		}
 		this.migrationSearchInput?.layout();
 	}
 
@@ -1916,6 +1961,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 			this.toolsListWidget?.focusSearch();
 		} else if (this.selectedSection === AICustomizationManagementSection.Automations) {
 			this.automationsListWidget?.focus();
+		} else if (this.selectedSection && this.contributedSectionContainers.has(this.selectedSection)) {
+			this.ensureContributedSectionWidget(this.selectedSection)?.focus?.();
 		} else {
 			this.listWidget?.focusSearch();
 		}

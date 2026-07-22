@@ -38,7 +38,7 @@ import { AgentHostOpenSessionLinkOpenerContribution } from '../browser/agentSess
 import { AgentHostTerminalContribution } from '../browser/agentSessions/agentHost/agentHostTerminalContribution.js';
 import { AgentHostCopilotCliSettingsContribution } from '../browser/agentSessions/agentHost/agentHostCopilotCliSettingsContribution.js';
 import { AgentHostCodexSettingsContribution } from '../browser/agentSessions/agentHost/agentHostCodexSettingsContribution.js';
-import '../../../../sessions/browser/codexAccountActions.js';
+import './codexCustomizationSettings.contribution.js';
 import '../browser/agentSessions/agentHost/agentHostSettings.contribution.js';
 import '../browser/agentSessions/agentHost/agentSessionSettings.contribution.js';
 import { AgentSessionProviders, getAgentSessionProviderName } from '../browser/agentSessions/agentSessions.js';
