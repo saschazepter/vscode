@@ -12,7 +12,6 @@ import { ChatAgentLocation, ChatModeKind } from '../../../../common/constants.js
 import { ILanguageModelChatMetadataAndIdentifier } from '../../../../common/languageModels.js';
 import { ModelSelectionReason, resolveModelIdentifier, resolveModelIdentifierFromCatalog } from '../../../../common/modelSelection.js';
 import { ChatInputModelSelectionController, IChatInputModelSelectionRuntime } from '../../../../browser/widget/input/chatInputModelSelectionController.js';
-import { ChatModelSelectionModel } from '../../../../browser/widget/input/chatModelSelectionModel.js';
 
 function model(identifier: string): ILanguageModelChatMetadataAndIdentifier {
 	return {
@@ -44,7 +43,6 @@ interface IRuntimeState {
 }
 
 function createRuntime(
-	selection: ChatModelSelectionModel,
 	state: IRuntimeState,
 	modelChanges: Emitter<string>,
 	applied: string[],
@@ -63,33 +61,31 @@ function createRuntime(
 		getBoundConversationKey: () => 'chat:one',
 		getVisibleConversationKey: () => 'chat:one',
 		restoreModelConfiguration: () => { },
-		applyModel: model => {
-			applied.push(model.identifier);
-			selection.setCurrentModel(model, false);
-		},
+		applyModel: model => applied.push(model.identifier),
 	};
 }
 
-suite('ChatModelSelectionModel', () => {
+suite('ChatInputModelSelectionController', () => {
 
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('tracks explicit selection origin', () => {
-		const selection = new ChatModelSelectionModel();
+		const modelChanges = disposables.add(new Emitter<string>());
+		const controller = disposables.add(new ChatInputModelSelectionController(createRuntime({ models: [], resolved: true, sessionType: 'test' }, modelChanges, [])));
 		const first = model('test/first');
 		const second = model('test/second');
 
-		selection.setCurrentModel(first, false);
+		controller.applyAutomaticSelection(first, () => { });
 		const automatic = {
-			current: selection.currentModel.get()?.identifier,
-			explicit: selection.userExplicitlySelectedModel,
+			current: controller.currentModel.get()?.identifier,
+			explicit: controller.userExplicitlySelectedModel,
 		};
-		selection.setCurrentModel(second, true);
+		controller.applyExplicitSelection(second, () => { }, false);
 
 		assert.deepStrictEqual({
 			automatic,
-			current: selection.currentModel.get()?.identifier,
-			explicitAfterUserSelection: selection.userExplicitlySelectedModel,
+			current: controller.currentModel.get()?.identifier,
+			explicitAfterUserSelection: controller.userExplicitlySelectedModel,
 		}, {
 			automatic: { current: first.identifier, explicit: false },
 			current: second.identifier,
@@ -97,30 +93,26 @@ suite('ChatModelSelectionModel', () => {
 		});
 	});
 
-	test('rolls back a failed automatic transition effect', () => {
-		const selection = new ChatModelSelectionModel();
+	test('rolls back a failed explicit selection effect', () => {
+		const modelChanges = disposables.add(new Emitter<string>());
+		const controller = disposables.add(new ChatInputModelSelectionController(createRuntime({ models: [], resolved: true, sessionType: 'test' }, modelChanges, [])));
 		const first = model('test/first');
 		const second = model('test/second');
-		selection.setCurrentModel(first, false);
-		selection.setSelectionReason(ModelSelectionReason.FirstAvailable);
-		const previousState = selection.captureState();
-		selection.setCurrentModel(second, false);
-		selection.setSelectionReason(ModelSelectionReason.ConfiguredDefault);
+		controller.applyAutomaticSelection(first, () => { });
 
-		assert.throws(() => selection.applyTransitionEffect(previousState, () => { throw new Error('rejected'); }), /rejected/);
+		assert.throws(() => controller.applyExplicitSelection(second, () => { throw new Error('rejected'); }, true), /rejected/);
 		assert.deepStrictEqual({
-			current: selection.currentModel.get()?.identifier,
-			reason: selection.getCurrentReason(undefined),
+			current: controller.currentModel.get()?.identifier,
+			reason: controller.selectionReason,
 		}, {
 			current: first.identifier,
-			reason: ModelSelectionReason.FirstAvailable,
+			reason: undefined,
 		});
 	});
 
 	test('restores only for fresh own-pool session switches', () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, createRuntime(selection, {
+		const controller = disposables.add(new ChatInputModelSelectionController(createRuntime({
 			models: [],
 			resolved: true,
 			sessionType: 'test',
@@ -144,7 +136,6 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('applies a fallback while waiting for a remembered model, then restores it', () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const first = model('test/first');
 		const second = model('test/second');
@@ -169,10 +160,9 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: () => { },
 			applyModel: selected => {
 				applied.push(selected.identifier);
-				selection.setCurrentModel(selected, false);
 			},
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 		controller.initialize(second.identifier, result => initialSelections.push(result.kind));
 		const pending = controller.hasPendingIntent();
 		models = [first, second];
@@ -193,24 +183,23 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('explicit selection cancels an eventual remembered-model restore', () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const fallback = model('test/fallback');
 		const explicit = model('test/explicit');
 		const remembered = model('test/remembered');
 		const state: IRuntimeState = { models: [fallback, explicit], resolved: true, sessionType: 'local' };
 		const applied: string[] = [];
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, createRuntime(selection, state, modelChanges, applied)));
+		const controller = disposables.add(new ChatInputModelSelectionController(createRuntime(state, modelChanges, applied)));
 
 		controller.initialize(remembered.identifier, () => { });
-		controller.applyExplicitSelection(explicit, 'local', 'chat:one', () => applied.push(explicit.identifier), false);
+		controller.applyExplicitSelection(explicit, () => applied.push(explicit.identifier), false);
 		state.models = [fallback, explicit, remembered];
 		modelChanges.fire('loaded');
 
 		assert.deepStrictEqual({
 			pending: controller.hasPendingIntent(),
 			applied,
-			current: selection.currentModel.get()?.identifier,
+			current: controller.currentModel.get()?.identifier,
 		}, {
 			pending: false,
 			applied: [fallback.identifier, explicit.identifier],
@@ -219,25 +208,24 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('programmatic selection cancels an eventual remembered-model restore', () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const fallback = model('test/fallback');
 		const programmatic = model('test/programmatic');
 		const remembered = model('test/remembered');
 		const state: IRuntimeState = { models: [fallback, programmatic], resolved: true, sessionType: 'local' };
 		const applied: string[] = [];
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, createRuntime(selection, state, modelChanges, applied)));
+		const controller = disposables.add(new ChatInputModelSelectionController(createRuntime(state, modelChanges, applied)));
 
 		controller.initialize(remembered.identifier, () => { });
-		controller.applyProgrammaticSelection(programmatic, 'local', 'chat:one', () => applied.push(programmatic.identifier));
+		controller.applyProgrammaticSelection(programmatic);
 		state.models = [fallback, programmatic, remembered];
 		modelChanges.fire('loaded');
 
 		assert.deepStrictEqual({
 			pending: controller.hasPendingIntent(),
 			applied,
-			current: selection.currentModel.get()?.identifier,
-			reason: selection.selectionReason,
+			current: controller.currentModel.get()?.identifier,
+			reason: controller.selectionReason,
 		}, {
 			pending: false,
 			applied: [fallback.identifier, programmatic.identifier],
@@ -247,21 +235,15 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('pending programmatic selection applies when the model arrives', async () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const requested = model('test/requested');
 		const state: IRuntimeState = { models: [], resolved: false, sessionType: 'local' };
 		const applied: string[] = [];
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, createRuntime(selection, state, modelChanges, applied)));
+		const controller = disposables.add(new ChatInputModelSelectionController(createRuntime(state, modelChanges, applied)));
 
 		const result = controller.requestProgrammaticSelection(
 			() => state.models.find(model => model.identifier === requested.identifier),
-			'local',
 			'chat:one',
-			model => {
-				applied.push(model.identifier);
-				selection.setCurrentModel(model, false);
-			},
 		);
 		const pending = controller.hasPendingProgrammaticSelection();
 		state.models = [requested];
@@ -272,7 +254,7 @@ suite('ChatModelSelectionModel', () => {
 			result: await result,
 			pendingAfterLoad: controller.hasPendingProgrammaticSelection(),
 			applied,
-			current: selection.currentModel.get()?.identifier,
+			current: controller.currentModel.get()?.identifier,
 		}, {
 			pending: true,
 			result: true,
@@ -283,21 +265,18 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('explicit selection cancels a pending programmatic selection', async () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const requested = model('test/requested');
 		const explicit = model('test/explicit');
 		const state: IRuntimeState = { models: [explicit], resolved: false, sessionType: 'local' };
 		const applied: string[] = [];
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, createRuntime(selection, state, modelChanges, applied)));
+		const controller = disposables.add(new ChatInputModelSelectionController(createRuntime(state, modelChanges, applied)));
 
 		const result = controller.requestProgrammaticSelection(
 			() => state.models.find(model => model.identifier === requested.identifier),
-			'local',
 			'chat:one',
-			model => applied.push(model.identifier),
 		);
-		controller.applyExplicitSelection(explicit, 'local', 'chat:one', () => applied.push(explicit.identifier), false);
+		controller.applyExplicitSelection(explicit, () => applied.push(explicit.identifier), false);
 		state.models = [explicit, requested];
 		modelChanges.fire('loaded');
 
@@ -305,7 +284,7 @@ suite('ChatModelSelectionModel', () => {
 			result: await result,
 			pending: controller.hasPendingProgrammaticSelection(),
 			applied,
-			current: selection.currentModel.get()?.identifier,
+			current: controller.currentModel.get()?.identifier,
 		}, {
 			result: false,
 			pending: false,
@@ -315,28 +294,24 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('clearing a pending programmatic selection clears its authority', async () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const requested = model('test/requested');
 		const state: IRuntimeState = { models: [], resolved: false, sessionType: 'local' };
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, createRuntime(selection, state, modelChanges, [])));
+		const controller = disposables.add(new ChatInputModelSelectionController(createRuntime(state, modelChanges, [])));
 
 		const result = controller.requestProgrammaticSelection(
 			() => state.models.find(model => model.identifier === requested.identifier),
-			'local',
 			'chat:one',
-			() => { },
 		);
 		controller.clearIntent();
 
-		assert.deepStrictEqual({ result: await result, reason: selection.selectionReason }, {
+		assert.deepStrictEqual({ result: await result, reason: controller.selectionReason }, {
 			result: false,
 			reason: undefined,
 		});
 	});
 
 	test('location default improves the fallback and settles conclusively absent remembered intent', () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const fallback = model('test/fallback');
 		const remembered = model('test/remembered');
@@ -347,7 +322,7 @@ suite('ChatModelSelectionModel', () => {
 		};
 		const state: IRuntimeState = { models: [fallback], resolved: true, sessionType: 'local' };
 		const applied: string[] = [];
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, createRuntime(selection, state, modelChanges, applied)));
+		const controller = disposables.add(new ChatInputModelSelectionController(createRuntime(state, modelChanges, applied)));
 
 		controller.initialize(remembered.identifier, () => { });
 		state.models = [fallback, locationDefault];
@@ -360,7 +335,7 @@ suite('ChatModelSelectionModel', () => {
 			pendingAfterDefault,
 			pendingAfterLoad: controller.hasPendingIntent(),
 			applied,
-			current: selection.currentModel.get()?.identifier,
+			current: controller.currentModel.get()?.identifier,
 		}, {
 			pendingAfterDefault: false,
 			pendingAfterLoad: false,
@@ -370,14 +345,13 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('repairs a removed fallback and settles conclusively absent remembered intent', () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const fallback = model('test/fallback');
 		const replacement = model('test/replacement');
 		const remembered = model('test/remembered');
 		const state: IRuntimeState = { models: [fallback], resolved: true, sessionType: 'local' };
 		const applied: string[] = [];
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, createRuntime(selection, state, modelChanges, applied)));
+		const controller = disposables.add(new ChatInputModelSelectionController(createRuntime(state, modelChanges, applied)));
 
 		controller.initialize(remembered.identifier, () => { });
 		state.models = [replacement];
@@ -390,7 +364,7 @@ suite('ChatModelSelectionModel', () => {
 			pendingAfterRepair,
 			pendingAfterLoad: controller.hasPendingIntent(),
 			applied,
-			current: selection.currentModel.get()?.identifier,
+			current: controller.currentModel.get()?.identifier,
 		}, {
 			pendingAfterRepair: false,
 			pendingAfterLoad: false,
@@ -400,7 +374,6 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('applies a fallback while the configured default loads, then upgrades it', () => {
-		const selection = new ChatModelSelectionModel();
 		const byok = model('openai/byok');
 		const configured = model('copilot/configured');
 		let models = [byok];
@@ -421,17 +394,16 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: () => { },
 			applyModel: selected => {
 				applied.push(selected.identifier);
-				selection.setCurrentModel(selected, false);
 			},
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 
 		controller.initialize(undefined, () => { });
 		const pending = controller.hasPendingIntent();
 		models = [byok, configured];
 		controller.reconcileModelListChange(models);
 
-		assert.deepStrictEqual({ pending, applied, current: selection.currentModel.get()?.identifier }, {
+		assert.deepStrictEqual({ pending, applied, current: controller.currentModel.get()?.identifier }, {
 			pending: false,
 			applied: [byok.identifier, configured.identifier],
 			current: configured.identifier,
@@ -439,7 +411,6 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('configured default supersedes pending remembered intent', () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const fallback = model('test/fallback');
 		const configured = model('test/configured');
@@ -451,7 +422,7 @@ suite('ChatModelSelectionModel', () => {
 			configuredModel: configured.metadata.id,
 		};
 		const applied: string[] = [];
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, createRuntime(selection, state, modelChanges, applied)));
+		const controller = disposables.add(new ChatInputModelSelectionController(createRuntime(state, modelChanges, applied)));
 
 		controller.initialize(remembered.identifier, () => { });
 		state.models = [fallback, configured, remembered];
@@ -461,8 +432,8 @@ suite('ChatModelSelectionModel', () => {
 		assert.deepStrictEqual({
 			pending: controller.hasPendingIntent(),
 			applied,
-			current: selection.currentModel.get()?.identifier,
-			reason: selection.selectionReason,
+			current: controller.currentModel.get()?.identifier,
+			reason: controller.selectionReason,
 		}, {
 			pending: false,
 			applied: [fallback.identifier, configured.identifier],
@@ -472,7 +443,6 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('configured default claims an already selected fallback', () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const fallback = model('test/fallback');
 		const defaultBase = model('test/default');
@@ -482,7 +452,7 @@ suite('ChatModelSelectionModel', () => {
 		};
 		const state: IRuntimeState = { models: [fallback], resolved: true, sessionType: 'local' };
 		const applied: string[] = [];
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, createRuntime(selection, state, modelChanges, applied)));
+		const controller = disposables.add(new ChatInputModelSelectionController(createRuntime(state, modelChanges, applied)));
 
 		controller.initialize(undefined, () => { });
 		state.configuredModel = fallback.metadata.id;
@@ -492,8 +462,8 @@ suite('ChatModelSelectionModel', () => {
 
 		assert.deepStrictEqual({
 			applied,
-			current: selection.currentModel.get()?.identifier,
-			reason: selection.selectionReason,
+			current: controller.currentModel.get()?.identifier,
+			reason: controller.selectionReason,
 		}, {
 			applied: [fallback.identifier],
 			current: fallback.identifier,
@@ -502,7 +472,6 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('keeps an explicit selection when the configured default loads later', () => {
-		const selection = new ChatModelSelectionModel();
 		const byok = model('openai/byok');
 		const explicit = model('openai/explicit');
 		const configured = model('copilot/configured');
@@ -524,24 +493,22 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: () => { },
 			applyModel: selected => {
 				applied.push(selected.identifier);
-				selection.setCurrentModel(selected, false);
 			},
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 
 		controller.initialize(undefined, () => { });
-		controller.applyExplicitSelection(explicit, undefined, 'chat:one', () => applied.push(explicit.identifier), false);
+		controller.applyExplicitSelection(explicit, () => applied.push(explicit.identifier), false);
 		models = [byok, explicit, configured];
 		controller.reconcileModelListChange(models);
 
-		assert.deepStrictEqual({ applied, current: selection.currentModel.get()?.identifier }, {
+		assert.deepStrictEqual({ applied, current: controller.currentModel.get()?.identifier }, {
 			applied: [byok.identifier, explicit.identifier],
 			current: explicit.identifier,
 		});
 	});
 
 	test('conversation restore cancels startup remembered intent', () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const fallback = model('test/fallback');
 		const remembered = model('copilot/remembered');
@@ -565,10 +532,9 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: () => { },
 			applyModel: selected => {
 				applied.push(selected.identifier);
-				selection.setCurrentModel(selected, false);
 			},
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 
 		controller.initialize(remembered.identifier, () => { });
 		controller.syncFromConversationState(restored, undefined, undefined, 'chat:one');
@@ -579,7 +545,7 @@ suite('ChatModelSelectionModel', () => {
 		assert.deepStrictEqual({
 			pending: controller.hasPendingIntent(),
 			applied,
-			current: selection.currentModel.get()?.identifier,
+			current: controller.currentModel.get()?.identifier,
 		}, {
 			pending: false,
 			applied: [fallback.identifier, restored.identifier],
@@ -588,7 +554,6 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('late configured default does not overwrite a restored conversation model', () => {
-		const selection = new ChatModelSelectionModel();
 		const restored = model('test/restored');
 		const configured = model('copilot/configured');
 		let models = [restored];
@@ -609,24 +574,22 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: () => { },
 			applyModel: selected => {
 				applied.push(selected.identifier);
-				selection.setCurrentModel(selected, false);
 			},
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 
 		controller.initialize(undefined, () => { });
 		controller.syncFromConversationState(restored, undefined, undefined, 'chat:one');
 		models = [restored, configured];
 		controller.reconcileModelListChange(models);
 
-		assert.deepStrictEqual({ applied, current: selection.currentModel.get()?.identifier }, {
+		assert.deepStrictEqual({ applied, current: controller.currentModel.get()?.identifier }, {
 			applied: [restored.identifier],
 			current: restored.identifier,
 		});
 	});
 
 	test('conversation restore cancels older history intent', () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const restored = model('test/restored');
 		const history = model('test/history');
@@ -648,17 +611,16 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: () => { },
 			applyModel: selected => {
 				applied.push(selected.identifier);
-				selection.setCurrentModel(selected, false);
 			},
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 
 		controller.preselectFromHistory(history.identifier, 'chat:one');
 		controller.syncFromConversationState(restored, undefined, undefined, 'chat:one');
 		models = [restored, history];
 		modelChanges.fire('test');
 
-		assert.deepStrictEqual({ applied, current: selection.currentModel.get()?.identifier }, {
+		assert.deepStrictEqual({ applied, current: controller.currentModel.get()?.identifier }, {
 			applied: [restored.identifier],
 			current: restored.identifier,
 		});
@@ -676,7 +638,6 @@ suite('ChatModelSelectionModel', () => {
 		};
 
 		const run = (configuredModel: string | undefined, rememberedModel: string | undefined, models: ILanguageModelChatMetadataAndIdentifier[]) => {
-			const selection = new ChatModelSelectionModel();
 			const applied: string[] = [];
 			const runtime: IChatInputModelSelectionRuntime = {
 				location: ChatAgentLocation.Chat,
@@ -694,10 +655,9 @@ suite('ChatModelSelectionModel', () => {
 				restoreModelConfiguration: () => { },
 				applyModel: selected => {
 					applied.push(selected.identifier);
-					selection.setCurrentModel(selected, false);
 				},
 			};
-			disposables.add(new ChatInputModelSelectionController(selection, runtime)).initialize(rememberedModel, () => { });
+			disposables.add(new ChatInputModelSelectionController(runtime)).initialize(rememberedModel, () => { });
 			return applied[0];
 		};
 
@@ -710,7 +670,6 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('applies fallback and configured defaults through the automatic path', () => {
-		const selection = new ChatModelSelectionModel();
 		const first = model('test/first');
 		const second = model('test/second');
 		const configuration: { model: string | undefined } = { model: undefined };
@@ -731,10 +690,9 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: () => { },
 			applyModel: selected => {
 				applied.push(selected.identifier);
-				selection.setCurrentModel(selected, false);
 			},
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 
 		controller.ensureCurrentModelSupported();
 		configuration.model = second.metadata.id;
@@ -747,7 +705,6 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('replaces a BYOK first-available model when the Copilot default loads later', () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const byok = model('openai/byok');
 		const copilotDefault = {
@@ -775,23 +732,21 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: () => { },
 			applyModel: selected => {
 				applied.push(selected.identifier);
-				selection.setCurrentModel(selected, false);
 			},
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 
 		controller.initialize(undefined, () => { });
 		models = [byok, copilotDefault];
 		controller.reconcileModelListChange(models);
 
-		assert.deepStrictEqual({ applied, current: selection.currentModel.get()?.identifier }, {
+		assert.deepStrictEqual({ applied, current: controller.currentModel.get()?.identifier }, {
 			applied: [byok.identifier, copilotDefault.identifier],
 			current: copilotDefault.identifier,
 		});
 	});
 
 	test('drops cross-pool drafts and waits for a cold conversation model', () => {
-		const selection = new ChatModelSelectionModel();
 		const sessionType = 'agent-host-test';
 		const general = model('test/general');
 		const fallback = targetedModel('test/fallback', sessionType);
@@ -817,10 +772,9 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: (modelId, configuration) => restored.push({ modelId, configuration }),
 			applyModel: selected => {
 				applied.push(selected.identifier);
-				selection.setCurrentModel(selected, false);
 			},
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 
 		const draft = controller.resolveDraftModel(general, sessionType, true);
 		models = [];
@@ -852,7 +806,6 @@ suite('ChatModelSelectionModel', () => {
 		// re-resolutions and applies the model once the pool loads — instead of defaulting to Auto.
 		// (If the grace in resolveModelIdentifierFromCatalog is removed, resolution is `unavailable`,
 		// no wait is armed, and this test fails.)
-		const selection = new ChatModelSelectionModel();
 		const sessionType = 'agent-host-copilotcli';
 		const base = targetedModel('agent-host-copilotcli:gpt-5.6-sol', sessionType);
 		const desired = { ...base, metadata: { ...base.metadata, vendor: sessionType } };
@@ -880,10 +833,9 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: (modelId, configuration) => restored.push({ modelId, configuration }),
 			applyModel: selected => {
 				applied.push(selected.identifier);
-				selection.setCurrentModel(selected, false);
 			},
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 
 		controller.syncFromConversationState(desired, { effort: 'high' }, sessionType, 'chat:one');
 		const pending = controller.hasPendingIntent();
@@ -913,7 +865,6 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('initialize settles remembered intent after a conclusively empty catalog update', () => {
-		const selection = new ChatModelSelectionModel();
 		const sessionType = 'test-session';
 		const remembered = targetedModel('test:remembered', sessionType);
 		const modelChanges = disposables.add(new Emitter<string>());
@@ -935,10 +886,9 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: () => { },
 			applyModel: selected => {
 				applied.push(selected.identifier);
-				selection.setCurrentModel(selected, false);
 			},
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 
 		controller.initialize(remembered.identifier, () => { });
 		const pendingAfterInit = controller.hasPendingIntent();
@@ -956,7 +906,7 @@ suite('ChatModelSelectionModel', () => {
 			pendingAfterEmpty,
 			pendingAfterLoad: controller.hasPendingIntent(),
 			applied,
-			current: selection.currentModel.get()?.identifier,
+			current: controller.currentModel.get()?.identifier,
 		}, {
 			pendingAfterInit: true,
 			appliedAfterInit: [],
@@ -968,7 +918,6 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('late best-match restore remains authoritative after configured-model refresh', () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const sessionType = 'agent-host-test';
 		const desired = targetedModel('test/desired', sessionType);
@@ -977,7 +926,7 @@ suite('ChatModelSelectionModel', () => {
 		const configured = targetedModel('test/configured', sessionType);
 		const state: IRuntimeState = { models: [], resolved: false, sessionType, configuredModel: configured.metadata.id };
 		const applied: string[] = [];
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, createRuntime(selection, state, modelChanges, applied)));
+		const controller = disposables.add(new ChatInputModelSelectionController(createRuntime(state, modelChanges, applied)));
 
 		controller.syncFromConversationState(desired, undefined, sessionType, 'chat:one');
 		state.models = [match, configured];
@@ -987,8 +936,8 @@ suite('ChatModelSelectionModel', () => {
 
 		assert.deepStrictEqual({
 			applied,
-			current: selection.currentModel.get()?.identifier,
-			reason: selection.selectionReason,
+			current: controller.currentModel.get()?.identifier,
+			reason: controller.selectionReason,
 		}, {
 			applied: [match.identifier],
 			current: match.identifier,
@@ -997,7 +946,6 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('terminal restore fallback cancels obsolete session intent', () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const sessionType = 'agent-host-test';
 		const staleDesired = targetedModel('test/stale', sessionType);
@@ -1005,7 +953,7 @@ suite('ChatModelSelectionModel', () => {
 		const inapplicable = model('test/inapplicable');
 		const state: IRuntimeState = { models: [], resolved: false, sessionType };
 		const applied: string[] = [];
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, createRuntime(selection, state, modelChanges, applied)));
+		const controller = disposables.add(new ChatInputModelSelectionController(createRuntime(state, modelChanges, applied)));
 
 		controller.syncFromConversationState(staleDesired, undefined, sessionType, 'chat:one');
 		state.models = [fallback];
@@ -1021,7 +969,6 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('does not apply a late history model after the visible conversation changes', () => {
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const restored = model('test/restored');
 		let models: ILanguageModelChatMetadataAndIdentifier[] = [];
@@ -1043,7 +990,7 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: () => { },
 			applyModel: selected => applied.push(selected.identifier),
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 
 		controller.preselectFromHistory(restored.identifier, 'chat:one');
 		visibleConversation = 'chat:two';
@@ -1054,7 +1001,6 @@ suite('ChatModelSelectionModel', () => {
 	});
 
 	test('revalidates a selection when switching model pools', () => {
-		const selection = new ChatModelSelectionModel();
 		const general = model('test/general');
 		const targeted = targetedModel('test/targeted', 'agent-host-test');
 		const state: { sessionType: string | undefined } = { sessionType: undefined };
@@ -1075,16 +1021,15 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: () => { },
 			applyModel: selected => {
 				applied.push(selected.identifier);
-				selection.setCurrentModel(selected, false);
 			},
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
-		selection.setCurrentModel(general, false);
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
+		controller.applyAutomaticSelection(general, () => { });
 		state.sessionType = 'agent-host-test';
 
 		controller.revalidateForSessionType(() => { });
 
-		assert.deepStrictEqual({ applied, current: selection.currentModel.get()?.identifier }, {
+		assert.deepStrictEqual({ applied, current: controller.currentModel.get()?.identifier }, {
 			applied: [targeted.identifier],
 			current: targeted.identifier,
 		});
@@ -1097,7 +1042,6 @@ suite('ChatModelSelectionModel', () => {
 		// so when the remembered model shows up on a later change it is swapped in — instead of being
 		// lost. Reverting the `initialize` restructure (arming the wait only for `pending`) leaves no
 		// wait armed here, so `pendingAfterInit` is false and the remembered model is never applied.
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const fallback = model('test/fallback');
 		const remembered = model('test/remembered');
@@ -1119,10 +1063,9 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: () => { },
 			applyModel: selected => {
 				applied.push(selected.identifier);
-				selection.setCurrentModel(selected, false);
 			},
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 
 		controller.initialize(remembered.identifier, () => { });
 		const pendingAfterInit = controller.hasPendingIntent();
@@ -1133,7 +1076,7 @@ suite('ChatModelSelectionModel', () => {
 			pendingAfterInit,
 			pendingAfterLoad: controller.hasPendingIntent(),
 			applied,
-			current: selection.currentModel.get()?.identifier,
+			current: controller.currentModel.get()?.identifier,
 		}, {
 			pendingAfterInit: true,
 			pendingAfterLoad: false,
@@ -1146,7 +1089,6 @@ suite('ChatModelSelectionModel', () => {
 		// Termination guard: the wait must not linger. Once the remembered model is conclusively
 		// absent (the pool loaded with other models but not it), settle on the already-applied
 		// fallback and tear the subscription down — without re-applying the fallback.
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const fallback = model('test/fallback');
 		const other = model('test/other');
@@ -1169,10 +1111,9 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: () => { },
 			applyModel: selected => {
 				applied.push(selected.identifier);
-				selection.setCurrentModel(selected, false);
 			},
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 
 		controller.initialize(remembered.identifier, () => { });
 		const pendingAfterInit = controller.hasPendingIntent();
@@ -1183,7 +1124,7 @@ suite('ChatModelSelectionModel', () => {
 			pendingAfterInit,
 			pendingAfterLoad: controller.hasPendingIntent(),
 			applied,
-			current: selection.currentModel.get()?.identifier,
+			current: controller.currentModel.get()?.identifier,
 		}, {
 			pendingAfterInit: true,
 			pendingAfterLoad: false,
@@ -1196,7 +1137,6 @@ suite('ChatModelSelectionModel', () => {
 		// Guard against over-arming: no remembered model, or a remembered model that is already
 		// available, must not leave a catalog subscription armed.
 		const build = (rememberedId: string | undefined, models: ILanguageModelChatMetadataAndIdentifier[]) => {
-			const selection = new ChatModelSelectionModel();
 			const applied: string[] = [];
 			const runtime: IChatInputModelSelectionRuntime = {
 				location: ChatAgentLocation.Chat,
@@ -1214,10 +1154,9 @@ suite('ChatModelSelectionModel', () => {
 				restoreModelConfiguration: () => { },
 				applyModel: selected => {
 					applied.push(selected.identifier);
-					selection.setCurrentModel(selected, false);
 				},
 			};
-			const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+			const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 			controller.initialize(rememberedId, () => { });
 			return controller.hasPendingIntent();
 		};
@@ -1236,7 +1175,6 @@ suite('ChatModelSelectionModel', () => {
 	test('an explicit selection cancels the initialize restore wait', () => {
 		// While the wait is armed, an explicit user pick must win permanently: the wait is cancelled
 		// and a later appearance of the remembered model does not override the explicit selection.
-		const selection = new ChatModelSelectionModel();
 		const modelChanges = disposables.add(new Emitter<string>());
 		const fallback = model('test/fallback');
 		const explicit = model('test/explicit');
@@ -1259,14 +1197,13 @@ suite('ChatModelSelectionModel', () => {
 			restoreModelConfiguration: () => { },
 			applyModel: selected => {
 				applied.push(selected.identifier);
-				selection.setCurrentModel(selected, false);
 			},
 		};
-		const controller = disposables.add(new ChatInputModelSelectionController(selection, runtime));
+		const controller = disposables.add(new ChatInputModelSelectionController(runtime));
 
 		controller.initialize(remembered.identifier, () => { });
 		const pendingAfterInit = controller.hasPendingIntent();
-		controller.applyExplicitSelection(explicit, undefined, 'chat:one', () => applied.push(explicit.identifier), false);
+		controller.applyExplicitSelection(explicit, () => applied.push(explicit.identifier), false);
 		const pendingAfterExplicit = controller.hasPendingIntent();
 		models = [fallback, explicit, remembered];
 		modelChanges.fire('loaded');
@@ -1275,7 +1212,7 @@ suite('ChatModelSelectionModel', () => {
 			pendingAfterInit,
 			pendingAfterExplicit,
 			applied,
-			current: selection.currentModel.get()?.identifier,
+			current: controller.currentModel.get()?.identifier,
 		}, {
 			pendingAfterInit: true,
 			pendingAfterExplicit: false,
