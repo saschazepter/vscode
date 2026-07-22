@@ -15,11 +15,13 @@ suite('CopilotConfigSlashSubmitHandler', () => {
 		assert.deepStrictEqual({
 			yoloOn: resolveCopilotConfigSlashSubmit('/yolo on'),
 			yoloOff: resolveCopilotConfigSlashSubmit('/yolo off'),
+			yoloInvalid: resolveCopilotConfigSlashSubmit('/yolo onxxxcva'),
 			planPrompt: resolveCopilotConfigSlashSubmit('/plan implement this'),
 			unknown: resolveCopilotConfigSlashSubmit('/not-a-config-command'),
 		}, {
 			yoloOn: { applyConfig: { autoApprove: 'autoApprove' }, strippedPrompt: '' },
 			yoloOff: { applyConfig: { autoApprove: 'default' }, strippedPrompt: '' },
+			yoloInvalid: undefined,
 			planPrompt: { applyConfig: { mode: 'plan' }, strippedPrompt: 'implement this' },
 			unknown: undefined,
 		});
