@@ -231,14 +231,10 @@ export class ChatInputModelSelectionController extends Disposable {
 	}
 
 	applyConfiguredDefault(): boolean {
-		// A configured default (`chat.defaultModel`) is the default for every NEW conversation, so
-		// any path that (re)binds an empty session must re-apply it. Only a genuine in-conversation
-		// choice keeps it from doing so: an explicit user pick or a mode-forced programmatic
-		// selection. `SessionRestore` is intentionally NOT a blocker here: a reopened conversation
-		// that legitimately restores its own model is always non-empty (handled by `!isEmpty()`
-		// above), so on an EMPTY session a `SessionRestore` reason only reflects a model that spilled
-		// over from the previous session (e.g. via the "+" new-session button or back-to-list
-		// navigation) and must yield to the configured default.
+		// `chat.defaultModel` is the default for every new (empty) conversation. Only a genuine
+		// in-conversation choice blocks it: an explicit user pick or a mode-forced programmatic
+		// selection. `SessionRestore` on an empty session is just spillover from the previous
+		// session and must yield (a real reopened conversation is non-empty → `!isEmpty()`).
 		if (!this._runtime.isEmpty()
 			|| this._selectionReason === ModelSelectionReason.UserSelection
 			|| this._selectionReason === ModelSelectionReason.ProgrammaticSelection
