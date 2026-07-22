@@ -119,7 +119,7 @@ export class ServerAgentHostManager extends Disposable implements IServerAgentHo
 				kind: 'startFailed',
 				restartCount: this._restartCount,
 				willRestart,
-			});
+			}, error);
 			if (willRestart) {
 				this._logService.error('ServerAgentHostManager: agent host failed to start', error);
 				this._restartCount++;

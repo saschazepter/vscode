@@ -99,7 +99,7 @@ export class AgentHostProcessManager extends Disposable {
 				kind: 'startFailed',
 				restartCount: this._restartCount,
 				willRestart: false,
-			});
+			}, error);
 		}
 	}
 }

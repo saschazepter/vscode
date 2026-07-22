@@ -243,7 +243,9 @@ suite('ServerAgentHostManager', () => {
 	});
 
 	test('reports process start failure', async () => {
-		starter.failNextStart(new Error('test start failure'));
+		const error = new Error('test start failure');
+		error.stack = 'test start failure stack';
+		starter.failNextStart(error);
 		createManager();
 		await waitForStart();
 		await waitForStart();
@@ -255,6 +257,8 @@ suite('ServerAgentHostManager', () => {
 				restartCount: 0,
 				willRestart: true,
 				isError: true,
+				callstack: 'test start failure stack',
+				msg: 'test start failure',
 			},
 		}]);
 	});
