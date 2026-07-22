@@ -83,13 +83,21 @@ export interface CreateSessionParams extends BaseParams {
 	 */
 	workingDirectories?: URI[];
 	/**
-	 * The primary working directory for the session's **default chat** — the
-	 * distinguished root that chat is centered on (see
-	 * {@link ChatState.primaryWorkingDirectory}). A session has no primary of its
-	 * own; this seeds the default chat's primary. When set, it MUST be one of
-	 * {@link workingDirectories}. A client SHOULD supply this when the agent
-	 * advertises {@link MultipleWorkingDirectoriesCapability.requiresPrimary}; a
-	 * host MAY reject creation that omits it, or fall back to the first entry of
+	 * The primary working directory for the session's **default chat**.
+	 *
+	 * A session has no primary of its own — primary is a per-chat notion (see
+	 * {@link ChatState.primaryWorkingDirectory}). But `createSession` implicitly
+	 * creates the session's default chat, and there is no separate `createChat`
+	 * call to carry that chat's create-time fields. This field is therefore the
+	 * only place a client can designate the **default chat's** primary at birth;
+	 * it is copied into that chat's read-only `primaryWorkingDirectory`. For any
+	 * non-default chat, pass {@link CreateChatParams.primaryWorkingDirectory}
+	 * instead.
+	 *
+	 * When set, it MUST be one of {@link workingDirectories}. A client SHOULD
+	 * supply this when the agent advertises
+	 * {@link MultipleWorkingDirectoriesCapability.requiresPrimary}; a host MAY
+	 * reject creation that omits it, or fall back to the first entry of
 	 * `workingDirectories`. Ignored for forked sessions (a fork inherits the
 	 * source session's chats and their primaries).
 	 */

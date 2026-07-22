@@ -1169,16 +1169,16 @@ function getTerminalOutput(tc: ToolCallState) {
 		return undefined;
 	}
 
-	const terminalComplete = tc.content?.find(isToolResultTerminalCompleteContent);
+	const terminalResult = tc.content?.find(isToolResultTerminalContent)?.result;
 
 	// Prefer the structured terminal snapshot. Text content is a compatibility
 	// fallback for older/restored results and can include legacy bookkeeping.
-	let text = terminalComplete?.preview;
+	let text = terminalResult?.preview;
 	if (text === undefined) {
 		const fallbackText = tc.content?.find(isToolResultTextContent)?.text;
 		text = fallbackText === undefined ? undefined : stripLegacyTerminalExitMarkers(fallbackText);
 	}
-	if (text === undefined || (!text && terminalComplete?.truncated !== true)) {
+	if (text === undefined || (!text && terminalResult?.truncated !== true)) {
 		return undefined;
 	}
 
@@ -1188,7 +1188,7 @@ function getTerminalOutput(tc: ToolCallState) {
 	// normalize to `\r\n` here. The replace is idempotent on already-CRLF input.
 	return {
 		text: text.replace(/\r?\n/g, '\r\n'),
-		...(terminalComplete?.truncated !== undefined ? { truncated: terminalComplete.truncated } : {}),
+		...(terminalResult?.truncated !== undefined ? { truncated: terminalResult.truncated } : {}),
 	};
 }
 
@@ -1201,17 +1201,17 @@ function isToolResultTextContent(content: ToolResultContent): content is Extract
 }
 
 function getTerminalCommandState(tc: ToolCallState, fallbackSuccess?: boolean): IChatTerminalToolInvocationData['terminalCommandState'] | undefined {
-	const terminalComplete = tc.status === ToolCallStatus.Completed || tc.status === ToolCallStatus.Running
-		? tc.content?.find(isToolResultTerminalCompleteContent)
+	const terminalResult = tc.status === ToolCallStatus.Completed || tc.status === ToolCallStatus.Running
+		? tc.content?.find(isToolResultTerminalContent)?.result
 		: undefined;
-	if (terminalComplete?.exitCode !== undefined) {
-		return { exitCode: terminalComplete.exitCode };
+	if (terminalResult?.exitCode !== undefined) {
+		return { exitCode: terminalResult.exitCode };
 	}
 	return fallbackSuccess === undefined ? undefined : { exitCode: fallbackSuccess ? 0 : 1 };
 }
 
-function isToolResultTerminalCompleteContent(content: ToolResultContent): content is Extract<ToolResultContent, { type: ToolResultContentType.TerminalComplete }> {
-	return content.type === ToolResultContentType.TerminalComplete;
+function isToolResultTerminalContent(content: ToolResultContent): content is Extract<ToolResultContent, { type: ToolResultContentType.Terminal }> {
+	return content.type === ToolResultContentType.Terminal;
 }
 
 function getTerminalLanguage(tc: ToolCallState) {

@@ -29,12 +29,15 @@ import { IDiffComputeService } from '../../common/diffComputeService.js';
 import { ISessionDataService, type ISessionDatabase } from '../../common/sessionDataService.js';
 import { ActionType, type ChatDeltaAction, type ChatErrorAction, type ChatInputRequestedAction, type ChatResponsePartAction, type ChatToolCallCompleteAction, type ChatToolCallReadyAction, type ChatToolCallStartAction, type ChatTurnCompleteAction, type ChatUsageAction, type SessionAction } from '../../common/state/sessionActions.js';
 import { MessageAttachmentKind, MessageKind, ResponsePartKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, ToolCallConfirmationReason, ToolCallRiskAssessmentKind, ToolCallRiskAssessmentStatus, ToolCallContributorKind, ToolCallStatus, ToolResultContentType, buildChatUri, buildDefaultChatUri, createSessionState, mergeSessionWithDefaultChat, readUsageInfoMeta, SessionStatus, type ToolDefinition, type ToolResultContent, type ToolResultFileEditContent, type UsageInfoMeta } from '../../common/state/sessionState.js';
+import { TerminalClaimKind } from '../../common/state/protocol/state.js';
 import { CustomizationType, McpAuthRequiredReason, McpServerStatus, type Customization } from '../../common/state/protocol/channels-session/state.js';
 import { CopilotAgentSession } from '../../node/copilot/copilotAgentSession.js';
 import { ActiveClientToolSet } from '../../node/activeClientState.js';
 import { type CopilotSessionLaunchPlan, type IActiveClientSnapshot, type ICopilotSessionLauncher, type ICopilotSessionRuntime } from '../../node/copilot/copilotSessionLauncher.js';
 import { CopilotSessionWrapper } from '../../node/copilot/copilotSessionWrapper.js';
 import { AgentHostStateManager, IAgentHostStateManager } from '../../node/agentHostStateManager.js';
+import { IAgentHostTerminalManager } from '../../node/agentHostTerminalManager.js';
+import { TestAgentHostTerminalManager } from './testAgentHostTerminalManager.js';
 import { buildCopilotSystemNotification } from '../../node/copilot/copilotSystemNotification.js';
 import { IAgentConfigurationService } from '../../node/agentConfigurationService.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
@@ -367,6 +370,7 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 	mockSession: MockCopilotSession;
 	signals: AgentSignal[];
 	waitForSignal: (predicate: (signal: AgentSignal) => boolean) => Promise<AgentSignal>;
+	terminalManager: TestAgentHostTerminalManager;
 	sessionConfigUpdates: ReadonlyArray<{ session: string; patch: Record<string, unknown> }>;
 	setConfigValue: (key: string, value: unknown) => void;
 	setRootValue: (key: string, value: unknown) => void;
@@ -513,6 +517,8 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 	if (options?.environmentServiceRegistration !== 'none') {
 		services.set(INativeEnvironmentService, environmentService);
 	}
+	const terminalManager = disposables.add(new TestAgentHostTerminalManager());
+	services.set(IAgentHostTerminalManager, terminalManager);
 	const instantiationService = disposables.add(new InstantiationService(services));
 
 	const session = disposables.add(instantiationService.createInstance(
@@ -544,6 +550,7 @@ async function createAgentSession(disposables: DisposableStore, options?: {
 		mockSession,
 		signals,
 		waitForSignal,
+		terminalManager,
 		sessionConfigUpdates,
 		setConfigValue: (key, value) => { configValues[key] = value; },
 		setRootValue: (key, value) => { rootValues[key] = value; },
@@ -2916,10 +2923,11 @@ suite('CopilotAgentSession', () => {
 			assert.strictEqual((toolStart.action as ChatToolCallStartAction).intention, 'List files in the repo root');
 		});
 
-		test('tool partial results stream cumulative output as running content', async () => {
-			const { session, mockSession, signals, waitForSignal } = await createAgentSession(disposables);
+		test('tool partial results stream into an output-only terminal channel', async () => {
+			const { session, mockSession, signals, waitForSignal, terminalManager } = await createAgentSession(disposables);
 			session.resetTurnState('turn-stream');
 
+			const terminalUri = 'agenthost-terminal://shell/copilotNonPtyShells/tc-stream';
 			mockSession.fire('tool.execution_start', {
 				toolCallId: 'tc-stream',
 				toolName: 'bash',
@@ -2936,10 +2944,15 @@ suite('CopilotAgentSession', () => {
 			mockSession.fire('tool.execution_complete', {
 				toolCallId: 'tc-stream',
 				success: true,
-				result: { content: 'tick 1\ntick 2\n' },
+				result: {
+					content: 'tick 1\ntick 2\n',
+					contents: [{ type: 'shell_exit', shellId: '0', exitCode: 0, outputPreview: 'tick 1\ntick 2\n' }],
+				},
 			} as SessionEventPayload<'tool.execution_complete'>['data']);
 			await waitForSignal(signal => isAction(signal, ActionType.ChatToolCallComplete));
 
+			// The first partial result creates the channel and attaches the
+			// terminal block once; later partials only append channel data.
 			assert.deepStrictEqual(getActions(signals)
 				.filter(action => action.type === ActionType.ChatToolCallContentChanged)
 				.map(action => ({
@@ -2950,16 +2963,30 @@ suite('CopilotAgentSession', () => {
 				{
 					turnId: 'turn-stream',
 					toolCallId: 'tc-stream',
-					content: [{ type: ToolResultContentType.Text, text: 'tick 1\n' }],
-				},
-				{
-					turnId: 'turn-stream',
-					toolCallId: 'tc-stream',
-					content: [{ type: ToolResultContentType.Text, text: 'tick 1\ntick 2\n' }],
+					content: [{ type: ToolResultContentType.Terminal, resource: terminalUri, title: 'Run Shell Command', isPty: false }],
 				},
 			]);
+			assert.deepStrictEqual(terminalManager.outputTerminalsCreated, [{
+				uri: terminalUri,
+				title: 'Run Shell Command',
+				claim: { kind: TerminalClaimKind.Session, session: AgentSession.uri('copilot', 'test-session-1').toString(), toolCallId: 'tc-stream' },
+			}]);
+			assert.deepStrictEqual(terminalManager.outputTerminalData, [
+				{ uri: terminalUri, data: 'tick 1\n' },
+				{ uri: terminalUri, data: 'tick 2\n' },
+			]);
+			assert.deepStrictEqual(terminalManager.outputTerminalsFinalized, [{ uri: terminalUri, exitCode: 0 }]);
+
+			// shell_exit completion data lands on the streamed terminal block.
 			const completed = getActions(signals).find(action => action.type === ActionType.ChatToolCallComplete) as ChatToolCallCompleteAction;
 			assert.deepStrictEqual(completed.result.content, [
+				{
+					type: ToolResultContentType.Terminal,
+					resource: terminalUri,
+					title: 'Run Shell Command',
+					isPty: false,
+					result: { exitCode: 0, preview: 'tick 1\ntick 2\n' },
+				},
 				{ type: ToolResultContentType.Text, text: 'tick 1\ntick 2\n' },
 			]);
 		});
@@ -3073,9 +3100,14 @@ suite('CopilotAgentSession', () => {
 				assert.strictEqual(action.result.success, true);
 				assert.deepStrictEqual(action.result.content, [
 					{ type: ToolResultContentType.Text, text: 'command not found\n' },
-					{ type: ToolResultContentType.TerminalComplete, exitCode: 127, cwd: URI.file('/repo').toString() },
+					{
+						type: ToolResultContentType.Terminal,
+						resource: 'agenthost-terminal://shell/copilotNonPtyShells/tc-shell-exit',
+						title: 'Run Shell Command',
+						isPty: false,
+						result: { exitCode: 127 },
+					},
 				]);
-				assert.ok(!action.result.content?.some(content => content.type === ToolResultContentType.Terminal));
 			}
 		});
 

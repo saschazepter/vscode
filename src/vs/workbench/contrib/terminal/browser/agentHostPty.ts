@@ -110,6 +110,9 @@ export class AgentHostPty extends BasePty implements ITerminalChildProcess {
 	private _supportsCommandDetection = false;
 	get supportsCommandDetection(): boolean { return this._supportsCommandDetection; }
 
+	/** Whether the channel is output-only plain text (`TerminalState.isPty === false`). */
+	private _isPlainText = false;
+
 	/**
 	 * Command IDs for sentinel commands that should be suppressed from shell
 	 * integration events. When the copilot shell tools fall back to sentinel-
@@ -164,6 +167,7 @@ export class AgentHostPty extends BasePty implements ITerminalChildProcess {
 				this._supportsCommandDetection = true;
 				this._onSupportsCommandDetection.fire();
 			}
+			this._isPlainText = state.isPty === false;
 			this._replayContent(state.content);
 
 			// 5. Track initial cwd
@@ -193,7 +197,7 @@ export class AgentHostPty extends BasePty implements ITerminalChildProcess {
 		const action = envelope.action;
 		switch (action.type) {
 			case ActionType.TerminalData:
-				this.handleData(action.data);
+				this.handleData(this._normalizePlainTextData(action.data));
 				break;
 			case ActionType.TerminalExited:
 				this.handleExit(action.exitCode);
@@ -254,11 +258,21 @@ export class AgentHostPty extends BasePty implements ITerminalChildProcess {
 	 * Emits command lifecycle events for command parts so that consumers
 	 * (e.g. {@link AhpTerminalCommandSource}) can reconstruct command history.
 	 */
+	/**
+	 * Output-only channels (`isPty: false`) carry plain text with `\n` line
+	 * endings; the client xterm treats input as a raw TTY stream where a lone
+	 * `\n` only advances the row (producing a staircase), so normalize to
+	 * `\r\n`. No-op for pty-backed channels. Idempotent on CRLF input.
+	 */
+	private _normalizePlainTextData(data: string): string {
+		return this._isPlainText ? data.replace(/\r?\n/g, '\r\n') : data;
+	}
+
 	private _replayContent(content: TerminalContentPart[]): void {
 		for (const part of content) {
 			if (part.type === 'unclassified') {
 				if (part.value) {
-					this.handleData(part.value);
+					this.handleData(this._normalizePlainTextData(part.value));
 				}
 			} else if (part.type === 'command') {
 				if (isCopilotSentinelCommand(part.commandLine)) {
@@ -427,6 +441,7 @@ export class AgentHostPty extends BasePty implements ITerminalChildProcess {
 				this._supportsCommandDetection = true;
 				this._onSupportsCommandDetection.fire();
 			}
+			this._isPlainText = state.isPty === false;
 
 			// Clear the terminal buffer before replaying to avoid duplicate
 			// content. ESC[2J clears the screen, ESC[3J clears scrollback,
