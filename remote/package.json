@@ -55,9 +55,6 @@
     "zod": "^3.25.76"
   },
   "overrides": {
-    "@github/copilot-sdk": {
-      "koffi": "3.1.0"
-    },
     "node-gyp-build": "4.8.1",
     "kerberos@2.1.1": {
       "node-addon-api": "7.1.0"
@@ -66,7 +63,7 @@
   },
   "allowScripts": {
     "kerberos@2.1.1": true,
-    "koffi@3.1.0": true,
+    "koffi@3.1.2": true,
     "node-pty@1.2.0-beta.13": true,
     "@parcel/watcher@2.5.6": true,
     "@vscode/deviceid@0.1.5": true,
