@@ -818,6 +818,42 @@ suite('CopilotAgentSession', () => {
 		}]);
 	});
 
+	test('preserves simple attachment display kind through SDK blobs', async () => {
+		const { session, mockSession } = await createAgentSession(disposables);
+		const attachment = {
+			type: MessageAttachmentKind.Simple,
+			label: 'Browser Pages',
+			displayKind: 'workspace',
+			modelRepresentation: 'No browser pages are currently shared with you.',
+		} as const;
+
+		await session.send('hello', [attachment]);
+		const sdkAttachment = {
+			type: 'blob' as const,
+			data: encodeBase64(VSBuffer.fromString(attachment.modelRepresentation)),
+			mimeType: 'text/plain; x-vscode-display-kind=workspace',
+			displayName: attachment.label,
+		};
+		assert.deepStrictEqual(mockSession.sendRequests, [{
+			prompt: 'hello',
+			attachments: [sdkAttachment],
+		}]);
+
+		mockSession.messages = [{
+			type: 'user.message',
+			id: 'event-1',
+			parentId: null,
+			timestamp: new Date().toISOString(),
+			data: {
+				interactionId: 'message-1',
+				content: 'hello',
+				attachments: [sdkAttachment],
+			},
+		}];
+
+		assert.deepStrictEqual((await session.getMessages())[0].message.attachments, [attachment]);
+	});
+
 	test('forwards an embedded resource with a selection as its already-sliced inline blob', async () => {
 		const { session, mockSession } = await createAgentSession(disposables);
 
@@ -879,7 +915,7 @@ suite('CopilotAgentSession', () => {
 			attachments: [{
 				type: 'blob',
 				data: encodeBase64(VSBuffer.fromString('Transcript text')),
-				mimeType: 'text/plain',
+				mimeType: 'text/plain; x-vscode-display-kind=paste',
 				displayName: 'Previous conversation',
 			}],
 		}]);
@@ -895,7 +931,7 @@ suite('CopilotAgentSession', () => {
 				attachments: [{
 					type: 'blob',
 					data: encodeBase64(VSBuffer.fromString('Transcript text')),
-					mimeType: 'text/plain',
+					mimeType: 'text/plain; x-vscode-display-kind=paste',
 					displayName: 'Previous conversation',
 				}],
 			},
@@ -904,6 +940,7 @@ suite('CopilotAgentSession', () => {
 		assert.deepStrictEqual((await session.getMessages())[0].message.attachments, [{
 			type: MessageAttachmentKind.Simple,
 			label: 'Previous conversation',
+			displayKind: 'paste',
 			modelRepresentation: 'Transcript text',
 		}]);
 	});

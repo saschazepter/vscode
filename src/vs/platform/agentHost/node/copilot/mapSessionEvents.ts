@@ -20,6 +20,7 @@ import { buildSessionDbUri } from '../shared/fileEditTracker.js';
 import { getMediaMime } from '../../../../base/common/mime.js';
 import { buildCopilotSystemNotification } from './copilotSystemNotification.js';
 import { buildMcpChannel, buildMcpTopLevelCustomizationId } from '../shared/mcpCustomizationController.js';
+import { readSimpleAttachmentDisplayKindFromMimeType } from './copilotAttachmentUtils.js';
 
 function tryStringify(value: unknown): string | undefined {
 	try {
@@ -679,10 +680,12 @@ function sdkAttachmentToProtocol(
 				return undefined;
 			}
 			if (attachment.mimeType.startsWith('text/plain')) {
+				const displayKind = readSimpleAttachmentDisplayKindFromMimeType(attachment.mimeType);
 				return {
 					type: MessageAttachmentKind.Simple,
 					label: attachment.displayName ?? 'attachment',
 					modelRepresentation: decodeBase64(attachment.data ?? '').toString(),
+					...(displayKind !== undefined ? { displayKind } : {}),
 				};
 			}
 			const displayKind = attachment.mimeType.startsWith('image/') ? 'image' : undefined;

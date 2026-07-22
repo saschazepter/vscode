@@ -63,6 +63,7 @@ import type { IAgentHostRestrictedTelemetryContext } from '../agentHostRestricte
 import { stripProxyErrorMarker, tryBuildChatErrorMeta, tryBuildChatErrorMetaFromFields } from '../shared/forwardedChatError.js';
 import { getEffectiveMcpServerCustomizations, McpCustomizationController, type ISdkMcpServer } from '../shared/mcpCustomizationController.js';
 import { appendSdkToolResultContent, mapSessionEvents } from './mapSessionEvents.js';
+import { addSimpleAttachmentDisplayKindToMimeType } from './copilotAttachmentUtils.js';
 import { buildPendingEditContentUri } from './pendingEditContentStore.js';
 import { AgentHostStateManager, IAgentHostStateManager } from '../agentHostStateManager.js';
 import { McpAuthRequiredReason, McpServerStatus, type McpAuthRequirement, type McpServerState } from '../../common/state/protocol/channels-session/state.js';
@@ -1576,7 +1577,7 @@ export class CopilotAgentSession extends Disposable {
 				return {
 					type: 'blob' as const,
 					data: encodeBase64(VSBuffer.fromString(attachment.modelRepresentation)),
-					mimeType: 'text/plain',
+					mimeType: addSimpleAttachmentDisplayKindToMimeType(attachment),
 					displayName: attachment.label,
 				};
 			}
