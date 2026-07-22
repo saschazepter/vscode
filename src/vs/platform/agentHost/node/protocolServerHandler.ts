@@ -460,10 +460,18 @@ export class ProtocolServerHandler extends Disposable {
 							// Multiroot working-directory mutations are declared in the
 							// protocol but not yet supported: they would mutate the
 							// synchronized access set without reconfiguring the agent's
-							// actual directory access. Reject them until capability-backed
-							// multiroot support lands.
+							// actual directory access. Reject them through the normal
+							// reconciliation path (preserving the client's origin) so the
+							// client rolls back its optimistic action instead of leaving
+							// it pending, until capability-backed multiroot support lands.
 							if (UNSUPPORTED_CLIENT_ACTION_TYPES.has(action.type)) {
-								this._logService.warn(`[ProtocolServer] ignoring unsupported client action: ${action.type}`);
+								this._logService.warn(`[ProtocolServer] rejecting unsupported client action: ${action.type}`);
+								this._stateManager.rejectClientAction(
+									channel,
+									action,
+									{ clientId: client.clientId, clientSeq: msg.params.clientSeq },
+									`Unsupported action: ${action.type}`,
+								);
 							} else if (isSessionAction(action) || isChatAction(action) || isTerminalAction(action) || action.type === ActionType.RootConfigChanged) {
 								this._agentService.dispatchAction(channel, action, client.clientId, msg.params.clientSeq);
 							}
@@ -1163,7 +1171,7 @@ export class ProtocolServerHandler extends Disposable {
 			try {
 				createdSession = await this._agentService.createSession({
 					provider: params.provider,
-					workingDirectory: params.workingDirectories?.[0] ? URI.parse(params.workingDirectories?.[0]) : undefined,
+					workingDirectory: params.workingDirectories?.[0] ? URI.parse(params.workingDirectories[0]) : undefined,
 					session: URI.parse(params.channel),
 					fork,
 					config: params.config,

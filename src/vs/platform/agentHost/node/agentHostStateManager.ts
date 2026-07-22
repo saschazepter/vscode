@@ -1134,6 +1134,26 @@ export class AgentHostStateManager extends Disposable {
 		return this._applyAndEmit(channel, action, origin);
 	}
 
+	/**
+	 * Reject a client-originated action without applying it to state. Emits an
+	 * {@link ActionEnvelope} that carries the original {@link ActionOrigin} and a
+	 * {@link ActionEnvelope.rejectionReason | rejectionReason} so the originating
+	 * client can reconcile (roll back) its optimistic write-ahead action through
+	 * the normal path instead of leaving it pending until reconnect. The reducer
+	 * is deliberately NOT run, so no synchronized state changes.
+	 */
+	rejectClientAction(channel: URI, action: StateAction, origin: ActionOrigin, reason: string): void {
+		const envelope: ActionEnvelope = {
+			channel,
+			action,
+			serverSeq: ++this._serverSeq,
+			origin,
+			rejectionReason: reason,
+		};
+		this._logService.trace(`[AgentHostStateManager] Emitting rejection envelope: seq=${envelope.serverSeq}, channel=${envelope.channel}, type=${action.type}, origin=${origin.clientId}:${origin.clientSeq}, reason=${reason}`);
+		this._onDidEmitEnvelope.fire(envelope);
+	}
+
 	// ---- Internal -----------------------------------------------------------
 
 	private _applyAndEmit(channel: URI, action: StateAction, origin: ActionOrigin | undefined): unknown {
