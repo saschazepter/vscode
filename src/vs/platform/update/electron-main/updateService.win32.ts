@@ -5,7 +5,7 @@
 
 import { ChildProcess, spawn } from 'child_process';
 import { app } from 'electron';
-import { existsSync, unlinkSync, writeFileSync } from 'fs';
+import { unlinkSync, writeFileSync } from 'fs';
 import { mkdir, readFile, unlink } from 'fs/promises';
 import { release, tmpdir } from 'os';
 import { Delayer, ProcessTimeRunOnceScheduler, timeout } from '../../../base/common/async.js';
