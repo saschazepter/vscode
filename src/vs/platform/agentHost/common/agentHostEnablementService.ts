@@ -23,7 +23,7 @@ export interface IAgentHostEnablementService {
 	readonly _serviceBrand: undefined;
 	/**
 	 * Whether Agent Host features are enabled in this runtime.
-	 * Returns `false` on web or when AI features are disabled. This value is fixed at startup and never changes.
+	 * Requires `chat.agentHost.enabled`, a non-web runtime, and enabled AI features. This value is fixed at startup and never changes.
 	 */
 	readonly enabled: boolean;
 }
