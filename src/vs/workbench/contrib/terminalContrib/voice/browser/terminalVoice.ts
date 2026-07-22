@@ -210,7 +210,7 @@ export class TerminalVoiceSession extends Disposable {
 		}));
 
 		try {
-			await service.start(getActiveWindow());
+			await service.start(getActiveWindow(), 'terminal');
 		} catch {
 			// Microphone acquisition/connection failure is surfaced by the service.
 			this.stop();

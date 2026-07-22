@@ -14,7 +14,7 @@ import { Range } from '../../../../../editor/common/core/range.js';
 import { Selection } from '../../../../../editor/common/core/selection.js';
 import { localize } from '../../../../../nls.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
-import { ChatSpeechToTextState, IChatSpeechToTextService } from './chatSpeechToTextService.js';
+import { ChatDictationSurface, ChatSpeechToTextState, IChatSpeechToTextService } from './chatSpeechToTextService.js';
 
 /**
  * Inline decoration class for the still-processing tail of not-yet-finalized
@@ -296,7 +296,7 @@ export function activeDictationEditor(): ICodeEditor | undefined {
 }
 
 /** Start dictating into `editor`, rendering the transcript live. */
-export async function startDictation(service: IChatSpeechToTextService, editor: ICodeEditor, window: Window & typeof globalThis, logService: ILogService): Promise<void> {
+export async function startDictation(service: IChatSpeechToTextService, editor: ICodeEditor, window: Window & typeof globalThis, logService: ILogService, surface: ChatDictationSurface = 'chat'): Promise<void> {
 	if (_active || service.state !== ChatSpeechToTextState.Idle) {
 		return;
 	}
@@ -368,7 +368,7 @@ export async function startDictation(service: IChatSpeechToTextService, editor: 
 	disposables.add(editor.onDidDispose(() => cancelDictation()));
 	_active = { service, editor, inserter, disposables, logService };
 	try {
-		await service.start(window);
+		await service.start(window, surface);
 	} catch {
 		// Acquisition/connection failure is surfaced by the service.
 		if (_active?.service === service) {

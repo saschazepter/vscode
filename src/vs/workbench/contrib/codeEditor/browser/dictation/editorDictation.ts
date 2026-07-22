@@ -258,7 +258,7 @@ export class EditorDictation extends Disposable implements IEditorContribution {
 		}));
 
 		const window = getWindow(this.editor.getDomNode()) ?? getActiveWindow();
-		await startDictation(this.chatSpeechToTextService, this.editor, window, this.logService);
+		await startDictation(this.chatSpeechToTextService, this.editor, window, this.logService, 'editor');
 
 		// If the session did not take (already dictating elsewhere, or start
 		// failed without a state transition), do not leave the widget stranded.
