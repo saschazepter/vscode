@@ -16,7 +16,7 @@ import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uri
 import { localize } from '../../../../nls.js';
 import { IActiveSession, ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { ISession } from '../../../services/sessions/common/session.js';
-import { ISessionsService } from '../../../services/sessions/browser/sessionsService.js';
+import { IOpenNewSessionResult, ISessionsService } from '../../../services/sessions/browser/sessionsService.js';
 import { IAquariumService, IMountedToggleHandle } from '../../aquarium/browser/aquariumOverlay.js';
 import { WorkspacePicker } from './sessionWorkspacePicker.js';
 import { WebWorkspacePicker } from './webWorkspacePicker.js';
@@ -296,26 +296,32 @@ export class NewChatWidget extends Disposable {
 			&& t.sessionType.id === pick.sessionTypeId);
 	}
 
-	private async _createNewSession(folderUri: URI): Promise<ISession | undefined> {
+	private async _createNewSession(folderUri: URI): Promise<IOpenNewSessionResult> {
 		this._pendingPreferredUpgrade.clear();
 		const userPick = this._newChatInput.sessionTypePicker.getUserPickedSessionType();
-		const created = await this._createSessionNow(folderUri, userPick);
+		const result = await this._createSessionNow(folderUri, userPick);
+		if (result.trustDeclined) {
+			// The user explicitly declined trust: don't schedule a retry, which
+			// would silently recreate (and possibly re-prompt) the draft once a
+			// provider registers/changes without any further user action.
+			return result;
+		}
 		// Keep the draft in sync with late-registering providers. Agent hosts
 		// connect lazily, so there is no timeout — the listener lives until the
 		// draft is sent or replaced. We watch when:
-		//  - no provider can serve the folder yet (!created),
+		//  - no provider can serve the folder yet (!result.session),
 		//  - the user's explicit pick isn't servable yet (created with a
 		//    fallback, upgrade once its provider connects), or
 		//  - there is no explicit pick, so the draft tracks the preferred
 		//    (first) type, which can change as the folder's session-type list
 		//    grows.
-		if (!created || !userPick || !this._isPreferredServable(folderUri, userPick)) {
-			this._scheduleRecreateOnProviderChange(folderUri, userPick, created);
+		if (!result.session || !userPick || !this._isPreferredServable(folderUri, userPick)) {
+			this._scheduleRecreateOnProviderChange(folderUri, userPick, result.session);
 		}
-		return created;
+		return result;
 	}
 
-	private async _createSessionNow(folderUri: URI, userPick: IPreferredSessionType | undefined): Promise<ISession | undefined> {
+	private async _createSessionNow(folderUri: URI, userPick: IPreferredSessionType | undefined): Promise<IOpenNewSessionResult> {
 		// Prefer the user's explicit pick when its provider can serve the
 		// folder; otherwise fall back to the preferred (first) session type.
 		const effectivePick = userPick && this._isPreferredServable(folderUri, userPick)
@@ -333,7 +339,7 @@ export class NewChatWidget extends Disposable {
 			});
 		} catch (e) {
 			this.logService.error('Failed to create new session:', e);
-			return undefined;
+			return { session: undefined, trustDeclined: false };
 		}
 	}
 
@@ -562,10 +568,9 @@ export class NewChatWidget extends Disposable {
 			return;
 		}
 
-		const created = await this._createNewSession(folderUri);
-		if (!created && this.sessionsManagementService.resolveWorkspace(folderUri)?.workspace.requiresWorkspaceTrust) {
-			// Trust was declined (or the folder became untrustable in the
-			// meantime): don't leave the picker showing it as selected.
+		const result = await this._createNewSession(folderUri);
+		if (result.trustDeclined) {
+			// Don't leave the picker showing the declined folder as selected.
 			this._workspacePicker.removeFromRecents(folderUri);
 		}
 	}
