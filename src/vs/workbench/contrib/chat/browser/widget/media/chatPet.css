@@ -1,0 +1,50 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.chat-pet-host {
+	position: relative;
+}
+
+.chat-pet-button {
+	position: absolute;
+	right: var(--vscode-spacing-size120);
+	bottom: calc(100% - var(--vscode-spacing-size80));
+	z-index: 100;
+	width: 48px;
+	height: 48px;
+	padding: 0;
+	border: 0;
+	outline: none;
+	background: transparent;
+	cursor: pointer;
+}
+
+.chat-pet-button.hidden {
+	display: none;
+}
+
+.chat-pet-button:focus-visible {
+	outline: var(--vscode-strokeThickness) solid var(--vscode-focusBorder);
+	outline-offset: 0;
+	border-radius: var(--vscode-cornerRadius-small);
+}
+
+.chat-pet-sprite {
+	display: block;
+	width: 48px;
+	height: 48px;
+	object-fit: contain;
+	image-rendering: pixelated;
+	pointer-events: none;
+}
+
+.agent-sessions-workbench .interactive-input-part.chat-pet-host > .chat-pet-button {
+	right: calc(var(--vscode-spacing-size320) + var(--vscode-spacing-size120));
+}
+
+.new-chat-input-container.chat-pet-host > .chat-pet-button {
+	right: var(--vscode-spacing-size120);
+	bottom: calc(100% - var(--vscode-spacing-size80));
+}

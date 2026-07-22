@@ -89,6 +89,7 @@ import { getChatSessionType } from '../../common/model/chatUri.js';
 import { ICustomizationHarnessService } from '../../common/customizationHarnessService.js';
 import { CHAT_READ_ONLY_BANNER_HEIGHT, ChatReadOnlyBanner } from './chatReadOnlyBanner.js';
 import { IChatSubmitRequestHandlerService } from '../chatSubmitRequestHandlerService.js';
+import { ChatPetWidget } from './chatPetWidget.js';
 
 const $ = dom.$;
 
@@ -788,6 +789,10 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				this.container.appendChild(this.readOnlyBanner.domNode);
 			}
 			this.createInput(this.container, { renderFollowups, renderStyle, renderInputToolbarBelowInput });
+		}
+
+		if (this.location === ChatAgentLocation.Chat && !isInlineChat(this)) {
+			this._register(this.instantiationService.createInstance(ChatPetWidget, this.inputPart.domNode, this._viewModelObs.map(viewModel => viewModel?.model)));
 		}
 
 		this.renderWelcomeViewContentIfNeeded();

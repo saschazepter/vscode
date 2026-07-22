@@ -72,7 +72,7 @@ import { ChatAgentLocation, ChatModeKind } from '../../../../workbench/contrib/c
 import { ChatHistoryNavigator } from '../../../../workbench/contrib/chat/common/widget/chatWidgetHistoryService.js';
 import { IHistoryNavigationWidget } from '../../../../base/browser/history.js';
 import { registerAndCreateHistoryNavigationContext, IHistoryNavigationContext } from '../../../../platform/history/browser/contextScopedHistoryWidget.js';
-import { autorun, derived, IObservable, observableValue } from '../../../../base/common/observable.js';
+import { autorun, constObservable, derived, IObservable, observableValue } from '../../../../base/common/observable.js';
 import { ChatInputNotificationWidget } from '../../../../workbench/contrib/chat/browser/widget/input/chatInputNotificationWidget.js';
 import { IChatSubmitRequestHandlerService } from '../../../../workbench/contrib/chat/browser/chatSubmitRequestHandlerService.js';
 import { INewChatModelPickerService, NewChatModelPickerService } from './newChatModelPicker.js';
@@ -89,6 +89,7 @@ import { combineVoiceInput } from '../../../../workbench/contrib/chat/browser/vo
 import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 import { DictationDownloadRing } from '../../../../workbench/contrib/chat/browser/speechToText/dictationDownloadRing.js';
 import { IVoiceSessionController } from '../../../../workbench/contrib/chat/browser/voiceClient/voiceSessionController.js';
+import { ChatPetWidget } from '../../../../workbench/contrib/chat/browser/widget/chatPetWidget.js';
 
 
 const OPEN_OTEL_SETTINGS_COMMAND = 'github.copilot.chat.otel.openSettings';
@@ -415,6 +416,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 	render(parent: HTMLElement, root: HTMLElement): void {
 		// Input slot
 		const chatInputContainer = dom.append(parent, dom.$('.new-chat-input-container'));
+		this._register(this.instantiationService.createInstance(ChatPetWidget, chatInputContainer, constObservable(undefined)));
 
 		// Overflow widget DOM node at the top level so the suggest widget
 		// is not clipped by any overflow:hidden ancestor.
