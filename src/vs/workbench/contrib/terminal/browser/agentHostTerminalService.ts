@@ -356,6 +356,20 @@ export class AgentHostTerminalService extends Disposable implements IAgentHostTe
 						commandSource.connect(instance, pty);
 					}
 
+					// Output-only channels (isPty false) carry plain text where a
+					// pty would emit TTY line endings; let xterm convert instead
+					// of treating the stream as raw TTY output. Mirrors the
+					// processTraits-driven option updates in TerminalInstance.
+					store.add(pty.onProcessReady(async () => {
+						if (!pty.isPlainTextOutput) {
+							return;
+						}
+						const xterm = await instance.xtermReadyPromise;
+						if (xterm) {
+							xterm.raw.options.convertEol = true;
+						}
+					}));
+
 					this._activePtys.set(key, { pty, clientId: connection.clientId });
 					return pty;
 				},

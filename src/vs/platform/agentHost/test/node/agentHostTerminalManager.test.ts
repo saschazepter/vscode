@@ -827,17 +827,16 @@ suite('AgentHostTerminalManager – output-only terminals', () => {
 		manager.finalizeOutputTerminal(uri, 0);
 		manager.finalizeOutputTerminal(uri, 1); // recorded exit is immutable
 
-		// LF input is normalized to CRLF so the channel renders like a pty-backed one.
 		assert.deepStrictEqual(manager.getTerminalState(uri), {
 			title: 'Run Shell Command',
-			content: [{ type: 'unclassified', value: 'tick 1\r\ntick 2\r\n' }],
+			content: [{ type: 'unclassified', value: 'tick 1\ntick 2\n' }],
 			exitCode: 0,
 			claim,
 			isPty: false,
 		});
 		assert.deepStrictEqual(dispatched, [
-			{ type: ActionType.TerminalData, data: 'tick 1\r\n' },
-			{ type: ActionType.TerminalData, data: 'tick 2\r\n' },
+			{ type: ActionType.TerminalData, data: 'tick 1\n' },
+			{ type: ActionType.TerminalData, data: 'tick 2\n' },
 			{ type: ActionType.TerminalExited, exitCode: 0 },
 		]);
 		assert.strictEqual(manager.hasTerminal(uri), true);
