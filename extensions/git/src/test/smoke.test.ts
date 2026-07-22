@@ -50,7 +50,18 @@ suite('git smoke test', function () {
 		cp.execSync('git add .', { cwd });
 		cp.execSync('git commit -m "initial commit"', { cwd });
 
-		const submoduleSource = path.join(cwd, '.git', 'submodule-source');
+		const nestedRepository = file('nested-submodule-fixture');
+		fs.appendFileSync(file('.git/info/exclude'), '\nnested-submodule-fixture/\n');
+		fs.mkdirSync(nestedRepository);
+		fs.writeFileSync(path.join(nestedRepository, 'README.md'), 'nested repository', 'utf8');
+		cp.execFileSync('git', ['init', '-b', 'main'], { cwd: nestedRepository });
+		cp.execFileSync('git', ['config', 'user.name', 'testuser'], { cwd: nestedRepository });
+		cp.execFileSync('git', ['config', 'user.email', 'monacotools@example.com'], { cwd: nestedRepository });
+		cp.execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: nestedRepository });
+		cp.execFileSync('git', ['add', '.'], { cwd: nestedRepository });
+		cp.execFileSync('git', ['commit', '-m', 'initial commit'], { cwd: nestedRepository });
+
+		const submoduleSource = path.join(nestedRepository, '.git', 'submodule-source');
 		fs.mkdirSync(submoduleSource);
 		fs.writeFileSync(path.join(submoduleSource, 'README.md'), 'submodule', 'utf8');
 		cp.execFileSync('git', ['init', '-b', 'main'], { cwd: submoduleSource });
@@ -59,8 +70,8 @@ suite('git smoke test', function () {
 		cp.execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: submoduleSource });
 		cp.execFileSync('git', ['add', '.'], { cwd: submoduleSource });
 		cp.execFileSync('git', ['commit', '-m', 'initial commit'], { cwd: submoduleSource });
-		cp.execFileSync('git', ['-c', 'protocol.file.allow=always', 'submodule', 'add', submoduleSource, 'folder1/moduleA'], { cwd });
-		cp.execSync('git commit -m "add nested submodule"', { cwd });
+		cp.execFileSync('git', ['-c', 'protocol.file.allow=always', 'submodule', 'add', submoduleSource, 'folder1/moduleA'], { cwd: nestedRepository });
+		cp.execFileSync('git', ['commit', '-m', 'add nested submodule'], { cwd: nestedRepository });
 
 		// make sure git is activated
 		const ext = extensions.getExtension<GitExtension>('vscode.git');
@@ -78,7 +89,8 @@ suite('git smoke test', function () {
 	});
 
 	test('detects nested submodules', async function () {
-		const submodulePath = file('folder1/moduleA');
+		const nestedRepositoryPath = file('nested-submodule-fixture');
+		const submodulePath = path.join(nestedRepositoryPath, 'folder1/moduleA');
 		let submodule = git.repositories.find(repository => repository.rootUri.fsPath === submodulePath);
 
 		if (!submodule) {
@@ -97,6 +109,12 @@ suite('git smoke test', function () {
 		const onDidCloseRepository = eventToPromise(git.onDidCloseRepository);
 		await commands.executeCommand('git.close', submodule);
 		await onDidCloseRepository;
+
+		const nestedRepository = git.repositories.find(repository => repository.rootUri.fsPath === nestedRepositoryPath)!;
+		assert(nestedRepository);
+		const onDidCloseNestedRepository = eventToPromise(git.onDidCloseRepository);
+		await commands.executeCommand('git.close', nestedRepository);
+		await onDidCloseNestedRepository;
 	});
 
 	test('reflects working tree changes', async function () {
