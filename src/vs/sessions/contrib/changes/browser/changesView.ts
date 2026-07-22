@@ -1570,10 +1570,22 @@ export class ChangesViewPane extends ViewPane {
 
 		// Show the whole file rather than folding unchanged regions, since this
 		// diff is opened to review one specific file. No open-call option exists
-		// for this, so apply it via updateOptions() once the pane resolves.
+		// for this, so apply it via updateOptions() once the pane resolves - but
+		// the pane's diff editor control is reused across different inputs, so
+		// restore the configured value once this input is no longer active,
+		// rather than leaving the override stuck for whatever opens next.
 		const control = pane?.getControl();
-		if (isDiffEditor(control)) {
+		if (pane && isDiffEditor(control)) {
+			const openedInput = pane.input;
 			control.updateOptions({ hideUnchangedRegions: { enabled: false } });
+			const listener = pane.group.onDidActiveEditorChange(() => {
+				if (pane.group.activeEditor === openedInput) {
+					return;
+				}
+				listener.dispose();
+				control.updateOptions({ hideUnchangedRegions: { enabled: this.configurationService.getValue<boolean>('diffEditor.hideUnchangedRegions.enabled') } });
+			});
+			this._register(listener);
 		}
 	}
 
