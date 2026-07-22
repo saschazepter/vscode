@@ -94,6 +94,41 @@ steps:
       displayName: 🧪 Run integration tests (Electron)
       timeoutInMinutes: 20
 
+    # Temporary diagnostic loop for Agent Host E2E flake discovery.
+    - powershell: |
+        . build/azure-pipelines/win32/exec.ps1
+        $ErrorActionPreference = "Stop"
+        $AppRoot = "$(agent.builddirectory)\test\VSCode-win32-$(VSCODE_ARCH)"
+        $ProductJsonPath = (Get-ChildItem -Path "$AppRoot" -Name "product.json" -Recurse | Select-Object -First 1)
+        $AppProductJson = Get-Content -Raw -Path "$AppRoot\$ProductJsonPath" | ConvertFrom-Json
+        $env:INTEGRATION_TEST_ELECTRON_PATH = "$AppRoot\$($AppProductJson.nameShort).exe"
+        $Failures = 0
+        foreach ($iteration in 1..5) {
+          foreach ($provider in @("copilot", "claude", "codex")) {
+            Write-Host "Agent Host E2E iteration ${iteration}: $provider"
+            try {
+              exec {
+                .\scripts\test-integration.bat `
+                  --build `
+                  --tfs "Agent Host E2E $provider iteration $iteration" `
+                  --run "src/vs/platform/agentHost/test/node/e2e/providers/$($provider)AgentHostE2E.integrationTest.ts"
+              }
+            } catch {
+              $Failures++
+              Write-Host "Agent Host E2E iteration $iteration failed for $provider."
+            }
+          }
+        }
+        if ($Failures -ne 0) {
+          throw "$Failures Agent Host E2E loop run(s) failed."
+        }
+      env:
+        VSCODE_REMOTE_SERVER_PATH: $(agent.builddirectory)\test\vscode-server-win32-$(VSCODE_ARCH)
+        VSCODE_SKIP_PRELAUNCH: '1'
+      displayName: Loop Agent Host E2E tests (5x)
+      condition: and(succeeded(), eq(variables['VSCODE_CIBUILD'], 'true'))
+      timeoutInMinutes: 45
+
   - ${{ if eq(parameters.VSCODE_RUN_BROWSER_TESTS, true) }}:
     - powershell: |
         . build/azure-pipelines/win32/exec.ps1
