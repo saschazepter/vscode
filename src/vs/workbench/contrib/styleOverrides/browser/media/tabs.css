@@ -42,6 +42,10 @@
 .style-override .part.editor .tabs-container > .tab.sticky-compact {
 	justify-content: center;
 	padding: 0 !important;
+	width: 28px !important;
+	min-width: 28px !important;
+	max-width: 28px !important;
+	flex: 0 0 28px !important;
 }
 
 .style-override .part.editor .tabs-container > .tab.sticky-compact > .tab-label {
@@ -80,13 +84,6 @@
 	width: auto !important;
 	min-width: 0 !important;
 	flex: 0 0 auto !important;
-}
-
-.style-override .part.editor .tabs-container > .tab.sticky-compact {
-	width: 28px !important;
-	min-width: 28px !important;
-	max-width: 28px !important;
-	flex: 0 0 28px !important;
 }
 
 /* Center tabs vertically and strip the bottom border so the pills float. */
