@@ -114,6 +114,39 @@ export function getRuntimeTargetForBuild(vscodePlatform: string, arch: string): 
 }
 
 /**
+ * Whether a given VS Code build should stamp `product.dictationRuntime`, EVEN IF
+ * this build's own `(platform, arch)` has no CDN payload of its own.
+ *
+ * The stamp — `{version, urlTemplate}` — is target-agnostic (the `{target}`
+ * placeholder is resolved by the runtime per launch), so it must be present on
+ * every product whose app can host on-device dictation, whether or not this
+ * particular job produced/uploaded the payload:
+ *
+ *   - `darwin-x64`: the macOS app is Universal. Its x64 and arm64 slices are
+ *     merged into one bundle whose single `product.json` must carry the runtime
+ *     config so dictation works when the Universal app runs natively on Apple
+ *     Silicon — even though only the `darwin-arm64` job builds/uploads the
+ *     payload. So `darwin-x64` stamps but does not produce.
+ *   - non-publish product builds: packaging always strips the SDK's native
+ *     payload (`getFoundryLocalExcludeFilter` in `gulpfile.vscode.ts`), so a
+ *     packaged build with no stamp would have NEITHER a CDN location NOR a
+ *     `node_modules` fallback. Stamping regardless of `VSCODE_PUBLISH` gives the
+ *     packaged app a usable CDN source; the payload for that version is uploaded
+ *     (idempotently) by publish runs. Only local dev-from-source (which never
+ *     runs `produce.ts`) keeps the `node_modules` payload.
+ *
+ * Returns `false` for platforms/arches that can never host dictation (armhf,
+ * Alpine/musl, web) so their `product.json` stays clean.
+ */
+export function shouldStampRuntime(vscodePlatform: string, arch: string): boolean {
+	if (getRuntimeTargetForBuild(vscodePlatform, arch)) {
+		return true;
+	}
+	// The Universal macOS x64 slice must match its arm64 sibling's stamp.
+	return vscodePlatform === 'darwin' && arch === 'x64';
+}
+
+/**
  * The CDN URL `product.dictationRuntime.urlTemplate` resolves to for a concrete
  * target. Content-addressed under
  * `dictation-runtime/<RUNTIME_ID>/<version>/<target>.tgz`. Matches the upload
@@ -169,9 +202,11 @@ export interface IDictationRuntimeResult {
 /**
  * Reads the per-platform dictation-runtime results file written by `produce.ts`.
  * Returns `undefined` when `DICTATION_RUNTIME_RESULTS_FILE` is unset, the file
- * doesn't exist, or no runtime applied to this build — that's the local-dev /
- * unsupported-target path (ship product.json without `dictationRuntime`; the
- * runtime falls back to the SDK's own `node_modules` payload).
+ * doesn't exist, or the build can't host dictation. In a pipeline build that CAN
+ * host dictation this is always present (publish or not); it is absent for local
+ * dev-from-source (which never runs `produce.ts`) — that path ships product.json
+ * without `dictationRuntime` and the runtime falls back to the SDK's own
+ * `node_modules` payload.
  */
 export function readDictationRuntimeResults(): IDictationRuntimeResult | undefined {
 	const filePath = process.env.DICTATION_RUNTIME_RESULTS_FILE;

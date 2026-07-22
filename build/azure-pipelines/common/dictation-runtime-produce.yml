@@ -6,27 +6,26 @@ parameters:
       - linux
       - win32
 
-# Builds the dictation-runtime tarball for ONE VS Code build, and (on real
-# publish runs) uploads it to the CDN, emits
-# `##vso[task.setvariable variable=DICTATION_RUNTIME_RESULTS_FILE]<path>`, and
-# leaves the downstream gulp packaging step to stamp product.dictationRuntime.
+# Produces the dictation-runtime for ONE VS Code build:
+#   - STAMP: writes the (target-agnostic) product.dictationRuntime results file
+#     and emits `##vso[task.setvariable variable=DICTATION_RUNTIME_RESULTS_FILE]`
+#     on EVERY build that can host dictation, so the downstream gulp packaging
+#     step stamps product.json. Packaged builds strip the SDK's native payload,
+#     so they need this CDN pointer regardless of VSCODE_PUBLISH.
+#   - PAYLOAD: builds this target's tarball and uploads it to the CDN only on
+#     real publish runs (VSCODE_PUBLISH=true). darwin-x64 stamps but uploads
+#     nothing (the darwin-arm64 job publishes the shared Apple Silicon payload).
 #
-# Upload is gated on VSCODE_PUBLISH=true (the same pipeline variable used by
-# the agent SDK upload and similar release-only side effects). Non-publish runs
-# (PRs, CI, local pipeline tests) still produce the tarball into
-# `$(Build.SourcesDirectory)/.build/dictation-runtime/tarballs/` so the calling
-# job can publish it as a pipelineArtifact for inspection, but they skip the CDN
-# write and the dictationRuntime stamp.
-#
-# Unlike the agent SDK step this needs no npm registry auth: the prebuilt addon
-# is copied from the already-restored `node_modules/foundry-local-sdk` and the
-# core libraries are fetched from NuGet by the SDK's own installer.
+# The core libraries are fetched from NuGet for the target's explicit RID (see
+# build/dictation-runtime/nuget.ts), so ARM64 targets build fine on x64 pools;
+# the prebuilt addon is copied from the already-restored node_modules. No npm
+# registry auth is needed.
 #
 # Steps:
 #   1. AzureCLI@2 to fetch the SPN credentials for the CDN storage account —
 #      skipped on non-publish runs (no CDN write to auth for).
-#   2. Run `node build/dictation-runtime/produce.ts`. Always builds; uploads
-#      only on publish; emits task.setvariable only on publish.
+#   2. Run `node build/dictation-runtime/produce.ts`. Always stamps; uploads
+#      only on publish.
 steps:
   - task: AzureCLI@2
     displayName: "Dictation runtime: fetch CDN credentials"

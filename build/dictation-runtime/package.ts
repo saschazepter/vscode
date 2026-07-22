@@ -13,14 +13,12 @@
  * "Dictation runtime: build + upload" pipeline step; the CLI form is for local
  * one-off builds.
  *
- * IMPORTANT — the core libraries are host-specific. `foundry-local-sdk`'s NuGet
- * installer (`script/install-utils.cjs`) selects the RID from the RUNNING host's
- * `process.platform`/`process.arch`, so core libraries can only be produced for
- * the host's own target. `buildOne` therefore refuses a `--target` that doesn't
- * match the host. This matches the pipeline model where each platform build job
- * produces only its own target (`getRuntimeTargetForBuild`). The addon, by
- * contrast, is copied from the pinned `foundry-local-sdk` package's `prebuilds/`
- * (which ships every target), so it is host-independent.
+ * The addon is copied from the pinned `foundry-local-sdk` package's `prebuilds/`
+ * (which ships every target), and the core libraries are fetched from NuGet for
+ * the requested target's RID via `fetchCoreLibraries` (NOT the SDK's host-locked
+ * installer), so ANY build host can produce ANY target's tarball. This is what
+ * lets VS Code's ARM64 desktop builds — which run on x64 pools — publish their
+ * `linux-arm64`/`win32-arm64` runtimes.
  *
  * The produced tarball's internal layout mirrors the runtime cache layout so the
  * runtime extraction is a plain untar:
@@ -35,6 +33,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as tar from 'tar';
 import { getRuntimeVersion, parseFlags, SDK_PACKAGE_NAME, sha256OfFile, SUPPORTED_TARGETS } from './common.ts';
+import { fetchCoreLibraries } from './nuget.ts';
 
 const SCRIPT = 'package.ts';
 
@@ -62,10 +61,6 @@ export interface IBuildArgs {
 export async function buildOne(args: IBuildArgs): Promise<IBuildResult> {
 	if (!SUPPORTED_TARGETS.has(args.target)) {
 		throw new Error(`[${SCRIPT}] Unknown target '${args.target}'. Supported: ${[...SUPPORTED_TARGETS].join(', ')}.`);
-	}
-	const hostTarget = `${process.platform}-${process.arch}`;
-	if (args.target !== hostTarget) {
-		throw new Error(`[${SCRIPT}] Cannot build target '${args.target}' on host '${hostTarget}': the Foundry Local core libraries are fetched for the host RID only. Run this on a '${args.target}' agent.`);
 	}
 
 	const version = getRuntimeVersion();
@@ -107,20 +102,16 @@ async function stageAddon(stagingDir: string, target: string): Promise<void> {
 }
 
 /**
- * Fetch the Foundry Local core libraries for `target` into the staging tree by
- * reusing the SDK's own NuGet installer (`runInstall` with a custom `binDir`).
- * Replicates the standard variant's artifact selection, including the linux-x64
- * GPU ONNX Runtime package. The installer keys off the host RID, so `target`
- * must equal the host (asserted by `buildOne`).
+ * Fetch the Foundry Local core libraries for `target` into the staging tree from
+ * NuGet, for that target's explicit RID (see `fetchCoreLibraries`). Replicates
+ * the standard variant's artifact selection, including the linux-x64 GPU ONNX
+ * Runtime package. Host-independent — `target` need not match the build host.
  */
 async function stageCoreLibraries(stagingDir: string, target: string): Promise<void> {
 	const deps = sdkRequire(`${SDK_PACKAGE_NAME}/deps_versions.json`) as {
 		'foundry-local-core': { nuget: string };
 		onnxruntime: { version: string };
 		'onnxruntime-genai': { version: string };
-	};
-	const { runInstall } = sdkRequire(`${SDK_PACKAGE_NAME}/script/install-utils.cjs`) as {
-		runInstall(artifacts: { name: string; version: string }[], options?: { binDir?: string }): Promise<void>;
 	};
 
 	// Microsoft.ML.OnnxRuntime.Gpu.Linux only ships x86_64 native binaries, so
@@ -135,8 +126,7 @@ async function stageCoreLibraries(stagingDir: string, target: string): Promise<v
 	];
 
 	const coreDir = path.join(stagingDir, 'foundry-local-core', target);
-	fs.mkdirSync(coreDir, { recursive: true });
-	await runInstall(artifacts, { binDir: coreDir });
+	await fetchCoreLibraries(target, artifacts, coreDir);
 
 	for (const name of requiredCoreLibraryNames(target)) {
 		if (!fs.existsSync(path.join(coreDir, name))) {

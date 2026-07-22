@@ -4,27 +4,31 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * Per-(vscode-platform, arch) dictation-runtime producer. Builds the tarball
- * needed by ONE VS Code build, optionally uploads it to the CDN, and writes a
- * small JSON results file that the gulfile-side `packageTask` reads to stamp
- * `product.json`'s `dictationRuntime` field.
+ * Per-(vscode-platform, arch) dictation-runtime producer. On publish builds it
+ * assembles + uploads this target's tarball to the CDN, and on ANY pipeline
+ * build it writes a small JSON results file that the gulpfile-side `packageTask`
+ * reads to stamp `product.json`'s `dictationRuntime` field.
  *
  * Run as a pipeline step BEFORE the gulp packaging step on the same agent (via
  * `build/azure-pipelines/common/dictation-runtime-produce.yml`).
  *
- * Behavior split by VSCODE_PUBLISH:
- *   - VSCODE_PUBLISH=true (real release builds): build → upload (HEAD-then-
- *     decide idempotent) → write results JSON → emit task.setvariable so the
- *     gulp step stamps product.dictationRuntime.
- *   - VSCODE_PUBLISH unset / not 'true' (PR / CI / test runs): build only.
- *     The tarball stays on disk at `.build/dictation-runtime/tarballs/` so the
- *     pipeline can publish it as an artifact for inspection, but no CDN upload
- *     happens and no results file is written — so product.json ships without
- *     `dictationRuntime` and the runtime falls back to the SDK's own
- *     `node_modules` payload (dev-from-source behavior).
+ * Two independent axes:
  *
- * For VS Code builds where no runtime applies (e.g. darwin-x64, Alpine, armhf),
- * exits with no result — product.json ships without `dictationRuntime`.
+ *   - STAMP (`product.dictationRuntime = {version, urlTemplate}`): written for
+ *     every build that can host dictation (`shouldStampRuntime`), regardless of
+ *     `VSCODE_PUBLISH`. The stamp is target-agnostic (the runtime resolves
+ *     `{target}` per launch), so packaged non-publish builds — whose native
+ *     payload is stripped at packaging time — still get a usable CDN source, and
+ *     the Universal macOS x64 slice carries the same config as its arm64 sibling.
+ *     Only local dev-from-source (which never runs this script) ships without the
+ *     stamp and falls back to the SDK's `node_modules` payload.
+ *
+ *   - PAYLOAD (the `<target>.tgz` on the CDN): built + uploaded only on publish
+ *     runs (`VSCODE_PUBLISH=true`) and only for a build whose `(platform, arch)`
+ *     has a real target (so `darwin-x64` stamps but uploads nothing — the
+ *     `darwin-arm64` job publishes the shared Apple Silicon payload). Upload is
+ *     idempotent (HEAD-then-decide), so re-runs and the once-per-version nature
+ *     of the stamped URL stay consistent.
  */
 
 import * as fs from 'fs';
@@ -36,6 +40,7 @@ import {
 	type IDictationRuntimeResult,
 	KNOWN_VSCODE_PLATFORMS,
 	parseFlags,
+	shouldStampRuntime,
 } from './common.ts';
 import { buildOne } from './package.ts';
 import { uploadOne } from './upload.ts';
@@ -54,23 +59,29 @@ async function main(): Promise<void> {
 	const args = parseArgs();
 	fs.mkdirSync(args.tarballsDir, { recursive: true });
 
-	const result = await produceOne(args);
+	const version = getRuntimeVersion();
+	const target = getRuntimeTargetForBuild(args.vscodePlatform, args.arch);
 
-	const tarballCount = fs.readdirSync(args.tarballsDir).filter(f => f.endsWith('.tgz')).length;
-	if (tarballCount > 0) {
+	// PAYLOAD: build + upload this target's tarball on publish runs only.
+	if (args.upload && target) {
+		console.log(`[${SCRIPT}] producing payload for ${args.vscodePlatform}/${args.arch} → ${target}`);
+		const built = await buildOne({ target, outDir: args.tarballsDir });
+		await uploadOne({ version: built.version, target, tgzPath: built.tgzPath, sha256: built.sha256 });
 		console.log(`##vso[task.setvariable variable=DICTATION_RUNTIME_TARBALLS_PRODUCED]true`);
+	} else if (target) {
+		console.log(`[${SCRIPT}] upload=false — skipping payload build/upload for ${target} (publish-only).`);
+	} else {
+		console.log(`[${SCRIPT}] no CDN payload for ${args.vscodePlatform}/${args.arch} (not a supported target).`);
 	}
 
-	if (!args.upload) {
-		console.log(`[${SCRIPT}] upload=false — ${tarballCount} tarball(s) left in ${args.tarballsDir}; skipping results file and DICTATION_RUNTIME_RESULTS_FILE setvariable.`);
+	// STAMP: written on every pipeline build that can host dictation, publish or
+	// not — the stamp is target-agnostic and packaged builds have no other source.
+	if (!shouldStampRuntime(args.vscodePlatform, args.arch)) {
+		console.log(`[${SCRIPT}] ${args.vscodePlatform}/${args.arch} cannot host dictation; product.json ships without dictationRuntime.`);
 		return;
 	}
 
-	if (!result) {
-		console.log(`[${SCRIPT}] no runtime applies to ${args.vscodePlatform}/${args.arch}; product.json ships without dictationRuntime.`);
-		return;
-	}
-
+	const result: IDictationRuntimeResult = { version, urlTemplate: buildCdnUrlTemplate(version) };
 	fs.mkdirSync(path.dirname(args.resultsFile), { recursive: true });
 	fs.writeFileSync(args.resultsFile, JSON.stringify(result, null, 2) + '\n');
 	console.log(`[${SCRIPT}] Wrote dictationRuntime entry to ${args.resultsFile}`);
@@ -78,25 +89,6 @@ async function main(): Promise<void> {
 	// Tell Azure Pipelines: subsequent steps in this job see
 	// DICTATION_RUNTIME_RESULTS_FILE in their env (auto-injected from the variable).
 	console.log(`##vso[task.setvariable variable=DICTATION_RUNTIME_RESULTS_FILE]${args.resultsFile}`);
-}
-
-async function produceOne(args: IProduceArgs): Promise<IDictationRuntimeResult | undefined> {
-	const target = getRuntimeTargetForBuild(args.vscodePlatform, args.arch);
-	if (!target) {
-		console.log(`[${SCRIPT}] no target for ${args.vscodePlatform}/${args.arch} — skipping`);
-		return undefined;
-	}
-	console.log(`[${SCRIPT}] producing for ${args.vscodePlatform}/${args.arch} → ${target}`);
-	const built = await buildOne({ target, outDir: args.tarballsDir });
-	if (!args.upload) {
-		return undefined;
-	}
-	// Upload returns the per-target URL; we discard it and emit the `{target}`
-	// template instead. Every platform job ends up with the same `urlTemplate` —
-	// only the version differs across SDK bumps. The runtime substitutes
-	// `{target}` per launch.
-	await uploadOne({ version: built.version, target, tgzPath: built.tgzPath, sha256: built.sha256 });
-	return { version: built.version, urlTemplate: buildCdnUrlTemplate(built.version) };
 }
 
 function parseArgs(): IProduceArgs {

@@ -113,8 +113,6 @@ export async function ensureFoundryLocalRuntime(cacheRoot: string, download: IFo
 }
 
 async function doEnsure(overrideDir: string, platformKey: string, download: IFoundryLocalRuntimeDownload, token: CancellationToken, onProgress?: FoundryLocalRuntimeProgress): Promise<string> {
-	const addonPath = foundryAddonPath(overrideDir, platformKey);
-	const coreDir = foundryCoreDir(overrideDir, platformKey);
 	// The completion marker is per-platform: the shared `<cacheRoot>/<version>`
 	// dir can hold payloads for multiple architectures (e.g. a win32-arm64
 	// machine running x64 VS Code under emulation, then arm64 VS Code). Verify
@@ -132,13 +130,27 @@ async function doEnsure(overrideDir: string, platformKey: string, download: IFou
 	assertRuntimeLoadable(platformKey);
 
 	onProgress?.('Downloading dictation runtime…');
+	await provisionRuntime(overrideDir, platformKey, download.urlTemplate, download.version, token);
+	return overrideDir;
+}
+
+/**
+ * Download the `{target}`-substituted CDN tarball for `platformKey` into
+ * `overrideDir`, extract + verify + atomically promote its payload, and write the
+ * per-platform completion marker. Host-independent (does NOT run the glibc
+ * loadability gate); exported for tests. Callers that provision for the running
+ * host should use `ensureFoundryLocalRuntime`, which gates and de-dupes.
+ */
+export async function provisionRuntime(overrideDir: string, platformKey: string, urlTemplate: string, version: string, token: CancellationToken): Promise<void> {
+	const addonPath = foundryAddonPath(overrideDir, platformKey);
+	const coreDir = foundryCoreDir(overrideDir, platformKey);
 
 	// The cache is shared by the utility processes of every open VS Code window,
 	// so provision into a process-unique staging dir and atomically promote each
 	// payload directory into place. Two concurrent first-use downloads therefore
 	// never write to the same final path; whichever process wins the rename is
 	// the published copy and the loser accepts it as success.
-	const url = format2(download.urlTemplate, { target: platformKey });
+	const url = format2(urlTemplate, { target: platformKey });
 	const staging = join(overrideDir, `.staging-${process.pid}-${randomSuffix()}`);
 	const stagingAddon = join(staging, 'prebuilds', platformKey, 'foundry_local_napi.node');
 	const stagingCore = join(staging, 'foundry-local-core', platformKey);
@@ -161,8 +173,7 @@ async function doEnsure(overrideDir: string, platformKey: string, download: IFou
 		throw new Error('Foundry Local native runtime is incomplete after provisioning.');
 	}
 
-	await fs.promises.writeFile(foundryMarkerPath(overrideDir, platformKey), `${download.version}\n`).catch(() => { /* best effort marker */ });
-	return overrideDir;
+	await fs.promises.writeFile(foundryMarkerPath(overrideDir, platformKey), `${version}\n`).catch(() => { /* best effort marker */ });
 }
 
 /** Path of the per-platform completion marker inside a versioned override dir. */
@@ -351,8 +362,11 @@ async function resolveProxyAgent(targetUrl: string): Promise<import('http').Agen
 
 /** Download `url` to `dest`, following redirects, honoring cancellation. */
 async function downloadFile(url: string, dest: string, token: CancellationToken): Promise<void> {
-	// `https` is a slow-to-load builtin; import it lazily at runtime.
-	const https = await import('https');
+	// `http`/`https` are slow-to-load builtins; import them lazily at runtime.
+	// The CDN is always `https:`; `http:` support exists only so provisioning can
+	// be exercised against a local test server.
+	const [https, http] = await Promise.all([import('https'), import('http')]);
+	const getFor = (u: string) => (new URL(u).protocol === 'http:' ? http.get : https.get);
 	// A single proxy agent tunnels to whatever host each request (including any
 	// redirect target) addresses, so resolving it once from the initial URL is
 	// sufficient. `undefined` means "go direct".
@@ -396,7 +410,7 @@ async function downloadFile(url: string, dest: string, token: CancellationToken)
 				return;
 			}
 			armTimeout();
-			activeRequest = https.get(currentUrl, { agent }, response => {
+			activeRequest = getFor(currentUrl)(currentUrl, { agent }, response => {
 				armTimeout();
 				const status = response.statusCode ?? 0;
 				if (status >= 300 && status < 400 && response.headers.location) {
