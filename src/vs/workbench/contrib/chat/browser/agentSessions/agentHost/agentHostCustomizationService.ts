@@ -199,16 +199,20 @@ export abstract class AbstractAgentHostCustomizationService extends Disposable i
 		// failure/recovery is captured even without a re-query.
 		this._trackMcpDiagnostics(sessionResource, target);
 		return this._flattenMcpServers(target.customizations)
-			.map((c): IAgentHostMcpServer => ({
-				id: this._scopedMcpServerId(sessionResource, c.id),
-				name: c.name,
-				enabled: c.enabled,
-				status: c.state.kind,
-				state: c.state,
-				setEnabled: (enabled: boolean) => target.setCustomizationEnabled(c.id, enabled),
-				start: () => target.startMcpServer(c.id),
-				stop: () => target.stopMcpServer(c.id),
-			}));
+			.map((c): IAgentHostMcpServer => {
+				const logOutputChannelId = this._mcpLogRegistry.record({ sessionResource, rawId: c.id, name: c.name, enabled: c.enabled, state: c.state });
+				return {
+					id: this._scopedMcpServerId(sessionResource, c.id),
+					name: c.name,
+					enabled: c.enabled,
+					status: c.state.kind,
+					state: c.state,
+					logOutputChannelId,
+					setEnabled: (enabled: boolean) => target.setCustomizationEnabled(c.id, enabled),
+					start: () => target.startMcpServer(c.id),
+					stop: () => target.stopMcpServer(c.id),
+				};
+			});
 	}
 
 	showMcpServerLog(sessionResource: URI, serverId: string): void {

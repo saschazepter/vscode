@@ -169,6 +169,17 @@ suite('AbstractAgentHostCustomizationService - MCP server enablement', () => {
 		assert.deepStrictEqual(otherTarget.dispatched, []);
 	});
 
+	test('getMcpServers provides a stable output channel for diagnostics', () => {
+		const sut = createSut();
+		sut.setTarget(sessionA1, new FakeTarget([mcpServer('gh-1', 'GitHub', true)]));
+
+		const [first] = sut.getMcpServers(sessionA1);
+		const [second] = sut.getMcpServers(sessionA1);
+
+		assert.ok(first.logOutputChannelId);
+		assert.strictEqual(second.logOutputChannelId, first.logOutputChannelId);
+	});
+
 	test('does not reapply unchanged durable policy, preserving a later session-level toggle', () => {
 		const sut = createSut();
 		sut.setMcpServerEnablement(sessionA1, 'GitHub', ContributionEnablementState.DisabledProfile);
