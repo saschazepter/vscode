@@ -7,6 +7,7 @@ import { getDelayedChannel, IChannel, ProxyChannel } from '../../../../base/part
 import { arch, platform } from '../../../../base/common/process.js';
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
+import { IProductService } from '../../../../platform/product/common/productService.js';
 import { ILocalTranscriptionService, localTranscriptionChannelName } from '../../../../platform/localTranscription/common/localTranscription.js';
 import { IUtilityProcessWorkerWorkbenchService } from '../../utilityProcess/electron-browser/utilityProcessWorkerWorkbenchService.js';
 
@@ -48,6 +49,7 @@ export class LocalTranscriptionService {
 	constructor(
 		@IUtilityProcessWorkerWorkbenchService private readonly utilityProcessWorkerWorkbenchService: IUtilityProcessWorkerWorkbenchService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IProductService private readonly productService: IProductService,
 	) { }
 
 	private _getChannel(): IChannel {
@@ -77,7 +79,18 @@ export class LocalTranscriptionService {
 	getModelStatus() { return this._getProxy().getModelStatus(); }
 	start(options: { cacheDir: string; model?: string; language?: string }) {
 		const { proxyUrl, noProxy, proxyStrictSSL, proxyAuthorization } = this._resolveProxyConfig();
-		return this._getProxy().start({ cacheDir: options.cacheDir, model: options.model, language: options.language, proxyUrl, noProxy, proxyStrictSSL, proxyAuthorization });
+		const runtime = this.productService.dictationRuntime;
+		return this._getProxy().start({
+			cacheDir: options.cacheDir,
+			model: options.model,
+			language: options.language,
+			proxyUrl,
+			noProxy,
+			proxyStrictSSL,
+			proxyAuthorization,
+			runtimeUrlTemplate: runtime?.urlTemplate,
+			runtimeVersion: runtime?.version,
+		});
 	}
 	pushAudio(chunk: Parameters<ILocalTranscriptionService['pushAudio']>[0]) { return this._getProxy().pushAudio(chunk); }
 	stop() { return this._getProxy().stop(); }
