@@ -94,7 +94,11 @@ suite('AbstractAgentHostCustomizationService - MCP server enablement', () => {
 	function createSut() {
 		const instantiationService = store.add(new TestInstantiationService());
 		instantiationService.stub(ILoggerService, store.add(new NullLoggerService()));
-		instantiationService.stub(IOutputService, { showChannel: async () => { } });
+		instantiationService.stub(IOutputService, {
+			getChannel: () => undefined,
+			getChannelDescriptor: () => undefined,
+			showChannel: async () => { },
+		});
 		const sut = store.add(new TestAgentHostCustomizationService(instantiationService, new NullLogService(), store.add(new InMemoryStorageService())));
 		return sut;
 	}
@@ -169,7 +173,7 @@ suite('AbstractAgentHostCustomizationService - MCP server enablement', () => {
 		assert.deepStrictEqual(otherTarget.dispatched, []);
 	});
 
-	test('getMcpServers provides a stable output channel for diagnostics', () => {
+	test('getMcpServers provides a stable diagnostics output channel id without creating a logger', () => {
 		const sut = createSut();
 		sut.setTarget(sessionA1, new FakeTarget([mcpServer('gh-1', 'GitHub', true)]));
 

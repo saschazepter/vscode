@@ -2436,11 +2436,13 @@ suite('LocalAgentHostSessionsProvider', () => {
 			}],
 		} satisfies Omit<SessionActiveClient, 'clientId'>;
 		const provider = createProvider(disposables, agentHost, undefined, { activeSession, activeClient });
+		const resource = URI.from({ scheme: 'agent-host-copilotcli', path: '/active-client' });
+		activeSession.set({
+			providerId: provider.id,
+			sessionId: `${provider.id}:${resource.toString()}`,
+			resource,
+		} as IActiveSession, undefined);
 		fireSessionAdded(agentHost, 'active-client');
-		const session = provider.getSessions().find(session => session.resource.path === '/active-client');
-		assert.ok(session);
-
-		activeSession.set(session as IActiveSession, undefined);
 
 		assert.deepStrictEqual(agentHost.dispatchedActions.filter(dispatch => dispatch.action.type === ActionType.SessionActiveClientSet), [{
 			channel: AgentSession.uri('copilotcli', 'active-client').toString(),

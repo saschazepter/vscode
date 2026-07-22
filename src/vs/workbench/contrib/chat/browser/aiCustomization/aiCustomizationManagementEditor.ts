@@ -942,7 +942,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		if (hasSections.has(AICustomizationManagementSection.McpServers)) {
 			this.mcpContentContainer = DOM.append(contentInner, $('.mcp-content-container'));
 			this.mcpListWidget = this.editorDisposables.add(this.instantiationService.createInstance(McpListWidget));
-			this.mcpListWidget.setBeforeShowOutput(async () => {
+			this.mcpListWidget.setCloseCustomizationEditor(async () => {
 				if (this.input) {
 					await this.group.closeEditor(this.input);
 				}

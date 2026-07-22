@@ -199,7 +199,7 @@ suite('mcpListWidget', () => {
 			});
 		});
 
-		test('active-session error closes the editor before opening the agent-host output', async () => {
+		test('active-session error registers the channel, closes the editor, then opens output', async () => {
 			const shownChannels: string[] = [];
 			let localOutputCount = 0;
 			const actions: string[] = [];
@@ -215,7 +215,9 @@ suite('mcpListWidget', () => {
 				async () => {
 					actions.push('close-editor');
 				},
-				() => {
+				async beforeShow => {
+					actions.push('register-agent-host-output');
+					await beforeShow?.();
 					actions.push('show-agent-host-output');
 				},
 			);
@@ -230,7 +232,7 @@ suite('mcpListWidget', () => {
 			}, {
 				shownChannels: [],
 				localOutputCount: 0,
-				actions: ['close-editor', 'show-agent-host-output'],
+				actions: ['register-agent-host-output', 'close-editor', 'show-agent-host-output'],
 			});
 		});
 

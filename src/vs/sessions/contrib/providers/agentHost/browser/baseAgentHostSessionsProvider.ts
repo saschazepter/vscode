@@ -1983,7 +1983,10 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		// live, instead of relying on the idle timer that only client actions
 		// refresh.
 		this._register(autorun(reader => this._syncVisibleSessionStatePins(reader)));
-		this._register(autorun(reader => this._syncActiveClient(reader)));
+		this._register(autorun(reader => {
+			this._sessionsService.activeSession.read(reader);
+			this._syncActiveClient();
+		}));
 
 		// Session-cache persistence. These listeners are inert until a subclass
 		// opts in via `_enableSessionCachePersistence` (which sets the storage
@@ -2172,8 +2175,8 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		return [...this.sessionTypes];
 	}
 
-	private _syncActiveClient(reader: IReader): void {
-		const activeSession = this._sessionsService.activeSession.read(reader);
+	private _syncActiveClient(): void {
+		const activeSession = this._sessionsService.activeSession.get();
 		if (!activeSession || activeSession.providerId !== this.id) {
 			return;
 		}
@@ -4097,6 +4100,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 			if (added.length > 0 || removed.length > 0 || changed.length > 0) {
 				this._onDidChangeSessions.fire({ added, removed, changed });
 			}
+			this._syncActiveClient();
 			for (const cached of removed) {
 				(cached as AgentHostSessionAdapter).dispose();
 			}
@@ -4284,12 +4288,14 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 			if (this.updateAdapter(existing, meta)) {
 				this._onDidChangeSessions.fire({ added: [], removed: [], changed: [existing] });
 			}
+			this._syncActiveClient();
 			return;
 		}
 
 		const cached = this.createAdapter(meta);
 		this._sessionCache.set(rawId, cached);
 		this._onDidChangeSessions.fire({ added: [cached], removed: [], changed: [] });
+		this._syncActiveClient();
 	}
 
 	private _handleSessionRemoved(session: URI | string): void {

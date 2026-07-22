@@ -165,7 +165,7 @@ class McpServerItemRenderer implements IListRenderer<IMcpServerItemEntry | IMcpS
 	readonly templateId = 'mcpServerItem';
 
 	constructor(
-		private readonly _beforeShowOutput: () => Promise<void>,
+		private readonly _afterShowOutput: () => Promise<void>,
 		@IAICustomizationWorkspaceService private readonly workspaceService: IAICustomizationWorkspaceService,
 		@IAgentPluginService private readonly agentPluginService: IAgentPluginService,
 		@IHoverService private readonly hoverService: IHoverService,
@@ -300,8 +300,9 @@ class McpServerItemRenderer implements IListRenderer<IMcpServerItemEntry | IMcpS
 
 		const activeSessionServer = getActiveSessionServer(element);
 		const label = getMcpEntryLabel(element);
+		const activeSessionResource = this.customizationHarnessService.activeSessionResource.get();
 		const showActiveSessionOutput = activeSessionServer
-			? () => this.agentHostCustomizationService.showMcpServerLog(this.customizationHarnessService.activeSessionResource.get(), activeSessionServer.id)
+			? (beforeShow?: () => Promise<void>) => this.agentHostCustomizationService.showMcpServerLog(activeSessionResource, activeSessionServer.id, beforeShow)
 			: undefined;
 		if (state === McpServerStatus.AuthRequired && activeSessionServer) {
 			const signInLabel = localize('signInToMcpServer', "Sign in to {0}", label);
@@ -329,7 +330,7 @@ class McpServerItemRenderer implements IListRenderer<IMcpServerItemEntry | IMcpS
 		}
 
 		const showOutput = state === McpServerStatus.Error || state === McpConnectionState.Kind.Error
-			? getMcpServerOutputHandler(this.outputService, element.type === 'session-server-item' ? undefined : element.localServer, activeSessionServer, this._beforeShowOutput, showActiveSessionOutput)
+			? getMcpServerOutputHandler(this.outputService, element.type === 'session-server-item' ? undefined : element.localServer, activeSessionServer, this._afterShowOutput, showActiveSessionOutput)
 			: undefined;
 		if (showOutput) {
 			const showOutputLabel = localize('showMcpServerOutput', "Show output for {0}", label);
@@ -339,9 +340,7 @@ class McpServerItemRenderer implements IListRenderer<IMcpServerItemEntry | IMcpS
 			}));
 			statusButton.icon = presentation.icon;
 			statusButton.element.classList.add('mcp-server-status', 'mcp-server-status-action', presentation.className);
-			registerMcpInlineButtonAction(templateData.actionDisposables, statusButton, () => {
-				showOutput();
-			});
+			registerMcpInlineButtonAction(templateData.actionDisposables, statusButton, showOutput);
 			return;
 		}
 
@@ -372,21 +371,20 @@ export function authenticateMcpServer(agentHostCustomizationService: IAgentHostC
 }
 
 /** Resolves the output action for an MCP server, preferring its active agent-host output. */
-export function getMcpServerOutputHandler(outputService: Pick<IOutputService, 'showChannel'>, localServer: Pick<IMcpServer, 'showOutput'> | undefined, activeSessionServer: AgentHostMcpServer | undefined, beforeShowOutput?: () => Promise<void>, showActiveSessionOutput?: () => void): (() => Promise<void>) | undefined {
+export function getMcpServerOutputHandler(outputService: Pick<IOutputService, 'showChannel'>, localServer: Pick<IMcpServer, 'showOutput'> | undefined, activeSessionServer: AgentHostMcpServer | undefined, closeCustomizationEditor?: () => Promise<void>, showActiveSessionOutput?: (beforeShow?: () => Promise<void>) => Promise<void>): (() => Promise<void>) | undefined {
 	const outputChannelId = activeSessionServer?.logOutputChannelId;
-	if (outputChannelId || showActiveSessionOutput) {
+	if (showActiveSessionOutput) {
+		return () => showActiveSessionOutput(closeCustomizationEditor);
+	}
+	if (outputChannelId) {
 		return async () => {
-			await beforeShowOutput?.();
-			if (showActiveSessionOutput) {
-				showActiveSessionOutput();
-			} else {
-				await outputService.showChannel(outputChannelId!);
-			}
+			await closeCustomizationEditor?.();
+			await outputService.showChannel(outputChannelId);
 		};
 	}
 	if (localServer) {
 		return async () => {
-			await beforeShowOutput?.();
+			await closeCustomizationEditor?.();
 			await localServer.showOutput();
 		};
 	}
@@ -795,7 +793,7 @@ export class McpListWidget extends Disposable {
 	private galleryCts: CancellationTokenSource | undefined;
 	private readonly delayedFilter = new Delayer<void>(200);
 	private readonly delayedGallerySearch = new Delayer<void>(400);
-	private _beforeShowOutput: () => Promise<void> = () => Promise.resolve();
+	private _closeCustomizationEditor: () => Promise<void> = () => Promise.resolve();
 
 	constructor(
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
@@ -830,8 +828,8 @@ export class McpListWidget extends Disposable {
 		});
 	}
 
-	setBeforeShowOutput(beforeShowOutput: () => Promise<void>): void {
-		this._beforeShowOutput = beforeShowOutput;
+	setCloseCustomizationEditor(closeCustomizationEditor: () => Promise<void>): void {
+		this._closeCustomizationEditor = closeCustomizationEditor;
 	}
 
 	private create(): void {
@@ -960,7 +958,7 @@ export class McpListWidget extends Disposable {
 		// Create list
 		const delegate = new McpServerItemDelegate();
 		const groupHeaderRenderer = new CustomizationGroupHeaderRenderer<IMcpGroupHeaderEntry>('mcpGroupHeader', this.hoverService);
-		const localRenderer = this.instantiationService.createInstance(McpServerItemRenderer, () => this._beforeShowOutput());
+		const localRenderer = this.instantiationService.createInstance(McpServerItemRenderer, () => this._closeCustomizationEditor());
 		const galleryRenderer = new GalleryItemRenderer<IMcpServerItemEntry>(MCP_GALLERY_ITEM_TEMPLATE_ID, new McpGalleryItemProvider(this.mcpWorkbenchService));
 
 		this.list = this._register(this.instantiationService.createInstance(
