@@ -40,6 +40,12 @@ export interface VoiceWidgetCallbacks {
 	getAnalyserNode(): AnalyserNode | null;
 	onResize(): void;
 	openPttKeySettings(): void;
+	/**
+	 * Show the Voice Mode context menu (Configure, Select Microphone, Disable
+	 * Voice Mode) anchored at the triggering event. Wired to a right-click /
+	 * context-menu gesture on the voice mode mic icon.
+	 */
+	showVoiceContextMenu(e: MouseEvent): void;
 	/** Optional — when provided, header renders a "popout" button. */
 	openPopout?(): void;
 	/** Submit user feedback. Returns success/failure. */
@@ -181,7 +187,6 @@ export class AgentsVoiceWidget extends Disposable {
 	private readonly _inputBoxPlaceholder: HTMLElement | undefined;
 	private readonly _inputBoxToolbar: HTMLElement | undefined;
 	private readonly _inputBoxMicBtn: HTMLElement | undefined;
-	private readonly _inputBoxGearBtn: HTMLElement | undefined;
 	private readonly _inputBoxConnIndicator: HTMLElement | undefined;
 	private readonly _inputBoxFeedbackBtn: HTMLElement | undefined;
 	private readonly _inputBoxSessionsBtn: HTMLElement | undefined;
@@ -335,16 +340,15 @@ export class AgentsVoiceWidget extends Disposable {
 			this._inputBoxMicBtn.ariaLabel = localize('agentsVoice.pushToTalkSpace', "Push to talk (Space)");
 			this._inputBoxMicBtn.title = localize('agentsVoice.pushToTalkSpace', "Push to talk (Space)");
 			this._inputBoxMicBtn.style.cssText = `font-size:${FONT_SIZE.iconMd};cursor:pointer;-webkit-app-region:no-drag;border-radius:4px;padding:2px;`;
+			this._register(dom.addDisposableListener(this._inputBoxMicBtn, 'contextmenu', (e: MouseEvent) => {
+				e.preventDefault(); e.stopPropagation();
+				this.callbacks.showVoiceContextMenu(e);
+			}));
 
 			// Connection indicator
 			this._inputBoxConnIndicator = toolbarBtn('codicon-debug-connected',
 				localize('agentsVoice.disconnect', "Disconnect"),
 				localize('agentsVoice.disconnect', "Disconnect"));
-
-			// Gear button
-			this._inputBoxGearBtn = toolbarBtn('codicon-gear',
-				localize('agentsVoice.configureKeybinding', "Configure keybinding"),
-				localize('agentsVoice.configureKeybinding', "Configure keybinding"));
 
 			// Feedback button
 			this._inputBoxFeedbackBtn = toolbarBtn('codicon-feedback',
@@ -371,7 +375,6 @@ export class AgentsVoiceWidget extends Disposable {
 			this._inputBoxToolbar.append(
 				this._inputBoxMicBtn,
 				this._inputBoxConnIndicator,
-				this._inputBoxGearBtn,
 				toolbarSpacer,
 				this._inputBoxFeedbackBtn,
 				this._inputBoxSessionsBtn,
@@ -760,10 +763,6 @@ export class AgentsVoiceWidget extends Disposable {
 		this._inputBoxConnIndicator!.style.display = showConnected ? '' : 'none';
 		this._inputBoxConnIndicator!.onclick = (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); this.callbacks.disconnect(); };
 
-		// Gear button — always visible
-		this._inputBoxGearBtn!.style.display = '';
-		this._inputBoxGearBtn!.onclick = (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); this.callbacks.openPttKeySettings(); };
-
 		// Feedback button — always visible
 		this._inputBoxFeedbackBtn!.onclick = (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); this._toggleFeedbackDialog(); };
 
@@ -841,7 +840,7 @@ export class AgentsVoiceWidget extends Disposable {
 				onDisconnectClick: (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); this.callbacks.disconnect(); },
 				onCloseClick: (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); this.callbacks.closeWindow(); },
 				onToggleClick: (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); this._expanded.set(!this._expanded.get(), undefined); },
-				onPttKeyClick: (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); this.callbacks.openPttKeySettings(); },
+				onMicContextMenu: (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); this.callbacks.showVoiceContextMenu(e); },
 				onPopoutClick: (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); this.callbacks.openPopout?.(); },
 				onFeedbackClick: (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); this._toggleFeedbackDialog(); },
 				pttKeyLabel: this._pttKeyLabel.read(reader),

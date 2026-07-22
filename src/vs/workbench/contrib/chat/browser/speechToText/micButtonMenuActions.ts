@@ -84,12 +84,28 @@ export function getDictationContextMenuActions(commandService: ICommandService, 
 }
 
 /**
+ * "Configure" entry for the Voice Mode mic button context menu. Opens the
+ * keybindings editor scoped to the Voice Mode keybinding — the affordance that
+ * used to live behind the toolbar gear button. `keybindingCommandId` is the
+ * stable command the keybinding entry targets.
+ */
+function createConfigureVoiceModeAction(commandService: ICommandService, keybindingService: IKeybindingService, keybindingCommandId: string): IAction {
+	const configureKeybinding = createConfigureKeybindingAction(commandService, keybindingService, keybindingCommandId);
+	return toAction({
+		id: configureKeybinding.id,
+		label: localize('voiceMode.configure', "Configure"),
+		run: () => configureKeybinding.run(),
+	});
+}
+
+/**
  * Actions for the Voice Mode mic button context menu, mirroring
- * {@link getDictationContextMenuActions} but with "Disable Voice Mode".
+ * {@link getDictationContextMenuActions} but with "Configure" (opening the
+ * Voice Mode keybinding) and "Disable Voice Mode".
  */
 export function getVoiceModeContextMenuActions(commandService: ICommandService, configurationService: IConfigurationService, keybindingService: IKeybindingService, keybindingCommandId: string): IAction[] {
 	return [
-		createConfigureKeybindingAction(commandService, keybindingService, keybindingCommandId),
+		createConfigureVoiceModeAction(commandService, keybindingService, keybindingCommandId),
 		createSelectMicrophoneAction(commandService),
 		createDisableVoiceModeAction(commandService, configurationService),
 	];

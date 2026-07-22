@@ -27,7 +27,7 @@ export interface HeaderProps {
 	readonly onDisconnectClick: (e: MouseEvent) => void;
 	readonly onCloseClick: (e: MouseEvent) => void;
 	readonly onToggleClick: (e: MouseEvent) => void;
-	readonly onPttKeyClick: (e: MouseEvent) => void;
+	readonly onMicContextMenu: (e: MouseEvent) => void;
 	readonly onPopoutClick: (e: MouseEvent) => void;
 	readonly onFeedbackClick: (e: MouseEvent) => void;
 	readonly expanded: boolean;
@@ -66,11 +66,6 @@ export function createHeader(): HeaderComponent {
 	micBtn.ariaLabel = localize('agentsVoice.pushToTalkSpace', "Push to talk (Space)");
 	micBtn.title = localize('agentsVoice.pushToTalkSpace', "Push to talk (Space)");
 	micBtn.style.cssText = `font-size:${FONT_SIZE.iconMd};cursor:pointer;-webkit-app-region:no-drag;border-radius:4px;padding:2px;`;
-
-	// PTT key / gear button
-	const gearBtn = hoverButton('codicon-gear',
-		localize('agentsVoice.configureKeybinding', "Configure keybinding"),
-		localize('agentsVoice.configureKeybinding', "Configure keybinding"));
 
 	// Connection indicator
 	const connIndicator = dom.$('span.voice-conn-indicator');
@@ -133,7 +128,7 @@ export function createHeader(): HeaderComponent {
 		}
 	`;
 
-	container.append(copilotIcon, micBtn, placeholderText, gearBtn, connIndicator, spacer, popoutBtn, closeBtn, connStyle);
+	container.append(copilotIcon, micBtn, placeholderText, connIndicator, spacer, popoutBtn, closeBtn, connStyle);
 
 	return {
 		element: container,
@@ -164,6 +159,7 @@ export function createHeader(): HeaderComponent {
 			micBtn.onmouseleave = () => { micBtn.style.color = micColor; };
 			micBtn.onmousedown = props.onMicDown;
 			micBtn.onmouseup = () => props.onMicUp();
+			micBtn.oncontextmenu = (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); props.onMicContextMenu(e); };
 
 			// Placeholder text — shown when not connected, displays PTT keybinding
 			placeholderText.style.display = showConnected ? 'none' : '';
@@ -174,10 +170,6 @@ export function createHeader(): HeaderComponent {
 			placeholderText.textContent = holdText;
 			placeholderText.ariaLabel = holdText;
 			placeholderText.onclick = props.onConnectClick;
-
-			// Gear
-			gearBtn.style.display = props.isConnected ? '' : 'none';
-			gearBtn.onclick = props.onPttKeyClick;
 
 			// Connection indicator
 			connIndicator.style.display = showConnected && !props.hideDisconnect ? 'inline-flex' : 'none';
