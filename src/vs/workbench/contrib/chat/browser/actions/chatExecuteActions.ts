@@ -21,7 +21,10 @@ import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.j
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
+import { IStorageService } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
+import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
+import { IAgentHostEnablementService } from '../../../../../platform/agentHost/common/agentHostEnablementService.js';
 import { IViewsService } from '../../../../services/views/common/viewsService.js';
 import { IsSessionsWindowContext } from '../../../../common/contextkeys.js';
 import { ChatContextKeys } from '../../common/actions/chatContextKeys.js';
@@ -33,7 +36,7 @@ import { ILanguageModelChatMetadata } from '../../common/languageModels.js';
 import { ILanguageModelToolsService } from '../../common/tools/languageModelToolsService.js';
 import { isInClaudeAgentsFolder } from '../../common/promptSyntax/config/promptFileLocations.js';
 import { IChatSessionsService, localChatSessionType } from '../../common/chatSessionsService.js';
-import { IChatWidget, IChatWidgetService } from '../chat.js';
+import { type IChatAcceptInputOptions, IChatWidget, IChatWidgetService } from '../chat.js';
 import { getAgentSessionProvider, AgentSessionProviders, AgentSessionTarget } from '../agentSessions/agentSessions.js';
 import { getEditingSessionContext } from '../chatEditing/chatEditingActions.js';
 import { ctxHasEditorModification, ctxHasRequestInProgress, ctxIsGlobalEditingSession } from '../chatEditing/chatEditingEditorContextKeys.js';
@@ -47,6 +50,7 @@ export interface IVoiceChatExecuteActionContext {
 export interface IChatExecuteActionContext {
 	widget?: IChatWidget;
 	inputValue?: string;
+	acceptInputOptions?: IChatAcceptInputOptions;
 	voice?: IVoiceChatExecuteActionContext;
 }
 
@@ -156,7 +160,7 @@ abstract class SubmitAction extends Action2 {
 		} else if (widget?.viewModel?.model.checkpoint) {
 			widget.viewModel.model.setCheckpoint(undefined);
 		}
-		widget?.acceptInput(context?.inputValue);
+		widget?.acceptInput(context?.inputValue, context?.acceptInputOptions);
 	}
 
 	private async handleDelegation(accessor: ServicesAccessor, widget: IChatWidget, delegationTarget: Exclude<AgentSessionTarget, AgentSessionProviders.Local>): Promise<void> {
@@ -345,7 +349,7 @@ class ToggleChatModeAction extends Action2 {
 			isClaudeAgent
 		});
 
-		widget.input.setChatMode(switchToMode.id);
+		widget.input.setChatMode(switchToMode.id, true, true);
 
 		if (chatModeCheck.needToClearSession) {
 			await commandService.executeCommand(ACTION_ID_NEW_CHAT);
@@ -905,6 +909,9 @@ class SendToNewChatAction extends Action2 {
 		const chatService = accessor.get(IChatService);
 		const configurationService = accessor.get(IConfigurationService);
 		const chatSessionsService = accessor.get(IChatSessionsService);
+		const storageService = accessor.get(IStorageService);
+		const workspaceContextService = accessor.get(IWorkspaceContextService);
+		const agentHostEnablementService = accessor.get(IAgentHostEnablementService);
 		const widget = context?.widget ?? widgetService.lastFocusedWidget;
 		if (!widget) {
 			return;
@@ -926,7 +933,7 @@ class SendToNewChatAction extends Action2 {
 		// Clear the input from the current session before creating a new one
 		widget.setInput('');
 
-		await clearChatSessionPreservingType(widget, viewsService, undefined, configurationService, chatSessionsService);
+		await clearChatSessionPreservingType(widget, viewsService, undefined, configurationService, chatSessionsService, storageService, workspaceContextService.getWorkspace(), agentHostEnablementService.enabled);
 
 		widget.acceptInput(inputBeforeClear, { storeToHistory: true });
 	}
