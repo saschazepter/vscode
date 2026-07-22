@@ -58,7 +58,12 @@ export class LocalTranscriptionService {
 				const { client } = await this.utilityProcessWorkerWorkbenchService.createWorker({
 					moduleId: 'vs/platform/localTranscription/node/localTranscriptionMain',
 					type: 'localTranscription',
-					name: 'local-transcription'
+					name: 'local-transcription',
+					// The on-device dictation runtime is downloaded from our CDN and its
+					// native addon (foundry_local_napi.node) is signed by a third party,
+					// so on macOS it must load in the plugin helper (library validation
+					// disabled) to avoid a Team ID mismatch dlopen failure.
+					allowLoadingUnsignedLibraries: true
 				});
 				return client.getChannel(localTranscriptionChannelName);
 			})());
