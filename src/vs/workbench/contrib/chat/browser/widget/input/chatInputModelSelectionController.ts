@@ -3,11 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, IDisposable, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
+import { Disposable, IDisposable, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { ChatAgentLocation, ChatModeKind } from '../../../common/constants.js';
 import { ILanguageModelChatMetadataAndIdentifier } from '../../../common/languageModels.js';
 import { InitialModelSelectionResult, ModelIdentifierResolution, ModelSelectionReason, resolveConfiguredModel, resolveInitialModelSelection, resolveModelIdentifier } from '../../../common/modelSelection.js';
-import { findBestMatchingModel, findDefaultModel, findReplacementForProvisionalModel, hasModelsTargetingSession, isModelValidForSession, resolveModelFromSyncState, shouldDropAgnosticDraftModel, shouldResetModelToDefault, shouldResetOnModelListChange, shouldWaitForSessionModel } from './chatInputModelUtils.js';
+import { findBestMatchingModel, findDefaultModel, hasModelsTargetingSession, isModelValidForSession, resolveModelFromSyncState, shouldDropAgnosticDraftModel, shouldResetModelToDefault, shouldResetOnModelListChange, shouldWaitForSessionModel } from './chatInputModelUtils.js';
 import { IChatModelSelectionDiagnostics, NullChatModelSelectionDiagnostics } from './chatModelSelectionDiagnostics.js';
 import { ChatModelSelectionModel } from './chatModelSelectionModel.js';
 
@@ -34,12 +34,16 @@ interface IResolvedDraftModelSelection {
 	readonly changed: boolean;
 }
 
+type ModelSelectionIntent =
+	| { readonly kind: 'remembered'; readonly modelId: string }
+	| { readonly kind: 'programmatic'; readonly resolveModel: () => ILanguageModelChatMetadataAndIdentifier | undefined; readonly sessionKey: string | undefined; readonly conversationKey: string | undefined; readonly complete: (applied: boolean) => void }
+	| { readonly kind: 'session'; readonly model: ILanguageModelChatMetadataAndIdentifier; readonly configuration: Record<string, unknown> | undefined; readonly sessionType: string | undefined; readonly conversationKey: string }
+	| { readonly kind: 'history'; readonly modelId: string; readonly conversationKey: string };
+
 /** Reconciles the shared selection model with Workbench-specific input and catalog state. */
 export class ChatInputModelSelectionController extends Disposable {
 
-	private readonly _authoritativeModelWait = this._register(new MutableDisposable<IDisposable>());
-	private readonly _historyModelWait = this._register(new MutableDisposable<IDisposable>());
-	private _provisionalModelId: string | undefined;
+	private _intent: ModelSelectionIntent | undefined;
 	private _restorePerTypeModel = false;
 
 	constructor(
@@ -48,42 +52,40 @@ export class ChatInputModelSelectionController extends Disposable {
 		private readonly _diagnostics: IChatModelSelectionDiagnostics = NullChatModelSelectionDiagnostics,
 	) {
 		super();
+		this._register(this._runtime.subscribeToModelChanges(() => this.reconcileModelListChange(this._runtime.getModels(this._runtime.getCurrentSessionType()))));
+		this._register(toDisposable(() => this._clearIntent()));
 	}
 
 	get restorePerTypeModel(): boolean {
 		return this._restorePerTypeModel;
 	}
 
-	get provisionalModelId(): string | undefined {
-		return this._provisionalModelId;
-	}
-
 	beginSessionSwitch(isEmpty: boolean, ownsPool: boolean, hadIncomingModel: boolean): void {
 		this._model.resetSelectionOrigin();
-		this._provisionalModelId = undefined;
 		this._restorePerTypeModel = isEmpty && ownsPool && !hadIncomingModel;
-		this.clearAuthoritativeModelWait();
-		this.clearHistoryModelWait();
+		this._clearIntent();
 	}
 
 	endSessionSwitch(): void {
 		this._restorePerTypeModel = false;
 	}
 
-	hasAuthoritativeModelWait(): boolean {
-		return !!this._authoritativeModelWait.value;
+	hasPendingIntent(): boolean {
+		return !!this._intent;
 	}
 
 	hasPendingProgrammaticSelection(): boolean {
-		return this.hasAuthoritativeModelWait() && this._model.selectionReason === ModelSelectionReason.ProgrammaticSelection;
+		return this._intent?.kind === 'programmatic';
 	}
 
-	clearAuthoritativeModelWait(): void {
-		this._authoritativeModelWait.clear();
+	clearIntent(): void {
+		this._clearIntent();
 	}
 
-	clearHistoryModelWait(): void {
-		this._historyModelWait.clear();
+	clearHistoryIntent(): void {
+		if (this._intent?.kind === 'history') {
+			this._clearIntent();
+		}
 	}
 
 	applyExplicitSelection(
@@ -93,9 +95,7 @@ export class ChatInputModelSelectionController extends Disposable {
 		apply: () => void,
 		rollbackOnError: boolean,
 	): void {
-		this.clearAuthoritativeModelWait();
-		this.clearHistoryModelWait();
-		this._provisionalModelId = undefined;
+		this._clearIntent();
 		this._model.applyExplicitSelection(model, sessionKey, conversationKey, apply, rollbackOnError);
 	}
 
@@ -105,9 +105,7 @@ export class ChatInputModelSelectionController extends Disposable {
 		conversationKey: string | undefined,
 		apply: () => void,
 	): void {
-		this.clearAuthoritativeModelWait();
-		this.clearHistoryModelWait();
-		this._provisionalModelId = undefined;
+		this._clearIntent();
 		this._model.applyProgrammaticSelection(model, sessionKey, conversationKey);
 		apply();
 	}
@@ -118,51 +116,26 @@ export class ChatInputModelSelectionController extends Disposable {
 		conversationKey: string | undefined,
 		apply: (model: ILanguageModelChatMetadataAndIdentifier) => void,
 	): Promise<boolean> {
-		const available = resolveModel();
-		if (available) {
-			this.applyProgrammaticSelection(available, sessionKey, conversationKey, () => apply(available));
-			return Promise.resolve(true);
-		}
-
-		this.clearAuthoritativeModelWait();
-		this.clearHistoryModelWait();
-		this._provisionalModelId = undefined;
+		this._clearIntent();
 		this._model.setTransitionMemory(sessionKey, conversationKey, ModelSelectionReason.ProgrammaticSelection);
-
 		return new Promise<boolean>(resolve => {
-			let settled = false;
-			const finish = (value: boolean) => {
-				if (!settled) {
-					settled = true;
-					resolve(value);
-				}
-			};
-			const listener = this._runtime.subscribeToModelChanges(() => {
-				if (this._runtime.getBoundConversationKey() !== conversationKey) {
-					this.clearAuthoritativeModelWait();
-					return;
-				}
-				const model = resolveModel();
-				if (model) {
-					finish(true);
-					this.applyProgrammaticSelection(model, sessionKey, conversationKey, () => apply(model));
-				}
-			});
-			this._authoritativeModelWait.value = {
-				dispose: () => {
-					listener.dispose();
-					if (this._model.selectionReason === ModelSelectionReason.ProgrammaticSelection) {
-						this._model.setSelectionReason(undefined);
-					}
-					finish(false);
+			let complete = resolve;
+			this._intent = {
+				kind: 'programmatic',
+				resolveModel,
+				sessionKey,
+				conversationKey,
+				complete: applied => {
+					complete(applied);
+					complete = () => { };
 				},
 			};
+			this._reconcileIntent();
 		});
 	}
 
 	initialize(rememberedModelId: string | undefined, onInitialSelection: (selection: InitialModelSelectionResult) => void): void {
-		this.clearAuthoritativeModelWait();
-		this._provisionalModelId = undefined;
+		this._clearIntent();
 		const resolveSelection = (): InitialModelSelectionResult => {
 			const configuredModelValue = this._runtime.getConfiguredModelValue();
 			const models = this._runtime.getModels(this._runtime.getCurrentSessionType());
@@ -182,31 +155,15 @@ export class ChatInputModelSelectionController extends Disposable {
 		this._reportInitialization(this._runtime.getConfiguredModelValue(), rememberedModelId, selection);
 		if (selection.kind === 'apply') {
 			this._model.setSelectionReason(selection.reason);
-			this._provisionalModelId = selection.reason === ModelSelectionReason.FirstAvailable
-				&& !selection.model.metadata.isDefaultForLocation[this._runtime.location]
-				? selection.model.identifier
-				: undefined;
 			this._runtime.applyModel(selection.model);
 			this.ensureCurrentModelSupported();
 		} else if (selection.kind === 'pending') {
+			this._intent = { kind: 'remembered', modelId: selection.selection.reference };
 			const fallbackModel = findDefaultModel(this._runtime.getModels(this._runtime.getCurrentSessionType()), this._runtime.location);
 			if (fallbackModel) {
 				this._model.setSelectionReason(ModelSelectionReason.FirstAvailable);
-				this._provisionalModelId = fallbackModel.metadata.isDefaultForLocation[this._runtime.location]
-					? undefined
-					: fallbackModel.identifier;
 				this._runtime.applyModel(fallbackModel);
 			}
-			this._authoritativeModelWait.value = this._runtime.subscribeToModelChanges(() => {
-				const lateSelection = resolveSelection();
-				if (lateSelection.kind === 'apply') {
-					this.clearAuthoritativeModelWait();
-					this._provisionalModelId = undefined;
-					this._model.setSelectionReason(lateSelection.reason);
-					this._runtime.applyModel(lateSelection.model);
-					this.ensureCurrentModelSupported();
-				}
-			});
 		}
 	}
 
@@ -247,20 +204,16 @@ export class ChatInputModelSelectionController extends Disposable {
 		if (!defaultModel) {
 			return;
 		}
-		const isProvisional = this._runtime.isEmpty()
-			&& !this._model.userExplicitlySelectedModel
-			&& !configuredModel
-			&& !defaultModel.metadata.isDefaultForLocation[this._runtime.location];
 		if (!this.hasPendingProgrammaticSelection()) {
 			this._model.setSelectionReason(configuredModel ? ModelSelectionReason.ConfiguredDefault : ModelSelectionReason.FirstAvailable);
 		}
-		this._provisionalModelId = isProvisional ? defaultModel.identifier : undefined;
 		this._runtime.applyModel(defaultModel);
 	}
 
 	applyConfiguredDefault(): boolean {
 		if (!this._runtime.isEmpty()
-			|| this._model.selectionIsAuthoritative) {
+			|| this._model.selectionIsAuthoritative
+			|| (this._intent && this._intent.kind !== 'remembered')) {
 			return false;
 		}
 		const configuredValue = this._runtime.getConfiguredModelValue();
@@ -268,10 +221,21 @@ export class ChatInputModelSelectionController extends Disposable {
 			return false;
 		}
 		const configuredModel = resolveConfiguredModel(configuredValue, this._runtime.getModels(this._runtime.getCurrentSessionType()));
-		if (!configuredModel || configuredModel.identifier === this._model.currentModel.get()?.identifier) {
+		if (!configuredModel) {
 			return false;
 		}
-		this.clearAuthoritativeModelWait();
+		const matchesCurrent = configuredModel.identifier === this._model.currentModel.get()?.identifier;
+		const supersededRememberedIntent = this._intent?.kind === 'remembered';
+		if (supersededRememberedIntent) {
+			this._clearIntent();
+		}
+		if (matchesCurrent) {
+			if (this._model.selectionReason !== ModelSelectionReason.ConfiguredDefault) {
+				this._model.setSelectionReason(ModelSelectionReason.ConfiguredDefault);
+				return true;
+			}
+			return supersededRememberedIntent;
+		}
 		this._model.setSelectionReason(ModelSelectionReason.ConfiguredDefault);
 		this._runtime.applyModel(configuredModel);
 		this.ensureCurrentModelSupported();
@@ -279,13 +243,22 @@ export class ChatInputModelSelectionController extends Disposable {
 	}
 
 	reconcileModelListChange(models: readonly ILanguageModelChatMetadataAndIdentifier[]): void {
-		if (this.applyConfiguredDefault() || this._replaceProvisionalModelWithDefault(models)) {
+		if (this.applyConfiguredDefault() || this._reconcileIntent()) {
 			return;
 		}
-		if (!shouldResetOnModelListChange(this._model.currentModel.get()?.identifier, [...models])) {
+		const currentModel = this._model.currentModel.get();
+		const locationDefault = models.find(model => model.metadata.isDefaultForLocation[this._runtime.location]);
+		if (this._runtime.isEmpty()
+			&& this._model.selectionReason === ModelSelectionReason.FirstAvailable
+			&& locationDefault
+			&& currentModel?.identifier !== locationDefault.identifier) {
+			this._runtime.applyModel(locationDefault);
 			return;
 		}
-		const match = findBestMatchingModel(this._model.currentModel.get(), models);
+		if (!shouldResetOnModelListChange(currentModel?.identifier, [...models])) {
+			return;
+		}
+		const match = findBestMatchingModel(currentModel, models);
 		if (match) {
 			this._runtime.applyModel(match);
 		} else {
@@ -299,7 +272,7 @@ export class ChatInputModelSelectionController extends Disposable {
 		sessionType: string | undefined,
 		conversationKey: string,
 	): void {
-		this.clearHistoryModelWait();
+		this.clearHistoryIntent();
 		const allModels = this._runtime.getAllModels();
 		const currentModel = this._model.currentModel.get();
 		const resolution = this._runtime.resolveModelIdentifier(desiredModel.identifier);
@@ -327,29 +300,10 @@ export class ChatInputModelSelectionController extends Disposable {
 		if (match) {
 			this._applySessionRestore(match, true);
 		} else if (resolution.kind === 'pending' && shouldWaitForSessionModel(desiredModel, sessionType, allModels)) {
-			this._authoritativeModelWait.value = this._runtime.subscribeToModelChanges(() => {
-				if (this._runtime.getBoundConversationKey() !== conversationKey) {
-					this.clearAuthoritativeModelWait();
-					return;
-				}
-				const lateResolution = this._runtime.resolveModelIdentifier(desiredModel.identifier);
-				if (lateResolution.kind === 'available') {
-					this._applySessionRestore(lateResolution.model, true, {
-						modelId: desiredModel.identifier,
-						configuration: modelConfiguration,
-					});
-				} else if (lateResolution.kind === 'unavailable') {
-					this.clearAuthoritativeModelWait();
-					const lateMatch = findBestMatchingModel(desiredModel, this._runtime.getModels(sessionType));
-					if (lateMatch) {
-						this._applySessionRestore(lateMatch, true);
-					} else {
-						this.selectDefault(sessionType);
-					}
-				}
-			});
+			this._clearIntent();
+			this._intent = { kind: 'session', model: desiredModel, configuration: modelConfiguration, sessionType, conversationKey };
 		} else {
-			this.clearAuthoritativeModelWait();
+			this._clearIntent();
 			this.selectDefault(sessionType);
 		}
 	}
@@ -379,8 +333,7 @@ export class ChatInputModelSelectionController extends Disposable {
 	}
 
 	preselectFromHistory(modelId: string, conversationKey: string): void {
-		this.clearAuthoritativeModelWait();
-		this.clearHistoryModelWait();
+		this.clearIntent();
 		const tryMatch = (): ILanguageModelChatMetadataAndIdentifier | undefined => {
 			const models = this._runtime.getModels(this._runtime.getCurrentSessionType());
 			if (models.length === 0 || (models.length === 1 && models[0].metadata.id.toLocaleLowerCase() === 'auto')) {
@@ -395,18 +348,7 @@ export class ChatInputModelSelectionController extends Disposable {
 			this._runtime.applyModel(match);
 			return;
 		}
-		this._historyModelWait.value = this._runtime.subscribeToModelChanges(() => {
-			if (this._runtime.getVisibleConversationKey() !== conversationKey) {
-				this.clearHistoryModelWait();
-				return;
-			}
-			const lateMatch = tryMatch();
-			if (lateMatch) {
-				this.clearHistoryModelWait();
-				this._model.setSelectionReason(ModelSelectionReason.SessionRestore);
-				this._runtime.applyModel(lateMatch);
-			}
-		});
+		this._intent = { kind: 'history', modelId, conversationKey };
 	}
 
 	resolveDraftModel(
@@ -430,9 +372,7 @@ export class ChatInputModelSelectionController extends Disposable {
 		applyModel: boolean,
 		configuration?: { readonly modelId: string; readonly configuration: Record<string, unknown> | undefined },
 	): void {
-		this.clearAuthoritativeModelWait();
-		this.clearHistoryModelWait();
-		this._provisionalModelId = undefined;
+		this._clearIntent();
 		this._model.setSelectionReason(ModelSelectionReason.SessionRestore);
 		if (configuration) {
 			this._runtime.restoreModelConfiguration(configuration.modelId, configuration.configuration);
@@ -442,24 +382,97 @@ export class ChatInputModelSelectionController extends Disposable {
 		}
 	}
 
-	private _replaceProvisionalModelWithDefault(models: readonly ILanguageModelChatMetadataAndIdentifier[]): boolean {
-		if (!this._runtime.isEmpty() || this._model.selectionIsAuthoritative) {
+	private _reconcileIntent(): boolean {
+		const intent = this._intent;
+		if (!intent) {
 			return false;
 		}
-		const replacement = findReplacementForProvisionalModel(
-			this._model.currentModel.get()?.identifier,
-			this._provisionalModelId,
-			models,
-			this._runtime.location,
-		);
-		if (!replacement) {
+
+		if (intent.kind === 'programmatic') {
+			if (this._runtime.getBoundConversationKey() !== intent.conversationKey) {
+				this._clearIntent();
+				return true;
+			}
+			const model = intent.resolveModel();
+			if (!model) {
+				return false;
+			}
+			this._intent = undefined;
+			intent.complete(true);
+			this.applyProgrammaticSelection(model, intent.sessionKey, intent.conversationKey, () => this._runtime.applyModel(model));
+			return true;
+		}
+
+		if (intent.kind === 'remembered') {
+			const models = this._runtime.getModels(this._runtime.getCurrentSessionType());
+			const model = models.find(model => model.identifier === intent.modelId);
+			if (model) {
+				this._intent = undefined;
+				this._model.setSelectionReason(ModelSelectionReason.Remembered);
+				this._runtime.applyModel(model);
+				this.ensureCurrentModelSupported();
+				return true;
+			}
+			const currentModel = this._model.currentModel.get();
+			const replacement = models.find(model => model.metadata.isDefaultForLocation[this._runtime.location]);
+			if (replacement && currentModel?.identifier !== replacement.identifier && !this._model.selectionIsAuthoritative) {
+				this._model.setSelectionReason(ModelSelectionReason.FirstAvailable);
+				this._runtime.applyModel(replacement);
+				this.ensureCurrentModelSupported();
+				return true;
+			}
 			return false;
 		}
-		this._provisionalModelId = undefined;
-		this._model.setSelectionReason(ModelSelectionReason.FirstAvailable);
-		this._runtime.applyModel(replacement);
-		this.ensureCurrentModelSupported();
-		return true;
+
+		if (intent.kind === 'session') {
+			if (this._runtime.getBoundConversationKey() !== intent.conversationKey) {
+				this._clearIntent();
+				return true;
+			}
+			const resolution = this._runtime.resolveModelIdentifier(intent.model.identifier);
+			if (resolution.kind === 'available') {
+				this._intent = undefined;
+				this._applySessionRestore(resolution.model, true, { modelId: intent.model.identifier, configuration: intent.configuration });
+				return true;
+			}
+			if (resolution.kind === 'unavailable') {
+				this._intent = undefined;
+				const match = findBestMatchingModel(intent.model, this._runtime.getModels(intent.sessionType));
+				if (match) {
+					this._applySessionRestore(match, true);
+				} else {
+					this.selectDefault(intent.sessionType);
+				}
+				return true;
+			}
+			return false;
+		}
+
+		if (this._runtime.getVisibleConversationKey() !== intent.conversationKey) {
+			this._clearIntent();
+			return true;
+		}
+		const models = this._runtime.getModels(this._runtime.getCurrentSessionType());
+		const model = models.find(model => model.identifier === intent.modelId)
+			?? models.find(model => model.metadata.id === intent.modelId);
+		if (model && !(models.length === 1 && model.metadata.id.toLocaleLowerCase() === 'auto')) {
+			this._intent = undefined;
+			this._model.setSelectionReason(ModelSelectionReason.SessionRestore);
+			this._runtime.applyModel(model);
+			return true;
+		}
+		return false;
+	}
+
+	private _clearIntent(): void {
+		const intent = this._intent;
+		this._intent = undefined;
+		if (intent?.kind === 'programmatic') {
+			intent.complete(false);
+			if (this._model.selectionReason === ModelSelectionReason.ProgrammaticSelection) {
+				this._model.setSelectionReason(undefined);
+			}
+		}
 	}
 
 	private _reportInitialization(configuredModel: string | undefined, rememberedModel: string | undefined, selection: InitialModelSelectionResult): void {

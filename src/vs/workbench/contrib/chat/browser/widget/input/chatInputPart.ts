@@ -896,7 +896,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 			this.checkModelSupported();
 		}));
 
-		const resetCurrentLanguageModelIfUnavailable = () => {
+		const updateAfterModelListChange = (reconcileSelection: boolean) => {
 			const modelIdentifier = this._currentLanguageModel.get()?.identifier;
 			const models = this.getModels();
 			if (canLog(this.logService.getLevel(), LogLevel.Debug)) {
@@ -932,14 +932,16 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 				logChangesToStateModel(this._inputModel, messageparts.join(', '), undefined, undefined, this.logService);
 			}
-			this._modelSelectionController.reconcileModelListChange(models);
+			if (reconcileSelection) {
+				this._modelSelectionController.reconcileModelListChange(models);
+			}
 			// The available-model set changed: re-evaluate whether sending is
 			// possible (a `requiresCustomModels` session may now have, or have
 			// lost, its models).
 			this._updateInputContentContextKeys();
 		};
-		this._register(this.languageModelsService.onDidChangeLanguageModels(resetCurrentLanguageModelIfUnavailable));
-		this._register(this.languageModelsService.onDidChangeModelVisibility(resetCurrentLanguageModelIfUnavailable));
+		this._register(this.languageModelsService.onDidChangeLanguageModels(() => updateAfterModelListChange(false)));
+		this._register(this.languageModelsService.onDidChangeModelVisibility(() => updateAfterModelListChange(true)));
 
 		this._register(this.onDidChangeCurrentChatMode(() => {
 			this.accessibilityService.alert(this._currentModeObservable.get().label.get());
@@ -1413,9 +1415,6 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		const ownsPool = !!this._currentSessionType && this.sessionTypeHasOwnModelPool(this._currentSessionType);
 		const hadIncomingModel = !!model.state.get()?.selectedModel;
 		this._modelSelectionController.beginSessionSwitch(chatSessionIsEmpty, ownsPool, hadIncomingModel);
-		// Drop any pending persisted-model wait from a PREVIOUS session so it can't later fire
-		// into this (or a subsequent) session's storage key.
-		this._modelSelectionController.clearAuthoritativeModelWait();
 
 		if (chatSessionIsEmpty) {
 			const persistedState = model.state.get() ? undefined : this._getPersistedEmptyInputState();
@@ -1874,10 +1873,10 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 	 */
 	private preselectModelFromSessionHistory(): void {
 		// Session-history preselection is delayed when extension-provided models
-		// have not arrived yet. Always clear the previous session-history wait
+		// have not arrived yet. Always clear the previous session-history intent
 		// before any early return so a listener captured for another session cannot
 		// later apply its model to the active session.
-		this._modelSelectionController.clearHistoryModelWait();
+		this._modelSelectionController.clearHistoryIntent();
 
 		const sessionModel = this._widget?.viewModel?.model;
 		const sessionResource = sessionModel?.sessionResource;
@@ -1916,9 +1915,9 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		return model ? model : undefined;
 	}
 
-	/** Resets the language model to the location default and cancels any pending persisted-model waiter. */
+	/** Resets the language model to the location default and cancels any pending model-selection intent. */
 	public resetLanguageModelToDefault(): void {
-		this._modelSelectionController.clearAuthoritativeModelWait();
+		this._modelSelectionController.clearIntent();
 		this.setCurrentLanguageModelToDefault();
 	}
 
@@ -2836,7 +2835,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		// move away from the model that will be applied when it appears.
 		if (this._modelSelectionController.restorePerTypeModel) {
 			this.initSelectedModel();
-			if (!this._modelSelectionController.hasAuthoritativeModelWait()) {
+			if (!this._modelSelectionController.hasPendingIntent()) {
 				this.checkModelInSessionPool();
 			}
 		}
