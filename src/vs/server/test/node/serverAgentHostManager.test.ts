@@ -237,6 +237,7 @@ suite('ServerAgentHostManager', () => {
 				code: 17,
 				restartCount: 0,
 				willRestart: true,
+				isError: true,
 			},
 		}]);
 	});
@@ -253,6 +254,7 @@ suite('ServerAgentHostManager', () => {
 				kind: 'startFailed',
 				restartCount: 0,
 				willRestart: true,
+				isError: true,
 			},
 		}]);
 	});
