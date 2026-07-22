@@ -42,6 +42,7 @@ const MODE_SETTING = 'chat.speechToText.mode';
 
 type SpeechToTextSessionEvent = {
 	outcome: 'completed' | 'cancelled' | 'error';
+	surface: string;
 	mode: string;
 	durationMs: number;
 	segments: number;
@@ -50,8 +51,9 @@ type SpeechToTextSessionEvent = {
 };
 type SpeechToTextSessionClassification = {
 	owner: 'meganrogge';
-	comment: 'Tracks usage and reliability of chat-input dictation (speech-to-text).';
+	comment: 'Tracks usage and reliability of built-in on-device dictation (speech-to-text).';
 	outcome: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'How the dictation session ended.' };
+	surface: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Which surface dictated: chat, editor, or terminal.' };
 	mode: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Configured dictation shortcut mode (auto, toggle, or pushToTalk).' };
 	durationMs: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; isMeasurement: true; comment: 'Recording duration in milliseconds.' };
 	segments: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Number of transcript segments returned.' };
@@ -83,6 +85,25 @@ export const enum ChatSpeechToTextState {
 	Transcribing = 'transcribing',
 }
 
+/**
+ * The surface a dictation session was started from. Reported in telemetry so
+ * built-in dictation usage can be attributed to the chat input, an editor, or
+ * the terminal.
+ */
+export type ChatDictationSurface = 'chat' | 'editor' | 'terminal';
+
+/** A live dictation transcript update. */
+export interface IChatDictationTranscript {
+	/** Full cumulative transcript to display. */
+	readonly text: string;
+	/**
+	 * The leading portion of `text` that is finalized (committed): it should be
+	 * rendered without the shimmer. The remainder is the in-progress interim
+	 * tail that keeps shimmering until it is finalized.
+	 */
+	readonly finalizedText: string;
+}
+
 export interface IChatSpeechToTextService {
 	readonly _serviceBrand: undefined;
 
@@ -92,9 +113,10 @@ export interface IChatSpeechToTextService {
 	/**
 	 * Fires with the cumulative transcript while recording, so callers can
 	 * render dictation live as the user speaks. The value grows monotonically
-	 * (finalized utterances plus any in-progress delta).
+	 * (finalized utterances plus any in-progress delta), and carries the
+	 * finalized (non-shimmering) portion of that transcript.
 	 */
-	readonly onDidUpdateTranscript: Event<string>;
+	readonly onDidUpdateTranscript: Event<IChatDictationTranscript>;
 
 	/**
 	 * Whether on-device speech-to-text is available on this platform. Callers
@@ -128,9 +150,10 @@ export interface IChatSpeechToTextService {
 	/**
 	 * Begin capturing microphone audio in the given window and streaming it to
 	 * the on-device transcription model. Rejects if the microphone cannot be
-	 * accessed.
+	 * accessed. `surface` identifies the dictation surface for telemetry
+	 * (defaults to the chat input).
 	 */
-	start(window: Window & typeof globalThis): Promise<void>;
+	start(window: Window & typeof globalThis, surface?: ChatDictationSurface): Promise<void>;
 
 	/**
 	 * Stop capturing, flush the final utterance, and resolve with the complete
@@ -149,7 +172,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private readonly _onDidChangeState = this._register(new Emitter<ChatSpeechToTextState>());
 	readonly onDidChangeState = this._onDidChangeState.event;
 
-	private readonly _onDidUpdateTranscript = this._register(new Emitter<string>());
+	private readonly _onDidUpdateTranscript = this._register(new Emitter<IChatDictationTranscript>());
 	readonly onDidUpdateTranscript = this._onDidUpdateTranscript.event;
 
 	private readonly _onDidChangePreparingModel = this._register(new Emitter<boolean>());
@@ -214,6 +237,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	private _sessionStartMs = 0;
 	private _sessionSegments = 0;
 	private _sessionErrorCode = '';
+	private _sessionSurface: ChatDictationSurface = 'chat';
 
 	// Model-preparation telemetry accumulator. `_prepareStartMs` is non-zero
 	// while a preparation is being tracked, so the terminal Ready/Error status
@@ -276,6 +300,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		const durationMs = Date.now() - this._sessionStartMs;
 		this._telemetryService.publicLog2<SpeechToTextSessionEvent, SpeechToTextSessionClassification>('chatSpeechToText.session', {
 			outcome,
+			surface: this._sessionSurface,
 			mode: this._getDictationMode(),
 			durationMs,
 			segments: this._sessionSegments,
@@ -327,7 +352,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		return [this._finalizedText, this._deltaText].filter(Boolean).join(' ').replace(/\s{2,}/g, ' ').trim();
 	}
 
-	async start(window: Window & typeof globalThis): Promise<void> {
+	async start(window: Window & typeof globalThis, surface: ChatDictationSurface = 'chat'): Promise<void> {
 		if (this._state !== ChatSpeechToTextState.Idle) {
 			return;
 		}
@@ -347,6 +372,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		this._sessionStartMs = Date.now();
 		this._sessionSegments = 0;
 		this._sessionErrorCode = '';
+		this._sessionSurface = surface;
 
 		let stream: MediaStream;
 		try {
@@ -409,7 +435,7 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 			if (!result.isFinal) {
 				this._sessionSegments++;
 			}
-			this._onDidUpdateTranscript.fire(this._transcript);
+			this._onDidUpdateTranscript.fire({ text: this._transcript, finalizedText: result.finalizedText ?? '' });
 		}));
 		const cacheDir = joinPath(this._environmentService.cacheHome, 'chatDictationModels').fsPath;
 		const model = this._getModelId();
