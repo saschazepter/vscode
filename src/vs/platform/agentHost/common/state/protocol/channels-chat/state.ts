@@ -63,6 +63,16 @@ export interface ChatState {
 	 * update the subset on a running chat.
 	 */
 	workingDirectories?: URI[];
+	/**
+	 * The chat's primary working directory — the distinguished root this chat
+	 * centers on. When set, it MUST be one of this chat's effective working
+	 * directories ({@link workingDirectories}, or the session's set when that is
+	 * absent). Present when the agent advertises
+	 * {@link MultipleWorkingDirectoriesCapability.requiresPrimary}; when absent,
+	 * the chat inherits {@link SessionState.primaryWorkingDirectory | the
+	 * session's primary}.
+	 */
+	primaryWorkingDirectory?: URI;
 
 	// ── Conversation contents ──────────────────────────────────────────
 	/** Completed turns */
@@ -135,6 +145,11 @@ export interface ChatSummary {
 	 * See {@link ChatState.workingDirectories} for the full semantics.
 	 */
 	workingDirectories?: URI[];
+	/**
+	 * The chat's primary working directory.
+	 * See {@link ChatState.primaryWorkingDirectory} for the full semantics.
+	 */
+	primaryWorkingDirectory?: URI;
 }
 
 /**

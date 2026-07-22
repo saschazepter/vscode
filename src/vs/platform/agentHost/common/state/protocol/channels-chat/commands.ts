@@ -51,6 +51,16 @@ export interface CreateChatParams extends BaseParams {
 	 * {@link AgentCapabilities.multipleWorkingDirectories}.
 	 */
 	workingDirectories?: URI[];
+	/**
+	 * The chat's primary working directory — the distinguished root this chat
+	 * centers on. When set, it MUST be one of the chat's effective working
+	 * directories ({@link workingDirectories}, or the session's set when that is
+	 * omitted). A client SHOULD supply this when the agent advertises
+	 * {@link MultipleWorkingDirectoriesCapability.requiresPrimary} and the chat
+	 * narrows to a subset that excludes the session's primary; when absent, the
+	 * chat inherits the session's primary. Ignored for forked chats.
+	 */
+	primaryWorkingDirectory?: URI;
 }
 
 // ─── disposeChat ─────────────────────────────────────────────────────────────

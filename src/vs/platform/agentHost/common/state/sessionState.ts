@@ -618,6 +618,7 @@ export function createSessionState(summary: SessionSummary): SessionState {
 	if (summary.activity !== undefined) { state.activity = summary.activity; }
 	if (summary.project !== undefined) { state.project = summary.project; }
 	if (summary.workingDirectories !== undefined) { state.workingDirectories = summary.workingDirectories; }
+	if (summary.primaryWorkingDirectory !== undefined) { state.primaryWorkingDirectory = summary.primaryWorkingDirectory; }
 	if (summary.annotations !== undefined) { state.annotations = summary.annotations; }
 	if (summary._meta !== undefined) { state._meta = summary._meta; }
 	return state;
@@ -638,6 +639,7 @@ export function createChatState(summary: ChatSummary): ChatState {
 		origin: summary.origin,
 		interactivity: summary.interactivity,
 		workingDirectories: summary.workingDirectories,
+		primaryWorkingDirectory: summary.primaryWorkingDirectory,
 		turns: [],
 		activeTurn: undefined,
 	};
@@ -659,13 +661,13 @@ export function createDefaultChatSummary(session: SessionSummary, chatUri: Proto
 		origin: { kind: ChatOriginKind.User },
 	};
 	if (session.activity !== undefined) { summary.activity = session.activity; }
-	// `workingDirectories` is deliberately NOT copied: per the protocol it is a
-	// per-chat SUBSET override and, when absent, the chat inherits the session's
-	// full set of working directories (see `mergeSessionWithDefaultChat`).
-	// Seeding it here would denormalize the session default onto every chat as a
-	// fake override, which then goes stale when the session's working
-	// directories are resolved later (e.g. a worktree resolved at
-	// materialization).
+	// `workingDirectories` (and `primaryWorkingDirectory`) is deliberately NOT
+	// copied: per the protocol it is a per-chat SUBSET override and, when absent,
+	// the chat inherits the session's full set of working directories and its
+	// primary (see `mergeSessionWithDefaultChat`). Seeding it here would
+	// denormalize the session default onto every chat as a fake override, which
+	// then goes stale when the session's working directories are resolved later
+	// (e.g. a worktree resolved at materialization).
 	return summary;
 }
 
@@ -685,6 +687,7 @@ export function chatSummaryFromState(state: ChatState): ChatSummary {
 	if (state.origin !== undefined) { summary.origin = state.origin; }
 	if (state.interactivity !== undefined) { summary.interactivity = state.interactivity; }
 	if (state.workingDirectories !== undefined) { summary.workingDirectories = state.workingDirectories; }
+	if (state.primaryWorkingDirectory !== undefined) { summary.primaryWorkingDirectory = state.primaryWorkingDirectory; }
 	return summary;
 }
 
@@ -883,13 +886,14 @@ export function isAhpChatChannel(uri: string): boolean {
  *
  * The protocol moved turns and pending state off the session and onto a
  * per-chat channel, and lets a chat override the session's working directories
- * with a subset (e.g. {@link ChatState.workingDirectories}). This composite
+ * with a subset (e.g. {@link ChatState.workingDirectories}) and pick its own
+ * {@link ChatState.primaryWorkingDirectory | primary}. This composite
  * recombines the session with one of its chats — default or peer — so consumers
  * read the chat's effective context and conversation through one object without
  * walking back to the session to re-derive shared state. The inherited
- * {@link SessionState.workingDirectories} carries the chat's *effective*
- * working directories (its own subset override when present, else the session's
- * full set).
+ * {@link SessionState.workingDirectories} / {@link SessionState.primaryWorkingDirectory}
+ * carry the chat's *effective* working directories and primary (its own
+ * override when present, else the session's).
  */
 export interface ISessionWithDefaultChat extends SessionState {
 	/** Completed turns of this chat. */
@@ -916,6 +920,7 @@ export function mergeSessionWithDefaultChat(session: SessionState, chat: ChatSta
 	return {
 		...session,
 		workingDirectories: chat?.workingDirectories ?? session.workingDirectories,
+		primaryWorkingDirectory: chat?.primaryWorkingDirectory ?? session.primaryWorkingDirectory,
 		turns: chat?.turns ?? [],
 		activeTurn: chat?.activeTurn,
 		steeringMessage: chat?.steeringMessage,
