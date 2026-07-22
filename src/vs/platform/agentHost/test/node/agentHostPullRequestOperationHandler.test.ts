@@ -12,8 +12,9 @@ import { NullLogService } from '../../../log/common/log.js';
 import { GITHUB_COPILOT_PROTECTED_RESOURCE, GITHUB_REPO_PROTECTED_RESOURCE, type IAgentService } from '../../common/agentService.js';
 import { buildSessionChangesetUri } from '../../common/changesetUri.js';
 import { withSessionGitHubState, withSessionGitState, type ISessionFileDiff, MessageKind, ResponsePartKind, SessionStatus, TurnState, type Turn } from '../../common/state/sessionState.js';
-import type { IAgentHostGitService, IPushOptions } from '../../common/agentHostGitService.js';
+import type { IAgentHostGitService, IDefaultBranch, IPushOptions } from '../../common/agentHostGitService.js';
 import { AgentHostPullRequestOperationHandler } from '../../node/agentHostPullRequestOperationHandler.js';
+import { createTestGitHubEndpointService } from './testGitHubEndpointService.js';
 import { AgentHostStateManager } from '../../node/agentHostStateManager.js';
 import type { AutoMergeMethod, CreatedPullRequest, IAgentHostOctoKitService } from '../../node/shared/agentHostOctoKitService.js';
 import type { ICopilotApiService, ICopilotApiServiceRequestOptions, ICopilotUtilityChatCompletionRequest } from '../../node/shared/copilotApiService.js';
@@ -55,11 +56,12 @@ class TestGitService implements IAgentHostGitService {
 	branchChanges: readonly ISessionFileDiff[] | undefined = [{ after: { uri: 'file:///repo/file.ts', content: { uri: 'file:///repo/file.ts' } } }];
 
 	async getCurrentBranch(): Promise<string | undefined> { return 'feature/test'; }
-	async getDefaultBranch(): Promise<string | undefined> { return 'main'; }
+	async getDefaultBranch(): Promise<IDefaultBranch | undefined> { return { name: 'main', startPoint: 'main' }; }
 	async getBranches(): Promise<string[]> { return []; }
 	async getRepositoryRoot(): Promise<URI | undefined> { return URI.file('/repo'); }
 	async getWorktreeRoots(): Promise<URI[]> { return []; }
 	async addWorktree(): Promise<void> { }
+	async copyWorktreeIncludeFiles(): Promise<void> { }
 	async addExistingWorktree(): Promise<void> { }
 	async removeWorktree(): Promise<void> { }
 	async branchExists(): Promise<boolean> { return false; }
@@ -95,6 +97,10 @@ class TestGitService implements IAgentHostGitService {
 	async overlayPathIntoTree(): Promise<string | undefined> { return undefined; }
 	async diffTreePaths(): Promise<string[] | undefined> { return undefined; }
 	async computeFileDiffsBetweenRefs(): Promise<readonly ISessionFileDiff[] | undefined> { return undefined; }
+	async getFetchRemoteUrls(): Promise<undefined> { return undefined; }
+	async getUntrackedPaths(): Promise<[]> { return []; }
+	async getBranchDiffSafetyInfo(): Promise<undefined> { return undefined; }
+	async getDiffPatchBetweenRefs(): Promise<undefined> { return undefined; }
 }
 
 class TestOctoKitService implements IAgentHostOctoKitService {
@@ -189,7 +195,7 @@ function setup(disposables: Pick<DisposableStore, 'add'>, gitService: TestGitSer
 				return state;
 			},
 			event => createdEvents.push(`${event.sessionKey}:${event.pullRequestUrl}`),
-			createAgentService(options?.withCopilotToken), gitService, octoKitService, copilotApiService, new NullLogService()),
+			createAgentService(options?.withCopilotToken), gitService, octoKitService, createTestGitHubEndpointService(), copilotApiService, new NullLogService()),
 		session,
 		createdEvents,
 		copilotApiService,
