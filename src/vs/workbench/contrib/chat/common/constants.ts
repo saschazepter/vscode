@@ -72,7 +72,6 @@ export enum ChatConfiguration {
 	ChatViewProgressBadgeEnabled = 'chat.viewProgressBadge.enabled',
 	ChatContextUsageEnabled = 'chat.contextUsage.enabled',
 	Verbose = 'chat.verbose',
-	ChatPersistentProgressEnabled = 'chat.persistentProgress.enabled',
 	ProgressBorder = 'chat.progressBorder.enabled',
 	SubagentToolCustomAgents = 'chat.customAgentInSubagent.enabled',
 	SubagentsAllowInvocationsFromSubagents = 'chat.subagents.allowInvocationsFromSubagents',
@@ -91,7 +90,7 @@ export enum ChatConfiguration {
 	AutopilotAdvancedEnabled = 'chat.autopilot.advanced.enabled',
 	PlanReviewInlineEditorEnabled = 'chat.planReview.inlineEditor.enabled',
 	DefaultPermissionLevel = 'chat.permissions.default',
-	AutoApprovalsEnabled = 'chat.experimental.autoApprovals.enabled',
+	AssistedPermissionsEnabled = 'chat.assistedPermissions.enabled',
 	PermissionsSandboxToggleEnabled = 'chat.experimental.permissionsSandboxToggle.enabled',
 	DefaultConfiguration = 'chat.defaultConfiguration',
 	DefaultModel = 'chat.defaultModel',
@@ -157,11 +156,33 @@ export function isChatPermissionLevel(level: unknown | undefined): level is Chat
  */
 export type AgentSessionMode = 'interactive' | 'plan' | 'autopilot';
 
+/** Approval values exposed by the `chat.defaultConfiguration` setting. */
+export enum ChatDefaultPermissionLevel {
+	Default = 'default',
+	Assisted = 'assisted',
+	AllowAll = 'allowAll',
+}
+
 export interface IChatDefaultConfiguration {
 	/** Starting agent mode: `interactive` / `plan` / `autopilot`. */
 	readonly mode?: AgentSessionMode;
-	/** Starting approval level: `default` / `assisted` / `autoApprove`. */
-	readonly approvals?: ChatPermissionLevel.Default | ChatPermissionLevel.Assisted | ChatPermissionLevel.AutoApprove;
+	/** Starting approval level: `default` / `assisted` / `allowAll`. */
+	readonly approvals?: ChatDefaultPermissionLevel;
+}
+
+/** Maps a default-configuration value to the internal Agent Host permission level. */
+export function getChatPermissionLevelFromDefaultConfiguration(value: unknown): ChatPermissionLevel | undefined {
+	switch (value) {
+		case ChatDefaultPermissionLevel.Default:
+			return ChatPermissionLevel.Default;
+		case ChatDefaultPermissionLevel.Assisted:
+			return ChatPermissionLevel.Assisted;
+		case ChatDefaultPermissionLevel.AllowAll:
+		case ChatPermissionLevel.AutoApprove:
+			return ChatPermissionLevel.AutoApprove;
+		default:
+			return undefined;
+	}
 }
 
 /**
@@ -264,11 +285,10 @@ export function isSupportedChatFileScheme(accessor: ServicesAccessor, scheme: st
  * Returns the effective default session type for a new chat in the VS Code
  * editor window.
  *
- * When the agent host is enabled and `chat.defaultToCopilotHarness` is opted
- * in, Agent Host Copilot CLI is the default so that first-time users land on
- * Copilot instead of the local harness. Otherwise it falls back to
- * {@link localChatSessionType} when local is enabled, or to the first visible
- * non-local provider.
+ * Virtual workspaces always default to {@link localChatSessionType}. Otherwise,
+ * when the agent host is enabled and `chat.defaultToCopilotHarness` is opted in,
+ * Agent Host Copilot CLI is the default. It falls back to the local harness
+ * when enabled, or to the first visible non-local provider.
  */
 export function getComputedDefaultSessionType(
 	configurationService: IConfigurationService,
@@ -276,6 +296,10 @@ export function getComputedDefaultSessionType(
 	workspace: IWorkspace,
 	agentHostEnabled: boolean
 ): string {
+	if (isVirtualWorkspace(workspace)) {
+		return localChatSessionType;
+	}
+
 	if (agentHostEnabled && configurationService.getValue<boolean>(ChatConfiguration.DefaultToCopilotHarness)) {
 		return SessionType.AgentHostCopilot;
 	}

@@ -19,15 +19,15 @@ import { Menus } from '../../../browser/menus.js';
 import { IsPhoneLayoutContext, SessionUsesCombinedConfigPickerContext } from '../../../common/contextkeys.js';
 import { ISessionContext } from '../../../services/sessions/browser/sessionContext.js';
 import { SessionStatus } from '../../../services/sessions/common/session.js';
-import { ISessionModelSelectionModel } from './modelPickerModel.js';
+import { ISessionModelSelectionModel } from './sessionModelSelectionModel.js';
 import { INewChatModelPickerService } from './newChatModelPicker.js';
 import { reportNewChatPickerClosed } from './newChatPickerTelemetry.js';
 
 /**
  * The sessions-core model picker. Unlike the previous per-provider pickers,
  * this single widget reads the model list from the active session's provider
- * via {@link ISessionsProvider.getModelsSnapshot}, remembers the last used model per
- * provider per session type, and applies the selection through the existing
+ * via {@link ISessionsProvider.getModelsSnapshot}, remembers explicit model choices per
+ * shared or targeted model pool, and applies the selection through the existing
  * {@link ISessionsProvider.setModel} API. It reuses the shared workbench
  * {@link ModelPickerActionItem} so the dropdown looks and behaves like the
  * other chat model pickers.
@@ -67,11 +67,10 @@ export class ModelPicker extends Disposable {
 				}
 			},
 			getModels: () => [...this._selectionModel.state.get().models],
-			useGroupedModelPicker: () => this._selectionModel.state.get().options.useGroupedModelPicker,
-			showManageModelsAction: () => this._selectionModel.state.get().options.showManageModelsAction,
-			showUnavailableFeatured: () => this._selectionModel.state.get().options.showUnavailableFeatured,
-			showFeatured: () => this._selectionModel.state.get().options.showFeatured,
-			showAutoModel: () => this._selectionModel.state.get().options.showAutoModel,
+			getPresentationOptions: () => ({
+				...this._selectionModel.state.get().options,
+				useGenericModelIcon: false,
+			}),
 			isCacheWarm: () => {
 				const session = this._sessionContext.session.get();
 				// The session's prompt cache is warm once its first request has

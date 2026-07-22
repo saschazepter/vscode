@@ -31,6 +31,10 @@ export interface IVoiceTranscription {
 	readonly text: string;
 	readonly status?: 'partial' | 'final';
 	readonly committed?: string;
+	/** Client capture turn identifier translated from the wire's `turn_id`. */
+	readonly turnId?: string;
+	/** Monotonically increasing backend revision within a scoped turn. */
+	readonly revision?: number;
 }
 
 export interface IVoiceAudioResponse {
@@ -39,6 +43,8 @@ export interface IVoiceAudioResponse {
 	readonly isFinal: boolean;
 	readonly codingSessionId?: string;
 	readonly transcript?: string;
+	/** Backend turn identifier from the wire's `turn_id`. */
+	readonly turnId?: string;
 	/**
 	 * Stable id correlating all chunks of ONE narration/response stream, echoed
 	 * by the backend from the `narration_id` the client sent on
@@ -204,7 +210,7 @@ export interface IVoiceClientService {
 	disconnect(): void;
 
 	// --- Outbound messages ---
-	sendPttStart(turnId: string): void;
+	sendPttStart(turnId: string, passive?: boolean): void;
 	sendPttAudioChunk(audio: string): void;
 	sendPttEnd(): void;
 	/**

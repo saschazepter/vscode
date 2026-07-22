@@ -51,7 +51,7 @@ import { IChatModel, IChatModelInputState } from '../../../common/model/chatMode
 import { CHAT_PROVIDER_ID } from '../../../common/participants/chatParticipantContribTypes.js';
 import { IChatModelReference, IChatService } from '../../../common/chatService/chatService.js';
 import { IChatSessionsService, localChatSessionType } from '../../../common/chatSessionsService.js';
-import { LocalChatSessionUri, getChatSessionType } from '../../../common/model/chatUri.js';
+import { LocalChatSessionUri, getChatSessionType, isUntitledChatSession } from '../../../common/model/chatUri.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, getDefaultNewChatSessionResource, getDefaultNewChatSessionType } from '../../../common/constants.js';
 import { AgentSessionsControl } from '../../agentSessions/agentSessionsControl.js';
 import { ACTION_ID_NEW_CHAT } from '../../actions/chatActions.js';
@@ -75,7 +75,8 @@ import { IHostService } from '../../../../../services/host/browser/host.js';
 import { IMicCaptureService } from '../../voiceClient/micCaptureService.js';
 import { ITtsPlaybackService } from '../../voiceClient/ttsPlaybackService.js';
 import { IVoiceSessionController } from '../../voiceClient/voiceSessionController.js';
-import { computeVoiceGlowStyle, readVoiceGlowIntensity } from '../../voiceClient/voiceGlow.js';
+import { computeVoiceGlowStyle, isGlowingVoiceState, readVoiceGlowIntensity } from '../../voiceClient/voiceGlow.js';
+import { combineVoiceInput } from '../../voiceClient/voiceInputUtils.js';
 import { IAgentTitleBarStatusService } from '../../agentSessions/experiments/agentTitleBarStatusService.js';
 import { IVoicePlaybackService } from '../../../common/voicePlaybackService.js';
 import { IWorkbenchEnvironmentService } from '../../../../../services/environment/common/environmentService.js';
@@ -147,7 +148,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		@IMicCaptureService private readonly micCaptureService: IMicCaptureService,
 		@ITtsPlaybackService private readonly ttsPlaybackService: ITtsPlaybackService,
 		@IVoiceSessionController private readonly voiceSessionController: IVoiceSessionController,
-		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
+		@IChatWidgetService _chatWidgetService: IChatWidgetService,
 		@IAgentTitleBarStatusService _agentTitleBarStatusService: IAgentTitleBarStatusService,
 		@IVoicePlaybackService _voicePlaybackService: IVoicePlaybackService,
 		@IWorkbenchEnvironmentService _workbenchEnvironmentService: IWorkbenchEnvironmentService,
@@ -397,14 +398,17 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			// Voice command bridge — lets the VoiceSessionController reach into the chat widget
 			this._voiceBarDisposables.add(CommandsRegistry.registerCommand('_chat.voice.acceptInput', (accessor, text: string) => {
 				const chatWidgetService = accessor.get(IChatWidgetService);
-				const widget = chatWidgetService.lastFocusedWidget ?? this._widget;
+				// Ignore lastFocusedWidget when its input no longer has focus because blur does not clear it.
+				const focusedWidget = chatWidgetService.lastFocusedWidget;
+				const widget = focusedWidget?.hasInputFocus() ? focusedWidget : this._widget;
 				if (text && widget?.viewModel) {
 					if (widget.viewModel.editing) {
 						// When editing an old message, populate the active input
 						// editor so the user can review before submitting.
 						widget.input.setValue(text, false);
 					} else {
-						widget.acceptInput(text, { preserveFocus: true });
+						// Preserve any text the user already typed in the input.
+						widget.acceptInput(combineVoiceInput(widget.getInput(), text), { preserveFocus: true });
 					}
 				}
 			}));
@@ -443,37 +447,38 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		const glowDataArrayRef: { value: Uint8Array | undefined } = { value: undefined };
 		const win = getWindow(inputContainerEl);
 		let lastGlowTarget: HTMLElement | undefined;
-		// Lock the glow target to whichever widget was focused when voice connected.
-		// This prevents confirmations/programmatic focus shifts from moving the glow.
-		let lockedGlowWidget: HTMLElement | undefined;
-		const getActiveInputContainer = (): HTMLElement => {
-			if (lockedGlowWidget) {
-				return lockedGlowWidget;
-			}
-			const focused = this.chatWidgetService.lastFocusedWidget;
-			return focused?.input?.inputContainerElement ?? inputContainerEl;
-		};
+		// The session this pane's voice UI belongs to, kept in sync by the
+		// transcript ownership autorun below. The glow only renders on the input
+		// of the session voice is actually bound to, so it never lingers on a
+		// background/last-focused session in another split or window (#8514).
+		let voiceUiOwner: URI | undefined;
 		const startGlowAnimation = () => {
 			if (animFrameId !== undefined) { return; }
 			const animate = () => {
 				animFrameId = win.requestAnimationFrame(animate);
 				const connected = this.voiceSessionController.isConnected.get();
 				const voiceState = this.voiceSessionController.voiceState.get();
-				const glowActive = connected && (voiceState === 'listening' || voiceState === 'speaking');
-				const target = getActiveInputContainer();
+				// Only glow the input of the session voice is bound to. Mirrors the
+				// transcript overlay's ownership test (see below) so the glow and
+				// the "Listening..."/transcript overlay always render on the same
+				// pane and never on a different split/window (#8514).
+				const currentSession = this._currentSessionResource.get();
+				const isOwner = !voiceUiOwner || !currentSession || isEqual(voiceUiOwner, currentSession);
+				const glowActive = connected && isGlowingVoiceState(voiceState) && isOwner;
+				const target = inputContainerEl;
 
 				// If the target changed, clear styling on the old one
 				if (lastGlowTarget && lastGlowTarget !== target) {
 					lastGlowTarget.style.borderColor = '';
 					lastGlowTarget.style.boxShadow = '';
-					lastGlowTarget.classList.remove('voice-active', 'voice-listening');
+					lastGlowTarget.classList.remove('voice-active', 'voice-listening', 'voice-speaking');
 				}
 				lastGlowTarget = target;
 
 				if (!glowActive) {
 					target.style.borderColor = '';
 					target.style.boxShadow = '';
-					target.classList.remove('voice-active', 'voice-listening');
+					target.classList.remove('voice-active', 'voice-listening', 'voice-speaking');
 					return;
 				}
 
@@ -489,6 +494,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 				target.style.boxShadow = boxShadow;
 				target.classList.add('voice-active');
 				target.classList.toggle('voice-listening', voiceState === 'listening');
+				target.classList.toggle('voice-speaking', voiceState === 'speaking');
 			};
 			animFrameId = win.requestAnimationFrame(animate);
 		};
@@ -500,24 +506,17 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			const target = lastGlowTarget ?? inputContainerEl;
 			target.style.borderColor = '';
 			target.style.boxShadow = '';
-			target.classList.remove('voice-active', 'voice-listening');
+			target.classList.remove('voice-active', 'voice-listening', 'voice-speaking');
 			lastGlowTarget = undefined;
 		};
-
-		// Lock glow target on connect, unlock on disconnect
-		this._register(autorun(reader => {
-			const connected = this.voiceSessionController.isConnected.read(reader);
-			if (connected && !lockedGlowWidget) {
-				lockedGlowWidget = this.chatWidgetService.lastFocusedWidget?.input?.inputContainerElement ?? inputContainerEl;
-			} else if (!connected) {
-				lockedGlowWidget = undefined;
-			}
-		}));
 
 		this._register(autorun(reader => {
 			const connected = this.voiceSessionController.isConnected.read(reader);
 			const voiceState = this.voiceSessionController.voiceState.read(reader);
-			if (connected && (voiceState === 'listening' || voiceState === 'speaking')) {
+			// Only run the per-frame glow loop for states that actually render a
+			// glow. Idle renders none, so keeping the loop alive then would burn a
+			// requestAnimationFrame callback every frame for nothing.
+			if (connected && isGlowingVoiceState(voiceState)) {
 				startGlowAnimation();
 			} else {
 				stopGlowAnimation();
@@ -529,8 +528,10 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 		// session the user is dictating into (the explicit target session, or the
 		// focused session when dictation began) and is only shown in that
 		// session's view. Switching focus to a different session hides the
-		// transcript here; switching while actively dictating also stops
-		// transcription so it isn't misrouted to the newly focused session.
+		// transcript here; switching to another existing session stops
+		// transcription so it isn't misrouted there. Anything already dictated is
+		// submitted to the original session; an idle hands-free turn may instead
+		// follow an untitled "New Chat" session before any dictation starts.
 		let listeningSession: URI | undefined;
 		let ownerSession: URI | undefined;
 		this._register(autorun(reader => {
@@ -545,6 +546,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			if (!connected) {
 				listeningSession = undefined;
 				ownerSession = undefined;
+				voiceUiOwner = undefined;
 				transcriptOverlayNode.style.display = 'none';
 				transcriptOverlayNode.classList.remove('has-transcript');
 				return;
@@ -556,18 +558,23 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 					listeningSession = targetSession ?? currentSession;
 					ownerSession = listeningSession;
 				} else if (!targetSession && currentSession && !isEqual(currentSession, listeningSession)) {
-					// User switched to a different session while listening. Only
-					// stop when there's dictation in progress, so it isn't
-					// misrouted to the newly focused session. If nothing has been
-					// recorded yet (e.g. clicking "New Chat" while idly listening
-					// hands-free), keep listening and just follow the new session.
+					const dictationSession = listeningSession;
 					const activelyDictating = turns.some(t => t.speaker === 'user' && t.isPartial && t.text.trim().length > 0);
 					if (activelyDictating) {
-						this.voiceSessionController.stopListening();
+						// The user has already spoken — submit their words to the
+						// session they were dictating into rather than losing them
+						// or misrouting to the newly focused session.
+						this.voiceSessionController.finishListeningAndSubmitTo(dictationSession);
 						listeningSession = undefined;
-					} else {
+					} else if (isUntitledChatSession(currentSession)) {
+						// Idle hands-free listen following into a fresh New Chat.
 						listeningSession = currentSession;
 						ownerSession = currentSession;
+					} else {
+						// Idle listen and the user switched to another existing
+						// session before saying anything — nothing to submit.
+						this.voiceSessionController.discardListening();
+						listeningSession = undefined;
 					}
 				}
 			} else {
@@ -577,6 +584,7 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 
 			// Don't show a transcript that belongs to a different session here.
 			const effectiveOwner = targetSession ?? ownerSession;
+			voiceUiOwner = effectiveOwner;
 			if (effectiveOwner && currentSession && !isEqual(effectiveOwner, currentSession)) {
 				transcriptOverlayNode.style.display = 'none';
 				transcriptOverlayNode.classList.remove('has-transcript');
@@ -596,6 +604,19 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 					listening.textContent = localize('voiceMode.listening', "Listening...");
 					transcriptOverlay.append(listening);
 					transcriptScrollable.scanDomNode();
+				} else if (!showTranscript && voiceState === 'speaking') {
+					// Transcript is disabled: hint that the user can interrupt playback.
+					transcriptOverlayNode.style.display = '';
+					transcriptOverlayNode.classList.remove('has-transcript');
+					transcriptOverlay.replaceChildren();
+					const hint = $('span.partial');
+					const kb = this.keybindingService.lookupKeybinding('agentsVoice.pushToTalk');
+					const kbLabel = kb?.getLabel();
+					hint.textContent = kbLabel
+						? localize('voiceMode.bargeInHint', "Press {0} to barge in", kbLabel)
+						: localize('voiceMode.bargeInHintNoKb', "Speak to barge in");
+					transcriptOverlay.append(hint);
+					transcriptScrollable.scanDomNode();
 				} else if (voiceState === 'idle' && visible.length === 0 && showTranscript && !handsFree) {
 					transcriptOverlayNode.style.display = '';
 					transcriptOverlayNode.classList.remove('has-transcript');
@@ -604,8 +625,8 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 					const kb = this.keybindingService.lookupKeybinding('agentsVoice.pushToTalk');
 					const kbLabel = kb?.getLabel();
 					hint.textContent = kbLabel
-						? localize('voiceMode.pttHint', "Press {0} to talk", kbLabel)
-						: localize('voiceMode.clickMicHint', "Click voice mode to talk");
+						? localize('voiceMode.pttOrBargeInHint', "Press {0} to talk or barge in", kbLabel)
+						: localize('voiceMode.clickMicOrBargeInHint', "Click voice mode to talk or barge in");
 					transcriptOverlay.append(hint);
 					transcriptScrollable.scanDomNode();
 				} else {

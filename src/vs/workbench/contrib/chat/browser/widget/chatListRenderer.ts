@@ -157,6 +157,7 @@ export interface IChatListItemTemplate {
 	readonly titleToolbar?: MenuWorkbenchToolBar;
 	readonly header?: HTMLElement;
 	readonly footerToolbar: MenuWorkbenchToolBar;
+	readonly footerToolbarContainer: HTMLElement;
 	readonly footerDetailsContainer: HTMLElement;
 	readonly avatarContainer: HTMLElement;
 	readonly username: HTMLElement;
@@ -233,6 +234,60 @@ interface IItemHeightChangeParams {
 
 export function shouldScheduleInitialHeightChange(normalizedHeight: number, allocatedHeight: number | undefined): boolean {
 	return typeof allocatedHeight !== 'number' || normalizedHeight > allocatedHeight;
+}
+
+/** How a freshly measured row height should be reconciled against the tree's known height. */
+export type ChatItemHeightUpdateKind = 'none' | 'fire' | 'scheduleInitial' | 'deferReMeasure';
+
+export interface IChatItemHeightUpdate {
+	/** Value to store back into the element's `currentRenderedHeight`. */
+	readonly nextRenderedHeight: number | undefined;
+	/** Whether/how to notify the tree of the new height. */
+	readonly kind: ChatItemHeightUpdateKind;
+	/** The height to notify with (meaningful when `kind` is `fire` or `scheduleInitial`). */
+	readonly height: number;
+}
+
+/**
+ * Decide how a freshly measured, normalized row height should be reconciled against the height
+ * the tree currently knows about (`currentRenderedHeight`).
+ *
+ * `isBeingRendered` is `true` when the measurement arrives *synchronously* during the tree's
+ * `renderElement` call; in that case the tree must not be notified re-entrantly.
+ *
+ * See https://github.com/microsoft/vscode/issues/326952: when notification is suppressed,
+ * `currentRenderedHeight` must remain unchanged so an identical deferred measurement is not
+ * deduplicated before it reaches the tree.
+ */
+export function reconcileChatItemHeight(
+	normalizedHeight: number,
+	currentRenderedHeight: number | undefined,
+	isBeingRendered: boolean,
+	allocatedHeight: number | undefined,
+): IChatItemHeightUpdate {
+	if (normalizedHeight === currentRenderedHeight) {
+		return { nextRenderedHeight: currentRenderedHeight, kind: 'none', height: normalizedHeight };
+	}
+
+	if (isBeingRendered) {
+		// Suppress the re-entrant notification and DO NOT advance `currentRenderedHeight` (the tree
+		// was never told). Schedule a deferred re-measure so the height reaches the tree once this
+		// row is done rendering, instead of relying on a later async measurement that could be
+		// deduped by the "unchanged" check above.
+		return { nextRenderedHeight: currentRenderedHeight, kind: 'deferReMeasure', height: normalizedHeight };
+	}
+
+	if (typeof currentRenderedHeight === 'number') {
+		return { nextRenderedHeight: normalizedHeight, kind: 'fire', height: normalizedHeight };
+	}
+
+	// First measurements that already fit are just initialization. Only schedule a first update
+	// when the row would otherwise clip newly rendered content.
+	if (!shouldScheduleInitialHeightChange(normalizedHeight, allocatedHeight)) {
+		return { nextRenderedHeight: normalizedHeight, kind: 'none', height: normalizedHeight };
+	}
+
+	return { nextRenderedHeight: normalizedHeight, kind: 'scheduleInitial', height: normalizedHeight };
 }
 
 export function renderChatResponseDetails(container: HTMLElement, details: string | undefined, completedAt: number | undefined, elapsedMs: number | undefined, verbose: boolean): HTMLElement | undefined {
@@ -532,32 +587,33 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}
 
 		const normalizedHeight = Math.ceil(height);
-		if (normalizedHeight === template.currentElement.currentRenderedHeight) {
-			return;
-		}
+		const element = template.currentElement;
+		const update = reconcileChatItemHeight(
+			normalizedHeight,
+			element.currentRenderedHeight,
+			element === this._elementBeingRendered,
+			template.allocatedHeight,
+		);
+		element.currentRenderedHeight = update.nextRenderedHeight;
 
-		const originalStoredHeight = template.currentElement.currentRenderedHeight;
-		template.currentElement.currentRenderedHeight = normalizedHeight;
-		if (template.currentElement === this._elementBeingRendered) {
-			return;
-		}
-
-		if (typeof originalStoredHeight === 'number') {
-			this._onDidChangeItemHeight.fire({ element: template.currentElement, height: normalizedHeight });
-		} else {
-			// First measurements that already fit are just initialization. Only schedule
-			// a first update when the row would otherwise clip newly rendered content.
-			if (!shouldScheduleInitialHeightChange(normalizedHeight, template.allocatedHeight)) {
-				return;
-			}
-
-			const element = template.currentElement;
-			const scheduledHeight = normalizedHeight;
+		if (update.kind === 'fire') {
+			this._onDidChangeItemHeight.fire({ element, height: update.height });
+		} else if (update.kind === 'scheduleInitial') {
+			const scheduledHeight = update.height;
 			dom.scheduleAtNextAnimationFrame(dom.getWindow(template.rowContainer), () => {
 				if (template.currentElement !== element || element.currentRenderedHeight !== scheduledHeight) {
 					return;
 				}
 				this._onDidChangeItemHeight.fire({ element, height: scheduledHeight });
+			});
+		} else if (update.kind === 'deferReMeasure') {
+			// The measurement arrived synchronously during this row's render. Re-measure on the
+			// next frame (once the render pass is over) so the grown height reliably reaches the
+			// tree without a re-entrant notification.
+			dom.scheduleAtNextAnimationFrame(dom.getWindow(template.rowContainer), () => {
+				if (template.currentElement === element && element !== this._elementBeingRendered) {
+					this.fireItemHeightChange(template);
+				}
 			});
 		}
 	}
@@ -837,7 +893,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		}));
 		const connectionObserver = document.createElement('connection-observer') as dom.ConnectionObserverElement;
 		dom.append(container, connectionObserver);
-		const template: IChatListItemTemplate = { header, avatarContainer, requestHover, username, detail, value, rowContainer, elementDisposables, templateDisposables, contextKeyService, instantiationService: scopedInstantiationService, agentHover, titleToolbar, footerToolbar, footerDetailsContainer, disabledOverlay, checkpointToolbar, checkpointRestoreToolbar, checkpointContainer, checkpointRestoreContainer };
+		const template: IChatListItemTemplate = { header, avatarContainer, requestHover, username, detail, value, rowContainer, elementDisposables, templateDisposables, contextKeyService, instantiationService: scopedInstantiationService, agentHover, titleToolbar, footerToolbar, footerToolbarContainer, footerDetailsContainer, disabledOverlay, checkpointToolbar, checkpointRestoreToolbar, checkpointContainer, checkpointRestoreContainer };
 		this.templateDataByRow.set(rowContainer, template);
 
 		connectionObserver.onDidDisconnect = () => {
@@ -1117,8 +1173,18 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 				reqData?.checkpointContainer.classList.toggle('group-hovered', hovered);
 				resData?.rowContainer.classList.toggle('group-hovered', hovered);
 			};
-			templateData.elementDisposables.add(dom.addDisposableListener(templateData.rowContainer, dom.EventType.MOUSE_ENTER, () => setGroupHover(true)));
-			templateData.elementDisposables.add(dom.addDisposableListener(templateData.rowContainer, dom.EventType.MOUSE_LEAVE, () => setGroupHover(false)));
+			const hoverTargets = isResponseVM(element)
+				? [templateData.value, templateData.footerToolbarContainer]
+				: [templateData.rowContainer];
+			const isHoverTarget = (target: EventTarget | null) => dom.isHTMLElement(target) && hoverTargets.some(hoverTarget => hoverTarget.contains(target));
+			for (const hoverTarget of hoverTargets) {
+				templateData.elementDisposables.add(dom.addDisposableListener(hoverTarget, dom.EventType.MOUSE_ENTER, () => setGroupHover(true)));
+				templateData.elementDisposables.add(dom.addDisposableListener(hoverTarget, dom.EventType.MOUSE_LEAVE, e => {
+					if (!isHoverTarget(e.relatedTarget)) {
+						setGroupHover(false);
+					}
+				}));
+			}
 			templateData.elementDisposables.add(toDisposable(() => setGroupHover(false)));
 		}
 
@@ -1378,7 +1444,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	}
 
 	private shouldShowWorkingProgress(element: IChatResponseViewModel, partsToRender: IChatRendererContent[], moreContentAvailable: boolean, templateData: IChatListItemTemplate): IChatWorkingProgress | undefined {
-		if (element.agentOrSlashCommandDetected || this.rendererOptions.renderStyle === 'minimal') {
+		if (element.agentOrSlashCommandDetected || this.rendererOptions.renderStyle === 'minimal' || element.isComplete || !checkModeOption(this.delegate.currentChatMode(), this.rendererOptions.progressMessageAtBottomOfResponse)) {
 			return undefined;
 		}
 
@@ -1389,24 +1455,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		// settings/mode-driven branches so it applies regardless of
 		// persistent-progress / shimmer / progressMessageAtBottomOfResponse.
 		if (partsToRender.some(part => part.kind === 'planReview' && !part.isUsed)) {
-			return undefined;
-		}
-
-		const showProgressDetails = this.configService.getValue<boolean>(ChatConfiguration.ChatPersistentProgressEnabled) !== false
-			&& (this.configService.getValue<boolean>(ChatConfiguration.ProgressBorder) !== true || this.accessibilityService.isMotionReduced());
-		if (element.isComplete) {
-			return undefined;
-		}
-
-		const workingState = {
-			confirmationAdjustedTimestamp: element.confirmationAdjustedTimestamp,
-			completionTokenCountObs: element.completionTokenCountObs,
-			isComplete: element.isComplete,
-			completedAt: element.model.completedAt,
-			elapsedMs: element.model.elapsedMs,
-		};
-
-		if (!checkModeOption(this.delegate.currentChatMode(), this.rendererOptions.progressMessageAtBottomOfResponse)) {
 			return undefined;
 		}
 
@@ -1439,21 +1487,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 
 		const workingParts = getWorkingProgressRelevantParts(partsToRender);
 		const lastPart = findLastMeaningfulPart(workingParts);
-
-		if (showProgressDetails) {
-			// When the thinking section is actively streaming with its own inline
-			// shimmer (collapsed mode), let it own the progress indicator. In
-			// fixed-scrolling mode the thinking section does not show its own
-			// active indicator, so the working-progress row should still render.
-			const lastThinking = this.getLastThinkingPart(templateData.renderedParts);
-			if (lastThinking?.getIsActive() && !lastThinking.isFixedScrollingMode) {
-				return undefined;
-			}
-			if (lastPart?.kind === 'progressMessage') {
-				return undefined;
-			}
-			return { kind: 'working', state: workingState };
-		}
 
 		// Don't show working if a streaming tool invocation is already present
 		if (workingParts.some(part => part.kind === 'toolInvocation' && IChatToolInvocation.isStreaming(part))) {
@@ -1568,10 +1601,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	private doUpdateWorkingProgressForPendingConfirmations(templateData: IChatListItemTemplate): void {
 		const element = templateData.currentElement;
 		if (!isResponseVM(element)) {
-			return;
-		}
-
-		if (element.isComplete && this.configService.getValue<boolean>(ChatConfiguration.ChatPersistentProgressEnabled) !== false && (this.configService.getValue<boolean>(ChatConfiguration.ProgressBorder) !== true || this.accessibilityService.isMotionReduced())) {
 			return;
 		}
 
@@ -2181,9 +2210,6 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 	private getNextProgressiveRenderContent(element: IChatResponseViewModel, templateData: IChatListItemTemplate): { content: IChatRendererContent[]; moreContentAvailable: boolean } {
 		const data = this.getDataForProgressiveRender(element);
 
-		// An unregistered setting for development- skip the word counting and smoothing, just render content as it comes in
-		const renderImmediately = this.configService.getValue<boolean>('chat.experimental.renderMarkdownImmediately') === true;
-
 		// When incremental rendering is enabled, skip word-counting for markdown.
 		// The morpher's own buffer + rAF loop is the sole rate limiter.
 		const incrementalRendering = this.configService.getValue<boolean>(ChatConfiguration.IncrementalRendering) === true;
@@ -2201,7 +2227,7 @@ export class ChatListItemRenderer extends Disposable implements ITreeRenderer<Ch
 		let moreContentAvailable = false;
 		for (let i = 0; i < renderableResponse.length; i++) {
 			const part = renderableResponse[i];
-			if (part.kind === 'markdownContent' && !renderImmediately && !incrementalRendering) {
+			if (part.kind === 'markdownContent' && !incrementalRendering) {
 				const wordCountResult = getNWords(part.content.value, numNeededWords);
 				this.traceLayout('getNextProgressiveRenderContent', `  Chunk ${i}: Want to render ${numNeededWords} words and found ${wordCountResult.returnedWordCount} words. Total words in chunk: ${wordCountResult.totalWordCount}`);
 				numNeededWords -= wordCountResult.returnedWordCount;
