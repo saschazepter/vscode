@@ -419,7 +419,13 @@ export class ChatInputModelSelectionController extends Disposable {
 				this._model.setSelectionReason(ModelSelectionReason.FirstAvailable);
 				this._runtime.applyModel(replacement);
 				this.ensureCurrentModelSupported();
+				if (this._runtime.resolveModelIdentifier(intent.modelId).kind !== 'pending') {
+					this._intent = undefined;
+				}
 				return true;
+			}
+			if (this._runtime.resolveModelIdentifier(intent.modelId).kind !== 'pending') {
+				this._intent = undefined;
 			}
 			return false;
 		}
