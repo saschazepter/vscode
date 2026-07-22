@@ -13,7 +13,7 @@ import { ITelemetryData, ITelemetryService } from '../../../telemetry/common/tel
 		"exp_assignment_context": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Experiment assignment context from the Copilot CLI runtime." },
 		"session_id": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Identifier for the Copilot CLI session." },
 		"sdk_session_id": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Identifier for the SDK session that forwarded the event." },
-		"copilot_tracking_id": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Copilot tracking identifier supplied by the runtime." },
+		"copilot_tracking_id": { "classification": "EndUserPseudonymizedInformation", "purpose": "BusinessInsight", "comment": "Pseudonymous Copilot user identifier supplied by the runtime." },
 		"kind": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Kind of SDK telemetry event." },
 		"cli_version": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Version of the Copilot CLI runtime." },
 		"os_platform": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Operating system platform of the Copilot CLI runtime." },
@@ -23,7 +23,7 @@ import { ITelemetryData, ITelemetryService } from '../../../telemetry/common/tel
 		"copilot_plan": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Copilot subscription plan reported by the runtime." },
 		"client_type": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Type of client that produced the event." },
 		"client_name": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Name of the client that produced the event." },
-		"dev_device_id": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Stable device identifier supplied by the runtime." },
+		"dev_device_id": { "classification": "EndUserPseudonymizedInformation", "purpose": "BusinessInsight", "comment": "Pseudonymous device identifier supplied by the runtime." },
 		"is_staff": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Whether the user is a GitHub or Microsoft staff member.", "isMeasurement": true },
 		"restricted": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Whether the SDK marked the event as restricted telemetry.", "isMeasurement": true },
 		"${wildcard}": [{
