@@ -873,6 +873,9 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			for (const part of input.parts) {
 				if (part instanceof ChatRequestToolPart || part instanceof ChatRequestToolSetPart || part instanceof ChatRequestDynamicVariablePart) {
 					const entry = part.toVariableEntry();
+					if (part instanceof ChatRequestDynamicVariablePart && part.isAttachmentReference) {
+						continue;
+					}
 					newPromptAttachments.set(entry.id, entry);
 					oldPromptAttachments.delete(entry.id);
 				}
