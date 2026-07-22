@@ -36,8 +36,6 @@ import { AgentHostPreferLongContextEnabledConfigKey, AgentHostSystemProxyEnabled
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
 import { AgentSession, GITHUB_COPILOT_PROTECTED_RESOURCE, type AgentSignal, type IAgentCreateChatForkSource, type IAgentSessionMetadata, type IAgentSpawnChatEvent } from '../../common/agentService.js';
 import { ISessionDataService } from '../../common/sessionDataService.js';
-import { buildDefaultChatUri, buildChatUri, buildSubagentChatUri, parseRequiredSessionUriFromChatUri, CustomizationLoadStatus, ResponsePartKind, ToolResultContentType, customizationId, type ClientPluginCustomization, type PluginCustomization, type ToolCallResult, type Turn, RuleCustomization } from '../../common/state/sessionState.js';
-import { CustomizationType, SessionStatus, ToolCallContributorKind, type AgentSelection, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
 import { buildDefaultChatUri, buildChatUri, buildSubagentChatUri, parseRequiredSessionUriFromChatUri, CustomizationLoadStatus, MessageKind, ResponsePartKind, ToolResultContentType, TurnState, customizationId, type ClientPluginCustomization, type PluginCustomization, type ToolCallResult, type Turn, RuleCustomization } from '../../common/state/sessionState.js';
 import { CustomizationType, SessionStatus, ToolCallContributorKind, type AgentSelection, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
 import { ActionType, type ChatAction, type SessionAction } from '../../common/state/sessionActions.js';
@@ -63,9 +61,6 @@ import { SessionDatabase } from '../../node/sessionDatabase.js';
 import { createNullSessionDataService } from '../common/sessionTestHelpers.js';
 import { ActiveClientToolSet } from '../../node/activeClientState.js';
 import { ByokLmBridgeRegistry, IByokLmBridgeRegistry } from '../../node/byokLmBridgeRegistry.js';
-import { ICopilotApiService, type ICopilotApiServiceRequestOptions, type ICopilotUtilityChatCompletionRequest, type IRestrictedTelemetryContext } from '../../node/shared/copilotApiService.js';
-import type { IAgentHostInternalTelemetryContext, IAgentHostRestrictedTelemetryContext } from '../../node/agentHostRestrictedTelemetry.js';
-import { injectSideChatContext } from '../../node/agentPeerChats.js';
 import { ICopilotApiService, type ICopilotApiServiceRequestOptions, type ICopilotUtilityChatCompletionRequest, type IRestrictedTelemetryContext } from '../../node/shared/copilotApiService.js';
 import type { IAgentHostInternalTelemetryContext, IAgentHostRestrictedTelemetryContext } from '../../node/agentHostRestrictedTelemetry.js';
 import { injectSideChatContext } from '../../node/agentPeerChats.js';
@@ -3297,7 +3292,6 @@ suite('CopilotAgent', () => {
 			_sessions: Map<string, CopilotSessionEntry>;
 			_createAgentSession: (launchPlan: CopilotSessionLaunchPlan, customizationDirectory: URI | undefined, activeClient: unknown, identity?: { sessionUri: URI; chatChannelUri: URI }) => CopilotAgentSession;
 			_sessionSequencer: { queue<T>(key: string, task: () => Promise<T>): Promise<T> };
-			_createAgentSession: (launchPlan: CopilotSessionLaunchPlan, customizationDirectory: URI | undefined, activeClient: unknown, identity?: { sessionUri: URI; chatChannelUri: URI }) => CopilotAgentSession;
 			_forkSdkChat: (client: unknown, sourceEntry: unknown, turnId: string, targetDbDir: URI) => Promise<string>;
 			_resolveAgentName: (snapshot: IActiveClientSnapshot, agent: AgentSelection) => string | undefined;
 		};

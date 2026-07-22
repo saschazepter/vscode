@@ -2710,7 +2710,6 @@ export class ChatWidget extends Disposable implements IChatWidget {
 			attachedContext: options?.enableImplicitContext === false ? this.input.getAttachedContext() : this.input.getAttachedAndImplicitContext(),
 		};
 
-		const isUserQuery = !query;
 		if (this.viewModel.model.requestInProgress.get() && await this._executeSlashCommandDuringRequest(requestInputs.input, isUserQuery, options.preserveFocus)) {
 			return;
 		}
