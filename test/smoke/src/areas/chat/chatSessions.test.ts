@@ -65,12 +65,10 @@ const SHELL_SESSIONS: readonly ShellSessionConfig[] = [
  * only the enablement migration can activate Copilot Chat before its mock
  * endpoints are configured.
  */
-function preseedChatSessionProfile(userDataDir: string | undefined, mockServerUrl: string): void {
+async function preseedChatSessionProfile(userDataDir: string | undefined, mockServerUrl: string): Promise<void> {
 	if (!userDataDir) {
 		throw new Error('Cannot pre-seed Chat Sessions profile without a user data directory');
 	}
-
-	preseedChatExtensionEnablement(userDataDir);
 
 	const settingsPath = path.join(userDataDir, 'User', 'settings.json');
 	fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
@@ -88,6 +86,8 @@ function preseedChatSessionProfile(userDataDir: string | undefined, mockServerUr
 		'github.copilot.chat.claudeAgent.useSdkExtension': false,
 		'chat.tools.riskAssessment.enabled': false,
 	}, undefined, '\t'));
+
+	await preseedChatExtensionEnablement(userDataDir);
 }
 
 async function openSession(app: Application, session: { readonly command: string; readonly kind: 'editor' | 'view' }): Promise<void> {
