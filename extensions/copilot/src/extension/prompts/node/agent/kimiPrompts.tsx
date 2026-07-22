@@ -57,7 +57,7 @@ class KimiAgentPrompt extends PromptElement<DefaultAgentPromptProps> {
 				You will be given context and attachments along with the user prompt. Use relevant context and ignore irrelevant context.{tools[ToolName.ReadFile] && <> Some attachments may be summarized with omitted sections like `/* Lines 123-456 omitted */`. Use {ToolName.ReadFile} to read more context if needed. Never pass this omitted line marker to an edit tool.</>}<br />
 				If you can infer the project type (languages, frameworks, and libraries) from the user's query or the context, keep it in mind when making changes.<br />
 				When reading files, prefer reading large meaningful chunks rather than consecutive small sections to minimize tool calls and gain better context.<br />
-				You do not need to read a file if it is already provided in context. Do not read the same file or line range more than once: content you have already read stays available to you for the rest of the conversation, so re-reading identical content only wastes a tool call and yields no new information. Read a file again only if it has since changed or you need a different range you have not seen yet.
+				You do not need to read a file if it is already provided in context. Avoid re-reading a file or line range that is already available in the current context, since re-reading identical content wastes a tool call and yields no new information. Read it again only if it has changed, if you need a range you have not seen yet, or if that content is no longer in context (for example after earlier conversation history was summarized).
 			</Tag>
 
 			<Tag name='toolUseInstructions'>
@@ -86,7 +86,7 @@ class KimiAgentPrompt extends PromptElement<DefaultAgentPromptProps> {
 			{tools[ToolName.ReplaceString] && !tools[ToolName.EditFile] && <Tag name='replaceStringInstructions'>
 				Before editing an existing file, make sure it is already in context or read it with {ToolName.ReadFile}.<br />
 				{tools[ToolName.MultiReplaceString]
-					? <>Use {ToolName.ReplaceString} only when you have a single edit to make. Whenever you have more than one edit — whether to the same file or across several files — make them all in one {ToolName.MultiReplaceString} call rather than issuing {ToolName.ReplaceString} repeatedly; batching edits is much faster and cheaper. Include enough surrounding context in each edit to ensure uniqueness. Do not announce which tool you're using.<br /></>
+					? <>Use {ToolName.ReplaceString} for single string replacements with enough context to ensure uniqueness. Whenever you have multiple independent edits across one or more files, always batch them into a single {ToolName.MultiReplaceString} call instead of issuing {ToolName.ReplaceString} repeatedly, which is much faster and cheaper. Because each replacement is prepared against the original file, edits that overlap or depend on each other will conflict — combine those into one replacement or make them in separate calls. Do not announce which tool you're using.<br /></>
 					: <>Use {ToolName.ReplaceString} to edit files. Include sufficient surrounding context so the replacement is unique. You can use this tool multiple times per file.<br /></>}
 				Group changes by file.<br />
 				NEVER show the changes to the user; call the edit tool and the edits will be applied and shown to the user.<br />
@@ -139,7 +139,7 @@ class KimiReminderInstructions extends PromptElement<ReminderInstructionsProps> 
 	render() {
 		return <>
 			<DefaultReminderInstructions {...this.props} />
-			<br />Don't re-read a file or line range you have already read in this conversation — that content is still available to you. Read a file again only if it has changed or you need a range you have not seen yet.
+			<br />Don't re-read a file or line range that is still available in your current context — re-reading it only wastes a tool call. Read it again only if it has changed, if you need a range you have not seen yet, or if that content is no longer in context (for example after the history was summarized).
 		</>;
 	}
 }
