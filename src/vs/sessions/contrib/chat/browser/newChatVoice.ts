@@ -9,7 +9,7 @@ import { Disposable, IDisposable, toDisposable } from '../../../../base/common/l
 import { IObservable, autorun, derived, observableValue } from '../../../../base/common/observable.js';
 import { URI } from '../../../../base/common/uri.js';
 import { localize } from '../../../../nls.js';
-import { MenuId, MenuRegistry } from '../../../../platform/actions/common/actions.js';
+import { MenuId, MenuItemAction, MenuRegistry } from '../../../../platform/actions/common/actions.js';
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
 import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { ServiceCollection } from '../../../../platform/instantiation/common/serviceCollection.js';
@@ -20,6 +20,7 @@ import { IKeybindingService } from '../../../../platform/keybinding/common/keybi
 import { IMicCaptureService } from '../../../../workbench/contrib/chat/browser/voiceClient/micCaptureService.js';
 import { ITtsPlaybackService } from '../../../../workbench/contrib/chat/browser/voiceClient/ttsPlaybackService.js';
 import { IVoiceSessionController } from '../../../../workbench/contrib/chat/browser/voiceClient/voiceSessionController.js';
+import { VoiceModeActionViewItem } from '../../../../workbench/contrib/chat/browser/voiceClient/voiceModeActionViewItem.js';
 import { ISessionsService } from '../../../services/sessions/browser/sessionsService.js';
 import { setupVoiceInputDecorations } from './voiceInputDecorations.js';
 
@@ -180,6 +181,12 @@ export class NewChatVoiceController extends Disposable {
 
 		this._register(scopedInstantiationService.createInstance(MenuWorkbenchToolBar, options.toolbarContainer, SessionsNewChatVoiceMenu, {
 			hiddenItemStrategy: HiddenItemStrategy.NoHide,
+			actionViewItemProvider: (action, itemOptions) => {
+				if (action.id === 'agentsVoice.startVoiceInChat' && action instanceof MenuItemAction) {
+					return scopedInstantiationService.createInstance(VoiceModeActionViewItem, action, itemOptions);
+				}
+				return undefined;
+			},
 		}));
 
 		// Target the active composer before a session exists, or when it opts in

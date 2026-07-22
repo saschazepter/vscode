@@ -7,6 +7,7 @@ import './media/chatInput.css';
 import './media/chatInputMobile.css';
 import * as dom from '../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
+import { StandardMouseEvent } from '../../../../base/browser/mouseEvent.js';
 import { Gesture, EventType as TouchEventType } from '../../../../base/browser/touch.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter } from '../../../../base/common/event.js';
@@ -54,12 +55,14 @@ import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/b
 import { Menus } from '../../../browser/menus.js';
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
 import { MenuId, MenuItemAction } from '../../../../platform/actions/common/actions.js';
+import { createConfigureKeybindingAction } from '../../../../platform/actions/common/menuService.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IAccessibilityService } from '../../../../platform/accessibility/common/accessibility.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { defaultButtonStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
+import { createDisableDictationAction, createSelectMicrophoneAction } from '../../../../workbench/contrib/chat/browser/speechToText/micButtonMenuActions.js';
 import { SlashCommandHandler } from './slashCommands.js';
 import { VariableCompletionHandler } from './variableCompletions.js';
 import { SessionReferenceCompletionHandler } from './sessionReferenceCompletions.js';
@@ -359,6 +362,8 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
 		@IChatSpeechToTextService private readonly chatSpeechToTextService: IChatSpeechToTextService,
 		@IChatSubmitRequestHandlerService private readonly chatSubmitRequestHandlerService: IChatSubmitRequestHandlerService,
+		@IContextMenuService private readonly contextMenuService: IContextMenuService,
+		@ICommandService private readonly commandService: ICommandService,
 	) {
 		super();
 		this._sessionModelSelectionModel = this._register(this.instantiationService.createInstance(SessionModelSelectionModel, this.options.session));
@@ -855,6 +860,22 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 				dom.EventHelper.stop(event, true);
 				void toggle();
 			}
+		}));
+
+		// Right-click shows dictation-specific entries ("Configure Keybinding",
+		// "Select Microphone", "Disable Dictation") mirroring the chat-input mic
+		// button, since this custom button isn't a `MenuEntryActionViewItem`.
+		this._register(dom.addDisposableListener(button, dom.EventType.CONTEXT_MENU, e => {
+			dom.EventHelper.stop(e, true);
+			const supportsKeybindings = !!this.keybindingService.lookupKeybinding(TOGGLE_DICTATION_COMMAND_ID);
+			this.contextMenuService.showContextMenu({
+				getAnchor: () => new StandardMouseEvent(dom.getWindow(button), e),
+				getActions: () => [
+					createConfigureKeybindingAction(this.commandService, this.keybindingService, TOGGLE_DICTATION_COMMAND_ID, undefined, supportsKeybindings),
+					createSelectMicrophoneAction(this.commandService),
+					createDisableDictationAction(this.configurationService),
+				],
+			});
 		}));
 	}
 

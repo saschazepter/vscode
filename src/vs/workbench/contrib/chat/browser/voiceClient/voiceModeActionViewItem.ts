@@ -17,16 +17,16 @@ import { IContextMenuService } from '../../../../../platform/contextview/browser
 import { IKeybindingService } from '../../../../../platform/keybinding/common/keybinding.js';
 import { INotificationService } from '../../../../../platform/notification/common/notification.js';
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
-import { createDisableDictationAction, createSelectMicrophoneAction } from './micButtonMenuActions.js';
+import { createDisableVoiceModeAction, createSelectMicrophoneAction } from '../speechToText/micButtonMenuActions.js';
 
 /**
- * Action view item for the chat-input dictation mic button. Behaves like a
- * normal toolbar mic (click to dictate) but adds a right-click context menu with
- * dictation-specific entries — "Configure Keybinding" (mirroring the standard
- * toolbar affordance), "Select Microphone" and "Disable Dictation" — instead of
- * the generic toolbar context menu.
+ * Action view item for the chat-input Voice Mode button. Behaves like the normal
+ * toolbar voice-mode toggle (click to start/stop) but adds a right-click context
+ * menu with voice-specific entries — "Configure Keybinding" (mirroring the
+ * standard toolbar affordance), "Select Microphone" and "Disable Voice Mode" —
+ * instead of the generic toolbar context menu. Mirrors {@link DictationActionViewItem}.
  */
-export class DictationActionViewItem extends MenuEntryActionViewItem {
+export class VoiceModeActionViewItem extends MenuEntryActionViewItem {
 
 	constructor(
 		action: MenuItemAction,
@@ -48,7 +48,7 @@ export class DictationActionViewItem extends MenuEntryActionViewItem {
 
 		this._register(addDisposableListener(container, 'contextmenu', e => {
 			// Stop the event before it reaches the toolbar's generic context-menu
-			// handler so we show our dictation-specific menu instead.
+			// handler so we show our voice-specific menu instead.
 			e.preventDefault();
 			e.stopPropagation();
 			this._showContextMenu(new StandardMouseEvent(getWindow(container), e));
@@ -62,7 +62,7 @@ export class DictationActionViewItem extends MenuEntryActionViewItem {
 		const actions: IAction[] = [
 			createConfigureKeybindingAction(this._commandService, this._keybindingService, commandId, undefined, supportsKeybindings),
 			createSelectMicrophoneAction(this._commandService),
-			createDisableDictationAction(this._configurationService),
+			createDisableVoiceModeAction(this._commandService, this._configurationService),
 		];
 
 		this._contextMenuService.showContextMenu({
