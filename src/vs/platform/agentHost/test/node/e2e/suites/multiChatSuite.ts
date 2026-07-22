@@ -31,7 +31,7 @@ import { getActionEnvelope, isActionNotification } from '../../serverIntegration
 import { hostOnlyTest, type IAgentHostE2ETestContext } from './e2eTestContext.js';
 
 export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
-	const { config, createdSessions, tempDirs } = context;
+	const { config, createdSessions, tempDirs, shellToolReplayEnabled } = context;
 
 	async function createSession(prefix: string): Promise<{ sessionUri: string; defaultChatUri: string; workspace: string }> {
 		const workspace = mkdtempSync(join(tmpdir(), `ahp-multichat-${prefix}-`));
@@ -535,6 +535,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.strictEqual(readFileSync(file, 'utf8'), 'PEER_CREATED');
 	});
 
+	// Copilot's fixture uses a POSIX shell for this mutation.
 	providerTest('peer chat edits an existing workspace file', async function () {
 		const { sessionUri, workspace } = await createSession('edit-file');
 		const file = join(workspace, 'peer-edit.txt');
@@ -545,8 +546,9 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		await driveTurn(peer, 'peer-edit', `Replace the complete contents of ${file} with AFTER_PEER.`, 1);
 
 		assert.strictEqual(readFileSync(file, 'utf8').trim(), 'AFTER_PEER');
-	});
+	}, config.supportsMultipleChats && (config.provider !== 'copilotcli' || shellToolReplayEnabled));
 
+	// Copilot's fixture uses a POSIX shell for this mutation.
 	providerTest('peer chat creates a file in a nested directory', async function () {
 		const { sessionUri, workspace } = await createSession('nested-create');
 		const file = join(workspace, 'peer-output', 'report.txt');
@@ -556,7 +558,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		await driveTurn(peer, 'peer-nested-create', `Create the file at ${file} containing exactly PEER_NESTED.`, 1);
 
 		assert.strictEqual(readFileSync(file, 'utf8'), 'PEER_NESTED');
-	});
+	}, config.supportsMultipleChats && (config.provider !== 'copilotcli' || shellToolReplayEnabled));
 
 	providerTest('peer chat handles a missing workspace file without an error', async function () {
 		const { sessionUri, workspace } = await createSession('missing-file');
