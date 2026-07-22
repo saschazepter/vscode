@@ -76,37 +76,6 @@ steps:
       displayName: 🧪 Run integration tests (Electron)
       timeoutInMinutes: 20
 
-    # Temporary diagnostic loop for Agent Host E2E flake discovery.
-    - script: |
-        set -e
-        APP_ROOT="$(agent.builddirectory)/VSCode-darwin-$(VSCODE_ARCH)"
-        APP_NAME="`ls $APP_ROOT | head -n 1`"
-        ProductJsonPath=$(find "$APP_ROOT" -name "product.json" -type f | head -n 1)
-        BINARY_NAME=$(jq -r '.nameShort' "$ProductJsonPath")
-        export INTEGRATION_TEST_ELECTRON_PATH="$APP_ROOT/$APP_NAME/Contents/MacOS/$BINARY_NAME"
-        failures=0
-        for iteration in 1 2 3 4 5; do
-          for provider in copilot claude codex; do
-            echo "Agent Host E2E iteration $iteration: $provider"
-            if ! ./scripts/test-integration.sh \
-                --build \
-                --tfs "Agent Host E2E $provider iteration $iteration" \
-                --run "src/vs/platform/agentHost/test/node/e2e/providers/${provider}AgentHostE2E.integrationTest.ts"; then
-              failures=$((failures + 1))
-            fi
-          done
-        done
-        if [ "$failures" -ne 0 ]; then
-          echo "$failures Agent Host E2E loop run(s) failed."
-          exit 1
-        fi
-      env:
-        VSCODE_REMOTE_SERVER_PATH: $(agent.builddirectory)/vscode-server-darwin-$(VSCODE_ARCH)
-        VSCODE_SKIP_PRELAUNCH: '1'
-      displayName: Loop Agent Host E2E tests (5x)
-      condition: and(succeeded(), eq(variables['VSCODE_CIBUILD'], 'true'))
-      timeoutInMinutes: 45
-
   - ${{ if eq(parameters.VSCODE_RUN_BROWSER_TESTS, true) }}:
     - script: ./scripts/test-web-integration.sh --browser webkit
       env:

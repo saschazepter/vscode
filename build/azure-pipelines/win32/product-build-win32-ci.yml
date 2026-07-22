@@ -9,7 +9,7 @@ parameters:
 jobs:
   - job: Windows${{ parameters.VSCODE_TEST_SUITE }}
     displayName: ${{ parameters.VSCODE_TEST_SUITE }} Tests
-    timeoutInMinutes: 90
+    timeoutInMinutes: 50
     variables:
       VSCODE_ARCH: x64
       BUILDS_API_URL: $(System.CollectionUri)$(System.TeamProject)/_apis/build/builds/$(Build.BuildId)/
