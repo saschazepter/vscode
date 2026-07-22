@@ -840,12 +840,18 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 		});
 	}
 
-	/** Append plain-text data to an output-only terminal and stream it to subscribers. */
+	/**
+	 * Append plain-text data to an output-only terminal and stream it to
+	 * subscribers. Line endings are normalized to CRLF so the channel renders
+	 * in terminal frontends exactly like pty-backed channels (a pty performs
+	 * the same LF→CRLF conversion on output).
+	 */
 	appendOutputTerminalData(uri: string, data: string): void {
 		const terminal = this._outputTerminals.get(uri);
 		if (!terminal || data.length === 0) {
 			return;
 		}
+		data = data.replace(/\r?\n/g, '\r\n');
 		this._appendToContent(terminal, data);
 		this._trimContent(terminal);
 		this._stateManager.dispatchServerAction(uri, {
