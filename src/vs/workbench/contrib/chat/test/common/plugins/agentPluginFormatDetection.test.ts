@@ -30,6 +30,7 @@ import { ContributionEnablementState, IEnablementModel } from '../../../common/e
  */
 class TestPluginDiscovery extends AbstractAgentPluginDiscovery {
 	private _sources: URI[] = [];
+	private _remove: (() => void) | undefined = () => { };
 
 	constructor(
 		fileService: IFileService,
@@ -50,11 +51,17 @@ class TestPluginDiscovery extends AbstractAgentPluginDiscovery {
 		await this._refreshPlugins();
 	}
 
+	async setRemoveAndRefresh(uri: URI, remove: (() => void) | undefined): Promise<void> {
+		this._sources = [uri];
+		this._remove = remove;
+		await this._refreshPlugins();
+	}
+
 	protected override async _discoverPluginSources() {
 		return this._sources.map(uri => ({
 			uri,
 			fromMarketplace: undefined,
-			remove: () => { },
+			remove: this._remove,
 		}));
 	}
 }
@@ -118,6 +125,38 @@ suite('AgentPlugin format detection', () => {
 		discovery.start(mockEnablementModel);
 
 		assert.strictEqual(discovery.plugins.get(), undefined);
+	});
+
+	test('refreshes removability for cached plugin entries', async () => {
+		const uri = pluginUri('/plugins/removability');
+		await writeFile('/plugins/removability/plugin.json', JSON.stringify({ name: 'removability' }));
+
+		const removeCounts = [0, 0];
+		const discovery = createDiscovery();
+		discovery.start(mockEnablementModel);
+		await discovery.setRemoveAndRefresh(uri, () => removeCounts[0]++);
+		const initialPlugin = getDiscoveredPlugins(discovery)[0];
+		initialPlugin.remove?.();
+
+		await discovery.setRemoveAndRefresh(uri, undefined);
+		const managedPlugin = getDiscoveredPlugins(discovery)[0];
+		const managedRemove = managedPlugin.remove;
+
+		await discovery.setRemoveAndRefresh(uri, () => removeCounts[1]++);
+		const removablePlugin = getDiscoveredPlugins(discovery)[0];
+		removablePlugin.remove?.();
+
+		assert.deepStrictEqual({
+			reusedManagedPlugin: managedPlugin === initialPlugin,
+			managedRemove,
+			reusedRemovablePlugin: removablePlugin === initialPlugin,
+			removeCounts,
+		}, {
+			reusedManagedPlugin: true,
+			managedRemove: undefined,
+			reusedRemovablePlugin: true,
+			removeCounts: [1, 1],
+		});
 	});
 
 	test('detects Open Plugin format when .plugin/plugin.json exists', () => runWithFakedTimers({ useFakeTimers: true }, async () => {

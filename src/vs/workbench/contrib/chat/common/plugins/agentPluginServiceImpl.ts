@@ -316,6 +316,7 @@ export abstract class AbstractAgentPluginDiscovery extends Disposable implements
 				existing.store.dispose();
 				this._pluginEntries.delete(key);
 			} else {
+				existing.plugin.remove = removeCallback;
 				return existing.plugin;
 			}
 		}
