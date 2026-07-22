@@ -75,23 +75,14 @@ export interface SessionMetadata {
 	/**
 	 * The working directories the session's agent has tool access to, as
 	 * maintained by the `session/workingDirectorySet` /
-	 * `session/workingDirectoryRemoved` actions. Directories are equal peers
-	 * except when the agent advertises
-	 * {@link MultipleWorkingDirectoriesCapability.requiresPrimary}, in which case
-	 * one of them is designated the primary (see {@link primaryWorkingDirectory}).
-	 * Individual chats MAY restrict to a subset via
-	 * {@link ChatSummary.workingDirectories | their own `workingDirectories`}; a
-	 * chat that sets none operates against this full set.
+	 * `session/workingDirectoryRemoved` actions. Directories are **equal peers** —
+	 * the session has no primary. Individual chats MAY restrict to a subset via
+	 * {@link ChatSummary.workingDirectories | their own `workingDirectories`} and
+	 * designate one of their own directories as primary (see
+	 * {@link ChatState.primaryWorkingDirectory}); a chat that sets no subset
+	 * operates against this full set.
 	 */
 	workingDirectories?: URI[];
-	/**
-	 * The session's primary working directory — the distinguished root the agent
-	 * centers on. When set, it MUST be one of {@link workingDirectories}. Present
-	 * when the agent advertises
-	 * {@link MultipleWorkingDirectoriesCapability.requiresPrimary}; absent when
-	 * the agent has no primary (all directories equal peers).
-	 */
-	primaryWorkingDirectory?: URI;
 	/**
 	 * Lightweight summary of this session's inline annotations channel
 	 * (`ahp-session:/<uuid>/annotations`). Surfaced so badge UI can render

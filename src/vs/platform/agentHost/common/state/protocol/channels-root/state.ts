@@ -142,15 +142,15 @@ export interface MultipleChatsCapability {
  */
 export interface MultipleWorkingDirectoriesCapability {
 	/**
-	 * The agent requires exactly one of its working directories to be designated
-	 * the **primary** — a distinguished root the agent centers on (e.g. its
-	 * process root, the default location for relative paths). When `true`, a
-	 * client SHOULD supply {@link CreateSessionParams.primaryWorkingDirectory}
-	 * (and {@link CreateChatParams.primaryWorkingDirectory} for a chat that
-	 * narrows the set); a host MAY reject creation that omits it, or fall back to
-	 * the first entry of `workingDirectories`. The chosen primary is reported on
-	 * {@link SessionState.primaryWorkingDirectory} /
-	 * {@link ChatState.primaryWorkingDirectory}.
+	 * The agent requires each chat to designate one of its working directories as
+	 * the **primary** — a distinguished root the chat is centered on (e.g. the
+	 * agent's process root for that chat, the default location for relative
+	 * paths). Primary is a **per-chat** notion, fixed at chat creation. When
+	 * `true`, a client SHOULD supply {@link CreateChatParams.primaryWorkingDirectory}
+	 * (and {@link CreateSessionParams.primaryWorkingDirectory}, which seeds the
+	 * session's default chat); a host MAY reject creation that omits it, or fall
+	 * back to the first entry of the chat's working directories. The chosen
+	 * primary is reported (read-only) on {@link ChatState.primaryWorkingDirectory}.
 	 *
 	 * When absent or `false`, the agent has no primary — all directories are
 	 * equal peers and clients need not designate one.
