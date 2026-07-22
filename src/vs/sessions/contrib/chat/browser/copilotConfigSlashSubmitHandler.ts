@@ -1,0 +1,53 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+import { Disposable } from '../../../../base/common/lifecycle.js';
+import { parseLeadingSlashCommand } from '../../../../platform/agentHost/common/agentHostSlashCommand.js';
+import { resolveCopilotConfigSlashCommandOnSend } from '../../../../platform/agentHost/common/copilotConfigSlashCommands.js';
+import { IChatSubmitRequestHandlerService, type ChatSubmitRequestHandling, type IChatSubmitRequest } from '../../../../workbench/contrib/chat/browser/chatSubmitRequestHandlerService.js';
+import { SessionType } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
+import { getChatSessionType } from '../../../../workbench/contrib/chat/common/model/chatUri.js';
+import { IWorkbenchContribution } from '../../../../workbench/common/contributions.js';
+import { isAgentHostProvider } from '../../../common/agentHostSessionsProvider.js';
+import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
+import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
+
+export class SessionsCopilotConfigSlashSubmitHandlerContribution extends Disposable implements IWorkbenchContribution {
+
+	static readonly ID = 'sessions.contrib.chat.copilotConfigSlashSubmitHandler';
+
+	constructor(
+		@IChatSubmitRequestHandlerService submitRequestHandlerService: IChatSubmitRequestHandlerService,
+		@ISessionsManagementService private readonly _sessionsManagementService: ISessionsManagementService,
+		@ISessionsProvidersService private readonly _sessionsProvidersService: ISessionsProvidersService,
+	) {
+		super();
+		this._register(submitRequestHandlerService.register({
+			id: 'sessions.copilot.configSlash',
+			tryHandle: request => this._tryHandle(request),
+		}));
+	}
+
+	private async _tryHandle(request: IChatSubmitRequest): Promise<ChatSubmitRequestHandling | undefined> {
+		if (getChatSessionType(request.sessionResource) !== SessionType.AgentHostCopilot) {
+			return undefined;
+		}
+		const slashCommand = parseLeadingSlashCommand(request.input);
+		const configAction = slashCommand ? resolveCopilotConfigSlashCommandOnSend(slashCommand.command, slashCommand.rawRest) : undefined;
+		if (!configAction) {
+			return undefined;
+		}
+		const session = this._sessionsManagementService.getSession(request.sessionResource);
+		if (!session) {
+			return undefined;
+		}
+		const provider = this._sessionsProvidersService.getProvider(session.providerId);
+		if (!provider || !isAgentHostProvider(provider)) {
+			return undefined;
+		}
+		await Promise.all(Object.entries(configAction.applyConfig).map(([key, value]) => provider.setSessionConfigValue(session.sessionId, key, value)));
+		return configAction.strippedPrompt ? undefined : { kind: 'handled' };
+	}
+}
