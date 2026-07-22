@@ -286,10 +286,12 @@ export abstract class AbstractAgentPluginDiscovery extends Disposable implements
 		const sources = await this._discoverPluginSources();
 		const plugins: IAgentPlugin[] = [];
 		const seenPluginUris = new Set<string>();
+		const attemptedPluginUris = new Set<string>();
 
 		for (const source of sources) {
 			const key = source.uri.toString();
-			if (!seenPluginUris.has(key)) {
+			if (!attemptedPluginUris.has(key)) {
+				attemptedPluginUris.add(key);
 				try {
 					const format = await detectPluginFormat(source.uri, this._fileService);
 					const plugin = await this._toPlugin(source.uri, format, source.fromMarketplace, source.repositoryUri, source.remove);
@@ -432,7 +434,11 @@ export abstract class AbstractAgentPluginDiscovery extends Disposable implements
 		const agentManifestUri = joinPath(uri, 'plugin.json');
 		const rootWatcher = this._fileService.createWatcher(uri, { recursive: false, excludes: [] });
 		store.add(rootWatcher);
-		store.add(rootWatcher.onDidChange(() => readManifest()));
+		store.add(rootWatcher.onDidChange(change => {
+			if (change.affects(agentManifestUri)) {
+				void readManifest();
+			}
+		}));
 		store.add(this._fileService.onDidRunOperation(event => {
 			if (isEqual(event.resource, agentManifestUri)) {
 				void readManifest();

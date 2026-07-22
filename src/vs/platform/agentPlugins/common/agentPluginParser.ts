@@ -22,6 +22,9 @@ export interface IAgentPluginManifest {
 
 export async function readAgentPluginManifest(pluginUri: URI, fileService: IFileService): Promise<IAgentPluginManifest | undefined> {
 	const manifestUri = joinPath(pluginUri, 'plugin.json');
+	if (!await fileService.exists(manifestUri)) {
+		return undefined;
+	}
 	let parsed: unknown;
 	try {
 		parsed = parseJSONC((await fileService.readFile(manifestUri)).value.toString());

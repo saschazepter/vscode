@@ -1240,7 +1240,7 @@ export async function parsePlugin(
 	// Read manifest
 	const manifest = await readPluginManifest(pluginUri, formatConfig, fileService);
 	if (formatConfig.requiresManifest && !manifest) {
-		throw new Error('Plugin manifest is missing');
+		throw new Error(`Plugin manifest '${joinPath(pluginUri, formatConfig.manifestPath).toString()}' is missing`);
 	}
 
 	// Resolve component directories from manifest
