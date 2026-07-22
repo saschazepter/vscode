@@ -954,21 +954,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 			return;
 		}
 
-		const session = this.options.session.get();
-		if (session) {
-			const preSubmitResult = await this.chatSubmitRequestHandlerService.tryHandle({
-				sessionResource: session.resource,
-				providerId: session.providerId,
-				sessionId: session.sessionId,
-				input: query,
-			});
-			if (preSubmitResult) {
-				this._editor.getModel()?.setValue('');
-				return;
-			}
-		}
-
-		if (query && this._slashCommandHandler?.tryExecuteSlashCommand(query)) {
+		if (await this._tryHandleSubmitCommand(query)) {
 			this._editor.getModel()?.setValue('');
 			return;
 		}
@@ -1001,6 +987,19 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		this._editor.updateOptions({ readOnly: false });
 		this._updateSendButtonState();
 		this._updateInputLoadingState();
+	}
+
+	private async _tryHandleSubmitCommand(query: string): Promise<boolean> {
+		const session = this.options.session.get();
+		if (session && await this.chatSubmitRequestHandlerService.tryHandle({
+			sessionResource: session.resource,
+			providerId: session.providerId,
+			sessionId: session.sessionId,
+			input: query,
+		})) {
+			return true;
+		}
+		return !!query && !!this._slashCommandHandler?.tryExecuteSlashCommand(query);
 	}
 
 	private _updateSendButtonState(): void {
