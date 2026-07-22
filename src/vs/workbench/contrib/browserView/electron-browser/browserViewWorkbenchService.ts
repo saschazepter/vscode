@@ -34,7 +34,7 @@ import { IChatWidgetService } from '../../chat/browser/chat.js';
 import { URI } from '../../../../base/common/uri.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { Schemas } from '../../../../base/common/network.js';
-import { getCopilotHomePath } from '../../../../platform/agentHost/common/copilotHome.js';
+import { getCopilotRootPaths } from '../../../../platform/agentHost/common/copilotHome.js';
 import { localChatSessionType } from '../../chat/common/chatSessionsService.js';
 import { INativeWorkbenchEnvironmentService } from '../../../services/environment/electron-browser/environmentService.js';
 import { ITunnelProxyInfo } from '../../../../platform/tunnel/common/tunnelProxy.js';
@@ -523,10 +523,8 @@ export class BrowserViewWorkbenchService extends Disposable implements IBrowserV
 	}
 
 	private _getTrustedFileRoots(): string[] {
-		const roots = new Set<string>([
-			// Trust the Copilot home directory. This allows agents to create HTML files and open them in the browser.
-			getCopilotHomePath(this.environmentService.userHome.fsPath, process.env),
-		]);
+		// Trust Copilot roots so agents can create HTML files and open them in the browser.
+		const roots = new Set(getCopilotRootPaths(this.environmentService.userHome.fsPath, process.env));
 		if (this.workspaceTrustManagementService.isWorkspaceTrusted()) {
 			for (const folder of this.workspaceContextService.getWorkspace().folders) {
 				if (folder.uri.scheme === Schemas.file) {

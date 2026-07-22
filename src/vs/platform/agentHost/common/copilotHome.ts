@@ -9,3 +9,10 @@ import { IProcessEnvironment } from '../../../base/common/platform.js';
 export function getCopilotHomePath(userHomePath: string, environment: IProcessEnvironment): string {
 	return environment['COPILOT_HOME'] || join(userHomePath, '.copilot');
 }
+
+export function getCopilotRootPaths(userHomePath: string, environment: IProcessEnvironment): string[] {
+	return [...new Set([
+		getCopilotHomePath(userHomePath, environment),
+		join(userHomePath, '.copilot'),
+	])];
+}

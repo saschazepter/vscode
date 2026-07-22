@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { join } from '../../../../base/common/path.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
-import { getCopilotHomePath } from '../../common/copilotHome.js';
+import { getCopilotHomePath, getCopilotRootPaths } from '../../common/copilotHome.js';
 
 suite('copilotHome', () => {
 
@@ -19,6 +19,16 @@ suite('copilotHome', () => {
 		], [
 			join('user-home', '.copilot'),
 			'custom-copilot',
+		]);
+	});
+
+	test('resolves all Copilot roots', () => {
+		assert.deepStrictEqual([
+			getCopilotRootPaths('user-home', {}),
+			getCopilotRootPaths('user-home', { COPILOT_HOME: 'custom-copilot' }),
+		], [
+			[join('user-home', '.copilot')],
+			['custom-copilot', join('user-home', '.copilot')],
 		]);
 	});
 });
