@@ -27,7 +27,7 @@ import { ISessionDataService, SESSION_ATTACHMENTS_DIRNAME } from '../common/sess
 import { SessionConfigKey } from '../common/sessionConfigKeys.js';
 import { parseChangesetUri } from '../common/changesetUri.js';
 import { ActionType, ActionEnvelope, AuthRequiredReason, INotification, type ChatAction, type IRootConfigChangedAction, type SessionAction, type TerminalAction, type ClientAnnotationsAction, type ClientChangesetAction } from '../common/state/sessionActions.js';
-import type { CompletionsParams, CompletionsResult, CreateTerminalParams, ResolveSessionConfigResult, SessionConfigCompletionsResult, SessionConfigPropertySchema, StartAgentAccountLoginResult } from '../common/state/protocol/commands.js';
+import type { AgentGlobalConfigurationEdit, AgentGlobalConfigurationState, CompletionsParams, CompletionsResult, CreateTerminalParams, ResolveSessionConfigResult, SessionConfigCompletionsResult, SessionConfigPropertySchema, StartAgentAccountLoginResult } from '../common/state/protocol/commands.js';
 import type { InvokeChangesetOperationParams, InvokeChangesetOperationResult } from '../common/state/protocol/channels-changeset/commands.js';
 import { AhpErrorCodes, AHP_SESSION_NOT_FOUND, ContentEncoding, JSON_RPC_INTERNAL_ERROR, ProtocolError, ResourceChangeType, ResourceType, ResourceWriteMode, type CreateResourceWatchParams, type CreateResourceWatchResult, type DirectoryEntry, type ResourceCopyParams, type ResourceCopyResult, type ResourceDeleteParams, type ResourceDeleteResult, type ResourceListResult, type ResourceMkdirParams, type ResourceMkdirResult, type ResourceMoveParams, type ResourceMoveResult, type ResourceReadResult, type ResourceResolveParams, type ResourceResolveResult, type ResourceWatchState, type ResourceWriteParams, type ResourceWriteResult, type IStateSnapshot } from '../common/state/sessionProtocol.js';
 import { ChangesSummary, ChatInteractivity, ChatOriginKind, MessageAttachmentKind, type AgentAccountState, type Message, type MessageAttachment, type MessageResourceAttachment } from '../common/state/protocol/state.js';
@@ -662,12 +662,28 @@ export class AgentService extends Disposable implements IAgentService {
 		return this._getAccountManagement(providerId).logout();
 	}
 
+	async readAgentGlobalConfiguration(providerId: AgentProvider, keyPaths: readonly string[]): Promise<AgentGlobalConfigurationState> {
+		return this._getGlobalConfigurationManagement(providerId).read(keyPaths);
+	}
+
+	async writeAgentGlobalConfiguration(providerId: AgentProvider, edits: readonly AgentGlobalConfigurationEdit[], expectedVersion?: string): Promise<AgentGlobalConfigurationState> {
+		return this._getGlobalConfigurationManagement(providerId).write(edits, expectedVersion);
+	}
+
 	private _getAccountManagement(providerId: AgentProvider) {
 		const account = this._providers.get(providerId)?.account;
 		if (!account) {
 			throw new Error(`Agent provider does not support account management: ${providerId}`);
 		}
 		return account;
+	}
+
+	private _getGlobalConfigurationManagement(providerId: AgentProvider) {
+		const globalConfiguration = this._providers.get(providerId)?.globalConfiguration;
+		if (!globalConfiguration) {
+			throw new Error(`Agent provider does not support global configuration: ${providerId}`);
+		}
+		return globalConfiguration;
 	}
 
 	getAuthToken(request: IAgentHostAuthTokenRequest): string | undefined {

@@ -1256,6 +1256,12 @@ export class ProtocolServerHandler extends Disposable {
 			await this._agentService.logoutAgentAccount(params.provider);
 			return null;
 		},
+		readAgentGlobalConfiguration: async (_client, params) => {
+			return this._agentService.readAgentGlobalConfiguration(params.provider, params.keyPaths);
+		},
+		writeAgentGlobalConfiguration: async (_client, params) => {
+			return this._agentService.writeAgentGlobalConfiguration(params.provider, params.edits, params.expectedVersion);
+		},
 		completions: async (_client, params) => {
 			return this._agentService.completions(params);
 		},

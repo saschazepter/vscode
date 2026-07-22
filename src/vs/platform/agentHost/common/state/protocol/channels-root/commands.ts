@@ -245,3 +245,31 @@ export interface LogoutAgentAccountParams extends BaseParams {
 	channel: 'ahp-root://';
 	provider: string;
 }
+
+// ─── Agent global configuration ────────────────────────────────────────────
+
+export type AgentGlobalConfigurationValue = string | number | boolean | null | AgentGlobalConfigurationValue[] | { [key: string]: AgentGlobalConfigurationValue | undefined };
+
+export interface AgentGlobalConfigurationState {
+	values: Record<string, AgentGlobalConfigurationValue | undefined>;
+	file: URI;
+	version: string;
+}
+
+export interface ReadAgentGlobalConfigurationParams extends BaseParams {
+	channel: 'ahp-root://';
+	provider: string;
+	keyPaths: string[];
+}
+
+export interface AgentGlobalConfigurationEdit {
+	keyPath: string;
+	value: AgentGlobalConfigurationValue;
+}
+
+export interface WriteAgentGlobalConfigurationParams extends BaseParams {
+	channel: 'ahp-root://';
+	provider: string;
+	edits: AgentGlobalConfigurationEdit[];
+	expectedVersion?: string;
+}

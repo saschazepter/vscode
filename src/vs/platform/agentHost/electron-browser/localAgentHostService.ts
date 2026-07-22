@@ -355,6 +355,12 @@ export class LocalAgentHostServiceClient extends Disposable implements IAgentHos
 	logoutAgentAccount(provider: string): Promise<void> {
 		return this._proxy.logoutAgentAccount(provider);
 	}
+	readAgentGlobalConfiguration(provider: string, keyPaths: readonly string[]) {
+		return this._proxy.readAgentGlobalConfiguration(provider, keyPaths);
+	}
+	writeAgentGlobalConfiguration(provider: string, edits: readonly import('../common/state/protocol/commands.js').AgentGlobalConfigurationEdit[], expectedVersion?: string) {
+		return this._proxy.writeAgentGlobalConfiguration(provider, edits, expectedVersion);
+	}
 	completions(params: CompletionsParams): Promise<CompletionsResult> {
 		return this._proxy.completions(params);
 	}

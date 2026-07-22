@@ -53,6 +53,8 @@ export class NullAgentHostService implements IAgentHostService {
 	async startAgentAccountLogin(_provider: string, _method: 'browser' | 'deviceCode'): Promise<StartAgentAccountLoginResult> { return notSupported(); }
 	async cancelAgentAccountLogin(_provider: string, _loginId: string): Promise<void> { notSupported(); }
 	async logoutAgentAccount(_provider: string): Promise<void> { notSupported(); }
+	async readAgentGlobalConfiguration(_provider: string, _keyPaths: readonly string[]): Promise<import('../common/state/protocol/commands.js').AgentGlobalConfigurationState> { return notSupported(); }
+	async writeAgentGlobalConfiguration(_provider: string, _edits: readonly import('../common/state/protocol/commands.js').AgentGlobalConfigurationEdit[], _expectedVersion?: string): Promise<import('../common/state/protocol/commands.js').AgentGlobalConfigurationState> { return notSupported(); }
 	async getNetworkDiagnosticsInfo(): Promise<IAgentHostNetworkDiagnosticsInfo> { return notSupported(); }
 	async diagnosticsFetch(_url: string): Promise<IAgentHostNetworkFetchResult> { return notSupported(); }
 	async listSessions(): Promise<IAgentSessionMetadata[]> { return []; }

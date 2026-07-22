@@ -1,0 +1,276 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.codex-settings-editor {
+	height: 100%;
+	overflow: auto;
+	color: var(--vscode-foreground);
+}
+
+.codex-settings-content {
+	box-sizing: border-box;
+	width: min(720px, 100%);
+	margin: 0 auto;
+	padding: 32px 28px 52px;
+}
+
+.codex-settings-content h1 {
+	font-size: 24px;
+	font-weight: 600;
+	line-height: 32px;
+	margin: 0 0 4px;
+}
+
+.codex-settings-intro,
+.codex-settings-section-description,
+.codex-settings-account-description,
+.codex-settings-configuration-description {
+	color: var(--vscode-descriptionForeground);
+}
+
+.codex-settings-intro {
+	font-size: 13px;
+	line-height: 20px;
+	margin: 0 0 26px;
+}
+
+.codex-settings-section {
+	margin-top: 24px;
+}
+
+.codex-settings-section h2 {
+	font-size: 15px;
+	font-weight: 600;
+	line-height: 22px;
+	margin: 0 0 2px;
+}
+
+.codex-settings-section-description {
+	font-size: 12px;
+	line-height: 18px;
+	margin: 0 0 10px;
+}
+
+.codex-settings-card {
+	border: 1px solid var(--vscode-widget-border, var(--vscode-contrastBorder, transparent));
+	border-radius: 4px;
+	overflow: hidden;
+}
+
+.codex-settings-account-row,
+.codex-settings-configuration-row {
+	position: relative;
+	display: flex;
+	align-items: center;
+	min-height: 54px;
+	padding: 10px 12px;
+	box-sizing: border-box;
+}
+
+.codex-settings-account-row + .codex-settings-account-row,
+.codex-settings-configuration-row + .codex-settings-configuration-row {
+	border-top: 1px solid var(--vscode-widget-border, var(--vscode-contrastBorder, transparent));
+}
+
+.codex-settings-account-row:hover:not(.selected) {
+	background: var(--vscode-list-hoverBackground);
+	color: var(--vscode-list-hoverForeground);
+}
+
+.codex-settings-account-row.selected {
+	background: var(--vscode-list-inactiveSelectionBackground);
+	color: var(--vscode-list-inactiveSelectionForeground);
+}
+
+.codex-settings-account-row.selected .codex-settings-account-description {
+	color: inherit;
+	opacity: 0.8;
+}
+
+.codex-settings-account-selector {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex: 1;
+	align-self: stretch;
+	min-width: 0;
+	padding: 0;
+	border: 0;
+	outline: none;
+	background: transparent;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.codex-settings-account-selector:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 3px;
+}
+
+.codex-settings-account-selector:disabled {
+	cursor: default;
+	opacity: 0.65;
+}
+
+.codex-settings-account-selector > .codicon {
+	font-size: 16px;
+	flex: none;
+}
+
+.codex-settings-account-labels,
+.codex-settings-configuration-labels {
+	min-width: 0;
+	flex: 1;
+}
+
+.codex-settings-account-label,
+.codex-settings-configuration-label {
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 19px;
+}
+
+.codex-settings-account-description,
+.codex-settings-configuration-description {
+	font-size: 12px;
+	line-height: 17px;
+}
+
+.codex-settings-radio {
+	box-sizing: border-box;
+	width: 14px;
+	height: 14px;
+	margin-left: 10px;
+	border: 1px solid var(--vscode-radio-inactiveBorder, var(--vscode-checkbox-border, var(--vscode-foreground)));
+	border-radius: 50%;
+	background: var(--vscode-radio-inactiveBackground, transparent);
+	flex: none;
+}
+
+.codex-settings-radio.checked {
+	border: 4px solid var(--vscode-radio-activeBackground, var(--vscode-focusBorder));
+	background: var(--vscode-radio-activeForeground, var(--vscode-checkbox-foreground));
+}
+
+.codex-settings-account-action,
+.codex-settings-configuration-action {
+	margin-left: 14px;
+	flex: none;
+}
+
+.codex-settings-configuration-row {
+	gap: 14px;
+}
+
+.codex-settings-select-container {
+	width: 168px;
+	flex: none;
+}
+
+.codex-settings-select-container .monaco-select-box {
+	width: 100%;
+}
+
+.codex-settings-policy-row {
+	display: block;
+	padding-top: 12px;
+	padding-bottom: 12px;
+}
+
+.codex-settings-policy-input {
+	box-sizing: border-box;
+	display: block;
+	width: 100%;
+	min-height: 76px;
+	margin-top: 8px;
+	padding: 6px 8px;
+	resize: vertical;
+	border: 1px solid var(--vscode-input-border, transparent);
+	border-radius: 2px;
+	outline: none;
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground);
+	font-family: inherit;
+	font-size: 12px;
+	line-height: 18px;
+}
+
+.codex-settings-policy-input:focus {
+	border-color: var(--vscode-focusBorder);
+}
+
+.codex-settings-policy-input::placeholder {
+	color: var(--vscode-input-placeholderForeground);
+}
+
+.codex-settings-policy-actions {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: 8px;
+}
+
+.codex-settings-policy-actions .monaco-button {
+	flex: none;
+	width: auto;
+}
+
+.monaco-action-bar .action-item.codex-settings-action-item {
+	box-sizing: border-box;
+	flex: 0 0 22px !important;
+	width: 22px !important;
+	min-width: 22px !important;
+	max-width: 22px !important;
+}
+
+.monaco-action-bar .action-item.codex-settings-action-item > .action-label {
+	box-sizing: border-box;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px !important;
+	min-width: 22px !important;
+	height: 22px !important;
+	min-height: 22px !important;
+	padding: 0 !important;
+	margin: 0 !important;
+}
+
+.codex-settings-unavailable {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	padding: 12px;
+	color: var(--vscode-descriptionForeground);
+	line-height: 18px;
+}
+
+.codex-settings-unavailable .codicon {
+	margin-top: 1px;
+}
+
+.codex-settings-unavailable.error .codicon {
+	color: var(--vscode-errorForeground);
+}
+
+.codex-settings-editor.narrow .codex-settings-content {
+	padding: 24px 16px 40px;
+}
+
+.codex-settings-editor.narrow .codex-settings-account-row,
+.codex-settings-editor.narrow .codex-settings-configuration-row:not(.codex-settings-policy-row) {
+	align-items: flex-start;
+	flex-wrap: wrap;
+}
+
+.codex-settings-editor.narrow .codex-settings-account-action,
+.codex-settings-editor.narrow .codex-settings-configuration-action,
+.codex-settings-editor.narrow .codex-settings-select-container {
+	margin: 8px 0 0 26px;
+}
+
+.codex-settings-editor.narrow .codex-settings-select-container {
+	width: calc(100% - 26px);
+}

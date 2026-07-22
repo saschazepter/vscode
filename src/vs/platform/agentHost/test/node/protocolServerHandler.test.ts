@@ -155,6 +155,8 @@ class MockAgentService implements IAgentService {
 	async startAgentAccountLogin(_provider: string, _method: 'browser' | 'deviceCode'): Promise<StartAgentAccountLoginResult> { throw new Error('Not supported'); }
 	async cancelAgentAccountLogin(_provider: string, _loginId: string): Promise<void> { }
 	async logoutAgentAccount(_provider: string): Promise<void> { }
+	async readAgentGlobalConfiguration(_provider: string, keyPaths: readonly string[]): Promise<import('../../common/state/protocol/commands.js').AgentGlobalConfigurationState> { return { values: Object.fromEntries(keyPaths.map(key => [key, undefined])), file: URI.file('/tmp/config.toml').toString(), version: '1' }; }
+	async writeAgentGlobalConfiguration(_provider: string, edits: readonly import('../../common/state/protocol/commands.js').AgentGlobalConfigurationEdit[], _expectedVersion?: string): Promise<import('../../common/state/protocol/commands.js').AgentGlobalConfigurationState> { return { values: Object.fromEntries(edits.map(edit => [edit.keyPath, edit.value])), file: URI.file('/tmp/config.toml').toString(), version: '2' }; }
 	getAuthToken(): string | undefined { return undefined; }
 	async resourceWrite(_params: ResourceWriteParams): Promise<ResourceWriteResult> { return {}; }
 	async resourceList(uri: URI): Promise<ResourceListResult> {
@@ -1805,6 +1807,38 @@ suite('ProtocolServerHandler', () => {
 			['start', 'codex', 'deviceCode'],
 			['cancel', 'codex', 'login-1'],
 			['logout', 'codex'],
+		]);
+	});
+
+	test('agent global configuration commands forward keys, edits, and version', async () => {
+		const calls: unknown[] = [];
+		agentService.readAgentGlobalConfiguration = async (provider, keyPaths) => {
+			calls.push(['read', provider, keyPaths]);
+			return { values: { personality: 'friendly' }, file: 'file:///tmp/config.toml', version: '7' };
+		};
+		agentService.writeAgentGlobalConfiguration = async (provider, edits, expectedVersion) => {
+			calls.push(['write', provider, edits, expectedVersion]);
+			return { values: { personality: 'pragmatic' }, file: 'file:///tmp/config.toml', version: '8' };
+		};
+
+		const transport = connectClient('client-global-configuration');
+		transport.sent.length = 0;
+		const responses = [2, 3].map(id => waitForResponse(transport, id));
+		transport.simulateMessage(request(2, 'readAgentGlobalConfiguration', { channel: 'ahp-root://', provider: 'codex', keyPaths: ['personality'] }));
+		transport.simulateMessage(request(3, 'writeAgentGlobalConfiguration', {
+			channel: 'ahp-root://',
+			provider: 'codex',
+			edits: [{ keyPath: 'personality', value: 'pragmatic' }],
+			expectedVersion: '7',
+		}));
+
+		assert.deepStrictEqual((await Promise.all(responses)).map(response => (response as { readonly result?: unknown }).result), [
+			{ values: { personality: 'friendly' }, file: 'file:///tmp/config.toml', version: '7' },
+			{ values: { personality: 'pragmatic' }, file: 'file:///tmp/config.toml', version: '8' },
+		]);
+		assert.deepStrictEqual(calls, [
+			['read', 'codex', ['personality']],
+			['write', 'codex', [{ keyPath: 'personality', value: 'pragmatic' }], '7'],
 		]);
 	});
 

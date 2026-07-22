@@ -24,12 +24,12 @@ import { createSchema, platformRootSchema, platformSessionSchema, schemaProperty
 import { createPricingMetaFromBilling, normalizeCAPIBilling } from '../../common/agentModelPricing.js';
 import { AgentHostConfigKey, agentHostCustomizationConfigSchema, type CodexUsageSource } from '../../common/agentHostCustomizationConfig.js';
 import { getReasoningEffortDescription, getReasoningEffortLabel } from '../../common/reasoningEffort.js';
-import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentSession, AgentSignal, CODEX_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentAccountManagement, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, type AgentProvider, type AuthenticateParams } from '../../common/agentService.js';
+import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentSession, AgentSignal, CODEX_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentAccountManagement, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentGlobalConfigurationManagement, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, type AgentProvider, type AuthenticateParams } from '../../common/agentService.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { ActionType, isChatAction, type SessionAction, type ChatAction } from '../../common/state/sessionActions.js';
 import type { AgentAccountState, ConfigSchema, ModelSelection, ProtectedResourceMetadata, ToolDefinition, AgentSelection } from '../../common/state/protocol/state.js';
-import type { ResolveSessionConfigResult, SessionConfigCompletionsResult, StartAgentAccountLoginResult } from '../../common/state/protocol/commands.js';
+import type { AgentGlobalConfigurationEdit, AgentGlobalConfigurationState, AgentGlobalConfigurationValue, ResolveSessionConfigResult, SessionConfigCompletionsResult, StartAgentAccountLoginResult } from '../../common/state/protocol/commands.js';
 import { AuthRequiredReason, type AuthRequiredParams } from '../../common/state/protocol/common/notifications.js';
 import { buildDefaultChatUri, parseChatUri, type ClientPluginCustomization, type DirectoryCustomization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, ChatInputResponseKind, type PolicyState, type ToolCallResult, ToolResultContentType, type Turn, ResponsePartKind } from '../../common/state/sessionState.js';
 import type { IAgentServerToolHost } from '../../common/agentServerTools.js';
@@ -110,6 +110,8 @@ import type { HooksListResponse } from './protocol/generated/v2/HooksListRespons
 import type { ItemGuardianApprovalReviewCompletedNotification } from './protocol/generated/v2/ItemGuardianApprovalReviewCompletedNotification.js';
 import type { GuardianWarningNotification } from './protocol/generated/v2/GuardianWarningNotification.js';
 import type { ThreadApproveGuardianDeniedActionResponse } from './protocol/generated/v2/ThreadApproveGuardianDeniedActionResponse.js';
+import type { ConfigReadResponse } from './protocol/generated/v2/ConfigReadResponse.js';
+import type { ConfigWriteResponse } from './protocol/generated/v2/ConfigWriteResponse.js';
 import { formatGuardianDenialNotification, summarizeGuardianReviewAction, toGuardianAssessmentEventJson } from './codexGuardianReview.js';
 
 const CLIENT_INFO = {
@@ -712,6 +714,10 @@ export class CodexAgent extends Disposable implements IAgent {
 		startLogin: method => this._startAccountLogin(method),
 		cancelLogin: loginId => this._cancelAccountLogin(loginId),
 		logout: () => this._logoutAccount(),
+	};
+	readonly globalConfiguration: IAgentGlobalConfigurationManagement = {
+		read: keyPaths => this._readGlobalConfiguration(keyPaths),
+		write: (edits, expectedVersion) => this._writeGlobalConfiguration(edits, expectedVersion),
 	};
 
 	/** Keyed by caller-facing sessionId (the URI host). */
@@ -2007,6 +2013,51 @@ export class CodexAgent extends Disposable implements IAgent {
 		await connection.client.request<'account/logout'>('account/logout', undefined as never);
 		await this._refreshAccount(connection.client);
 		this._models.set([], undefined);
+	}
+
+	private async _readGlobalConfiguration(keyPaths: readonly string[]): Promise<AgentGlobalConfigurationState> {
+		const connection = await this._ensureConnection();
+		const response = await connection.client.request<'config/read', ConfigReadResponse>('config/read', { includeLayers: true });
+		return this._toGlobalConfigurationState(response, keyPaths);
+	}
+
+	private async _writeGlobalConfiguration(edits: readonly AgentGlobalConfigurationEdit[], expectedVersion?: string): Promise<AgentGlobalConfigurationState> {
+		const connection = await this._ensureConnection();
+		await connection.client.request<'config/batchWrite', ConfigWriteResponse>('config/batchWrite', {
+			edits: edits.map(edit => ({ keyPath: edit.keyPath, value: edit.value, mergeStrategy: 'replace' })),
+			expectedVersion,
+			reloadUserConfig: true,
+		});
+		return this._readGlobalConfiguration(edits.map(edit => edit.keyPath));
+	}
+
+	private _toGlobalConfigurationState(response: ConfigReadResponse, keyPaths: readonly string[]): AgentGlobalConfigurationState {
+		const userLayer = response.layers?.find(layer => layer.name.type === 'user' && layer.name.profile === null)
+			?? response.layers?.find(layer => layer.name.type === 'user');
+		if (!userLayer || userLayer.name.type !== 'user') {
+			throw new Error('Codex did not report a user config.toml location.');
+		}
+		const config = JSON.parse(JSON.stringify(response.config)) as Record<string, AgentGlobalConfigurationValue | undefined>;
+		const values: Record<string, AgentGlobalConfigurationValue | undefined> = {};
+		for (const keyPath of keyPaths) {
+			values[keyPath] = this._readGlobalConfigurationValue(config, keyPath);
+		}
+		return {
+			values,
+			file: URI.file(userLayer.name.file).toString(),
+			version: userLayer.version,
+		};
+	}
+
+	private _readGlobalConfigurationValue(config: Record<string, AgentGlobalConfigurationValue | undefined>, keyPath: string): AgentGlobalConfigurationValue | undefined {
+		let value: AgentGlobalConfigurationValue | undefined = config;
+		for (const segment of keyPath.split('.')) {
+			if (!value || Array.isArray(value) || typeof value !== 'object') {
+				return undefined;
+			}
+			value = value[segment];
+		}
+		return value;
 	}
 
 	private _handleAccountLoginCompleted(client: ICodexAppServerClient, params: AccountLoginCompletedNotification): void {

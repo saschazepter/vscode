@@ -9,7 +9,7 @@ import { equals } from '../../base/common/objects.js';
 import { URI } from '../../base/common/uri.js';
 import { AuthenticateParams, AuthenticateResult, IAgentConnection } from '../../platform/agentHost/common/agentService.js';
 import { RemoteAgentHostConnectionStatus } from '../../platform/agentHost/common/remoteAgentHostService.js';
-import { ResolveSessionConfigResult, SessionConfigValueItem, StartAgentAccountLoginResult } from '../../platform/agentHost/common/state/protocol/commands.js';
+import { AgentGlobalConfigurationEdit, AgentGlobalConfigurationState, ResolveSessionConfigResult, SessionConfigValueItem, StartAgentAccountLoginResult } from '../../platform/agentHost/common/state/protocol/commands.js';
 import { AgentAccountState, AgentCustomization, AgentInfo, Customization, McpServerStatus, RootConfigState, type McpServerState } from '../../platform/agentHost/common/state/protocol/state.js';
 import { ISessionsProvider } from '../services/sessions/common/sessionsProvider.js';
 import { ISessionAgentRef } from '../services/sessions/common/session.js';
@@ -142,6 +142,8 @@ export interface IAgentHostSessionsProvider extends ISessionsProvider {
 	startAgentAccountLogin(provider: string, method: 'browser' | 'deviceCode'): Promise<StartAgentAccountLoginResult>;
 	cancelAgentAccountLogin(provider: string, loginId: string): Promise<void>;
 	logoutAgentAccount(provider: string): Promise<void>;
+	readAgentGlobalConfiguration(provider: string, keyPaths: readonly string[]): Promise<AgentGlobalConfigurationState>;
+	writeAgentGlobalConfiguration(provider: string, edits: readonly AgentGlobalConfigurationEdit[], expectedVersion?: string): Promise<AgentGlobalConfigurationState>;
 
 	/** Authenticate against the backing agent-host connection. */
 	authenticate(params: AuthenticateParams): Promise<AuthenticateResult>;

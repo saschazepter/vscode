@@ -147,7 +147,7 @@ configurationRegistry.registerConfiguration({
 		},
 		[AgentHostCodexAgentUsageSourceSettingId]: {
 			type: 'string',
-			description: nls.localize('chat.agentHost.codexAgent.usageSource', "Controls whether Codex uses your GitHub Copilot subscription or authenticates directly with OpenAI. This setting affects all Codex agent-host sessions on the host. Use the Codex usage control in the new-session toolbar or run 'Codex: Manage Usage and Account' to sign in with ChatGPT."),
+			description: nls.localize('chat.agentHost.codexAgent.usageSource', "Controls whether Codex uses your GitHub Copilot subscription or authenticates directly with OpenAI. This setting affects all Codex agent-host sessions on the host. Open Codex Settings from the chat input toolbar to sign in with ChatGPT or change the usage source."),
 			default: 'copilot',
 			enum: ['copilot', 'openai'],
 			enumDescriptions: [

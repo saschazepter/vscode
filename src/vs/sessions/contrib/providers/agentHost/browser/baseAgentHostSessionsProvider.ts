@@ -2865,6 +2865,22 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		return connection.logoutAgentAccount(provider);
 	}
 
+	readAgentGlobalConfiguration(provider: string, keyPaths: readonly string[]) {
+		const connection = this.connection;
+		if (!connection?.readAgentGlobalConfiguration) {
+			throw new Error('Agent host is not connected.');
+		}
+		return connection.readAgentGlobalConfiguration(provider, keyPaths);
+	}
+
+	writeAgentGlobalConfiguration(provider: string, edits: readonly import('../../../../../platform/agentHost/common/state/protocol/commands.js').AgentGlobalConfigurationEdit[], expectedVersion?: string) {
+		const connection = this.connection;
+		if (!connection?.writeAgentGlobalConfiguration) {
+			throw new Error('Agent host is not connected.');
+		}
+		return connection.writeAgentGlobalConfiguration(provider, edits, expectedVersion);
+	}
+
 	// -- Model selection ------------------------------------------------------
 
 	get onDidChangeModels(): Event<void> {
