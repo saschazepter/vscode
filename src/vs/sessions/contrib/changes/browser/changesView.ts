@@ -57,6 +57,7 @@ import { ACTIVE_GROUP, IEditorService, SIDE_GROUP } from '../../../../workbench/
 import { IExtensionService } from '../../../../workbench/services/extensions/common/extensions.js';
 import { IWorkbenchLayoutService } from '../../../../workbench/services/layout/browser/layoutService.js';
 import { IMultiDiffEditorOptions } from '../../../../editor/browser/widget/multiDiffEditor/multiDiffEditorWidgetImpl.js';
+import { isDiffEditor } from '../../../../editor/browser/editorBrowser.js';
 import { getChangesEditorLabels } from './changesEditorLabels.js';
 import { ISessionChangesService } from './sessionChangesService.js';
 import { ISessionsService } from '../../../services/sessions/browser/sessionsService.js';
@@ -926,14 +927,9 @@ export class ChangesViewPane extends ViewPane {
 					return;
 				}
 
-				if (this.shouldRevealFileInMultiDiffEditor()) {
-					void this._openMultiFileDiffEditor(e.element.uri);
-					return;
-				}
-
 				// Holding Alt inverts the configured single/multi file diff behavior.
 				const altKey = !!(e.browserEvent as MouseEvent | KeyboardEvent | undefined)?.altKey;
-				const openSingleFileDiff = this.configurationService.getValue<boolean>(SESSIONS_CHANGES_OPEN_SINGLE_FILE_DIFF_SETTING) !== altKey;
+				const openSingleFileDiff = this.shouldOpenSingleFileDiffByDefault() !== altKey;
 				if (openSingleFileDiff) {
 					// Alt here only switches the diff mode, not the target group.
 					const sideBySide = e.sideBySide && !altKey;
@@ -1479,16 +1475,19 @@ export class ChangesViewPane extends ViewPane {
 	}
 
 	/**
-	 * Whether clicking a file opens the modal single-file diff (vs the multi-file
-	 * diff editor). Standard layout honors the `workbench.editor.useModal` setting;
-	 * {@link SinglePaneChangesViewPane} always opens the multi-file diff.
+	 * Whether clicking a file opens the modal single-file diff. {@link SinglePaneChangesViewPane}
+	 * never uses the modal editor.
 	 */
 	protected shouldOpenModalDiff(): boolean {
 		return this.configurationService.getValue<string>('workbench.editor.useModal') === 'all';
 	}
 
-	protected shouldRevealFileInMultiDiffEditor(): boolean {
-		return false;
+	/**
+	 * Whether clicking a file opens a single-file diff by default (vs the
+	 * multi-file diff editor). Alt inverts this.
+	 */
+	protected shouldOpenSingleFileDiffByDefault(): boolean {
+		return this.configurationService.getValue<boolean>(SESSIONS_CHANGES_OPEN_SINGLE_FILE_DIFF_SETTING);
 	}
 
 	/**
@@ -1562,12 +1561,20 @@ export class ChangesViewPane extends ViewPane {
 		// (no modified) are shown as a diff against an empty side, matching the
 		// "Open Changes" action.
 		const modifiedUri = isDeletion ? undefined : uri;
-		await this.editorService.openEditor({
+		const pane = await this.editorService.openEditor({
 			original: { resource: originalUri },
 			modified: { resource: modifiedUri },
 			...labels,
 			options: { preserveFocus, pinned }
 		}, group);
+
+		// Show the whole file rather than folding unchanged regions, since this
+		// diff is opened to review one specific file. No open-call option exists
+		// for this, so apply it via updateOptions() once the pane resolves.
+		const control = pane?.getControl();
+		if (isDiffEditor(control)) {
+			control.updateOptions({ hideUnchangedRegions: { enabled: false } });
+		}
 	}
 
 	private async _openMultiFileDiffEditor(reveal?: URI): Promise<void> {
@@ -1619,7 +1626,7 @@ export class ChangesViewPane extends ViewPane {
  * Changes view for the single-pane layout: the files list lives in the docked
  * detail panel while the Branch Changes header, Create-PR actions, and diffs are
  * shown in the custom Changes editor. Overrides the standard hooks to omit the
- * in-panel header/actions and always open the multi-file diff.
+ * in-panel header/actions.
  */
 export class SinglePaneChangesViewPane extends ChangesViewPane {
 
@@ -1636,11 +1643,8 @@ export class SinglePaneChangesViewPane extends ChangesViewPane {
 	}
 
 	protected override shouldOpenModalDiff(): boolean {
+		// Single-pane never uses the modal editor.
 		return false;
-	}
-
-	protected override shouldRevealFileInMultiDiffEditor(): boolean {
-		return true;
 	}
 }
 
