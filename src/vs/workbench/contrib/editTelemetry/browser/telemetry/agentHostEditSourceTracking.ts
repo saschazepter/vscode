@@ -235,14 +235,10 @@ export class AgentHostEditSourceTracking extends Disposable {
 			correlation: `${session.toString()}:${toolCallId}:${contentIndex}`,
 			kind: normalized.kind,
 		});
-		if (!shouldTrackAgentEdit(reconcileResult)) {
+		if (!shouldTrackAgentEdit(reconcileResult) || dirtyResource) {
 			if (dirtyResource) {
 				this._logService.trace(`[AgentHostEditSourceTracking] Skipping attribution for dirty open file ${dirtyResource.toString()}`);
 			}
-			return;
-		}
-		if (dirtyResource) {
-			this._logService.trace(`[AgentHostEditSourceTracking] Skipping attribution for dirty open file ${dirtyResource.toString()}`);
 			return;
 		}
 
