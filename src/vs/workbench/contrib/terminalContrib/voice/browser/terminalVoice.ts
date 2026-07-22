@@ -15,8 +15,10 @@ import { IContextKey, IContextKeyService } from '../../../../../platform/context
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { SpeechTimeoutDefault } from '../../../accessibility/browser/accessibilityConfiguration.js';
 import { ISpeechService, AccessibilityVoiceSettingId, ISpeechToTextEvent, SpeechToTextStatus } from '../../../speech/common/speechService.js';
+import { ChatSpeechToTextState, IChatSpeechToTextService } from '../../../chat/browser/speechToText/chatSpeechToTextService.js';
 import type { IMarker, IDecoration } from '@xterm/xterm';
 import { alert } from '../../../../../base/browser/ui/aria/aria.js';
+import { getActiveWindow } from '../../../../../base/browser/dom.js';
 import { ITerminalService } from '../../../terminal/browser/terminal.js';
 import { TerminalContextKeys } from '../../../terminal/common/terminalContextKey.js';
 
@@ -70,6 +72,7 @@ export class TerminalVoiceSession extends Disposable {
 	private readonly _disposables: DisposableStore;
 	constructor(
 		@ISpeechService private readonly _speechService: ISpeechService,
+		@IChatSpeechToTextService private readonly _chatSpeechToTextService: IChatSpeechToTextService,
 		@ITerminalService private readonly _terminalService: ITerminalService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@IContextKeyService contextKeyService: IContextKeyService,
@@ -93,6 +96,13 @@ export class TerminalVoiceSession extends Disposable {
 		}, voiceTimeout));
 		this._cancellationTokenSource = new CancellationTokenSource();
 		this._register(toDisposable(() => this._cancellationTokenSource?.dispose(true)));
+
+		// Prefer the built-in on-device engine (private, in-box) when configured,
+		// falling back to the speech extension's provider otherwise.
+		if (this._chatSpeechToTextService.isConfigured) {
+			return this._startBuiltin(voiceTimeout);
+		}
+
 		const session = await this._speechService.createSpeechToTextSession(this._cancellationTokenSource?.token, 'terminal');
 
 		this._disposables.add(session.onDidChange((e) => {
@@ -134,6 +144,62 @@ export class TerminalVoiceSession extends Disposable {
 			}
 		}));
 	}
+
+	/**
+	 * Drive terminal dictation from the built-in on-device engine. Unlike the
+	 * extension provider (which emits discrete `Recognizing`/`Recognized` events
+	 * per utterance), the built-in engine streams a single growing cumulative
+	 * transcript. We render it live as ghost text and keep it staged in
+	 * `_input`, then send it once the silence timeout elapses or the user stops.
+	 */
+	private async _startBuiltin(voiceTimeout: number): Promise<void> {
+		const service = this._chatSpeechToTextService;
+
+		this._terminalDictationInProgress.set(true);
+		if (!this._decoration) {
+			this._createDecoration();
+		}
+
+		this._disposables.add(service.onDidUpdateTranscript(update => {
+			if (this._cancellationTokenSource?.token.isCancellationRequested) {
+				return;
+			}
+			// Reuse the provider-path rendering by shaping the cumulative
+			// transcript as a recognizing event.
+			const event: ISpeechToTextEvent = { status: SpeechToTextStatus.Recognizing, text: update.text };
+			this._updateInput(event);
+			this._renderGhostText(event);
+			this._updateDecoration();
+			if (voiceTimeout > 0) {
+				this._acceptTranscriptionScheduler!.cancel();
+				this._acceptTranscriptionScheduler!.schedule();
+			}
+		}));
+
+		// If the engine ends the session on its own (e.g. the model failed to
+		// load), tear down and send whatever was captured. Guarded by the
+		// cancellation token so the teardown-triggered Idle transition (from
+		// `service.cancel()` below) does not re-enter `stop`.
+		this._disposables.add(service.onDidChangeState(state => {
+			if (this._cancellationTokenSource?.token.isCancellationRequested) {
+				return;
+			}
+			if (state === ChatSpeechToTextState.Idle) {
+				this.stop(true);
+			}
+		}));
+
+		// Abort the on-device session when this dictation is torn down.
+		this._disposables.add(toDisposable(() => service.cancel()));
+
+		try {
+			await service.start(getActiveWindow());
+		} catch {
+			// Microphone acquisition/connection failure is surfaced by the service.
+			this.stop();
+		}
+	}
+
 	stop(send?: boolean): void {
 		this._setInactive();
 		if (send) {
