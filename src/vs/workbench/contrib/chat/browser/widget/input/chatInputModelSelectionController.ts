@@ -6,7 +6,7 @@
 import { Disposable, IDisposable, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
 import { ChatAgentLocation, ChatModeKind } from '../../../common/constants.js';
 import { ILanguageModelChatMetadataAndIdentifier } from '../../../common/languageModels.js';
-import { InitialModelSelectionResult, ModelIdentifierResolution, ModelSelectionReason, resolveConfiguredModel, resolveInitialModelSelection } from '../../../common/modelSelection.js';
+import { InitialModelSelectionResult, ModelIdentifierResolution, ModelSelectionReason, resolveConfiguredModel, resolveInitialModelSelection, resolveModelIdentifier } from '../../../common/modelSelection.js';
 import { findBestMatchingModel, findDefaultModel, findReplacementForProvisionalModel, hasModelsTargetingSession, isModelValidForSession, resolveModelFromSyncState, shouldDropAgnosticDraftModel, shouldResetModelToDefault, shouldResetOnModelListChange, shouldWaitForSessionModel } from './chatInputModelUtils.js';
 import { IChatModelSelectionDiagnostics, NullChatModelSelectionDiagnostics } from './chatModelSelectionDiagnostics.js';
 import { ChatModelSelectionModel } from './chatModelSelectionModel.js';
@@ -74,6 +74,10 @@ export class ChatInputModelSelectionController extends Disposable {
 		return !!this._authoritativeModelWait.value;
 	}
 
+	hasPendingProgrammaticSelection(): boolean {
+		return this.hasAuthoritativeModelWait() && this._model.selectionReason === ModelSelectionReason.ProgrammaticSelection;
+	}
+
 	clearAuthoritativeModelWait(): void {
 		this._authoritativeModelWait.clear();
 	}
@@ -95,6 +99,67 @@ export class ChatInputModelSelectionController extends Disposable {
 		this._model.applyExplicitSelection(model, sessionKey, conversationKey, apply, rollbackOnError);
 	}
 
+	applyProgrammaticSelection(
+		model: ILanguageModelChatMetadataAndIdentifier,
+		sessionKey: string | undefined,
+		conversationKey: string | undefined,
+		apply: () => void,
+	): void {
+		this.clearAuthoritativeModelWait();
+		this.clearHistoryModelWait();
+		this._provisionalModelId = undefined;
+		this._model.applyProgrammaticSelection(model, sessionKey, conversationKey);
+		apply();
+	}
+
+	requestProgrammaticSelection(
+		resolveModel: () => ILanguageModelChatMetadataAndIdentifier | undefined,
+		sessionKey: string | undefined,
+		conversationKey: string | undefined,
+		apply: (model: ILanguageModelChatMetadataAndIdentifier) => void,
+	): Promise<boolean> {
+		const available = resolveModel();
+		if (available) {
+			this.applyProgrammaticSelection(available, sessionKey, conversationKey, () => apply(available));
+			return Promise.resolve(true);
+		}
+
+		this.clearAuthoritativeModelWait();
+		this.clearHistoryModelWait();
+		this._provisionalModelId = undefined;
+		this._model.setTransitionMemory(sessionKey, conversationKey, ModelSelectionReason.ProgrammaticSelection);
+
+		return new Promise<boolean>(resolve => {
+			let settled = false;
+			const finish = (value: boolean) => {
+				if (!settled) {
+					settled = true;
+					resolve(value);
+				}
+			};
+			const listener = this._runtime.subscribeToModelChanges(() => {
+				if (this._runtime.getBoundConversationKey() !== conversationKey) {
+					this.clearAuthoritativeModelWait();
+					return;
+				}
+				const model = resolveModel();
+				if (model) {
+					finish(true);
+					this.applyProgrammaticSelection(model, sessionKey, conversationKey, () => apply(model));
+				}
+			});
+			this._authoritativeModelWait.value = {
+				dispose: () => {
+					listener.dispose();
+					if (this._model.selectionReason === ModelSelectionReason.ProgrammaticSelection) {
+						this._model.setSelectionReason(undefined);
+					}
+					finish(false);
+				},
+			};
+		});
+	}
+
 	initialize(rememberedModelId: string | undefined, onInitialSelection: (selection: InitialModelSelectionResult) => void): void {
 		this.clearAuthoritativeModelWait();
 		this._provisionalModelId = undefined;
@@ -102,11 +167,9 @@ export class ChatInputModelSelectionController extends Disposable {
 			const configuredModelValue = this._runtime.getConfiguredModelValue();
 			const models = this._runtime.getModels(this._runtime.getCurrentSessionType());
 			const configuredModel = resolveConfiguredModel(configuredModelValue, models);
-			const resolution = rememberedModelId ? this._runtime.resolveModelIdentifier(rememberedModelId) : { kind: 'notRequested' } as const;
+			const resolution = resolveModelIdentifier(models, rememberedModelId, false);
 			return resolveInitialModelSelection({
-				configuredModelValue,
 				configuredModel,
-				waitForConfiguredModel: false,
 				desiredModelResolution: resolution,
 				desiredReason: ModelSelectionReason.Remembered,
 				fallbackModel: findDefaultModel(models, this._runtime.location),
@@ -142,8 +205,6 @@ export class ChatInputModelSelectionController extends Disposable {
 					this._model.setSelectionReason(lateSelection.reason);
 					this._runtime.applyModel(lateSelection.model);
 					this.ensureCurrentModelSupported();
-				} else if (lateSelection.kind === 'none') {
-					this.clearAuthoritativeModelWait();
 				}
 			});
 		}
@@ -190,15 +251,16 @@ export class ChatInputModelSelectionController extends Disposable {
 			&& !this._model.userExplicitlySelectedModel
 			&& !configuredModel
 			&& !defaultModel.metadata.isDefaultForLocation[this._runtime.location];
-		this._model.setSelectionReason(configuredModel ? ModelSelectionReason.ConfiguredDefault : ModelSelectionReason.FirstAvailable);
+		if (!this.hasPendingProgrammaticSelection()) {
+			this._model.setSelectionReason(configuredModel ? ModelSelectionReason.ConfiguredDefault : ModelSelectionReason.FirstAvailable);
+		}
 		this._provisionalModelId = isProvisional ? defaultModel.identifier : undefined;
 		this._runtime.applyModel(defaultModel);
 	}
 
 	applyConfiguredDefault(): boolean {
 		if (!this._runtime.isEmpty()
-			|| this._model.userExplicitlySelectedModel
-			|| this._model.selectionReason === ModelSelectionReason.SessionRestore) {
+			|| this._model.selectionIsAuthoritative) {
 			return false;
 		}
 		const configuredValue = this._runtime.getConfiguredModelValue();
@@ -253,23 +315,17 @@ export class ChatInputModelSelectionController extends Disposable {
 			action: syncResult.action,
 		}, syncResult.action === 'keep' ? 'debug' : 'info');
 		if (syncResult.action === 'apply' || syncResult.action === 'keep') {
-			this.clearAuthoritativeModelWait();
-			this.clearHistoryModelWait();
-			this._model.setSelectionReason(ModelSelectionReason.SessionRestore);
-			this._runtime.restoreModelConfiguration(desiredModel.identifier, modelConfiguration);
-			if (syncResult.action === 'apply') {
-				this._runtime.applyModel(desiredModel);
-			}
+			this._applySessionRestore(desiredModel, syncResult.action === 'apply', {
+				modelId: desiredModel.identifier,
+				configuration: modelConfiguration,
+			});
 			return;
 		}
 
 		const pool = this._runtime.getModels(sessionType);
 		const match = findBestMatchingModel(desiredModel, pool) ?? findBestMatchingModel(currentModel, pool);
 		if (match) {
-			this.clearAuthoritativeModelWait();
-			this.clearHistoryModelWait();
-			this._model.setSelectionReason(ModelSelectionReason.SessionRestore);
-			this._runtime.applyModel(match);
+			this._applySessionRestore(match, true);
 		} else if (resolution.kind === 'pending' && shouldWaitForSessionModel(desiredModel, sessionType, allModels)) {
 			this._authoritativeModelWait.value = this._runtime.subscribeToModelChanges(() => {
 				if (this._runtime.getBoundConversationKey() !== conversationKey) {
@@ -278,16 +334,15 @@ export class ChatInputModelSelectionController extends Disposable {
 				}
 				const lateResolution = this._runtime.resolveModelIdentifier(desiredModel.identifier);
 				if (lateResolution.kind === 'available') {
-					this.clearAuthoritativeModelWait();
-					this._model.setSelectionReason(ModelSelectionReason.SessionRestore);
-					this._runtime.restoreModelConfiguration(desiredModel.identifier, modelConfiguration);
-					this._runtime.applyModel(lateResolution.model);
+					this._applySessionRestore(lateResolution.model, true, {
+						modelId: desiredModel.identifier,
+						configuration: modelConfiguration,
+					});
 				} else if (lateResolution.kind === 'unavailable') {
 					this.clearAuthoritativeModelWait();
 					const lateMatch = findBestMatchingModel(desiredModel, this._runtime.getModels(sessionType));
 					if (lateMatch) {
-						this._model.setSelectionReason(ModelSelectionReason.SessionRestore);
-						this._runtime.applyModel(lateMatch);
+						this._applySessionRestore(lateMatch, true);
 					} else {
 						this.selectDefault(sessionType);
 					}
@@ -370,8 +425,25 @@ export class ChatInputModelSelectionController extends Disposable {
 		return { model, changed: model?.identifier !== draftModel?.identifier };
 	}
 
+	private _applySessionRestore(
+		model: ILanguageModelChatMetadataAndIdentifier,
+		applyModel: boolean,
+		configuration?: { readonly modelId: string; readonly configuration: Record<string, unknown> | undefined },
+	): void {
+		this.clearAuthoritativeModelWait();
+		this.clearHistoryModelWait();
+		this._provisionalModelId = undefined;
+		this._model.setSelectionReason(ModelSelectionReason.SessionRestore);
+		if (configuration) {
+			this._runtime.restoreModelConfiguration(configuration.modelId, configuration.configuration);
+		}
+		if (applyModel) {
+			this._runtime.applyModel(model);
+		}
+	}
+
 	private _replaceProvisionalModelWithDefault(models: readonly ILanguageModelChatMetadataAndIdentifier[]): boolean {
-		if (!this._runtime.isEmpty() || this._model.userExplicitlySelectedModel || this.hasAuthoritativeModelWait()) {
+		if (!this._runtime.isEmpty() || this._model.selectionIsAuthoritative) {
 			return false;
 		}
 		const replacement = findReplacementForProvisionalModel(
@@ -398,7 +470,6 @@ export class ChatInputModelSelectionController extends Disposable {
 			selection: selection.kind,
 			resultModel: selection.kind === 'apply' ? selection.model.identifier : undefined,
 			resultReason: selection.kind === 'apply' ? selection.reason : undefined,
-			pendingSource: selection.kind === 'pending' ? selection.selection.source : undefined,
 			pendingReference: selection.kind === 'pending' ? selection.selection.reference : undefined,
 		}, selection.kind === 'none' ? 'debug' : 'info');
 	}

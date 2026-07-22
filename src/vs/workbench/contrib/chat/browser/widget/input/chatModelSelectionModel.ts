@@ -6,7 +6,7 @@
 import { IObservable, observableValue } from '../../../../../../base/common/observable.js';
 import { ChatAgentLocation } from '../../../common/constants.js';
 import { ILanguageModelChatMetadataAndIdentifier } from '../../../common/languageModels.js';
-import { IModelSelectionModelsContext, IModelSelectionSessionContext, IModelSelectionTransitionResult, IPendingModelSelection, ModelIdentifierResolution, ModelSelectionApplyReason, ModelSelectionReason, transitionModelSelection } from '../../../common/modelSelection.js';
+import { IModelSelectionModelsContext, IModelSelectionSessionContext, IModelSelectionTransitionResult, IPendingModelSelection, isAuthoritativeModelSelectionReason, ModelIdentifierResolution, ModelSelectionApplyReason, ModelSelectionReason, transitionModelSelection } from '../../../common/modelSelection.js';
 import { IChatModelSelectionDiagnostics, NullChatModelSelectionDiagnostics } from './chatModelSelectionDiagnostics.js';
 
 /** Captures coordinator state so a failed external selection effect can be rolled back. */
@@ -29,7 +29,6 @@ export interface IChatModelCatalogTransitionInput<TSnapshot extends IChatModelCa
 	readonly trigger?: string;
 	readonly location: ChatAgentLocation;
 	readonly configuredModel: string | undefined;
-	readonly waitForConfiguredModel: boolean;
 	readonly getSnapshot: (desiredModelId: string | undefined) => TSnapshot;
 	readonly getRememberedSelection: (snapshot: TSnapshot) => TRemembered | undefined;
 }
@@ -61,6 +60,10 @@ export class ChatModelSelectionModel {
 		return this._currentReason;
 	}
 
+	get selectionIsAuthoritative(): boolean {
+		return isAuthoritativeModelSelectionReason(this._currentReason);
+	}
+
 	getCurrentReason(sessionKey: string | undefined): ModelSelectionApplyReason | undefined {
 		return sessionKey === this._sessionKey ? this._currentReason : undefined;
 	}
@@ -85,6 +88,11 @@ export class ChatModelSelectionModel {
 		this._lastPushedChatKey = chatKey;
 		this._currentReason = reason;
 		this._pendingSelection = undefined;
+	}
+
+	applyProgrammaticSelection(model: ILanguageModelChatMetadataAndIdentifier, sessionKey: string | undefined, chatKey: string | undefined): void {
+		this.setCurrentModel(model, false);
+		this.setTransitionMemory(sessionKey, chatKey, ModelSelectionReason.ProgrammaticSelection);
 	}
 
 	applyExplicitSelection(
@@ -159,7 +167,6 @@ export class ChatModelSelectionModel {
 		const result = this.transition(input.session, {
 			available: snapshot.models,
 			configuredModel: input.configuredModel,
-			waitForConfiguredModel: input.waitForConfiguredModel,
 			rememberedModelId,
 			desiredModelResolution: snapshot.desiredModelResolution,
 			fallbackModel,
@@ -179,7 +186,6 @@ export class ChatModelSelectionModel {
 			previousReason: currentReason,
 			resultModel: result.currentModel?.identifier,
 			resultReason: result.currentReason,
-			pendingSource: result.pendingSelection?.source,
 			pendingReference: result.pendingSelection?.reference,
 			effect: result.effect.kind,
 			effectModel: result.effect.kind === 'apply' ? result.effect.model.identifier : undefined,

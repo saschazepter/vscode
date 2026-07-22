@@ -228,7 +228,6 @@ export class SessionModelSelectionModel extends Disposable implements ISessionMo
 			} : { kind: 'none' },
 			location: ChatAgentLocation.Chat,
 			configuredModel: this._configurationService.getValue<string>(ChatConfiguration.DefaultModel),
-			waitForConfiguredModel: false,
 			getSnapshot: desiredModelId => {
 				const snapshot = session && provider
 					? provider.getModelsSnapshot(session.sessionId, desiredModelId)

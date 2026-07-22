@@ -1052,7 +1052,11 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		const models = this.getModels();
 		const model = models.find(m => m.identifier === identifier);
 		if (model) {
-			this.setCurrentLanguageModel(model, isUserAction, storeSelection);
+			if (isUserAction) {
+				this.setCurrentLanguageModel(model, true, storeSelection);
+			} else {
+				this._applyProgrammaticLanguageModel(model);
+			}
 			return true;
 		}
 		return false;
@@ -1063,12 +1067,27 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		for (const qualifiedModelName of qualifiedModelNames) {
 			const model = models.find(m => ILanguageModelChatMetadata.matchesQualifiedName(qualifiedModelName, m.metadata));
 			if (model) {
-				this.setCurrentLanguageModel(model);
+				this._applyProgrammaticLanguageModel(model);
 				return true;
 			}
 		}
 		this.logService.warn(`[chat] Node of the models "${qualifiedModelNames.join(', ')}" not found. Use format "<name> (<vendor>)", e.g. "GPT-4o (copilot)".`);
 		return false;
+	}
+
+	public requestModelByIdentifier(identifier: string): Promise<boolean> {
+		return this._requestProgrammaticLanguageModel(() => this.getModels().find(model => model.identifier === identifier));
+	}
+
+	public requestModelByQualifiedName(qualifiedModelNames: readonly string[]): Promise<boolean> {
+		return this._requestProgrammaticLanguageModel(() => {
+			const models = this.getModels();
+			return qualifiedModelNames.map(name => models.find(model => ILanguageModelChatMetadata.matchesQualifiedName(name, model.metadata))).find(isDefined);
+		});
+	}
+
+	get hasPendingProgrammaticModelSelection(): boolean {
+		return this._modelSelectionController.hasPendingProgrammaticSelection();
 	}
 
 
@@ -1646,6 +1665,37 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		}
 	}
 
+	private _applyProgrammaticLanguageModel(model: ILanguageModelChatMetadataAndIdentifier): void {
+		this._modelSelectionController.applyProgrammaticSelection(
+			model,
+			this.getCurrentSessionType(),
+			this._inputModelSessionResource?.toString(),
+			() => {
+				if (this.cachedWidth) {
+					this.layout(this.cachedWidth);
+				}
+				this._syncInputStateToModel();
+			},
+		);
+	}
+
+	private _requestProgrammaticLanguageModel(resolveModel: () => ILanguageModelChatMetadataAndIdentifier | undefined): Promise<boolean> {
+		const result = this._modelSelectionController.requestProgrammaticSelection(
+			resolveModel,
+			this.getCurrentSessionType(),
+			this._inputModelSessionResource?.toString(),
+			model => {
+				if (this.cachedWidth) {
+					this.layout(this.cachedWidth);
+				}
+				this._syncInputStateToModel();
+			},
+		);
+		this._updateInputContentContextKeys();
+		void result.finally(() => this._updateInputContentContextKeys());
+		return result;
+	}
+
 	private checkModelSupported(): void {
 		this._modelSelectionController.ensureCurrentModelSupported();
 	}
@@ -2200,7 +2250,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		const hasSendableContent = inputHasText || this._attachmentModel.attachments.some(isExplicitFileOrImageVariableEntry);
 		// Block sending when the session type has no usable model (and can't
 		// fall back to Auto): there is nothing to send the request with.
-		this.inputEditorHasSendableContent.set(hasSendableContent && !this.hasNoAvailableModel());
+		this.inputEditorHasSendableContent.set(hasSendableContent && !this.hasNoAvailableModel() && !this.hasPendingProgrammaticModelSelection);
 	}
 
 	private getOrCreateOptionEmitter(optionGroupId: string): Emitter<IChatSessionProviderOptionItem> {
