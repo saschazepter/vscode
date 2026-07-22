@@ -61,6 +61,10 @@ export class TerminalVoiceSession extends Disposable {
 	private static _instance: TerminalVoiceSession | undefined = undefined;
 	private _acceptTranscriptionScheduler: RunOnceScheduler | undefined;
 	private readonly _terminalDictationInProgress: IContextKey<boolean>;
+	/** True while the current session is driven by the built-in on-device engine. */
+	private _usingBuiltin = false;
+	/** True while awaiting the built-in engine's final transcript during accept. */
+	private _builtinFinalizing = false;
 	static getInstance(instantiationService: IInstantiationService): TerminalVoiceSession {
 		if (!TerminalVoiceSession._instance) {
 			TerminalVoiceSession._instance = instantiationService.createInstance(TerminalVoiceSession);
@@ -91,6 +95,13 @@ export class TerminalVoiceSession extends Disposable {
 			voiceTimeout = SpeechTimeoutDefault;
 		}
 		this._acceptTranscriptionScheduler = this._disposables.add(new RunOnceScheduler(() => {
+			// The built-in engine returns its final utterance only from
+			// stopAndTranscribe(), so accept through stop(true) rather than
+			// sending the interim text and discarding the recording.
+			if (this._usingBuiltin) {
+				this.stop(true);
+				return;
+			}
 			this._sendText();
 			this.stop();
 		}, voiceTimeout));
@@ -155,17 +166,30 @@ export class TerminalVoiceSession extends Disposable {
 	private async _startBuiltin(voiceTimeout: number): Promise<void> {
 		const service = this._chatSpeechToTextService;
 
+		// Only one dictation can run at a time (the on-device engine is a shared
+		// singleton). If it is already recording elsewhere (chat input or an
+		// editor), `service.start()` would no-op while these listeners stayed
+		// attached and streamed that other surface's transcript into the
+		// terminal. Reject a non-idle engine before subscribing.
+		if (service.state !== ChatSpeechToTextState.Idle) {
+			this.stop();
+			return;
+		}
+
+		this._usingBuiltin = true;
 		this._terminalDictationInProgress.set(true);
 		if (!this._decoration) {
 			this._createDecoration();
 		}
 
 		this._disposables.add(service.onDidUpdateTranscript(update => {
-			if (this._cancellationTokenSource?.token.isCancellationRequested) {
+			if (this._cancellationTokenSource?.token.isCancellationRequested || this._builtinFinalizing) {
 				return;
 			}
 			// Reuse the provider-path rendering by shaping the cumulative
-			// transcript as a recognizing event.
+			// transcript as a recognizing event. The staged text is only sent
+			// once accepted (silence timeout or Stop Dictation), which fetches
+			// the engine's final transcript.
 			const event: ISpeechToTextEvent = { status: SpeechToTextStatus.Recognizing, text: update.text };
 			this._updateInput(event);
 			this._renderGhostText(event);
@@ -177,20 +201,13 @@ export class TerminalVoiceSession extends Disposable {
 		}));
 
 		// If the engine ends the session on its own (e.g. the model failed to
-		// load), tear down and send whatever was captured. Guarded by the
-		// cancellation token so the teardown-triggered Idle transition (from
-		// `service.cancel()` below) does not re-enter `stop`.
+		// load), abort the terminal-side rendering. Guarded so neither the
+		// accept-triggered nor the abort-triggered Idle transition re-enters.
 		this._disposables.add(service.onDidChangeState(state => {
-			if (this._cancellationTokenSource?.token.isCancellationRequested) {
-				return;
-			}
-			if (state === ChatSpeechToTextState.Idle) {
-				this.stop(true);
+			if (state === ChatSpeechToTextState.Idle && !this._builtinFinalizing && !this._cancellationTokenSource?.token.isCancellationRequested) {
+				this.stop();
 			}
 		}));
-
-		// Abort the on-device session when this dictation is torn down.
-		this._disposables.add(toDisposable(() => service.cancel()));
 
 		try {
 			await service.start(getActiveWindow());
@@ -200,7 +217,39 @@ export class TerminalVoiceSession extends Disposable {
 		}
 	}
 
+	/**
+	 * Accept the built-in dictation: fetch the engine's final transcript (the
+	 * last utterance is only returned by `stopAndTranscribe`, not the interim
+	 * stream), stage it, then tear down and send it. Used by the silence timeout
+	 * and the Stop Dictation action; abort/error teardown uses `cancel()` instead.
+	 */
+	private async _finalizeBuiltinThenStop(): Promise<void> {
+		let finalText: string | undefined;
+		try {
+			finalText = await this._chatSpeechToTextService.stopAndTranscribe();
+		} catch {
+			// Fall back to the last interim text already staged in `_input`.
+		}
+		// A concurrent abort (e.g. the terminal was disposed) already tore down.
+		if (!this._usingBuiltin || this._cancellationTokenSource?.token.isCancellationRequested) {
+			return;
+		}
+		if (finalText !== undefined) {
+			this._updateInput({ status: SpeechToTextStatus.Recognized, text: finalText });
+		}
+		// _builtinFinalizing is set, so this reaches the synchronous teardown and
+		// sends the staged (final) text.
+		this.stop(true);
+	}
+
 	stop(send?: boolean): void {
+		// Built-in accept path: fetch the final transcript before tearing down.
+		if (this._usingBuiltin && send && !this._builtinFinalizing) {
+			this._builtinFinalizing = true;
+			this._acceptTranscriptionScheduler?.cancel();
+			this._finalizeBuiltinThenStop();
+			return;
+		}
 		this._setInactive();
 		if (send) {
 			this._acceptTranscriptionScheduler!.cancel();
@@ -213,9 +262,16 @@ export class TerminalVoiceSession extends Disposable {
 		this._marker = undefined;
 		this._ghostTextMarker = undefined;
 		this._cancellationTokenSource?.cancel();
+		// Abort the on-device engine on teardown. On the accept path the engine
+		// has already finished via stopAndTranscribe(), so this is a no-op there.
+		if (this._usingBuiltin) {
+			this._chatSpeechToTextService.cancel();
+		}
 		this._disposables.clear();
 		this._input = '';
 		this._terminalDictationInProgress.reset();
+		this._usingBuiltin = false;
+		this._builtinFinalizing = false;
 	}
 
 	private _sendText(): void {
