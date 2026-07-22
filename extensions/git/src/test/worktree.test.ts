@@ -12,7 +12,29 @@ import { tmpdir } from 'os';
 import * as path from 'path';
 import { getWorktreeIncludePaths } from '../worktree';
 
+const isCaseInsensitiveFileSystem = process.platform === 'win32' || process.platform === 'darwin';
+
+function rmDirWithRetry(directory: string): void {
+	try { fs.rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { }
+}
+
 suite('worktree', () => {
+	test('protects target-tracked files that differ only in case on case-insensitive file systems', () => {
+		const root = path.join(path.parse(process.cwd()).root, 'repo');
+		const includePaths = getWorktreeIncludePaths(
+			root,
+			['Cache/**'],
+			'Cache/config.json',
+			'',
+			'cache/config.json'
+		);
+
+		// On case-insensitive file systems (Windows/macOS) the target-tracked
+		// `cache/config.json` must protect the aliased ignored `Cache/config.json`.
+		const expected = isCaseInsensitiveFileSystem ? [] : [path.join(root, 'Cache/config.json')];
+		assert.deepStrictEqual(includePaths, expected);
+	});
+
 	test('collapses only wholly ignored directories', () => {
 		const root = path.join(path.parse(process.cwd()).root, 'repo');
 		const result = getWorktreeIncludePaths(
@@ -107,8 +129,8 @@ suite('worktree', () => {
 			});
 		} finally {
 			try { runGit(repositoryRoot, ['worktree', 'remove', '--force', worktreePath]); } catch { }
-			fs.rmSync(repositoryRoot, { recursive: true, force: true });
-			fs.rmSync(worktreePath, { recursive: true, force: true });
+			rmDirWithRetry(repositoryRoot);
+			rmDirWithRetry(worktreePath);
 		}
 	});
 
@@ -156,8 +178,8 @@ suite('worktree', () => {
 			});
 		} finally {
 			try { runGit(repositoryRoot, ['worktree', 'remove', '--force', worktreePath]); } catch { }
-			fs.rmSync(repositoryRoot, { recursive: true, force: true });
-			fs.rmSync(worktreePath, { recursive: true, force: true });
+			rmDirWithRetry(repositoryRoot);
+			rmDirWithRetry(worktreePath);
 		}
 	});
 });
