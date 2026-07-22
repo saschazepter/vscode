@@ -38,7 +38,7 @@ import { createNoopGitService, createSessionDataService, TestSessionDatabase } f
 import { NULL_CHECKPOINT_SERVICE } from '../../common/agentHostCheckpointService.js';
 import { buildSessionChangesetUri, buildUncommittedChangesetUri } from '../../common/changesetUri.js';
 import { type ICopilotApiService, type ICopilotApiServiceRequestOptions, type ICopilotUtilityChatCompletionRequest } from '../../node/shared/copilotApiService.js';
-import { WorktreeIsolation } from '../../node/shared/worktreeIsolation.js';
+import { getWorktreesRoot, WorktreeIsolation } from '../../node/shared/worktreeIsolation.js';
 import { AhpErrorCodes, JSON_RPC_INTERNAL_ERROR, ProtocolError } from '../../common/state/sessionProtocol.js';
 import type { INetworkDiagnosticsService } from '../../node/networkDiagnosticsService.js';
 
@@ -365,66 +365,105 @@ suite('AgentService (node dispatcher)', () => {
 		});
 	});
 
-	test('marks worktree isolation pending before a provisional provider can prewarm', async () => {
+	test('uses the final isolation choice when a Git-capable provisional session first sends', async () => {
 		const session = AgentSession.uri('codex', 'pending-before-create');
-		const workingDirectory = URI.file('/workspace/repo');
+		const workingDirectory = URI.file(mkdtempSync(`${tmpdir()}/agent-host-worktree-`));
+		const worktreesRoot = getWorktreesRoot(workingDirectory);
 		const gitService = createNoopGitService();
 		gitService.getRepositoryRoot = async () => workingDirectory;
 		gitService.revParse = async () => 'head';
 		gitService.getCurrentBranch = async () => 'feature';
-		gitService.getDefaultBranch = async () => ({ name: 'main', startPoint: 'main' });
-		const localService = disposables.add(new AgentService(new NullLogService(), fileService, nullSessionDataService, { _serviceBrand: undefined } as IProductService, gitService));
-		const isolation = disposables.add(new WorktreeIsolation(
-			{ generateBranchName: async () => 'agents/test' },
-			gitService,
-			new TestCopilotApiService(),
-			nullSessionDataService,
-			new NullLogService(),
-		));
-		localService.setWorktreeIsolation(isolation);
+		gitService.getDefaultBranch = async () => ({ name: 'main', startPoint: 'origin/main' });
+		const addWorktreeCalls: Array<{ worktree: URI; branch: string; startPoint: string }> = [];
+		gitService.addWorktree = async (_repositoryRoot, worktree, branch, startPoint) => {
+			addWorktreeCalls.push({ worktree, branch, startPoint });
+		};
+		const sessionDataService = createSessionDataService();
+		const localDisposables = new DisposableStore();
 		const pendingDuringCreate: boolean[] = [];
 		const providerCreateConfigs: Array<Record<string, unknown> | undefined> = [];
 		let failCreate = false;
-		class PrewarmingAgent extends MockAgent {
-			override async createSession(config?: import('../../common/agentService.js').IAgentCreateSessionConfig): Promise<import('../../common/agentService.js').IAgentCreateSessionResult> {
-				pendingDuringCreate.push(localService.configurationService.isWorkingDirectoryPending(config!.session!.toString()));
-				providerCreateConfigs.push(config?.config);
-				if (failCreate) {
-					throw new Error('create failed');
+		try {
+			const localService = localDisposables.add(new AgentService(new NullLogService(), fileService, sessionDataService, { _serviceBrand: undefined } as IProductService, gitService));
+			const isolation = localDisposables.add(new WorktreeIsolation(
+				{ generateBranchName: async () => 'agents/test' },
+				gitService,
+				new TestCopilotApiService(),
+				sessionDataService,
+				new NullLogService(),
+			));
+			localService.setWorktreeIsolation(isolation);
+			class PrewarmingAgent extends MockAgent {
+				override async createSession(config?: import('../../common/agentService.js').IAgentCreateSessionConfig): Promise<import('../../common/agentService.js').IAgentCreateSessionResult> {
+					pendingDuringCreate.push(localService.configurationService.isWorkingDirectoryPending(config!.session!.toString()));
+					providerCreateConfigs.push(config?.config);
+					if (failCreate) {
+						throw new Error('create failed');
+					}
+					return { ...await super.createSession(config), provisional: true };
 				}
-				return { ...await super.createSession(config), provisional: true };
 			}
+			const agent = new PrewarmingAgent('codex');
+			localDisposables.add(toDisposable(() => agent.dispose()));
+			localService.registerProvider(agent);
+
+			await localService.createSession({
+				provider: 'codex',
+				session,
+				workingDirectory,
+				config: { [SessionConfigKey.Isolation]: 'folder' },
+			});
+			const pendingAfterCreate = localService.configurationService.isWorkingDirectoryPending(session.toString());
+			localService.dispatchAction(session.toString(), {
+				type: ActionType.SessionConfigChanged,
+				config: { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' },
+			}, 'test-client', 1);
+			const didSend = Event.toPromise(agent.onDidSendMessage);
+			localService.dispatchAction(buildDefaultChatUri(session.toString()), {
+				type: ActionType.ChatTurnStarted,
+				turnId: 'turn-1',
+				startedAt: '2025-01-01T00:00:00.000Z',
+				message: { text: 'hello', origin: { kind: MessageKind.User } },
+			}, 'test-client', 2);
+			await didSend;
+
+			const failedSession = AgentSession.uri('codex', 'failed-before-create');
+			failCreate = true;
+			await assert.rejects(localService.createSession({
+				provider: 'codex',
+				session: failedSession,
+				workingDirectory,
+				config: { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' },
+			}), /create failed/);
+
+			assert.deepStrictEqual({
+				pendingDuringCreate,
+				providerCreateConfigs,
+				pendingAfterCreate,
+				pendingAfterSend: localService.configurationService.isWorkingDirectoryPending(session.toString()),
+				pendingAfterFailure: localService.configurationService.isWorkingDirectoryPending(failedSession.toString()),
+				configAfterSend: localService.configurationService.getSessionConfigValues(session.toString()),
+				addWorktreeCalls: addWorktreeCalls.map(call => ({ ...call, worktree: call.worktree.toString() })),
+				createdWorktreeSessionIds: isolation.createdWorktreeSessionIds,
+			}, {
+				pendingDuringCreate: [true, true],
+				providerCreateConfigs: [{}, {}],
+				pendingAfterCreate: true,
+				pendingAfterSend: false,
+				pendingAfterFailure: false,
+				configAfterSend: { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' },
+				addWorktreeCalls: [{
+					worktree: URI.joinPath(worktreesRoot, 'test').toString(),
+					branch: 'agents/test',
+					startPoint: 'origin/main',
+				}],
+				createdWorktreeSessionIds: ['pending-before-create'],
+			});
+		} finally {
+			localDisposables.dispose();
+			rmSync(workingDirectory.fsPath, { recursive: true, force: true });
+			rmSync(worktreesRoot.fsPath, { recursive: true, force: true });
 		}
-		const agent = new PrewarmingAgent('codex');
-		disposables.add(toDisposable(() => agent.dispose()));
-		localService.registerProvider(agent);
-
-		await localService.createSession({
-			provider: 'codex',
-			session,
-			workingDirectory,
-			config: { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' },
-		});
-		const failedSession = AgentSession.uri('codex', 'failed-before-create');
-		failCreate = true;
-		await assert.rejects(localService.createSession({
-			provider: 'codex',
-			session: failedSession,
-			workingDirectory,
-			config: { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' },
-		}), /create failed/);
-
-		assert.deepStrictEqual({
-			pendingDuringCreate,
-			providerCreateConfigs,
-			pendingAfterCreate: localService.configurationService.isWorkingDirectoryPending(session.toString()),
-			pendingAfterFailure: localService.configurationService.isWorkingDirectoryPending(failedSession.toString()),
-		}, {
-			pendingDuringCreate: [true, true],
-			providerCreateConfigs: [{}, {}],
-			pendingAfterCreate: true,
-			pendingAfterFailure: false,
-		});
 	});
 
 	suite('resourceRead', () => {

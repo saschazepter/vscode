@@ -965,7 +965,9 @@ export class AgentService extends Disposable implements IAgentService {
 		// materializing in the picked folder before the host creates the worktree.
 		const initializeSideEffects = this._sideEffects.initialize();
 		const sessionConfig = await this._resolveCreatedSessionConfig(provider, config);
-		const deferWorktreeCreation = sessionConfig?.values?.[SessionConfigKey.Isolation] === 'worktree' && !config?.fork && !config?.importConversation;
+		const deferWorktreeCreation = (sessionConfig?.schema.properties[SessionConfigKey.Isolation]?.enum?.includes('worktree') === true
+			|| sessionConfig?.values?.[SessionConfigKey.Isolation] === 'worktree')
+			&& !config?.fork && !config?.importConversation;
 
 		this._logService.trace(`[AgentService] createSession: initializing auto-approver and creating session...`);
 		const [, created] = await Promise.all([
