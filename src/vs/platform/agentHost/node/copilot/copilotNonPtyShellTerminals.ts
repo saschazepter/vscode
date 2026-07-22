@@ -19,16 +19,20 @@ export function buildNonPtyShellTerminalUri(toolCallId: string): string {
 
 interface INonPtyShellStream {
 	readonly uri: string;
-	emittedLength: number;
+	/** The last cumulative snapshot written to the channel (cleared on finalize). */
+	lastEmitted: string;
 	finalized: boolean;
 }
 
 /**
  * Streams output of SDK-runtime-executed shell tool calls into output-only
- * AHP terminal channels. The runtime reports cumulative output via
- * `tool.execution_partial_result`; this class emits only the unseen suffix as
- * `terminal/data` so subscribed clients receive live plain-text output
- * (`isPty: false` — no VT parsing needed).
+ * AHP terminal channels. The runtime reports ANSI-stripped plain-text output
+ * via `tool.execution_partial_result` as cumulative snapshots (throttled and
+ * capped to the leading ~10KB with a trailing truncation marker); this class
+ * emits only the unseen suffix as `terminal/data` while the snapshot grows
+ * in place, and resets the channel when the snapshot was rewritten (e.g. the
+ * truncation marker changed), so subscribed clients receive live plain-text
+ * output (`isPty: false` — no VT parsing needed).
  *
  * Created once per session and disposed with it, matching the pty-backed
  * `ShellManager` lifecycle.
@@ -68,23 +72,23 @@ export class NonPtyShellTerminalStreams extends Disposable {
 				toolCallId,
 			};
 			this._terminalManager.createOutputTerminal(uri, { title, claim });
-			stream = { uri, emittedLength: 0, finalized: false };
+			stream = { uri, lastEmitted: '', finalized: false };
 			this._streams.set(toolCallId, stream);
 			created = true;
 		}
-		if (stream.finalized) {
+		if (stream.finalized || cumulativeOutput === stream.lastEmitted) {
 			return { uri: stream.uri, created };
 		}
-		if (cumulativeOutput.length < stream.emittedLength) {
-			// The runtime rewrote its cumulative output (defensive); start over.
+		if (cumulativeOutput.startsWith(stream.lastEmitted)) {
+			this._terminalManager.appendOutputTerminalData(stream.uri, cumulativeOutput.slice(stream.lastEmitted.length));
+		} else {
+			// The snapshot no longer extends what we emitted — the runtime
+			// rewrote it (its ~10KB cap keeps leading lines and splices in a
+			// growing truncation marker). Start the channel over.
 			this._terminalManager.resetOutputTerminal(stream.uri);
-			stream.emittedLength = 0;
+			this._terminalManager.appendOutputTerminalData(stream.uri, cumulativeOutput);
 		}
-		const delta = cumulativeOutput.slice(stream.emittedLength);
-		if (delta.length > 0) {
-			this._terminalManager.appendOutputTerminalData(stream.uri, delta);
-			stream.emittedLength = cumulativeOutput.length;
-		}
+		stream.lastEmitted = cumulativeOutput;
 		return { uri: stream.uri, created };
 	}
 
@@ -98,6 +102,7 @@ export class NonPtyShellTerminalStreams extends Disposable {
 			return;
 		}
 		stream.finalized = true;
+		stream.lastEmitted = '';
 		this._terminalManager.finalizeOutputTerminal(stream.uri, exitCode);
 	}
 }

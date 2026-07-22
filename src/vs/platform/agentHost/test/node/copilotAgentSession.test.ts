@@ -2991,6 +2991,40 @@ suite('CopilotAgentSession', () => {
 			]);
 		});
 
+		test('tool partial results reset the channel when the runtime rewrites its snapshot', async () => {
+			const { mockSession, terminalManager } = await createAgentSession(disposables);
+
+			const terminalUri = 'agenthost-terminal://shell/copilotNonPtyShells/tc-rewrite';
+			mockSession.fire('tool.execution_start', {
+				toolCallId: 'tc-rewrite',
+				toolName: 'bash',
+				arguments: { command: 'yes' },
+			} as SessionEventPayload<'tool.execution_start'>['data']);
+			mockSession.fire('tool.execution_partial_result', {
+				toolCallId: 'tc-rewrite',
+				partialOutput: 'tick 1\n',
+			} as SessionEventPayload<'tool.execution_partial_result'>['data']);
+			// Past its output cap the runtime keeps leading lines and splices in
+			// a truncation marker, so the snapshot stops being prefix-stable.
+			mockSession.fire('tool.execution_partial_result', {
+				toolCallId: 'tc-rewrite',
+				partialOutput: 'tick 1\n[...truncated 42 lines...]\n',
+			} as SessionEventPayload<'tool.execution_partial_result'>['data']);
+			mockSession.fire('tool.execution_partial_result', {
+				toolCallId: 'tc-rewrite',
+				partialOutput: 'tick 1\n[...truncated 99 lines...]\n',
+			} as SessionEventPayload<'tool.execution_partial_result'>['data']);
+
+			assert.deepStrictEqual({ data: terminalManager.outputTerminalData, resets: terminalManager.outputTerminalResets }, {
+				data: [
+					{ uri: terminalUri, data: 'tick 1\n' },
+					{ uri: terminalUri, data: '[...truncated 42 lines...]\n' },
+					{ uri: terminalUri, data: 'tick 1\n[...truncated 99 lines...]\n' },
+				],
+				resets: [terminalUri],
+			});
+		});
+
 		test('tool partial results for untracked tools are ignored', async () => {
 			const { mockSession, signals } = await createAgentSession(disposables);
 
