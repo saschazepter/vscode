@@ -628,7 +628,10 @@ export class ChatListWidget extends Disposable {
 	 */
 	private updateScrollDownButtonVisibility(): void {
 		const { showButton, atBottom } = computeScrollDownState(this.isScrolledToBottom, this._scrollLock);
-		this._scrollDownButton.element.style.display = showButton ? '' : 'none';
+		// Use an explicit `flex` (the `.monaco-button` default) rather than '' when showing: the
+		// stylesheet applies `display: none` to `.interactive-session .chat-scroll-down`, so clearing
+		// the inline style would let that rule win and keep the button hidden.
+		this._scrollDownButton.element.style.display = showButton ? 'flex' : 'none';
 		this._container.classList.toggle('chat-list-at-bottom', atBottom);
 	}
 
