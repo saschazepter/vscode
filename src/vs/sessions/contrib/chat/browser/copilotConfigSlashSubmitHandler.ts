@@ -7,9 +7,12 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { parseLeadingSlashCommand } from '../../../../platform/agentHost/common/agentHostSlashCommand.js';
 import { resolveCopilotConfigSlashCommandOnSend } from '../../../../platform/agentHost/common/copilotConfigSlashCommands.js';
 import { IChatSubmitRequestHandlerService, type ChatSubmitRequestHandling, type IChatSubmitRequest } from '../../../../workbench/contrib/chat/browser/chatSubmitRequestHandlerService.js';
+import { applyAgentHostCompletionAction } from '../../../../workbench/contrib/chat/browser/agentHostCompletionAction.js';
 import { SessionType } from '../../../../workbench/contrib/chat/common/chatSessionsService.js';
 import { getChatSessionType } from '../../../../workbench/contrib/chat/common/model/chatUri.js';
 import { IWorkbenchContribution } from '../../../../workbench/common/contributions.js';
+import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
+import { IStorageService } from '../../../../platform/storage/common/storage.js';
 import { isAgentHostProvider } from '../../../common/agentHostSessionsProvider.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
@@ -22,6 +25,8 @@ export class SessionsCopilotConfigSlashSubmitHandlerContribution extends Disposa
 		@IChatSubmitRequestHandlerService submitRequestHandlerService: IChatSubmitRequestHandlerService,
 		@ISessionsManagementService private readonly _sessionsManagementService: ISessionsManagementService,
 		@ISessionsProvidersService private readonly _sessionsProvidersService: ISessionsProvidersService,
+		@IDialogService private readonly _dialogService: IDialogService,
+		@IStorageService private readonly _storageService: IStorageService,
 	) {
 		super();
 		this._register(submitRequestHandlerService.register({
@@ -47,7 +52,12 @@ export class SessionsCopilotConfigSlashSubmitHandlerContribution extends Disposa
 		if (!provider || !isAgentHostProvider(provider)) {
 			return undefined;
 		}
-		await Promise.all(Object.entries(configAction.applyConfig).map(([key, value]) => provider.setSessionConfigValue(session.sessionId, key, value)));
+		const applied = await applyAgentHostCompletionAction({ applyConfig: configAction.applyConfig }, this._dialogService, this._storageService, async config => {
+			await Promise.all(Object.entries(config).map(([key, value]) => provider.setSessionConfigValue(session.sessionId, key, value)));
+		});
+		if (!applied) {
+			return { kind: 'handled', clearInput: false };
+		}
 		return configAction.strippedPrompt ? undefined : { kind: 'handled' };
 	}
 }

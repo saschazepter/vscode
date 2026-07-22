@@ -954,12 +954,6 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 			return;
 		}
 
-		// Check for slash commands first
-		if (query && this._slashCommandHandler?.tryExecuteSlashCommand(query)) {
-			this._editor.getModel()?.setValue('');
-			return;
-		}
-
 		const session = this.options.session.get();
 		if (session) {
 			const preSubmitResult = await this.chatSubmitRequestHandlerService.tryHandle({
@@ -975,6 +969,11 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 				}
 				return;
 			}
+		}
+
+		if (query && this._slashCommandHandler?.tryExecuteSlashCommand(query)) {
+			this._editor.getModel()?.setValue('');
+			return;
 		}
 
 		const attachments = this._agentHostInputCompletionHandler?.getAttachmentsForSend(query, queryOffset) ?? [...this._contextAttachments.attachments];
