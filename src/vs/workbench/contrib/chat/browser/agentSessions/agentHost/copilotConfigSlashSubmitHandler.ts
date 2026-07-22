@@ -59,7 +59,7 @@ export class CopilotConfigSlashSubmitHandlerContribution extends Disposable impl
 		if (!configAction) {
 			return false;
 		}
-		const applied = await applyAgentHostSubmitConfig(request.sessionResource, configAction.applyConfig, {
+		await applyAgentHostSubmitConfig(request.sessionResource, configAction.applyConfig, {
 			agentHostService: this._agentHostService,
 			provisionalService: this._provisionalService,
 			workingDirectoryResolver: this._workingDirectoryResolver,
@@ -68,9 +68,6 @@ export class CopilotConfigSlashSubmitHandlerContribution extends Disposable impl
 			dialogService: this._dialogService,
 			storageService: this._storageService,
 		});
-		if (!applied) {
-			return false;
-		}
 		return !configAction.strippedPrompt;
 	}
 }
