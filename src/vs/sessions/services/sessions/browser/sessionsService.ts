@@ -15,6 +15,8 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
+import { IWorkspaceTrustRequestService } from '../../../../platform/workspace/common/workspaceTrust.js';
+import { localize } from '../../../../nls.js';
 import { ChatInteractivity, ChatOriginKind, IChat, ISession, SessionStatus } from '../common/session.js';
 import { IActiveSession, ICreateNewChatInSessionOptions, ICreateNewSessionOptions, IRecentlyOpenedSessions, ISessionsChangeEvent, ISessionsManagementService, IToggleSessionStickinessEvent } from '../common/sessionsManagement.js';
 import { ISessionsProvidersService } from './sessionsProvidersService.js';
@@ -154,11 +156,15 @@ export interface ISessionsService {
 	 *   showing the empty placeholder. No-op when the empty placeholder is
 	 *   already showing (no session active). Returns the restored pending
 	 *   draft, or `undefined` when none.
-	 * - With `options.folderUri`: create a concrete draft session for that
-	 *   folder (via {@link ISessionsManagementService.createNewSession}) and
-	 *   show it as the active session. Returns the created draft.
+	 * - With `options.folderUri`: resolve the workspace and, when it requires
+	 *   workspace trust, prompt for it first (single gate for every path that
+	 *   creates a concrete session for a folder). If trust is declined,
+	 *   resolves to `undefined` without creating a session. Otherwise creates
+	 *   a concrete draft session for that folder (via
+	 *   {@link ISessionsManagementService.createNewSession}) and shows it as
+	 *   the active session. Returns the created draft.
 	 */
-	openNewSession(options?: IOpenNewSessionOptions): ISession | undefined;
+	openNewSession(options?: IOpenNewSessionOptions): Promise<ISession | undefined>;
 
 	/**
 	 * Open a new **quick chat**: create a concrete workspace-less draft session
@@ -286,6 +292,7 @@ export class SessionsService extends Disposable implements ISessionsService {
 		@ISessionsProvidersService private readonly sessionsProvidersService: ISessionsProvidersService,
 		@ISessionsPartService private readonly sessionsPartService: ISessionsPartService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IWorkspaceTrustRequestService private readonly workspaceTrustRequestService: IWorkspaceTrustRequestService,
 	) {
 		super();
 
@@ -688,9 +695,24 @@ export class SessionsService extends Disposable implements ISessionsService {
 		this._activate(undefined);
 	}
 
-	openNewSession(options?: IOpenNewSessionOptions): ISession | undefined {
+	async openNewSession(options?: IOpenNewSessionOptions): Promise<ISession | undefined> {
 		const folderUri = options?.folderUri;
 		if (folderUri) {
+			// Single trust gate for every path that creates a concrete session for
+			// a folder (the workspace picker dropdown, the folder Quick Pick, etc.):
+			// resolve the workspace and, if it requires trust, prompt before
+			// creating the session. A no-op if the folder is already trusted.
+			const resolved = this.sessionsManagementService.resolveWorkspace(folderUri);
+			if (resolved?.workspace.requiresWorkspaceTrust) {
+				const trusted = await this.workspaceTrustRequestService.requestResourcesTrust({
+					uri: folderUri,
+					message: localize('sessionsService.trustFolderMessage', "An agent session will be able to read files, run commands, and make changes in this folder."),
+				});
+				if (!trusted) {
+					return undefined;
+				}
+			}
+
 			this._startOpenSession();
 			try {
 				const session = this.sessionsManagementService.createNewSession(folderUri, options);

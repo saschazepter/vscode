@@ -43,6 +43,15 @@ export interface ISessionsRecentWorkspacesService {
 	/** The recently used folders, resolved and most recent first: own history first, then VS Code's recents (deduplicated). */
 	getRecentWorkspaces(): IRecentWorkspace[];
 
+	/**
+	 * Only the sessions' own recently-picked workspaces (excludes VS Code's
+	 * global recents). Use this to restore the last explicit selection made
+	 * in an Agents Window folder picker, so an unrelated folder the user
+	 * merely opened in a regular VS Code window never silently becomes a
+	 * new session's default workspace.
+	 */
+	getOwnRecentWorkspaces(): IRecentWorkspace[];
+
 	/** Records `folderUri` as most-recently used; `checked` un-checks every other entry. */
 	addRecentWorkspace(folderUri: URI, providerId: string | undefined, checked: boolean): void;
 
@@ -82,11 +91,19 @@ export class SessionsRecentWorkspacesService extends Disposable implements ISess
 			.filter(uri => !ownUris.has(this.uriIdentityService.extUri.getComparisonKey(uri)))
 			.map(uri => ({ uri: uri.toJSON(), providerId: undefined, checked: false }) satisfies IStoredRecentWorkspace);
 
+		return this._resolveStored([...own, ...vsCode]);
+	}
+
+	getOwnRecentWorkspaces(): IRecentWorkspace[] {
+		return this._resolveStored(this._getStoredRecentWorkspaces());
+	}
+
+	private _resolveStored(stored: readonly IStoredRecentWorkspace[]): IRecentWorkspace[] {
 		const recents: IRecentWorkspace[] = [];
-		for (const stored of [...own, ...vsCode]) {
-			const resolved = this._resolveWorkspace(URI.revive(stored.uri), stored.providerId);
+		for (const entry of stored) {
+			const resolved = this._resolveWorkspace(URI.revive(entry.uri), entry.providerId);
 			if (resolved) {
-				recents.push({ workspace: resolved.workspace, providerId: resolved.providerId, checked: stored.checked });
+				recents.push({ workspace: resolved.workspace, providerId: resolved.providerId, checked: entry.checked });
 			}
 		}
 		return recents;
