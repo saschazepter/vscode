@@ -177,8 +177,10 @@ export class CodexAccountManager {
 			title: localize('codexAccount.waiting', "Waiting for ChatGPT sign-in"),
 			cancellable: true,
 		}, async () => completion.p.finally(() => disposables.dispose()), () => {
-			void target.cancelAgentAccountLogin(CODEX_AGENT_PROVIDER_ID, login.loginId);
-			void completion.error(new CancellationError());
+			void target.cancelAgentAccountLogin(CODEX_AGENT_PROVIDER_ID, login.loginId).then(
+				() => completion.error(new CancellationError()),
+				error => completion.error(error),
+			);
 		});
 	}
 }
