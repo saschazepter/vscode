@@ -397,7 +397,16 @@ export class ChatViewPane extends ViewPane implements IViewWelcomeDelegate {
 			// Voice command bridge — lets the VoiceSessionController reach into the chat widget
 			this._voiceBarDisposables.add(CommandsRegistry.registerCommand('_chat.voice.acceptInput', (accessor, text: string) => {
 				const chatWidgetService = accessor.get(IChatWidgetService);
-				const widget = chatWidgetService.lastFocusedWidget ?? this._widget;
+				// `lastFocusedWidget` is only updated when a chat widget gains focus
+				// and is never cleared on blur, so it can stay pinned to a
+				// background chat editor that was focused earlier. Dictating in this
+				// panel's voice input does not DOM-focus its chat input, so relying
+				// on `lastFocusedWidget` would misroute the request to that stale
+				// editor. Only trust it while it still holds input focus (an
+				// intentionally focused chat editor); otherwise fall back to this
+				// panel's own widget, matching `_chat.voice.getCurrentSession`.
+				const focusedWidget = chatWidgetService.lastFocusedWidget;
+				const widget = focusedWidget?.hasInputFocus() ? focusedWidget : this._widget;
 				if (text && widget?.viewModel) {
 					if (widget.viewModel.editing) {
 						// When editing an old message, populate the active input
