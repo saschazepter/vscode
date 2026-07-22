@@ -547,6 +547,44 @@ suite('SessionCustomizationDiscovery', () => {
 		assert.strictEqual(changeCount, 0, 'expected onDidChange not to fire for paths outside any trigger URI');
 	});
 
+	test('discover mode watches the discovered skill root so new skills fire onDidChange', async () => {
+		// The skill root exists but is empty; getDiscoveryPaths still reports it.
+		await fileService.createFolder(URI.from({ scheme: Schemas.inMemory, path: '/workspace/.github/skills' }));
+
+		const discovery = disposables.add(instantiationService.createInstance(SessionCustomizationDiscovery, workspace, userHome, inMemoryPathToUri));
+		const client = {
+			rpc: {
+				agents: {
+					getDiscoveryPaths: async () => ({ paths: [] }),
+					discover: async () => ({ agents: [] }),
+				},
+				instructions: {
+					getDiscoveryPaths: async () => ({ paths: [] }),
+					discover: async () => ({ sources: [] }),
+				},
+				skills: {
+					getDiscoveryPaths: async () => ({ paths: [{ path: '/workspace/.github/skills' }] }),
+					discover: async () => ({ skills: [] }),
+				},
+			},
+		} as unknown as CopilotClient;
+
+		await discovery.discover(client, CancellationToken.None);
+		await timeout(50);
+
+		let changeCount = 0;
+		const fired = new DeferredPromise<void>();
+		disposables.add(discovery.onDidChange(() => {
+			changeCount++;
+			fired.complete();
+		}));
+
+		await seed('/workspace/.github/skills/new-skill/SKILL.md', 'new workspace skill');
+		await raceTimeout(fired.p, 500);
+
+		assert.strictEqual(changeCount, 1, 'expected onDidChange to fire when a skill is added under the discovered skill root');
+	});
+
 	test('cancellation of one caller does not affect another concurrent caller', async () => {
 		await seed('/workspace/.github/agents/foo.agent.md', 'workspace agent');
 
