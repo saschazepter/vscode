@@ -16,6 +16,7 @@ import { IInstantiationService } from '../../../../../platform/instantiation/com
 import { SpeechTimeoutDefault } from '../../../accessibility/browser/accessibilityConfiguration.js';
 import { ISpeechService, AccessibilityVoiceSettingId, ISpeechToTextEvent, SpeechToTextStatus } from '../../../speech/common/speechService.js';
 import { ChatSpeechToTextState, IChatSpeechToTextService } from '../../../chat/browser/speechToText/chatSpeechToTextService.js';
+import { getDictationPreparingLabel } from '../../../chat/browser/speechToText/dictationDownloadRing.js';
 import type { IMarker, IDecoration } from '@xterm/xterm';
 import { alert } from '../../../../../base/browser/ui/aria/aria.js';
 import { getActiveWindow } from '../../../../../base/browser/dom.js';
@@ -182,6 +183,23 @@ export class TerminalVoiceSession extends Disposable {
 			this._createDecoration();
 		}
 
+		// On first use the model downloads/loads before any transcript arrives.
+		// Unlike the chat input (which has a toolbar download ring), the terminal
+		// has no progress affordance, so surface a "Preparing…/Downloading… X%"
+		// hint in the ghost-text slot until the model is ready and real
+		// transcripts start streaming.
+		const renderPreparing = () => {
+			if (this._cancellationTokenSource?.token.isCancellationRequested || this._builtinFinalizing) {
+				return;
+			}
+			if (service.isPreparingModel) {
+				this._renderPreparingText(getDictationPreparingLabel(service));
+			}
+		};
+		renderPreparing();
+		this._disposables.add(service.onDidChangePreparingModel(() => renderPreparing()));
+		this._disposables.add(service.onDidChangeModelDownloadProgress(() => renderPreparing()));
+
 		this._disposables.add(service.onDidUpdateTranscript(update => {
 			if (this._cancellationTokenSource?.token.isCancellationRequested || this._builtinFinalizing) {
 				return;
@@ -189,7 +207,8 @@ export class TerminalVoiceSession extends Disposable {
 			// Reuse the provider-path rendering by shaping the cumulative
 			// transcript as a recognizing event. The staged text is only sent
 			// once accepted (silence timeout or Stop Dictation), which fetches
-			// the engine's final transcript.
+			// the engine's final transcript. The first real transcript replaces
+			// any lingering "Preparing…" hint.
 			const event: ISpeechToTextEvent = { status: SpeechToTextStatus.Recognizing, text: update.text };
 			this._updateInput(event);
 			this._renderGhostText(event);
@@ -335,8 +354,20 @@ export class TerminalVoiceSession extends Disposable {
 	}
 
 	private _renderGhostText(e: ISpeechToTextEvent): void {
+		this._renderGhostTextContent(e.text, 'terminal-voice-progress-text');
+	}
+
+	/**
+	 * Render a non-transcript hint (e.g. "Preparing…/Downloading… X%") in the
+	 * ghost-text slot while the on-device model is still preparing on first use.
+	 * Styled distinctly from the live transcript so it does not read as speech.
+	 */
+	private _renderPreparingText(label: string): void {
+		this._renderGhostTextContent(label, 'terminal-voice-preparing-text');
+	}
+
+	private _renderGhostTextContent(text: string | undefined, className: string): void {
 		this._ghostText?.dispose();
-		const text = e.text;
 		if (!text) {
 			return;
 		}
@@ -360,7 +391,7 @@ export class TerminalVoiceSession extends Disposable {
 			this._disposables.add(this._ghostText);
 		}
 		this._ghostText?.onRender((e: HTMLElement) => {
-			e.classList.add('terminal-voice-progress-text');
+			e.classList.add(className);
 			e.textContent = text;
 			e.style.width = (xterm.cols - xterm.buffer.active.cursorX) / xterm.cols * 100 + '%';
 		});

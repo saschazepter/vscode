@@ -68,3 +68,12 @@
 	will-change: background-position;
 	z-index: 1000;
 }
+
+/* First-use "Preparing…/Downloading… X%" hint shown while the on-device model
+ * loads. Static placeholder-colored italic text (no shimmer) so it reads as a
+ * status message rather than dictated speech. */
+.terminal-voice-preparing-text {
+	font-style: italic;
+	color: var(--vscode-input-placeholderForeground);
+	z-index: 1000;
+}
