@@ -17,7 +17,7 @@ import { createSessionList, type SessionRowData, type SessionGroupData } from '.
 import { createFeedbackDialog, type FeedbackDialogState } from './components/feedbackDialog.js';
 import { createOnboarding } from './components/onboardingComponent.js';
 import { createVoiceBar } from './components/voiceBarComponent.js';
-import { FONT_SIZE, addKeyboardActivation } from './components/tokens.js';
+import { FONT_SIZE, addKeyboardActivation, isSecondaryPointerGesture } from './components/tokens.js';
 import type { VoiceState, IPendingToolConfirmation, ITranscriptTurn } from '../../chat/browser/voiceClient/voiceSessionController.js';
 import { computeVoiceGlowStyle } from '../../chat/browser/voiceClient/voiceGlow.js';
 
@@ -756,8 +756,8 @@ export class AgentsVoiceWidget extends Disposable {
 		if (!micIsActive) {
 			this._inputBoxMicBtn!.style.boxShadow = 'none';
 		}
-		this._inputBoxMicBtn!.onmousedown = (e: MouseEvent) => { e.preventDefault(); this.callbacks.pttDown(); };
-		this._inputBoxMicBtn!.onmouseup = () => { this.callbacks.pttUp(); };
+		this._inputBoxMicBtn!.onmousedown = (e: MouseEvent) => { if (isSecondaryPointerGesture(e)) { return; } e.preventDefault(); this.callbacks.pttDown(); };
+		this._inputBoxMicBtn!.onmouseup = (e: MouseEvent) => { if (isSecondaryPointerGesture(e)) { return; } this.callbacks.pttUp(); };
 
 		// Connection indicator — visible when connected
 		this._inputBoxConnIndicator!.style.display = showConnected ? '' : 'none';
