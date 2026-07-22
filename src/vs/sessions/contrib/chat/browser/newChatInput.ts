@@ -308,7 +308,6 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 	private readonly _contextAttachments: NewChatContextAttachments;
 
 	// Slash commands
-	private _slashCommandHandler: SlashCommandHandler | undefined;
 	private _agentHostInputCompletionHandler: AgentHostInputCompletionHandler | undefined;
 	private readonly _scopedInstantiationService: IInstantiationService;
 	private readonly _newChatModelPickerService = new NewChatModelPickerService();
@@ -676,7 +675,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		}));
 
 		// Slash commands
-		this._slashCommandHandler = this._register(this._scopedInstantiationService.createInstance(SlashCommandHandler, this._editor));
+		this._register(this._scopedInstantiationService.createInstance(SlashCommandHandler, this._editor));
 
 		// Variable completions (#file, #folder)
 		this._register(this.instantiationService.createInstance(
@@ -954,7 +953,13 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 			return;
 		}
 
-		if (await this._tryHandleSubmitCommand(query)) {
+		const session = this.options.session.get();
+		if (session && await this.chatSubmitRequestHandlerService.tryHandle({
+			sessionResource: session.resource,
+			providerId: session.providerId,
+			sessionId: session.sessionId,
+			input: query,
+		})) {
 			this._editor.getModel()?.setValue('');
 			return;
 		}
@@ -987,19 +992,6 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		this._editor.updateOptions({ readOnly: false });
 		this._updateSendButtonState();
 		this._updateInputLoadingState();
-	}
-
-	private async _tryHandleSubmitCommand(query: string): Promise<boolean> {
-		const session = this.options.session.get();
-		if (session && await this.chatSubmitRequestHandlerService.tryHandle({
-			sessionResource: session.resource,
-			providerId: session.providerId,
-			sessionId: session.sessionId,
-			input: query,
-		})) {
-			return true;
-		}
-		return !!query && !!this._slashCommandHandler?.tryExecuteSlashCommand(query);
 	}
 
 	private _updateSendButtonState(): void {
