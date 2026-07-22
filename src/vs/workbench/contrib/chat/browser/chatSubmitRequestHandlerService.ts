@@ -13,6 +13,8 @@ export const IChatSubmitRequestHandlerService = createDecorator<IChatSubmitReque
 /** A chat input submission before it is sent to the selected chat session. */
 export interface IChatSubmitRequest {
 	readonly sessionResource: URI;
+	readonly providerId?: string;
+	readonly sessionId?: string;
 	readonly input: string;
 	readonly mode: ChatModeKind;
 	readonly location: ChatAgentLocation;

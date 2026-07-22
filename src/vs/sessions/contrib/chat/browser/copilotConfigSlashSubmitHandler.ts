@@ -45,15 +45,17 @@ export class SessionsCopilotConfigSlashSubmitHandlerContribution extends Disposa
 			return undefined;
 		}
 		const session = this._sessionsManagementService.getSession(request.sessionResource);
-		if (!session) {
+		const providerId = session?.providerId ?? request.providerId;
+		const sessionId = session?.sessionId ?? request.sessionId;
+		if (!providerId || !sessionId) {
 			return undefined;
 		}
-		const provider = this._sessionsProvidersService.getProvider(session.providerId);
+		const provider = this._sessionsProvidersService.getProvider(providerId);
 		if (!provider || !isAgentHostProvider(provider)) {
 			return undefined;
 		}
 		const applied = await applyAgentHostCompletionAction({ applyConfig: configAction.applyConfig }, this._dialogService, this._storageService, async config => {
-			await Promise.all(Object.entries(config).map(([key, value]) => provider.setSessionConfigValue(session.sessionId, key, value)));
+			await Promise.all(Object.entries(config).map(([key, value]) => provider.setSessionConfigValue(sessionId, key, value)));
 		});
 		if (!applied) {
 			return { kind: 'handled', clearInput: false };

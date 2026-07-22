@@ -958,6 +958,8 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		if (session) {
 			const preSubmitResult = await this.chatSubmitRequestHandlerService.tryHandle({
 				sessionResource: session.resource,
+				providerId: session.providerId,
+				sessionId: session.sessionId,
 				input: query,
 				mode: ChatModeKind.Agent,
 				location: ChatAgentLocation.Chat,
