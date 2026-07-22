@@ -255,12 +255,9 @@ export interface IChatItemHeightUpdate {
  * `isBeingRendered` is `true` when the measurement arrives *synchronously* during the tree's
  * `renderElement` call; in that case the tree must not be notified re-entrantly.
  *
- * See https://github.com/microsoft/vscode/issues/326952: `currentRenderedHeight` must only be
- * advanced once a height has actually been notified to the tree. Recording the height while
- * suppressing the notification lets a later identical measurement be deduped by the "unchanged"
- * check, stranding the row at a stale height until a full relayout. When a measurement is
- * suppressed we therefore keep the stored height untouched AND request a deferred re-measure once
- * the render pass is over, so the grown height reliably reaches the tree.
+ * See https://github.com/microsoft/vscode/issues/326952: when notification is suppressed,
+ * `currentRenderedHeight` must remain unchanged so an identical deferred measurement is not
+ * deduplicated before it reaches the tree.
  */
 export function reconcileChatItemHeight(
 	normalizedHeight: number,
