@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { isWeb } from '../../../../base/common/platform.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { TestConfigurationService } from '../../../configuration/test/common/testConfigurationService.js';
 import { MockContextKeyService } from '../../../keybinding/test/common/mockKeybindingService.js';
@@ -34,7 +35,7 @@ suite('AgentHostEnablementService', () => {
 		});
 
 		assert.deepStrictEqual(actual, [
-			{ enabled: true, contextKey: true },
+			{ enabled: !isWeb, contextKey: !isWeb },
 			{ enabled: false, contextKey: false },
 			{ enabled: false, contextKey: false },
 		]);
