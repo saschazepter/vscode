@@ -103,11 +103,9 @@ registerAction2(class ShowSessionsPickerAction extends Action2 {
 		const toPickItem = (session: ISession): ISessionPickItem => {
 			const title = session.title.get() || getUntitledSessionTitle(session.isQuickChat?.get() ?? false);
 
-			// Status icon, mirroring the sessions list and session header. Use the
-			// list model service's read state (not session.isRead) so the icon
-			// matches what the sessions list shows.
+			// Status icon, mirroring the sessions list and session header.
 			const status = session.status.get();
-			const isRead = sessionsListModelService.isSessionRead(session);
+			const isRead = session.isRead.get();
 			const isArchived = session.isArchived.get();
 			const workspace = session.workspace.get();
 			const pullRequestIcon = workspace?.folders[0]?.gitRepository?.gitHubInfo.get()?.pullRequest?.icon;
@@ -1200,7 +1198,7 @@ export class SessionNewChatActionViewItemContribution extends Disposable impleme
 // committed chat.
 MenuRegistry.appendMenuItem(Menus.SessionBarToolbar, {
 	submenu: Menus.SessionConversations,
-	title: localize2('chatCompositeBar.conversations', "Conversations"),
+	title: localize2('chatCompositeBar.conversations', "Chats"),
 	icon: Codicon.commentDiscussion,
 	group: 'navigation',
 	order: 10,
@@ -1213,7 +1211,7 @@ MenuRegistry.appendMenuItem(Menus.SessionBarToolbar, {
 // the Conversations menu only ever appears in one place at a time.
 MenuRegistry.appendMenuItem(Menus.SessionChatTabBar, {
 	submenu: Menus.SessionConversations,
-	title: localize2('chatCompositeBar.conversations', "Conversations"),
+	title: localize2('chatCompositeBar.conversations', "Chats"),
 	icon: Codicon.commentDiscussion,
 	group: 'navigation',
 	order: 10,
