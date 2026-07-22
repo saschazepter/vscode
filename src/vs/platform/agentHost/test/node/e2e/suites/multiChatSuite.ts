@@ -410,12 +410,15 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		const firstResponse = await driveTurn(peer, 'peer-context-1', 'Remember the code word PEAR. Reply exactly "ready".', 1);
 		const response = await driveTurn(peer, 'peer-context-2', 'What code word did I ask you to remember? Reply with only the code word.', 2);
 		const messages = observedModelMessages(context.observedModelRequestBodies.at(-1) ?? '');
+		const priorAssistantResponse = firstResponse.trim();
 
 		assert.deepStrictEqual({
+			priorAssistantResponseIsNonEmpty: priorAssistantResponse.length > 0,
 			responseHasCodeWord: /PEAR/i.test(response),
 			requestHasPriorUserMessage: messages.some(message => message.role === 'user' && message.content.includes('Remember the code word PEAR')),
-			requestHasPriorAssistantMessage: messages.some(message => message.role === 'assistant' && message.content.includes(firstResponse.trim())),
+			requestHasPriorAssistantMessage: messages.some(message => message.role === 'assistant' && message.content.includes(priorAssistantResponse)),
 		}, {
+			priorAssistantResponseIsNonEmpty: true,
 			responseHasCodeWord: true,
 			requestHasPriorUserMessage: true,
 			requestHasPriorAssistantMessage: true,
@@ -430,17 +433,20 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
 		const response = await driveTurn(peer, 'fork-turn', 'What code word did I ask you to remember? Reply with only the code word.', 2);
 		const messages = observedModelMessages(context.observedModelRequestBodies.at(-1) ?? '');
+		const priorAssistantResponse = sourceResponse.trim();
 
 		assert.deepStrictEqual({
 			seededMessages: (await chatState(peer)).turns.map(turn => turn.message.text),
+			priorAssistantResponseIsNonEmpty: priorAssistantResponse.length > 0,
 			responseHasCodeWord: /FORKCODE/i.test(response),
 			requestHasPriorUserMessage: messages.some(message => message.role === 'user' && message.content.includes('Remember the code word FORKCODE')),
-			requestHasPriorAssistantMessage: messages.some(message => message.role === 'assistant' && message.content.includes(sourceResponse.trim())),
+			requestHasPriorAssistantMessage: messages.some(message => message.role === 'assistant' && message.content.includes(priorAssistantResponse)),
 		}, {
 			seededMessages: [
 				'Remember the code word FORKCODE. Reply exactly "ready".',
 				'What code word did I ask you to remember? Reply with only the code word.',
 			],
+			priorAssistantResponseIsNonEmpty: true,
 			responseHasCodeWord: true,
 			requestHasPriorUserMessage: true,
 			requestHasPriorAssistantMessage: true,
