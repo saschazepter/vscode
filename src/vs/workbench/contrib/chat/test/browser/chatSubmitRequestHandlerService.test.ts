@@ -6,7 +6,6 @@
 import assert from 'assert';
 import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
-import { ChatAgentLocation, ChatModeKind } from '../../common/constants.js';
 import { ChatSubmitRequestHandlerService } from '../../browser/chatSubmitRequestHandlerService.js';
 
 suite('ChatSubmitRequestHandlerService', () => {
@@ -41,9 +40,6 @@ suite('ChatSubmitRequestHandlerService', () => {
 		const result = await service.tryHandle({
 			sessionResource: URI.parse('agent-host-copilotcli:/test'),
 			input: '/yolo on',
-			mode: ChatModeKind.Agent,
-			location: ChatAgentLocation.Chat,
-			isUserQuery: true,
 		});
 
 		assert.deepStrictEqual({ result, calls }, {

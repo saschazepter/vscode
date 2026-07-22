@@ -2685,18 +2685,15 @@ export class ChatWidget extends Disposable implements IChatWidget {
 
 		const isUserQuery = !query;
 		const inputValue = isUserQuery ? this.getInput() : query.query;
-		const preSubmitResult = await this.chatSubmitRequestHandlerService.tryHandle({
-			sessionResource: this.viewModel.sessionResource,
-			input: inputValue,
-			mode: this.input.currentModeKind,
-			location: this.location,
-			isUserQuery,
-		});
-		if (preSubmitResult) {
-			if (isUserQuery) {
+		if (isUserQuery) {
+			const preSubmitResult = await this.chatSubmitRequestHandlerService.tryHandle({
+				sessionResource: this.viewModel.sessionResource,
+				input: inputValue,
+			});
+			if (preSubmitResult) {
 				this.setInput('');
+				return;
 			}
-			return;
 		}
 
 		this._onDidAcceptInput.fire();

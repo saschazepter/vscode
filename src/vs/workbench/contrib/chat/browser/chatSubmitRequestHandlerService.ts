@@ -6,7 +6,6 @@
 import { toDisposable, type IDisposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
-import type { ChatAgentLocation, ChatModeKind } from '../common/constants.js';
 
 export const IChatSubmitRequestHandlerService = createDecorator<IChatSubmitRequestHandlerService>('chatSubmitRequestHandlerService');
 
@@ -16,9 +15,6 @@ export interface IChatSubmitRequest {
 	readonly providerId?: string;
 	readonly sessionId?: string;
 	readonly input: string;
-	readonly mode: ChatModeKind;
-	readonly location: ChatAgentLocation;
-	readonly isUserQuery: boolean;
 }
 
 /** Handler offered a chat input submission before the normal send path. */

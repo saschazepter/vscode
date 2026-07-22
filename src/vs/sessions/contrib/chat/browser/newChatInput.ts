@@ -961,9 +961,6 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 				providerId: session.providerId,
 				sessionId: session.sessionId,
 				input: query,
-				mode: ChatModeKind.Agent,
-				location: ChatAgentLocation.Chat,
-				isUserQuery: true,
 			});
 			if (preSubmitResult) {
 				this._editor.getModel()?.setValue('');
