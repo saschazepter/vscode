@@ -23,13 +23,5 @@ export type PromptTimelineRailStyle = 'off' | 'ruler' | 'dock';
 /** The selectable rail-style values, for the setting's `enum`. */
 export const PROMPT_TIMELINE_RAIL_STYLES: readonly PromptTimelineRailStyle[] = ['off', 'ruler', 'dock'];
 
-/**
- * Normalizes a raw {@link PROMPT_TIMELINE_RAIL_SETTING} value to a {@link PromptTimelineRailStyle},
- * falling back to `off` for any unrecognized value.
- */
-export function normalizePromptTimelineRailStyle(value: unknown): PromptTimelineRailStyle {
-	return value === 'ruler' || value === 'dock' ? value : 'off';
-}
-
 /** Minimum number of user prompts before the rail is shown. */
 export const MIN_PROMPTS = 2;

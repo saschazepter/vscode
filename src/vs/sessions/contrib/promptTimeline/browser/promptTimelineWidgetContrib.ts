@@ -12,7 +12,7 @@ import { IInstantiationService } from '../../../../platform/instantiation/common
 import { IChatWidget } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { IChatWidgetContrib, ChatWidget } from '../../../../workbench/contrib/chat/browser/widget/chatWidget.js';
 import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
-import { MIN_PROMPTS, normalizePromptTimelineRailStyle, PromptTimelineRailStyle, PROMPT_TIMELINE_CONTRIB_ID, PROMPT_TIMELINE_RAIL_SETTING, PROMPT_TIMELINE_STICKY_HEADER_SETTING } from '../common/promptTimeline.js';
+import { MIN_PROMPTS, PromptTimelineRailStyle, PROMPT_TIMELINE_CONTRIB_ID, PROMPT_TIMELINE_RAIL_SETTING, PROMPT_TIMELINE_STICKY_HEADER_SETTING } from '../common/promptTimeline.js';
 import { PromptTimelineModel } from './promptTimelineModel.js';
 import { PromptTimelineDockRail } from './promptTimelineDockRail.js';
 import { IPromptTimelineRail } from './promptTimelineRail.js';
@@ -64,7 +64,7 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 	private _update(): void {
 		this._enablement.clear();
 		this._rail = undefined;
-		const railStyle = normalizePromptTimelineRailStyle(this.configurationService.getValue(PROMPT_TIMELINE_RAIL_SETTING));
+		const railStyle = this.configurationService.getValue<PromptTimelineRailStyle>(PROMPT_TIMELINE_RAIL_SETTING);
 		const stickyEnabled = this.configurationService.getValue<boolean>(PROMPT_TIMELINE_STICKY_HEADER_SETTING) === true;
 		if (railStyle !== 'off' || stickyEnabled) {
 			this._createFeature(railStyle, stickyEnabled);
@@ -135,8 +135,14 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 			rail.domNode.style.setProperty('--prompt-timeline-bottom', `${inputPart.height.read(reader)}px`);
 		}));
 
+		// The dock lists every prompt as its own entry (unbucketed/uncapped) and highlights the exact
+		// prompt scrolled to the top; the ruler uses the recency-bucketed, capped ticks and their
+		// representative active id.
+		const ticksObs = railStyle === 'dock' ? model.promptTicks : model.ticks;
+		const activeObs = railStyle === 'dock' ? model.activePromptId : model.activeRequestId;
+
 		this._enablement.add(autorun(reader => {
-			const ticks = model.ticks.read(reader);
+			const ticks = ticksObs.read(reader);
 			// Toggle visibility before rendering so the rail's fit measurement in
 			// setTicks runs against the displayed (non-zero height) element.
 			rail.domNode.classList.toggle('hidden', ticks.length < MIN_PROMPTS);
@@ -144,7 +150,7 @@ export class PromptTimelineWidgetContrib extends Disposable implements IChatWidg
 		}));
 
 		this._enablement.add(autorun(reader => {
-			rail.setActive(model.activeRequestId.read(reader));
+			rail.setActive(activeObs.read(reader));
 		}));
 
 		// Supply proportional scroll positions for the marks.

@@ -5,6 +5,7 @@
 
 import { $, addDisposableListener, append, clearNode, EventType, getWindow } from '../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
+import { Gesture, EventType as TouchEventType } from '../../../../base/browser/touch.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
@@ -14,6 +15,13 @@ import { PromptDiffStat, PromptFileDiff, PromptTick, IPromptScrollLayout } from 
 import { IPromptReviewFileEvent, IPromptTimelineRail } from './promptTimelineRail.js';
 import './media/promptTimeline.css';
 
+/**
+ * Upper bound on the number of resting dots drawn on the handle. The flyout list is uncapped (it
+ * lists every prompt), but the dot preview would grow unboundedly tall for very long sessions, so
+ * it is capped and an overflow indicator is shown once there are more prompts than dots.
+ */
+const MAX_REST_DOTS = 50;
+
 interface IRowEntry {
 	tick: PromptTick;
 	readonly button: HTMLButtonElement;
@@ -21,12 +29,19 @@ interface IRowEntry {
 	readonly stat: HTMLElement;
 }
 
+/** Unique-per-instance suffix so the flyout's id (referenced by the handle's `aria-controls`) never collides. */
+let dockIdSeq = 0;
+
 /**
- * A minimal, left-edge prompt timeline. At rest it is only a small three-dot "⋮" handle in the
- * transcript's left gutter — no per-prompt marks, no diff colour — so the transcript stays calm.
- * Hovering (or focusing) the handle opens a flyout listing every prompt (its text and a diff badge);
- * activating a row reveals that prompt. Because the list is evenly spaced and never derived from
- * response heights, it stays stable under the transcript's virtualization.
+ * A minimal, left-edge prompt timeline. At rest it is only a small handle in the transcript's left
+ * gutter (one dot per prompt) — no per-prompt marks, no diff colour — so the transcript stays calm.
+ * Hovering, tapping, or focusing the handle expands a flyout listing every prompt (its text and a
+ * diff badge); activating a row reveals that prompt and closes the flyout. Because the list is
+ * evenly spaced and never derived from response heights, it stays stable under virtualization.
+ *
+ * The handle is an accessible disclosure button (`aria-expanded`/`aria-controls`) wired for mouse,
+ * touch (via {@link Gesture}) and keyboard; the flyout is a single-tab-stop toolbar whose rows are
+ * reached with Arrow/Home/End and dismissed with Escape.
  *
  * It implements the same {@link IPromptTimelineRail} contract as the overview-ruler rail so the two
  * are interchangeable behind the `sessions.promptTimeline.rail` setting; the scroll-driven and
@@ -35,12 +50,16 @@ interface IRowEntry {
 export class PromptTimelineDockRail extends Disposable implements IPromptTimelineRail {
 
 	private readonly _domNode: HTMLElement;
-	private readonly _rest: HTMLElement;
+	private readonly _rest: HTMLButtonElement;
 	private readonly _list: HTMLElement;
 	private readonly _rowDisposables = this._register(new DisposableStore());
 	private readonly _rows: IRowEntry[] = [];
 	private _activeRequestId: string | undefined;
 	private _hostWidth = Number.POSITIVE_INFINITY;
+	/** Disclosure held open by explicit activation (handle click/tap/keyboard, or a row focused via keyboard). */
+	private _open = false;
+	/** Pointer is over the rail; reveals the flyout transiently (independent of {@link _open}). */
+	private _hovering = false;
 
 	private readonly _onDidSelect = this._register(new Emitter<string>());
 	readonly onDidSelect: Event<string> = this._onDidSelect.event;
@@ -61,41 +80,105 @@ export class PromptTimelineDockRail extends Disposable implements IPromptTimelin
 		this._domNode.setAttribute('role', 'toolbar');
 		this._domNode.setAttribute('aria-orientation', 'vertical');
 
-		// The resting affordance: a small handle carrying one dot per prompt (built in `setTicks`).
-		// Purely decorative — the flyout is the interactive surface — so it is hidden from the
-		// accessibility tree.
-		this._rest = append(this._domNode, $('.prompt-timeline-dock-rest'));
-		this._rest.setAttribute('aria-hidden', 'true');
+		const panelId = `prompt-timeline-dock-panel-${dockIdSeq++}`;
+
+		// The resting affordance is a disclosure button that expands the flyout. It carries one dot per
+		// prompt (built in `setTicks`); the dots are decorative, so the button owns the accessible name.
+		this._rest = append(this._domNode, $<HTMLButtonElement>('button.prompt-timeline-dock-rest'));
+		this._rest.setAttribute('aria-haspopup', 'true');
+		this._rest.setAttribute('aria-expanded', 'false');
+		this._rest.setAttribute('aria-controls', panelId);
+		this._rest.setAttribute('aria-label', localize('promptTimeline.dock.toggleLabel', "Show prompts"));
+		this._rest.tabIndex = 0;
 
 		this._list = append(this._domNode, $('.prompt-timeline-dock-panel'));
+		this._list.id = panelId;
 
-		// The rail element itself is pointer-transparent (its children opt back in), so `mouseenter`
-		// never fires on it — bubble `mouseover`/`mouseout` from the handle and flyout instead, and
-		// only collapse once the pointer truly leaves the rail subtree.
-		this._register(addDisposableListener(this._domNode, EventType.MOUSE_OVER, () => this._setRevealed(true)));
+		// Mouse: reveal while the pointer is over the rail subtree. The rail element is
+		// pointer-transparent (its children opt back in), so `mouseenter` never fires on it — bubble
+		// `mouseover`/`mouseout` from the handle and flyout instead, and only collapse once the pointer
+		// truly leaves the rail subtree.
+		this._register(addDisposableListener(this._domNode, EventType.MOUSE_OVER, () => {
+			this._hovering = true;
+			this._updateRevealed();
+		}));
 		this._register(addDisposableListener(this._domNode, EventType.MOUSE_OUT, (e: MouseEvent) => {
 			if (!this._domNode.contains(e.relatedTarget as Node | null)) {
-				this._setRevealed(false);
+				this._hovering = false;
+				this._updateRevealed();
 			}
 		}));
 
-		// One Tab stop into the flyout; Arrow/Home/End move between rows.
+		// Touch + click + keyboard toggle on the handle (iOS needs both click and tap per Sessions guidance).
+		this._register(Gesture.addTarget(this._rest));
+		this._register(addDisposableListener(this._rest, EventType.CLICK, e => { e.preventDefault(); this._toggleOpen(); }));
+		this._register(addDisposableListener(this._rest, TouchEventType.Tap, () => this._toggleOpen()));
+		this._register(addDisposableListener(this._rest, EventType.KEY_DOWN, e => {
+			const event = new StandardKeyboardEvent(e);
+			if (event.keyCode === KeyCode.Enter || event.keyCode === KeyCode.Space) {
+				event.preventDefault();
+				event.stopPropagation();
+				this._toggleOpen();
+			}
+		}));
+
+		// Keyboard: one Tab stop into the flyout; Arrow/Home/End move between rows, Escape dismisses.
 		this._register(addDisposableListener(this._list, EventType.KEY_DOWN, e => this._onListKeyDown(e)));
+
+		// Focus fully leaving the rail collapses the disclosure (covers Shift+Tab off the handle,
+		// Tab past the last row, and tapping elsewhere on touch, where no mouseout fires).
+		this._register(addDisposableListener(this._domNode, EventType.FOCUS_OUT, (e: FocusEvent) => {
+			if (!this._domNode.contains(e.relatedTarget as Node | null)) {
+				this._open = false;
+				this._updateRevealed();
+			}
+		}));
 	}
 
-	private _setRevealed(revealed: boolean): void {
+	/** Reveal whenever the disclosure is open OR the pointer is hovering; keep `aria-expanded` in sync. */
+	private _updateRevealed(): void {
+		const revealed = this._open || this._hovering;
 		this._domNode.classList.toggle('revealed', revealed);
+		this._rest.setAttribute('aria-expanded', String(revealed));
+	}
+
+	/** Toggle the disclosure via explicit activation: opening focuses a row, closing returns to the handle. */
+	private _toggleOpen(): void {
+		if (this._open) {
+			this._close();
+		} else {
+			this._open = true;
+			this._updateRevealed();
+			this._focusActiveRow();
+		}
+	}
+
+	/** Collapse the disclosure and return focus to the handle (shared close path for activation and Escape). */
+	private _close(): void {
+		this._open = false;
+		this._updateRevealed();
+		this._rest.focus();
+	}
+
+	private _focusActiveRow(): void {
+		const activeIndex = this._rows.findIndex(r => r.button.tabIndex === 0);
+		this._rows[activeIndex >= 0 ? activeIndex : 0]?.button.focus();
 	}
 
 	setFilesProvider(_provider: (tick: PromptTick) => readonly PromptFileDiff[]): void {
 		// The dock does not surface per-file changes; the ruler rail's hover card does.
 	}
 
-	/** Rebuilds the resting handle's dots so there is exactly one per prompt. */
+	/** Rebuilds the resting handle's dots so there is one per prompt, capped at {@link MAX_REST_DOTS}. */
 	private _renderDots(count: number): void {
 		clearNode(this._rest);
-		for (let i = 0; i < count; i++) {
+		const dots = Math.min(count, MAX_REST_DOTS);
+		for (let i = 0; i < dots; i++) {
 			append(this._rest, $('.prompt-timeline-dock-dot'));
+		}
+		// More prompts than dots: a small trailing marker signals the count is truncated.
+		if (count > MAX_REST_DOTS) {
+			append(this._rest, $('.prompt-timeline-dock-dot-more'));
 		}
 	}
 
@@ -125,8 +208,18 @@ export class PromptTimelineDockRail extends Disposable implements IPromptTimelin
 			const entry: IRowEntry = { tick, button, label, stat };
 			this._renderRow(entry, tick);
 			const requestId = tick.requestId;
-			this._rowDisposables.add(addDisposableListener(button, EventType.CLICK, () => this._onDidSelect.fire(requestId)));
-			this._rowDisposables.add(addDisposableListener(button, EventType.FOCUS, () => this._updateTabStops(this._rows.indexOf(entry))));
+			// Activating a row jumps to the prompt and closes the flyout (focus returns to the handle),
+			// so it does not linger over the transcript.
+			this._rowDisposables.add(addDisposableListener(button, EventType.CLICK, () => {
+				this._onDidSelect.fire(requestId);
+				this._close();
+			}));
+			this._rowDisposables.add(addDisposableListener(button, EventType.FOCUS, () => {
+				// Keyboard-focusing a row (e.g. Tab in from the handle) counts as opening the disclosure.
+				this._open = true;
+				this._updateRevealed();
+				this._updateTabStops(this._rows.indexOf(entry));
+			}));
 			this._rows.push(entry);
 		}
 
@@ -166,6 +259,12 @@ export class PromptTimelineDockRail extends Disposable implements IPromptTimelin
 			return;
 		}
 		const event = new StandardKeyboardEvent(e);
+		if (event.keyCode === KeyCode.Escape) {
+			event.preventDefault();
+			event.stopPropagation();
+			this._close();
+			return;
+		}
 		const currentIndex = this._rows.findIndex(r => r.button === getWindow(this._domNode).document.activeElement);
 		let nextIndex: number;
 		switch (event.keyCode) {
@@ -191,6 +290,12 @@ export class PromptTimelineDockRail extends Disposable implements IPromptTimelin
 			const active = this._activeRequestId !== undefined
 				&& (row.tick.requestId === this._activeRequestId || row.tick.allRequestIds.includes(this._activeRequestId));
 			row.button.classList.toggle('active', active);
+			// Expose the current prompt to assistive tech, mirroring the overview-ruler rail.
+			if (active) {
+				row.button.setAttribute('aria-current', 'location');
+			} else {
+				row.button.removeAttribute('aria-current');
+			}
 		}
 	}
 
