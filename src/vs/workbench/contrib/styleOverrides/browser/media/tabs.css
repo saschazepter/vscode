@@ -40,7 +40,7 @@
 }
 
 .style-override .part.editor .tabs-container > .tab > .tab-label > .monaco-icon-label-container {
-	font-weight: var(--vscode-agents-fontWeight-semiBold);
+	font-weight: var(--vscode-fontWeight-semiBold);
 }
 
 
