@@ -177,10 +177,10 @@ export const enum ChatOriginKind {
  * How a chat came into existence. Clients MAY use it to render
  * contextual UI (parent indicators, fork markers, "spawned by tool" badges).
  *
- * Fork origins preserve the existing flat `chat` + `turnId` wire shape. Side
- * chat origins likewise carry a stable `turnId` identity alongside
- * `kind: "sideChat"` instead of snapshotting whether that turn was active or
- * historical at creation time. Consumers resolve the identifier against the
+ * Fork and side-chat origins both carry a stable top-level `turnId` alongside
+ * their discriminated `kind` value instead of snapshotting whether that turn
+ * was active or historical at creation time. Consumers resolve the identifier
+ * against the
  * source chat's current `activeTurn` or retained `turns` as needed.
  *
  * When a host accepts side-chat creation from the source chat's current active

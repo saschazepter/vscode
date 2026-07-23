@@ -47,18 +47,12 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		return { sessionUri, defaultChatUri: buildDefaultChatUri(sessionUri), workspace };
 	}
 
-	async function createPeer(sessionUri: string, id: string, source?: { chat: string; turnId: string; kind?: ChatSourceKind }): Promise<string> {
+	async function createPeer(sessionUri: string, id: string, source?: { chat: string; turnId: string; kind: ChatSourceKind }): Promise<string> {
 		const chat = buildChatUri(sessionUri, id);
 		await context.client.call('createChat', {
 			channel: sessionUri,
 			chat,
-			...(source
-				? {
-					source: source.kind === ChatSourceKind.SideChat
-						? { kind: ChatSourceKind.SideChat, chat: source.chat, turnId: source.turnId }
-						: { chat: source.chat, turnId: source.turnId }
-				}
-				: {}),
+			...(source ? { source } : {}),
 		}, 30_000);
 		return chat;
 	}
@@ -396,7 +390,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 	hostOnlyTest(context, 'forking an unknown turn creates a fresh empty peer chat', async function () {
 		const { sessionUri, defaultChatUri } = await createSession('unknown-fork');
 
-		const peer = await createPeer(sessionUri, 'fork', { chat: defaultChatUri, turnId: 'missing-turn' });
+		const peer = await createPeer(sessionUri, 'fork', { kind: ChatSourceKind.Fork, chat: defaultChatUri, turnId: 'missing-turn' });
 
 		assert.deepStrictEqual((await chatState(peer)).turns, []);
 	}, config.supportsMultipleChats);
@@ -438,7 +432,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		const { sessionUri, defaultChatUri } = await createSession('fork-history');
 		const sourceResponse = await driveTurn(defaultChatUri, 'fork-source', 'Remember the code word FORKCODE. Reply exactly "ready".', 1);
 
-		const peer = await createPeer(sessionUri, 'fork', { chat: defaultChatUri, turnId: 'fork-source' });
+		const peer = await createPeer(sessionUri, 'fork', { kind: ChatSourceKind.Fork, chat: defaultChatUri, turnId: 'fork-source' });
 		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
 		const response = await driveTurn(peer, 'fork-turn', 'What code word did I ask you to remember? Reply with only the code word.', 2);
 		const messages = observedModelMessages(context.observedModelRequestBodies.at(-1) ?? '');
@@ -726,7 +720,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 	forkProviderTest('unknown-turn fork does not inherit source provider context', async function () {
 		const { sessionUri, defaultChatUri } = await createSession('unknown-fork-context');
 		await driveTurn(defaultChatUri, 'source-secret', 'Remember the code word SOURCE_SECRET. Reply exactly "ready".', 1);
-		const peer = await createPeer(sessionUri, 'fork', { chat: defaultChatUri, turnId: 'missing-turn' });
+		const peer = await createPeer(sessionUri, 'fork', { kind: ChatSourceKind.Fork, chat: defaultChatUri, turnId: 'missing-turn' });
 		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
 
 		await driveTurn(peer, 'fresh-fork-turn', 'Reply exactly "fresh".', 10);

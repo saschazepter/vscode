@@ -130,8 +130,8 @@ export interface AgentCapabilities {
 export interface MultipleChatsCapability {
 	/**
 	 * The agent can fork a chat from a specific turn. When absent or `false`,
-	 * clients MUST NOT pass a fork-shaped {@link ChatSource} (`chat` + `turnId`)
-	 * to `createChat`.
+	 * clients MUST NOT pass a {@link ChatSource} with `kind: "fork"` to
+	 * `createChat`.
 	 * Forking always implies multi-chat support.
 	 */
 	fork?: boolean;

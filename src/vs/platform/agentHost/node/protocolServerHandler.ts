@@ -13,7 +13,7 @@ import { ILogService } from '../../log/common/log.js';
 import { AHPFileSystemProvider } from '../common/agentHostFileSystemProvider.js';
 import { AgentSession, type IAgentCreateChatOptions, type IAgentService, type IMcpNotification } from '../common/agentService.js';
 import { isActionEnvelopeRelevantToSubscriptionUris } from '../common/state/agentSubscription.js';
-import { isSideChatSource } from '../common/state/protocol/chatSource.js';
+import { ChatSourceKind } from '../common/state/protocol/channels-chat/commands.js';
 import type { CommandMap } from '../common/state/protocol/messages.js';
 import { ActionEnvelope, ActionType, INotification, isChatAction, isSessionAction, isTerminalAction, type ChatAction, type SessionAction, type TerminalAction, type IRootConfigChangedAction } from '../common/state/sessionActions.js';
 import { PROTOCOL_VERSION } from '../common/state/protocol/version/registry.js';
@@ -1210,13 +1210,15 @@ export class ProtocolServerHandler extends Disposable {
 			const source = params.source;
 			let options: IAgentCreateChatOptions | undefined;
 			if (source) {
-				const sourceWithMaybeKind = source as unknown as Record<string, unknown>;
-				if (isSideChatSource(source)) {
-					options = { sideChat: { source: URI.parse(source.chat), turnId: source.turnId } };
-				} else if (hasKey(sourceWithMaybeKind, { kind: true })) {
-					throw new ProtocolError(JsonRpcErrorCodes.InvalidParams, `Unsupported createChat source kind: ${String(sourceWithMaybeKind['kind'])}`);
-				} else {
-					options = { fork: { source: URI.parse(source.chat), turnId: source.turnId } };
+				switch (source.kind) {
+					case ChatSourceKind.Fork:
+						options = { fork: { source: URI.parse(source.chat), turnId: source.turnId } };
+						break;
+					case ChatSourceKind.SideChat:
+						options = { sideChat: { source: URI.parse(source.chat), turnId: source.turnId } };
+						break;
+					default:
+						throw new ProtocolError(JsonRpcErrorCodes.InvalidParams, `Unsupported createChat source kind: ${String((source as { kind?: unknown }).kind)}`);
 				}
 			}
 			await this._agentService.createChat(

@@ -26,14 +26,14 @@ export const enum ChatSourceKind {
  * Copies source history through a completed turn into the new chat.
  */
 export interface ForkChatSource {
+	/** Discriminant */
+	kind: ChatSourceKind.Fork;
 	/** URI of the existing source chat. */
 	chat: URI;
 	/**
 	 * Completed turn identifier in the source chat.
 	 *
 	 * Content through this turn is copied into the new chat's visible `turns`.
-	 * This preserves the existing 0.7.x flat fork wire format (`chat` +
-	 * `turnId`).
 	 */
 	turnId: string;
 }
@@ -86,25 +86,23 @@ export interface CreateChatParams extends BaseParams {
 	/**
 	 * Optional source chat and source turn.
 	 *
-	 * The source chat MUST belong to this session. Clients MUST only request the
-	 * flat fork shape (`chat` + `turnId`) when the selected agent advertises
-	 * `capabilities.multipleChats.fork`, and
-	 * `kind: "sideChat"` when the selected agent advertises
-	 * `capabilities.multipleChats.sideChat`. Forks keep the legacy flat
-	 * `chat` + `turnId` shape and therefore only target completed turns. Side
-	 * chats also carry a stable `turnId`, which the host resolves against the
-	 * source chat's current active turn or retained history. If it resolves to
-	 * the active turn, the host snapshots the currently available partial
-	 * response when accepting `createChat`.
+	 * The source chat MUST belong to this session. Clients MUST only request
+	 * `kind: "fork"` when the selected agent advertises
+	 * `capabilities.multipleChats.fork`, and `kind: "sideChat"` when the
+	 * selected agent advertises `capabilities.multipleChats.sideChat`. Both
+	 * source forms carry a stable top-level `turnId`. Forks target completed
+	 * turns. Side chats also carry a stable `turnId`, which the host resolves
+	 * against the source chat's current active turn or retained history. If it
+	 * resolves to the active turn, the host snapshots the currently available
+	 * partial response when accepting `createChat`.
 	 */
 	source?: ChatSource;
 	/**
 	 * Initial working-directory subset for this chat. Every entry MUST be
 	 * present in the owning session's `workingDirectories`; the server MUST
 	 * reject any entry that is not. When absent, the chat inherits the full
-	 * session set. Forked chats (those whose `source` uses the flat `chat` +
-	 * `turnId` shape) inherit the source chat's `workingDirectories`; this field
-	 * is ignored for forks.
+	 * session set. Forked chats (those whose `source.kind` is `"fork"`) inherit
+	 * the source chat's `workingDirectories`; this field is ignored for forks.
 	 *
 	 * A client MUST NOT supply this field unless the agent advertises
 	 * {@link AgentCapabilities.multipleWorkingDirectories}.
@@ -119,8 +117,7 @@ export interface CreateChatParams extends BaseParams {
 	 * reject creation that omits it, or fall back to the first of the chat's
 	 * directories. Fixed at creation and reported (read-only) on
 	 * {@link ChatState.primaryWorkingDirectory}. Ignored for forks (a chat whose
-	 * `source` uses the flat `chat` + `turnId` shape inherits the source chat's
-	 * primary).
+	 * `source.kind` is `"fork"` inherits the source chat's primary).
 	 */
 	primaryWorkingDirectory?: URI;
 }
