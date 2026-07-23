@@ -197,7 +197,7 @@ export class DeleteAutomationTool implements IToolImpl {
 			throw error;
 		}
 
-		if (invocation.selectedCustomButton !== undefined && invocation.selectedCustomButton !== deleteAutomationConfirmationId) {
+		if (invocation.selectedCustomButton !== deleteAutomationConfirmationId) {
 			return automationDeleteCancelled();
 		}
 

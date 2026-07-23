@@ -609,10 +609,11 @@ export class WorkspacePicker extends Disposable {
 		this._connectionStatusWatch.clear();
 		this._selectedFolderUri = undefined;
 		this._selectedResolved = undefined;
-		// Clear checked state from all recents
-		const recents = this._getStoredRecentWorkspaces();
-		const updated = recents.map(p => ({ ...p, checked: false }));
-		this.storageService.store(STORAGE_KEY_RECENT_WORKSPACES, JSON.stringify(updated), StorageScope.PROFILE, StorageTarget.MACHINE);
+		if (this._shouldPersistSelection()) {
+			const recents = this._getStoredRecentWorkspaces();
+			const updated = recents.map(p => ({ ...p, checked: false }));
+			this.storageService.store(STORAGE_KEY_RECENT_WORKSPACES, JSON.stringify(updated), StorageScope.PROFILE, StorageTarget.MACHINE);
+		}
 		this._updateTriggerLabel();
 		this._onDidChangeSelection.fire();
 	}
@@ -640,7 +641,7 @@ export class WorkspacePicker extends Disposable {
 		const resolved = this._resolveFolder(folderUri, providerIdHint ?? storedProviderId);
 		this._selectedFolderUri = folderUri;
 		this._selectedResolved = resolved;
-		if (persist) {
+		if (persist && this._shouldPersistSelection()) {
 			this._persistSelectedFolder(folderUri, resolved?.providerId);
 		}
 		this._updateTriggerLabel();
@@ -648,6 +649,10 @@ export class WorkspacePicker extends Disposable {
 		if (fireEvent) {
 			this._onDidSelectWorkspace.fire(folderUri);
 		}
+	}
+
+	protected _shouldPersistSelection(): boolean {
+		return true;
 	}
 
 	/**

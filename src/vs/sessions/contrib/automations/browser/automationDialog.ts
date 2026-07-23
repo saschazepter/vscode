@@ -1099,6 +1099,10 @@ export class AutomationsWorkspacePicker extends WorkspacePicker {
 		return false;
 	}
 
+	protected override _shouldPersistSelection(): boolean {
+		return false;
+	}
+
 	protected override _buildItems(): IActionListItem<IWorkspacePickerItem>[] {
 		const items = super._buildItems();
 		const noWorkspace: IActionListItem<IWorkspacePickerItem> = {

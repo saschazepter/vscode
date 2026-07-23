@@ -115,6 +115,24 @@ flakySuite('StorageService (browser specific)', () => {
 		});
 	});
 
+	test('application database access shares storage state and fallback', async () => {
+		storageService.store('key', 'first', StorageScope.APPLICATION, StorageTarget.MACHINE);
+		await storageService.flush();
+		const database = await storageService.getApplicationStorageDatabase();
+		const before = await database.getValue('key');
+		const result = await database.compareAndSwap('key', 'first', 'second');
+
+		deepStrictEqual({
+			before,
+			result,
+			serviceValue: storageService.get('key', StorageScope.APPLICATION),
+		}, {
+			before: 'first',
+			result: { swapped: true, currentValue: 'second' },
+			serviceValue: 'second',
+		});
+	});
+
 	ensureNoDisposablesAreLeakedInTestSuite();
 });
 
@@ -225,11 +243,12 @@ flakySuite('IndexDBStorageDatabase (browser)', () => {
 		const rejected = await database.compareAndSwap('key', 'stale', 'second');
 		const accepted = await database.compareAndSwap('key', 'first', 'second');
 		const items = await database.getItems();
+		const value = await database.getValue('key');
 
 		deepStrictEqual({
 			rejected,
 			accepted,
-			value: items.get('key'),
+			value,
 			unrelated: items.get('unrelated'),
 		}, {
 			rejected: { swapped: false, currentValue: 'first' },

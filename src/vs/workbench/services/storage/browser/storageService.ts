@@ -47,6 +47,10 @@ export class BrowserStorageService extends AbstractStorageService {
 		);
 	}
 
+	async getApplicationStorageDatabase(): Promise<IIndexedDBStorageDatabase> {
+		return (await this.applicationStoragePromise.p).indexedDb;
+	}
+
 	constructor(
 		private readonly workspace: IAnyWorkspaceIdentifier,
 		private readonly userDataProfileService: IUserDataProfileService,
@@ -288,6 +292,7 @@ export interface IIndexedDBStorageDatabase extends IStorageDatabase, IDisposable
 	 */
 	readonly hasPendingUpdate: boolean;
 
+	getValue(key: string): Promise<string | undefined>;
 	compareAndSwap(key: string, expectedValue: string | undefined, newValue: string): Promise<{ readonly swapped: boolean; readonly currentValue: string | undefined }>;
 
 	/**
@@ -300,6 +305,10 @@ class InMemoryIndexedDBStorageDatabase extends InMemoryStorageDatabase implement
 
 	readonly hasPendingUpdate = false;
 	readonly name = 'in-memory-indexedb-storage';
+
+	async getValue(key: string): Promise<string | undefined> {
+		return (await this.getItems()).get(key);
+	}
 
 	async compareAndSwap(key: string, expectedValue: string | undefined, newValue: string): Promise<{ readonly swapped: boolean; readonly currentValue: string | undefined }> {
 		const items = await this.getItems();
@@ -418,6 +427,12 @@ export class IndexedDBStorageDatabase extends Disposable implements IIndexedDBSt
 		return db.getKeyValues<string>(IndexedDBStorageDatabase.STORAGE_OBJECT_STORE, isValid);
 	}
 
+	async getValue(key: string): Promise<string | undefined> {
+		const db = await this.whenConnected;
+		const value = await db.runInTransaction(IndexedDBStorageDatabase.STORAGE_OBJECT_STORE, 'readonly', objectStore => objectStore.get(key));
+		return typeof value === 'string' ? value : undefined;
+	}
+
 	async updateItems(request: IUpdateRequest): Promise<void> {
 
 		// Run the update
@@ -450,8 +465,10 @@ export class IndexedDBStorageDatabase extends Disposable implements IIndexedDBSt
 			newValue,
 			(value): value is string => typeof value === 'string',
 		);
-		if (this.broadcastChannel && result.swapped) {
-			this.broadcastChannel.postData({ changed: new Map([[key, newValue]]) });
+		if (result.swapped) {
+			const event = { changed: new Map([[key, newValue]]) };
+			this._onDidChangeItemsExternal.fire(event);
+			this.broadcastChannel?.postData(event);
 		}
 		return result;
 	}

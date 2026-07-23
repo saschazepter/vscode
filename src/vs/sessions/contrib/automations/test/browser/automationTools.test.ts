@@ -363,6 +363,27 @@ suite('AutomationTools', () => {
 		});
 	});
 
+	test('deleteAutomation missing Delete option makes no changes', async () => {
+		const automation = createAutomation();
+		const automationService = new FakeAutomationService([automation]);
+		const tool = new DeleteAutomationTool(automationService, createConfigurationService());
+
+		const result = await invoke(tool, { automationId: automation.id });
+
+		assert.deepStrictEqual({
+			result: JSON.parse(getText(result)),
+			deleted: automationService.deleted,
+			automations: automationService.automations.get(),
+		}, {
+			result: {
+				status: 'cancelled',
+				message: 'The automation was not deleted.',
+			},
+			deleted: [],
+			automations: [automation],
+		});
+	});
+
 	test('deleteAutomation cancellation makes no changes', async () => {
 		const automation = createAutomation();
 		const automationService = new FakeAutomationService([automation]);

@@ -761,6 +761,43 @@ suite('AutomationsWorkspacePicker', () => {
 		});
 	});
 
+	test('user workspace selections do not update recent workspaces', async () => {
+		const providersService = disposables.add(new MockSessionsProvidersService());
+		const provider = createMockProvider('local-1');
+		const originalFolder = URI.file('/local/original');
+		const proposedFolder = URI.file('/local/proposed');
+		const storage = disposables.add(new TestStorageService());
+		seedStorage(storage, [
+			{ uri: originalFolder, providerId: provider.id, checked: true },
+			{ uri: proposedFolder, providerId: provider.id, checked: false },
+		]);
+		providersService.setProviders([provider]);
+		const before = storage.get(STORAGE_KEY_RECENT_WORKSPACES, StorageScope.PROFILE);
+		const picker = createTestPicker(
+			disposables,
+			providersService,
+			storage,
+			new TestNotificationService(),
+			TestAutomationsWorkspacePicker,
+		) as TestAutomationsWorkspacePicker;
+		picker.setTargetModel(new AutomationIsolationModel({
+			isQuickChat: false,
+			folderUri: originalFolder,
+			isolationMode: 'workspace',
+			branch: undefined,
+		}));
+
+		await picker.select('local/proposed');
+
+		assert.deepStrictEqual({
+			selected: picker.selectedFolderUri?.toString(),
+			storageUnchanged: storage.get(STORAGE_KEY_RECENT_WORKSPACES, StorageScope.PROFILE) === before,
+		}, {
+			selected: proposedFolder.toString(),
+			storageUnchanged: true,
+		});
+	});
+
 	test('a stale remote selection cannot override a newer No workspace choice', async () => {
 		const providersService = disposables.add(new MockSessionsProvidersService());
 		const localProvider = createMockProvider('local-1');
