@@ -454,7 +454,7 @@ export class ApplyPatchFormatInstructions extends PromptElement {
 			<br />
 			You must use the same indentation style as the original code. If the original code uses tabs, you must use tabs. If the original code uses spaces, you must use spaces. Be sure to use a proper UNESCAPED tab character.<br />
 			<br />
-			See below for an example of the patch format. If you propose changes to multiple regions in the same file, you should repeat the *** Update File header for each snippet of code to change:<br />
+			See below for an example of the patch format. If you propose changes to multiple regions in the same file, use multiple @@ hunks under a single *** Update File header:<br />
 			<br />
 			*** Begin Patch<br />
 			*** Update File: {this._promptPathRepresentationService.getExampleFilePath('/Users/someone/pygorithm/searching/binary_search.py')}<br />
@@ -463,6 +463,11 @@ export class ApplyPatchFormatInstructions extends PromptElement {
 			[3 lines of pre-context]<br />
 			-[old_code]<br />
 			+[new_code]<br />
+			[3 lines of post-context]<br />
+			@@ class Subclass<br />
+			@@   def method():<br />
+			[3 lines of pre-context]<br />
+			-[old_code]<br />
 			+[new_code]<br />
 			[3 lines of post-context]<br />
 			*** End Patch<br />
@@ -487,7 +492,7 @@ export class ApplyPatchInstructions extends PromptElement<DefaultAgentPromptProp
 			To edit files in the workspace, use the {ToolName.ApplyPatch} tool. If you have issues with it, you should first try to fix your patch and continue using {ToolName.ApplyPatch}. {this.props.tools[ToolName.EditFile] && <>If you are stuck, you can fall back on the {ToolName.EditFile} tool, but {ToolName.ApplyPatch} is much faster and is the preferred tool.</>}<br />
 			{isGpt5 && <>Prefer the smallest set of changes needed to satisfy the task. Avoid reformatting unrelated code; preserve existing style and public APIs unless the task requires changes. When practical, complete all edits for a file within a single message.<br /></>}
 			{!useSimpleInstructions && <>
-				The input for this tool is a string representing the patch to apply, following a special format. For each snippet of code that needs to be changed, repeat the following:<br />
+				The tool call requires both `input`, a string representing the patch to apply, and `explanation`, a short description of what the patch aims to achieve. The input follows a special format. For each snippet of code that needs to be changed, repeat the following:<br />
 				<ApplyPatchFormatInstructions /><br />
 				NEVER print this out to the user, instead call the tool and the edits will be applied and shown to the user.<br />
 			</>}
