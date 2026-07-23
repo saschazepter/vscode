@@ -126,6 +126,17 @@ parameters:
     displayName: "SDK canary: @github/copilot version ('auto' = infer from the SDK)"
     type: string
     default: auto
+  # .copilot-version overrides: pin @github/copilot-sdk / @github/copilot to a
+  # feed version or build from source at a branch/commit (git:<ref>). 'default'
+  # uses the committed .copilot-version file. See .copilot-version.
+  - name: VSCODE_COPILOT_SDK
+    displayName: "Copilot override: @github/copilot-sdk ('default' = use .copilot-version)"
+    type: string
+    default: default
+  - name: VSCODE_COPILOT_RUNTIME
+    displayName: "Copilot override: @github/copilot ('default' = use .copilot-version)"
+    type: string
+    default: default
 
 variables:
   - name: VSCODE_PRIVATE_BUILD
@@ -145,6 +156,18 @@ variables:
       value: ""
     ${{ else }}:
       value: ${{ parameters.VSCODE_CLI_CANARY_VERSION }}
+  # Normalize the 'default' sentinel to empty so apply-copilot-override falls back
+  # to the committed .copilot-version file; a non-'default' value overrides it.
+  - name: VSCODE_COPILOT_SDK
+    ${{ if eq(parameters.VSCODE_COPILOT_SDK, 'default') }}:
+      value: ""
+    ${{ else }}:
+      value: ${{ parameters.VSCODE_COPILOT_SDK }}
+  - name: VSCODE_COPILOT_RUNTIME
+    ${{ if eq(parameters.VSCODE_COPILOT_RUNTIME, 'default') }}:
+      value: ""
+    ${{ else }}:
+      value: ${{ parameters.VSCODE_COPILOT_RUNTIME }}
   - name: CARGO_REGISTRY
     value: ${{ parameters.CARGO_REGISTRY }}
   - name: VSCODE_QUALITY

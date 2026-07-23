@@ -6,6 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ensureNpmPackage, type EnsureNpmPackageOptions } from './npmPackage.ts';
+import { isRuntimeSourceActive, materializeRuntimeSourcePackage } from './copilotRuntimeSource.ts';
 
 /**
  * The platforms that @github/copilot ships platform-specific packages for.
@@ -214,6 +215,15 @@ export function ensureCopilotPlatformPackage(platform: string, arch: string, nod
 	}
 
 	const packageName = `@github/copilot-${copilotPackagePlatformArch}`;
+	const packageDir = path.join(nodeModulesRoot, ...packageName.split('/'));
+
+	// A `.copilot-version` runtime `git:<ref>` override builds the runtime from
+	// source (full native build) and replaces the published platform package.
+	if (isRuntimeSourceActive()) {
+		materializeRuntimeSourcePackage(packageDir, copilotPackagePlatformArch);
+		return;
+	}
+
 	ensureNpmPackage(packageName, nodeModulesRoot, options);
 }
 

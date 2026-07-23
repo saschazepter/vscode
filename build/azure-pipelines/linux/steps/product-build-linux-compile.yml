@@ -63,6 +63,10 @@ steps:
 
   - template: ../../common/apply-sdk-canary.yml@self
 
+  - template: ../../common/apply-copilot-override.yml@self
+    parameters:
+      installRuntimeToolchain: true
+
   - script: mkdir -p .build && node build/azure-pipelines/common/computeNodeModulesCacheKey.ts linux $VSCODE_ARCH $(node -p process.arch) > .build/packagelockhash
     displayName: Prepare node_modules cache key
 
