@@ -752,8 +752,8 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 
 		dom.append(toolbar, dom.$('.sessions-chat-toolbar-spacer'));
 
-		// Dictation (speech-to-text) mic button. Shares the STT service, mic
-		// device, and gating (on-device support + `chat.speechToText.enabled`)
+		// Dictation mic button. Shares the STT service, mic
+		// device, and gating (on-device support + `dictation.enabled`)
 		// with the main chat input; inserts the transcript into this composer's
 		// editor. Placed before the voice controls so dictation leads the
 		// mic-related group.
@@ -849,7 +849,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 			updateVisibility();
 		}));
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration('chat.speechToText.enabled')) {
+			if (e.affectsConfiguration('dictation.enabled')) {
 				updateVisibility();
 			}
 		}));
@@ -883,10 +883,10 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 	}
 
 	/**
-	 * Toggle on-device dictation into this composer's editor, honoring the
-	 * tap-vs-hold `chat.speechToText.mode` setting. Shared by the mic button and
-	 * the Cmd/Ctrl+I chord ({@link TOGGLE_DICTATION_COMMAND_ID}); the shared
-	 * Dictate action can't target this composer since it isn't an `IChatWidget`.
+	 * Toggle on-device dictation into this composer's editor. Shared by the mic
+	 * button and the Cmd/Ctrl+I chord ({@link TOGGLE_DICTATION_COMMAND_ID}); the
+	 * shared Dictate action can't target this composer since it isn't an
+	 * `IChatWidget`.
 	 */
 	async toggleDictation(): Promise<void> {
 		if (!this._editor) {
@@ -895,7 +895,6 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		await runDictationShortcut({
 			speechService: this.chatSpeechToTextService,
 			keybindingService: this.keybindingService,
-			configurationService: this.configurationService,
 			logService: this.logService,
 		}, TOGGLE_DICTATION_COMMAND_ID, this._editor);
 	}
