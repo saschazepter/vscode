@@ -11,8 +11,9 @@ import { hasKey } from '../../../base/common/types.js';
 import { URI } from '../../../base/common/uri.js';
 import { ILogService } from '../../log/common/log.js';
 import { AHPFileSystemProvider } from '../common/agentHostFileSystemProvider.js';
-import { AgentSession, type IAgentService, type IMcpNotification } from '../common/agentService.js';
+import { AgentSession, type IAgentCreateChatOptions, type IAgentService, type IMcpNotification } from '../common/agentService.js';
 import { isActionEnvelopeRelevantToSubscriptionUris } from '../common/state/agentSubscription.js';
+import { isSideChatSource } from '../common/state/protocol/chatSource.js';
 import type { CommandMap } from '../common/state/protocol/messages.js';
 import { ActionEnvelope, ActionType, INotification, isChatAction, isSessionAction, isTerminalAction, type ChatAction, type SessionAction, type TerminalAction, type IRootConfigChangedAction } from '../common/state/sessionActions.js';
 import { PROTOCOL_VERSION } from '../common/state/protocol/version/registry.js';
@@ -1207,11 +1208,17 @@ export class ProtocolServerHandler extends Disposable {
 				return null;
 			}
 			const source = params.source;
-			const options = source
-				? (hasKey(source, { kind: true })
-					? { sideChat: { source: URI.parse(source.chat), turnId: source.turnId } }
-					: { fork: { source: URI.parse(source.chat), turnId: source.turnId } })
-				: undefined;
+			let options: IAgentCreateChatOptions | undefined;
+			if (source) {
+				const sourceWithMaybeKind = source as unknown as Record<string, unknown>;
+				if (isSideChatSource(source)) {
+					options = { sideChat: { source: URI.parse(source.chat), turnId: source.turnId } };
+				} else if (hasKey(sourceWithMaybeKind, { kind: true })) {
+					throw new ProtocolError(JsonRpcErrorCodes.InvalidParams, `Unsupported createChat source kind: ${String(sourceWithMaybeKind['kind'])}`);
+				} else {
+					options = { fork: { source: URI.parse(source.chat), turnId: source.turnId } };
+				}
+			}
 			await this._agentService.createChat(
 				URI.parse(params.channel),
 				URI.parse(params.chat),
