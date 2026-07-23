@@ -43,6 +43,8 @@ import { IMouseEvent } from '../../../../../base/browser/mouseEvent.js';
 import { IChatWidget } from '../chat.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
+import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
+import { LayoutSettings } from '../../../../services/layout/browser/layoutService.js';
 
 export interface IAgentSessionsControlOptions {
 	readonly overrideStyles: IStyleOverride<IListStyles>;
@@ -119,6 +121,7 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		@IEditorService private readonly editorService: IEditorService,
 		@IStorageService private readonly storageService: IStorageService,
 		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
 	) {
 		super();
 
@@ -274,7 +277,12 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		const list = this.sessionsList = this._register(this.instantiationService.createInstance(WorkbenchCompressibleAsyncDataTree,
 			'AgentSessionsView',
 			container,
-			new AgentSessionsListDelegate(approvalModel, this.options.compactShowMore),
+			new AgentSessionsListDelegate(
+				approvalModel,
+				this.options.compactShowMore,
+				() => this.configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true ? AgentSessionsListDelegate.COMPACT_ITEM_HEIGHT : AgentSessionsListDelegate.ITEM_HEIGHT,
+				() => this.configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true ? AgentSessionsListDelegate.SPACED_SECTION_HEIGHT : AgentSessionsListDelegate.SECTION_HEIGHT,
+			),
 			new AgentSessionsCompressionDelegate(),
 			[
 				sessionRenderer,
@@ -300,6 +308,21 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		)) as WorkbenchCompressibleAsyncDataTree<IAgentSessionsModel, AgentSessionListItem, FuzzyScore>;
 
 		ChatContextKeys.agentSessionsViewerFocused.bindTo(list.contextKeyService);
+
+		this._register(this.configurationService.onDidChangeConfiguration(event => {
+			if (!event.affectsConfiguration(LayoutSettings.MODERN_UI)) {
+				return;
+			}
+
+			const nodes = [...list.getNode().children];
+			while (nodes.length > 0) {
+				const node = nodes.pop()!;
+				if (isAgentSession(node.element) || isAgentSessionSection(node.element)) {
+					list.updateElementHeight(node.element, undefined);
+				}
+				nodes.push(...node.children);
+			}
+		}));
 
 		this._register(sessionRenderer.onDidChangeItemHeight(session => {
 			if (list.hasNode(session)) {
