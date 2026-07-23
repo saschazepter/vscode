@@ -23,7 +23,7 @@ import { IEnvironmentService } from '../../../../../platform/environment/common/
 import { ILocalTranscriptionModelStatus, ILocalTranscriptionService, LocalTranscriptionModelState } from '../../../../../platform/localTranscription/common/localTranscription.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
 import { IAuthenticationService } from '../../../../services/authentication/common/authentication.js';
-import { IVoiceClientService, IVoiceSessionContext, IVoiceTranscription } from '../../common/voiceClient/voiceClientService.js';
+import { IVoiceClientService, IVoiceSessionContext, IVoiceTranscription, IVoiceTurnConfig } from '../../common/voiceClient/voiceClientService.js';
 import { AccessibilitySignal, IAccessibilitySignalService } from '../../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
 import { AgentsVoiceStorageKeys } from '../../../agentsVoice/common/agentsVoice.js';
@@ -527,6 +527,11 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		this._firstAudioMs = 0;
 		this._firstTranscriptMs = 0;
 		this._finalizeMs = -1;
+		// Defensively clear any transcript left over from a previous session so a
+		// new dictation never starts by re-emitting the prior transcript (teardown
+		// already clears these, but a start without a clean teardown must not leak).
+		this._finalizedText = '';
+		this._deltaText = '';
 
 		let stream: MediaStream;
 		try {
@@ -644,8 +649,15 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		// minimal (session-less) dictation session and wait for the backend to
 		// acknowledge it before streaming audio. The websocket preserves order,
 		// but the ack guarantees the session exists server-side first.
+		//
+		// Dictation is one continuous turn: the user taps to start, speaks
+		// several phrases with pauses in between, and taps to stop. Disable the
+		// backend's automatic turn endpointing (VAD silence / stop phrases) so a
+		// pause between phrases does not end the turn — otherwise everything
+		// after the first pause lands in a new (dropped) turn and is lost.
 		const context: IVoiceSessionContext = { sessions: [], display_locale: '' };
-		this._voiceClientService.sendStartSession(context, this._telemetryService.machineId);
+		const turnConfig: IVoiceTurnConfig = { auto_end_mode: 'off', silence_ms: 0, stop_phrases: [], vad_gate_asr: false };
+		this._voiceClientService.sendStartSession(context, this._telemetryService.machineId, undefined, turnConfig);
 		await this._awaitSessionInit();
 
 		this._voiceClientService.sendPttStart(this._maiTurnId);
@@ -673,21 +685,28 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	}
 
 	/**
-	 * Handle a transcription event from the shared voice socket, ignoring events
-	 * that are not for this dictation's turn or that carry a stale (non-
-	 * increasing) revision, so a late/other-turn event cannot overwrite the
-	 * transcript or resolve the final waiter early.
+	 * Handle a transcription event from the shared voice socket. Events for a
+	 * different (non-empty) turn are dropped so a stale/foreign frame — e.g. a
+	 * replay from a previous session on the shared backend — cannot resurrect
+	 * the prior transcript; a frame without a turnId is accepted since the
+	 * conversational socket does not always tag transcription frames. Within our
+	 * turn, a stale (non-increasing) revision is dropped so a late event cannot
+	 * overwrite newer text or resolve the final waiter early. `text` is the full
+	 * cumulative transcript for the turn.
 	 */
 	private _handleMaiTranscription(e: IVoiceTranscription): void {
 		if (e.turnId !== undefined && this._maiTurnId && e.turnId !== this._maiTurnId) {
+			this._logService.trace(`[chat-stt] mai transcription dropped (turn ${e.turnId} != ${this._maiTurnId})`);
 			return;
 		}
 		if (e.revision !== undefined) {
 			if (e.revision <= this._maiRevision) {
+				this._logService.trace(`[chat-stt] mai transcription dropped (revision ${e.revision} <= ${this._maiRevision})`);
 				return;
 			}
 			this._maiRevision = e.revision;
 		}
+		this._logService.trace(`[chat-stt] mai transcription status=${e.status ?? 'none'} revision=${e.revision ?? 'none'} len=${e.text.length}`);
 		this._emitTranscript(e.text, e.committed ?? '', e.status === 'final');
 		if (e.status === 'final') {
 			this._maiFinalTranscript?.complete();
