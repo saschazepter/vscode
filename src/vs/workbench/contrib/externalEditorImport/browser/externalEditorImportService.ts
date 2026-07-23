@@ -45,6 +45,12 @@ interface IKnownEditorDescriptor {
 	readonly themeStateNameKeys?: readonly string[];
 }
 
+interface IExternalEditorKeybinding {
+	readonly key: string;
+	readonly command: string;
+	readonly [property: string]: unknown;
+}
+
 const KNOWN_EDITORS: readonly IKnownEditorDescriptor[] = [
 	{
 		id: 'cursor',
@@ -228,7 +234,7 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		}
 
 		if (!token?.isCancellationRequested && selection.snippets && source.hasSnippets) {
-			const result = await this.importSnippets(source);
+			const result = await this.importSnippets(source, token);
 			snippetsImported = result.imported;
 			snippetsFailed = result.failed;
 		}
@@ -278,22 +284,18 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 	}
 
 	private async previewKeybindings(source: IExternalEditorSource): Promise<string[]> {
-		const sourceKeybindings = await this.readJsonArray(URI.joinPath(source.userDataUri, 'keybindings.json'));
+		const sourceKeybindings = await this.readKeybindings(URI.joinPath(source.userDataUri, 'keybindings.json'));
 		if (!sourceKeybindings || sourceKeybindings.length === 0) {
 			return [];
 		}
 
-		const existingKeybindings = await this.readJsonArray(this.userDataProfileService.currentProfile.keybindingsResource) ?? [];
+		const existingKeybindings = await this.readKeybindings(this.userDataProfileService.currentProfile.keybindingsResource) ?? [];
 		const labels: string[] = [];
 		for (const entry of sourceKeybindings) {
 			if (existingKeybindings.some(existing => equals(existing, entry))) {
 				continue;
 			}
-			const key = (entry as { key?: unknown } | null)?.key;
-			const command = (entry as { command?: unknown } | null)?.command;
-			if (typeof key === 'string' && key) {
-				labels.push(typeof command === 'string' && command ? `${key} → ${command}` : key);
-			}
+			labels.push(`${entry.key} → ${entry.command}`);
 		}
 		return labels;
 	}
@@ -416,9 +418,6 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 	 * 2. Otherwise the source's persisted theme state (`globalStorage/storage.json`) is consulted —
 	 *    forks such as Cursor store the active theme there under their own namespace. Its kind
 	 *    (light/dark/high-contrast) is mapped to the matching VS Code default theme.
-	 * 3. Otherwise the `preferred*ColorTheme` / `window.autoDetectColorScheme` settings are used to
-	 *    infer a kind.
-	 *
 	 * Returns `undefined` when no theme preference can be determined.
 	 */
 	private async resolveColorThemeId(editor: IKnownEditorDescriptor, userDataUri: URI, settingsUri: URI): Promise<string | undefined> {
@@ -443,9 +442,7 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 			return DEFAULT_THEME_BY_KIND[kindFromState];
 		}
 
-		// 3. Fall back to preferred-theme / auto-detect settings.
-		const kindFromSettings = settings ? this.inferKindFromSettings(settings) : undefined;
-		return kindFromSettings ? DEFAULT_THEME_BY_KIND[kindFromSettings] : undefined;
+		return undefined;
 	}
 
 	private async readThemeKindFromState(editor: IKnownEditorDescriptor, userDataUri: URI): Promise<ColorThemeKind | undefined> {
@@ -495,43 +492,19 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		return undefined;
 	}
 
-	/**
-	 * Infers a color theme kind from the source settings' `preferred*ColorTheme` names. Used only
-	 * when the persisted theme state does not resolve a kind.
-	 */
-	private inferKindFromSettings(settings: Record<string, unknown>): ColorThemeKind | undefined {
-		const preferredHcDark = settings['workbench.preferredHighContrastColorTheme'];
-		const preferredHcLight = settings['workbench.preferredHighContrastLightColorTheme'];
-		const preferredDark = settings['workbench.preferredDarkColorTheme'];
-		const preferredLight = settings['workbench.preferredLightColorTheme'];
-		if (typeof preferredHcDark === 'string') {
-			return 'hc-dark';
-		}
-		if (typeof preferredHcLight === 'string') {
-			return 'hc-light';
-		}
-		if (typeof preferredDark === 'string') {
-			return 'dark';
-		}
-		if (typeof preferredLight === 'string') {
-			return 'light';
-		}
-		return undefined;
-	}
-
 	// =====================================================================
 	// Keybindings
 	// =====================================================================
 
 	private async importKeybindings(source: IExternalEditorSource): Promise<{ imported: boolean; failed: boolean }> {
-		const sourceKeybindings = await this.readJsonArray(URI.joinPath(source.userDataUri, 'keybindings.json'));
+		const sourceKeybindings = await this.readKeybindings(URI.joinPath(source.userDataUri, 'keybindings.json'));
 		if (!sourceKeybindings || sourceKeybindings.length === 0) {
 			return { imported: false, failed: false };
 		}
 
 		const targetResource = this.userDataProfileService.currentProfile.keybindingsResource;
 		const targetExists = await this.safeExists(targetResource);
-		const existingKeybindings = targetExists ? await this.readJsonArray(targetResource) : [];
+		const existingKeybindings = targetExists ? await this.readKeybindings(targetResource) : [];
 
 		// The target file exists but could not be parsed. Rewriting it would discard the user's
 		// keybindings, so bail out rather than risk data loss.
@@ -565,7 +538,7 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 	// Snippets
 	// =====================================================================
 
-	private async importSnippets(source: IExternalEditorSource): Promise<{ imported: number; failed: number }> {
+	private async importSnippets(source: IExternalEditorSource, token?: CancellationToken): Promise<{ imported: number; failed: number }> {
 		const sourceSnippetsHome = URI.joinPath(source.userDataUri, 'snippets');
 		let sourceStat;
 		try {
@@ -583,6 +556,9 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 		let imported = 0;
 		let failed = 0;
 		for (const child of sourceStat.children) {
+			if (token?.isCancellationRequested) {
+				break;
+			}
 			if (child.isDirectory || !this.isSnippetFile(child.resource)) {
 				continue;
 			}
@@ -593,6 +569,9 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 			}
 			try {
 				const content = await this.fileService.readFile(child.resource);
+				if (token?.isCancellationRequested) {
+					break;
+				}
 				await this.fileService.writeFile(targetUri, content.value);
 				imported++;
 			} catch (error) {
@@ -747,6 +726,17 @@ export class ExternalEditorImportService extends Disposable implements IExternal
 	private async readJsonArray(resource: URI): Promise<unknown[] | undefined> {
 		const parsed = await this.readJson(resource);
 		return Array.isArray(parsed) ? parsed : undefined;
+	}
+
+	private async readKeybindings(resource: URI): Promise<IExternalEditorKeybinding[] | undefined> {
+		const entries = await this.readJsonArray(resource);
+		return entries?.filter((entry): entry is IExternalEditorKeybinding => {
+			if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+				return false;
+			}
+			const keybinding = entry as Record<string, unknown>;
+			return typeof keybinding.key === 'string' && !!keybinding.key && typeof keybinding.command === 'string' && !!keybinding.command;
+		});
 	}
 
 	private async readJson(resource: URI): Promise<unknown> {

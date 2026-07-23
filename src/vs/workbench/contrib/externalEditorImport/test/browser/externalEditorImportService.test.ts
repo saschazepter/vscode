@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { CancellationTokenSource } from '../../../../../base/common/cancellation.js';
 import { VSBuffer } from '../../../../../base/common/buffer.js';
-import { isMacintosh, isWindows } from '../../../../../base/common/platform.js';
+import { isMacintosh, isWeb, isWindows } from '../../../../../base/common/platform.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
@@ -36,6 +36,8 @@ suite('ExternalEditorImportService', () => {
 
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 	const home = URI.file('/home/tester');
+	const nativeTest = isWeb ? test.skip : test;
+	const webTest = isWeb ? test : test.skip;
 
 	function createService(existingPaths: Set<string>, remoteAuthority?: string, fileContents?: Map<string, string>, importEnvironmentService?: IExternalEditorImportEnvironmentService): ExternalEditorImportService {
 		const fileService = {
@@ -123,7 +125,7 @@ suite('ExternalEditorImportService', () => {
 		};
 	}
 
-	test('detects Cursor and reports available categories', async () => {
+	nativeTest('detects Cursor and reports available categories', async () => {
 		const cursorUser = URI.joinPath(applicationDataHome(home), 'Cursor', 'User');
 		const existing = new Set<string>([
 			URI.joinPath(cursorUser, 'settings.json').toString(),
@@ -150,7 +152,7 @@ suite('ExternalEditorImportService', () => {
 		}]);
 	});
 
-	test('resolves an explicit color theme to itself', async () => {
+	nativeTest('resolves an explicit color theme to itself', async () => {
 		const cursorUser = URI.joinPath(applicationDataHome(home), 'Cursor', 'User');
 		const settingsUri = URI.joinPath(cursorUser, 'settings.json');
 		const existing = new Set<string>([settingsUri.toString()]);
@@ -164,7 +166,7 @@ suite('ExternalEditorImportService', () => {
 		assert.strictEqual(sources[0]?.colorThemeId, 'Monokai');
 	});
 
-	test('maps the selected theme from state storage to the closest VS Code theme', async () => {
+	nativeTest('maps the selected theme from state storage to the closest VS Code theme', async () => {
 		const cursorUser = URI.joinPath(applicationDataHome(home), 'Cursor', 'User');
 		const settingsUri = URI.joinPath(cursorUser, 'settings.json');
 		const storageUri = URI.joinPath(cursorUser, 'globalStorage', 'storage.json');
@@ -181,7 +183,7 @@ suite('ExternalEditorImportService', () => {
 		assert.strictEqual(sources[0]?.colorThemeId, 'Light Modern');
 	});
 
-	test('maps a high-contrast base theme from state storage', async () => {
+	nativeTest('maps a high-contrast base theme from state storage', async () => {
 		const cursorUser = URI.joinPath(applicationDataHome(home), 'Cursor', 'User');
 		const settingsUri = URI.joinPath(cursorUser, 'settings.json');
 		const storageUri = URI.joinPath(cursorUser, 'globalStorage', 'storage.json');
@@ -197,12 +199,16 @@ suite('ExternalEditorImportService', () => {
 		assert.strictEqual(sources[0]?.colorThemeId, 'Dark High Contrast');
 	});
 
-	test('does not treat OS auto-detect alone as a resolved theme', async () => {
+	nativeTest('does not infer the active theme from preferred themes', async () => {
 		const cursorUser = URI.joinPath(applicationDataHome(home), 'Cursor', 'User');
 		const settingsUri = URI.joinPath(cursorUser, 'settings.json');
 		const existing = new Set<string>([settingsUri.toString()]);
 		const contents = new Map<string, string>([
-			[settingsUri.toString(), JSON.stringify({ 'window.autoDetectColorScheme': true })],
+			[settingsUri.toString(), JSON.stringify({
+				'window.autoDetectColorScheme': true,
+				'workbench.preferredDarkColorTheme': 'Cursor Dark',
+				'workbench.preferredLightColorTheme': 'Cursor Light',
+			})],
 		]);
 
 		const service = createService(existing, undefined, contents);
@@ -211,7 +217,7 @@ suite('ExternalEditorImportService', () => {
 		assert.strictEqual(sources[0]?.colorThemeId, undefined);
 	});
 
-	test('reports no theme preference when the source settings set none', async () => {
+	nativeTest('reports no theme preference when the source settings set none', async () => {
 		const cursorUser = URI.joinPath(applicationDataHome(home), 'Cursor', 'User');
 		const settingsUri = URI.joinPath(cursorUser, 'settings.json');
 		const existing = new Set<string>([settingsUri.toString()]);
@@ -225,13 +231,13 @@ suite('ExternalEditorImportService', () => {
 		assert.strictEqual(sources[0]?.colorThemeId, undefined);
 	});
 
-	test('returns no sources when nothing is installed', async () => {
+	nativeTest('returns no sources when nothing is installed', async () => {
 		const service = createService(new Set<string>());
 		const sources = await service.detectSources();
 		assert.strictEqual(sources.length, 0);
 	});
 
-	test('returns no sources in a remote window', async () => {
+	nativeTest('returns no sources in a remote window', async () => {
 		const cursorUser = URI.joinPath(applicationDataHome(home), 'Cursor', 'User');
 		const existing = new Set<string>([URI.joinPath(cursorUser, 'settings.json').toString()]);
 		const service = createService(existing, 'ssh-remote+host');
@@ -239,7 +245,7 @@ suite('ExternalEditorImportService', () => {
 		assert.strictEqual(sources.length, 0);
 	});
 
-	test('detects Cursor under a redirected application-data root', async () => {
+	nativeTest('detects Cursor under a redirected application-data root', async () => {
 		const redirectedHome = URI.file('/redirected/config');
 		const cursorUser = URI.joinPath(redirectedHome, 'Cursor', 'User');
 		const existing = new Set<string>([URI.joinPath(cursorUser, 'settings.json').toString()]);
@@ -251,6 +257,15 @@ suite('ExternalEditorImportService', () => {
 		const sources = await createService(existing, undefined, undefined, importEnvironmentService).detectSources();
 
 		assert.deepStrictEqual(sources.map(source => source.userDataUri.toString()), [cursorUser.toString()]);
+	});
+
+	webTest('returns no sources in web', async () => {
+		const cursorUser = URI.joinPath(applicationDataHome(home), 'Cursor', 'User');
+		const existing = new Set<string>([URI.joinPath(cursorUser, 'settings.json').toString()]);
+
+		const sources = await createService(existing).detectSources();
+
+		assert.deepStrictEqual(sources, []);
 	});
 
 	function createImportService(options: {
@@ -392,6 +407,29 @@ suite('ExternalEditorImportService', () => {
 		assert.deepStrictEqual({ preview: preview.keybindings, imported: result.keybindingsImported }, { preview: [], imported: false });
 	});
 
+	test('ignores invalid keybinding entries consistently', async () => {
+		const sourceKeybindings = URI.joinPath(cursorUserData, 'keybindings.json');
+		const files = new InMemoryFiles(new Map([
+			[sourceKeybindings.toString(), JSON.stringify([null, 42, 'invalid', { key: 'ctrl+a' }, { key: 'ctrl+b', command: 'b' }])],
+		]));
+		const writes: IJSONValue[][] = [];
+		const jsonEditingService = {
+			write: async (_resource: URI, values: IJSONValue[]) => { writes.push(values); },
+		} as unknown as IJSONEditingService;
+		const service = createImportService({ files, jsonEditingService });
+		const source = cursorSource({ hasKeybindings: true });
+
+		const preview = await service.preview(source);
+		const result = await service.import(source, { keybindings: true });
+
+		assert.deepStrictEqual({ preview: preview.keybindings, imported: result.keybindingsImported, writes }, {
+			preview: ['ctrl+b → b'],
+			imported: true,
+			writes: [],
+		});
+		assert.strictEqual(files.get(keybindingsTarget), JSON.stringify([{ key: 'ctrl+b', command: 'b' }], null, '\t'));
+	});
+
 	test('previews and imports only supported snippet files', async () => {
 		const snippetsHome = URI.joinPath(cursorUserData, 'snippets');
 		const files = new InMemoryFiles(new Map([
@@ -502,6 +540,35 @@ suite('ExternalEditorImportService', () => {
 		const result = await service.import(cursorSource({ hasSnippets: true }), { snippets: true });
 
 		assert.deepStrictEqual({ imported: result.snippetsImported, failed: result.snippetsFailed }, { imported: 0, failed: 1 });
+	});
+
+	test('stops importing snippets when cancelled', async () => {
+		const snippetsHome = URI.joinPath(cursorUserData, 'snippets');
+		const firstSnippet = URI.joinPath(snippetsHome, 'first.code-snippets');
+		const secondSnippet = URI.joinPath(snippetsHome, 'second.code-snippets');
+		const files = new InMemoryFiles(new Map([
+			[snippetsHome.toString(), 'directory'],
+			[firstSnippet.toString(), '{}'],
+			[secondSnippet.toString(), '{}'],
+		]));
+		files.service.resolve = async () => ({
+			children: [
+				{ name: 'first.code-snippets', isDirectory: false, resource: firstSnippet },
+				{ name: 'second.code-snippets', isDirectory: false, resource: secondSnippet },
+			],
+		}) as never;
+		const cancellation = store.add(new CancellationTokenSource());
+		const writeFile = files.service.writeFile;
+		files.service.writeFile = async (resource, value) => {
+			await writeFile(resource, value);
+			cancellation.cancel();
+		};
+		const service = createImportService({ files });
+
+		const result = await service.import(cursorSource({ hasSnippets: true }), { snippets: true }, cancellation.token);
+
+		assert.deepStrictEqual({ imported: result.snippetsImported, failed: result.snippetsFailed }, { imported: 1, failed: 0 });
+		assert.strictEqual(files.get(URI.file('/profile/snippets/second.code-snippets')), undefined);
 	});
 
 	test('counts extensions missing from the gallery as failed', async () => {
