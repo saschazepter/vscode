@@ -687,18 +687,20 @@ function hasAutoApprovedPendingConfirmation(state: ChatState): boolean {
 	);
 }
 
-/** Whether the chat is genuinely blocked on user input (a pending elicitation, or a non-auto-approved confirmation gate). */
+/** Whether the chat is genuinely blocked on user input (an open input request, an auth-required tool, or a non-auto-approved confirmation gate). */
 function chatAwaitsUserInput(state: ChatState): boolean {
-	if ((state.inputRequests?.length ?? 0) > 0) {
-		return true;
-	}
 	return !!state.activeTurn?.responseParts.some(part => {
+		// An open elicitation always awaits the user until it is answered.
+		if (part.kind === ResponsePartKind.InputRequest) {
+			return part.response === undefined;
+		}
 		if (part.kind !== ResponsePartKind.ToolCall) {
 			return false;
 		}
 		const status = part.toolCall.status;
-		// A result gate always requires the user; a parameter gate only when it was not auto-approved.
-		if (status === ToolCallStatus.PendingResultConfirmation) {
+		// Result-confirmation and auth-required gates always require the user; a
+		// parameter-confirmation gate only when it was not auto-approved.
+		if (status === ToolCallStatus.PendingResultConfirmation || status === ToolCallStatus.AuthRequired) {
 			return true;
 		}
 		return status === ToolCallStatus.PendingConfirmation
