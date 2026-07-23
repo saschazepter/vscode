@@ -836,7 +836,7 @@ function getSchemaCatalogUris(): Uri[] {
 		const catalogs = extension.packageJSON?.contributes?.jsonValidationCatalogs;
 		if (Array.isArray(catalogs)) {
 			for (const catalog of catalogs) {
-				if (typeof catalog.url === 'string') {
+				if (typeof catalog?.url === 'string') {
 					result.push(resolveExtensionResource(extension.extensionUri, catalog.url));
 				}
 			}
