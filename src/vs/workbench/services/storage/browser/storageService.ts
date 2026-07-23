@@ -47,8 +47,12 @@ export class BrowserStorageService extends AbstractStorageService {
 		);
 	}
 
-	async getApplicationStorageDatabase(): Promise<IIndexedDBStorageDatabase> {
-		return (await this.applicationStoragePromise.p).indexedDb;
+	async getApplicationStorageValue(key: string): Promise<string | undefined> {
+		return (await this.applicationStoragePromise.p).indexedDb.getValue(key);
+	}
+
+	async compareAndSwapApplicationStorage(key: string, expectedValue: string | undefined, newValue: string): Promise<{ readonly swapped: boolean; readonly currentValue: string | undefined }> {
+		return (await this.applicationStoragePromise.p).indexedDb.compareAndSwap(key, expectedValue, newValue);
 	}
 
 	constructor(
@@ -279,7 +283,7 @@ export class BrowserStorageService extends AbstractStorageService {
 	}
 }
 
-export interface IIndexedDBStorageDatabase extends IStorageDatabase, IDisposable {
+interface IIndexedDBStorageDatabase extends IStorageDatabase, IDisposable {
 
 	/**
 	 * Name of the database.

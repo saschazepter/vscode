@@ -118,9 +118,8 @@ flakySuite('StorageService (browser specific)', () => {
 	test('application database access shares storage state and fallback', async () => {
 		storageService.store('key', 'first', StorageScope.APPLICATION, StorageTarget.MACHINE);
 		await storageService.flush();
-		const database = await storageService.getApplicationStorageDatabase();
-		const before = await database.getValue('key');
-		const result = await database.compareAndSwap('key', 'first', 'second');
+		const before = await storageService.getApplicationStorageValue('key');
+		const result = await storageService.compareAndSwapApplicationStorage('key', 'first', 'second');
 
 		deepStrictEqual({
 			before,

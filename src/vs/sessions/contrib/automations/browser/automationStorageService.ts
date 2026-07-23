@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
-import { BrowserStorageService, IIndexedDBStorageDatabase } from '../../../../workbench/services/storage/browser/storageService.js';
+import { BrowserStorageService } from '../../../../workbench/services/storage/browser/storageService.js';
 import { AUTOMATION_STORAGE_KEY, IAutomationStorageCompareAndSwapResult, IAutomationStorageService } from '../common/automationStorageService.js';
 
 /**
@@ -14,7 +14,7 @@ export class BrowserAutomationStorageService implements IAutomationStorageServic
 
 	declare readonly _serviceBrand: undefined;
 
-	private readonly database: Promise<IIndexedDBStorageDatabase>;
+	private readonly storageService: BrowserStorageService;
 
 	constructor(
 		@IStorageService storageService: IStorageService,
@@ -22,14 +22,14 @@ export class BrowserAutomationStorageService implements IAutomationStorageServic
 		if (!(storageService instanceof BrowserStorageService)) {
 			throw new Error('Browser automation storage requires BrowserStorageService.');
 		}
-		this.database = storageService.getApplicationStorageDatabase();
+		this.storageService = storageService;
 	}
 
 	async read(): Promise<string | undefined> {
-		return (await this.database).getValue(AUTOMATION_STORAGE_KEY);
+		return this.storageService.getApplicationStorageValue(AUTOMATION_STORAGE_KEY);
 	}
 
 	async compareAndSwap(expectedValue: string | undefined, newValue: string): Promise<IAutomationStorageCompareAndSwapResult> {
-		return (await this.database).compareAndSwap(AUTOMATION_STORAGE_KEY, expectedValue, newValue);
+		return this.storageService.compareAndSwapApplicationStorage(AUTOMATION_STORAGE_KEY, expectedValue, newValue);
 	}
 }
