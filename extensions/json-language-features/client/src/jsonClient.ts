@@ -544,6 +544,24 @@ async function startClientWithParticipants(_context: ExtensionContext, languageP
 
 	client.sendNotification(SchemaAssociationNotification.type, await getSchemaAssociations(false));
 
+	let schemaAssociationRefreshGeneration = 0;
+	let schemaAssociationRefreshTrigger: Disposable | undefined;
+	const refreshSchemaAssociations = () => {
+		const generation = ++schemaAssociationRefreshGeneration;
+		schemaAssociationRefreshTrigger?.dispose();
+		schemaAssociationRefreshTrigger = runtime.timer.setTimeout(async () => {
+			schemaAssociationRefreshTrigger = undefined;
+			const associations = await getSchemaAssociations(true);
+			if (generation === schemaAssociationRefreshGeneration) {
+				client.sendNotification(SchemaAssociationNotification.type, associations);
+			}
+		}, 500);
+	};
+	toDispose.push(new Disposable(() => {
+		schemaAssociationRefreshGeneration++;
+		schemaAssociationRefreshTrigger?.dispose();
+	}));
+
 	const catalogWatchers = new Map<string, Disposable>();
 	const updateCatalogWatchers = () => {
 		const catalogUris = new Set(getSchemaCatalogUris().map(uri => uri.toString()));
@@ -559,19 +577,16 @@ async function startClientWithParticipants(_context: ExtensionContext, languageP
 				const fileName = catalogUri.path.substring(catalogUri.path.lastIndexOf('/') + 1);
 				const parentUri = catalogUri.with({ path: catalogUri.path.substring(0, catalogUri.path.length - fileName.length), query: undefined, fragment: undefined });
 				const watcher = workspace.createFileSystemWatcher(new RelativePattern(parentUri, fileName));
-				const refresh = async () => {
-					client.sendNotification(SchemaAssociationNotification.type, await getSchemaAssociations(true));
-				};
-				catalogWatchers.set(uri, Disposable.from(watcher, watcher.onDidCreate(refresh), watcher.onDidChange(refresh), watcher.onDidDelete(refresh)));
+				catalogWatchers.set(uri, Disposable.from(watcher, watcher.onDidCreate(refreshSchemaAssociations), watcher.onDidChange(refreshSchemaAssociations), watcher.onDidDelete(refreshSchemaAssociations)));
 			}
 		}
 	};
 	updateCatalogWatchers();
 	toDispose.push(new Disposable(() => catalogWatchers.forEach(watcher => watcher.dispose())));
 
-	toDispose.push(extensions.onDidChange(async () => {
+	toDispose.push(extensions.onDidChange(() => {
 		updateCatalogWatchers();
-		client.sendNotification(SchemaAssociationNotification.type, await getSchemaAssociations(true));
+		refreshSchemaAssociations();
 	}));
 
 	// manually register / deregister format provider based on the `json.format.enable` setting avoiding issues with late registration. See #71652.
