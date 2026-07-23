@@ -1477,8 +1477,11 @@ export class AgentService extends Disposable implements IAgentService {
 		this._stateManager.markSessionPersisted(sessionKey, summary);
 		this._stateManager.dispatchServerAction(sessionKey, { type: ActionType.SessionReady });
 
-		// Attach git state for the working directory (if present)
-		void this._gitStateService.refreshSessionGitState(e.session.toString(), e.workingDirectories?.[0] ?? e.workingDirectory);
+		// Attach git state for the working directory (if present). Git state is a
+		// single-repo operation (part of the deferred git track), so prefer the
+		// provider's resolved singular cwd; `workingDirectories` is an unordered set
+		// of equal peers whose `[0]` is not necessarily the primary.
+		void this._gitStateService.refreshSessionGitState(e.session.toString(), e.workingDirectory ?? e.workingDirectories?.[0]);
 
 		// If a client subscribed to this session's uncommitted changeset
 		// before the working directory was known, the coordinator drains
