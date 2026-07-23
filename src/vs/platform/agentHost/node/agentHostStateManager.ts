@@ -542,8 +542,14 @@ export class AgentHostStateManager extends Disposable {
 	 * the agent (e.g. on the first message that materializes an SDK session
 	 * and writes its on-disk metadata). Call {@link markSessionPersisted}
 	 * afterwards to fire the deferred notification.
+	 *
+	 * `options.primaryWorkingDirectory` seeds the default chat's read-only
+	 * primary (see {@link ChatState.primaryWorkingDirectory}) when it is one of
+	 * `summary.workingDirectories`; otherwise (or when omitted) the primary
+	 * falls back to the first entry, keeping a single-root session's default
+	 * chat primary equal to its one working directory.
 	 */
-	createSession(summary: SessionSummary, options?: { readonly emitNotification?: boolean }): SessionState {
+	createSession(summary: SessionSummary, options?: { readonly emitNotification?: boolean; readonly primaryWorkingDirectory?: string }): SessionState {
 		const key = summary.resource;
 		const existing = this._sessionStates.get(key);
 		if (existing) {
@@ -553,7 +559,7 @@ export class AgentHostStateManager extends Disposable {
 
 		const state = createSessionState(summary);
 		this._sessionStates.set(key, this._newEntry(state, summary));
-		this._ensureDefaultChat(key, summary);
+		this._ensureDefaultChat(key, summary, undefined, undefined, undefined, options?.primaryWorkingDirectory);
 
 		this._logService.trace(`[AgentHostStateManager] Created session: ${key}`);
 
@@ -661,12 +667,18 @@ export class AgentHostStateManager extends Disposable {
 	 * in place rather than via dispatched actions: there are no subscribers
 	 * at creation/restore time, so the snapshot a client later receives on
 	 * subscribe already reflects the default chat.
+	 *
+	 * `primaryWorkingDirectoryCandidate` is the client-supplied primary (if
+	 * any); it is honored only when it names one of `summary.workingDirectories`,
+	 * otherwise (and when omitted) the primary falls back to the first entry
+	 * — the host-derived default that stays correct for single-root sessions.
 	 */
-	private _ensureDefaultChat(sessionKey: string, summary: SessionSummary, turns?: Turn[], draft?: Message, defaultChatTitle?: string): void {
+	private _ensureDefaultChat(sessionKey: string, summary: SessionSummary, turns?: Turn[], draft?: Message, defaultChatTitle?: string, primaryWorkingDirectoryCandidate?: string): void {
 		const chatUri = buildDefaultChatUri(sessionKey);
 		// Empty title means "inherit the session title"; a persisted independent
 		// rename (`defaultChatTitle`) is seeded back here so it survives restore.
-		const chatSummary: ChatSummary = { ...createDefaultChatSummary(summary, chatUri), title: defaultChatTitle ?? '' };
+		const primaryWorkingDirectory = this._resolveDefaultChatPrimary(summary, primaryWorkingDirectoryCandidate);
+		const chatSummary: ChatSummary = { ...createDefaultChatSummary(summary, chatUri), title: defaultChatTitle ?? '', ...(primaryWorkingDirectory !== undefined ? { primaryWorkingDirectory } : {}) };
 		this._chatStates.set(chatUri, { ...createChatState(chatSummary), turns: turns ?? [], draft });
 		const entry = this._sessionStates.get(sessionKey);
 		if (entry) {
@@ -679,6 +691,45 @@ export class AgentHostStateManager extends Disposable {
 			entry.state.chats = [chatSummary];
 			entry.state.defaultChat = chatUri;
 		}
+	}
+
+	/**
+	 * Resolves the effective primary working directory for a default chat
+	 * being created or restored: the candidate (typically client-supplied)
+	 * when it names one of the session's working directories, else the
+	 * first entry. Returns `undefined` when the session has no working
+	 * directories at all (e.g. a workspace-less session).
+	 */
+	private _resolveDefaultChatPrimary(summary: SessionSummary, candidate?: string): string | undefined {
+		if (candidate && summary.workingDirectories?.includes(candidate)) {
+			return candidate;
+		}
+		return summary.workingDirectories?.[0];
+	}
+
+	/**
+	 * Refreshes the default chat's primary working directory after a
+	 * provisional session materializes and the agent resolves its real
+	 * working directory (e.g. a worktree-isolated session, whose directory
+	 * is replaced post-creation). The primary is otherwise fixed at chat
+	 * creation per the protocol, but a provisional session's initial primary
+	 * is seeded from the pre-materialization directory, which goes stale the
+	 * moment materialization swaps it — this keeps the two in sync.
+	 *
+	 * Intentionally silent: `primaryWorkingDirectory` does not participate in
+	 * `session/chatUpdated` per the protocol, so no action is dispatched here.
+	 */
+	refreshDefaultChatPrimaryWorkingDirectory(session: URI, workingDirectory: URI): void {
+		const entry = this._sessionStates.get(session);
+		if (!entry) {
+			return;
+		}
+		const chatUri = entry.state.defaultChat ?? buildDefaultChatUri(session);
+		const chatState = this._chatStates.get(chatUri);
+		if (chatState) {
+			this._chatStates.set(chatUri, { ...chatState, primaryWorkingDirectory: workingDirectory });
+		}
+		entry.state.chats = entry.state.chats.map(c => c.resource === chatUri ? { ...c, primaryWorkingDirectory: workingDirectory } : c);
 	}
 
 	/**

@@ -860,6 +860,13 @@ export interface IAgentCreateSessionConfig {
 	readonly agent?: AgentSelection;
 	readonly session?: URI;
 	readonly workingDirectory?: URI;
+	/**
+	 * Primary working directory to seed the new session's default chat with
+	 * (see {@link ChatState.primaryWorkingDirectory}). MUST be one of the
+	 * chat's effective working directories. Defaults to
+	 * {@link workingDirectory} when omitted.
+	 */
+	readonly primaryWorkingDirectory?: URI;
 	readonly config?: Record<string, unknown>;
 	/**
 	 * Eagerly claim the active client role for the new session. When provided,

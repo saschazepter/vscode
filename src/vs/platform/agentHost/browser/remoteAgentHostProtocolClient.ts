@@ -815,10 +815,14 @@ export class RemoteAgentHostProtocolClient extends Disposable implements IAgentC
 		}
 		// Use `.then` (not `async`) so the tracked promise and the returned promise are the same object — callers
 		// awaiting via `getInflightSessionCreate` resume on the same microtask queue as direct `createSession()` awaiters.
+		// Single-root: the primary is either the client-supplied override or
+		// the (only) working directory itself.
+		const primaryWorkingDirectory = config?.primaryWorkingDirectory ?? config?.workingDirectory;
 		const promise = this._sendRequest('createSession', {
 			channel: session.toString(),
 			provider,
 			workingDirectories: config?.workingDirectory ? [fromAgentHostUri(config.workingDirectory).toString()] : undefined,
+			primaryWorkingDirectory: primaryWorkingDirectory ? fromAgentHostUri(primaryWorkingDirectory).toString() : undefined,
 			config: config?.config,
 			activeClient: config?.activeClient,
 		}).then(() => session);

@@ -1172,6 +1172,7 @@ export class ProtocolServerHandler extends Disposable {
 				createdSession = await this._agentService.createSession({
 					provider: params.provider,
 					workingDirectory: params.workingDirectories?.[0] ? URI.parse(params.workingDirectories[0]) : undefined,
+					primaryWorkingDirectory: params.primaryWorkingDirectory ? URI.parse(params.primaryWorkingDirectory) : undefined,
 					session: URI.parse(params.channel),
 					fork,
 					config: params.config,

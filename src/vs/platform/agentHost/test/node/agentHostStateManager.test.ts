@@ -239,6 +239,41 @@ suite('AgentHostStateManager', () => {
 		});
 	});
 
+	test('createSession seeds the default chat primary from the (single) working directory, honoring a valid client-supplied candidate and falling back otherwise', () => {
+		const hostDerived = disposables.add(new AgentHostStateManager(new NullLogService()));
+		hostDerived.createSession({ ...makeSessionSummary(), workingDirectories: ['file:///test-project'] });
+
+		const validCandidate = disposables.add(new AgentHostStateManager(new NullLogService()));
+		validCandidate.createSession({ ...makeSessionSummary(), workingDirectories: ['file:///test-project'] }, { primaryWorkingDirectory: 'file:///test-project' });
+
+		const invalidCandidate = disposables.add(new AgentHostStateManager(new NullLogService()));
+		invalidCandidate.createSession({ ...makeSessionSummary(), workingDirectories: ['file:///test-project'] }, { primaryWorkingDirectory: 'file:///not-a-working-directory' });
+
+		assert.deepStrictEqual({
+			hostDerived: hostDerived.getDefaultChatState(sessionUri)?.primaryWorkingDirectory,
+			validCandidate: validCandidate.getDefaultChatState(sessionUri)?.primaryWorkingDirectory,
+			invalidCandidate: invalidCandidate.getDefaultChatState(sessionUri)?.primaryWorkingDirectory,
+		}, {
+			hostDerived: 'file:///test-project',
+			validCandidate: 'file:///test-project',
+			invalidCandidate: 'file:///test-project',
+		});
+	});
+
+	test('refreshDefaultChatPrimaryWorkingDirectory keeps a worktree-isolated session\'s default chat primary in sync post-materialization', () => {
+		manager.createSession({ ...makeSessionSummary(), workingDirectories: ['file:///provisional'] }, { emitNotification: false, primaryWorkingDirectory: 'file:///provisional' });
+		manager.markSessionPersisted(sessionUri, { ...makeSessionSummary(), workingDirectories: ['file:///resolved-worktree'] });
+		manager.refreshDefaultChatPrimaryWorkingDirectory(sessionUri, 'file:///resolved-worktree');
+
+		assert.deepStrictEqual({
+			chatState: manager.getDefaultChatState(sessionUri)?.primaryWorkingDirectory,
+			catalog: manager.getSessionState(sessionUri)?.chats.find(c => c.resource === sessionChatUri)?.primaryWorkingDirectory,
+		}, {
+			chatState: 'file:///resolved-worktree',
+			catalog: 'file:///resolved-worktree',
+		});
+	});
+
 	test('getActiveTurnId returns active turn id after turnStarted', () => {
 		manager.createSession(makeSessionSummary());
 		manager.dispatchServerAction(sessionUri, { type: ActionType.SessionReady, });

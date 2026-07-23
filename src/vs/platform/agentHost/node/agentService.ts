@@ -1097,7 +1097,7 @@ export class AgentService extends Disposable implements IAgentService {
 			// clients can subscribe and stream config / model changes that
 			// the agent will pick up at materialization time.
 			const summary = this._buildInitialSummary(provider, session, config, created, '');
-			const state = this._stateManager.createSession(summary, { emitNotification: !created.provisional });
+			const state = this._stateManager.createSession(summary, { emitNotification: !created.provisional, primaryWorkingDirectory: config?.primaryWorkingDirectory?.toString() });
 			state.config = sessionConfig;
 			state.activeClients = config?.activeClient ? [config.activeClient] : [];
 			if (initialCustomizations && initialCustomizations.length > 0) {
@@ -1471,6 +1471,14 @@ export class AgentService extends Disposable implements IAgentService {
 
 		// Attach git state for the working directory (if present)
 		void this._gitStateService.refreshSessionGitState(e.session.toString(), e.workingDirectory);
+
+		// The default chat's primary was seeded from the pre-materialization
+		// working directory (see `_buildInitialSummary`); worktree-isolated
+		// sessions replace that directory here, so refresh the primary to
+		// match rather than let it go stale.
+		if (e.workingDirectory) {
+			this._stateManager.refreshDefaultChatPrimaryWorkingDirectory(sessionKey, e.workingDirectory.toString());
+		}
 
 		// If a client subscribed to this session's uncommitted changeset
 		// before the working directory was known, the coordinator drains
