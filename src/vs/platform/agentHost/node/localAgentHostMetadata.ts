@@ -69,7 +69,16 @@ export async function prepareLocalAgentHostEndpointMetadataDirectory(userDataPat
 
 export async function prepareLocalAgentHostEndpointSocketDirectory(userDataPath: string): Promise<void> {
 	if (process.platform !== 'win32') {
-		await fs.promises.mkdir(getSocketDirectory(userDataPath), { recursive: true });
+		const directory = getSocketDirectory(userDataPath);
+		await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 });
+		const stat = await fs.promises.lstat(directory);
+		if (!stat.isDirectory() || stat.isSymbolicLink()) {
+			throw new Error(`Local agent host endpoint socket directory is not a directory: ${directory}`);
+		}
+		if (process.getuid && stat.uid !== process.getuid()) {
+			throw new Error(`Local agent host endpoint socket directory is not owned by the current user: ${directory}`);
+		}
+		await fs.promises.chmod(directory, 0o700);
 	}
 }
 

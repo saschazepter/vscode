@@ -61,6 +61,11 @@ suite('Local Agent Host Endpoint Metadata', () => {
 				isShort: true,
 			});
 		});
+
+		test('writes owner-only socket directory permissions', async () => {
+			const metadata = createLocalAgentHostEndpointMetadata(userDataPath);
+			assert.strictEqual((await fs.promises.stat(dirname(metadata.endpointPath))).mode & 0o777, 0o700);
+		});
 	}
 
 	test('atomically replaces and owner-checks metadata', async () => {
