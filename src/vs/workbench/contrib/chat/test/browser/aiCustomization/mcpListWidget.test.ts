@@ -23,8 +23,10 @@ import {
 	getLocalMcpServerEnablementActions,
 	getMcpServerOutputHandler,
 	getSessionEnablementAction,
+	isMcpWorkbenchServerVisible,
 	registerMcpInlineButtonAction,
 } from '../../../browser/aiCustomization/mcpListWidget.js';
+import { LocalMcpServerScope } from '../../../../../services/mcp/common/mcpWorkbenchManagementService.js';
 
 function createAgentHostServer(overrides: Partial<AgentHostMcpServer> = {}): AgentHostMcpServer {
 	return {
@@ -80,6 +82,29 @@ function trackActions(store: Pick<DisposableStore, 'add'>, actions: readonly IAc
 
 suite('mcpListWidget', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
+
+	suite('isMcpWorkbenchServerVisible', () => {
+		const activeRoot = URI.file('/worktrees/active');
+		const activeWorkspaceServer = { scope: LocalMcpServerScope.Workspace, mcpResource: URI.file('/worktrees/active/.vscode/mcp.json') };
+		const otherWorkspaceServer = { scope: LocalMcpServerScope.Workspace, mcpResource: URI.file('/worktrees/other/.vscode/mcp.json') };
+		const userServer = { scope: LocalMcpServerScope.User, mcpResource: URI.file('/user/mcp.json') };
+
+		test('scopes workspace servers to the active Sessions project without changing core multi-root behavior', () => {
+			assert.deepStrictEqual({
+				activeSessions: isMcpWorkbenchServerVisible(activeWorkspaceServer, true, activeRoot),
+				otherSessions: isMcpWorkbenchServerVisible(otherWorkspaceServer, true, activeRoot),
+				userSessions: isMcpWorkbenchServerVisible(userServer, true, activeRoot),
+				quickChatWorkspace: isMcpWorkbenchServerVisible(activeWorkspaceServer, true, undefined),
+				coreOtherWorkspace: isMcpWorkbenchServerVisible(otherWorkspaceServer, false, activeRoot),
+			}, {
+				activeSessions: true,
+				otherSessions: false,
+				userSessions: true,
+				quickChatWorkspace: false,
+				coreOtherWorkspace: true,
+			});
+		});
+	});
 
 	suite('getSessionEnablementAction', () => {
 		test('labels as Disable (Session) when the server is enabled and toggles it off', () => {

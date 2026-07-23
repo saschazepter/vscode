@@ -13,6 +13,7 @@ import { WorkbenchList } from '../../../../../platform/list/browser/listService.
 import { IListVirtualDelegate, IListRenderer, IListContextMenuEvent } from '../../../../../base/browser/ui/list/list.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
+import { isEqualOrParent } from '../../../../../base/common/resources.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { defaultButtonStyles, defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
@@ -33,7 +34,7 @@ import { CancellationTokenSource } from '../../../../../base/common/cancellation
 import { Delayer } from '../../../../../base/common/async.js';
 import { Action, IAction, Separator } from '../../../../../base/common/actions.js';
 import { ConfigureModelAccessAction, DisableMcpServerForWorkspaceAction, DisableMcpServerGloballyAction, EnableMcpServerForWorkspaceAction, EnableMcpServerGloballyAction, getContextMenuActions, RestartServerAction, ShowSamplingRequestsAction, StartServerAction, StopServerAction } from '../../../../contrib/mcp/browser/mcpServerActions.js';
-import { LocalMcpServerScope } from '../../../../services/mcp/common/mcpWorkbenchManagementService.js';
+import { IWorkbenchLocalMcpServer, LocalMcpServerScope } from '../../../../services/mcp/common/mcpWorkbenchManagementService.js';
 import { IAgentPluginService } from '../../common/plugins/agentPluginService.js';
 import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { workspaceIcon, userIcon, mcpServerIcon, builtinIcon, pluginIcon, extensionIcon } from './aiCustomizationIcons.js';
@@ -425,6 +426,17 @@ function getMcpStatusPresentation(state: McpStatusKind | undefined): IMcpStatusP
 
 function getActiveSessionServer(entry: IMcpServerItemEntry | IMcpSessionServerItemEntry | IMcpBuiltinItemEntry): AgentHostMcpServer | undefined {
 	return entry.type === 'session-server-item' ? entry.server : entry.activeSessionServer;
+}
+
+export function isMcpWorkbenchServerVisible(
+	localServer: Pick<IWorkbenchLocalMcpServer, 'scope' | 'mcpResource'> | undefined,
+	isSessionsWindow: boolean,
+	activeProjectRoot: URI | undefined,
+): boolean {
+	if (!isSessionsWindow || localServer?.scope !== LocalMcpServerScope.Workspace) {
+		return true;
+	}
+	return activeProjectRoot !== undefined && isEqualOrParent(localServer.mcpResource, activeProjectRoot);
 }
 
 function getMcpEntryLabel(element: IMcpServerItemEntry | IMcpSessionServerItemEntry | IMcpBuiltinItemEntry): string {
@@ -1030,6 +1042,7 @@ export class McpListWidget extends Disposable {
 		}));
 		this._register(autorun(reader => {
 			this.customizationHarnessService.activeSessionResource.read(reader);
+			this.workspaceService.activeProjectRoot.read(reader);
 			if (!this.browseMode) {
 				this.refresh();
 			}
@@ -1173,20 +1186,25 @@ export class McpListWidget extends Disposable {
 	private filterServers(): void {
 		const query = this.searchQuery.toLowerCase().trim();
 		const activeSessionResource = this.customizationHarnessService.activeSessionResource.get();
-		const activeSessionMatcher = new ActiveSessionMcpServerMatcher(this.agentHostCustomizationService.getMcpServers(activeSessionResource));
+		const activeSessionMatcher = new ActiveSessionMcpServerMatcher(this.agentHostCustomizationService.getMcpServerInventory(activeSessionResource));
 		const localServerMatcher = new LocalMcpServerMatcher(this.mcpService.servers.get());
+		const allWorkbenchServers = this.mcpWorkbenchService.local;
+		const activeProjectRoot = this.workspaceService.getActiveProjectRoot();
+		const visibleWorkbenchServers = allWorkbenchServers.filter(server =>
+			isMcpWorkbenchServerVisible(server.local, this.workspaceService.isSessionsWindow, activeProjectRoot)
+		);
 
 		if (query) {
-			this.filteredServers = this.mcpWorkbenchService.local.filter(server =>
+			this.filteredServers = visibleWorkbenchServers.filter(server =>
 				server.label.toLowerCase().includes(query) ||
 				(server.description?.toLowerCase().includes(query))
 			);
 		} else {
-			this.filteredServers = [...this.mcpWorkbenchService.local];
+			this.filteredServers = [...visibleWorkbenchServers];
 		}
 
 		// Find extension-provided servers not in the local list (e.g. GitHub MCP)
-		const localIds = new Set(this.filteredServers.map(s => s.id));
+		const localIds = new Set(allWorkbenchServers.map(s => s.id));
 		const builtinServers = this.mcpService.servers.get()
 			.filter(s => !localIds.has(s.definition.id))
 			.filter(s => !query || s.definition.label.toLowerCase().includes(query));
