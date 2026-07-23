@@ -828,7 +828,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 					downloadRing.value = new DictationDownloadRing(button, sttService);
 				}
 			} else {
-				dom.append(button, renderIcon(recording ? Codicon.stopCircle : Codicon.mic));
+				dom.append(button, renderIcon(recording ? Codicon.micFilled : Codicon.mic));
 			}
 			button.classList.toggle('recording', recording && !preparing);
 			button.classList.toggle('preparing', preparing);

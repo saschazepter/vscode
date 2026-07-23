@@ -4,6 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { IManagedHoverContent } from '../../../../../base/browser/ui/hover/hover.js';
+import { Codicon } from '../../../../../base/common/codicons.js';
+import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { MenuItemAction } from '../../../../../platform/actions/common/actions.js';
 import { IMenuEntryActionViewItemOptions, MenuEntryActionViewItem } from '../../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
@@ -48,14 +50,10 @@ export class DictationDownloadActionViewItem extends MenuEntryActionViewItem {
 		super.render(container);
 
 		container.classList.add('dictation-download-item');
-		// The on-device backend downloads a model, so show a progress ring around
-		// the download icon. The cloud backend only connects (no download), so
-		// show a plain spinner instead, matching the composer mic affordance.
-		if (this._speechToTextService.currentBackend === 'mai') {
-			if (this.label) {
-				this.label.className = 'action-label codicon codicon-loading codicon-modifier-spin';
-			}
-		} else {
+		// The on-device backend downloads a model, so show a determinate progress
+		// ring around the download icon. The cloud backend only connects (no
+		// download), so its icon is swapped for a plain spinner in updateClass().
+		if (this._speechToTextService.currentBackend !== 'mai') {
 			this._register(new DictationDownloadRing(container, this._speechToTextService));
 		}
 
@@ -67,6 +65,21 @@ export class DictationDownloadActionViewItem extends MenuEntryActionViewItem {
 			() => getDictationContextMenuActions(this._commandService, this._configurationService, this._keybindingService, TOGGLE_DICTATION_COMMAND_ID),
 			this._contextMenuService,
 		));
+	}
+
+	protected override updateClass(): void {
+		super.updateClass();
+		// For the cloud backend, replace the action's cloud-download glyph with a
+		// spinning loading icon so the mic reads as "connecting" rather than
+		// downloading. super.updateClass() applies the action's icon classes to
+		// the label, so strip them here and add the spinner classes instead.
+		if (this._speechToTextService.currentBackend !== 'mai' || !this.label) {
+			return;
+		}
+		const iconClasses = ThemeIcon.asClassNameArray(Codicon.cloudDownload);
+		this.label.classList.remove(...iconClasses);
+		const spinnerClasses = ThemeIcon.asClassNameArray(ThemeIcon.modify(Codicon.loading, 'spin'));
+		this.label.classList.add(...spinnerClasses);
 	}
 
 	protected override getHoverContents(): IManagedHoverContent {
