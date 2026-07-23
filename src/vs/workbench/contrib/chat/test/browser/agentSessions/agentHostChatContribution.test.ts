@@ -5357,6 +5357,48 @@ suite('AgentHostChatContribution', () => {
 			await turnPromise;
 		});
 
+		test('output-only terminal attaches to chat without reviving a terminal instance', async () => {
+			let reviveCalls = 0;
+			let attachmentDisposed = false;
+			let attached: { terminalUri: string; terminalToolSessionId: string } | undefined;
+			const { sessionHandler, agentHostService, chatAgentService } = createContribution(disposables, {
+				agentHostTerminalServiceOverride: {
+					reviveTerminal: async () => {
+						reviveCalls++;
+						return {} as ITerminalInstance;
+					},
+					attachOutputTerminal: (_connection, terminalUri, terminalToolSessionId) => {
+						attached = { terminalUri: terminalUri.toString(), terminalToolSessionId };
+						return toDisposable(() => attachmentDisposed = true);
+					},
+				},
+			});
+			const { turnPromise, collected, session, turnId, fire } = await startTurn(sessionHandler, agentHostService, chatAgentService, disposables);
+
+			fire({ type: 'chat/toolCallStart', session, turnId, toolCallId: 'tc-output', toolName: 'bash', displayName: 'Bash', _meta: { toolKind: 'terminal', language: 'shellscript' } } as ChatAction);
+			fire({ type: 'chat/toolCallReady', session, turnId, toolCallId: 'tc-output', invocationMessage: 'Running command', toolInput: 'long-running-command', confirmed: 'not-needed' } as ChatAction);
+			fire({
+				type: 'chat/toolCallContentChanged',
+				session,
+				turnId,
+				toolCallId: 'tc-output',
+				content: [{ type: ToolResultContentType.Terminal, resource: 'agenthost-terminal://shell/output', title: 'Terminal', isPty: false }],
+			} as ChatAction);
+
+			const terminalData = (collected[0][0] as ChatToolInvocation).toolSpecificData as IChatTerminalToolInvocationData;
+			assert.strictEqual(reviveCalls, 0);
+			assert.strictEqual(terminalData.isPty, false);
+			assert.deepStrictEqual(attached, {
+				terminalUri: 'agenthost-terminal://shell/output',
+				terminalToolSessionId: JSON.stringify({ terminal: 'agenthost-terminal://shell/output', session: 'copilot:/new-turntest' }),
+			});
+
+			fire({ type: 'chat/toolCallComplete', session, turnId, toolCallId: 'tc-output', result: { success: true, pastTenseMessage: 'Ran command', content: [{ type: ToolResultContentType.Terminal, resource: 'agenthost-terminal://shell/output', title: 'Terminal', isPty: false }] } } as ChatAction);
+			fire({ type: 'chat/turnComplete', endedAt: '2025-01-01T00:00:00.000Z', session, turnId } as ChatAction);
+			await turnPromise;
+			assert.strictEqual(attachmentDisposed, true);
+		});
+
 		test('bash tool renders as terminal command block with output', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
 			const { sessionHandler, agentHostService, chatAgentService } = createContribution(disposables);
 
@@ -5390,7 +5432,7 @@ suite('AgentHostChatContribution', () => {
 				dataKind: 'terminal',
 				commandLine: 'echo hello',
 				language: 'shellscript',
-				outputText: 'hello\r\n',
+				outputText: 'hello\n',
 				exitCode: 0,
 			});
 		}));
@@ -5547,7 +5589,7 @@ suite('AgentHostChatContribution', () => {
 				// Terminal tool has output and exit code
 				assert.strictEqual(toolPart.toolSpecificData?.kind, 'terminal');
 				const termData = toolPart.toolSpecificData as IChatTerminalToolInvocationData;
-				assert.strictEqual(termData.terminalCommandOutput?.text, 'file1\r\nfile2');
+				assert.strictEqual(termData.terminalCommandOutput?.text, 'file1\nfile2');
 				assert.strictEqual(termData.terminalCommandState?.exitCode, 0);
 			}
 		});

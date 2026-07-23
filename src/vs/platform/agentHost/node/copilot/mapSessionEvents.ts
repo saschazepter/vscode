@@ -52,19 +52,25 @@ function isSyntheticUserMessage(event: SessionEvent): boolean {
  * the tool call's terminal content block; when no terminal block exists yet
  * (e.g. history replay, where no live channel survives) and `terminal` is
  * provided, a non-pty terminal block is synthesized so the outcome still
- * renders from `result.preview`. Returns the `shell_exit` exit code, if any.
+ * renders from `result.preview`. Returns the `shell_exit` outcome, if any, so
+ * the live path can settle the non-pty output channel from it.
  */
-export function appendSdkToolResultContent(content: ToolResultContent[], sdkContents: readonly ToolExecutionCompleteContent[] | undefined, terminal?: { toolCallId: string; title: string }): number | undefined {
-	let shellExitCode: number | undefined;
+export interface ISdkShellExit {
+	readonly shellId: string;
+	readonly result: TerminalCommandResult;
+}
+
+export function appendSdkToolResultContent(content: ToolResultContent[], sdkContents: readonly ToolExecutionCompleteContent[] | undefined, terminal?: { toolCallId: string; title: string }): ISdkShellExit | undefined {
+	let shellExit: ISdkShellExit | undefined;
 	for (const sdkContent of sdkContents ?? []) {
 		switch (sdkContent.type) {
 			case 'shell_exit': {
-				shellExitCode = sdkContent.exitCode;
 				const result: TerminalCommandResult = {
 					exitCode: sdkContent.exitCode,
 					...(sdkContent.outputPreview !== undefined ? { preview: sdkContent.outputPreview } : {}),
 					...(sdkContent.outputTruncated !== undefined ? { truncated: sdkContent.outputTruncated } : {}),
 				};
+				shellExit = { shellId: sdkContent.shellId, result };
 				const terminalIndex = content.findIndex(c => c.type === ToolResultContentType.Terminal);
 				if (terminalIndex !== -1) {
 					const terminalBlock = content[terminalIndex] as ToolResultTerminalContent;
@@ -82,7 +88,7 @@ export function appendSdkToolResultContent(content: ToolResultContent[], sdkCont
 			}
 		}
 	}
-	return shellExitCode;
+	return shellExit;
 }
 
 // =============================================================================

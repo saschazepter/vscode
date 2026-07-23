@@ -2989,6 +2989,7 @@ suite('CopilotAgentSession', () => {
 				},
 				{ type: ToolResultContentType.Text, text: 'tick 1\ntick 2\n' },
 			]);
+			assert.strictEqual(completed._meta?.['terminalIsBackground'], false);
 		});
 
 		test('tool partial results reset the channel when the runtime rewrites its snapshot', async () => {
@@ -3004,8 +3005,9 @@ suite('CopilotAgentSession', () => {
 				toolCallId: 'tc-rewrite',
 				partialOutput: 'tick 1\n',
 			} as SessionEventPayload<'tool.execution_partial_result'>['data']);
-			// Past its output cap the runtime keeps leading lines and splices in
-			// a truncation marker, so the snapshot stops being prefix-stable.
+			// Once output is truncated the runtime rewrites its snapshot (a
+			// truncation marker under the emit cap, a rolling tail past the
+			// large-output threshold), so it stops being prefix-stable.
 			mockSession.fire('tool.execution_partial_result', {
 				toolCallId: 'tc-rewrite',
 				partialOutput: 'tick 1\n[...truncated 42 lines...]\n',
@@ -3023,6 +3025,179 @@ suite('CopilotAgentSession', () => {
 				],
 				resets: [terminalUri],
 			});
+		});
+
+		test('zero-partial shell completion creates, seeds, and finalizes the output channel', async () => {
+			const { mockSession, signals, terminalManager } = await createAgentSession(disposables);
+
+			const terminalUri = 'agenthost-terminal://shell/copilotNonPtyShells/tc-quiet';
+			mockSession.fire('tool.execution_start', {
+				toolCallId: 'tc-quiet',
+				toolName: 'bash',
+				arguments: { command: 'true' },
+			} as SessionEventPayload<'tool.execution_start'>['data']);
+			mockSession.fire('tool.execution_complete', {
+				toolCallId: 'tc-quiet',
+				success: true,
+				result: {
+					content: 'ok\n',
+					contents: [{ type: 'shell_exit', shellId: '0', exitCode: 0, outputPreview: 'ok\n' }],
+				},
+			} as SessionEventPayload<'tool.execution_complete'>['data']);
+
+			// The channel advertised by the completed tool call exists, carries
+			// the preview, and is terminated even though no partial result ever
+			// streamed into it.
+			assert.deepStrictEqual({
+				created: terminalManager.outputTerminalsCreated.map(t => t.uri),
+				data: terminalManager.outputTerminalData,
+				finalized: terminalManager.outputTerminalsFinalized,
+			}, {
+				created: [terminalUri],
+				data: [{ uri: terminalUri, data: 'ok\n' }],
+				finalized: [{ uri: terminalUri, exitCode: 0 }],
+			});
+			const completed = getActions(signals).find(action => action.type === ActionType.ChatToolCallComplete) as ChatToolCallCompleteAction;
+			assert.ok(completed.result.content?.some(c => c.type === ToolResultContentType.Terminal && c.resource === terminalUri));
+		});
+
+		test('tool success without shell_exit does not fabricate a process exit', async () => {
+			const { mockSession, terminalManager } = await createAgentSession(disposables);
+
+			mockSession.fire('tool.execution_start', {
+				toolCallId: 'tc-err',
+				toolName: 'bash',
+				arguments: { command: 'boom' },
+			} as SessionEventPayload<'tool.execution_start'>['data']);
+			mockSession.fire('tool.execution_partial_result', {
+				toolCallId: 'tc-err',
+				partialOutput: 'boom\n',
+			} as SessionEventPayload<'tool.execution_partial_result'>['data']);
+			mockSession.fire('tool.execution_complete', {
+				toolCallId: 'tc-err',
+				success: false,
+				error: { message: 'failed' },
+			} as SessionEventPayload<'tool.execution_complete'>['data']);
+			mockSession.fire('tool.execution_start', {
+				toolCallId: 'tc-ok',
+				toolName: 'bash',
+				arguments: { command: 'fine' },
+			} as SessionEventPayload<'tool.execution_start'>['data']);
+			mockSession.fire('tool.execution_partial_result', {
+				toolCallId: 'tc-ok',
+				partialOutput: 'fine\n',
+			} as SessionEventPayload<'tool.execution_partial_result'>['data']);
+			mockSession.fire('tool.execution_complete', {
+				toolCallId: 'tc-ok',
+				success: true,
+				result: { content: 'fine\n' },
+			} as SessionEventPayload<'tool.execution_complete'>['data']);
+
+			// Tool completion and process completion are separate lifecycles.
+			assert.deepStrictEqual({
+				data: terminalManager.outputTerminalData,
+				finalized: terminalManager.outputTerminalsFinalized,
+			}, {
+				data: [
+					{ uri: 'agenthost-terminal://shell/copilotNonPtyShells/tc-err', data: 'boom\n' },
+					{ uri: 'agenthost-terminal://shell/copilotNonPtyShells/tc-ok', data: 'fine\n' },
+				],
+				finalized: [],
+			});
+		});
+
+		test('stable shell completion fallback finalizes when the SDK strips shell_exit', async () => {
+			const { mockSession, signals, waitForSignal, terminalManager } = await createAgentSession(disposables);
+			const terminalUri = 'agenthost-terminal://shell/copilotNonPtyShells/tc-exit-fallback';
+
+			mockSession.fire('tool.execution_start', {
+				toolCallId: 'tc-exit-fallback',
+				toolName: 'bash',
+				arguments: { command: 'eci hi' },
+			} as SessionEventPayload<'tool.execution_start'>['data']);
+			mockSession.fire('tool.execution_partial_result', {
+				toolCallId: 'tc-exit-fallback',
+				partialOutput: '/bin/bash: eci: command not found\n',
+			} as SessionEventPayload<'tool.execution_partial_result'>['data']);
+			mockSession.fire('tool.execution_complete', {
+				toolCallId: 'tc-exit-fallback',
+				success: true,
+				result: {
+					content: '/bin/bash: eci: command not found\n<shellId: shell-error completed with exit code 127>',
+				},
+			} as SessionEventPayload<'tool.execution_complete'>['data']);
+			await waitForSignal(signal => isAction(signal, ActionType.ChatToolCallComplete));
+
+			assert.deepStrictEqual(terminalManager.outputTerminalsFinalized, [{ uri: terminalUri, exitCode: 127 }]);
+			const completed = getActions(signals).find(action => action.type === ActionType.ChatToolCallComplete) as ChatToolCallCompleteAction;
+			assert.strictEqual(completed._meta?.['terminalIsBackground'], false);
+		});
+
+		test('background shell keeps streaming after tool completion and exits on shell_completed', async () => {
+			const { session, mockSession, signals, waitForSignal, terminalManager } = await createAgentSession(disposables);
+			session.resetTurnState('turn-background');
+			const terminalUri = 'agenthost-terminal://shell/copilotNonPtyShells/tc-background';
+
+			mockSession.fire('tool.execution_start', {
+				toolCallId: 'tc-background',
+				toolName: 'bash',
+				arguments: { command: 'long-running-command' },
+			} as SessionEventPayload<'tool.execution_start'>['data']);
+			mockSession.fire('tool.execution_complete', {
+				toolCallId: 'tc-background',
+				success: true,
+				result: { content: '<command started in background with shellId: shell-bg>' },
+			} as SessionEventPayload<'tool.execution_complete'>['data']);
+			await waitForSignal(signal => isAction(signal, ActionType.ChatToolCallComplete));
+
+			const completed = getActions(signals).find(action => action.type === ActionType.ChatToolCallComplete) as ChatToolCallCompleteAction;
+			assert.ok(completed.result.content?.some(content => content.type === ToolResultContentType.Terminal && content.resource === terminalUri && content.isPty === false));
+			assert.strictEqual(completed._meta?.['terminalIsBackground'], true);
+			assert.deepStrictEqual(terminalManager.outputTerminalsFinalized, []);
+
+			// Runtime partials remain keyed to the original tool call after the
+			// SDK has emitted tool.execution_complete.
+			mockSession.fire('tool.execution_partial_result', {
+				toolCallId: 'tc-background',
+				partialOutput: 'late output\n',
+			} as SessionEventPayload<'tool.execution_partial_result'>['data']);
+			assert.deepStrictEqual(terminalManager.outputTerminalData, [{ uri: terminalUri, data: 'late output\n' }]);
+
+			mockSession.fire('system.notification', {
+				content: '<system_notification>Shell command completed</system_notification>',
+				kind: { type: 'shell_completed', shellId: 'shell-bg', exitCode: 7, description: 'long-running-command' },
+			} as SessionEventPayload<'system.notification'>['data']);
+			assert.deepStrictEqual(terminalManager.outputTerminalsFinalized, [{ uri: terminalUri, exitCode: 7 }]);
+		});
+
+		test('completions without partials or shell_exit never create output channels', async () => {
+			const { mockSession, terminalManager } = await createAgentSession(disposables);
+
+			mockSession.fire('tool.execution_start', {
+				toolCallId: 'tc-grep',
+				toolName: 'grep',
+				arguments: { pattern: 'x' },
+			} as SessionEventPayload<'tool.execution_start'>['data']);
+			mockSession.fire('tool.execution_complete', {
+				toolCallId: 'tc-grep',
+				success: true,
+				result: { content: 'match' },
+			} as SessionEventPayload<'tool.execution_complete'>['data']);
+			mockSession.fire('tool.execution_start', {
+				toolCallId: 'tc-silent',
+				toolName: 'bash',
+				arguments: { command: 'true' },
+			} as SessionEventPayload<'tool.execution_start'>['data']);
+			mockSession.fire('tool.execution_complete', {
+				toolCallId: 'tc-silent',
+				success: true,
+				result: { content: '' },
+			} as SessionEventPayload<'tool.execution_complete'>['data']);
+
+			assert.deepStrictEqual({
+				created: terminalManager.outputTerminalsCreated,
+				finalized: terminalManager.outputTerminalsFinalized,
+			}, { created: [], finalized: [] });
 		});
 
 		test('tool partial results for untracked tools are ignored', async () => {
@@ -3110,7 +3285,7 @@ suite('CopilotAgentSession', () => {
 		});
 
 		test('live tool_complete maps SDK shell_exit content to terminal completion', async () => {
-			const { mockSession, signals } = await createAgentSession(disposables);
+			const { mockSession, signals, terminalManager } = await createAgentSession(disposables);
 
 			mockSession.fire('tool.execution_start', {
 				toolCallId: 'tc-shell-exit',
@@ -3143,6 +3318,17 @@ suite('CopilotAgentSession', () => {
 					},
 				]);
 			}
+			// The advertised channel exists and is terminated; with no preview
+			// there is nothing to seed.
+			assert.deepStrictEqual({
+				created: terminalManager.outputTerminalsCreated.map(t => t.uri),
+				data: terminalManager.outputTerminalData,
+				finalized: terminalManager.outputTerminalsFinalized,
+			}, {
+				created: ['agenthost-terminal://shell/copilotNonPtyShells/tc-shell-exit'],
+				data: [],
+				finalized: [{ uri: 'agenthost-terminal://shell/copilotNonPtyShells/tc-shell-exit', exitCode: 127 }],
+			});
 		});
 
 		test('live task_complete emits root markdown instead of a tool call', async () => {

@@ -40,6 +40,7 @@ suite('Agent host _meta readers', () => {
 			const result = readToolCallMeta(toolCall({
 				toolKind: 'terminal',
 				language: 'bash',
+				terminalIsBackground: true,
 				subagentDescription: 'Find files',
 				subagentAgentName: 'explore',
 				mcpServerName: 'srv',
@@ -52,6 +53,7 @@ suite('Agent host _meta readers', () => {
 			assert.deepStrictEqual(result, {
 				toolKind: 'terminal',
 				language: 'bash',
+				terminalIsBackground: true,
 				subagentDescription: 'Find files',
 				subagentAgentName: 'explore',
 				mcpServerName: 'srv',

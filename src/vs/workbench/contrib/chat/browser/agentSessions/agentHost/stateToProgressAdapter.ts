@@ -11,7 +11,7 @@ import { Schemas } from '../../../../../../base/common/network.js';
 import { posix, win32 } from '../../../../../../base/common/path.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { generateUuid } from '../../../../../../base/common/uuid.js';
-import { buildSubagentChatUri, MessageKind, ToolCallContributorKind, ToolCallRiskAssessmentStatus, ToolCallStatus, TurnState, ResponsePartKind, getToolFileEdits, getToolOutputText, getToolSubagentContent, readUsageInfoMeta, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, type ActiveTurn, type ChatInputAnswer, type ChatInputRequest, type ICompletedToolCall, type InputRequestResponsePart, type Message, type ToolCallPendingConfirmationState, type ToolCallState, type ToolResultSubagentContent, type Turn, FileEditKind, ToolResultContentType, type ToolResultContent, type UsageInfo, type UsageInfoMeta } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { buildSubagentChatUri, MessageKind, ToolCallContributorKind, ToolCallRiskAssessmentStatus, ToolCallStatus, TurnState, ResponsePartKind, getToolFileEdits, getToolOutputText, getToolSubagentContent, readUsageInfoMeta, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, type ActiveTurn, type ChatInputAnswer, type ChatInputRequest, type ICompletedToolCall, type InputRequestResponsePart, type Message, type TerminalCommandResult, type ToolCallPendingConfirmationState, type ToolCallState, type ToolResultSubagentContent, type Turn, FileEditKind, ToolResultContentType, type ToolResultContent, type UsageInfo, type UsageInfoMeta } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import type { ChatInputRequestWithPlanReview, IAgentHostPlanReview } from '../../../../../../platform/agentHost/common/agentHostPlanReview.js';
 import { getToolKind } from '../../../../../../platform/agentHost/common/state/sessionReducers.js';
 import { readToolCallMeta } from '../../../../../../platform/agentHost/common/meta/agentToolCallMeta.js';
@@ -425,15 +425,11 @@ export function isSubagentTool(tc: ToolCallState): boolean {
  * Returns the terminal URI if found.
  */
 export function getTerminalContentUri(content: ToolResultContent[] | undefined): string | undefined {
-	if (!content) {
-		return undefined;
-	}
-	for (const block of content) {
-		if (block.type === ToolResultContentType.Terminal) {
-			return block.resource;
-		}
-	}
-	return undefined;
+	return getTerminalContent(content)?.resource;
+}
+
+export function getTerminalContent(content: ToolResultContent[] | undefined): Extract<ToolResultContent, { type: ToolResultContentType.Terminal }> | undefined {
+	return content?.find(isToolResultTerminalContent);
 }
 
 /**
@@ -1169,12 +1165,13 @@ function getTerminalOutput(tc: ToolCallState) {
 		return undefined;
 	}
 
-	const terminalResult = tc.content?.find(isToolResultTerminalContent)?.result;
+	const terminalContent = getTerminalContent(tc.content);
+	const terminalResult = getTerminalCommandResult(tc);
 
 	// Prefer the structured terminal snapshot. Text content is a compatibility
 	// fallback for older/restored results and can include legacy bookkeeping.
 	let text = terminalResult?.preview;
-	if (text === undefined) {
+	if (text === undefined && terminalContent?.isPty !== false) {
 		const fallbackText = tc.content?.find(isToolResultTextContent)?.text;
 		text = fallbackText === undefined ? undefined : stripLegacyTerminalExitMarkers(fallbackText);
 	}
@@ -1182,12 +1179,8 @@ function getTerminalOutput(tc: ToolCallState) {
 		return undefined;
 	}
 
-	// The detached xterm used to render this output treats input as a raw TTY stream,
-	// so a lone `\n` only advances the row without resetting the column (producing a
-	// staircase). SDK terminal tools return plain text with `\n` line endings, so
-	// normalize to `\r\n` here. The replace is idempotent on already-CRLF input.
 	return {
-		text: text.replace(/\r?\n/g, '\r\n'),
+		text,
 		...(terminalResult?.truncated !== undefined ? { truncated: terminalResult.truncated } : {}),
 	};
 }
@@ -1202,16 +1195,46 @@ function isToolResultTextContent(content: ToolResultContent): content is Extract
 
 function getTerminalCommandState(tc: ToolCallState, fallbackSuccess?: boolean): IChatTerminalToolInvocationData['terminalCommandState'] | undefined {
 	const terminalResult = tc.status === ToolCallStatus.Completed || tc.status === ToolCallStatus.Running
-		? tc.content?.find(isToolResultTerminalContent)?.result
+		? getTerminalCommandResult(tc)
 		: undefined;
 	if (terminalResult?.exitCode !== undefined) {
 		return { exitCode: terminalResult.exitCode };
+	}
+	if ((tc.status === ToolCallStatus.Completed || tc.status === ToolCallStatus.Running) && getTerminalContent(tc.content)?.isPty === false) {
+		// A failed SDK shell call does not always include shell_exit content.
+		// Preserve that failure for decoration/completion state without treating
+		// a successful background handoff as a process exit.
+		return fallbackSuccess === false ? { exitCode: 1 } : undefined;
 	}
 	return fallbackSuccess === undefined ? undefined : { exitCode: fallbackSuccess ? 0 : 1 };
 }
 
 function isToolResultTerminalContent(content: ToolResultContent): content is Extract<ToolResultContent, { type: ToolResultContentType.Terminal }> {
 	return content.type === ToolResultContentType.Terminal;
+}
+
+/**
+ * Shape of the `terminalComplete` tool result block that AHP 0.7.0 removed
+ * (its data moved onto the terminal block as `result`). Old persisted turns
+ * may still carry it, so completion data falls back to it.
+ */
+interface ILegacyTerminalCompleteContent {
+	type: 'terminalComplete';
+	exitCode?: number;
+	preview?: string;
+	truncated?: boolean;
+}
+
+/**
+ * Completion data for a terminal-style tool call: the terminal block's
+ * `result`, falling back to a legacy `terminalComplete` block.
+ */
+function getTerminalCommandResult(tc: { content?: ToolResultContent[] }): TerminalCommandResult | undefined {
+	const result = tc.content?.find(isToolResultTerminalContent)?.result;
+	if (result) {
+		return result;
+	}
+	return tc.content?.find(c => (c as { type: string }).type === 'terminalComplete') as ILegacyTerminalCompleteContent | undefined;
 }
 
 function getTerminalLanguage(tc: ToolCallState) {
@@ -1275,9 +1298,10 @@ function buildTerminalToolSpecificData(
 	sessionResource: URI,
 	existing?: IChatTerminalToolInvocationData,
 ): IChatTerminalToolInvocationData {
-	const terminalContentUri = (tc.status === ToolCallStatus.Running || tc.status === ToolCallStatus.Completed)
-		? getTerminalContentUri(tc.content)
+	const terminalContent = (tc.status === ToolCallStatus.Running || tc.status === ToolCallStatus.Completed)
+		? getTerminalContent(tc.content)
 		: undefined;
+	const terminalContentUri = terminalContent?.resource;
 	const nextCommand = getTerminalInput(tc);
 	const commandLine = nextCommand
 		? { ...existing?.commandLine, original: nextCommand }
@@ -1296,6 +1320,8 @@ function buildTerminalToolSpecificData(
 			? makeAhpTerminalToolSessionId(terminalContentUri, sessionResource)
 			: existing?.terminalToolSessionId,
 		terminalCommandUri: terminalContentUri ? URI.parse(terminalContentUri) : existing?.terminalCommandUri,
+		isPty: terminalContent?.isPty ?? existing?.isPty,
+		isBackground: readToolCallMeta(tc).terminalIsBackground ?? existing?.isBackground,
 		terminalCommandOutput: nextOutput ?? existing?.terminalCommandOutput,
 	};
 }

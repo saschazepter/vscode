@@ -744,11 +744,11 @@ suite('appendSdkToolResultContent', () => {
 			{ type: ToolResultContentType.Terminal, resource: 'agenthost-terminal://shell/abc', title: 'Bash' },
 		];
 
-		const exitCode = appendSdkToolResultContent(content, [
+		const result = appendSdkToolResultContent(content, [
 			{ type: 'shell_exit', shellId: '0', exitCode: 2, outputPreview: 'boom\n', outputTruncated: false },
 		], { toolCallId: 'tc-1', title: 'Run Shell Command' });
 
-		assert.strictEqual(exitCode, 2);
+		assert.deepStrictEqual(result, { shellId: '0', result: { exitCode: 2, preview: 'boom\n', truncated: false } });
 		assert.deepStrictEqual(content, [
 			{
 				type: ToolResultContentType.Terminal,

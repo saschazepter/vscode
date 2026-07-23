@@ -5,7 +5,7 @@
 
 import { Disposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
-import { TerminalClaimKind, type TerminalSessionClaim } from '../../common/state/protocol/state.js';
+import { TerminalClaimKind, type TerminalCommandResult, type TerminalSessionClaim } from '../../common/state/protocol/state.js';
 import { IAgentHostTerminalManager } from '../agentHostTerminalManager.js';
 
 /**
@@ -19,20 +19,59 @@ export function buildNonPtyShellTerminalUri(toolCallId: string): string {
 
 interface INonPtyShellStream {
 	readonly uri: string;
+	readonly title: string;
+	created: boolean;
 	/** The last cumulative snapshot written to the channel (cleared on finalize). */
 	lastEmitted: string;
 	finalized: boolean;
 }
 
 /**
+ * Extracts the shell id from the runtime's explicit background handoff
+ * messages. Keep this deliberately narrow: these strings are the only
+ * currently available structured-enough signal that a successful tool call
+ * handed a still-running process to the background shell manager.
+ */
+export function parseBackgroundShellId(text: string | undefined): string | undefined {
+	if (!text) {
+		return undefined;
+	}
+	const normalized = text.trim();
+	const started = /^<command started in (?:detached )?background with shellId: (.+?)(?:\. [^>]*)?>$/.exec(normalized);
+	if (started) {
+		return started[1];
+	}
+	return /^<command with shellId: (.+?) moved to background by the user\.[^>]*>$/.exec(normalized)?.[1];
+}
+
+/**
+ * Extracts the process identity and exit code from the runtime's stable text
+ * fallback. The external SDK bridge currently removes the equivalent
+ * `shell_exit` content block for compatibility with older SDK clients.
+ */
+export function parseCompletedShell(text: string | undefined): { shellId: string; exitCode: number } | undefined {
+	const match = text && /<shellId: ([^>\r\n]+) completed with exit code (-?\d+)>\s*$/.exec(text);
+	if (!match) {
+		return undefined;
+	}
+	return { shellId: match[1], exitCode: Number(match[2]) };
+}
+
+export interface INonPtyShellToolCompletion {
+	readonly uri: string;
+	readonly isBackground: boolean;
+}
+
+/**
  * Streams output of SDK-runtime-executed shell tool calls into output-only
  * AHP terminal channels. The runtime reports ANSI-stripped plain-text output
- * via `tool.execution_partial_result` as cumulative snapshots (throttled and
- * capped to the leading ~10KB with a trailing truncation marker); this class
- * emits only the unseen suffix as `terminal/data` while the snapshot grows
- * in place, and resets the channel when the snapshot was rewritten (e.g. the
- * truncation marker changed), so subscribed clients receive live plain-text
- * output (`isPty: false` — no VT parsing needed).
+ * via `tool.execution_partial_result` as throttled cumulative snapshots that
+ * may be rewritten once output is truncated (a trailing truncation marker
+ * under the emit cap, a rolling tail past the large-output threshold); this
+ * class emits only the unseen suffix as `terminal/data` while the snapshot
+ * grows in place, and resets the channel when the snapshot was rewritten, so
+ * subscribed clients receive live plain-text output (`isPty: false` — no VT
+ * parsing needed).
  *
  * Created once per session and disposed with it, matching the pty-backed
  * `ShellManager` lifecycle.
@@ -40,6 +79,7 @@ interface INonPtyShellStream {
 export class NonPtyShellTerminalStreams extends Disposable {
 
 	private readonly _streams = new Map<string, INonPtyShellStream>();
+	private readonly _toolCallIdByShellId = new Map<string, string>();
 
 	constructor(
 		private readonly _sessionUri: URI,
@@ -49,7 +89,9 @@ export class NonPtyShellTerminalStreams extends Disposable {
 
 		this._register(toDisposable(() => {
 			for (const stream of this._streams.values()) {
-				this._terminalManager.disposeTerminal(stream.uri);
+				if (stream.created) {
+					this._terminalManager.disposeTerminal(stream.uri);
+				}
 			}
 			this._streams.clear();
 		}));
@@ -61,20 +103,30 @@ export class NonPtyShellTerminalStreams extends Disposable {
 	 * URI and whether this call created it (so the caller can attach the
 	 * terminal content block exactly once).
 	 */
-	append(toolCallId: string, cumulativeOutput: string, title: string): { uri: string; created: boolean } {
-		let stream = this._streams.get(toolCallId);
-		let created = false;
+	track(toolCallId: string, title: string): void {
+		if (!this._streams.has(toolCallId)) {
+			this._streams.set(toolCallId, {
+				uri: buildNonPtyShellTerminalUri(toolCallId),
+				title,
+				lastEmitted: '',
+				finalized: false,
+				created: false,
+			});
+		}
+	}
+
+	has(toolCallId: string): boolean {
+		return this._streams.has(toolCallId);
+	}
+
+	append(toolCallId: string, cumulativeOutput: string): { uri: string; created: boolean } | undefined {
+		const stream = this._streams.get(toolCallId);
 		if (!stream) {
-			const uri = buildNonPtyShellTerminalUri(toolCallId);
-			const claim: TerminalSessionClaim = {
-				kind: TerminalClaimKind.Session,
-				session: this._sessionUri.toString(),
-				toolCallId,
-			};
-			this._terminalManager.createOutputTerminal(uri, { title, claim });
-			stream = { uri, lastEmitted: '', finalized: false };
-			this._streams.set(toolCallId, stream);
-			created = true;
+			return undefined;
+		}
+		const created = !stream.created;
+		if (created) {
+			this._createTerminal(toolCallId, stream);
 		}
 		if (stream.finalized || cumulativeOutput === stream.lastEmitted) {
 			return { uri: stream.uri, created };
@@ -83,8 +135,8 @@ export class NonPtyShellTerminalStreams extends Disposable {
 			this._terminalManager.appendOutputTerminalData(stream.uri, cumulativeOutput.slice(stream.lastEmitted.length));
 		} else {
 			// The snapshot no longer extends what we emitted — the runtime
-			// rewrote it (its ~10KB cap keeps leading lines and splices in a
-			// growing truncation marker). Start the channel over.
+			// rewrote it after truncation (marker under the emit cap, rolling
+			// tail past the large-output threshold). Start the channel over.
 			this._terminalManager.resetOutputTerminal(stream.uri);
 			this._terminalManager.appendOutputTerminalData(stream.uri, cumulativeOutput);
 		}
@@ -93,16 +145,72 @@ export class NonPtyShellTerminalStreams extends Disposable {
 	}
 
 	/**
-	 * Records the command's exit on the tool call's output terminal, if one
-	 * was created. Later partial results for the tool call are ignored.
+	 * Records the process lifecycle information carried by tool completion.
+	 * A structured shell exit settles the channel. A runtime background handoff
+	 * instead keeps the channel open and associates its shell id so late output
+	 * and the eventual shell-completed notification remain correlated.
 	 */
-	finalize(toolCallId: string, exitCode: number | undefined): void {
+	completeToolCall(toolCallId: string, toolOutput: string | undefined, shellExit: { shellId: string; result: TerminalCommandResult } | undefined): INonPtyShellToolCompletion | undefined {
 		const stream = this._streams.get(toolCallId);
-		if (!stream || stream.finalized) {
+		if (!stream) {
+			return undefined;
+		}
+
+		const backgroundShellId = parseBackgroundShellId(toolOutput);
+		if (backgroundShellId) {
+			this._toolCallIdByShellId.set(backgroundShellId, toolCallId);
+			if (!stream.created) {
+				this._createTerminal(toolCallId, stream);
+			}
+			return { uri: stream.uri, isBackground: true };
+		}
+
+		const completedShell = shellExit
+			? { shellId: shellExit.shellId, exitCode: shellExit.result.exitCode }
+			: parseCompletedShell(toolOutput);
+		if (!completedShell) {
+			return stream.created ? { uri: stream.uri, isBackground: false } : undefined;
+		}
+		this._toolCallIdByShellId.set(completedShell.shellId, toolCallId);
+		if (!stream.created) {
+			this._createTerminal(toolCallId, stream);
+		}
+		if (shellExit?.result.preview !== undefined) {
+			this.append(toolCallId, shellExit.result.preview);
+		}
+		if (completedShell.exitCode !== undefined) {
+			this._finalize(stream, completedShell.exitCode);
+		}
+		return { uri: stream.uri, isBackground: false };
+	}
+
+	finalizeShell(shellId: string, exitCode: number | undefined): void {
+		if (exitCode === undefined) {
+			return;
+		}
+		const toolCallId = this._toolCallIdByShellId.get(shellId);
+		const stream = toolCallId ? this._streams.get(toolCallId) : undefined;
+		if (stream) {
+			this._finalize(stream, exitCode);
+		}
+	}
+
+	private _finalize(stream: INonPtyShellStream, exitCode: number): void {
+		if (stream.finalized) {
 			return;
 		}
 		stream.finalized = true;
 		stream.lastEmitted = '';
 		this._terminalManager.finalizeOutputTerminal(stream.uri, exitCode);
+	}
+
+	private _createTerminal(toolCallId: string, stream: INonPtyShellStream): void {
+		const claim: TerminalSessionClaim = {
+			kind: TerminalClaimKind.Session,
+			session: this._sessionUri.toString(),
+			toolCallId,
+		};
+		this._terminalManager.createOutputTerminal(stream.uri, { title: stream.title, claim });
+		stream.created = true;
 	}
 }

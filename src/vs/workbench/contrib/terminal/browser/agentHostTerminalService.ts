@@ -12,6 +12,7 @@ import { IAgentConnection } from '../../../../platform/agentHost/common/agentSer
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { IQuickInputService, IQuickPickItem } from '../../../../platform/quickinput/common/quickInput.js';
 import { AgentHostPty } from './agentHostPty.js';
+import { AgentHostOutputChannel } from './agentHostOutputChannel.js';
 import { AhpTerminalCommandSource } from './ahpTerminalCommandSource.js';
 import { ITerminalChatService, ITerminalInstance, ITerminalLocationOptions, ITerminalService } from './terminal.js';
 import { ITerminalProfileProvider, ITerminalProfileService } from '../common/terminal.js';
@@ -90,6 +91,9 @@ export interface IAgentHostTerminalService {
 	 */
 	reviveTerminal(connection: IAgentConnection, terminalUri: URI, terminalToolSessionId: string): Promise<ITerminalInstance>;
 
+	/** Attach a non-pty output channel directly to chat without creating a terminal instance. */
+	attachOutputTerminal(connection: IAgentConnection, terminalUri: URI, terminalToolSessionId: string): IDisposable;
+
 	/**
 	 * Sets the default cwd used by profile providers when no explicit cwd
 	 * is provided. Call with `undefined` to clear.
@@ -116,6 +120,7 @@ export class AgentHostTerminalService extends Disposable implements IAgentHostTe
 	 */
 	private readonly _activePtys = new Map<string, { pty: AgentHostPty; clientId: string }>();
 	private readonly _pendingRevives = new Map<string, Promise<ITerminalInstance>>();
+	private readonly _outputChannels = new Map<string, { readonly store: DisposableStore; refCount: number }>();
 
 	constructor(
 		@ITerminalService private readonly _terminalService: ITerminalService,
@@ -124,6 +129,12 @@ export class AgentHostTerminalService extends Disposable implements IAgentHostTe
 		@IQuickInputService private readonly _quickInputService: IQuickInputService,
 	) {
 		super();
+		this._register(toDisposable(() => {
+			for (const entry of this._outputChannels.values()) {
+				entry.store.dispose();
+			}
+			this._outputChannels.clear();
+		}));
 	}
 
 	// #region Profile management
@@ -334,6 +345,29 @@ export class AgentHostTerminalService extends Disposable implements IAgentHostTe
 		return revive;
 	}
 
+	attachOutputTerminal(connection: IAgentConnection, terminalUri: URI, terminalToolSessionId: string): IDisposable {
+		let entry = this._outputChannels.get(terminalToolSessionId);
+		if (!entry) {
+			const store = new DisposableStore();
+			const source = store.add(new AgentHostOutputChannel(connection, terminalUri));
+			store.add(this._terminalChatService.registerOutputSource(terminalToolSessionId, source));
+			entry = { store, refCount: 0 };
+			this._outputChannels.set(terminalToolSessionId, entry);
+		}
+		entry.refCount++;
+		let disposed = false;
+		return toDisposable(() => {
+			if (disposed) {
+				return;
+			}
+			disposed = true;
+			if (--entry.refCount === 0 && this._outputChannels.get(terminalToolSessionId) === entry) {
+				this._outputChannels.delete(terminalToolSessionId);
+				entry.store.dispose();
+			}
+		});
+	}
+
 	private async _doReviveTerminal(connection: IAgentConnection, terminalUri: URI, terminalToolSessionId: string, key: string): Promise<ITerminalInstance> {
 		const existing = this._revivedInstances.get(key);
 		if (existing) {
@@ -355,20 +389,6 @@ export class AgentHostTerminalService extends Disposable implements IAgentHostTe
 					if (!store.isDisposed) {
 						commandSource.connect(instance, pty);
 					}
-
-					// Output-only channels (isPty false) carry plain text where a
-					// pty would emit TTY line endings; let xterm convert instead
-					// of treating the stream as raw TTY output. Mirrors the
-					// processTraits-driven option updates in TerminalInstance.
-					store.add(pty.onProcessReady(async () => {
-						if (!pty.isPlainTextOutput) {
-							return;
-						}
-						const xterm = await instance.xtermReadyPromise;
-						if (xterm) {
-							xterm.raw.options.convertEol = true;
-						}
-					}));
 
 					this._activePtys.set(key, { pty, clientId: connection.clientId });
 					return pty;

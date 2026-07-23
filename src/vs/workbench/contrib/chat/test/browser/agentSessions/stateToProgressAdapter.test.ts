@@ -936,7 +936,7 @@ suite('stateToProgressAdapter', () => {
 			const invocation = toolCallStateToInvocation(tc);
 			assert.strictEqual(invocation.toolSpecificData?.kind, 'terminal');
 			const termData = invocation.toolSpecificData as { kind: 'terminal'; terminalCommandOutput?: { text: string } };
-			assert.strictEqual(termData.terminalCommandOutput?.text, 'hi\r\n', 'normalizes \\n to \\r\\n for xterm');
+			assert.strictEqual(termData.terminalCommandOutput?.text, 'hi\n');
 		});
 
 		test('does not render terminal pill for terminal toolKind without a command (falls back to invocationMessage)', () => {
@@ -1255,7 +1255,7 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(value, 'Read [](vscode-agent-host://ssh__macbook-air/path/to/foo.ts?_ah%3DeyJzY2hlbWUiOiJmaWxlIn0)');
 		});
 
-		test('finalizes terminal tool with output and exit code', () => {
+		test('finalizes pty terminal tool with compatibility output and exit code', () => {
 			const tc = createToolCallState({
 				toolInput: 'echo hi',
 				status: ToolCallStatus.Running,
@@ -1283,13 +1283,13 @@ suite('stateToProgressAdapter', () => {
 
 			assert.ok(invocation.toolSpecificData);
 			assert.strictEqual(invocation.toolSpecificData.kind, 'terminal');
-			const termData = invocation.toolSpecificData as { kind: 'terminal'; terminalCommandOutput: { text: string }; terminalCommandState: { exitCode: number } };
-			assert.strictEqual(termData.terminalCommandOutput.text, 'output text');
-			assert.strictEqual(termData.terminalCommandState.exitCode, 0);
+			const termData = invocation.toolSpecificData as { kind: 'terminal'; terminalCommandOutput?: { text: string }; terminalCommandState?: { exitCode: number } };
+			assert.strictEqual(termData.terminalCommandOutput?.text, 'output text');
+			assert.strictEqual(termData.terminalCommandState?.exitCode, 0);
 			assert.strictEqual(IChatToolInvocation.resultDetails(invocation), undefined);
 		});
 
-		test('normalizes LF line endings to CRLF in terminal output for xterm rendering', () => {
+		test('leaves plain-text line endings unchanged for xterm convertEol', () => {
 			const tc = createToolCallState({
 				toolInput: 'grep -n foo',
 				status: ToolCallStatus.Running,
@@ -1315,8 +1315,8 @@ suite('stateToProgressAdapter', () => {
 				],
 			});
 
-			const termData = invocation.toolSpecificData as { kind: 'terminal'; terminalCommandOutput: { text: string } };
-			assert.strictEqual(termData.terminalCommandOutput.text, 'line1\r\nline2\r\nline3\r\n');
+			const termData = invocation.toolSpecificData as { kind: 'terminal'; terminalCommandOutput?: { text: string } };
+			assert.strictEqual(termData.terminalCommandOutput?.text, 'line1\nline2\r\nline3\n');
 		});
 
 		test('finalizes generic tool with input/output details', () => {
@@ -1911,7 +1911,7 @@ suite('stateToProgressAdapter', () => {
 				_meta: { toolKind: 'terminal' },
 				toolInput: 'npm test',
 				content: [
-					{ type: ToolResultContentType.Terminal, resource: 'agenthost-terminal:///abc123', title: 'Terminal' },
+					{ type: ToolResultContentType.Terminal, resource: 'agenthost-terminal:///abc123', title: 'Terminal', isPty: false },
 				],
 				success: true,
 			});
@@ -1932,14 +1932,14 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(termData.terminalCommandUri.toString(), 'agenthost-terminal:/abc123');
 		});
 
-		test('terminal content block skips output from text content', () => {
+		test('terminal content block skips bookkeeping text output', () => {
 			const tc = createCompletedToolCall({
 				_meta: {
 					toolKind: 'terminal',
 				},
 				toolInput: 'npm test',
 				content: [
-					{ type: ToolResultContentType.Terminal, resource: 'agenthost-terminal:///abc123', title: 'Terminal' },
+					{ type: ToolResultContentType.Terminal, resource: 'agenthost-terminal:///abc123', title: 'Terminal', isPty: false },
 					{ type: ToolResultContentType.Text, text: 'text-output' },
 				],
 				success: true,
@@ -1957,8 +1957,7 @@ suite('stateToProgressAdapter', () => {
 			const termData = serialized.toolSpecificData as { kind: 'terminal'; terminalCommandUri?: { toString(): string }; terminalCommandOutput?: { text: string } };
 			// Terminal content block URI should be set
 			assert.ok(termData.terminalCommandUri);
-			// Text content is still extracted as output
-			assert.strictEqual(termData.terminalCommandOutput?.text, 'text-output');
+			assert.strictEqual(termData.terminalCommandOutput, undefined);
 		});
 
 		test('uses terminal completion exit code for completed SDK shell tool history', () => {
@@ -1983,12 +1982,12 @@ suite('stateToProgressAdapter', () => {
 			const serialized = response.parts[0] as IChatToolInvocationSerialized;
 			const termData = getSerializedTerminalData(serialized);
 			assert.strictEqual(termData.terminalCommandState?.exitCode, 127);
-			assert.strictEqual(termData.terminalCommandOutput?.text, 'preview only\r\n');
+			assert.strictEqual(termData.terminalCommandOutput?.text, 'preview only\n');
 			assert.strictEqual(termData.terminalCommandOutput?.truncated, true);
 			assert.ok(!termData.terminalCommandOutput?.text.includes('shellId'));
 		});
 
-		test('strips legacy shell completion marker from terminal fallback output', () => {
+		test('does not use text content when a terminal block owns the output', () => {
 			const tc = createCompletedToolCall({
 				_meta: { toolKind: 'terminal' },
 				toolInput: 'ehco hi',
@@ -2010,18 +2009,17 @@ suite('stateToProgressAdapter', () => {
 			const serialized = response.parts[0] as IChatToolInvocationSerialized;
 			const termData = getSerializedTerminalData(serialized);
 			assert.strictEqual(termData.terminalCommandState?.exitCode, 127);
-			assert.strictEqual(termData.terminalCommandOutput?.text, 'bash: line 1: ehco: command not found\r\n');
-			assert.ok(!termData.terminalCommandOutput?.text.includes('shellId'));
+			assert.strictEqual(termData.terminalCommandOutput, undefined);
 		});
 
-		test('ignores legacy terminalComplete blocks from old persisted state', () => {
+		test('reads legacy terminalComplete blocks from old persisted state', () => {
 			const tc = createCompletedToolCall({
 				_meta: { toolKind: 'terminal' },
 				toolInput: 'pwd',
 				content: [
 					{ type: ToolResultContentType.Text, text: '/repo\n' },
 					// Removed from the protocol in AHP 0.7.0; may linger in old persisted turns.
-					{ type: 'terminalComplete', exitCode: 127, preview: 'stale preview\n' } as unknown as ToolResultContent,
+					{ type: 'terminalComplete', exitCode: 127, preview: 'legacy preview\n' } as unknown as ToolResultContent,
 				],
 				success: true,
 			});
@@ -2036,10 +2034,10 @@ suite('stateToProgressAdapter', () => {
 			if (response.type !== 'response') { return; }
 			const serialized = response.parts[0] as IChatToolInvocationSerialized;
 			const termData = getSerializedTerminalData(serialized);
-			// The unknown block is skipped: output comes from Text content and
-			// the exit code from the tool's success flag.
-			assert.strictEqual(termData.terminalCommandOutput?.text, '/repo\r\n');
-			assert.strictEqual(termData.terminalCommandState?.exitCode, 0);
+			// The legacy block's completion data is preserved instead of
+			// degrading to the Text fallback and the tool success flag.
+			assert.strictEqual(termData.terminalCommandOutput?.text, 'legacy preview\n');
+			assert.strictEqual(termData.terminalCommandState?.exitCode, 127);
 		});
 
 		test('keeps zero terminal completion exit code as success for completed SDK shell tool history', () => {
@@ -2067,7 +2065,7 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(termData.terminalCommandState?.exitCode, 0);
 		});
 
-		test('falls back to tool success when terminal completion has no exit code', () => {
+		test('does not fall back to tool success when terminal completion has no exit code', () => {
 			const tc = createCompletedToolCall({
 				_meta: { toolKind: 'terminal' },
 				toolInput: 'pwd',
@@ -2089,7 +2087,47 @@ suite('stateToProgressAdapter', () => {
 			const serialized = response.parts[0] as IChatToolInvocationSerialized;
 			assert.strictEqual(serialized.toolSpecificData?.kind, 'terminal');
 			const termData = serialized.toolSpecificData as { kind: 'terminal'; terminalCommandState?: { exitCode: number } };
-			assert.strictEqual(termData.terminalCommandState?.exitCode, 0);
+			assert.strictEqual(termData.terminalCommandState, undefined);
+		});
+
+		test('uses failed tool state when an output-only terminal has no shell exit', () => {
+			const tc = createCompletedToolCall({
+				_meta: { toolKind: 'terminal' },
+				toolInput: 'eci hi',
+				content: [
+					{ type: ToolResultContentType.Text, text: '/bin/bash: eci: command not found\n' },
+					{ type: ToolResultContentType.Terminal, resource: 'agenthost-terminal://shell/copilotNonPtyShells/tc-1', title: 'Run Shell Command', isPty: false },
+				],
+				success: false,
+			});
+
+			const turn = createTurn({
+				responseParts: [{ kind: ResponsePartKind.ToolCall, toolCall: tc } as ToolCallResponsePart],
+			});
+
+			const history = turnsToHistory(URI.file('/'), [turn], 'p');
+			const response = history[1];
+			assert.strictEqual(response.type, 'response');
+			if (response.type !== 'response') { return; }
+			const serialized = response.parts[0] as IChatToolInvocationSerialized;
+			assert.strictEqual(serialized.toolSpecificData?.kind, 'terminal');
+			const termData = serialized.toolSpecificData as { kind: 'terminal'; terminalCommandState?: { exitCode: number } };
+			assert.deepStrictEqual(termData.terminalCommandState, { exitCode: 1 });
+		});
+
+		test('maps explicit runtime background state onto output-only terminal data', () => {
+			const tc = createCompletedToolCall({
+				_meta: { toolKind: 'terminal', terminalIsBackground: true },
+				toolInput: 'long-running-command',
+				content: [
+					{ type: ToolResultContentType.Terminal, resource: 'agenthost-terminal://shell/copilotNonPtyShells/tc-1', title: 'Run Shell Command', isPty: false },
+				],
+			});
+
+			const invocation = toolCallStateToInvocation(tc);
+			assert.strictEqual(invocation.toolSpecificData?.kind, 'terminal');
+			const terminalData = invocation.toolSpecificData as { kind: 'terminal'; isBackground?: boolean };
+			assert.strictEqual(terminalData.isBackground, true);
 		});
 
 		test('running tool call with terminal content block sets terminalCommandUri', () => {
@@ -2369,7 +2407,7 @@ suite('stateToProgressAdapter', () => {
 			updateRunningToolSpecificData(invocation, runningTc);
 			const termData = invocation.toolSpecificData as { kind: 'terminal'; terminalCommandOutput?: { text: string } };
 			assert.strictEqual(termData.kind, 'terminal');
-			assert.strictEqual(termData.terminalCommandOutput?.text, 'hi\r\n');
+			assert.strictEqual(termData.terminalCommandOutput?.text, 'hi\n');
 		});
 
 		test('preserves AHP terminal fields (terminalToolSessionId, terminalCommandUri) when refreshing output', () => {
@@ -2410,7 +2448,7 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(termData.terminalToolSessionId, 'session-id-from-revive');
 			assert.strictEqual(termData.terminalCommandUri, reviveUri);
 			assert.strictEqual(termData.terminalCommandId, 'cmd-id-from-revive');
-			assert.strictEqual(termData.terminalCommandOutput?.text, 'hi\r\n');
+			assert.strictEqual(termData.terminalCommandOutput?.text, 'hi\n');
 		});
 	});
 

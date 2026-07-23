@@ -2955,6 +2955,9 @@ export class CopilotAgentSession extends Disposable {
 		const sessionId = this.sessionId;
 
 		this._register(wrapper.onSystemNotification(e => {
+			if (e.data.kind.type === 'shell_completed') {
+				this._nonPtyShellTerminals.finalizeShell(e.data.kind.shellId, e.data.kind.exitCode);
+			}
 			const notification = buildCopilotSystemNotification(e);
 			if (!notification) {
 				this._logService.trace(`[Copilot:${sessionId}] Ignoring system.notification kind=${e.data.kind.type}`);
@@ -3125,6 +3128,9 @@ export class CopilotAgentSession extends Disposable {
 			}
 			const parentToolCallId = this._parentToolCallIdForSubagentEvent(e);
 			this._activeToolCalls.set(e.data.toolCallId, { toolName: e.data.toolName, displayName, parameters, content: [], parentToolCallId, mcpServerName: e.data.mcpServerName, meta: undefined });
+			if (isShellTool(e.data.toolName)) {
+				this._nonPtyShellTerminals.track(e.data.toolCallId, displayName);
+			}
 			if (isTaskCompleteTool(e.data.toolName)) {
 				const scope = parentToolCallId ?? '';
 				this._currentTurn?.markdownPartIds.delete(scope);
@@ -3284,19 +3290,33 @@ export class CopilotAgentSession extends Disposable {
 			// SDK result content, so a `shell_exit` lands its completion data on
 			// the terminal block (skip if any terminal block was already added
 			// while the tool was running).
-			if (isShellTool(tracked.toolName) && this._shellManager) {
-				const terminalUri = this._shellManager.getTerminalUriForToolCall(e.data.toolCallId);
-				if (terminalUri && !content.some(c => c.type === ToolResultContentType.Terminal)) {
+			const ptyTerminalUri = isShellTool(tracked.toolName) ? this._shellManager?.getTerminalUriForToolCall(e.data.toolCallId) : undefined;
+			if (ptyTerminalUri && !content.some(c => c.type === ToolResultContentType.Terminal)) {
+				content.push({
+					type: ToolResultContentType.Terminal,
+					resource: ptyTerminalUri,
+					title: tracked.displayName,
+				});
+			}
+
+			const shellExit = appendSdkToolResultContent(content, e.data.result?.contents, { toolCallId: e.data.toolCallId, title: tracked.displayName });
+			if (isShellTool(tracked.toolName) && !ptyTerminalUri) {
+				const completion = this._nonPtyShellTerminals.completeToolCall(e.data.toolCallId, toolOutput, shellExit);
+				if (completion) {
+					tracked.meta = { ...tracked.meta, terminalIsBackground: completion.isBackground };
+				}
+				if (completion && !content.some(c => c.type === ToolResultContentType.Terminal)) {
 					content.push({
 						type: ToolResultContentType.Terminal,
-						resource: terminalUri,
+						resource: completion.uri,
 						title: tracked.displayName,
+						isPty: false,
 					});
 				}
 			}
-
-			const shellExitCode = appendSdkToolResultContent(content, e.data.result?.contents, { toolCallId: e.data.toolCallId, title: tracked.displayName });
-			this._nonPtyShellTerminals.finalize(e.data.toolCallId, shellExitCode);
+			if (shellExit) {
+				this._nonPtyShellTerminals.finalizeShell(shellExit.shellId, shellExit.result.exitCode);
+			}
 
 			const command = isString(tracked.parameters?.command) ? tracked.parameters.command : undefined;
 			const filePaths = isEditTool(tracked.toolName, command) ? this._getEditFilePaths(tracked.parameters) : [];
@@ -4262,15 +4282,19 @@ export class CopilotAgentSession extends Disposable {
 		this._register(wrapper.onToolPartialResult(e => {
 			this._logService.trace(`[Copilot:${sessionId}] Tool partial result: ${e.data.toolCallId} (${e.data.partialOutput.length} chars)`);
 			const tracked = this._activeToolCalls.get(e.data.toolCallId);
-			if (!tracked || !isShellTool(tracked.toolName)) {
+			if (tracked && !isShellTool(tracked.toolName)) {
+				return;
+			}
+			if (!tracked && !this._nonPtyShellTerminals.has(e.data.toolCallId)) {
 				return;
 			}
 			if (this._shellManager?.getTerminalUriForToolCall(e.data.toolCallId)) {
 				// Client-hosted pty shell — its terminal channel streams live output itself.
 				return;
 			}
-			const { uri, created } = this._nonPtyShellTerminals.append(e.data.toolCallId, e.data.partialOutput, tracked.displayName);
-			if (created) {
+			const appended = this._nonPtyShellTerminals.append(e.data.toolCallId, e.data.partialOutput);
+			if (appended?.created && tracked) {
+				const { uri } = appended;
 				tracked.content.push({
 					type: ToolResultContentType.Terminal,
 					resource: uri,
