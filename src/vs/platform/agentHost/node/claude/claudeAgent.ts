@@ -28,6 +28,7 @@ import { createClaudeThinkingLevelSchema, isClaudeEffortLevel } from '../../comm
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { AgentProvider, AgentSession, AgentSignal, CLAUDE_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChatDataChange, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSessionProjectInfo, IAgentSpawnChatEvent, SubagentChatSignal } from '../../common/agentService.js';
 import { ensureWorkspacelessScratchDir } from '../workspacelessScratchDir.js';
+import { getConfigPrimaryWorkingDirectory } from '../../common/workingDirectories.js';
 import { ActionType, AuthRequiredReason, type AuthRequiredParams } from '../../common/state/sessionActions.js';
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
@@ -674,6 +675,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		}
 		const sessionId = config.session ? AgentSession.id(config.session) : generateUuid();
 		const sessionUri = AgentSession.uri(this.id, sessionId);
+		const primaryWorkingDirectory = getConfigPrimaryWorkingDirectory(config);
 
 		const existing = this._findAnySession(sessionId);
 		if (existing) {
@@ -689,19 +691,19 @@ export class ClaudeAgent extends Disposable implements IAgent {
 					...(existing.project ? { project: existing.project } : {}),
 				};
 			}
-			return { session: sessionUri, workingDirectory: config.workingDirectory };
+			return { session: sessionUri, workingDirectory: primaryWorkingDirectory };
 		}
 
 		// A workspace-less session (no `workingDirectory` supplied, and not a
 		// fork) runs in a stable per-session scratch dir shared with the Copilot
 		// agent; without a cwd Claude throws at materialize. The workspace-less
 		// marker itself is owned/persisted centrally by the AH service.
-		const workingDirectory = config.workingDirectory ?? await ensureWorkspacelessScratchDir(this._environmentService.userHome, sessionId);
+		const workingDirectory = primaryWorkingDirectory ?? await ensureWorkspacelessScratchDir(this._environmentService.userHome, sessionId);
 
 		// Only probe for a project when the caller supplied a real folder; a
 		// scratch dir is never a code project.
-		const project = config.workingDirectory
-			? await projectFromCopilotContext({ cwd: config.workingDirectory.fsPath }, this._gitService)
+		const project = primaryWorkingDirectory
+			? await projectFromCopilotContext({ cwd: primaryWorkingDirectory.fsPath }, this._gitService)
 			: undefined;
 
 		const permissionMode = this._resolvePermissionMode(config.config);
@@ -944,7 +946,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			// fast (rather than at the first `sendMessage` when `_resumeSession`
 			// requires a cwd). The Query itself starts lazily — see the JSDoc.
 			const sdkInfo = await this._sdkService.getSessionInfo(newSessionId);
-			const workingDirectory = sdkInfo?.cwd ? URI.file(sdkInfo.cwd) : config.workingDirectory;
+			const workingDirectory = sdkInfo?.cwd ? URI.file(sdkInfo.cwd) : getConfigPrimaryWorkingDirectory(config);
 			if (!workingDirectory) {
 				throw new Error(`Cannot fork session ${sourceSessionId}: forked session ${newSessionId} has no working directory (SDK cwd missing and none supplied)`);
 			}

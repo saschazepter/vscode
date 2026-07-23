@@ -24,6 +24,7 @@ import { ServiceCollection } from '../../instantiation/common/serviceCollection.
 import { ILogService } from '../../log/common/log.js';
 import { AgentProvider, AgentSession, AgentSignal, AgentHostSessionReleaseGraceMsEnvVar, IAgent, IAgentChatDataChange, IAgentCreateChatOptions, IAgentCreateChatResult, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentHostAuthTokenRequest, IAgentHostNetworkDiagnosticsInfo, IAgentHostNetworkEndpoint, IAgentHostNetworkFetchResult, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IAgentSpawnChatEvent, AuthenticateParams, AuthenticateResult, IMcpNotification, IRestoredSubagentSession, SubagentChatSignal } from '../common/agentService.js';
 import { ISessionDataService, SESSION_ATTACHMENTS_DIRNAME } from '../common/sessionDataService.js';
+import { getConfigPrimaryWorkingDirectory, getConfigWorkingDirectories } from '../common/workingDirectories.js';
 import { SessionConfigKey } from '../common/sessionConfigKeys.js';
 import { parseChangesetUri } from '../common/changesetUri.js';
 import { ActionType, ActionEnvelope, AuthRequiredReason, INotification, type ChatAction, type IRootConfigChangedAction, type SessionAction, type TerminalAction, type ClientAnnotationsAction, type ClientChangesetAction } from '../common/state/sessionActions.js';
@@ -1129,7 +1130,7 @@ export class AgentService extends Disposable implements IAgentService {
 			this._stateManager.dispatchServerAction(session.toString(), { type: ActionType.SessionReady });
 
 			// Refresh the git state for the session.
-			const workingDirectory = created.workingDirectory ?? config?.workingDirectory;
+			const workingDirectory = created.workingDirectory ?? getConfigPrimaryWorkingDirectory(config);
 			void this._gitStateService.refreshSessionGitState(session.toString(), workingDirectory);
 		}
 
@@ -1400,9 +1401,15 @@ export class AgentService extends Disposable implements IAgentService {
 		return firstText.length > MAX ? `${firstText.slice(0, MAX)}...` : firstText;
 	}
 
-	private _buildInitialSummary(provider: IAgent, session: URI, config: IAgentCreateSessionConfig | undefined, created: { project?: { uri: URI; displayName: string }; workingDirectory?: URI }, title: string): SessionSummary {
+	private _buildInitialSummary(provider: IAgent, session: URI, config: IAgentCreateSessionConfig | undefined, created: { project?: { uri: URI; displayName: string }; workingDirectory?: URI; workingDirectories?: readonly URI[] }, title: string): SessionSummary {
 		const now = new Date().toISOString();
-		const primaryWorkingDir = (created.workingDirectory ?? config?.workingDirectory)?.toString();
+		// Prefer the RESOLVED directories the provider reports (e.g. a worktree /
+		// scratch dir that differs from the request); fall back to the requested
+		// set. Never build purely from the config set, or a resolved worktree dir
+		// would be dropped.
+		const requestedWorkingDirectories = getConfigWorkingDirectories(config);
+		const resolvedWorkingDirectories = created.workingDirectories
+			?? (created.workingDirectory ? [created.workingDirectory] : requestedWorkingDirectories);
 		return {
 			resource: session.toString(),
 			provider: provider.id,
@@ -1411,11 +1418,11 @@ export class AgentService extends Disposable implements IAgentService {
 			createdAt: now,
 			modifiedAt: now,
 			...(created.project ? { project: { uri: created.project.uri.toString(), displayName: created.project.displayName } } : {}),
-			workingDirectories: primaryWorkingDir ? [primaryWorkingDir] : undefined,
-			// Workspace-less is inferred at create from an absent input
-			// `workingDirectory` (the host assigns a scratch cwd, so it can't be
-			// re-inferred later) and tagged on the generic `_meta` bag.
-			...(config && !config.fork && !config.workingDirectory ? { _meta: withSessionWorkspaceless(undefined, true) } : {}),
+			workingDirectories: resolvedWorkingDirectories?.map(d => d.toString()),
+			// Workspace-less is inferred at create from an absent requested working
+			// directory (the host assigns a scratch cwd, so it can't be re-inferred
+			// later) and tagged on the generic `_meta` bag.
+			...(config && !config.fork && !requestedWorkingDirectories?.length ? { _meta: withSessionWorkspaceless(undefined, true) } : {}),
 		};
 	}
 
@@ -1453,7 +1460,8 @@ export class AgentService extends Disposable implements IAgentService {
 		const summary: SessionSummary = {
 			...currentSummary,
 			...(project ? { project: { uri: project.uri.toString(), displayName: project.displayName } } : {}),
-			workingDirectories: e.workingDirectory ? [e.workingDirectory.toString()] : currentSummary.workingDirectories,
+			workingDirectories: e.workingDirectories?.map(d => d.toString())
+				?? (e.workingDirectory ? [e.workingDirectory.toString()] : currentSummary.workingDirectories),
 			modifiedAt: new Date().toISOString(),
 		};
 		const configValues = state.config?.values;
@@ -1470,7 +1478,7 @@ export class AgentService extends Disposable implements IAgentService {
 		this._stateManager.dispatchServerAction(sessionKey, { type: ActionType.SessionReady });
 
 		// Attach git state for the working directory (if present)
-		void this._gitStateService.refreshSessionGitState(e.session.toString(), e.workingDirectory);
+		void this._gitStateService.refreshSessionGitState(e.session.toString(), e.workingDirectories?.[0] ?? e.workingDirectory);
 
 		// If a client subscribed to this session's uncommitted changeset
 		// before the working directory was known, the coordinator drains
@@ -1557,13 +1565,14 @@ export class AgentService extends Disposable implements IAgentService {
 	}
 
 	private async _resolveCreatedSessionConfig(provider: IAgent, config: IAgentCreateSessionConfig | undefined): Promise<SessionConfigState | undefined> {
-		if (!config?.config && !config?.workingDirectory) {
+		const primaryWorkingDirectory = getConfigPrimaryWorkingDirectory(config);
+		if (!config?.config && !primaryWorkingDirectory) {
 			return undefined;
 		}
 		const params: IAgentResolveSessionConfigParams = {
 			provider: provider.id,
-			workingDirectory: config.workingDirectory,
-			config: config.config,
+			workingDirectory: primaryWorkingDirectory,
+			config: config?.config,
 		};
 		try {
 			// Wrap with the host's isolation schema so the created config carries the
@@ -1576,7 +1585,7 @@ export class AgentService extends Disposable implements IAgentService {
 			return { schema: resolved.schema, values: resolved.values };
 		} catch (err) {
 			this._logService.error(`[AgentService] Failed to resolve created session config for provider ${provider.id}`, err);
-			return config.config ? { schema: { type: 'object', properties: {} }, values: config.config } : undefined;
+			return config?.config ? { schema: { type: 'object', properties: {} }, values: config.config } : undefined;
 		}
 	}
 

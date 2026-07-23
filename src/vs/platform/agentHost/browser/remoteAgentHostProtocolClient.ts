@@ -19,6 +19,7 @@ import { ILogService } from '../../log/common/log.js';
 import { FileSystemProviderErrorCode, toFileSystemProviderErrorCode } from '../../files/common/files.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { AgentSession, AgentHostCodexAgentEnabledSettingId, AgentHostSystemProxyEnabledSettingId, IAgentConnection, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentHostNetworkDiagnosticsInfo, IAgentHostNetworkFetchResult, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, AuthenticateParams, AuthenticateResult, IMcpNotification } from '../common/agentService.js';
+import { getConfigPrimaryWorkingDirectory, getConfigWorkingDirectories } from '../common/workingDirectories.js';
 import { createRemoteWatchHandle, type IRemoteWatchHandle } from '../common/agentHostFileSystemProvider.js';
 import { AgentSubscriptionManager, type IActiveSubscriptionInfo, type IAgentSubscription } from '../common/state/agentSubscription.js';
 import { agentHostAuthority, fromAgentHostUri, toAgentHostUri } from '../common/agentHostUri.js';
@@ -815,10 +816,12 @@ export class RemoteAgentHostProtocolClient extends Disposable implements IAgentC
 		}
 		// Use `.then` (not `async`) so the tracked promise and the returned promise are the same object — callers
 		// awaiting via `getInflightSessionCreate` resume on the same microtask queue as direct `createSession()` awaiters.
+		const primaryWorkingDirectory = getConfigPrimaryWorkingDirectory(config);
 		const promise = this._sendRequest('createSession', {
 			channel: session.toString(),
 			provider,
-			workingDirectories: config?.workingDirectory ? [fromAgentHostUri(config.workingDirectory).toString()] : undefined,
+			workingDirectories: getConfigWorkingDirectories(config)?.map(d => fromAgentHostUri(d).toString()),
+			primaryWorkingDirectory: primaryWorkingDirectory ? fromAgentHostUri(primaryWorkingDirectory).toString() : undefined,
 			config: config?.config,
 			activeClient: config?.activeClient,
 		}).then(() => session);

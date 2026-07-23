@@ -723,6 +723,8 @@ export interface IAgentCreateSessionResult {
 	readonly project?: IAgentSessionProjectInfo;
 	/** The resolved working directory, which may differ from the requested one (e.g. worktree). */
 	readonly workingDirectory?: URI;
+	/** The resolved working directories, which may differ from the requested set (e.g. worktree). */
+	readonly workingDirectories?: readonly URI[];
 	/**
 	 * `true` when the agent only allocated an in-memory placeholder for this
 	 * session (no SDK session, no worktree, no on-disk state). Materialization
@@ -743,6 +745,8 @@ export interface IAgentCreateSessionResult {
 export interface IAgentMaterializeSessionEvent {
 	readonly session: URI;
 	readonly workingDirectory: URI | undefined;
+	/** The resolved working directories (superset of {@link workingDirectory}). */
+	readonly workingDirectories?: readonly URI[];
 	readonly project: IAgentSessionProjectInfo | undefined;
 }
 
@@ -859,7 +863,29 @@ export interface IAgentCreateSessionConfig {
 	 */
 	readonly agent?: AgentSelection;
 	readonly session?: URI;
+	/**
+	 * @deprecated TRANSITIONAL — this singular field is scaffolding for the
+	 * multi-root migration and will be removed once all producers/consumers use
+	 * {@link workingDirectories} / {@link primaryWorkingDirectory}. Do NOT use in
+	 * new code. While present it is treated as `workingDirectories: [workingDirectory]`.
+	 * Read it only via the helpers in `workingDirectories.ts`.
+	 */
 	readonly workingDirectory?: URI;
+	/**
+	 * The working directories the session's agent is granted tool access to.
+	 * A session's directories are equal peers — a session has no primary of its
+	 * own. A client MUST NOT supply more than one entry unless the agent
+	 * advertises the `multipleWorkingDirectories` capability.
+	 */
+	readonly workingDirectories?: readonly URI[];
+	/**
+	 * The primary working directory that seeds the session's **default chat** —
+	 * the distinguished root that chat is centered on (the provider launch
+	 * context, the default location for relative paths). When set it MUST be one
+	 * of {@link workingDirectories}. A session has no primary of its own; this
+	 * only seeds the default chat's primary.
+	 */
+	readonly primaryWorkingDirectory?: URI;
 	readonly config?: Record<string, unknown>;
 	/**
 	 * Eagerly claim the active client role for the new session. When provided,

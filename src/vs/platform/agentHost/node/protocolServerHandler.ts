@@ -37,6 +37,7 @@ import {
 	type ReconnectParams,
 	type IStateSnapshot,
 	type SubscribeResult,
+	type ListSessionsResult,
 } from '../common/state/sessionProtocol.js';
 import { isAhpResourceWatchChannel, isAhpRootChannel, ResponsePartKind, SessionStatus, ToolCallConfirmationReason, ToolCallContributorKind, ToolCallStatus, ToolResultContentType, buildDefaultChatUri, isAhpChatChannel, parseChatUri, parseRequiredSessionUriFromChatUri, type ISessionWithDefaultChat, type SessionState } from '../common/state/sessionState.js';
 import type { IProtocolServer, IProtocolTransport } from '../common/state/sessionTransport.js';
@@ -1168,10 +1169,17 @@ export class ProtocolServerHandler extends Disposable {
 			if (params.activeClient && params.activeClient.clientId !== _client.clientId) {
 				throw new ProtocolError(JsonRpcErrorCodes.InvalidParams, `createSession.activeClient.clientId must match the connection's clientId`);
 			}
+			const workingDirectories = params.workingDirectories?.map(d => URI.parse(d));
+			const primaryWorkingDirectory = params.primaryWorkingDirectory ? URI.parse(params.primaryWorkingDirectory) : undefined;
 			try {
 				createdSession = await this._agentService.createSession({
 					provider: params.provider,
-					workingDirectory: params.workingDirectories?.[0] ? URI.parse(params.workingDirectories[0]) : undefined,
+					workingDirectories,
+					primaryWorkingDirectory,
+					// TRANSITIONAL: keep the singular alias populated (= primary, or the first
+					// requested directory) until all readers migrate to the plural fields, so
+					// provider cwd resolution is unchanged during the migration.
+					workingDirectory: primaryWorkingDirectory ?? workingDirectories?.[0],
 					session: URI.parse(params.channel),
 					fork,
 					config: params.config,
@@ -1250,9 +1258,9 @@ export class ProtocolServerHandler extends Disposable {
 					createdAt: new Date(s.startTime).toISOString(),
 					modifiedAt: new Date(s.modifiedTime).toISOString(),
 					...(s.project ? { project: { uri: s.project.uri.toString(), displayName: s.project.displayName } } : {}),
-					workingDirectory: s.workingDirectory?.toString(),
+					workingDirectories: s.workingDirectory ? [s.workingDirectory.toString()] : undefined,
 					changes: s.changes,
-				};
+				} satisfies ListSessionsResult['items'][number];
 			});
 			return { items };
 		},

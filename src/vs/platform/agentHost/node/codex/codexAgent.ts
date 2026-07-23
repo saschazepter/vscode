@@ -25,6 +25,7 @@ import { createPricingMetaFromBilling, normalizeCAPIBilling } from '../../common
 import { getReasoningEffortDescription, getReasoningEffortLabel } from '../../common/reasoningEffort.js';
 import { AgentHostCodexAgentBinaryArgsEnvVar, AgentHostCodexAgentCodexHomeEnvVar, AgentHostCodexAgentSdkRootEnvVar, AgentSession, AgentSignal, CODEX_AGENT_PROVIDER_ID, IActiveClient, IAgent, IAgentChats, IAgentCreateChatForkSource, IAgentCreateChatResult, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentCreateSessionResult, IAgentDescriptor, IAgentMaterializeSessionEvent, IAgentModelInfo, IAgentResolveSessionConfigParams, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, IMcpNotification, type AgentProvider, type AuthenticateParams } from '../../common/agentService.js';
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
+import { getConfigPrimaryWorkingDirectory } from '../../common/workingDirectories.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { ActionType, isChatAction, type SessionAction, type ChatAction } from '../../common/state/sessionActions.js';
 import type { ConfigSchema, ModelSelection, ProtectedResourceMetadata, ToolDefinition, AgentSelection } from '../../common/state/protocol/state.js';
@@ -2379,7 +2380,8 @@ export class CodexAgent extends Disposable implements IAgent {
 	};
 
 	async createSession(config: IAgentCreateSessionConfig = {}): Promise<IAgentCreateSessionResult> {
-		this._logService.info(`[Codex DEBUG] createSession session=${config.session?.toString() ?? '(none)'} model=${config.model?.id ?? '(none)'} cwd=${config.workingDirectory?.toString() ?? '(none)'}`);
+		const primaryWorkingDirectory = getConfigPrimaryWorkingDirectory(config);
+		this._logService.info(`[Codex DEBUG] createSession session=${config.session?.toString() ?? '(none)'} model=${config.model?.id ?? '(none)'} cwd=${primaryWorkingDirectory?.toString() ?? '(none)'}`);
 		this._ensureAuthenticated();
 		if (config.fork) {
 			return this._forkSession(config, config.fork);
@@ -2408,7 +2410,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			existing.model = effectiveModel ?? existing.model;
 			return {
 				session: sessionUri,
-				workingDirectory: existing.workingDirectory ?? config.workingDirectory,
+				workingDirectory: existing.workingDirectory ?? primaryWorkingDirectory,
 				provisional: existing.threadId === undefined,
 			};
 		}
@@ -2418,7 +2420,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			sessionId,
 			threadId: undefined,
 			sessionUri,
-			workingDirectory: config.workingDirectory,
+			workingDirectory: primaryWorkingDirectory,
 			managedWorkingDirectory: undefined,
 			mapState: createCodexSessionMapState(new Set(this._serverToolHost?.toolNames ?? []), clientToolSet),
 			pendingCommandApprovals: new PendingRequestRegistry<CommandExecutionApprovalDecision>(),
@@ -2453,7 +2455,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		this._schedulePrewarm(session);
 		return {
 			session: sessionUri,
-			workingDirectory: config.workingDirectory,
+			workingDirectory: primaryWorkingDirectory,
 			provisional: true,
 		};
 	}
@@ -2589,7 +2591,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		const newSessionUri = AgentSession.uri(this.id, newThreadId);
 		const workingDirectory = forkResult.cwd
 			? URI.file(forkResult.cwd)
-			: (sourceRead.thread.cwd ? URI.file(sourceRead.thread.cwd) : config.workingDirectory);
+			: (sourceRead.thread.cwd ? URI.file(sourceRead.thread.cwd) : getConfigPrimaryWorkingDirectory(config));
 
 		const session = this._createResumedSessionEntry(newThreadId, newThreadId, newSessionUri, workingDirectory, model);
 		this._sessions.set(newThreadId, session);
