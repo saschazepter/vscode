@@ -7,6 +7,7 @@ import assert from 'assert';
 import { observableValue } from '../../../../../base/common/observable.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
+import { PluginFormat } from '../../../../../platform/agentPlugins/common/pluginParsers.js';
 import { createUninstallPluginAction } from '../../browser/agentPluginActions.js';
 import { ContributionEnablementState } from '../../common/enablement.js';
 import { IAgentPlugin } from '../../common/plugins/agentPluginService.js';
@@ -17,6 +18,7 @@ suite('AgentPluginActions', () => {
 	function createPlugin(remove?: () => void): IAgentPlugin {
 		return {
 			uri: URI.file('/plugins/local-plugin'),
+			format: PluginFormat.Copilot,
 			label: 'Local Plugin',
 			enablement: observableValue('enablement', ContributionEnablementState.EnabledProfile),
 			remove,
