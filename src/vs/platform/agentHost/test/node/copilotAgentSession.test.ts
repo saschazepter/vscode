@@ -612,6 +612,35 @@ suite('CopilotAgentSession', () => {
 		);
 	});
 
+	test('logs managed settings resolution and enforcement', async () => {
+		const logService = new CapturingLogService();
+		const { mockSession } = await createAgentSession(disposables, { logService });
+
+		mockSession.fire('session.managed_settings_resolved', {
+			source: 'server',
+			serverManaged: true,
+			deviceManaged: false,
+			managedKeys: ['permissions'],
+			bypassPermissionsDisabled: true,
+			failClosed: false,
+		} as SessionEventPayload<'session.managed_settings_resolved'>['data']);
+		mockSession.fire('session.managed_settings_enforced', {
+			action: 'bypass_permissions_blocked',
+			escalation: 'allow_all',
+			setting: 'permissions.disableBypassPermissionsMode',
+			failClosed: false,
+			message: 'Bypass permissions mode is disabled by enterprise policy.',
+		} as SessionEventPayload<'session.managed_settings_enforced'>['data']);
+
+		assert.deepStrictEqual({
+			infos: logService.infos.map(entry => entry.message).filter(message => message.includes('Managed settings')),
+			warnings: logService.warnings.map(entry => entry.message).filter(message => message.includes('Managed settings')),
+		}, {
+			infos: ['[Copilot:test-session-1] Managed settings resolved: source=server, managedKeys=permissions, bypassPermissionsDisabled=true, failClosed=false'],
+			warnings: ['[Copilot:test-session-1] Managed settings enforced: action=bypass_permissions_blocked, setting=permissions.disableBypassPermissionsMode, escalation=allow_all, failClosed=false, message=Bypass permissions mode is disabled by enterprise policy.'],
+		});
+	});
+
 	test('maps internal attachment URIs to Copilot SDK path fields', async () => {
 		const fileUri = URI.file('/workspace/file.ts');
 		const selectionUri = URI.file('/workspace/selection.ts');

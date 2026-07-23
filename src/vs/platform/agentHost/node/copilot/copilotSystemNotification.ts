@@ -4,7 +4,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import type { SessionEventPayload, SystemNotification } from '@github/copilot-sdk';
-import { softAssertNever } from '../../../../base/common/assert.js';
 import { localize } from '../../../../nls.js';
 
 export interface ICopilotSystemNotification {
@@ -55,9 +54,6 @@ export function buildCopilotSystemNotification(event: SessionEventPayload<'syste
 				messageText: localize('agentHost.copilot.systemNotification.instructionDiscovered', "Instruction discovered: {0}", kind.description ?? kind.sourcePath),
 				startsTurn: false,
 			};
-		default:
-			softAssertNever(kind);
-			return undefined;
 	}
 }
 

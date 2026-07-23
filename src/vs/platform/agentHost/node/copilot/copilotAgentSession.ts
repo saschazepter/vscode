@@ -4185,6 +4185,14 @@ export class CopilotAgentSession extends Disposable {
 			this._logService.trace(`[Copilot:${sessionId}] Model changed: ${e.data.previousModel ?? '(none)'} -> ${e.data.newModel}`);
 		}));
 
+		this._register(wrapper.onManagedSettingsResolved(e => {
+			this._logService.info(`[Copilot:${sessionId}] Managed settings resolved: source=${e.data.source}, managedKeys=${e.data.managedKeys.join(',') || '(none)'}, bypassPermissionsDisabled=${e.data.bypassPermissionsDisabled}, failClosed=${e.data.failClosed}`);
+		}));
+
+		this._register(wrapper.onManagedSettingsEnforced(e => {
+			this._logService.warn(`[Copilot:${sessionId}] Managed settings enforced: action=${e.data.action}, setting=${e.data.setting}, escalation=${e.data.escalation ?? '(none)'}, failClosed=${e.data.failClosed}, message=${e.data.message}`);
+		}));
+
 		this._register(wrapper.onSessionHandoff(e => {
 			this._logService.trace(`[Copilot:${sessionId}] Session handoff: sourceType=${e.data.sourceType}, remoteSessionId=${e.data.remoteSessionId ?? '(none)'}`);
 		}));
