@@ -49,7 +49,7 @@ function chatState(status: SessionStatus, parts: ResponsePart[]): ChatState {
 		status,
 		modifiedAt: '2024-01-01T00:00:00.000Z',
 		turns: [],
-		activeTurn: { id: 'turn-1', message: { text: 'go', origin: { kind: MessageKind.User } }, responseParts: parts, usage: undefined },
+		activeTurn: { id: 'turn-1', startedAt: '2024-01-01T00:00:00.000Z', message: { text: 'go', origin: { kind: MessageKind.User } }, responseParts: parts, usage: undefined },
 	};
 }
 
