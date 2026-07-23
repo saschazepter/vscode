@@ -74,13 +74,7 @@ suite('aiCustomizationManagementEditor', () => {
 		editor.promptFilesToMigrate = [];
 		editor.editorDisplayMode = 'preview';
 		editor.editorPreviewFrontMatterContainer = document.createElement('div');
-		editor.editorPreviewDisposables = {
-			add<T>(value: T): T {
-				return value;
-			},
-			clear(): void { },
-			dispose(): void { },
-		};
+		editor.editorPreviewDisposables = new DisposableStore();
 		editor.hoverService = hoverService ?? {
 			setupManagedHover: () => ({
 				dispose() { },
@@ -96,7 +90,7 @@ suite('aiCustomizationManagementEditor', () => {
 		editor.migrationSearchQuery = '';
 		editor.selectedPromptMigrationUris = new ResourceSet();
 		editor.collapsedPromptMigrationGroups = new Set();
-		editor.migrationPageDisposables = new DisposableStore();
+		editor.migrationPageDisposables = editor.editorPreviewDisposables.add(new DisposableStore());
 		editor.labelService = {
 			getUriLabel: uri => uri.path,
 		};
