@@ -131,6 +131,10 @@ export class IndexedDB {
 		}).finally(() => this.pendingTransactions.splice(this.pendingTransactions.indexOf(transaction), 1));
 	}
 
+	/**
+	 * Atomically stores `newValue` when the current valid value strictly equals `expectedValue`.
+	 * Values rejected by `isValid` are treated as `undefined`; transaction failures reject without committing.
+	 */
 	async compareAndSwap<T>(
 		store: string,
 		key: IDBValidKey,
