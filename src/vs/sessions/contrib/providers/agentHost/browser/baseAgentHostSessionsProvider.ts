@@ -42,7 +42,7 @@ import { IChatSessionFileChange, IChatSessionFileChange2, IChatSessionsService }
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, ChatPermissionLevel, getChatPermissionLevelFromDefaultConfiguration, isChatPermissionLevel, type IChatDefaultConfiguration } from '../../../../../workbench/contrib/chat/common/constants.js';
 import { isAutoApprovePolicyRestricted, normalizeSessionConfigValue } from '../../../../../workbench/contrib/chat/common/agentHostConfigPolicy.js';
 import { ILanguageModelsService } from '../../../../../workbench/contrib/chat/common/languageModels.js';
-import { getRegisteredLanguageModels, resolveModelIdentifier, resolveModelIdentifierFromLanguageModels } from '../../../../../workbench/contrib/chat/common/modelSelection.js';
+import { getRegisteredLanguageModels, resolveConfiguredModel, resolveModelIdentifier, resolveModelIdentifierFromLanguageModels } from '../../../../../workbench/contrib/chat/common/modelSelection.js';
 import { buildMutableConfigSchema, IAgentHostMcpServer, IAgentHostSessionsProvider, resolvedConfigsEqual } from '../../../../common/agentHostSessionsProvider.js';
 import { agentHostSessionWorkspaceKey } from '../../../../common/agentHostSessionWorkspace.js';
 import { isSessionConfigComplete } from '../../../../common/sessionConfig.js';
@@ -2906,19 +2906,10 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 	}
 
 	/**
-	 * Validate a remembered model selection against the session's currently
-	 * available models before sending. When the selection is *conclusively*
-	 * unavailable (e.g. a remembered BYOK/Ollama model that is no longer bridged,
-	 * or a model that never resolved) and the harness supports Auto, drop the
-	 * selection so the request falls back to the harness default/Auto instead of
-	 * failing on a model id the harness cannot route.
-	 *
-	 * This mirrors the model picker's own removed-model fallback, which the
-	 * restore path intentionally suppresses for agent-host vendors (keeping a
-	 * remembered selection `pending` while the async model list settles). At send
-	 * time an unavailable selection is authoritative. Sessions that require an
-	 * explicit model (no Auto, e.g. Copilot Free/Student Claude) keep their
-	 * selection so the existing "no models available" UX still applies.
+	 * Resolve a remembered model selection at send time: when it is conclusively
+	 * unavailable and the harness supports Auto, return the Auto model identifier
+	 * (rather than `undefined`, which would leave an already-running chat pinned
+	 * to its stale backend model) so the request is explicitly reset to Auto.
 	 */
 	private _resolveSendModelId(sessionId: string, selectedModelId: string | undefined): string | undefined {
 		if (!selectedModelId) {
@@ -2934,8 +2925,12 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		if (!supportsAuto) {
 			return selectedModelId;
 		}
-		this._logService.warn(`[${this.id}] Selected model '${selectedModelId}' is unavailable for session '${sessionId}'; falling back to the harness default/Auto instead of sending an unroutable model.`);
-		return undefined;
+		// Send the harness's Auto model explicitly. Returning `undefined` would
+		// omit `model` from the turn, which leaves an already-running chat on its
+		// stale backend selection and still fails on the unroutable model.
+		const autoModelId = resolveConfiguredModel('auto', snapshot.models)?.identifier;
+		this._logService.warn(`[${this.id}] Selected model '${selectedModelId}' is unavailable for session '${sessionId}'; falling back to Auto instead of sending an unroutable model.`);
+		return autoModelId;
 	}
 
 	private _resolveSessionResourceScheme(sessionId: string): string | undefined {
