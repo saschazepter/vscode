@@ -152,6 +152,22 @@ suite('ChatContextUsageWidget', () => {
 		));
 	}
 
+	function createWidgetWithData(): { widget: ChatContextUsageWidget; getData: () => IChatContextUsageData | undefined } {
+		let currentData: IObservable<IChatContextUsageData | undefined> | undefined;
+		const details = {
+			domNode: document.createElement('div'),
+			setChatWidget: () => { },
+			dispose: () => { },
+		} as unknown as ChatContextUsageDetails;
+		const widget = createWidget({
+			createInstance: (_ctor: unknown, _chatWidget: unknown, data: IObservable<IChatContextUsageData | undefined>) => {
+				currentData = data;
+				return details;
+			},
+		} as unknown as IInstantiationService);
+		return { widget, getData: () => currentData?.get() };
+	}
+
 	function createRequest(modelId: string, usage: IChatUsage | undefined, onDidChange: Event<void> = Event.None, sessionCost: () => number = () => 0): IChatRequestModel {
 		const session = { get sessionCost() { return sessionCost(); } } as IChatRequestModel['session'];
 		const response = { usage, onDidChange, session } as unknown as IChatResponseModel;
@@ -193,53 +209,30 @@ suite('ChatContextUsageWidget', () => {
 	});
 
 	test('resolves session cost again when response data changes', () => {
-		let currentData: IObservable<IChatContextUsageData | undefined> | undefined;
-		const details = {
-			domNode: document.createElement('div'),
-			setChatWidget: () => { },
-			dispose: () => { },
-		} as unknown as ChatContextUsageDetails;
-		const instantiationService = {
-			createInstance: (_ctor: unknown, _chatWidget: unknown, data: IObservable<IChatContextUsageData | undefined>) => {
-				currentData = data;
-				return details;
-			},
-		} as unknown as IInstantiationService;
 		const responseChange = store.add(new Emitter<void>());
-		const widget = createWidget(instantiationService);
+		const { widget, getData } = createWidgetWithData();
 		let sessionCost = 2;
 
 		widget.update(createRequest(CONCRETE_MODEL, usage(), responseChange.event, () => sessionCost));
 		assert.strictEqual(widget.showDetails(), true);
-		assert.strictEqual(currentData?.get()?.sessionCost, 2);
+		assert.strictEqual(getData()?.sessionCost, 2);
 
 		sessionCost = 7;
 		responseChange.fire();
 
-		assert.strictEqual(currentData?.get()?.sessionCost, 7);
+		assert.strictEqual(getData()?.sessionCost, 7);
 	});
 
 	test('refreshes session cost without changing displayed token usage', () => {
-		let currentData: IObservable<IChatContextUsageData | undefined> | undefined;
-		const details = {
-			domNode: document.createElement('div'),
-			setChatWidget: () => { },
-			dispose: () => { },
-		} as unknown as ChatContextUsageDetails;
-		const instantiationService = {
-			createInstance: (_ctor: unknown, _chatWidget: unknown, data: IObservable<IChatContextUsageData | undefined>) => {
-				currentData = data;
-				return details;
-			},
-		} as unknown as IInstantiationService;
-		const widget = createWidget(instantiationService);
+		const { widget, getData } = createWidgetWithData();
 
 		widget.update(createRequest(CONCRETE_MODEL, usage(), Event.None, () => 2));
 		assert.strictEqual(widget.showDetails(), true);
-		const before = currentData?.get();
+		const before = getData();
 
 		widget.updateSessionCost(7);
 
-		assert.deepStrictEqual(currentData?.get(), { ...before, sessionCost: 7 });
+		assert.deepStrictEqual(getData(), { ...before, sessionCost: 7 });
 	});
+
 });

@@ -166,14 +166,7 @@ const requestSchema = Adapt.object<IChatRequestModel, ISerializableChatRequestDa
 	systemInitiatedLabel: Adapt.v(m => m.systemInitiatedLabel),
 	terminalExecutionId: Adapt.v(m => m.terminalExecutionId),
 }, {
-	sealed: o => {
-		const isTerminal = o.modelState?.value === ResponseModelState.Cancelled || o.modelState?.value === ResponseModelState.Failed || o.modelState?.value === ResponseModelState.Complete;
-		const hasActiveSubagent = o.response?.some(part => hasKey(part, { kind: true })
-			&& part.kind === 'toolInvocationSerialized'
-			&& part.toolSpecificData?.kind === 'subagent'
-			&& part.toolSpecificData.isActive);
-		return isTerminal && !hasActiveSubagent;
-	},
+	sealed: (o) => o.modelState?.value === ResponseModelState.Cancelled || o.modelState?.value === ResponseModelState.Failed || o.modelState?.value === ResponseModelState.Complete,
 });
 
 const inputStateSchema = Adapt.object<ISerializableChatModelInputState, ISerializableChatModelInputState>({

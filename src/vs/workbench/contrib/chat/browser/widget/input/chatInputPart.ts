@@ -2701,6 +2701,9 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 				store.add(request.response.onDidChange(() => this.contextUsageWidget?.updateSessionCost(model.sessionCost)));
 			}
 		};
+		for (const request of model.getRequests().slice(0, -1)) {
+			observePreviousResponse(request);
+		}
 
 		store.add(model.onDidChange(e => {
 			if (e.kind === 'addRequest') {

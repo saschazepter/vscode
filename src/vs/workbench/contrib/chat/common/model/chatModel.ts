@@ -1510,15 +1510,14 @@ export class ChatResponseModel extends Disposable implements IChatResponseModel 
 		this._setUsage(this._withSubagentCopilotCredits(usage), true);
 	}
 
-	setSubagentCopilotCredits(subagentCallId: string, copilotCredits: number): boolean {
+	setSubagentCopilotCredits(subagentCallId: string, copilotCredits: number): void {
 		const currentCredits = this._subagentCopilotCredits.get(subagentCallId);
 		if (!Number.isFinite(copilotCredits) || copilotCredits < 0 || (currentCredits !== undefined && copilotCredits <= currentCredits)) {
-			return false;
+			return;
 		}
 		this._subagentCopilotCredits.set(subagentCallId, copilotCredits);
 		const usage = this._parentUsage ?? { kind: 'usage', promptTokens: 0, completionTokens: 0 };
 		this._setUsage(this._withSubagentCopilotCredits(usage), false);
-		return true;
 	}
 
 	private _withSubagentCopilotCredits(usage: IChatUsage): IChatUsage {

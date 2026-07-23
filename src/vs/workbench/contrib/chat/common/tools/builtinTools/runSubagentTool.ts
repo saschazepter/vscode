@@ -148,9 +148,7 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 		}
 
 		const request = model.getRequests().at(-1)!;
-		if (invocation.toolSpecificData?.kind === 'subagent') {
-			invocation.toolSpecificData.isActive = true;
-		}
+		let subagentCredits: number | undefined;
 
 		const store = new DisposableStore();
 
@@ -246,10 +244,7 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 					// latest for its hover and fold it into the parent response total.
 					if (part.kind === 'usage') {
 						if (typeof part.copilotCredits === 'number' && Number.isFinite(part.copilotCredits) && part.copilotCredits >= 0) {
-							const accepted = request.response?.setSubagentCopilotCredits(invocation.callId, part.copilotCredits) ?? true;
-							if (accepted && invocation.toolSpecificData?.kind === 'subagent') {
-								invocation.toolSpecificData.credits = part.copilotCredits;
-							}
+							subagentCredits = Math.max(subagentCredits ?? 0, part.copilotCredits);
 						}
 						continue;
 					}
@@ -414,8 +409,11 @@ export class RunSubagentTool extends Disposable implements IToolImpl {
 			this.logService.error(errorMessage, error);
 			return createToolSimpleTextResult(errorMessage);
 		} finally {
-			if (invocation.toolSpecificData?.kind === 'subagent') {
-				invocation.toolSpecificData.isActive = false;
+			if (subagentCredits !== undefined) {
+				request.response?.setSubagentCopilotCredits(invocation.callId, subagentCredits);
+				if (invocation.toolSpecificData?.kind === 'subagent') {
+					invocation.toolSpecificData.credits = subagentCredits;
+				}
 			}
 			store.dispose();
 		}

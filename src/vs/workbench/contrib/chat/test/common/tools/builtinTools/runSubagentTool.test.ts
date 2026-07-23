@@ -1107,14 +1107,7 @@ suite('RunSubagentTool', () => {
 						getRequests: () => [{
 							id: 'req-1',
 							response: {
-								setSubagentCopilotCredits: (subagentCallId: string, copilotCredits: number) => {
-									const previous = parentCredits.findLast(entry => entry.subagentCallId === subagentCallId)?.copilotCredits;
-									if (previous !== undefined && copilotCredits <= previous) {
-										return false;
-									}
-									parentCredits.push({ subagentCallId, copilotCredits });
-									return true;
-								},
+								setSubagentCopilotCredits: (subagentCallId: string, copilotCredits: number) => parentCredits.push({ subagentCallId, copilotCredits }),
 							},
 						}],
 						acceptResponseProgress: () => { },
@@ -1170,15 +1163,10 @@ suite('RunSubagentTool', () => {
 
 			assert.deepStrictEqual({
 				toolCredits: invocation.toolSpecificData?.kind === 'subagent' ? invocation.toolSpecificData.credits : undefined,
-				isActive: invocation.toolSpecificData?.kind === 'subagent' ? invocation.toolSpecificData.isActive : undefined,
 				parentCredits,
 			}, {
 				toolCredits: 5,
-				isActive: false,
-				parentCredits: [
-					{ subagentCallId: invocation.callId, copilotCredits: 2 },
-					{ subagentCallId: invocation.callId, copilotCredits: 5 },
-				],
+				parentCredits: [{ subagentCallId: invocation.callId, copilotCredits: 5 }],
 			});
 		});
 
@@ -1193,11 +1181,9 @@ suite('RunSubagentTool', () => {
 
 			assert.deepStrictEqual({
 				toolCredits: invocation.toolSpecificData?.kind === 'subagent' ? invocation.toolSpecificData.credits : undefined,
-				isActive: invocation.toolSpecificData?.kind === 'subagent' ? invocation.toolSpecificData.isActive : undefined,
 				parentCredits,
 			}, {
 				toolCredits: 3,
-				isActive: false,
 				parentCredits: [{ subagentCallId: invocation.callId, copilotCredits: 3 }],
 			});
 		});

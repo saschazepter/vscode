@@ -5,7 +5,6 @@
 
 import assert from 'assert';
 import * as sinon from 'sinon';
-import { VSBuffer } from '../../../../../../base/common/buffer.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { observableValue } from '../../../../../../base/common/observable.js';
@@ -28,9 +27,7 @@ import { CellUri } from '../../../../notebook/common/notebookCommon.js';
 import { IChatRequestImplicitVariableEntry, IChatRequestStringVariableEntry, IChatRequestFileEntry, StringChatContextValue } from '../../../common/attachments/chatVariableEntries.js';
 import { ChatAgentService, IChatAgentService } from '../../../common/participants/chatAgents.js';
 import { ChatModel, ChatRequestModel, ChatResponseResource, IChatRequestModeInfo, IExportableChatData, ISerializableChatData1, ISerializableChatData2, ISerializableChatData3, ISerializableChatModelInputState, isExportableSessionData, isSerializableSessionData, normalizeSerializableChatData, Response, serializeSendOptions } from '../../../common/model/chatModel.js';
-import { storageSchema } from '../../../common/model/chatSessionOperationLog.js';
 import { ChatToolInvocation } from '../../../common/model/chatProgressTypes/chatToolInvocation.js';
-import { ObjectMutationLog } from '../../../common/model/objectMutationLog.js';
 import { ChatRequestTextPart } from '../../../common/requestParser/chatParserTypes.js';
 import { ChatRequestQueueKind, IChatService, IChatTerminalToolInvocationData, IChatToolInvocation, ResponseModelState } from '../../../common/chatService/chatService.js';
 import { ToolDataSource } from '../../../common/tools/languageModelToolsService.js';
@@ -238,38 +235,6 @@ suite('ChatModel', () => {
 			{ initialLocation: ChatAgentLocation.Chat, canUseTools: true }
 		));
 		assert.strictEqual(restoredSeparateCosts.sessionCost, 11);
-	});
-
-	test('credit-only usage persists after cancellation', () => {
-		const model = testDisposables.add(instantiationService.createInstance(ChatModel, undefined, { initialLocation: ChatAgentLocation.Chat, canUseTools: true }));
-		const text = 'hello';
-		const request = model.addRequest({ text, parts: [new ChatRequestTextPart(new OffsetRange(0, text.length), new Range(1, text.length, 1, text.length), text)] }, { variables: [] }, 0);
-		model.acceptResponseProgress(request, {
-			kind: 'externalToolInvocationUpdate',
-			toolCallId: 'subagent-1',
-			toolName: 'runSubagent',
-			isComplete: false,
-			toolSpecificData: { kind: 'subagent', isActive: true },
-		});
-		const operationLog = new ObjectMutationLog(storageSchema);
-		let serialized = operationLog.createInitial(model);
-
-		request.response?.cancel();
-		let update = operationLog.write(model);
-		serialized = update.op === 'replace' ? update.data : VSBuffer.concat([serialized, update.data]);
-		operationLog.confirmWrite();
-
-		request.response?.setSubagentCopilotCredits('subagent-1', 4);
-		update = operationLog.write(model);
-		serialized = update.op === 'replace' ? update.data : VSBuffer.concat([serialized, update.data]);
-		operationLog.confirmWrite();
-
-		const restored = testDisposables.add(instantiationService.createInstance(
-			ChatModel,
-			{ value: new ObjectMutationLog(storageSchema).read(serialized), serializer: undefined! },
-			{ initialLocation: ChatAgentLocation.Chat, canUseTools: true }
-		));
-		assert.deepStrictEqual({ live: model.sessionCost, restored: restored.sessionCost }, { live: 4, restored: 4 });
 	});
 
 	test('response details, elapsed time, and tokens roundtrip through serialization', () => {
