@@ -2651,7 +2651,51 @@ export class CodexAgent extends Disposable implements IAgent {
 			description: this._usageSource === 'openai'
 				? localize('codexAgent.description.openai', "Codex agent using your OpenAI account")
 				: localize('codexAgent.description.copilot', "Codex agent using GitHub Copilot"),
-			capabilities: { accountManagement: { loginMethods: ['browser', 'deviceCode'] } },
+			capabilities: {
+				globalConfiguration: {
+					title: localize('codexAgent.globalConfiguration.title', "Codex settings"),
+					description: localize('codexAgent.globalConfiguration.description', "Configure defaults used by Codex. New sessions use the updated personality and auto-review policy; existing sessions retain their session-scoped values. Some advanced config.toml changes may require restarting the Codex App Server."),
+					groups: [{
+						id: 'personalization',
+						title: localize('codexAgent.globalConfiguration.personalization.title', "Personalization"),
+						description: localize('codexAgent.globalConfiguration.personalization.description', "Choose Codex's default communication style."),
+						settings: [{
+							keyPath: 'personality',
+							title: localize('codexAgent.globalConfiguration.personality.title', "Personality"),
+							description: localize('codexAgent.globalConfiguration.personality.description', "Controls the tone Codex uses in newly started sessions."),
+							type: 'string',
+							default: 'none',
+							options: [
+								{ value: 'none', label: localize('codexAgent.globalConfiguration.personality.default', "Default") },
+								{ value: 'friendly', label: localize('codexAgent.globalConfiguration.personality.friendly', "Friendly") },
+								{ value: 'pragmatic', label: localize('codexAgent.globalConfiguration.personality.pragmatic', "Pragmatic") },
+							],
+						}],
+					}, {
+						id: 'autoReview',
+						title: localize('codexAgent.globalConfiguration.autoReview.title', "Auto-review policy"),
+						description: localize('codexAgent.globalConfiguration.autoReview.description', "Optional guidance used when Auto-Review is selected in the permissions picker."),
+						settings: [{
+							keyPath: 'auto_review.policy',
+							title: localize('codexAgent.globalConfiguration.reviewPolicy.title', "Review policy"),
+							description: localize('codexAgent.globalConfiguration.reviewPolicy.description', "Saved as auto_review.policy in config.toml. Describe actions the reviewer should deny or require you to review. This does not expand sandbox access."),
+							type: 'string',
+							default: '',
+							multiline: true,
+							placeholder: localize('codexAgent.globalConfiguration.reviewPolicy.placeholder', "Example: Never approve commands that publish packages or change cloud infrastructure."),
+							saveLabel: localize('codexAgent.globalConfiguration.reviewPolicy.save', "Save Policy"),
+							clearKeyPath: 'auto_review',
+						}],
+					}],
+					configurationFile: {
+						title: localize('codexAgent.globalConfiguration.file.title', "Configuration"),
+						description: localize('codexAgent.globalConfiguration.file.description', "Open the Codex configuration file to customize additional agent behavior."),
+						openLabel: localize('codexAgent.globalConfiguration.file.open', "Open config.toml"),
+						documentationUrl: 'https://learn.chatgpt.com/docs/config-file/config-basic',
+						documentationLabel: localize('codexAgent.globalConfiguration.file.documentation', "Codex configuration documentation"),
+					},
+				},
+			},
 		};
 	}
 

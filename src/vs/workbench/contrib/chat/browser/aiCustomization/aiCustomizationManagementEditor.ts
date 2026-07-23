@@ -444,8 +444,9 @@ export class AICustomizationManagementEditor extends EditorPane {
 			[AICustomizationManagementSection.Models]: { label: localize('models', "Models"), icon: Codicon.vm, description: localize('modelsDesc', "Configure and manage language models available for use.") },
 			[AICustomizationManagementSection.Tools]: { label: localize('tools', "Tools"), icon: toolsIcon, description: localize('toolsDesc', "Enable or disable groups of language model tools available to chat.") },
 		};
+		const activeHarnessId = this.harnessService.activeHarness.get();
 		for (const id of this.workspaceService.managementSections) {
-			const contribution = aiCustomizationManagementSectionRegistry.get(id);
+			const contribution = aiCustomizationManagementSectionRegistry.get(id, activeHarnessId) ?? aiCustomizationManagementSectionRegistry.getDefault(id);
 			const info = contribution ?? sectionInfo[id];
 			if (info) {
 				this.allSections.push({ id, label: info.label, icon: info.icon, description: info.description, count: 0 });
@@ -585,9 +586,10 @@ export class AICustomizationManagementEditor extends EditorPane {
 
 		this.sections.length = 0;
 		for (const s of this.allSections) {
-			const contribution = aiCustomizationManagementSectionRegistry.get(s.id);
-			if (!hidden.has(s.id) && (!contribution || contribution.supportsHarness(activeId))) {
-				this.sections.push(s);
+			const contribution = aiCustomizationManagementSectionRegistry.get(s.id, activeId);
+			const contributed = aiCustomizationManagementSectionRegistry.has(s.id);
+			if (!hidden.has(s.id) && (!contributed || !!contribution)) {
+				this.sections.push(contribution ? { ...s, label: contribution.label, icon: contribution.icon, description: contribution.description } : s);
 			}
 		}
 
@@ -665,6 +667,11 @@ export class AICustomizationManagementEditor extends EditorPane {
 			// count refresh completes. Only reset when the active harness
 			// actually changed to avoid flicker on harness registration events.
 			if (this._previousActiveHarnessId !== undefined && this._previousActiveHarnessId !== activeId) {
+				for (const [section, widget] of this.contributedSectionWidgets) {
+					widget.dispose();
+					this.contributedSectionContainers.get(section)?.replaceChildren();
+				}
+				this.contributedSectionWidgets.clear();
 				for (const section of this.sections) {
 					this.updateSectionCount(section.id, 0);
 				}
@@ -1004,8 +1011,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		}
 
 		for (const section of this.workspaceService.managementSections) {
-			const contribution = aiCustomizationManagementSectionRegistry.get(section);
-			if (!contribution) {
+			if (!aiCustomizationManagementSectionRegistry.has(section)) {
 				continue;
 			}
 			const container = DOM.append(contentInner, $('.contributed-section-container'));
@@ -1734,7 +1740,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		if (existing) {
 			return existing;
 		}
-		const contribution = aiCustomizationManagementSectionRegistry.get(section);
+		const contribution = aiCustomizationManagementSectionRegistry.get(section, this.harnessService.activeHarness.get());
 		const container = this.contributedSectionContainers.get(section);
 		if (!contribution || !container) {
 			return undefined;

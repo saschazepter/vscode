@@ -131,6 +131,60 @@ export interface AgentCapabilities {
 		/** Login mechanisms accepted by the provider. */
 		loginMethods: ('browser' | 'deviceCode')[];
 	};
+	/** Host-global settings that clients may render and edit through the root configuration commands. */
+	globalConfiguration?: AgentGlobalConfigurationCapability;
+}
+
+/** Metadata for a host-global configuration surface exposed by an agent provider. */
+export interface AgentGlobalConfigurationCapability {
+	/** Heading shown above the provider settings. */
+	title: string;
+	/** Introductory text describing the scope and lifecycle of these settings. */
+	description: string;
+	/** Ordered groups of settings to render. */
+	groups: AgentGlobalConfigurationGroup[];
+	/** Optional metadata for opening the provider-owned configuration file. */
+	configurationFile?: AgentGlobalConfigurationFile;
+}
+
+/** A visually grouped set of related host-global settings. */
+export interface AgentGlobalConfigurationGroup {
+	id: string;
+	title: string;
+	description?: string;
+	settings: AgentGlobalConfigurationSetting[];
+}
+
+/** A host-global setting rendered by clients and read/written through AHP. */
+export interface AgentGlobalConfigurationSetting {
+	/** Dotted provider configuration path passed to the root configuration commands. */
+	keyPath: string;
+	title: string;
+	description: string;
+	type: 'string' | 'boolean';
+	default?: string | boolean;
+	/** Enumerated string choices. When present, clients render a select control. */
+	options?: AgentGlobalConfigurationOption[];
+	/** Render string values as a multi-line text area. */
+	multiline?: boolean;
+	placeholder?: string;
+	/** Optional label for an explicit save action. */
+	saveLabel?: string;
+	/** Configuration path to clear when an empty string is saved. Defaults to keyPath. */
+	clearKeyPath?: string;
+}
+
+export interface AgentGlobalConfigurationOption {
+	value: string;
+	label: string;
+}
+
+export interface AgentGlobalConfigurationFile {
+	title: string;
+	description: string;
+	openLabel: string;
+	documentationUrl?: string;
+	documentationLabel?: string;
 }
 
 /**

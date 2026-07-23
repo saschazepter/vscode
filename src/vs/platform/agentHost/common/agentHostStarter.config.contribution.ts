@@ -17,7 +17,6 @@ import {
 	AgentHostCodexAgentEnabledSettingId,
 	AgentHostCodexAgentSdkRootSettingId,
 	AgentHostCodexAgentCodexHomeSettingId,
-	AgentHostCodexAgentUsageSourceSettingId,
 	AgentHostOTelCaptureContentSettingId,
 	AgentHostOTelDbSpanExporterEnabledSettingId,
 	AgentHostOTelEnabledSettingId,
@@ -144,17 +143,6 @@ configurationRegistry.registerConfiguration({
 					}
 				}
 			},
-		},
-		[AgentHostCodexAgentUsageSourceSettingId]: {
-			type: 'string',
-			description: nls.localize('chat.agentHost.codexAgent.usageSource', "Controls whether Codex uses your GitHub Copilot subscription or authenticates directly with OpenAI. This setting affects all Codex agent-host sessions on the host. Use the Settings section in Agent Customizations to sign in with ChatGPT or change the usage source."),
-			default: 'copilot',
-			enum: ['copilot', 'openai'],
-			enumDescriptions: [
-				nls.localize('chat.agentHost.codexAgent.usageSource.copilot', "Use GitHub Copilot quota and authentication."),
-				nls.localize('chat.agentHost.codexAgent.usageSource.openai', "Use Codex-managed OpenAI authentication, including ChatGPT subscription access or API-key billing."),
-			],
-			tags: ['experimental'],
 		},
 		[AgentHostCodexAgentSdkRootSettingId]: {
 			type: 'string',

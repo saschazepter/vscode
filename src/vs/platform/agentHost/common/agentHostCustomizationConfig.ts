@@ -96,7 +96,7 @@ export const agentHostCustomizationConfigSchema = createSchema({
 	[AgentHostConfigKey.CodexUsageSource]: schemaProperty<CodexUsageSource>({
 		type: 'string',
 		title: localize('agentHost.config.codexUsageSource.title', "Codex Usage Source"),
-		description: localize('agentHost.config.codexUsageSource.description', "Choose whether Codex usage is routed through GitHub Copilot or authenticated directly with your OpenAI account."),
+		description: localize('agentHost.config.codexUsageSource.description', "Choose whether Codex usage is routed through GitHub Copilot or uses an existing Codex OpenAI login. VS Code does not provide the OpenAI sign-in flow; authenticate Codex separately before selecting OpenAI."),
 		default: 'copilot',
 		enum: [...codexUsageSources],
 	}),

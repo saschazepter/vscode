@@ -258,8 +258,6 @@ export const AgentHostCodexAgentCodexHomeSettingId = 'chat.agentHost.codexAgent.
  */
 export const AgentHostCodexAgentBinaryArgsSettingId = 'chat.agentHost.codexAgent.binaryArgs';
 
-export const AgentHostCodexAgentUsageSourceSettingId = 'chat.agentHost.codexAgent.usageSource';
-
 /**
  * Environment variable form of {@link AgentHostCodexAgentSdkRootSettingId}.
  * Forwarded by the starters from the setting.
