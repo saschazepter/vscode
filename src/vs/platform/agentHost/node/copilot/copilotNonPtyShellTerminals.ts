@@ -27,24 +27,6 @@ interface INonPtyShellStream {
 }
 
 /**
- * Extracts the shell id from the runtime's explicit background handoff
- * messages. Keep this deliberately narrow: these strings are the only
- * currently available structured-enough signal that a successful tool call
- * handed a still-running process to the background shell manager.
- */
-function parseBackgroundShellId(text: string | undefined): string | undefined {
-	if (!text) {
-		return undefined;
-	}
-	const normalized = text.trim();
-	const started = /^<command started in (?:detached )?background with shellId: (.+?)(?:\. [^>]*)?>$/.exec(normalized);
-	if (started) {
-		return started[1];
-	}
-	return /^<command with shellId: (.+?) moved to background by the user\.[^>]*>$/.exec(normalized)?.[1];
-}
-
-/**
  * Extracts the command result from the runtime's stable text fallback. The
  * external SDK bridge currently removes the equivalent `shell_exit` content
  * block for compatibility with older SDK clients.
@@ -62,7 +44,6 @@ function parseCompletedShell(text: string | undefined): TerminalCommandResult | 
 
 export interface INonPtyShellToolCompletion {
 	readonly uri: string;
-	readonly isBackground: boolean;
 	readonly result?: TerminalCommandResult;
 }
 
@@ -83,7 +64,6 @@ export interface INonPtyShellToolCompletion {
 export class NonPtyShellTerminalStreams extends Disposable {
 
 	private readonly _streams = new Map<string, INonPtyShellStream>();
-	private readonly _toolCallIdByShellId = new Map<string, string>();
 
 	constructor(
 		private readonly _sessionUri: URI,
@@ -119,10 +99,6 @@ export class NonPtyShellTerminalStreams extends Disposable {
 		}
 	}
 
-	has(toolCallId: string): boolean {
-		return this._streams.has(toolCallId);
-	}
-
 	append(toolCallId: string, cumulativeOutput: string): { uri: string; created: boolean } | undefined {
 		const stream = this._streams.get(toolCallId);
 		if (!stream) {
@@ -150,9 +126,7 @@ export class NonPtyShellTerminalStreams extends Disposable {
 
 	/**
 	 * Records the process lifecycle information carried by tool completion.
-	 * A structured shell exit settles the channel. A runtime background handoff
-	 * instead keeps the channel open and associates its shell id so late output
-	 * and the eventual shell-completed notification remain correlated.
+	 * A structured shell exit settles the channel.
 	 */
 	completeToolCall(toolCallId: string, toolOutput: string | undefined, shellExit: { shellId: string; result: TerminalCommandResult } | undefined): INonPtyShellToolCompletion | undefined {
 		const stream = this._streams.get(toolCallId);
@@ -160,18 +134,9 @@ export class NonPtyShellTerminalStreams extends Disposable {
 			return undefined;
 		}
 
-		const backgroundShellId = parseBackgroundShellId(toolOutput);
-		if (backgroundShellId) {
-			this._toolCallIdByShellId.set(backgroundShellId, toolCallId);
-			if (!stream.created) {
-				this._createTerminal(toolCallId, stream);
-			}
-			return { uri: stream.uri, isBackground: true };
-		}
-
 		const result = shellExit?.result ?? parseCompletedShell(toolOutput);
 		if (!result) {
-			return stream.created ? { uri: stream.uri, isBackground: false } : undefined;
+			return stream.created ? { uri: stream.uri } : undefined;
 		}
 		if (!stream.created) {
 			this._createTerminal(toolCallId, stream);
@@ -182,18 +147,7 @@ export class NonPtyShellTerminalStreams extends Disposable {
 		if (result.exitCode !== undefined) {
 			this._finalize(stream, result.exitCode);
 		}
-		return { uri: stream.uri, isBackground: false, result };
-	}
-
-	finalizeShell(shellId: string, exitCode: number | undefined): void {
-		if (exitCode === undefined) {
-			return;
-		}
-		const toolCallId = this._toolCallIdByShellId.get(shellId);
-		const stream = toolCallId ? this._streams.get(toolCallId) : undefined;
-		if (stream) {
-			this._finalize(stream, exitCode);
-		}
+		return { uri: stream.uri, result };
 	}
 
 	private _finalize(stream: INonPtyShellStream, exitCode: number): void {

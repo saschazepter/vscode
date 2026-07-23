@@ -1202,8 +1202,8 @@ function getTerminalCommandState(tc: ToolCallState, fallbackSuccess?: boolean): 
 	}
 	if ((tc.status === ToolCallStatus.Completed || tc.status === ToolCallStatus.Running) && getTerminalContent(tc.content)?.isPty === false) {
 		// A failed SDK shell call does not always include shell_exit content.
-		// Preserve that failure for decoration/completion state without treating
-		// a successful background handoff as a process exit.
+		// Preserve that failure for decoration/completion state without
+		// fabricating a successful process exit when none was reported.
 		return fallbackSuccess === false ? { exitCode: 1 } : undefined;
 	}
 	return fallbackSuccess === undefined ? undefined : { exitCode: fallbackSuccess ? 0 : 1 };
@@ -1321,7 +1321,6 @@ function buildTerminalToolSpecificData(
 			: existing?.terminalToolSessionId,
 		terminalCommandUri: terminalContentUri ? URI.parse(terminalContentUri) : existing?.terminalCommandUri,
 		isPty: terminalContent?.isPty ?? existing?.isPty,
-		isBackground: readToolCallMeta(tc).terminalIsBackground ?? existing?.isBackground,
 		terminalCommandOutput: nextOutput ?? existing?.terminalCommandOutput,
 	};
 }

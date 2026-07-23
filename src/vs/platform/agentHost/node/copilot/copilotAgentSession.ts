@@ -2955,9 +2955,6 @@ export class CopilotAgentSession extends Disposable {
 		const sessionId = this.sessionId;
 
 		this._register(wrapper.onSystemNotification(e => {
-			if (e.data.kind.type === 'shell_completed') {
-				this._nonPtyShellTerminals.finalizeShell(e.data.kind.shellId, e.data.kind.exitCode);
-			}
 			const notification = buildCopilotSystemNotification(e);
 			if (!notification) {
 				this._logService.trace(`[Copilot:${sessionId}] Ignoring system.notification kind=${e.data.kind.type}`);
@@ -3302,9 +3299,6 @@ export class CopilotAgentSession extends Disposable {
 			const shellExit = appendSdkToolResultContent(content, e.data.result?.contents, { toolCallId: e.data.toolCallId, title: tracked.displayName });
 			if (isShellTool(tracked.toolName) && !ptyTerminalUri) {
 				const completion = this._nonPtyShellTerminals.completeToolCall(e.data.toolCallId, toolOutput, shellExit);
-				if (completion?.isBackground) {
-					tracked.meta = { ...tracked.meta, terminalIsBackground: true };
-				}
 				if (completion) {
 					const terminalIndex = content.findIndex(c => c.type === ToolResultContentType.Terminal);
 					if (terminalIndex === -1) {
@@ -4286,10 +4280,7 @@ export class CopilotAgentSession extends Disposable {
 		this._register(wrapper.onToolPartialResult(e => {
 			this._logService.trace(`[Copilot:${sessionId}] Tool partial result: ${e.data.toolCallId} (${e.data.partialOutput.length} chars)`);
 			const tracked = this._activeToolCalls.get(e.data.toolCallId);
-			if (tracked && !isShellTool(tracked.toolName)) {
-				return;
-			}
-			if (!tracked && !this._nonPtyShellTerminals.has(e.data.toolCallId)) {
+			if (!tracked || !isShellTool(tracked.toolName)) {
 				return;
 			}
 			if (this._shellManager?.getTerminalUriForToolCall(e.data.toolCallId)) {
@@ -4297,7 +4288,7 @@ export class CopilotAgentSession extends Disposable {
 				return;
 			}
 			const appended = this._nonPtyShellTerminals.append(e.data.toolCallId, e.data.partialOutput);
-			if (appended?.created && tracked) {
+			if (appended?.created) {
 				const { uri } = appended;
 				tracked.content.push({
 					type: ToolResultContentType.Terminal,

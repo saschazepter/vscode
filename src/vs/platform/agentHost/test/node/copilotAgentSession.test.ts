@@ -2989,7 +2989,6 @@ suite('CopilotAgentSession', () => {
 				},
 				{ type: ToolResultContentType.Text, text: 'tick 1\ntick 2\n' },
 			]);
-			assert.strictEqual(completed._meta?.['terminalIsBackground'], undefined);
 		});
 
 		test('tool partial results reset the channel when the runtime rewrites its snapshot', async () => {
@@ -3137,14 +3136,10 @@ suite('CopilotAgentSession', () => {
 				&& content.result?.exitCode === 127
 				&& content.result.preview === '/bin/bash: eci: command not found\n'
 			));
-			assert.strictEqual(completed._meta?.['terminalIsBackground'], undefined);
 		});
 
-		test('background shell keeps streaming after tool completion and exits on shell_completed', async () => {
-			const { session, mockSession, signals, waitForSignal, terminalManager } = await createAgentSession(disposables);
-			session.resetTurnState('turn-background');
-			const terminalUri = 'agenthost-terminal://shell/copilotNonPtyShells/tc-background';
-
+		test('background shell does not create an output-only terminal', async () => {
+			const { mockSession, signals, waitForSignal, terminalManager } = await createAgentSession(disposables);
 			mockSession.fire('tool.execution_start', {
 				toolCallId: 'tc-background',
 				toolName: 'bash',
@@ -3158,23 +3153,23 @@ suite('CopilotAgentSession', () => {
 			await waitForSignal(signal => isAction(signal, ActionType.ChatToolCallComplete));
 
 			const completed = getActions(signals).find(action => action.type === ActionType.ChatToolCallComplete) as ChatToolCallCompleteAction;
-			assert.ok(completed.result.content?.some(content => content.type === ToolResultContentType.Terminal && content.resource === terminalUri && content.isPty === false));
-			assert.strictEqual(completed._meta?.['terminalIsBackground'], true);
-			assert.deepStrictEqual(terminalManager.outputTerminalsFinalized, []);
+			assert.ok(!completed.result.content?.some(content => content.type === ToolResultContentType.Terminal));
+			assert.deepStrictEqual(terminalManager.outputTerminalsCreated, []);
 
-			// Runtime partials remain keyed to the original tool call after the
-			// SDK has emitted tool.execution_complete.
 			mockSession.fire('tool.execution_partial_result', {
 				toolCallId: 'tc-background',
 				partialOutput: 'late output\n',
 			} as SessionEventPayload<'tool.execution_partial_result'>['data']);
-			assert.deepStrictEqual(terminalManager.outputTerminalData, [{ uri: terminalUri, data: 'late output\n' }]);
 
 			mockSession.fire('system.notification', {
 				content: '<system_notification>Shell command completed</system_notification>',
 				kind: { type: 'shell_completed', shellId: 'shell-bg', exitCode: 7, description: 'long-running-command' },
 			} as SessionEventPayload<'system.notification'>['data']);
-			assert.deepStrictEqual(terminalManager.outputTerminalsFinalized, [{ uri: terminalUri, exitCode: 7 }]);
+			assert.deepStrictEqual({
+				created: terminalManager.outputTerminalsCreated,
+				data: terminalManager.outputTerminalData,
+				finalized: terminalManager.outputTerminalsFinalized,
+			}, { created: [], data: [], finalized: [] });
 		});
 
 		test('completions without partials or shell_exit never create output channels', async () => {

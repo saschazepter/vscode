@@ -2115,21 +2115,6 @@ suite('stateToProgressAdapter', () => {
 			assert.deepStrictEqual(termData.terminalCommandState, { exitCode: 1 });
 		});
 
-		test('maps explicit runtime background state onto output-only terminal data', () => {
-			const tc = createCompletedToolCall({
-				_meta: { toolKind: 'terminal', terminalIsBackground: true },
-				toolInput: 'long-running-command',
-				content: [
-					{ type: ToolResultContentType.Terminal, resource: 'agenthost-terminal://shell/copilotNonPtyShells/tc-1', title: 'Run Shell Command', isPty: false },
-				],
-			});
-
-			const invocation = toolCallStateToInvocation(tc);
-			assert.strictEqual(invocation.toolSpecificData?.kind, 'terminal');
-			const terminalData = invocation.toolSpecificData as { kind: 'terminal'; isBackground?: boolean };
-			assert.strictEqual(terminalData.isBackground, true);
-		});
-
 		test('running tool call with terminal content block sets terminalCommandUri', () => {
 			const tc = createToolCallState({
 				_meta: { toolKind: 'terminal' },

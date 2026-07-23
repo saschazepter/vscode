@@ -26,8 +26,6 @@ export interface IToolCallMeta {
 	readonly toolKind?: ToolKind;
 	/** Shell language for a `terminal` tool call (drives syntax highlighting). */
 	readonly language?: string;
-	/** Whether a runtime-owned terminal command remained active after its tool call completed. */
-	readonly terminalIsBackground?: boolean;
 	/** Short task description for a `subagent` tool call (e.g. "Find related files"). */
 	readonly subagentDescription?: string;
 	/** Agent name for a `subagent` tool call (e.g. "explore"). */
@@ -99,7 +97,6 @@ export function readToolCallMeta(source: IHasToolCallMeta): IToolCallMeta {
 	const result: Mutable<IToolCallMeta> = {};
 	if (isToolKind(meta['toolKind'])) { result.toolKind = meta['toolKind']; }
 	if (typeof meta['language'] === 'string') { result.language = meta['language']; }
-	if (typeof meta['terminalIsBackground'] === 'boolean') { result.terminalIsBackground = meta['terminalIsBackground']; }
 	if (typeof meta['subagentDescription'] === 'string') { result.subagentDescription = meta['subagentDescription']; }
 	if (typeof meta['subagentAgentName'] === 'string') { result.subagentAgentName = meta['subagentAgentName']; }
 	if (typeof meta['subagentChatUri'] === 'string') { result.subagentChatUri = meta['subagentChatUri']; }
