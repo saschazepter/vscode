@@ -682,6 +682,31 @@ suite('ProtocolServerHandler', () => {
 		});
 	});
 
+	test('listSessions maps the working directory into the workingDirectories array (regression: remote wire mismatch)', async () => {
+		agentService.listedSessions.push({
+			session: URI.parse(sessionUri),
+			startTime: 1000,
+			modifiedTime: 2000,
+			summary: 'Session Summary',
+			workingDirectory: URI.file('/workspace/project'),
+		});
+
+		const transport = connectClient('client-list-wd');
+		transport.sent.length = 0;
+		const responsePromise = waitForResponse(transport, 2);
+
+		transport.simulateMessage(request(2, 'listSessions'));
+		const resp = await responsePromise;
+
+		const result = (resp as unknown as { result: ListSessionsResult }).result;
+		const item = result.items[0];
+		assert.deepStrictEqual(item.workingDirectories, [URI.file('/workspace/project').toString()]);
+		// The server must NOT emit the off-schema singular `workingDirectory`; the
+		// client and schema read `workingDirectories`, so emitting the singular
+		// dropped the cwd on the remote list path.
+		assert.strictEqual((item as { workingDirectory?: unknown }).workingDirectory, undefined);
+	});
+
 	test('createSession returns null and broadcasts project in sessionAdded summary', async () => {
 		const transport = connectClient('client-create');
 		transport.sent.length = 0;
