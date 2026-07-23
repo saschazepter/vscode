@@ -19,6 +19,10 @@ interface IJSONValidationExtensionPoint {
 	url: string;
 }
 
+interface IJSONValidationCatalogExtensionPoint {
+	url: string;
+}
+
 const configurationExtPoint = ExtensionsRegistry.registerExtensionPoint<IJSONValidationExtensionPoint[]>({
 	extensionPoint: 'jsonValidation',
 	defaultExtensionKind: ['workspace', 'web'],
@@ -39,6 +43,26 @@ const configurationExtPoint = ExtensionsRegistry.registerExtensionPoint<IJSONVal
 				},
 				url: {
 					description: nls.localize('contributes.jsonValidation.url', 'A schema URL (\'http:\', \'https:\') or relative path to the extension folder (\'./\').'),
+					type: 'string'
+				}
+			}
+		}
+	}
+});
+
+const catalogExtPoint = ExtensionsRegistry.registerExtensionPoint<IJSONValidationCatalogExtensionPoint[]>({
+	extensionPoint: 'jsonValidationCatalogs',
+	defaultExtensionKind: ['workspace', 'web'],
+	jsonSchema: {
+		description: nls.localize('contributes.jsonValidationCatalogs', 'Contributes JSON validation catalogs. The catalog can be a dynamic resource from a filesystem provider and allows to change associations at runtime.'),
+		type: 'array',
+		defaultSnippets: [{ body: [{ url: '${1:url}' }] }],
+		items: {
+			type: 'object',
+			defaultSnippets: [{ body: { url: '${1:url}' } }],
+			properties: {
+				url: {
+					description: nls.localize('contributes.jsonValidationCatalogs.url', 'A catalog URI or relative path to the extension folder (\'./\').'),
 					type: 'string'
 				}
 			}
@@ -83,6 +107,38 @@ export class JSONValidationExtensionPoint {
 						return;
 					}
 				});
+			}
+		});
+
+		catalogExtPoint.setHandler(extensions => {
+			for (const extension of extensions) {
+				const catalogs = extension.value;
+				const collector = extension.collector;
+				const extensionLocation = extension.description.extensionLocation;
+
+				if (!Array.isArray(catalogs)) {
+					collector.error(nls.localize('invalid.jsonValidationCatalogs', "'configuration.jsonValidationCatalogs' must be an array"));
+					continue;
+				}
+				for (const catalog of catalogs) {
+					const uri = catalog.url;
+					if (!isString(uri)) {
+						collector.error(nls.localize('invalid.jsonValidationCatalogs.url', "'configuration.jsonValidationCatalogs.url' must be a URI or relative path"));
+						continue;
+					}
+					if (uri.startsWith('./')) {
+						try {
+							const catalogLocation = resources.joinPath(extensionLocation, uri);
+							if (!resources.isEqualOrParent(catalogLocation, extensionLocation)) {
+								collector.warn(nls.localize('invalid.jsonValidationCatalogs.path', "Expected `contributes.{0}.url` ({1}) to be included inside extension's folder ({2}). This might make the extension non-portable.", catalogExtPoint.name, catalogLocation.toString(), extensionLocation.path));
+							}
+						} catch (e) {
+							collector.error(nls.localize('invalid.jsonValidationCatalogs.fileschema', "'configuration.jsonValidationCatalogs.url' is an invalid relative URI: {0}", e.message));
+						}
+					} else if (!/^[^:/?#]+:\/\//.test(uri)) {
+						collector.error(nls.localize('invalid.jsonValidationCatalogs.schema', "'configuration.jsonValidationCatalogs.url' must be an absolute URI or start with './' to reference a catalog located in the extension."));
+					}
+				}
 			}
 		});
 	}

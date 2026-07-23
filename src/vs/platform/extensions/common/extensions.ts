@@ -36,6 +36,10 @@ export interface IJSONValidation {
 	url: string;
 }
 
+export interface IJSONValidationCatalog {
+	url: string;
+}
+
 export interface IKeyBinding {
 	command: string;
 	key: string;
@@ -214,6 +218,7 @@ export interface IExtensionContributions {
 	debuggers?: IDebugger[];
 	grammars?: IGrammar[];
 	jsonValidation?: IJSONValidation[];
+	jsonValidationCatalogs?: IJSONValidationCatalog[];
 	keybindings?: IKeyBinding[];
 	languages?: ILanguage[];
 	menus?: { [context: string]: IMenu[] };

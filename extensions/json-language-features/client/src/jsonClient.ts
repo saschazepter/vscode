@@ -544,13 +544,33 @@ async function startClientWithParticipants(_context: ExtensionContext, languageP
 
 	client.sendNotification(SchemaAssociationNotification.type, await getSchemaAssociations(false));
 
-	toDispose.push(extensions.onDidChange(async _ => {
-		client.sendNotification(SchemaAssociationNotification.type, await getSchemaAssociations(true));
-	}));
+	const catalogWatchers = new Map<string, Disposable>();
+	const updateCatalogWatchers = () => {
+		const catalogUris = new Set(getSchemaCatalogUris().map(uri => uri.toString()));
+		for (const [uri, watcher] of catalogWatchers) {
+			if (!catalogUris.has(uri)) {
+				watcher.dispose();
+				catalogWatchers.delete(uri);
+			}
+		}
+		for (const uri of catalogUris) {
+			if (!catalogWatchers.has(uri)) {
+				const catalogUri = Uri.parse(uri);
+				const fileName = catalogUri.path.substring(catalogUri.path.lastIndexOf('/') + 1);
+				const parentUri = catalogUri.with({ path: catalogUri.path.substring(0, catalogUri.path.length - fileName.length), query: undefined, fragment: undefined });
+				const watcher = workspace.createFileSystemWatcher(new RelativePattern(parentUri, fileName));
+				const refresh = async () => {
+					client.sendNotification(SchemaAssociationNotification.type, await getSchemaAssociations(true));
+				};
+				catalogWatchers.set(uri, Disposable.from(watcher, watcher.onDidCreate(refresh), watcher.onDidChange(refresh), watcher.onDidDelete(refresh)));
+			}
+		}
+	};
+	updateCatalogWatchers();
+	toDispose.push(new Disposable(() => catalogWatchers.forEach(watcher => watcher.dispose())));
 
-	const associationWatcher = workspace.createFileSystemWatcher(new RelativePattern(Uri.parse(`vscode://schemas-associations/`), '**/schemas-associations.json'));
-	toDispose.push(associationWatcher);
-	toDispose.push(associationWatcher.onDidChange(async _e => {
+	toDispose.push(extensions.onDidChange(async () => {
+		updateCatalogWatchers();
 		client.sendNotification(SchemaAssociationNotification.type, await getSchemaAssociations(true));
 	}));
 
@@ -767,7 +787,11 @@ async function startClientWithParticipants(_context: ExtensionContext, languageP
 
 async function computeSchemaAssociations(): Promise<ISchemaAssociation[]> {
 	const extensionAssociations = getSchemaExtensionAssociations();
-	return extensionAssociations.concat(await getDynamicSchemaAssociations());
+	return extensionAssociations.concat(await getSchemaCatalogAssociations());
+}
+
+function resolveExtensionResource(extensionUri: Uri, resource: string): Uri {
+	return resource.startsWith('./') ? Uri.joinPath(extensionUri, resource) : Uri.parse(resource);
 }
 
 function getSchemaExtensionAssociations(): ISchemaAssociation[] {
@@ -806,20 +830,41 @@ function getSchemaExtensionAssociations(): ISchemaAssociation[] {
 	return associations;
 }
 
-async function getDynamicSchemaAssociations(): Promise<ISchemaAssociation[]> {
-	const result: ISchemaAssociation[] = [];
-	try {
-		const data = await workspace.fs.readFile(Uri.parse(`vscode://schemas-associations/schemas-associations.json`));
-		const rawStr = new TextDecoder().decode(data);
-		const obj = <Record<string, string[]>>JSON.parse(rawStr);
-		for (const item of Object.keys(obj)) {
-			result.push({
-				fileMatch: obj[item],
-				uri: item
-			});
+function getSchemaCatalogUris(): Uri[] {
+	const result: Uri[] = [];
+	for (const extension of extensions.allAcrossExtensionHosts) {
+		const catalogs = extension.packageJSON?.contributes?.jsonValidationCatalogs;
+		if (Array.isArray(catalogs)) {
+			for (const catalog of catalogs) {
+				if (typeof catalog.url === 'string') {
+					result.push(resolveExtensionResource(extension.extensionUri, catalog.url));
+				}
+			}
 		}
-	} catch {
-		// ignore
+	}
+	return result;
+}
+
+async function getSchemaCatalogAssociations(): Promise<ISchemaAssociation[]> {
+	const result: ISchemaAssociation[] = [];
+	for (const catalogUri of getSchemaCatalogUris()) {
+		try {
+			const data = await workspace.fs.readFile(catalogUri);
+			const rawStr = new TextDecoder().decode(data);
+			const catalog = <{ schemas?: { url?: string; fileMatch?: string[] }[] }>JSON.parse(rawStr);
+			if (Array.isArray(catalog.schemas)) {
+				for (const schema of catalog.schemas) {
+					if (typeof schema.url === 'string' && Array.isArray(schema.fileMatch) && schema.fileMatch.every(fileMatch => typeof fileMatch === 'string')) {
+						result.push({
+							fileMatch: schema.fileMatch,
+							uri: schema.url
+						});
+					}
+				}
+			}
+		} catch {
+			// Ignore unavailable or invalid catalogs.
+		}
 	}
 	return result;
 }
