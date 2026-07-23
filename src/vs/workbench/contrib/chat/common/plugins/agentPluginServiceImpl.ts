@@ -268,8 +268,8 @@ export abstract class AbstractAgentPluginDiscovery extends Disposable implements
 
 	protected async _refreshPlugins(): Promise<void> {
 		const version = ++this._discoverVersion;
-		const plugins = await this._discoverAndBuildPlugins();
-		if (version !== this._discoverVersion || this._store.isDisposed) {
+		const plugins = await this._discoverAndBuildPlugins(version);
+		if (!this._isCurrentRefresh(version)) {
 			return;
 		}
 
@@ -279,8 +279,12 @@ export abstract class AbstractAgentPluginDiscovery extends Disposable implements
 	/** Subclasses return plugin sources to discover. */
 	protected abstract _discoverPluginSources(): Promise<readonly IPluginSource[]>;
 
-	private async _discoverAndBuildPlugins(): Promise<readonly IAgentPlugin[]> {
+	private async _discoverAndBuildPlugins(version: number): Promise<readonly IAgentPlugin[]> {
 		const sources = await this._discoverPluginSources();
+		if (!this._isCurrentRefresh(version)) {
+			return [];
+		}
+
 		const plugins: IAgentPlugin[] = [];
 		const seenPluginUris = new Set<string>();
 
@@ -289,14 +293,23 @@ export abstract class AbstractAgentPluginDiscovery extends Disposable implements
 			if (!seenPluginUris.has(key)) {
 				seenPluginUris.add(key);
 				const format = await detectPluginFormat(source.uri, this._fileService);
-				plugins.push(await this._toPlugin(source.uri, format, source.fromMarketplace, source.repositoryUri, source.remove));
+				if (!this._isCurrentRefresh(version)) {
+					return [];
+				}
+				plugins.push(await this._toPlugin(source.uri, format, source.fromMarketplace, source.repositoryUri, source.remove, version));
 			}
 		}
 
-		this._disposePluginEntriesExcept(seenPluginUris);
+		if (this._isCurrentRefresh(version)) {
+			this._disposePluginEntriesExcept(seenPluginUris);
+		}
 
 		plugins.sort((a, b) => a.uri.toString().localeCompare(b.uri.toString()));
 		return plugins;
+	}
+
+	private _isCurrentRefresh(version: number): boolean {
+		return version === this._discoverVersion && !this._store.isDisposed;
 	}
 
 	protected async _pathExists(resource: URI): Promise<boolean> {
@@ -308,10 +321,13 @@ export abstract class AbstractAgentPluginDiscovery extends Disposable implements
 		}
 	}
 
-	private async _toPlugin(uri: URI, format: IPluginFormatConfig, fromMarketplace: IMarketplacePlugin | undefined, repositoryUri: URI | undefined, removeCallback: (() => void) | undefined): Promise<IAgentPlugin> {
+	private async _toPlugin(uri: URI, format: IPluginFormatConfig, fromMarketplace: IMarketplacePlugin | undefined, repositoryUri: URI | undefined, removeCallback: (() => void) | undefined, version: number): Promise<IAgentPlugin> {
 		const key = uri.toString();
 		const existing = this._pluginEntries.get(key);
 		if (existing) {
+			if (!this._isCurrentRefresh(version)) {
+				return existing.plugin;
+			}
 			if (existing.format.format !== format.format) {
 				existing.store.dispose();
 				this._pluginEntries.delete(key);
@@ -436,7 +452,11 @@ export abstract class AbstractAgentPluginDiscovery extends Disposable implements
 			fromMarketplace,
 		};
 
-		this._pluginEntries.set(key, { store, plugin, format });
+		if (this._isCurrentRefresh(version)) {
+			this._pluginEntries.set(key, { store, plugin, format });
+		} else {
+			store.dispose();
+		}
 
 		return plugin;
 	}

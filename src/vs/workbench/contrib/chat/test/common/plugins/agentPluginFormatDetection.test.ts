@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { DeferredPromise } from '../../../../../../base/common/async.js';
 import { VSBuffer } from '../../../../../../base/common/buffer.js';
 import { Schemas } from '../../../../../../base/common/network.js';
 import { waitForState } from '../../../../../../base/common/observable.js';
@@ -31,6 +32,7 @@ import { ContributionEnablementState, IEnablementModel } from '../../../common/e
 class TestPluginDiscovery extends AbstractAgentPluginDiscovery {
 	private _sources: URI[] = [];
 	private _remove: (() => void) | undefined = () => { };
+	private _nextDiscoveryBarrier: Promise<void> | undefined;
 
 	constructor(
 		fileService: IFileService,
@@ -57,12 +59,23 @@ class TestPluginDiscovery extends AbstractAgentPluginDiscovery {
 		await this._refreshPlugins();
 	}
 
+	async setRemoveAndRefreshAfter(uri: URI, remove: (() => void) | undefined, barrier: Promise<void>): Promise<void> {
+		this._sources = [uri];
+		this._remove = remove;
+		this._nextDiscoveryBarrier = barrier;
+		await this._refreshPlugins();
+	}
+
 	protected override async _discoverPluginSources() {
-		return this._sources.map(uri => ({
+		const sources = this._sources.map(uri => ({
 			uri,
 			fromMarketplace: undefined,
 			remove: this._remove,
 		}));
+		const barrier = this._nextDiscoveryBarrier;
+		this._nextDiscoveryBarrier = undefined;
+		await barrier;
+		return sources;
 	}
 }
 
@@ -156,6 +169,33 @@ suite('AgentPlugin format detection', () => {
 			managedRemove: undefined,
 			reusedRemovablePlugin: true,
 			removeCounts: [1, 1],
+		});
+	});
+
+	test('stale refresh does not overwrite removability of published cached plugin', async () => {
+		const uri = pluginUri('/plugins/removability-race');
+		await writeFile('/plugins/removability-race/plugin.json', JSON.stringify({ name: 'removability-race' }));
+
+		let removeCount = 0;
+		const discovery = createDiscovery();
+		discovery.start(mockEnablementModel);
+		await discovery.setRemoveAndRefresh(uri, () => { });
+
+		const staleDiscoveryBarrier = new DeferredPromise<void>();
+		const staleRefresh = discovery.setRemoveAndRefreshAfter(uri, undefined, staleDiscoveryBarrier.p);
+		await discovery.setRemoveAndRefresh(uri, () => removeCount++);
+		staleDiscoveryBarrier.complete();
+		await staleRefresh;
+
+		const plugin = getDiscoveredPlugins(discovery)[0];
+		plugin.remove?.();
+
+		assert.deepStrictEqual({
+			hasRemove: plugin.remove !== undefined,
+			removeCount,
+		}, {
+			hasRemove: true,
+			removeCount: 1,
 		});
 	});
 
