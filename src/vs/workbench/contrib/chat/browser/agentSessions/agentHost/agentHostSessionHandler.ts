@@ -10,7 +10,7 @@ import { isCancellationError } from '../../../../../../base/common/errors.js';
 import { Emitter } from '../../../../../../base/common/event.js';
 import { MarkdownString } from '../../../../../../base/common/htmlContent.js';
 import { getChatErrorDetailsFromMeta, getCopilotPlanFromEntitlement, IChatErrorContext } from '../../../common/chatErrorMessages.js';
-import { Disposable, DisposableMap, DisposableResourceMap, DisposableStore, IReference, MutableDisposable, toDisposable, type IDisposable } from '../../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableResourceMap, DisposableStore, IReference, MutableDisposable, toDisposable, type IDisposable } from '../../../../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../../../../base/common/map.js';
 import { Schemas } from '../../../../../../base/common/network.js';
 import { equals } from '../../../../../../base/common/objects.js';
@@ -182,6 +182,11 @@ interface IObserveTurnOptions {
 interface ISubagentContext {
 	/** Tool call IDs already subscribed — prevents duplicate observers. */
 	readonly observedToolIds: Set<string>;
+}
+
+interface IOutputTerminalAttachment {
+	sessionId?: string;
+	readonly disposable: MutableDisposable<IDisposable>;
 }
 
 function getMcpAuthenticationRequiredServers(sessionResource: URI, state: ISessionWithDefaultChat | undefined): IChatMcpAuthenticationRequiredServer[] {
@@ -2601,7 +2606,9 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			this._awaitToolConfirmation(invocation, toolCallId, opts.backendSession, opts.turnId, opts.cancellationToken, () => confirmationOptions, opts.chatURI);
 		}
 		this._tryObserveSubagentToolCall(initial, invocation, store, opts, subagentContext);
-		const outputTerminalAttachments = store.add(new DisposableMap<string>());
+		const outputTerminalAttachment: IOutputTerminalAttachment = {
+			disposable: store.add(new MutableDisposable())
+		};
 
 		// Reuse the invocation whenever a tool enters confirmation to avoid duplicate cards.
 		let previousStatus: ToolCallStatus | undefined = initial.status;
@@ -2644,7 +2651,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				}
 				this._ensureLeftStreaming(invocation, tc, opts);
 				invocation.invocationMessage = stringOrMarkdownToString(tc.invocationMessage, this._config.connectionAuthority);
-				this._reviveTerminalIfNeeded(invocation, tc, opts.backendSession, outputTerminalAttachments);
+				this._reviveTerminalIfNeeded(invocation, tc, opts.backendSession, outputTerminalAttachment);
 				updateRunningToolSpecificData(invocation, tc, opts.backendSession, this._config.connectionAuthority);
 			}
 
@@ -2655,7 +2662,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				// Running was skipped (e.g. throttling) and terminal content
 				// only appears at Completed time.
 				this._ensureLeftStreaming(invocation, tc, opts);
-				this._reviveTerminalIfNeeded(invocation, tc, opts.backendSession, outputTerminalAttachments);
+				this._reviveTerminalIfNeeded(invocation, tc, opts.backendSession, outputTerminalAttachment);
 				const fileEdits = finalizeToolInvocation(invocation, tc, opts.backendSession, this._config.connectionAuthority);
 				if (fileEdits.length > 0) {
 					opts.onFileEdits?.(tc, fileEdits);
@@ -3269,7 +3276,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		invocation: ChatToolInvocation,
 		tc: ToolCallState,
 		backendSession: URI,
-		outputTerminalAttachments: DisposableMap<string>,
+		outputTerminalAttachment: IOutputTerminalAttachment,
 	): void {
 		// content is only present on Running/Completed/PendingResultConfirmation.
 		// toolInput is present on all post-streaming states.
@@ -3287,9 +3294,9 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		const terminalCommandUri = URI.parse(terminalUri);
 		const isPty = terminalContent.isPty !== false;
 		const terminalInstance = isPty ? this._ensureTerminalInstance(terminalUri, sessionId) : undefined;
-		if (!isPty && !outputTerminalAttachments.has(sessionId)) {
-			outputTerminalAttachments.clearAndDisposeAll();
-			outputTerminalAttachments.set(sessionId, this._agentHostTerminalService.attachOutputTerminal(this._config.connection, terminalCommandUri, sessionId));
+		if (!isPty && outputTerminalAttachment.sessionId !== sessionId) {
+			outputTerminalAttachment.disposable.value = this._agentHostTerminalService.attachOutputTerminal(this._config.connection, terminalCommandUri, sessionId);
+			outputTerminalAttachment.sessionId = sessionId;
 		}
 		const existing = invocation.toolSpecificData?.kind === 'terminal'
 			? invocation.toolSpecificData as IChatTerminalToolInvocationData

@@ -120,7 +120,6 @@ export class AgentHostTerminalService extends Disposable implements IAgentHostTe
 	 */
 	private readonly _activePtys = new Map<string, { pty: AgentHostPty; clientId: string }>();
 	private readonly _pendingRevives = new Map<string, Promise<ITerminalInstance>>();
-	private readonly _outputChannels = new Map<string, { readonly store: DisposableStore; refCount: number }>();
 
 	constructor(
 		@ITerminalService private readonly _terminalService: ITerminalService,
@@ -129,12 +128,6 @@ export class AgentHostTerminalService extends Disposable implements IAgentHostTe
 		@IQuickInputService private readonly _quickInputService: IQuickInputService,
 	) {
 		super();
-		this._register(toDisposable(() => {
-			for (const entry of this._outputChannels.values()) {
-				entry.store.dispose();
-			}
-			this._outputChannels.clear();
-		}));
 	}
 
 	// #region Profile management
@@ -346,26 +339,10 @@ export class AgentHostTerminalService extends Disposable implements IAgentHostTe
 	}
 
 	attachOutputTerminal(connection: IAgentConnection, terminalUri: URI, terminalToolSessionId: string): IDisposable {
-		let entry = this._outputChannels.get(terminalToolSessionId);
-		if (!entry) {
-			const store = new DisposableStore();
-			const source = store.add(new AgentHostOutputChannel(connection, terminalUri));
-			store.add(this._terminalChatService.registerOutputSource(terminalToolSessionId, source));
-			entry = { store, refCount: 0 };
-			this._outputChannels.set(terminalToolSessionId, entry);
-		}
-		entry.refCount++;
-		let disposed = false;
-		return toDisposable(() => {
-			if (disposed) {
-				return;
-			}
-			disposed = true;
-			if (--entry.refCount === 0 && this._outputChannels.get(terminalToolSessionId) === entry) {
-				this._outputChannels.delete(terminalToolSessionId);
-				entry.store.dispose();
-			}
-		});
+		const store = new DisposableStore();
+		const source = store.add(new AgentHostOutputChannel(connection, terminalUri));
+		store.add(this._terminalChatService.registerOutputSource(terminalToolSessionId, source));
+		return store;
 	}
 
 	private async _doReviveTerminal(connection: IAgentConnection, terminalUri: URI, terminalToolSessionId: string, key: string): Promise<ITerminalInstance> {

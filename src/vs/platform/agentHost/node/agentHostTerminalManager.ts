@@ -549,7 +549,7 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 
 	/** Get accumulated scrollback content for a terminal as raw text. */
 	getContent(uri: string): string | undefined {
-		const terminal = this._terminals.get(uri) ?? this._outputTerminals.get(uri);
+		const terminal = this._terminals.get(uri);
 		if (!terminal) {
 			return undefined;
 		}
@@ -558,12 +558,12 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 
 	/** Get the current claim for a terminal. */
 	getClaim(uri: string): TerminalClaim | undefined {
-		return (this._terminals.get(uri) ?? this._outputTerminals.get(uri))?.claim;
+		return this._terminals.get(uri)?.claim;
 	}
 
 	/** Check whether a terminal exists. */
 	hasTerminal(uri: string): boolean {
-		return this._terminals.has(uri) || this._outputTerminals.has(uri);
+		return this._terminals.has(uri);
 	}
 
 	/** Whether the terminal has shell integration active for command detection. */
@@ -574,7 +574,7 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 
 	/** Get the exit code for a terminal, or undefined if still running. */
 	getExitCode(uri: string): number | undefined {
-		return (this._terminals.get(uri) ?? this._outputTerminals.get(uri))?.exitCode;
+		return this._terminals.get(uri)?.exitCode;
 	}
 
 	/** Resize a terminal. */

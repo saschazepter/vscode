@@ -191,11 +191,7 @@ class TerminalCommandDecoration extends Disposable {
 
 	private _getHoverText(): string {
 		const command = this._options.getResolvedCommand();
-		if (this._options.terminalData.isPty !== false) {
-			return getTerminalCommandDecorationTooltip(command, this._options.terminalData.terminalCommandState) || '';
-		}
-		const storedState = this._getOutputOnlyStoredState();
-		const effectiveCommand = command?.exitCode === undefined && storedState?.exitCode !== undefined ? undefined : command;
+		const { effectiveCommand, storedState } = this._getDecorationInput(command);
 		return getTerminalCommandDecorationTooltip(effectiveCommand, storedState) || '';
 	}
 
@@ -208,13 +204,7 @@ class TerminalCommandDecoration extends Disposable {
 
 	private _apply(decoration: HTMLElement, command: ITerminalCommand | undefined): void {
 		const terminalData = this._options.terminalData;
-		let storedState = terminalData.terminalCommandState;
-		let effectiveCommand = command;
-
-		if (terminalData.isPty === false) {
-			storedState = this._getOutputOnlyStoredState();
-			effectiveCommand = command?.exitCode === undefined && storedState?.exitCode !== undefined ? undefined : command;
-		} else if (command) {
+		if (terminalData.isPty !== false && command) {
 			const existingState = terminalData.terminalCommandState ?? {};
 			terminalData.terminalCommandState = {
 				...existingState,
@@ -222,13 +212,12 @@ class TerminalCommandDecoration extends Disposable {
 				timestamp: command.timestamp ?? existingState.timestamp,
 				duration: command.duration ?? existingState.duration
 			};
-			storedState = terminalData.terminalCommandState;
-		} else if (!storedState) {
+		} else if (terminalData.isPty !== false && !terminalData.terminalCommandState) {
 			const now = Date.now();
 			terminalData.terminalCommandState = { exitCode: undefined, timestamp: now };
-			storedState = terminalData.terminalCommandState;
 		}
 
+		const { effectiveCommand, storedState } = this._getDecorationInput(command);
 		const decorationState = getTerminalCommandDecorationState(effectiveCommand, storedState);
 		const tooltip = getTerminalCommandDecorationTooltip(effectiveCommand, storedState);
 
@@ -256,10 +245,20 @@ class TerminalCommandDecoration extends Disposable {
 		}
 	}
 
-	private _getOutputOnlyStoredState(): IChatTerminalToolInvocationData['terminalCommandState'] {
-		const storedState = this._options.terminalData.terminalCommandState;
+	private _getDecorationInput(command: ITerminalCommand | undefined): {
+		effectiveCommand: ITerminalCommand | undefined;
+		storedState: IChatTerminalToolInvocationData['terminalCommandState'];
+	} {
+		let storedState = this._options.terminalData.terminalCommandState;
+		if (this._options.terminalData.isPty !== false) {
+			return { effectiveCommand: command, storedState };
+		}
 		const exitCode = this._options.getExitCode();
-		return exitCode === undefined ? storedState : { ...storedState, exitCode };
+		storedState = exitCode === undefined ? storedState : { ...storedState, exitCode };
+		return {
+			effectiveCommand: command?.exitCode === undefined && storedState?.exitCode !== undefined ? undefined : command,
+			storedState
+		};
 	}
 
 }

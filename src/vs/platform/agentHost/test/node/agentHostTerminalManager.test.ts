@@ -839,8 +839,8 @@ suite('AgentHostTerminalManager – output-only terminals', () => {
 			{ type: ActionType.TerminalData, data: 'tick 2\n' },
 			{ type: ActionType.TerminalExited, exitCode: 0 },
 		]);
-		assert.strictEqual(manager.hasTerminal(uri), true);
-		// Output channels are discovered through tool result content, not the root terminal list.
+		// Output channels are discovered through tool result content, not generic PTY terminal APIs.
+		assert.strictEqual(manager.hasTerminal(uri), false);
 		assert.deepStrictEqual(manager.getTerminalInfos(), []);
 	});
 
