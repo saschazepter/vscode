@@ -885,13 +885,13 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		return this._config.connection.getCompletionTriggerCharacters();
 	}
 
-	private _createCompletionItem(raw: AhpCompletionItem, text: string, attachment: IChatInputCompletionItem['attachment']): IChatInputCompletionItem {
+	private _createCompletionItem(raw: AhpCompletionItem, text: string, attachment: IChatInputCompletionItem['attachment'], label?: string): IChatInputCompletionItem {
 		const item: Mutable<IChatInputCompletionItem> = {
 			insertText: raw.insertText,
 			attachment
 		};
-		if (raw.label !== undefined) {
-			item.label = raw.label;
+		if (label !== undefined) {
+			item.label = label;
 		}
 		if (raw.rangeStart !== undefined) {
 			item.start = offsetToPosition(text, raw.rangeStart);
@@ -913,7 +913,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 						command: completionMeta.command,
 						description: completionMeta.description ?? '',
 						...(attachment._meta !== undefined && { _meta: attachment._meta }),
-					});
+					}, attachment.label !== raw.insertText ? attachment.label : undefined);
 				}
 				if (completionMeta?.kind === 'skill') {
 					return this._createCompletionItem(raw, text, {

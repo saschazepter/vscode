@@ -9655,6 +9655,36 @@ suite('AgentHostChatContribution', () => {
 			});
 		});
 
+		test('uses a command attachment label when it differs from the inserted text', async () => {
+			const { sessionHandler, agentHostService } = createContribution(disposables);
+
+			(agentHostService as unknown as { completions: (p: CompletionsParams) => Promise<CompletionsResult> }).completions = async () => ({
+				items: [
+					{
+						insertText: '',
+						attachment: {
+							type: MessageAttachmentKind.Simple,
+							label: '/yolo on',
+							_meta: {
+								command: 'yolo',
+								description: 'Set permissions to bypass approvals',
+								action: { applyConfig: { autoApprove: 'autoApprove' } },
+							},
+						},
+					},
+				],
+			});
+
+			const result = await sessionHandler.provideChatInputCompletions(
+				URI.from({ scheme: 'agent-host-copilot', path: '/abc' }),
+				{ text: '/y', offset: 2 },
+				CancellationToken.None,
+			);
+
+			assert.strictEqual(result?.items[0].label, '/yolo on');
+			assert.strictEqual(result?.items[0].insertText, '');
+		});
+
 		test('returns undefined when the request is cancelled', async () => {
 			const { sessionHandler, agentHostService } = createContribution(disposables);
 
