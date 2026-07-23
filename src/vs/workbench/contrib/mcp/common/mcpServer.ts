@@ -729,11 +729,11 @@ export class McpServer extends Disposable implements IMcpServer {
 			// When `command` is present, build the full command line (defaulting `args` to an empty
 			// array and dropping any non-string entries); the produced `IMcpServerIdentity.command`
 			// then never contains a non-string entry, which would otherwise break policy matching and
-			// the unresolved-variable check. Use an explicit `!== undefined` check so a valid-but-empty
-			// command string is preserved. When `command` is absent the full command line is unknown,
-			// so omit the field entirely rather than matching on args alone (which could collide with
-			// unrelated servers).
-			return launch.command !== undefined
+			// the unresolved-variable check. Use a string check so a valid-but-empty command string is
+			// preserved while malformed non-string command values are dropped. When `command` is absent
+			// the full command line is unknown, so omit the field entirely rather than matching on args
+			// alone (which could collide with unrelated servers).
+			return typeof launch.command === 'string'
 				? { name: this.definition.label, command: [launch.command, ...(launch.args ?? []).filter(arg => typeof arg === 'string')] }
 				: { name: this.definition.label };
 		}
