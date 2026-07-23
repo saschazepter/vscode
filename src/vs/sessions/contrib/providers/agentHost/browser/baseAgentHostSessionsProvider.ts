@@ -2905,6 +2905,39 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		};
 	}
 
+	/**
+	 * Validate a remembered model selection against the session's currently
+	 * available models before sending. When the selection is *conclusively*
+	 * unavailable (e.g. a remembered BYOK/Ollama model that is no longer bridged,
+	 * or a model that never resolved) and the harness supports Auto, drop the
+	 * selection so the request falls back to the harness default/Auto instead of
+	 * failing on a model id the harness cannot route.
+	 *
+	 * This mirrors the model picker's own removed-model fallback, which the
+	 * restore path intentionally suppresses for agent-host vendors (keeping a
+	 * remembered selection `pending` while the async model list settles). At send
+	 * time an unavailable selection is authoritative. Sessions that require an
+	 * explicit model (no Auto, e.g. Copilot Free/Student Claude) keep their
+	 * selection so the existing "no models available" UX still applies.
+	 */
+	private _resolveSendModelId(sessionId: string, selectedModelId: string | undefined): string | undefined {
+		if (!selectedModelId) {
+			return selectedModelId;
+		}
+		const snapshot = this.getModelsSnapshot(sessionId, selectedModelId);
+		if (snapshot.desiredModelResolution.kind !== 'unavailable') {
+			// Available, pending (list not yet populated) or not requested: keep the selection.
+			return selectedModelId;
+		}
+		const resourceScheme = this._resolveSessionResourceScheme(sessionId);
+		const supportsAuto = !resourceScheme || this._chatSessionsService.supportsAutoModelForSessionType(resourceScheme);
+		if (!supportsAuto) {
+			return selectedModelId;
+		}
+		this._logService.warn(`[${this.id}] Selected model '${selectedModelId}' is unavailable for session '${sessionId}'; falling back to the harness default/Auto instead of sending an unroutable model.`);
+		return undefined;
+	}
+
 	private _resolveSessionResourceScheme(sessionId: string): string | undefined {
 		const newSession = this._getNewSession(sessionId);
 		if (newSession) {
@@ -3311,7 +3344,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		const sessionType = chatResource.scheme;
 		const contribution = this._chatSessionsService.getChatSessionContribution(sessionType);
 
-		const selectedModelId = cached.getChatModelId(chatResource);
+		const selectedModelId = this._resolveSendModelId(chatId, cached.getChatModelId(chatResource));
 		const selectedAgentUri = cached.getChatMode(chatResource)?.id;
 
 		const sendOptions: IChatSendRequestOptions = {
@@ -3401,7 +3434,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		}
 
 		newSession.setStatus(SessionStatus.InProgress);
-		const selectedModelId = newSession.getSelectedModelId();
+		const selectedModelId = this._resolveSendModelId(chatId, newSession.getSelectedModelId());
 		const selectedAgent = newSession.getSelectedAgent();
 
 		const { query, attachedContext } = options;
