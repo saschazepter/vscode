@@ -30,7 +30,7 @@ import { ActionType, ActionEnvelope, AuthRequiredReason, INotification, type Cha
 import type { CompletionsParams, CompletionsResult, CreateTerminalParams, ResolveSessionConfigResult, SessionConfigCompletionsResult, SessionConfigPropertySchema } from '../common/state/protocol/commands.js';
 import type { InvokeChangesetOperationParams, InvokeChangesetOperationResult } from '../common/state/protocol/channels-changeset/commands.js';
 import { AhpErrorCodes, AHP_SESSION_NOT_FOUND, ContentEncoding, JSON_RPC_INTERNAL_ERROR, ProtocolError, ResourceChangeType, ResourceType, ResourceWriteMode, type CreateResourceWatchParams, type CreateResourceWatchResult, type DirectoryEntry, type ResourceCopyParams, type ResourceCopyResult, type ResourceDeleteParams, type ResourceDeleteResult, type ResourceListResult, type ResourceMkdirParams, type ResourceMkdirResult, type ResourceMoveParams, type ResourceMoveResult, type ResourceReadResult, type ResourceResolveParams, type ResourceResolveResult, type ResourceWatchState, type ResourceWriteParams, type ResourceWriteResult, type IStateSnapshot } from '../common/state/sessionProtocol.js';
-import { ChangesSummary, ChatInteractivity, ChatOriginKind, ChatSourceTurnKind, MessageAttachmentKind, type ChatOrigin, type Message, type MessageAttachment, type MessageResourceAttachment } from '../common/state/protocol/state.js';
+import { ChangesSummary, ChatInteractivity, ChatOriginKind, MessageAttachmentKind, type ChatOrigin, type Message, type MessageAttachment, type MessageResourceAttachment } from '../common/state/protocol/state.js';
 import type { ChatPendingMessageSetAction, ChatTurnStartedAction } from '../common/state/protocol/actions.js';
 import { ISessionGitHubState, ISessionGitState, MessageKind, ResponsePartKind, SESSION_META_GITHUB_KEY, SESSION_META_GIT_KEY, readSessionSpawnDepth, withSessionSpawnDepth, SessionStatus, ToolCallStatus, ToolResultContentType, AH_META_WORKSPACELESS_DB_KEY, AH_META_IS_ARCHIVED_DB_KEY, AH_META_IS_DONE_DB_KEY, buildChatUri, buildDefaultChatUri, buildResourceWatchChannelUri, buildSubagentChatUri, buildSubagentSessionUriPrefix, hostBuildInfoFromProduct, isAhpChatChannel, isDefaultChatUri, isSubagentChatUri, isSubagentSession, parseDefaultChatUri, parseRequiredSessionUriFromChatUri, parseResourceWatchChannelUri, parseSubagentSessionUri, readSessionGitState, readSessionWorkspaceless, withSessionGitHubState, withSessionGitState, withSessionWorkspaceless, type SessionConfigState, type SessionSummary, type ToolResultSubagentContent, type Turn } from '../common/state/sessionState.js';
 import { readToolCallMeta } from '../common/meta/agentToolCallMeta.js';
@@ -164,7 +164,7 @@ const PEER_CHAT_BACKING_METADATA_KEY = 'peerChatBacking';
  * in which case the agent recovers its backing from its own persistence on
  * {@link IAgent.materializeChat}. `origin` records the chat's provenance
  * (currently only {@link ChatOriginKind.SideChat}, carrying the source chat and
- * bounded turn) so it survives a restart; omitted for plain peer chats.
+ * stable source turn id) so it survives a restart; omitted for plain peer chats.
  */
 interface IPersistedPeerChat {
 	readonly uri: string;
@@ -1303,10 +1303,7 @@ export class AgentService extends Disposable implements IAgentService {
 			origin: {
 				kind: ChatOriginKind.SideChat,
 				chat: sourceChatKey,
-				turn: {
-					kind: activeTurn ? ChatSourceTurnKind.Active : ChatSourceTurnKind.Completed,
-					turnId: sideChat.turnId,
-				},
+				turnId: sideChat.turnId,
 			},
 			sourceChat: sourceChatKey,
 			...(sourceContext ? { sourceContext } : {}),

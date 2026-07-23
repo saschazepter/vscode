@@ -174,64 +174,21 @@ export const enum ChatOriginKind {
 }
 
 /**
- * Discriminant for {@link ChatSourceTurn} — which kind of source-turn snapshot
- * a fork or side chat was created from.
- *
- * @category Chat State
- */
-export const enum ChatSourceTurnKind {
-	/** A completed turn retained in the source chat's `turns`. */
-	Completed = 'completed',
-	/** The source chat's current in-progress `activeTurn`. */
-	Active = 'active',
-}
-
-/**
- * A completed turn used as a chat source or recorded in chat origin.
- *
- * @category Chat State
- */
-export interface CompletedChatSourceTurn {
-	/** Discriminant */
-	kind: ChatSourceTurnKind.Completed;
-	/** Turn identifier in the source chat. */
-	turnId: string;
-}
-
-/**
- * The current in-progress turn used as a side-chat source or recorded in chat
- * origin.
- *
- * When a host accepts side-chat creation from an active turn, it snapshots the
- * source chat's retained history plus that turn's current user message and any
- * partial assistant response already available. Later source-turn deltas do not
- * retroactively change the created side chat's starting context.
- *
- * @category Chat State
- */
-export interface ActiveChatSourceTurn {
-	/** Discriminant */
-	kind: ChatSourceTurnKind.Active;
-	/** Active turn identifier in the source chat. */
-	turnId: string;
-}
-
-/**
- * A source-turn reference used by chat creation and durable chat origin state.
- *
- * @category Chat State
- */
-export type ChatSourceTurn =
-	| CompletedChatSourceTurn
-	| ActiveChatSourceTurn;
-
-/**
  * How a chat came into existence. Clients MAY use it to render
  * contextual UI (parent indicators, fork markers, "spawned by tool" badges).
  *
  * Fork origins preserve the existing flat `chat` + `turnId` wire shape. Side
- * chat origins use `turn.kind` to distinguish completed-turn provenance from
- * active-turn snapshot provenance.
+ * chat origins likewise carry a stable `turnId` identity alongside
+ * `kind: "sideChat"` instead of snapshotting whether that turn was active or
+ * historical at creation time. Consumers resolve the identifier against the
+ * source chat's current `activeTurn` or retained `turns` as needed.
+ *
+ * When a host accepts side-chat creation from the source chat's current active
+ * turn, it snapshots the retained history plus that turn's current user
+ * message and any partial assistant response already available. Later
+ * source-turn deltas do not retroactively change the created side chat's
+ * starting context, and once the source turn completes it is still referenced
+ * by the same `turnId`.
  *
  * The `tool` variant records a tool-spawned worker from the worker's side: its
  * `chat`/`toolCallId` identify the spawning tool call in the parent chat. This
@@ -244,7 +201,7 @@ export type ChatSourceTurn =
 export type ChatOrigin =
 	| { kind: ChatOriginKind.User }
 	| { kind: ChatOriginKind.Fork; chat: URI; turnId: string }
-	| { kind: ChatOriginKind.SideChat; chat: URI; turn: ChatSourceTurn }
+	| { kind: ChatOriginKind.SideChat; chat: URI; turnId: string }
 	| { kind: ChatOriginKind.Tool; chat: URI; toolCallId: string };
 
 /**

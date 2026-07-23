@@ -28,7 +28,7 @@ import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { SessionDatabase } from '../../node/sessionDatabase.js';
 import { ActionType, ActionEnvelope } from '../../common/state/sessionActions.js';
 import { ChangesetStatus, CustomizationType, MessageAttachmentKind, MessageKind, SessionActiveClient, ResponsePartKind, ROOT_STATE_URI, SessionLifecycle, SessionStatus, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildChatUri, buildDefaultChatUri, buildSubagentChatUri, buildSubagentSessionUri, customizationId, isSubagentSession, parseChatUri, parseSubagentSessionUri, ChatOriginKind, type ChangesetState, type ISessionWithDefaultChat, type MarkdownResponsePart, type ToolCallCompletedState, type ToolCallResponsePart, type Turn } from '../../common/state/sessionState.js';
-import { ChatSourceTurnKind, type MessageResourceAttachment } from '../../common/state/protocol/state.js';
+import { type MessageResourceAttachment } from '../../common/state/protocol/state.js';
 import { IProductService } from '../../../product/common/productService.js';
 import { AgentService } from '../../node/agentService.js';
 import { MockAgent, ScriptedMockAgent } from './mockAgent.js';
@@ -3262,7 +3262,7 @@ suite('AgentService (node dispatcher)', () => {
 				forkForwarded: agent.lastCreateOptions?.fork,
 				sideChatForwarded: agent.lastCreateOptions?.sideChat,
 			}, {
-				origin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turn: { kind: ChatSourceTurnKind.Completed, turnId: 't1' } },
+				origin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turnId: 't1' },
 				copiedTurns: 0,
 				forkForwarded: undefined,
 				sideChatForwarded: { source: URI.parse(defaultChatUri), turnId: 't1' },
@@ -3302,7 +3302,7 @@ suite('AgentService (node dispatcher)', () => {
 					: undefined,
 			}, {
 				sourceActiveTurn: 'active-turn',
-				origin: { kind: ChatOriginKind.SideChat, chat: sourceChat, turn: { kind: ChatSourceTurnKind.Active, turnId: 'active-turn' } },
+				origin: { kind: ChatOriginKind.SideChat, chat: sourceChat, turnId: 'active-turn' },
 				sideChatForwarded: { source: sourceChat, turnId: 'active-turn', sourceContext: 'User request:\nstill running', partialResponse: 'partial answer' },
 			});
 		});
@@ -3372,8 +3372,8 @@ suite('AgentService (node dispatcher)', () => {
 				persistedOrigin,
 				restoredOrigin: localService.stateManager.getChatState(chatUri.toString())?.origin,
 			}, {
-				persistedOrigin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turn: { kind: ChatSourceTurnKind.Completed, turnId: 't1' } },
-				restoredOrigin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turn: { kind: ChatSourceTurnKind.Completed, turnId: 't1' } },
+				persistedOrigin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turnId: 't1' },
+				restoredOrigin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turnId: 't1' },
 			});
 		});
 

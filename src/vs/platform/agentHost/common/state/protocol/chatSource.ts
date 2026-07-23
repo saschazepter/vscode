@@ -5,14 +5,13 @@
 
 import type { URI } from './common/state.js';
 import { ChatSourceKind, type ChatSource, type ForkChatSource, type SideChatSource } from './channels-chat/commands.js';
-import type { ChatSourceTurn } from './channels-chat/state.js';
 
 export function createForkChatSource(chat: URI, turnId: string): ForkChatSource {
 	return { chat, turnId };
 }
 
-export function createSideChatSource(chat: URI, turn: ChatSourceTurn): SideChatSource {
-	return { kind: ChatSourceKind.SideChat, chat, turn };
+export function createSideChatSource(chat: URI, turnId: string): SideChatSource {
+	return { kind: ChatSourceKind.SideChat, chat, turnId };
 }
 
 export function isForkChatSource(source: ChatSource | undefined): source is ForkChatSource {

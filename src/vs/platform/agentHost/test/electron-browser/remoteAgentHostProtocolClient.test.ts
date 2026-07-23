@@ -298,7 +298,7 @@ suite('RemoteAgentHostProtocolClient', () => {
 				params: {
 					channel: sessionUri.toString(),
 					chat: chatUri.toString(),
-					source: { kind: ChatSourceKind.SideChat, chat: sourceUri.toString(), turn: { kind: 'completed', turnId: 'turn-1' } },
+					source: { kind: ChatSourceKind.SideChat, chat: sourceUri.toString(), turnId: 'turn-1' },
 				},
 			});
 

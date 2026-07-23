@@ -13,7 +13,6 @@ import { NullLogService } from '../../../log/common/log.js';
 import { FileType } from '../../../files/common/files.js';
 import { type IAgentCreateChatOptions, type IAgentCreateSessionConfig, type IAgentHostNetworkDiagnosticsInfo, type IAgentHostNetworkFetchResult, type IAgentResolveSessionConfigParams, type IAgentService, type IAgentSessionConfigCompletionsParams, type IAgentSessionMetadata, type AuthenticateParams, type AuthenticateResult } from '../../common/agentService.js';
 import { ChatSourceKind, CompletionsParams, CompletionsResult, ContentEncoding, ListSessionsResult, ResourceReadResult, ResolveSessionConfigResult, SessionConfigCompletionsResult, ResourceMkdirParams, ResourceMkdirResult, ResourceResolveParams, ResourceResolveResult, ResourceCopyParams, ResourceCopyResult } from '../../common/state/protocol/commands.js';
-import { ChatSourceTurnKind } from '../../common/state/protocol/state.js';
 import { ActionType, type IRootConfigChangedAction, type SessionAction, type TerminalAction, type ClientAnnotationsAction, type ProgressParams } from '../../common/state/sessionActions.js';
 import { PROTOCOL_VERSION } from '../../common/state/protocol/version/registry.js';
 import { isJsonRpcNotification, isJsonRpcRequest, isJsonRpcResponse, JSON_RPC_INTERNAL_ERROR, JsonRpcErrorCodes, ProtocolError, AhpErrorCodes, AHP_UNSUPPORTED_PROTOCOL_VERSION, AHP_SESSION_NOT_FOUND, type AhpNotification, type InitializeResult, type ProtocolMessage, type ReconnectResult, type ResourceListResult, type ResourceWriteParams, type ResourceWriteResult, type IStateSnapshot } from '../../common/state/sessionProtocol.js';
@@ -783,7 +782,7 @@ suite('ProtocolServerHandler', () => {
 				source: {
 					kind: ChatSourceKind.SideChat,
 					chat: buildDefaultChatUri(sessionUri),
-					turn: { kind: ChatSourceTurnKind.Active, turnId: 'turn-active' },
+					turnId: 'turn-active',
 				},
 			}));
 			const resp = await responsePromise;

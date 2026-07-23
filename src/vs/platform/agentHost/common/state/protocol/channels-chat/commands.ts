@@ -8,7 +8,7 @@
 
 import type { URI } from '../common/state.js';
 import type { BaseParams } from '../common/commands.js';
-import type { ChatSourceTurn, Message } from './state.js';
+import type { Message } from './state.js';
 
 // ─── createChat ──────────────────────────────────────────────────────────────
 
@@ -48,15 +48,16 @@ export interface SideChatSource {
 	/** URI of the existing source chat. */
 	chat: URI;
 	/**
-	 * Source turn in the source chat.
+	 * Stable source-turn identifier in the source chat.
 	 *
-	 * When this is `kind: "completed"`, the side chat is seeded from the source
-	 * chat's retained history through that turn. When this is `kind: "active"`,
-	 * the host snapshots the source chat's retained history plus the active turn's
-	 * current user message and any partial assistant response already available
-	 * when accepting `createChat`.
+	 * Hosts resolve this id against the source chat's current `activeTurn` or its
+	 * retained `turns` when accepting `createChat`. If it names the current
+	 * active turn, the host snapshots the source chat's retained history plus
+	 * that turn's current user message and any partial assistant response already
+	 * available. Once that turn later becomes historical, it is still referenced
+	 * by this same identifier.
 	 */
-	turn: ChatSourceTurn;
+	turnId: string;
 }
 
 /**
@@ -91,8 +92,10 @@ export interface CreateChatParams extends BaseParams {
 	 * `kind: "sideChat"` when the selected agent advertises
 	 * `capabilities.multipleChats.sideChat`. Forks keep the legacy flat
 	 * `chat` + `turnId` shape and therefore only target completed turns. Side
-	 * chats use `source.turn.kind` to distinguish a completed source turn from
-	 * the source chat's current active turn.
+	 * chats also carry a stable `turnId`, which the host resolves against the
+	 * source chat's current active turn or retained history. If it resolves to
+	 * the active turn, the host snapshots the currently available partial
+	 * response when accepting `createChat`.
 	 */
 	source?: ChatSource;
 	/**

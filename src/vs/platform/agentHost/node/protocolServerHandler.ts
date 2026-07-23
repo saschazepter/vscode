@@ -54,7 +54,6 @@ import {
 	type OtlpLogLevelName,
 } from '../common/otlp/otlpLogEmitter.js';
 import { isFileResourceRead } from '../common/resourceReadLogging.js';
-import { isForkChatSource, isSideChatSource } from '../common/state/protocol/chatSource.js';
 
 /** Default capacity of the server-side action replay buffer. */
 const REPLAY_BUFFER_CAPACITY = 1000;
@@ -1207,14 +1206,16 @@ export class ProtocolServerHandler extends Disposable {
 			if (URI.parse(params.chat).toString() === URI.parse(defaultChat).toString()) {
 				return null;
 			}
+			const source = params.source;
+			const options = source
+				? (hasKey(source, { kind: true })
+					? { sideChat: { source: URI.parse(source.chat), turnId: source.turnId } }
+					: { fork: { source: URI.parse(source.chat), turnId: source.turnId } })
+				: undefined;
 			await this._agentService.createChat(
 				URI.parse(params.channel),
 				URI.parse(params.chat),
-				isForkChatSource(params.source)
-					? { fork: { source: URI.parse(params.source.chat), turnId: params.source.turnId } }
-					: isSideChatSource(params.source)
-						? { sideChat: { source: URI.parse(params.source.chat), turnId: params.source.turn.turnId } }
-						: undefined,
+				options,
 			);
 			return null;
 		},
