@@ -814,7 +814,13 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		const downloadRing = this._register(new MutableDisposable<DictationDownloadRing>());
 		const renderState = () => {
 			const preparing = sttService.isPreparingModel;
-			const recording = sttService.state !== ChatSpeechToTextState.Idle;
+			// Only the active Recording state should read as "recording" (filled
+			// mic). Once the user stops, the service enters Transcribing while it
+			// waits for the final transcript (up to a few seconds on the cloud
+			// backend); during that the mic must already read as idle, matching
+			// the chat toolbar which flips as soon as recording stops.
+			const recording = sttService.state === ChatSpeechToTextState.Recording;
+			const active = sttService.state !== ChatSpeechToTextState.Idle;
 			dom.clearNode(button);
 			downloadRing.clear();
 			if (preparing) {
@@ -834,7 +840,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 			button.classList.toggle('preparing', preparing);
 			button.ariaLabel = preparing
 				? getDictationPreparingLabel(sttService)
-				: (recording ? stopLabel : micLabel);
+				: (active ? stopLabel : micLabel);
 		};
 		renderState();
 		this._register(sttService.onDidChangeState(renderState));
