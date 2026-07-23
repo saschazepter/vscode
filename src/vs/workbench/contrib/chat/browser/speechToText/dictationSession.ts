@@ -9,6 +9,7 @@ import { DisposableStore, MutableDisposable, toDisposable } from '../../../../..
 import { ICodeEditor } from '../../../../../editor/browser/editorBrowser.js';
 import { EditorOption } from '../../../../../editor/common/config/editorOptions.js';
 import { IEditorDecorationsCollection } from '../../../../../editor/common/editorCommon.js';
+import { TrackedRangeStickiness } from '../../../../../editor/common/model.js';
 import { Position } from '../../../../../editor/common/core/position.js';
 import { Range } from '../../../../../editor/common/core/range.js';
 import { Selection } from '../../../../../editor/common/core/selection.js';
@@ -249,6 +250,22 @@ class LiveTranscriptInserter {
 	}
 
 	/**
+	 * Range covering the finalized transcript text this inserter wrote,
+	 * excluding any leading space it prepended, so its content equals the
+	 * transcript exactly. `undefined` before anything is inserted. Used to track
+	 * the dictated span for accuracy telemetry after the session ends.
+	 */
+	finalizedRange(): Range | undefined {
+		if (!this._anchor || !this._end) {
+			return undefined;
+		}
+		const start = this._needsLeadingSpace
+			? new Position(this._anchor.lineNumber, this._anchor.column + 1)
+			: this._anchor;
+		return Range.fromPositions(start, this._end);
+	}
+
+	/**
 	 * Remove everything this inserter has written (including any leading space it
 	 * added) and restore the caret to where dictation began. Used when dictation
 	 * is cancelled so no dictated text is left behind.
@@ -277,6 +294,7 @@ interface IActiveDictation {
 	readonly inserter: LiveTranscriptInserter;
 	readonly disposables: DisposableStore;
 	readonly logService: ILogService;
+	readonly surface: ChatDictationSurface;
 }
 
 /**
@@ -379,7 +397,7 @@ export async function startDictation(service: IChatSpeechToTextService, editor: 
 	// composer is closed); cancel dictation instead of leaving the microphone
 	// and local transcription running against a dead editor.
 	disposables.add(editor.onDidDispose(() => cancelDictation()));
-	_active = { service, editor, inserter, disposables, logService };
+	_active = { service, editor, inserter, disposables, logService, surface };
 	try {
 		await service.start(window, surface);
 	} catch {
@@ -409,6 +427,9 @@ export async function stopDictation(): Promise<void> {
 		if (text !== undefined) {
 			// Final transcript: render it solid (no shimmer).
 			active.inserter.update(text, false);
+			// Track how much of this dictated text the user edits before sending,
+			// as an accuracy signal comparing the backends.
+			trackDictationAccuracy(active, text);
 		} else {
 			// No final transcript to apply; make sure the shimmer does not linger
 			// over the last interim text.
@@ -436,4 +457,54 @@ export function cancelDictation(): void {
 	active.inserter.revert();
 	active.disposables.dispose();
 	active.service.cancel();
+}
+
+/**
+ * After a dictation finishes, watch the dictated span until its text leaves the
+ * input (the user submits, which clears the editor, or the editor is torn down)
+ * and then report how much it was edited in the meantime as an accuracy signal.
+ *
+ * The dictated region is followed with a tracked decoration so it stays aligned
+ * as the user edits around it; edits typed at its edges are excluded so
+ * unrelated text appended after the dictation is not counted. Only aggregate
+ * character metrics are logged — never the transcript text. Runs independently
+ * of the (already-disposed) dictation session and cleans itself up on measure.
+ */
+function trackDictationAccuracy(active: IActiveDictation, dictatedText: string): void {
+	const { editor, inserter, service, surface } = active;
+	const model = editor.getModel();
+	const range = inserter.finalizedRange();
+	if (!model || !range || !dictatedText) {
+		return;
+	}
+	const backend = service.currentBackend;
+	const collection = editor.createDecorationsCollection([{
+		range,
+		options: {
+			description: 'chatSpeechToText-accuracy',
+			stickiness: TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+		},
+	}]);
+	const store = new DisposableStore();
+	let measured = false;
+	const measure = () => {
+		if (measured) {
+			return;
+		}
+		measured = true;
+		const current = collection.getRange(0);
+		const submittedText = current ? model.getValueInRange(current) : '';
+		service.logDictationAccuracy({ dictatedText, submittedText, backend, surface });
+		collection.clear();
+		store.dispose();
+	};
+	// Submitting the chat input clears the editor to empty; treat that (and any
+	// manual clear-all) as the dictated text having left the input.
+	store.add(model.onDidChangeContent(() => {
+		if (model.getValueLength() === 0) {
+			measure();
+		}
+	}));
+	store.add(model.onWillDispose(() => measure()));
+	store.add(editor.onDidDispose(() => measure()));
 }

@@ -7,6 +7,7 @@ import { Disposable, DisposableStore, toDisposable } from '../../../../../base/c
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { VSBuffer, encodeBase64 } from '../../../../../base/common/buffer.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
+import { computeLevenshteinDistance } from '../../../../../base/common/diff/diff.js';
 import { joinPath } from '../../../../../base/common/resources.js';
 import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IContextKey, IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
@@ -103,6 +104,41 @@ type SpeechToTextModelPrepareClassification = {
 	errorCode: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; comment: 'Short error identifier when preparation failed, else empty.' };
 };
 
+type SpeechToTextAccuracyEvent = {
+	backend: string;
+	surface: string;
+	dictatedLength: number;
+	editDistance: number;
+	editRate: number;
+	edited: boolean;
+};
+type SpeechToTextAccuracyClassification = {
+	owner: 'meganrogge';
+	comment: 'Measures how much dictated text the user edited before sending it, as a proxy for transcription accuracy, sliced by backend so backends can be compared. No transcript text is logged, only aggregate character metrics.';
+	backend: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Which transcription backend produced the dictated text (nemo on-device or mai cloud).' };
+	surface: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Which surface dictated: chat, editor, or terminal.' };
+	dictatedLength: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'Character length of the text originally inserted by dictation.' };
+	editDistance: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; isMeasurement: true; comment: 'Levenshtein distance between the dictated text and what the user actually submitted; the number of character corrections.' };
+	editRate: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; isMeasurement: true; comment: 'editDistance normalized by dictatedLength and capped at 1; the fraction of the dictated text that was corrected. Lower is more accurate.' };
+	edited: { classification: 'SystemMetaData'; purpose: 'PerformanceAndHealth'; isMeasurement: true; comment: 'Whether the dictated text was changed at all before submission.' };
+};
+
+/**
+ * A completed dictation whose text has now left the input (submitted or
+ * cleared), measured to compare what was dictated against what was sent. Only
+ * aggregate character metrics are logged; the transcript text never is.
+ */
+export interface IDictationAccuracyMeasurement {
+	/** The text originally inserted by dictation. */
+	readonly dictatedText: string;
+	/** The text occupying the dictated region at the moment it left the input. */
+	readonly submittedText: string;
+	/** Backend that produced the dictated text, captured when dictation finished. */
+	readonly backend: string;
+	/** Surface the dictation ran in, for slicing. */
+	readonly surface: ChatDictationSurface;
+}
+
 export const enum ChatSpeechToTextState {
 	/** Not recording. */
 	Idle = 'idle',
@@ -190,6 +226,16 @@ export interface IChatSpeechToTextService {
 
 	/** Abort an in-progress recording without keeping the transcript. */
 	cancel(): void;
+
+	/** The backend selected for the current/most-recent session (`nemo` or `mai`). */
+	readonly currentBackend: string;
+
+	/**
+	 * Report how much a finished dictation was edited before it was submitted, as
+	 * an accuracy proxy. Computes the edit distance internally and logs only
+	 * aggregate metrics; no transcript text is emitted.
+	 */
+	logDictationAccuracy(measurement: IDictationAccuracyMeasurement): void;
 }
 
 export class ChatSpeechToTextService extends Disposable implements IChatSpeechToTextService {
@@ -325,6 +371,27 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 	/** Read the configured dictation backend, derived from the selected model. */
 	private _getBackend(): DictationBackend {
 		return this._configurationService.getValue<string>(MODEL_SETTING) === MAI_MODEL_ID ? 'mai' : 'nemo';
+	}
+
+	get currentBackend(): string {
+		return this._activeBackend;
+	}
+
+	logDictationAccuracy(measurement: IDictationAccuracyMeasurement): void {
+		const { dictatedText, submittedText, backend, surface } = measurement;
+		if (!dictatedText) {
+			return;
+		}
+		const editDistance = computeLevenshteinDistance(dictatedText, submittedText);
+		const editRate = Math.min(1, editDistance / dictatedText.length);
+		this._telemetryService.publicLog2<SpeechToTextAccuracyEvent, SpeechToTextAccuracyClassification>('chatSpeechToText.accuracy', {
+			backend,
+			surface,
+			dictatedLength: dictatedText.length,
+			editDistance,
+			editRate,
+			edited: editDistance > 0,
+		});
 	}
 
 	/** Voice websocket endpoint used by the MAI backend (shared with Voice Mode). */
