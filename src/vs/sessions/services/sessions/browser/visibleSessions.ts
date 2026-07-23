@@ -806,13 +806,13 @@ export class VisibleSessions extends Disposable {
 		visibleSession = new VisibleSession(session, initialChat, this._resolveInitialClosedChats(session));
 		const visibleSessionRef = visibleSession;
 
-		// Track chat list changes — if the active chat is removed, fall back to last.
+		// Track chat list changes — if the active chat is removed, fall back to the last visible tab.
 		visibleSession.addDisposable(autorun(reader => {
 			const chats = session.chats.read(reader);
 			const activeChat = visibleSessionRef.activeChat.read(reader);
 			if (activeChat && !chats.some(c => this._uriIdentityService.extUri.isEqual(c.resource, activeChat.resource))) {
-				const openChats = visibleSessionRef.openChats.read(reader);
-				const fallback = openChats[openChats.length - 1] ?? session.mainChat.read(reader);
+				const visibleChatTabs = visibleSessionRef.visibleChatTabs.read(reader);
+				const fallback = visibleChatTabs[visibleChatTabs.length - 1] ?? session.mainChat.read(reader);
 				if (fallback) {
 					visibleSessionRef.setActiveChat(fallback);
 				}

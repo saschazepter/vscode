@@ -1285,13 +1285,15 @@ suite('VisibleSession - side chat tabs', () => {
 
 	function createSession(chats: IChat[]) {
 		const base = stubSession('S');
-		const session: ISession = { ...base, chats: constObservable(chats), mainChat: constObservable(chats[0]) };
-		return disposables.add(new VisibleSession(session, chats[0]));
+		const chatsObs = observableValue<readonly IChat[]>('chats', chats);
+		const session: ISession = { ...base, chats: chatsObs, mainChat: constObservable(chats[0]) };
+		const visible = disposables.add(new VisibleSession(session, chats[0]));
+		return { visible, chatsObs };
 	}
 
 	test('openChat keeps a side-chat origin chat available as a normal tab', () => {
 		const chats = [makeChat('main'), makeChat('side', ChatOriginKind.SideChat)];
-		const visible = createSession(chats);
+		const { visible } = createSession(chats);
 
 		visible.openChat(chats[1]);
 
@@ -1300,7 +1302,7 @@ suite('VisibleSession - side chat tabs', () => {
 
 	test('closeChat hides a side-chat origin chat into the reopenable closed set', () => {
 		const chats = [makeChat('main'), makeChat('side', ChatOriginKind.SideChat)];
-		const visible = createSession(chats);
+		const { visible } = createSession(chats);
 
 		visible.closeChat(chats[1]);
 
@@ -1317,12 +1319,88 @@ suite('VisibleSession - side chat tabs', () => {
 		const main = makeChat('main');
 		const second = makeChat('second');
 		const side = makeChat('side', ChatOriginKind.SideChat);
-		const visible = createSession([main, second, side]);
+		const { visible } = createSession([main, second, side]);
 
 		visible.setActiveChat(second);
 		visible.closeChat(second);
 
 		assert.strictEqual(visible.activeChat.get(), side);
+	});
+});
+
+suite('VisibleSessions - active chat removal fallback', () => {
+
+	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
+
+	function createModel() {
+		const uriIdentity = new class extends mock<IUriIdentityService>() {
+			override readonly extUri = extUriBiasedIgnorePathCase;
+		};
+		return disposables.add(new VisibleSessions(
+			session => session.mainChat.get(),
+			() => [],
+			uriIdentity,
+		));
+	}
+
+	function makeChat(id: string, origin?: ChatOriginKind): IChat {
+		return {
+			...stubChat,
+			resource: URI.parse(`test:///chat/${id}`),
+			title: constObservable(id),
+			status: constObservable(SessionStatus.Completed),
+			origin: origin ? { kind: origin } : undefined,
+		};
+	}
+
+	function createSession(chats: IChat[]) {
+		const chatsObs = observableValue<readonly IChat[]>('chats', chats);
+		const base = stubSession('S');
+		const session: ISession = { ...base, chats: chatsObs, mainChat: constObservable(chats[0]) };
+		return { session, chatsObs };
+	}
+
+	test('removing an active side chat falls back to the last visible tab, not an unopened tool chat', () => {
+		const main = makeChat('main');
+		const side = makeChat('side', ChatOriginKind.SideChat);
+		const tool = makeChat('tool', ChatOriginKind.Tool);
+		const { session, chatsObs } = createSession([main, side, tool]);
+		const model = createModel();
+		const visible = model.setActive(session)!;
+
+		visible.setActiveChat(side);
+		chatsObs.set([main, tool], undefined);
+
+		assert.deepStrictEqual({
+			active: visible.activeChat.get().title.get(),
+			open: visible.openChats.get().map(c => c.title.get()),
+			visible: visible.visibleChatTabs.get().map(c => c.title.get()),
+		}, {
+			active: 'main',
+			open: ['main', 'tool'],
+			visible: ['main'],
+		});
+	});
+
+	test('removing an active side chat can fall back to an explicitly opened tool tab', () => {
+		const main = makeChat('main');
+		const side = makeChat('side', ChatOriginKind.SideChat);
+		const tool = makeChat('tool', ChatOriginKind.Tool);
+		const { session, chatsObs } = createSession([main, side, tool]);
+		const model = createModel();
+		const visible = model.setActive(session)!;
+
+		visible.openChat(tool);
+		visible.setActiveChat(side);
+		chatsObs.set([main, tool], undefined);
+
+		assert.deepStrictEqual({
+			active: visible.activeChat.get().title.get(),
+			visible: visible.visibleChatTabs.get().map(c => c.title.get()),
+		}, {
+			active: 'tool',
+			visible: ['main', 'tool'],
+		});
 	});
 });
 

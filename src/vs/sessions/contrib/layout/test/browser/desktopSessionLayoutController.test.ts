@@ -285,7 +285,7 @@ suite('LayoutController (desktop)', () => {
 		);
 	});
 
-	test('[single-pane] gives browser tabs the full side pane and restores docked details afterward', async () => {
+	test('[single-pane] restores the detail panel after a browser tab hides it', async () => {
 		createSinglePaneController({ activateAux: true });
 		await timeout(0);
 		const hasDockedDetails = () => harness.contextKeyService.getContextKeyValue(HasDockedDetailsContext.key);
