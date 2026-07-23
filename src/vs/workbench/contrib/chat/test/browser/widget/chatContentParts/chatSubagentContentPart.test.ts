@@ -698,6 +698,32 @@ suite('ChatSubagentContentPart', () => {
 			});
 		});
 
+		test('forced inactive state freezes serialized subagent timing', () => {
+			const toolSpecificData: IChatSubagentToolInvocationData = {
+				kind: 'subagent',
+				isActive: true,
+				description: 'Restored task',
+				chatResource: 'ahp-chat://subagent/test/restored',
+				startedAt: Date.now() - 5000,
+			};
+			const part = createPart(createMockSerializedToolInvocation({
+				toolSpecificData,
+				isComplete: true,
+			}), createMockRenderContext(true));
+
+			part.markAsInactive(true);
+
+			assert.deepStrictEqual({
+				isActive: toolSpecificData.isActive,
+				hasDuration: typeof toolSpecificData.duration === 'number' && toolSpecificData.duration >= 5000,
+				contextDuration: getOpenChatContext(part)?.duration,
+			}, {
+				isActive: false,
+				hasDuration: true,
+				contextDuration: toolSpecificData.duration,
+			});
+		});
+
 		test('stops immediately when the parent response becomes terminal', () => {
 			const onDidChange = disposables.add(new Emitter<ChatResponseModelChangeReason>());
 			let isComplete = false;

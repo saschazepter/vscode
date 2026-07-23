@@ -3980,16 +3980,23 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		const part = new ChatToolConfirmationCarouselPart(factory, [], revealSubagent, revealSubagentLabel, subAgentInvocationId, agentName);
 		part.addToolInvocation(tool, subAgentInvocationId, agentName, revealSubagent, revealSubagentLabel, toolPart);
 		this._chatToolConfirmationCarousels.set(key, part);
-		this._register(part.onDidChangeActiveSubagent(id => this._onDidChangeActiveConfirmationSubagent.fire(id)));
-		this._onDidChangeActiveConfirmationSubagent.fire(part.activeSubAgentInvocationId);
+		const capturedKey = key;
+		this._register(part.onDidChangeActiveSubagent(id => {
+			if (this._currentSessionKey === capturedKey) {
+				this._onDidChangeActiveConfirmationSubagent.fire(id);
+			}
+		}));
+		if (this._currentSessionKey === capturedKey) {
+			this._onDidChangeActiveConfirmationSubagent.fire(part.activeSubAgentInvocationId);
+		}
 		dom.append(this.chatToolConfirmationCarouselContainer, part.domNode);
 		dom.show(this.chatToolConfirmationCarouselContainer);
 		this.updateToolConfirmationCarouselMaxHeight();
 
-		const capturedKey = key;
 		this._register(Event.once(part.onDidEmpty)(() => {
 			this._chatToolConfirmationCarousels.deleteAndDispose(capturedKey);
 			if (this._currentSessionKey === capturedKey) {
+				this._onDidChangeActiveConfirmationSubagent.fire(undefined);
 				dom.clearNode(this.chatToolConfirmationCarouselContainer);
 				dom.hide(this.chatToolConfirmationCarouselContainer);
 			}
@@ -4033,6 +4040,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		if (key) {
 			this._chatToolConfirmationCarousels.deleteAndDispose(key);
 		}
+		this._onDidChangeActiveConfirmationSubagent.fire(undefined);
 		dom.clearNode(this.chatToolConfirmationCarouselContainer);
 		dom.hide(this.chatToolConfirmationCarouselContainer);
 	}
@@ -4050,6 +4058,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		} else {
 			dom.hide(this.chatToolConfirmationCarouselContainer);
 		}
+		this._onDidChangeActiveConfirmationSubagent.fire(carousel?.activeSubAgentInvocationId);
 	}
 
 	setWorkingSetCollapsed(collapsed: boolean): void {

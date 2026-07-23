@@ -298,6 +298,7 @@ class OpenSubagentChatActionViewItem extends BaseActionViewItem {
 	private _updateDurationLabel(): void {
 		if (!this._durationElement || this._startedAt === undefined) {
 			this._durationElement?.classList.add('hidden');
+			this.updateAriaLabel();
 			return;
 		}
 		const end = this._endedAt ?? Date.now();
@@ -306,6 +307,7 @@ class OpenSubagentChatActionViewItem extends BaseActionViewItem {
 			? localize('chat.subagent.workingDuration', "Working for {0}", duration)
 			: localize('chat.subagent.workedDuration', "Worked for {0}", duration);
 		this._durationElement.classList.remove('hidden');
+		this.updateAriaLabel();
 	}
 
 	private _setStatus(status: SessionStatus | undefined): void {
@@ -324,6 +326,7 @@ class OpenSubagentChatActionViewItem extends BaseActionViewItem {
 			store.add(toDisposable(() => spinner.element.remove()));
 			this._spinner.value = store;
 		}
+		this.updateAriaLabel();
 	}
 
 	private _setResolvedTitle(title: string | undefined): void {
@@ -333,6 +336,7 @@ class OpenSubagentChatActionViewItem extends BaseActionViewItem {
 				this._labelElement.textContent = this._labelText();
 			}
 			this.updateTooltip();
+			this.updateAriaLabel();
 		}
 	}
 
@@ -365,11 +369,19 @@ class OpenSubagentChatActionViewItem extends BaseActionViewItem {
 		const openLabel = this._resolvedTitle
 			? localize('chat.subagent.openChat.aria', "Open subagent chat: {0}", this._resolvedTitle)
 			: this._action.label;
-		const ariaLabel = this._confirmationCount > 0
+		const statusLabel = this._status === SessionStatus.InProgress
+			? localize('chat.subagent.status.working', "Subagent is working")
+			: this._status === SessionStatus.NeedsInput
+				? localize('chat.subagent.status.waiting', "Subagent is waiting for input")
+				: this._status === SessionStatus.Completed
+					? localize('chat.subagent.status.completed', "Subagent completed")
+					: undefined;
+		const confirmationLabel = this._confirmationCount > 0
 			? this._confirmationCount === 1
-				? localize('chat.subagent.openChat.confirmationAria', "{0}. 1 confirmation needed.", openLabel)
-				: localize('chat.subagent.openChat.confirmationsAria', "{0}. {1} confirmations needed.", openLabel, this._confirmationCount)
-			: openLabel;
+				? localize('chat.subagent.confirmationAria', "1 confirmation needed")
+				: localize('chat.subagent.confirmationsAria', "{0} confirmations needed", this._confirmationCount)
+			: undefined;
+		const ariaLabel = [openLabel, statusLabel, confirmationLabel, this._durationElement?.textContent || undefined].filter(value => !!value).join('. ');
 		if (ariaLabel) {
 			this.element.setAttribute('aria-label', ariaLabel);
 		} else {

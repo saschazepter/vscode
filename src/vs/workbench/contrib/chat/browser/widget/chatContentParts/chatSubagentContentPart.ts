@@ -615,7 +615,7 @@ export class ChatSubagentContentPart extends ChatCollapsibleContentPart implemen
 	}
 
 	public markAsInactive(force: boolean = false): void {
-		if (force && this._subagentToolInvocation.kind === 'toolInvocation' && this._subagentToolInvocation.toolSpecificData?.kind === 'subagent') {
+		if (force && this._subagentToolInvocation.toolSpecificData?.kind === 'subagent') {
 			const data = this._subagentToolInvocation.toolSpecificData;
 			data.isActive = false;
 			if (data.duration === undefined && data.startedAt !== undefined) {

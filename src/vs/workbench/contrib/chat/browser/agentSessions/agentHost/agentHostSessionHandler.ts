@@ -3502,10 +3502,9 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				if (subagentChat) {
 					const existing = part.toolSpecificData?.kind === 'subagent' ? part.toolSpecificData : undefined;
 					part.toolSpecificData = {
+						...existing,
 						kind: 'subagent',
 						description: subagentChat.title || existing?.description || (typeof part.invocationMessage === 'string' ? part.invocationMessage : part.invocationMessage.value),
-						agentName: existing?.agentName,
-						result: existing?.result,
 						chatResource: subagentChat.resource.toString(),
 					};
 				}
