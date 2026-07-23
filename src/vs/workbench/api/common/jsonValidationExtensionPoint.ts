@@ -121,7 +121,7 @@ export class JSONValidationExtensionPoint {
 					continue;
 				}
 				for (const catalog of catalogs) {
-					const uri = catalog.url;
+					const uri = catalog?.url;
 					if (!isString(uri)) {
 						collector.error(nls.localize('invalid.jsonValidationCatalogs.url', "'configuration.jsonValidationCatalogs.url' must be a URI or relative path"));
 						continue;
