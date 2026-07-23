@@ -85,6 +85,7 @@ import { handleTerminalCommandPaste, isTerminalCommandInput } from '../../../../
 import { getChatSessionType } from '../../../../workbench/contrib/chat/common/model/chatUri.js';
 import { ChatSpeechToTextState, IChatSpeechToTextService } from '../../../../workbench/contrib/chat/browser/speechToText/chatSpeechToTextService.js';
 import { runDictationShortcut } from '../../../../workbench/contrib/chat/browser/actions/chatSpeechToTextActions.js';
+import { notifyDictationSubmitted } from '../../../../workbench/contrib/chat/browser/speechToText/dictationSession.js';
 import { combineVoiceInput } from '../../../../workbench/contrib/chat/browser/voiceClient/voiceInputUtils.js';
 import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 import { DictationDownloadRing } from '../../../../workbench/contrib/chat/browser/speechToText/dictationDownloadRing.js';
@@ -753,7 +754,7 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		dom.append(toolbar, dom.$('.sessions-chat-toolbar-spacer'));
 
 		// Dictation mic button. Shares the STT service, mic
-		// device, and gating (on-device support + `dictation.enabled`)
+		// device, and gating (backend support + `dictation.enabled`)
 		// with the main chat input; inserts the transcript into this composer's
 		// editor. Placed before the voice controls so dictation leads the
 		// mic-related group.
@@ -849,7 +850,10 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 			updateVisibility();
 		}));
 		this._register(this.configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration('dictation.enabled')) {
+			// Both the enable kill-switch and the model selection can change
+			// availability (e.g. an unsupported on-device platform becomes
+			// configured when switching to the cloud backend).
+			if (e.affectsConfiguration('dictation.enabled') || e.affectsConfiguration('dictation.model')) {
 				updateVisibility();
 			}
 		}));
@@ -883,10 +887,9 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 	}
 
 	/**
-	 * Toggle on-device dictation into this composer's editor. Shared by the mic
-	 * button and the Cmd/Ctrl+I chord ({@link TOGGLE_DICTATION_COMMAND_ID}); the
-	 * shared Dictate action can't target this composer since it isn't an
-	 * `IChatWidget`.
+	 * Toggle dictation into this composer's editor. Shared by the mic button and
+	 * the Cmd/Ctrl+I chord ({@link TOGGLE_DICTATION_COMMAND_ID}); the shared
+	 * Dictate action can't target this composer since it isn't an `IChatWidget`.
 	 */
 	async toggleDictation(): Promise<void> {
 		if (!this._editor) {
@@ -975,6 +978,10 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		if (!this._canSendRequest.get()) {
 			return;
 		}
+
+		// Measure any pending dictation accuracy against the text being sent,
+		// before the editor is cleared below.
+		notifyDictationSubmitted(this._editor);
 
 		const session = this.options.session.get();
 		if (session && await this.chatSubmitRequestHandlerService.tryHandle({

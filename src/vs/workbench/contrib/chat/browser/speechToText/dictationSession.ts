@@ -461,8 +461,10 @@ export function cancelDictation(): void {
 
 /**
  * After a dictation finishes, watch the dictated span until its text leaves the
- * input (the user submits, which clears the editor, or the editor is torn down)
- * and then report how much it was edited in the meantime as an accuracy signal.
+ * input and then report how much it was edited in the meantime as an accuracy
+ * signal. Preferably triggered by an actual submit (see
+ * {@link notifyDictationSubmitted}); otherwise falls back to the input being
+ * cleared or the editor being torn down.
  *
  * The dictated region is followed with a tracked decoration so it stays aligned
  * as the user edits around it; edits typed at its edges are excluded so
@@ -470,6 +472,32 @@ export function cancelDictation(): void {
  * character metrics are logged — never the transcript text. Runs independently
  * of the (already-disposed) dictation session and cleans itself up on measure.
  */
+interface IDictationAccuracyTracker {
+	readonly editor: ICodeEditor;
+	measure(submitted: boolean): void;
+}
+
+/**
+ * Live accuracy trackers awaiting their dictated text to leave the input. Keyed
+ * at module scope (mirroring {@link _active}) so a submit handler can resolve
+ * the tracker(s) for its editor via {@link notifyDictationSubmitted}.
+ */
+const _accuracyTrackers = new Set<IDictationAccuracyTracker>();
+
+/**
+ * Called by an input's submit path to measure any pending dictation accuracy
+ * against the text actually being sent, before the input is cleared. This is
+ * the precise signal; without it a tracker falls back to the clear/teardown
+ * heuristic and reports `submitted: false`.
+ */
+export function notifyDictationSubmitted(editor: ICodeEditor): void {
+	for (const tracker of [..._accuracyTrackers]) {
+		if (tracker.editor === editor) {
+			tracker.measure(true);
+		}
+	}
+}
+
 function trackDictationAccuracy(active: IActiveDictation, dictatedText: string): void {
 	const { editor, inserter, service, surface } = active;
 	const model = editor.getModel();
@@ -487,24 +515,30 @@ function trackDictationAccuracy(active: IActiveDictation, dictatedText: string):
 	}]);
 	const store = new DisposableStore();
 	let measured = false;
-	const measure = () => {
-		if (measured) {
-			return;
-		}
-		measured = true;
-		const current = collection.getRange(0);
-		const submittedText = current ? model.getValueInRange(current) : '';
-		service.logDictationAccuracy({ dictatedText, submittedText, backend, surface });
-		collection.clear();
-		store.dispose();
+	const tracker: IDictationAccuracyTracker = {
+		editor,
+		measure(submitted: boolean) {
+			if (measured) {
+				return;
+			}
+			measured = true;
+			const current = collection.getRange(0);
+			const submittedText = current ? model.getValueInRange(current) : '';
+			service.logDictationAccuracy({ dictatedText, submittedText, backend, surface, submitted });
+			collection.clear();
+			store.dispose();
+			_accuracyTrackers.delete(tracker);
+		},
 	};
-	// Submitting the chat input clears the editor to empty; treat that (and any
-	// manual clear-all) as the dictated text having left the input.
+	// Fallbacks when no submit signal arrives: submitting the chat input clears
+	// the editor to empty (also covers a manual clear-all), and the editor can
+	// be torn down with dictated text still in it.
 	store.add(model.onDidChangeContent(() => {
 		if (model.getValueLength() === 0) {
-			measure();
+			tracker.measure(false);
 		}
 	}));
-	store.add(model.onWillDispose(() => measure()));
-	store.add(editor.onDidDispose(() => measure()));
+	store.add(model.onWillDispose(() => tracker.measure(false)));
+	store.add(editor.onDidDispose(() => tracker.measure(false)));
+	_accuracyTrackers.add(tracker);
 }

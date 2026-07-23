@@ -266,7 +266,10 @@ configurationRegistry.registerConfiguration({
 				'nemotron-speech-streaming-en-0.6b',
 				'mai',
 			],
-			enumItemLabels: ['Nemotron Streaming (English) — On-Device', 'MAI — Cloud'],
+			enumItemLabels: [
+				nls.localize('dictation.model.nemotronStreaming.label', "Nemotron Streaming (English) — On-Device"),
+				nls.localize('dictation.model.mai.label', "MAI — Cloud"),
+			],
 			markdownEnumDescriptions: [
 				nls.localize('dictation.model.nemotronStreaming', "NVIDIA Nemotron streaming RNN-T (English), run on-device through Microsoft Foundry Local. Works offline; no audio leaves the device. Downloaded on first use and cached on disk."),
 				nls.localize('dictation.model.mai', "Cloud transcription through the same Microsoft AI voice service used by Voice Mode. Requires a network connection and GitHub sign-in; audio is streamed to the service."),
@@ -2273,7 +2276,7 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration).
 		// the new default so existing users keep working. Also migrate the setting
 		// from its old `chat.speechToText.model` id to `dictation.model`.
 		key: 'chat.speechToText.model',
-		migrateFn: (value: unknown) => {
+		migrateFn: (value: unknown, accessor) => {
 			const legacyModelIds = [
 				'onnx-community/whisper-tiny',
 				'onnx-community/whisper-base',
@@ -2283,20 +2286,32 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration).
 			const migrated = (typeof value === 'string' && legacyModelIds.includes(value))
 				? 'nemotron-speech-streaming-en-0.6b'
 				: value;
-			return [
-				['chat.speechToText.model', { value: undefined }],
-				['dictation.model', { value: migrated }],
-			];
+			const pairs: ConfigurationKeyValuePairs = [['chat.speechToText.model', { value: undefined }]];
+			// Never clobber an explicitly configured new key (e.g. after settings
+			// sync brought both keys across versions).
+			if (accessor('dictation.model') === undefined) {
+				pairs.push(['dictation.model', { value: migrated }]);
+			}
+			return pairs;
 		}
 	},
 	{
 		// Dictation settings were regrouped under the top-level `dictation.*`
 		// namespace (they govern dictation across chat, editor, and terminal).
 		key: 'chat.speechToText.enabled',
-		migrateFn: (value: unknown) => ([
-			['chat.speechToText.enabled', { value: undefined }],
-			['dictation.enabled', { value }],
-		])
+		migrateFn: (value: unknown, accessor) => {
+			const pairs: ConfigurationKeyValuePairs = [['chat.speechToText.enabled', { value: undefined }]];
+			if (accessor('dictation.enabled') === undefined) {
+				pairs.push(['dictation.enabled', { value }]);
+			}
+			return pairs;
+		}
+	},
+	{
+		// `chat.speechToText.mode` was removed (the shortcut is always tap-toggle /
+		// hold-to-talk); clear it so it does not linger as an unknown setting.
+		key: 'chat.speechToText.mode',
+		migrateFn: () => ([['chat.speechToText.mode', { value: undefined }]])
 	},
 ]);
 
