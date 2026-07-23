@@ -121,6 +121,28 @@ suite('agentPeerChats', () => {
 		});
 	});
 
+	test('injects completed local-turn context even when the inherited transcript already contains the concrete provider anchor', () => {
+		const sourceContext = 'User request:\nsource question\n\nAgent response:\nsource answer\n\n---\n\nUser request:\n!command';
+		const localSideChat: IPersistedSideChat = {
+			source: 'ahp-chat://default/source',
+			turnId: 'local-turn',
+			providerAnchorTurnId: sourceTurn.id,
+			inheritedTurnCount: 1,
+			context: sourceContext,
+		};
+		const prepared = prepareSideChatPrompt('Explain the branch', [sourceTurn], localSideChat);
+
+		assert.deepStrictEqual({
+			prepared,
+			localQuestionCount: countOccurrences(prepared, 'User request:\n!command'),
+			sourceQuestionCount: countOccurrences(prepared, 'User request:\nsource question'),
+		}, {
+			prepared: injectSideChatContext('Explain the branch', undefined, sourceContext),
+			localQuestionCount: 1,
+			sourceQuestionCount: 1,
+		});
+	});
+
 	test('strips hidden context even when the source text contains the legacy delimiter', () => {
 		const prepared = prepareSideChatPrompt('Visible prompt', [], {
 			...sideChat,

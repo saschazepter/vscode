@@ -35,7 +35,7 @@ import type { ChatPendingMessageSetAction, ChatTurnStartedAction } from '../comm
 import { ISessionGitHubState, ISessionGitState, MessageKind, ResponsePartKind, SESSION_META_GITHUB_KEY, SESSION_META_GIT_KEY, readSessionSpawnDepth, withSessionSpawnDepth, SessionStatus, ToolCallStatus, ToolResultContentType, AH_META_WORKSPACELESS_DB_KEY, AH_META_IS_ARCHIVED_DB_KEY, AH_META_IS_DONE_DB_KEY, buildChatUri, buildDefaultChatUri, buildResourceWatchChannelUri, buildSubagentChatUri, buildSubagentSessionUriPrefix, hostBuildInfoFromProduct, isAhpChatChannel, isDefaultChatUri, isSubagentChatUri, isSubagentSession, parseDefaultChatUri, parseRequiredSessionUriFromChatUri, parseResourceWatchChannelUri, parseSubagentSessionUri, readSessionGitState, readSessionWorkspaceless, withSessionGitHubState, withSessionGitState, withSessionWorkspaceless, type SessionConfigState, type SessionSummary, type ToolResultSubagentContent, type Turn } from '../common/state/sessionState.js';
 import { readToolCallMeta } from '../common/meta/agentToolCallMeta.js';
 import { IProductService } from '../../product/common/productService.js';
-import { buildSideChatSourceContext, getSideChatPartialResponse } from './agentPeerChats.js';
+import { buildBoundedSideChatSourceContext, getSideChatPartialResponse } from './agentPeerChats.js';
 import { AgentConfigurationService, IAgentConfigurationService } from './agentConfigurationService.js';
 import { AgentHostTerminalManager, IAgentHostTerminalManager } from './agentHostTerminalManager.js';
 import { ISessionDbUriFields, parseSessionDbUri } from './shared/fileEditTracker.js';
@@ -1191,14 +1191,11 @@ export class AgentService extends Disposable implements IAgentService {
 				sideChat: {
 					...options.sideChat,
 					source: URI.parse(resolvedSideChat.sourceChat),
+					...(resolvedSideChat.providerAnchorTurnId ? { providerAnchorTurnId: resolvedSideChat.providerAnchorTurnId } : {}),
 					...(resolvedSideChat.sourceContext ? { sourceContext: resolvedSideChat.sourceContext } : {}),
 					...(resolvedSideChat.partialResponse ? { partialResponse: resolvedSideChat.partialResponse } : {}),
 				},
 			};
-			const concreteTurnId = this._localTurns.resolveConcreteTurnId(resolvedSideChat.sourceChat, options.sideChat.turnId);
-			if (concreteTurnId !== undefined) {
-				createOptions = { ...createOptions, sideChat: { ...createOptions.sideChat!, turnId: concreteTurnId } };
-			}
 		}
 		if (options?.fork) {
 			const sourceKey = options.fork.source.toString();
@@ -1282,7 +1279,7 @@ export class AgentService extends Disposable implements IAgentService {
 	 * origin. Throws when the source chat is not part of `session` or when the
 	 * referenced completed or active turn is absent.
 	 */
-	private _resolveSideChatOrigin(session: URI, sideChat: IAgentCreateChatSideChatSource): { origin: ChatOrigin; sourceChat: string; sourceContext?: string; partialResponse?: string } {
+	private _resolveSideChatOrigin(session: URI, sideChat: IAgentCreateChatSideChatSource): { origin: ChatOrigin; sourceChat: string; providerAnchorTurnId?: string; sourceContext?: string; partialResponse?: string } {
 		const sessionKey = session.toString();
 		const sourceKey = sideChat.source.toString();
 		const { sourceChatKey, sourceSessionKey, sourceState } = this._resolveSessionSourceChat(session, sideChat.source);
@@ -1294,11 +1291,16 @@ export class AgentService extends Disposable implements IAgentService {
 		}
 		// The bounded turn must be a real completed or currently-active turn.
 		const activeTurn = sourceState?.activeTurn?.id === sideChat.turnId ? sourceState.activeTurn : undefined;
-		if (!sourceState?.turns.some(t => t.id === sideChat.turnId) && !activeTurn) {
+		const hasCompletedTurn = sourceState?.turns.some(t => t.id === sideChat.turnId) ?? false;
+		if (!hasCompletedTurn && !activeTurn) {
 			throw new Error(`[AgentService] createChat: side chat source turn ${sideChat.turnId} not found in ${sourceKey}`);
 		}
+		const isLocalSourceTurn = !activeTurn && this._localTurns.isLocal(sourceChatKey, sideChat.turnId);
+		const providerAnchorTurnId = isLocalSourceTurn ? this._localTurns.resolveConcreteTurnId(sourceChatKey, sideChat.turnId) : undefined;
 		const partialResponse = getSideChatPartialResponse(activeTurn);
-		const sourceContext = activeTurn ? buildSideChatSourceContext(sourceState?.turns ?? [], activeTurn) : undefined;
+		const sourceContext = (activeTurn || isLocalSourceTurn)
+			? buildBoundedSideChatSourceContext(sourceState?.turns ?? [], sideChat.turnId, activeTurn)
+			: undefined;
 		return {
 			origin: {
 				kind: ChatOriginKind.SideChat,
@@ -1306,6 +1308,7 @@ export class AgentService extends Disposable implements IAgentService {
 				turnId: sideChat.turnId,
 			},
 			sourceChat: sourceChatKey,
+			...(providerAnchorTurnId ? { providerAnchorTurnId } : {}),
 			...(sourceContext ? { sourceContext } : {}),
 			...(partialResponse ? { partialResponse } : {}),
 		};

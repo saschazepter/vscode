@@ -2254,11 +2254,12 @@ export class CopilotAgent extends Disposable implements IAgent {
 				if (!sourceEntry) {
 					throw new Error(`[Copilot] createChat side chat: source chat ${options.sideChat.source.toString()} not found`);
 				}
-				const forked = await this._forkSdkChat(client, sourceEntry, options.sideChat.turnId, this._sessionDataService.getSessionDataDir(chat));
+				const forked = await this._forkSdkChat(client, sourceEntry, options.sideChat.providerAnchorTurnId ?? options.sideChat.turnId, this._sessionDataService.getSessionDataDir(chat));
 				sdkSessionId = forked.sessionId;
 				sideChat = {
 					source: options.sideChat.source.toString(),
 					turnId: options.sideChat.turnId,
+					...(options.sideChat.providerAnchorTurnId ? { providerAnchorTurnId: options.sideChat.providerAnchorTurnId } : {}),
 					inheritedTurnCount: forked.inheritedTurnCount,
 					...(options.sideChat.sourceContext ? { context: options.sideChat.sourceContext } : {}),
 					...(options.sideChat.partialResponse ? { partialResponse: options.sideChat.partialResponse } : {}),

@@ -1256,7 +1256,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 				// chat rather than inheriting the whole source backend.
 				sdkSessionId = (await this._forkChat(session, options.fork))?.sessionId;
 			} else if (options?.sideChat) {
-				const forked = await this._forkChat(session, options.sideChat);
+				const forked = await this._forkChat(session, { source: options.sideChat.source, turnId: options.sideChat.providerAnchorTurnId ?? options.sideChat.turnId });
 				sdkSessionId = forked?.sessionId;
 				const fallbackContext = options.sideChat.sourceContext ?? (!forked ? this._buildSideChatContext(session, options.sideChat.source, options.sideChat.turnId) : undefined);
 				if (!forked && !fallbackContext && !options.sideChat.partialResponse) {
@@ -1265,6 +1265,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 				sideChat = {
 					source: options.sideChat.source.toString(),
 					turnId: options.sideChat.turnId,
+					...(options.sideChat.providerAnchorTurnId ? { providerAnchorTurnId: options.sideChat.providerAnchorTurnId } : {}),
 					inheritedTurnCount: forked?.inheritedTurnCount ?? 0,
 					...(fallbackContext ? { context: fallbackContext } : {}),
 					...(options.sideChat.partialResponse ? { partialResponse: options.sideChat.partialResponse } : {}),

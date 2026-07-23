@@ -3555,6 +3555,85 @@ suite('CopilotAgent', () => {
 			}
 		});
 
+		test('createChat side chat preserves a local source turn id while forking from the concrete provider anchor', async () => {
+			const sessionDataService = disposables.add(new TestSessionDataService());
+			const agent = createTestAgent(disposables, { sessionDataService, copilotClient: new TestCopilotClient([]) });
+			try {
+				await agent.authenticate('https://api.github.com', 'token');
+				const session = AgentSession.uri('copilotcli', 'side-local-peer');
+				await agent.createSession({ session, workingDirectory: URI.file('/workspace') });
+				const sourceTurn: Turn = {
+					id: 't1',
+					state: TurnState.Complete,
+					message: { text: 'source', origin: { kind: MessageKind.User } },
+					responseParts: [],
+					usage: undefined,
+				};
+				const sourceContext = 'User request:\nsource\n\nAgent response:\nsource answer\n\n---\n\nUser request:\n!command';
+				const injectedPrompt = injectSideChatContext('side', undefined, sourceContext);
+				const sideTurn: Turn = {
+					id: 't2',
+					state: TurnState.Complete,
+					message: { text: injectedPrompt, origin: { kind: MessageKind.User } },
+					responseParts: [],
+					usage: undefined,
+				};
+				const source = makeFakeChatSession(session, 'source-sdk', async () => [sourceTurn]);
+				setDefaultSessionStub(agent, AgentSession.id(session), source.fake);
+				const internals = agent as unknown as ChatInternals;
+				let forkTurnId: string | undefined;
+				internals._forkSdkChat = async (_client, _sourceEntry, turnId) => {
+					forkTurnId = turnId;
+					return { sessionId: 'side-sdk-id', inheritedTurnCount: 1 };
+				};
+				let messageReadCount = 0;
+				let sideRecorder: IFakeChatRecorder | undefined;
+				internals._createAgentSession = launchPlan => {
+					const side = makeFakeChatSession(session, launchPlan.sessionId, async () => {
+						messageReadCount++;
+						return messageReadCount <= 2 ? [sourceTurn] : [sourceTurn, sideTurn];
+					}, launchPlan.shellManager);
+					sideRecorder = side.rec;
+					return side.fake;
+				};
+
+				const chatUri = URI.parse(buildChatUri(session, 'peer-side-local'));
+				const result = await agent.chats.createChat(chatUri, {
+					sideChat: {
+						source: URI.parse(buildDefaultChatUri(session)),
+						turnId: 'local-1',
+						providerAnchorTurnId: 't1',
+						sourceContext,
+					},
+				});
+				await agent.chats.sendMessage(chatUri, 'side', undefined, undefined, 't2');
+				await agent.chats.sendMessage(chatUri, 'follow-up', undefined, undefined, 't3');
+				const turns = await agent.chats.getMessages(chatUri);
+
+				assert.deepStrictEqual({
+					forkTurnId,
+					sentPrompts: sideRecorder?.sends.map(send => send.prompt),
+					turns: turns.map(turn => turn.id),
+					visiblePrompt: turns[0]?.message.text,
+					sideChat: result ? JSON.parse(result.providerData!).sideChat : undefined,
+				}, {
+					forkTurnId: 't1',
+					sentPrompts: [injectedPrompt, 'follow-up'],
+					turns: ['t2'],
+					visiblePrompt: 'side',
+					sideChat: {
+						source: buildDefaultChatUri(session),
+						turnId: 'local-1',
+						providerAnchorTurnId: 't1',
+						inheritedTurnCount: 1,
+						context: sourceContext,
+					},
+				});
+			} finally {
+				await disposeAgent(agent);
+			}
+		});
+
 		test('sendMessage routes a turn to the targeted peer chat only', async () => {
 			const agent = createTestAgent(disposables);
 			try {

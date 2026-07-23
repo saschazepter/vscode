@@ -945,6 +945,8 @@ export interface IAgentCreateChatSideChatSource {
 	readonly source: URI;
 	/** Turn ID in the source chat the side chat records as its provenance. */
 	readonly turnId: string;
+	/** Concrete provider turn ID to fork/resume from when `turnId` names a host-only local turn. */
+	readonly providerAnchorTurnId?: string;
 	/** Bounded source-chat context captured from host state when the provider transcript lags. */
 	readonly sourceContext?: string;
 	/** User-visible assistant text captured while the source turn was active. */

@@ -16,6 +16,7 @@ export const MAX_SIDE_CHAT_CONTEXT_CHARS = 20_000;
 export interface IPersistedSideChat {
 	readonly source: string;
 	readonly turnId: string;
+	readonly providerAnchorTurnId?: string;
 	readonly inheritedTurnCount: number;
 	readonly partialResponse?: string;
 	readonly context?: string;
@@ -50,6 +51,14 @@ export function getSideChatPartialResponse(activeTurn: ActiveTurn | undefined): 
 	return responseMarkdown ? truncateMiddle(responseMarkdown, MAX_SIDE_CHAT_CONTEXT_CHARS) : undefined;
 }
 
+export function buildBoundedSideChatSourceContext(turns: readonly Turn[], turnId: string, activeTurn?: ActiveTurn): string | undefined {
+	if (activeTurn?.id === turnId) {
+		return buildSideChatSourceContext(turns, activeTurn);
+	}
+	const turnIndex = turns.findIndex(turn => turn.id === turnId);
+	return turnIndex === -1 ? undefined : buildSideChatSourceContext(turns.slice(0, turnIndex + 1));
+}
+
 export function injectSideChatContext(prompt: string, partialResponse?: string, sourceContext?: string): string {
 	const context = [SIDE_CHAT_GUIDANCE];
 	if (sourceContext) {
@@ -77,11 +86,11 @@ export function prepareSideChatPrompt(prompt: string, turns: readonly Turn[], si
 	if (!sideChat || turns.length > sideChat.inheritedTurnCount) {
 		return prompt;
 	}
-	const sourceTurn = turns.find(turn => turn.id === sideChat.turnId);
-	const sourceContext = sourceTurn ? undefined : sideChat.context;
+	const selectedSourceTurn = turns.find(turn => turn.id === sideChat.turnId);
+	const sourceContext = selectedSourceTurn ? undefined : sideChat.context;
 	let partialResponse = sideChat.partialResponse;
 	if (partialResponse) {
-		const inheritedResponse = sourceTurn ? renderResponseMarkdown(sourceTurn.responseParts) : '';
+		const inheritedResponse = selectedSourceTurn ? renderResponseMarkdown(selectedSourceTurn.responseParts) : '';
 		if (inheritedResponse.includes(partialResponse)) {
 			partialResponse = undefined;
 		}
@@ -180,16 +189,18 @@ export function decodeProviderData(providerData: string): IPersistedChat | undef
 		const validModel = model && typeof model === 'object' && typeof (model as { id?: unknown }).id === 'string'
 			? model as ModelSelection
 			: undefined;
-		const sideChat = value.sideChat as { source?: unknown; turnId?: unknown; inheritedTurnCount?: unknown; partialResponse?: unknown; context?: unknown } | undefined;
+		const sideChat = value.sideChat as { source?: unknown; turnId?: unknown; providerAnchorTurnId?: unknown; inheritedTurnCount?: unknown; partialResponse?: unknown; context?: unknown } | undefined;
 		const validSideChat = sideChat
 			&& typeof sideChat.source === 'string'
 			&& typeof sideChat.turnId === 'string'
+			&& (sideChat.providerAnchorTurnId === undefined || typeof sideChat.providerAnchorTurnId === 'string')
 			&& typeof sideChat.inheritedTurnCount === 'number'
 			&& (sideChat.partialResponse === undefined || typeof sideChat.partialResponse === 'string')
 			&& (sideChat.context === undefined || typeof sideChat.context === 'string')
 			? {
 				source: sideChat.source,
 				turnId: sideChat.turnId,
+				...(sideChat.providerAnchorTurnId ? { providerAnchorTurnId: sideChat.providerAnchorTurnId } : {}),
 				inheritedTurnCount: sideChat.inheritedTurnCount,
 				...(sideChat.partialResponse ? { partialResponse: sideChat.partialResponse } : {}),
 				...(sideChat.context ? { context: sideChat.context } : {}),

@@ -3269,6 +3269,50 @@ suite('AgentService (node dispatcher)', () => {
 			});
 		});
 
+		test('creates a side chat from a completed local turn without losing its stable source turn identity', async () => {
+			const db = new TestSessionDatabase();
+			const localService = disposables.add(new AgentService(new NullLogService(), fileService, createSessionDataService(db), { _serviceBrand: undefined } as IProductService, createNoopGitService()));
+			const agent = disposables.add(new SideChatAgent('copilot'));
+			localService.registerProvider(agent);
+			const { session } = await agent.createSession();
+			const sessionResource = (await agent.listSessions())[0].session;
+			const defaultChatUri = buildDefaultChatUri(sessionResource.toString());
+			agent.sessionMessages = [
+				{ type: 'message', session, role: 'user', messageId: 'real-1', content: 'first question', toolRequests: [] },
+				{ type: 'message', session, role: 'assistant', messageId: 'real-1-a', content: 'first answer', toolRequests: [] },
+			];
+			const localTurn: Turn = {
+				id: 'local-1',
+				state: TurnState.Complete,
+				message: { text: '!command', origin: { kind: MessageKind.User } },
+				responseParts: [],
+				usage: undefined,
+			};
+			await db.insertLocalTurn({ turnId: 'local-1', chatUri: defaultChatUri, anchorTurnId: 'real-1', seq: 1, payload: JSON.stringify(localTurn) });
+			await localService.restoreSession(sessionResource);
+			const chatUri = URI.parse(buildChatUri(sessionResource, 'side-local'));
+
+			await localService.createChat(sessionResource, chatUri, { sideChat: { source: URI.parse(defaultChatUri), turnId: 'local-1' } });
+
+			assert.deepStrictEqual({
+				origin: localService.stateManager.getChatState(chatUri.toString())?.origin,
+				sideChatForwarded: agent.lastCreateOptions?.sideChat && {
+					source: agent.lastCreateOptions.sideChat.source.toString(),
+					turnId: agent.lastCreateOptions.sideChat.turnId,
+					providerAnchorTurnId: agent.lastCreateOptions.sideChat.providerAnchorTurnId,
+					sourceContext: agent.lastCreateOptions.sideChat.sourceContext,
+				},
+			}, {
+				origin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turnId: 'local-1' },
+				sideChatForwarded: {
+					source: defaultChatUri,
+					turnId: 'local-1',
+					providerAnchorTurnId: 'real-1',
+					sourceContext: 'User request:\nfirst question\n\nAgent response:\nfirst answer\n\n---\n\nUser request:\n!command',
+				},
+			});
+		});
+
 		test('creates a side chat from the current active turn', async () => {
 			const agent = disposables.add(new SideChatAgent('copilot'));
 			service.registerProvider(agent);
