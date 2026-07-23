@@ -21,7 +21,7 @@ interface INonPtyShellStream {
 	readonly uri: string;
 	readonly title: string;
 	created: boolean;
-	/** The last cumulative snapshot written to the channel (cleared on finalize). */
+	/** The last cumulative snapshot written to the channel. */
 	lastEmitted: string;
 	finalized: boolean;
 }
@@ -32,7 +32,7 @@ interface INonPtyShellStream {
  * currently available structured-enough signal that a successful tool call
  * handed a still-running process to the background shell manager.
  */
-export function parseBackgroundShellId(text: string | undefined): string | undefined {
+function parseBackgroundShellId(text: string | undefined): string | undefined {
 	if (!text) {
 		return undefined;
 	}
@@ -45,21 +45,25 @@ export function parseBackgroundShellId(text: string | undefined): string | undef
 }
 
 /**
- * Extracts the process identity and exit code from the runtime's stable text
- * fallback. The external SDK bridge currently removes the equivalent
- * `shell_exit` content block for compatibility with older SDK clients.
+ * Extracts the command result from the runtime's stable text fallback. The
+ * external SDK bridge currently removes the equivalent `shell_exit` content
+ * block for compatibility with older SDK clients.
  */
-export function parseCompletedShell(text: string | undefined): { shellId: string; exitCode: number } | undefined {
+function parseCompletedShell(text: string | undefined): TerminalCommandResult | undefined {
 	const match = text && /<shellId: ([^>\r\n]+) completed with exit code (-?\d+)>\s*$/.exec(text);
 	if (!match) {
 		return undefined;
 	}
-	return { shellId: match[1], exitCode: Number(match[2]) };
+	return {
+		exitCode: Number(match[2]),
+		preview: text.slice(0, match.index),
+	};
 }
 
 export interface INonPtyShellToolCompletion {
 	readonly uri: string;
 	readonly isBackground: boolean;
+	readonly result?: TerminalCommandResult;
 }
 
 /**
@@ -165,23 +169,20 @@ export class NonPtyShellTerminalStreams extends Disposable {
 			return { uri: stream.uri, isBackground: true };
 		}
 
-		const completedShell = shellExit
-			? { shellId: shellExit.shellId, exitCode: shellExit.result.exitCode }
-			: parseCompletedShell(toolOutput);
-		if (!completedShell) {
+		const result = shellExit?.result ?? parseCompletedShell(toolOutput);
+		if (!result) {
 			return stream.created ? { uri: stream.uri, isBackground: false } : undefined;
 		}
-		this._toolCallIdByShellId.set(completedShell.shellId, toolCallId);
 		if (!stream.created) {
 			this._createTerminal(toolCallId, stream);
 		}
-		if (shellExit?.result.preview !== undefined) {
-			this.append(toolCallId, shellExit.result.preview);
+		if (result.preview !== undefined) {
+			this.append(toolCallId, result.preview);
 		}
-		if (completedShell.exitCode !== undefined) {
-			this._finalize(stream, completedShell.exitCode);
+		if (result.exitCode !== undefined) {
+			this._finalize(stream, result.exitCode);
 		}
-		return { uri: stream.uri, isBackground: false };
+		return { uri: stream.uri, isBackground: false, result };
 	}
 
 	finalizeShell(shellId: string, exitCode: number | undefined): void {
@@ -200,7 +201,6 @@ export class NonPtyShellTerminalStreams extends Disposable {
 			return;
 		}
 		stream.finalized = true;
-		stream.lastEmitted = '';
 		this._terminalManager.finalizeOutputTerminal(stream.uri, exitCode);
 	}
 

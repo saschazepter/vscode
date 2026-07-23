@@ -42,7 +42,7 @@ import { isAgentFeedbackAnnotationsAttachment, renderAgentFeedbackAnnotationsAtt
 import { ISessionDatabase, ISessionDataService, SESSION_ATTACHMENTS_DIRNAME } from '../../common/sessionDataService.js';
 import { MessageAttachmentKind, ToolCallContributorKind, type FileEdit, type MessageAttachment } from '../../common/state/protocol/state.js';
 import { ActionType, isChatAction, type ChatAction, type SessionAction } from '../../common/state/sessionActions.js';
-import { MessageKind, ResponsePartKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, ToolCallConfirmationReason, ToolCallRiskAssessmentKind, ToolCallRiskAssessmentStatus, ToolCallStatus, ToolResultContentType, buildSubagentSessionUri, getToolSubagentContent, isDefaultChatUri, isSubagentSession, type PendingMessage, type ChatInputAnswer, type ChatInputOption, type ChatInputQuestion, type ChatInputRequest, type ToolCallResult, type ToolResultContent, type Turn, type UsageInfo, type UsageInfoMeta } from '../../common/state/sessionState.js';
+import { MessageKind, ResponsePartKind, ChatInputAnswerState, ChatInputAnswerValueKind, ChatInputQuestionKind, ChatInputResponseKind, ToolCallConfirmationReason, ToolCallRiskAssessmentKind, ToolCallRiskAssessmentStatus, ToolCallStatus, ToolResultContentType, buildSubagentSessionUri, getToolSubagentContent, isDefaultChatUri, isSubagentSession, type PendingMessage, type ChatInputAnswer, type ChatInputOption, type ChatInputQuestion, type ChatInputRequest, type ToolCallResult, type ToolResultContent, type ToolResultTerminalContent, type Turn, type UsageInfo, type UsageInfoMeta } from '../../common/state/sessionState.js';
 import { IAgentConfigurationService } from '../agentConfigurationService.js';
 import type { IExitPlanModeResponse } from './copilotAgent.js';
 import { CopilotSessionWrapper } from './copilotSessionWrapper.js';
@@ -3302,20 +3302,24 @@ export class CopilotAgentSession extends Disposable {
 			const shellExit = appendSdkToolResultContent(content, e.data.result?.contents, { toolCallId: e.data.toolCallId, title: tracked.displayName });
 			if (isShellTool(tracked.toolName) && !ptyTerminalUri) {
 				const completion = this._nonPtyShellTerminals.completeToolCall(e.data.toolCallId, toolOutput, shellExit);
+				if (completion?.isBackground) {
+					tracked.meta = { ...tracked.meta, terminalIsBackground: true };
+				}
 				if (completion) {
-					tracked.meta = { ...tracked.meta, terminalIsBackground: completion.isBackground };
+					const terminalIndex = content.findIndex(c => c.type === ToolResultContentType.Terminal);
+					if (terminalIndex === -1) {
+						content.push({
+							type: ToolResultContentType.Terminal,
+							resource: completion.uri,
+							title: tracked.displayName,
+							isPty: false,
+							...(completion.result ? { result: completion.result } : {}),
+						});
+					} else if (completion.result) {
+						const terminalBlock = content[terminalIndex] as ToolResultTerminalContent;
+						content[terminalIndex] = { ...terminalBlock, result: completion.result };
+					}
 				}
-				if (completion && !content.some(c => c.type === ToolResultContentType.Terminal)) {
-					content.push({
-						type: ToolResultContentType.Terminal,
-						resource: completion.uri,
-						title: tracked.displayName,
-						isPty: false,
-					});
-				}
-			}
-			if (shellExit) {
-				this._nonPtyShellTerminals.finalizeShell(shellExit.shellId, shellExit.result.exitCode);
 			}
 
 			const command = isString(tracked.parameters?.command) ? tracked.parameters.command : undefined;

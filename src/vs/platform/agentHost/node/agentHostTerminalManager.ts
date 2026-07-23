@@ -179,7 +179,6 @@ interface IManagedTerminal {
  * to subscribers with `isPty: false` so clients skip VT parsing.
  */
 interface IOutputTerminal {
-	readonly uri: string;
 	title: string;
 	content: TerminalContentPart[];
 	contentSize: number;
@@ -832,7 +831,6 @@ export class AgentHostTerminalManager extends Disposable implements IAgentHostTe
 			throw new Error(`Terminal already exists: ${uri}`);
 		}
 		this._outputTerminals.set(uri, {
-			uri,
 			title: options.title,
 			content: [],
 			contentSize: 0,

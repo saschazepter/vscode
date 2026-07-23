@@ -424,7 +424,7 @@ export function isSubagentTool(tc: ToolCallState): boolean {
  * Finds a terminal content block in a tool call's content array.
  * Returns the terminal URI if found.
  */
-export function getTerminalContentUri(content: ToolResultContent[] | undefined): string | undefined {
+function getTerminalContentUri(content: ToolResultContent[] | undefined): string | undefined {
 	return getTerminalContent(content)?.resource;
 }
 

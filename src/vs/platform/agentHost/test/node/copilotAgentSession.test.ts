@@ -2989,7 +2989,7 @@ suite('CopilotAgentSession', () => {
 				},
 				{ type: ToolResultContentType.Text, text: 'tick 1\ntick 2\n' },
 			]);
-			assert.strictEqual(completed._meta?.['terminalIsBackground'], false);
+			assert.strictEqual(completed._meta?.['terminalIsBackground'], undefined);
 		});
 
 		test('tool partial results reset the channel when the runtime rewrites its snapshot', async () => {
@@ -3130,7 +3130,14 @@ suite('CopilotAgentSession', () => {
 
 			assert.deepStrictEqual(terminalManager.outputTerminalsFinalized, [{ uri: terminalUri, exitCode: 127 }]);
 			const completed = getActions(signals).find(action => action.type === ActionType.ChatToolCallComplete) as ChatToolCallCompleteAction;
-			assert.strictEqual(completed._meta?.['terminalIsBackground'], false);
+			assert.ok(completed.result.content?.some(content =>
+				content.type === ToolResultContentType.Terminal
+				&& content.resource === terminalUri
+				&& content.isPty === false
+				&& content.result?.exitCode === 127
+				&& content.result.preview === '/bin/bash: eci: command not found\n'
+			));
+			assert.strictEqual(completed._meta?.['terminalIsBackground'], undefined);
 		});
 
 		test('background shell keeps streaming after tool completion and exits on shell_completed', async () => {
