@@ -99,7 +99,7 @@ import { ChatInputModelSelectionController, IChatInputModelSelectionRuntime } fr
 import { ChatModelConfigurationStore } from './chatModelConfigurationStore.js';
 import { ChatModelSelectionDiagnostics } from './chatModelSelectionDiagnostics.js';
 import { deserializeUntitledInputAttachments, deserializeUntitledInputState, serializeUntitledInputAttachments, serializeUntitledInputState } from './chatInputStatePersistence.js';
-import { IChatModelInputState, IChatRequestModeInfo, IInputModel, logChangesToStateModel } from '../../../common/model/chatModel.js';
+import { IChatModelInputState, IChatRequestModeInfo, IChatRequestModel, IInputModel, logChangesToStateModel } from '../../../common/model/chatModel.js';
 import { filterModelsForSession, hasModelsTargetingSession, isModelHiddenInPicker, mergeModelsWithCache, shouldResetOnModelListChange } from './chatInputModelUtils.js';
 import { getChatSessionType, LocalChatSessionUri } from '../../../common/model/chatUri.js';
 import { IChatResponseViewModel, isResponseVM } from '../../../common/model/chatViewModel.js';
@@ -2695,10 +2695,20 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 
 		const store = new DisposableStore();
 		this._contextUsageDisposables.value = store;
+		let lastRequest = model.lastRequest;
+		const observePreviousResponse = (request: IChatRequestModel | undefined) => {
+			if (request?.response) {
+				store.add(request.response.onDidChange(() => this.contextUsageWidget?.updateSessionCost(model.sessionCost)));
+			}
+		};
 
 		store.add(model.onDidChange(e => {
-			if (e.kind === 'addRequest' || e.kind === 'completedRequest') {
-				this.contextUsageWidget?.update(model.lastRequest, model.sessionCost);
+			if (e.kind === 'addRequest') {
+				observePreviousResponse(lastRequest);
+				lastRequest = e.request;
+				this.contextUsageWidget?.update(model.lastRequest);
+			} else if (e.kind === 'completedRequest') {
+				this.contextUsageWidget?.update(model.lastRequest);
 			}
 		}));
 
@@ -2707,12 +2717,12 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		store.add(this.languageModelsService.onDidChangeLanguageModels(() => {
 			const lastRequest = model.lastRequest;
 			if (lastRequest?.modelId) {
-				this.contextUsageWidget?.update(lastRequest, model.sessionCost);
+				this.contextUsageWidget?.update(lastRequest);
 			}
 		}));
 
 		// Initial update
-		this.contextUsageWidget.update(model.lastRequest, model.sessionCost);
+		this.contextUsageWidget.update(model.lastRequest);
 	}
 
 	private handleViewModelChange(e: IChatWidgetViewModelChangeEvent): void {
