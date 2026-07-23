@@ -10,7 +10,7 @@ import { URI } from '../../base/common/uri.js';
 import { AuthenticateParams, AuthenticateResult, IAgentConnection } from '../../platform/agentHost/common/agentService.js';
 import { RemoteAgentHostConnectionStatus } from '../../platform/agentHost/common/remoteAgentHostService.js';
 import { ResolveSessionConfigResult, SessionConfigValueItem } from '../../platform/agentHost/common/state/protocol/commands.js';
-import { AgentCustomization, Customization, McpServerStatus, RootConfigState, type McpServerState } from '../../platform/agentHost/common/state/protocol/state.js';
+import { AgentCustomization, Customization, CustomizationType, McpServerStatus, RootConfigState, type McpServerState } from '../../platform/agentHost/common/state/protocol/state.js';
 import { ISessionsProvider } from '../services/sessions/common/sessionsProvider.js';
 import { ISessionAgentRef } from '../services/sessions/common/session.js';
 
@@ -33,6 +33,13 @@ export interface IAgentHostMcpServer {
 	readonly enabled: boolean;
 	readonly status: McpServerStatus;
 	readonly state: McpServerState;
+	readonly container?: {
+		readonly id: string;
+		readonly name: string;
+		readonly uri: string;
+		readonly type: CustomizationType.Plugin | CustomizationType.Directory;
+		readonly enabled: boolean;
+	};
 	readonly logOutputChannelId?: string;
 	/** Starts or restarts the server. Providers that cannot control lifecycle may no-op. */
 	start(): Promise<void>;

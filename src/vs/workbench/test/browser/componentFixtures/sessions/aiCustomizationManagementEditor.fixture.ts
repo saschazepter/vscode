@@ -143,7 +143,6 @@ function createMockAgentHostCustomizationService(mcpServers: readonly FixtureAge
 		override getCustomizations() { return []; }
 		override getWorkingDirectory() { return undefined; }
 		override getMcpServers() { return mcpServers; }
-		override getMcpServerInventory() { return mcpServers; }
 		override addMcpServer() { }
 		override async authenticateMcpServer() { return true; }
 	}();
@@ -401,9 +400,6 @@ function makeLocalMcpServer(id: string, label: string, scope: LocalMcpServerScop
 		override readonly local = new class extends mock<IWorkbenchLocalMcpServer>() {
 			override readonly id = id;
 			override readonly scope = scope;
-			override readonly mcpResource = scope === LocalMcpServerScope.Workspace
-				? URI.file('/workspace/.vscode/mcp.json')
-				: URI.file('/home/dev/.config/Code/User/mcp.json');
 		}();
 	}();
 }

@@ -39,6 +39,11 @@ class FakeTarget implements IAgentHostCustomizationTarget {
 	authenticate(): Promise<unknown> { return Promise.resolve(undefined); }
 	setCustomizationEnabled(rawId: string, enabled: boolean): void {
 		this.dispatched.push({ rawId, enabled });
+		const topLevel = this.customizations.find(customization => customization.id === rawId);
+		if (topLevel) {
+			topLevel.enabled = enabled;
+			return;
+		}
 		const server = this.customizations.flatMap(customization => customization.type === CustomizationType.McpServer
 			? [customization]
 			: customization.children?.filter(child => child.type === CustomizationType.McpServer) ?? []
@@ -187,7 +192,7 @@ suite('AbstractAgentHostCustomizationService - MCP server enablement', () => {
 		assert.strictEqual(second.logOutputChannelId, first.logOutputChannelId);
 	});
 
-	test('getMcpServerInventory coalesces exact names and prefers top-level runtime entries', () => {
+	test('getMcpServers retains same-named sources and applies container enablement', () => {
 		const sut = createSut();
 		const childGitHub = mcpServer('gh-child', 'GitHub', true);
 		const topLevelGitHub = mcpServer('gh-top-level', 'GitHub', false);
@@ -198,7 +203,7 @@ suite('AbstractAgentHostCustomizationService - MCP server enablement', () => {
 				id: 'plugin',
 				uri: 'file:///plugin',
 				name: 'Plugin',
-				enabled: true,
+				enabled: false,
 				children: [childGitHub],
 			},
 			topLevelGitHub,
@@ -206,20 +211,38 @@ suite('AbstractAgentHostCustomizationService - MCP server enablement', () => {
 		]);
 		sut.setTarget(sessionA1, target);
 
-		const inventory = sut.getMcpServerInventory(sessionA1);
-		inventory[0].setEnabled(true);
+		const servers = sut.getMcpServers(sessionA1);
+		servers[0].setEnabled(true);
 
 		assert.deepStrictEqual({
-			rawIds: sut.getMcpServers(sessionA1).map(server => server.id),
-			inventory: inventory.map(server => ({ id: server.id, name: server.name, enabled: server.enabled })),
+			servers: servers.map(server => ({
+				id: server.id,
+				name: server.name,
+				enabled: server.enabled,
+				...(server.container ? { container: server.container } : {}),
+			})),
 			dispatched: target.dispatched,
 		}, {
-			rawIds: ['session-a1/gh-child', 'session-a1/gh-top-level', 'session-a1/gh-lower-case'],
-			inventory: [
+			servers: [
+				{
+					id: 'session-a1/gh-child',
+					name: 'GitHub',
+					enabled: false,
+					container: {
+						id: 'plugin',
+						name: 'Plugin',
+						uri: 'file:///plugin',
+						type: CustomizationType.Plugin,
+						enabled: false,
+					},
+				},
 				{ id: 'session-a1/gh-top-level', name: 'GitHub', enabled: false },
 				{ id: 'session-a1/gh-lower-case', name: 'github', enabled: true },
 			],
-			dispatched: [{ rawId: 'gh-top-level', enabled: true }],
+			dispatched: [
+				{ rawId: 'plugin', enabled: true },
+				{ rawId: 'gh-child', enabled: true },
+			],
 		});
 	});
 

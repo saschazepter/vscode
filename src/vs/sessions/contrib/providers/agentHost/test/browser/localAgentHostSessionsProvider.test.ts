@@ -1612,6 +1612,95 @@ suite('LocalAgentHostSessionsProvider', () => {
 		assert.deepStrictEqual(actions.map(({ action }) => (action as { id: string }).id), ['mcp://docs', 'mcp://docs']);
 	});
 
+	test('getMcpServers retains same-named sources and applies container enablement', () => {
+		const provider = createProvider(disposables, agentHost);
+
+		fireSessionAdded(agentHost, 'mcp-collisions', { title: 'MCP Collisions' });
+		const session = provider.getSessions().find(s => s.title.get() === 'MCP Collisions');
+		assert.ok(session);
+
+		const fakeState: SessionState = {
+			provider: 'copilotcli',
+			title: 'MCP Collisions',
+			status: ProtocolSessionStatus.Idle,
+			lifecycle: SessionLifecycle.Ready,
+			activeClients: [],
+			chats: [],
+			customizations: [
+				{
+					type: CustomizationType.Plugin,
+					id: 'plugin-disabled',
+					uri: 'file:///plugins/disabled',
+					name: 'Disabled Plugin',
+					enabled: false,
+					children: [{
+						type: CustomizationType.McpServer,
+						id: 'plugin-server',
+						uri: 'file:///plugins/disabled/.mcp.json',
+						name: 'GitHub',
+						enabled: true,
+						state: { kind: McpServerStatus.Ready },
+					}],
+				},
+				{
+					type: CustomizationType.McpServer,
+					id: 'top-level-server',
+					uri: 'file:///mcp.json',
+					name: 'GitHub',
+					enabled: true,
+					state: { kind: McpServerStatus.Ready },
+				},
+			],
+		};
+		provider.getSessionConfig(session!.sessionId);
+		agentHost.setSessionState('mcp-collisions', 'copilotcli', fakeState);
+
+		const servers = provider.getMcpServers(session!.sessionId);
+		servers[0].setEnabled(true);
+
+		assert.deepStrictEqual({
+			servers: servers.map(server => ({
+				id: server.id,
+				name: server.name,
+				enabled: server.enabled,
+				...(server.container ? { container: server.container } : {}),
+			})),
+			actions: agentHost.dispatchedActions.slice(-2).map(({ action }) => action),
+		}, {
+			servers: [
+				{
+					id: '/plugin-server',
+					name: 'GitHub',
+					enabled: false,
+					container: {
+						id: 'plugin-disabled',
+						name: 'Disabled Plugin',
+						uri: 'file:///plugins/disabled',
+						type: CustomizationType.Plugin,
+						enabled: false,
+					},
+				},
+				{
+					id: '/top-level-server',
+					name: 'GitHub',
+					enabled: true,
+				},
+			],
+			actions: [
+				{
+					type: ActionType.SessionCustomizationToggled,
+					id: 'plugin-disabled',
+					enabled: true,
+				},
+				{
+					type: ActionType.SessionCustomizationToggled,
+					id: 'plugin-server',
+					enabled: true,
+				},
+			],
+		});
+	});
+
 	test('getCustomAgents returns no agents when the session has no SessionState', () => {
 		const provider = createProvider(disposables, agentHost);
 

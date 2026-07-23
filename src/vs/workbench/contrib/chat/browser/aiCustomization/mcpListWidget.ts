@@ -13,7 +13,6 @@ import { WorkbenchList } from '../../../../../platform/list/browser/listService.
 import { IListVirtualDelegate, IListRenderer, IListContextMenuEvent } from '../../../../../base/browser/ui/list/list.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
-import { isEqualOrParent } from '../../../../../base/common/resources.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { defaultButtonStyles, defaultInputBoxStyles } from '../../../../../platform/theme/browser/defaultStyles.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
@@ -34,7 +33,7 @@ import { CancellationTokenSource } from '../../../../../base/common/cancellation
 import { Delayer } from '../../../../../base/common/async.js';
 import { Action, IAction, Separator } from '../../../../../base/common/actions.js';
 import { ConfigureModelAccessAction, DisableMcpServerForWorkspaceAction, DisableMcpServerGloballyAction, EnableMcpServerForWorkspaceAction, EnableMcpServerGloballyAction, getContextMenuActions, RestartServerAction, ShowSamplingRequestsAction, StartServerAction, StopServerAction } from '../../../../contrib/mcp/browser/mcpServerActions.js';
-import { IWorkbenchLocalMcpServer, LocalMcpServerScope } from '../../../../services/mcp/common/mcpWorkbenchManagementService.js';
+import { LocalMcpServerScope } from '../../../../services/mcp/common/mcpWorkbenchManagementService.js';
 import { IAgentPluginService } from '../../common/plugins/agentPluginService.js';
 import { IDialogService } from '../../../../../platform/dialogs/common/dialogs.js';
 import { workspaceIcon, userIcon, mcpServerIcon, builtinIcon, pluginIcon, extensionIcon } from './aiCustomizationIcons.js';
@@ -82,6 +81,7 @@ interface IMcpServerItemEntry {
 	readonly server: IWorkbenchMcpServer;
 	readonly activeSessionServer?: AgentHostMcpServer;
 	readonly localServer?: IMcpServer;
+	readonly sourceDescription?: string;
 	/**
 	 * Whether this entry originates from a marketplace browse result. Marketplace rows always use
 	 * the gallery row presentation (with an Install/Installed button), even when the server is
@@ -125,7 +125,10 @@ class McpServerItemDelegate implements IListVirtualDelegate<IMcpListEntry> {
 		if (element.type === 'server-item' && element.server.gallery && (element.marketplace || !element.server.local)) {
 			return 62;
 		}
-		if (element.type === 'server-item' && element.server.description?.trim()) {
+		if (element.type === 'server-item' && getMcpServerItemDescription(element)) {
+			return MCP_ITEM_WITH_DESCRIPTION_HEIGHT;
+		}
+		if (element.type === 'session-server-item' && getMcpServerItemDescription(element)) {
 			return MCP_ITEM_WITH_DESCRIPTION_HEIGHT;
 		}
 		if (element.type === 'builtin-item' && element.description) {
@@ -238,15 +241,16 @@ class McpServerItemRenderer implements IListRenderer<IMcpServerItemEntry | IMcpS
 			templateData.container.classList.remove('builtin');
 			templateData.container.classList.toggle('has-detail', false);
 			templateData.name.textContent = formatDisplayName(element.server.name);
-			templateData.description.textContent = '';
-			templateData.description.style.display = 'none';
+			const description = getMcpServerItemDescription(element);
+			templateData.description.textContent = description ?? '';
+			templateData.description.style.display = description ? '' : 'none';
 			this.updateActiveSessionStatus(templateData, element);
 			return;
 		}
 
 		templateData.container.classList.remove('builtin');
 		templateData.name.textContent = formatDisplayName(element.server.label);
-		const description = element.server.description?.trim();
+		const description = getMcpServerItemDescription(element);
 		// Marketplace (gallery) entries are always clickable so users can install/inspect them,
 		// even when no description is returned by the gallery. Installed rows only opt-in to the
 		// detail view when there is something extra to show.
@@ -428,15 +432,13 @@ function getActiveSessionServer(entry: IMcpServerItemEntry | IMcpSessionServerIt
 	return entry.type === 'session-server-item' ? entry.server : entry.activeSessionServer;
 }
 
-export function isMcpWorkbenchServerVisible(
-	localServer: Pick<IWorkbenchLocalMcpServer, 'scope' | 'mcpResource'> | undefined,
-	isSessionsWindow: boolean,
-	activeProjectRoot: URI | undefined,
-): boolean {
-	if (!isSessionsWindow || localServer?.scope !== LocalMcpServerScope.Workspace) {
-		return true;
+function getMcpServerItemDescription(element: IMcpServerItemEntry | IMcpSessionServerItemEntry): string | undefined {
+	if (element.type === 'session-server-item') {
+		return element.server.container
+			? localize('mcpServerContainerSource', "From {0}", element.server.container.name)
+			: undefined;
 	}
-	return activeProjectRoot !== undefined && isEqualOrParent(localServer.mcpResource, activeProjectRoot);
+	return element.sourceDescription ?? (element.server.description?.trim() || undefined);
 }
 
 function getMcpEntryLabel(element: IMcpServerItemEntry | IMcpSessionServerItemEntry | IMcpBuiltinItemEntry): string {
@@ -469,6 +471,17 @@ function getMcpEntryAriaLabel(element: IMcpListEntry, isSessionsWindow: boolean)
 	}
 	const label = getMcpEntryLabel(element);
 	const status = getMcpStatusPresentation(getMcpStatusKind(element, isSessionsWindow));
+	const source = element.type === 'session-server-item'
+		? getMcpServerItemDescription(element)
+		: element.type === 'server-item'
+			? element.sourceDescription
+			: undefined;
+	if (source && status) {
+		return localize('mcpServerAriaLabelWithSourceAndStatus', "{0}, {1}, {2}", label, source, status.label);
+	}
+	if (source) {
+		return localize('mcpServerAriaLabelWithSource', "{0}, {1}", label, source);
+	}
 	return status
 		? localize('mcpServerAriaLabelWithStatus', "{0}, {1}", label, status.label)
 		: label;
@@ -1042,7 +1055,6 @@ export class McpListWidget extends Disposable {
 		}));
 		this._register(autorun(reader => {
 			this.customizationHarnessService.activeSessionResource.read(reader);
-			this.workspaceService.activeProjectRoot.read(reader);
 			if (!this.browseMode) {
 				this.refresh();
 			}
@@ -1186,21 +1198,17 @@ export class McpListWidget extends Disposable {
 	private filterServers(): void {
 		const query = this.searchQuery.toLowerCase().trim();
 		const activeSessionResource = this.customizationHarnessService.activeSessionResource.get();
-		const activeSessionMatcher = new ActiveSessionMcpServerMatcher(this.agentHostCustomizationService.getMcpServerInventory(activeSessionResource));
+		const activeSessionMatcher = new ActiveSessionMcpServerMatcher(this.agentHostCustomizationService.getMcpServers(activeSessionResource));
 		const localServerMatcher = new LocalMcpServerMatcher(this.mcpService.servers.get());
 		const allWorkbenchServers = this.mcpWorkbenchService.local;
-		const activeProjectRoot = this.workspaceService.getActiveProjectRoot();
-		const visibleWorkbenchServers = allWorkbenchServers.filter(server =>
-			isMcpWorkbenchServerVisible(server.local, this.workspaceService.isSessionsWindow, activeProjectRoot)
-		);
 
 		if (query) {
-			this.filteredServers = visibleWorkbenchServers.filter(server =>
+			this.filteredServers = allWorkbenchServers.filter(server =>
 				server.label.toLowerCase().includes(query) ||
 				(server.description?.toLowerCase().includes(query))
 			);
 		} else {
-			this.filteredServers = [...visibleWorkbenchServers];
+			this.filteredServers = [...allWorkbenchServers];
 		}
 
 		// Find extension-provided servers not in the local list (e.g. GitHub MCP)
@@ -1214,12 +1222,22 @@ export class McpListWidget extends Disposable {
 			{ scope: LocalMcpServerScope.User, label: localize('userGroup', "User"), icon: userIcon, description: localize('userGroupDescription', "MCP servers configured in your user settings. Private to you and available across all projects."), entries: [] },
 		];
 
+		const workbenchServerNameCounts = new Map<string, number>();
+		for (const server of allWorkbenchServers) {
+			const key = server.label.toLowerCase();
+			workbenchServerNameCounts.set(key, (workbenchServerNameCounts.get(key) ?? 0) + 1);
+		}
+
 		for (const server of this.filteredServers) {
+			const hasNameCollision = (workbenchServerNameCounts.get(server.label.toLowerCase()) ?? 0) > 1;
 			const entry: IMcpServerItemEntry = {
 				type: 'server-item',
 				server,
 				activeSessionServer: activeSessionMatcher.take(getWorkbenchServerMatchKeys(server)),
 				localServer: localServerMatcher.find(getWorkbenchServerMatchKeys(server)),
+				sourceDescription: hasNameCollision && server.local
+					? this.mcpWorkbenchService.getMcpConfigPath(server.local)?.label
+					: undefined,
 			};
 			const scope = server.local?.scope;
 			if (scope === LocalMcpServerScope.Workspace) {

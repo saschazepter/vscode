@@ -24,7 +24,7 @@ import { KNOWN_MODE_VALUES, SessionConfigKey } from '../../../../../platform/age
 import { migrateLegacyAutopilotConfig } from '../../../../../platform/agentHost/common/agentHostSchema.js';
 import type { IAgentSubscription } from '../../../../../platform/agentHost/common/state/agentSubscription.js';
 import { ResolveSessionConfigResult, type SessionConfigPropertySchema } from '../../../../../platform/agentHost/common/state/protocol/commands.js';
-import { AgentCustomization, ChangesSummary, ChatInteractivity as ProtocolChatInteractivity, ChatOriginKind as ProtocolChatOriginKind, type ClientPluginCustomization, Customization, CustomizationType, ModelSelection, SessionStatus as ProtocolSessionStatus, RootConfigState, RootState, SessionActiveClient, SessionState, SessionSummary, type Changeset } from '../../../../../platform/agentHost/common/state/protocol/state.js';
+import { AgentCustomization, ChangesSummary, ChatInteractivity as ProtocolChatInteractivity, ChatOriginKind as ProtocolChatOriginKind, type ClientPluginCustomization, Customization, CustomizationType, type McpServerCustomization, ModelSelection, SessionStatus as ProtocolSessionStatus, RootConfigState, RootState, SessionActiveClient, SessionState, SessionSummary, type Changeset } from '../../../../../platform/agentHost/common/state/protocol/state.js';
 import { ActionType, isChatAction, isSessionAction, NotificationType } from '../../../../../platform/agentHost/common/state/sessionActions.js';
 import { AgentCapabilities, AgentInfo, buildChatUri, buildDefaultChatUri, isDefaultChatUri, parseChatUri, readSessionGitHubState, readSessionGitState, readSessionWorkspaceless, ROOT_STATE_URI, SessionMeta, StateComponents, withSessionWorkspaceless, type ChatSummary, type ISessionGitState } from '../../../../../platform/agentHost/common/state/sessionState.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
@@ -2980,50 +2980,72 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 			return [];
 		}
 		const sessionUri = AgentSession.uri(cached.agentProvider, rawId);
-		return (sessionState.customizations ?? [])
-			.flatMap(c => c.type === CustomizationType.McpServer
-				? [c]
-				: c.children
-					? c.children.filter(c => c.type === CustomizationType.McpServer)
-					: [])
-			.map((c): IAgentHostMcpServer => ({
-				id: `${sessionUri.authority}/${c.id}`,
-				name: c.name,
-				enabled: c.enabled,
-				status: c.state.kind,
-				state: c.state,
-				setEnabled: (enabled: boolean) => {
-					const connection = this.connection;
-					if (!connection) {
-						return;
-					}
+		const entries: { server: McpServerCustomization; container?: Exclude<Customization, McpServerCustomization> }[] = [];
+		for (const customization of sessionState.customizations ?? []) {
+			if (customization.type === CustomizationType.McpServer) {
+				entries.push({ server: customization });
+				continue;
+			}
+			for (const server of customization.children ?? []) {
+				if (server.type === CustomizationType.McpServer) {
+					entries.push({ server, container: customization });
+				}
+			}
+		}
+		return entries.map(({ server, container }): IAgentHostMcpServer => ({
+			id: `${sessionUri.authority}/${server.id}`,
+			name: server.name,
+			enabled: container ? container.enabled && server.enabled : server.enabled,
+			status: server.state.kind,
+			state: server.state,
+			...(container ? {
+				container: {
+					id: container.id,
+					name: container.name,
+					uri: container.uri,
+					type: container.type,
+					enabled: container.enabled,
+				}
+			} : {}),
+			setEnabled: (enabled: boolean) => {
+				const connection = this.connection;
+				if (!connection) {
+					return;
+				}
+				if (enabled && container && !container.enabled) {
 					connection.dispatch(sessionUri.toString(), {
 						type: ActionType.SessionCustomizationToggled,
-						id: c.id,
-						enabled,
+						id: container.id,
+						enabled: true,
 					});
-				},
-				start: async () => {
-					const connection = this.connection;
-					if (!connection) {
-						return;
-					}
-					connection.dispatch(sessionUri.toString(), {
-						type: ActionType.SessionMcpServerStartRequested,
-						id: c.id,
-					});
-				},
-				stop: async () => {
-					const connection = this.connection;
-					if (!connection) {
-						return;
-					}
-					connection.dispatch(sessionUri.toString(), {
-						type: ActionType.SessionMcpServerStopRequested,
-						id: c.id,
-					});
-				},
-			}));
+				}
+				connection.dispatch(sessionUri.toString(), {
+					type: ActionType.SessionCustomizationToggled,
+					id: server.id,
+					enabled,
+				});
+			},
+			start: async () => {
+				const connection = this.connection;
+				if (!connection) {
+					return;
+				}
+				connection.dispatch(sessionUri.toString(), {
+					type: ActionType.SessionMcpServerStartRequested,
+					id: server.id,
+				});
+			},
+			stop: async () => {
+				const connection = this.connection;
+				if (!connection) {
+					return;
+				}
+				connection.dispatch(sessionUri.toString(), {
+					type: ActionType.SessionMcpServerStopRequested,
+					id: server.id,
+				});
+			},
+		}));
 	}
 
 	getFeedbackAnnotationsChannel(sessionId: string): { readonly connection: IAgentConnection; readonly annotationsUri: URI } | undefined {

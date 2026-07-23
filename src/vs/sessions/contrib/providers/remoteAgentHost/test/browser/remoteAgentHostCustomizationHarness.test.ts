@@ -156,9 +156,6 @@ function createTestCustomAgentsService(connection: MockAgentConnection, rootCust
 		getMcpServers(_sessionResource: URI) {
 			return [];
 		},
-		getMcpServerInventory(_sessionResource: URI) {
-			return [];
-		},
 		addMcpServer(_sessionResource: URI, _name: string, _config) {
 			// no-op
 		},
