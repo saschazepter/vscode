@@ -23,7 +23,7 @@ import { IEnvironmentService } from '../../../../../platform/environment/common/
 import { ILocalTranscriptionModelStatus, ILocalTranscriptionService, LocalTranscriptionModelState } from '../../../../../platform/localTranscription/common/localTranscription.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
 import { IAuthenticationService } from '../../../../services/authentication/common/authentication.js';
-import { IVoiceClientService, IVoiceTranscription } from '../../common/voiceClient/voiceClientService.js';
+import { IVoiceClientService, IVoiceSessionContext, IVoiceTranscription } from '../../common/voiceClient/voiceClientService.js';
 import { AccessibilitySignal, IAccessibilitySignalService } from '../../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
 import { AgentsVoiceStorageKeys } from '../../../agentsVoice/common/agentsVoice.js';
@@ -61,6 +61,8 @@ type DictationBackend = 'nemo' | 'mai';
 const MAI_CONNECT_TIMEOUT_MS = 8000;
 /** How long to wait after `ptt_end` for the backend's final transcript before returning what we have. */
 const MAI_FINAL_TIMEOUT_MS = 4000;
+/** How long to wait for the backend to acknowledge the opened session before streaming audio anyway. */
+const MAI_SESSION_INIT_TIMEOUT_MS = 4000;
 
 type SpeechToTextSessionEvent = {
 	outcome: 'completed' | 'cancelled' | 'error';
@@ -638,7 +640,36 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		await this._voiceClientService.connect(window, authToken);
 		await this._awaitVoiceConnected();
 
+		// The backend drops PTT audio until a session is opened, so establish a
+		// minimal (session-less) dictation session and wait for the backend to
+		// acknowledge it before streaming audio. The websocket preserves order,
+		// but the ack guarantees the session exists server-side first.
+		const context: IVoiceSessionContext = { sessions: [], display_locale: '' };
+		this._voiceClientService.sendStartSession(context, this._telemetryService.machineId);
+		await this._awaitSessionInit();
+
 		this._voiceClientService.sendPttStart(this._maiTurnId);
+	}
+
+	/**
+	 * Wait for the backend to acknowledge the opened session (`onSessionInit`),
+	 * resolving on a timeout so a missing ack cannot wedge dictation: the
+	 * websocket preserves order, so `ptt_start` still follows `start_session`.
+	 */
+	private async _awaitSessionInit(): Promise<void> {
+		await new Promise<void>(resolve => {
+			const store = new DisposableStore();
+			this._maiSessionDisposables.add(store);
+			const timer = setTimeout(() => {
+				store.dispose();
+				resolve();
+			}, MAI_SESSION_INIT_TIMEOUT_MS);
+			store.add(toDisposable(() => clearTimeout(timer)));
+			store.add(this._voiceClientService.onSessionInit(() => {
+				store.dispose();
+				resolve();
+			}));
+		});
 	}
 
 	/**
