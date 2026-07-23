@@ -6,6 +6,12 @@
 #### chat/aiCustomizations/aiCustomizationManagementEditor/AgentHostPromptMigration/Light
 ![screenshot](https://hediet-screenshots.azurewebsites.net/images/70c9ac164e5358815b96da4db49b7a4d661be4d57b797e282a459142634e3fd3)
 
+#### chat/aiCustomizations/aiCustomizationManagementEditor/PromptMigration/Dark
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/b23a70c35d54f016b4d7b19f935d9ecf2cc32e1747bedc69338723a9fa29eba6)
+
+#### chat/aiCustomizations/aiCustomizationManagementEditor/PromptMigration/Light
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/7f3e56c1916b4f49f5d4c0020a2d2895ce96c8428ae32cb9cd8f6953cf14f4ad)
+
 #### editor/codeEditor/CodeEditor/Dark
 ![screenshot](https://hediet-screenshots.azurewebsites.net/images/af3df9d90346c8473e8576c2aab60a9cab514ed0a130a2208fa72851e4884852)
 
