@@ -276,15 +276,16 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 		}, approvalModel, activeSessionResource));
 		const compact = this.options.compactShowMore;
 		const sessionDataSource = this.sessionsDataSource = this._register(new AgentSessionsDataSource(this.options.filter, sorter, this.options.repositoryGroupLimit));
+		const listDelegate = new AgentSessionsListDelegate(
+			approvalModel,
+			this.options.compactShowMore,
+			() => this.options.itemHeight ?? (this.configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true ? AgentSessionsListDelegate.COMPACT_ITEM_HEIGHT : AgentSessionsListDelegate.ITEM_HEIGHT),
+			() => this.options.sectionHeight ?? (this.configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true ? AgentSessionsListDelegate.SPACED_SECTION_HEIGHT : AgentSessionsListDelegate.SECTION_HEIGHT),
+		);
 		const list = this.sessionsList = this._register(this.instantiationService.createInstance(WorkbenchCompressibleAsyncDataTree,
 			'AgentSessionsView',
 			container,
-			new AgentSessionsListDelegate(
-				approvalModel,
-				this.options.compactShowMore,
-				() => this.options.itemHeight ?? (this.configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true ? AgentSessionsListDelegate.COMPACT_ITEM_HEIGHT : AgentSessionsListDelegate.ITEM_HEIGHT),
-				() => this.options.sectionHeight ?? (this.configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true ? AgentSessionsListDelegate.SPACED_SECTION_HEIGHT : AgentSessionsListDelegate.SECTION_HEIGHT),
-			),
+			listDelegate,
 			new AgentSessionsCompressionDelegate(),
 			[
 				sessionRenderer,
@@ -320,7 +321,7 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 			while (nodes.length > 0) {
 				const node = nodes.pop()!;
 				if (isAgentSession(node.element) || isAgentSessionSection(node.element)) {
-					list.updateElementHeight(node.element, undefined);
+					list.updateElementHeight(node.element, listDelegate.getHeight(node.element));
 				}
 				nodes.push(...node.children);
 			}
