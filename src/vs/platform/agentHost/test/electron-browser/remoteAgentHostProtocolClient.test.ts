@@ -266,7 +266,7 @@ suite('RemoteAgentHostProtocolClient', () => {
 		const chatUri = URI.parse('ahp-session:/test/chat-1');
 		const sourceUri = URI.parse('ahp-session:/test/chat-0');
 
-		test('forwards a fork source tagged with kind "fork"', async () => {
+		test('forwards a fork source using the legacy flat shape', async () => {
 			const { client, transport } = createClient();
 
 			const resultPromise = client.createChat(sessionUri, chatUri, { fork: { source: sourceUri, turnId: 'turn-1' } });
@@ -278,7 +278,7 @@ suite('RemoteAgentHostProtocolClient', () => {
 				params: {
 					channel: sessionUri.toString(),
 					chat: chatUri.toString(),
-					source: { kind: ChatSourceKind.Fork, chat: sourceUri.toString(), turnId: 'turn-1' },
+					source: { chat: sourceUri.toString(), turnId: 'turn-1' },
 				},
 			});
 
@@ -298,7 +298,7 @@ suite('RemoteAgentHostProtocolClient', () => {
 				params: {
 					channel: sessionUri.toString(),
 					chat: chatUri.toString(),
-					source: { kind: ChatSourceKind.SideChat, chat: sourceUri.toString(), turnId: 'turn-1' },
+					source: { kind: ChatSourceKind.SideChat, chat: sourceUri.toString(), turn: { kind: 'completed', turnId: 'turn-1' } },
 				},
 			});
 

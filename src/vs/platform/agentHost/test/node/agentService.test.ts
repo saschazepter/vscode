@@ -28,7 +28,7 @@ import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { SessionDatabase } from '../../node/sessionDatabase.js';
 import { ActionType, ActionEnvelope } from '../../common/state/sessionActions.js';
 import { ChangesetStatus, CustomizationType, MessageAttachmentKind, MessageKind, SessionActiveClient, ResponsePartKind, ROOT_STATE_URI, SessionLifecycle, SessionStatus, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildChatUri, buildDefaultChatUri, buildSubagentChatUri, buildSubagentSessionUri, customizationId, isSubagentSession, parseChatUri, parseSubagentSessionUri, ChatOriginKind, type ChangesetState, type ISessionWithDefaultChat, type MarkdownResponsePart, type ToolCallCompletedState, type ToolCallResponsePart, type Turn } from '../../common/state/sessionState.js';
-import { type MessageResourceAttachment } from '../../common/state/protocol/state.js';
+import { ChatSourceTurnKind, type MessageResourceAttachment } from '../../common/state/protocol/state.js';
 import { IProductService } from '../../../product/common/productService.js';
 import { AgentService } from '../../node/agentService.js';
 import { MockAgent, ScriptedMockAgent } from './mockAgent.js';
@@ -3251,6 +3251,7 @@ suite('AgentService (node dispatcher)', () => {
 			const session = await service.createSession({ provider: 'copilot' });
 			service.stateManager.seedDefaultChatTurns(session.toString(), [completedTurn('t1'), completedTurn('t2')]);
 			const chatUri = URI.parse(buildChatUri(session, 'side-1'));
+			const defaultChatUri = buildDefaultChatUri(session);
 
 			await service.createChat(session, chatUri, { sideChat: { source: session, turnId: 't1' } });
 			const state = service.stateManager.getChatState(chatUri.toString());
@@ -3261,10 +3262,10 @@ suite('AgentService (node dispatcher)', () => {
 				forkForwarded: agent.lastCreateOptions?.fork,
 				sideChatForwarded: agent.lastCreateOptions?.sideChat,
 			}, {
-				origin: { kind: ChatOriginKind.SideChat, chat: session.toString(), turnId: 't1' },
+				origin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turn: { kind: ChatSourceTurnKind.Completed, turnId: 't1' } },
 				copiedTurns: 0,
 				forkForwarded: undefined,
-				sideChatForwarded: { source: session, turnId: 't1' },
+				sideChatForwarded: { source: URI.parse(defaultChatUri), turnId: 't1' },
 			});
 		});
 
@@ -3295,13 +3296,48 @@ suite('AgentService (node dispatcher)', () => {
 					? {
 						source: agent.lastCreateOptions.sideChat.source.toString(),
 						turnId: agent.lastCreateOptions.sideChat.turnId,
+						sourceContext: agent.lastCreateOptions.sideChat.sourceContext,
 						partialResponse: agent.lastCreateOptions.sideChat.partialResponse,
 					}
 					: undefined,
 			}, {
 				sourceActiveTurn: 'active-turn',
-				origin: { kind: ChatOriginKind.SideChat, chat: sourceChat, turnId: 'active-turn' },
-				sideChatForwarded: { source: sourceChat, turnId: 'active-turn', partialResponse: 'partial answer' },
+				origin: { kind: ChatOriginKind.SideChat, chat: sourceChat, turn: { kind: ChatSourceTurnKind.Active, turnId: 'active-turn' } },
+				sideChatForwarded: { source: sourceChat, turnId: 'active-turn', sourceContext: 'User request:\nstill running', partialResponse: 'partial answer' },
+			});
+		});
+
+		test('creates a side chat from a later active turn without losing the current user question', async () => {
+			const agent = disposables.add(new SideChatAgent('copilot'));
+			service.registerProvider(agent);
+			const session = await service.createSession({ provider: 'copilot' });
+			const sourceChat = buildDefaultChatUri(session);
+			service.stateManager.seedDefaultChatTurns(session.toString(), [completedTurn('t1', 'first question', 'first answer')]);
+			service.dispatchAction(sourceChat, {
+				type: ActionType.ChatTurnStarted,
+				turnId: 'active-turn',
+				startedAt: '2025-01-01T00:00:00.000Z',
+				message: { text: 'second question', origin: { kind: MessageKind.User } },
+			}, 'test-client', 1);
+			service.stateManager.dispatchServerAction(sourceChat, {
+				type: ActionType.ChatResponsePart,
+				turnId: 'active-turn',
+				part: { kind: ResponsePartKind.Markdown, id: 'partial', content: 'partial answer' },
+			});
+			const chatUri = URI.parse(buildChatUri(session, 'side-active-later'));
+
+			await service.createChat(session, chatUri, { sideChat: { source: URI.parse(sourceChat), turnId: 'active-turn' } });
+
+			assert.deepStrictEqual(agent.lastCreateOptions?.sideChat && {
+				source: agent.lastCreateOptions.sideChat.source.toString(),
+				turnId: agent.lastCreateOptions.sideChat.turnId,
+				sourceContext: agent.lastCreateOptions.sideChat.sourceContext,
+				partialResponse: agent.lastCreateOptions.sideChat.partialResponse,
+			}, {
+				source: sourceChat,
+				turnId: 'active-turn',
+				sourceContext: 'User request:\nfirst question\n\nAgent response:\nfirst answer\n\n---\n\nUser request:\nsecond question',
+				partialResponse: 'partial answer',
 			});
 		});
 
@@ -3313,6 +3349,7 @@ suite('AgentService (node dispatcher)', () => {
 			const session = await localService.createSession({ provider: 'copilot' });
 			localService.stateManager.seedDefaultChatTurns(session.toString(), [completedTurn('t1')]);
 			const chatUri = URI.parse(buildChatUri(session, 'side-1'));
+			const defaultChatUri = buildDefaultChatUri(session);
 			await localService.createChat(session, chatUri, { sideChat: { source: session, turnId: 't1' } });
 
 			let persistedOrigin: unknown;
@@ -3335,8 +3372,8 @@ suite('AgentService (node dispatcher)', () => {
 				persistedOrigin,
 				restoredOrigin: localService.stateManager.getChatState(chatUri.toString())?.origin,
 			}, {
-				persistedOrigin: { kind: ChatOriginKind.SideChat, chat: session.toString(), turnId: 't1' },
-				restoredOrigin: { kind: ChatOriginKind.SideChat, chat: session.toString(), turnId: 't1' },
+				persistedOrigin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turn: { kind: ChatSourceTurnKind.Completed, turnId: 't1' } },
+				restoredOrigin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turn: { kind: ChatSourceTurnKind.Completed, turnId: 't1' } },
 			});
 		});
 

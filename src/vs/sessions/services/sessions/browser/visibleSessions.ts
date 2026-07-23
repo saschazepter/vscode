@@ -94,11 +94,9 @@ export class VisibleSession extends Disposable implements IActiveSession {
 			const closed = this._closedChatUris.read(reader);
 			const chats = this._session.chats.read(reader);
 			// Hidden chats are internal workers that must never be surfaced in the
-			// conversation tab strip; closed chats are user-dismissed; side chats
-			// are surfaced in the top-level Side Chat editor. All three are excluded here.
+			// conversation tab strip; closed chats are user-dismissed.
 			return chats.filter(c =>
 				c.interactivity.read(reader) !== ChatInteractivity.Hidden &&
-				c.origin?.kind !== ChatOriginKind.SideChat &&
 				!closed.has(c.resource.toString()));
 		});
 		this.closedChats = derived(this, reader => {
@@ -132,11 +130,6 @@ export class VisibleSession extends Disposable implements IActiveSession {
 	}
 
 	closeChat(chat: IChat): void {
-		// Side chats never appear as conversation tabs, so closing one from the
-		// top-level Side Chat editor must be a no-op here.
-		if (chat.origin?.kind === ChatOriginKind.SideChat) {
-			return;
-		}
 		const chatUri = chat.resource.toString();
 		// The main chat represents the session itself and is never closed.
 		if (chatUri === this._session.mainChat.get().resource.toString()) {
@@ -177,11 +170,6 @@ export class VisibleSession extends Disposable implements IActiveSession {
 	}
 
 	openChat(chat: IChat): void {
-		// Side chats never appear as conversation tabs; the Side Chat editor reaches
-		// them directly, so there is no "reopen as conversation tab" affordance.
-		if (chat.origin?.kind === ChatOriginKind.SideChat) {
-			return;
-		}
 		// Opening a subagent (tool-origin) chat surfaces it as a tab.
 		if (chat.origin?.kind === ChatOriginKind.Tool) {
 			const shown = this._shownSubagentUris.get();
@@ -214,7 +202,6 @@ export class VisibleSession extends Disposable implements IActiveSession {
 	private _defaultActiveChat(closed: ReadonlySet<string>, shownSubagents: ReadonlySet<string>): IChat {
 		const candidates = this._session.chats.get().filter(c =>
 			c.interactivity.get() !== ChatInteractivity.Hidden &&
-			c.origin?.kind !== ChatOriginKind.SideChat &&
 			!closed.has(c.resource.toString()) &&
 			(c.origin?.kind !== ChatOriginKind.Tool || shownSubagents.has(c.resource.toString())));
 		return candidates[candidates.length - 1] ?? this._session.mainChat.get();

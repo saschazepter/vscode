@@ -130,8 +130,8 @@ export interface AgentCapabilities {
 export interface MultipleChatsCapability {
 	/**
 	 * The agent can fork a chat from a specific turn. When absent or `false`,
-	 * clients MUST NOT pass a {@link ChatSource} with `kind: "fork"` to
-	 * `createChat`.
+	 * clients MUST NOT pass a fork-shaped {@link ChatSource} (`chat` + `turnId`)
+	 * to `createChat`.
 	 * Forking always implies multi-chat support.
 	 */
 	fork?: boolean;
@@ -141,8 +141,10 @@ export interface MultipleChatsCapability {
 	 * `kind: "sideChat"` to `createChat`.
 	 *
 	 * A side chat receives the source turn as context without copying the source
-	 * transcript into its own visible history. Side-chat support always implies
-	 * multi-chat support.
+	 * transcript into its own visible history. The source may be a completed turn
+	 * or the source chat's current active turn; when active, the host snapshots
+	 * the available partial assistant response at creation time. Side-chat
+	 * support always implies multi-chat support.
 	 */
 	sideChat?: boolean;
 }

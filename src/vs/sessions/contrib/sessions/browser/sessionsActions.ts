@@ -1295,11 +1295,6 @@ export class SessionConversationsMenuContribution extends Disposable implements 
 			if (chat.origin?.kind === ChatOriginKind.Tool) {
 				return;
 			}
-			// Side chats (via `/btw`) are excluded from conversation tabs; they
-			// are shown in the top-level Side Chat editor.
-			if (chat.origin?.kind === ChatOriginKind.SideChat) {
-				return;
-			}
 			registerToggle(chat, '1_chats', index);
 		});
 

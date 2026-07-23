@@ -10,6 +10,7 @@ import { join } from '../../../../../../base/common/path.js';
 import { URI } from '../../../../../../base/common/uri.js';
 import { ActionType, type ChatErrorAction, type ChatToolCallReadyAction } from '../../../../common/state/sessionActions.js';
 import { ChatSourceKind, CompletionItemKind, type CompletionsResult, type ListSessionsResult, type SubscribeResult } from '../../../../common/state/protocol/commands.js';
+import { ChatSourceTurnKind } from '../../../../common/state/protocol/state.js';
 import {
 	buildChatUri,
 	buildDefaultChatUri,
@@ -47,12 +48,18 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		return { sessionUri, defaultChatUri: buildDefaultChatUri(sessionUri), workspace };
 	}
 
-	async function createPeer(sessionUri: string, id: string, source?: { chat: string; turnId: string; kind?: ChatSourceKind }): Promise<string> {
+	async function createPeer(sessionUri: string, id: string, source?: { chat: string; turnId: string; kind?: ChatSourceKind; turnKind?: ChatSourceTurnKind }): Promise<string> {
 		const chat = buildChatUri(sessionUri, id);
 		await context.client.call('createChat', {
 			channel: sessionUri,
 			chat,
-			...(source ? { source: { kind: source.kind ?? ChatSourceKind.Fork, chat: source.chat, turnId: source.turnId } } : {}),
+			...(source
+				? {
+					source: source.kind === ChatSourceKind.SideChat
+						? { kind: ChatSourceKind.SideChat, chat: source.chat, turn: { kind: source.turnKind ?? ChatSourceTurnKind.Completed, turnId: source.turnId } }
+						: { chat: source.chat, turnId: source.turnId }
+				}
+				: {}),
 		}, 30_000);
 		return chat;
 	}
@@ -223,9 +230,11 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.deepStrictEqual({
 			multipleChats: !!agent?.capabilities?.multipleChats,
 			fork: agent?.capabilities?.multipleChats?.fork ?? false,
+			sideChat: agent?.capabilities?.multipleChats?.sideChat ?? false,
 		}, {
 			multipleChats: config.supportsMultipleChats,
 			fork: config.supportsChatFork,
+			sideChat: config.supportsSideChats ?? false,
 		});
 	});
 
@@ -653,7 +662,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 			responseIncludesCode: true,
 			sourceTurnCount: 1,
 			sideTurnCount: 1,
-			origin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turnId: 'turn-source' },
+			origin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turn: { kind: ChatSourceTurnKind.Completed, turnId: 'turn-source' } },
 			firstMessage: 'What exact token did I ask you to remember? Reply with only the token.',
 			firstAttachments: [],
 		});

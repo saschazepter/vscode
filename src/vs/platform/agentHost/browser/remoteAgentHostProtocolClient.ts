@@ -32,7 +32,8 @@ import { type IVscodeUpgradeResult } from '../common/state/protocolUpgrade.js';
 import { isClientTransport, type IProtocolTransport } from '../common/state/sessionTransport.js';
 import { AhpErrorCodes } from '../common/state/protocol/errors.js';
 import { ContentEncoding, ResourceRequestParams, type CompletionsParams, type CompletionsResult, type CreateTerminalParams, type ResolveSessionConfigResult, type SessionConfigCompletionsResult } from '../common/state/protocol/commands.js';
-import { ChatSourceKind } from '../common/state/protocol/channels-chat/commands.js';
+import { ChatSourceTurnKind } from '../common/state/protocol/state.js';
+import { createForkChatSource, createSideChatSource } from '../common/state/protocol/chatSource.js';
 import type { InvokeChangesetOperationParams, InvokeChangesetOperationResult } from '../common/state/protocol/channels-changeset/commands.js';
 import { encodeBase64 } from '../../../base/common/buffer.js';
 import { ILoadEstimator, LoadEstimator } from '../../../base/parts/ipc/common/ipc.net.js';
@@ -911,8 +912,15 @@ export class RemoteAgentHostProtocolClient extends Disposable implements IAgentC
 		await this._sendRequest('createChat', {
 			channel: session.toString(),
 			chat: chat.toString(),
-			...(options?.fork ? { source: { kind: ChatSourceKind.Fork, chat: options.fork.source.toString(), turnId: options.fork.turnId } } : {}),
-			...(options?.sideChat ? { source: { kind: ChatSourceKind.SideChat, chat: options.sideChat.source.toString(), turnId: options.sideChat.turnId } } : {}),
+			...(options?.fork ? {
+				source: createForkChatSource(options.fork.source.toString(), options.fork.turnId)
+			} : {}),
+			...(options?.sideChat ? {
+				source: createSideChatSource(options.sideChat.source.toString(), {
+					kind: options.sideChat.partialResponse !== undefined ? ChatSourceTurnKind.Active : ChatSourceTurnKind.Completed,
+					turnId: options.sideChat.turnId,
+				})
+			} : {}),
 		});
 	}
 

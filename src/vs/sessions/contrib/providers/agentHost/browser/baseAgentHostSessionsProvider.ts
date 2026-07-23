@@ -787,9 +787,9 @@ export class AgentHostSessionAdapter extends Disposable implements ISession {
 		this._defaultChatTitleOverride.set(defaultSummary?.title || undefined, undefined);
 		this._defaultChatInteractivity.set(toChatInteractivity(defaultSummary?.interactivity), undefined);
 
-		// Subagent (tool-origin) and side (`/btw`) chats always surface as
-		// read-only/peer entries; other non-default chats surface only when the
-		// session supports multiple chats.
+		// Tool-origin subagents and user-created side (`/btw`) chats must reach
+		// the peer-chat catalog even when the backing session type is otherwise
+		// single-chat; the UI later decides whether to show them by default.
 		const surfacesAsPeer = (summary: ChatSummary): boolean =>
 			!isDefault(summary)
 			&& !!parseChatUri(summary.resource)?.chatId
@@ -1013,6 +1013,14 @@ export class AgentHostSessionAdapter extends Disposable implements ISession {
 		return chatResource.fragment
 			? this._getAdditionalChat(chatResource)?.chat.modelId.get()
 			: this.modelId.get();
+	}
+
+	getChatModelSelection(chatResource: URI): ModelSelection | undefined {
+		const modelId = this.getChatModelId(chatResource);
+		if (modelId) {
+			return this._toModelSelection(modelId);
+		}
+		return chatResource.fragment ? undefined : this.modelSelection;
 	}
 
 	getChatMode(chatResource: URI): { readonly id: string; readonly kind: string } | undefined {
@@ -3281,11 +3289,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		const sessionUri = AgentSession.uri(cached.agentProvider, rawId);
 		const newChatId = generateUuid();
 		const chatUri = URI.parse(buildChatUri(sessionUri, newChatId));
-		// Map the UI source chat resource to its backend chat URI: a fragment
-		// addresses a peer chat, otherwise the session's default chat.
-		const sourceBackendUri = sourceChat.fragment
-			? URI.parse(buildChatUri(sessionUri, sourceChat.fragment))
-			: sessionUri;
+		const sourceBackendUri = this._resolveBackendSourceChatUri(cached.sessionId, sessionUri, sourceChat);
 
 		// Keep the session-state subscription alive so the `chatAdded` it emits
 		// flows into `_applyChatCatalogFromState` and updates `cached.chats`.
@@ -3321,22 +3325,20 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		const sessionUri = AgentSession.uri(cached.agentProvider, rawId);
 		const newChatId = generateUuid();
 		const chatUri = URI.parse(buildChatUri(sessionUri, newChatId));
-		// Map the UI source chat resource to its backend chat URI: a fragment
-		// addresses a peer chat, otherwise the session's default chat.
-		const sourceBackendUri = sourceChat.fragment
-			? URI.parse(buildChatUri(sessionUri, sourceChat.fragment))
-			: sessionUri;
+		const sourceBackendUri = this._resolveBackendSourceChatUri(cached.sessionId, sessionUri, sourceChat);
 
 		// Inherit the source chat's own model/agent selection (which may differ
 		// from the session's default), not the session-level fallback.
-		const selectedModelId = cached.getChatModelId(sourceChat);
+		const selectedModel = cached.getChatModelSelection(sourceChat);
+		const selectedModelId = cached.getChatModelId(sourceChat)
+			?? (selectedModel ? `${cached.resource.scheme}:${selectedModel.id}` : undefined);
 		const selectedAgentUri = cached.getChatMode(sourceChat)?.id;
 
 		// Keep the session-state subscription alive so the `chatAdded` it emits
 		// flows into `_applyChatCatalogFromState` and updates `cached.chats`.
 		this._keepSessionStateAlive(cached.sessionId);
 		await connection.createChat(sessionUri, chatUri, {
-			model: cached.modelSelection,
+			model: selectedModel,
 			sideChat: { source: sourceBackendUri, turnId },
 		});
 
@@ -3351,6 +3353,14 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		await this._chatSessionsService.getOrCreateChatSession(chat.resource, CancellationToken.None);
 		await this._updateChatSessionState(chat.resource, selectedModelId, selectedAgentUri);
 		return chat;
+	}
+
+	private _resolveBackendSourceChatUri(sessionId: string, sessionUri: URI, sourceChat: URI): URI {
+		if (sourceChat.fragment) {
+			return URI.parse(buildChatUri(sessionUri, sourceChat.fragment));
+		}
+		const hydratedDefaultChat = this._lastSessionStates.get(sessionId)?.defaultChat;
+		return hydratedDefaultChat ? URI.parse(hydratedDefaultChat.toString()) : URI.parse(buildDefaultChatUri(sessionUri));
 	}
 
 	async sendRequest(chatId: string, chatResource: URI, options: ISendRequestOptions): Promise<ISession> {

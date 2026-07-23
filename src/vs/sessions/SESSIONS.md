@@ -154,10 +154,10 @@ Each `IChat` exposes `interactivity: IObservable<ChatInteractivity>` — a provi
 
 In the agent host, the real producer of read-only chats is **subagent (worker) chats**: when an agent's tool spawns a subagent, `AgentSideEffects._handleSubagentStarted` (`src/vs/platform/agentHost/node/agentSideEffects.ts`) calls `stateManager.addChat(...)` with `interactivity: ChatInteractivity.ReadOnly` and an `origin` of `{ kind: Tool, ... }`. The lead chat stays `Full` (the user steers the agent there) while the subagent chat is observable but read-only. The interactivity flows on the protocol `ChatSummary` into `applyChatCatalog` and through the provider-agnostic `IChat.interactivity` mapping above.
 
-**Surfacing subagent chats as tabs.** Subagent chats are surfaced as read-only peer tabs (in addition to the inline `ChatSubagentContentPart` rendering in the parent chat). Two pieces make this work:
+**Surfacing subagent chats as tabs.** Subagent chats are hidden from the tab strip by default, but can be surfaced as read-only peer tabs (in addition to the inline `ChatSubagentContentPart` rendering in the parent chat). Two pieces make this work:
 
-- `applyChatCatalog` (`baseAgentHostSessionsProvider.ts`) surfaces a non-default chat as a peer when the session supports multiple chats (`copilotcli`) **or** the chat is a subagent (`origin.kind === Tool`). So subagent chats appear as peers even in single-chat session types (e.g. `claude`), while ordinary user/fork peers still require multi-chat support.
-- `chatCompositeBar` renders those tabs (it no longer filters out `origin.kind === Tool` chats) but keeps the trailing **New Chat** action gated to `capabilities.supportsMultipleChats`, so single-chat sessions that merely host a subagent don't expose chat creation.
+- `applyChatCatalog` (`baseAgentHostSessionsProvider.ts`) surfaces a non-default chat as a peer when the session supports multiple chats (`copilotcli`) **or** the chat is a subagent (`origin.kind === Tool`). So subagent chats exist in the peer-chat catalog even in single-chat session types (e.g. `claude`), while ordinary user/fork/side-chat peers still require the usual session support.
+- `VisibleSession` keeps tool-origin chats out of `visibleChatTabs` until the user explicitly opens one (for example from the transcript pill or the **Conversations** menu). `chatCompositeBar` renders whatever is in `visibleChatTabs`, so user-created peers such as side chats behave like ordinary tabs while subagents stay hidden/read-only by default. The trailing **New Chat** action remains gated to `capabilities.supportsMultipleChats`, so single-chat sessions that merely host a subagent don't expose chat creation.
 
 Subagent chats **persist** in the session catalog after the subagent completes (completion only marks the chat's turn complete; the chat is removed only when the whole session is disposed), so the read-only tab stays reviewable for the lifetime of the session.
 
@@ -169,7 +169,7 @@ A terminal parent response is authoritative for active subagent timing. Stop can
 
 **Subagent terminal progress.** When the last meaningful response part is the parent subagent invocation, its pill is the active progress affordance and `ChatListItemRenderer` must not append a second generic shimmering working-progress phrase below it. Child tool/hook updates can arrive later in the raw response array while still rendering inside an earlier pill, so they must not suppress progress that visually follows normal markdown. Subagent-tagged or regular markdown is supporting output, not the pill itself; if markdown follows the pill, normal working-progress rules apply.
 
-**Restoring subagent chats.** Subagent chats are in-memory only; on restart the agent host restores them as separate sessions but no longer re-adds them to the parent catalog. `AgentService._registerRestoredSubagent` mirrors the live `_handleSubagentStarted` flow on restore — it re-adds the subagent to the parent session's catalog (same `ahp-chat://subagent/...` chat URI, `origin: Tool`, `interactivity: ReadOnly`, restored turns) so it reappears as a read-only tab.
+**Restoring subagent chats.** Subagent chats are in-memory only; on restart the agent host restores them as separate sessions but no longer re-adds them to the parent catalog. `AgentService._registerRestoredSubagent` mirrors the live `_handleSubagentStarted` flow on restore — it re-adds the subagent to the parent session's catalog (same `ahp-chat://subagent/...` chat URI, `origin: Tool`, `interactivity: ReadOnly`, restored turns) so it remains available to reopen as a read-only tab.
 
 History restoration must also repair parent tool calls whose persisted `_meta`/subagent result content was lost. `AgentHostSessionHandler._enrichHistoryWithSubagentCalls` treats the session's tool-origin chat catalog as the canonical spawn record: a serialized tool call whose id matches `origin.toolCallId` is upgraded to `toolSpecificData.kind === "subagent"` with the catalog title/resource, so reload renders the pill instead of a generic "Delegating task" row.
 
@@ -509,23 +509,22 @@ refinement, so it costs at most one small-model call, and a concurrent manual
 A **side chat** is a peer chat branched from an existing chat's latest turn
 to ask an unrelated, "by the way" question without polluting the source
 conversation. Unlike a fork (which continues the same line of work as a new
-chat), a side chat is surfaced in a dedicated, provider-agnostic **Side Chat**
-editor tab rather than the normal conversation tab strip — see
-[LAYOUT.md](LAYOUT.md#side-chat-editor-tab).
+chat), a side chat is meant for a tangential question, but it still reuses the
+same ordinary peer-chat surfaces as any other user-created chat.
 
 Capability: `ISessionCapabilities.supportsSideChat`, derived by the agent host
 provider from `agentCapabilities.multipleChats.sideChat` (mirroring
 `supportsMultipleChats`/`fork`). Only providers with a complete side-chat
 context/restore implementation advertise it (currently Claude and Copilot).
 
-Origin: side chats carry `IChat.origin.kind === ChatOriginKind.SideChat`. Like
-subagent (`Tool`) chats, side-chat peers are **excluded** from the normal
-sessions surfaces that assume a user-facing conversation: the chat tab strip
-(`shouldShowChatTabs`/`openChats`), the **Conversations** menu
-(`SessionConversationsMenuContribution`), the active-chat fallback when closing
-a chat, and `committedChatCount` (so a session with only a main chat plus side
-chats does not appear to "support multiple chats" in the UI). They still
-appear in `ISession.chats` so the Side Chat editor can find them.
+Origin: side chats carry `IChat.origin.kind === ChatOriginKind.SideChat`.
+Unlike subagent (`Tool`) chats, side chats participate in the normal
+user-facing peer-chat surfaces: the chat tab strip
+(`shouldShowChatTabs`/`visibleChatTabs`), the **Conversations** menu
+(`SessionConversationsMenuContribution`), the chats picker, close/reopen, the
+active-chat fallback, and `committedChatCount`. Tool-origin subagents remain
+the special case: they stay hidden/read-only by default and surface only when
+explicitly opened.
 
 Creation: `ISessionsManagementService.createSideChatInSession(session,
 sourceChat, turnId)` → `ISessionsProvider.createSideChat`. The service throws
@@ -543,7 +542,7 @@ tangential question with the same context as the turn it branched from.
 The host records the `SideChat` origin but does not mutate the first user
 message. Claude and Copilot use their SDK fork primitives to inherit source
 context privately, persist the inherited-prefix length in providerData, and
-filter those inherited turns from `getMessages()` so the Side Chat editor only
+filter those inherited turns from `getMessages()` so the side chat only
 shows turns authored in that side chat.
 
 Invocation: the `/btw` slash command (registered against the core
@@ -559,20 +558,19 @@ queueing or steering it behind an active source turn. It anchors to the source
 chat's latest request, including an in-progress turn; only a chat with no turns
 shows a localized warning.
 Each invocation creates a **fresh** side chat (there is no "reuse the last side
-chat" behavior). After creating the chat, it opens/focuses the singleton Side
-Chat editor tab (`IEditorService.openEditor(SideChatEditorInput)`) and, if the user typed
-text after `/btw `, sends it as a background request
-(`sessionsManagementService.sendRequest(session, sideChat, { query, background:
-true })`) so the Side Chat editor's `ChatWidget` shows the request without
-navigating away from the source chat.
+chat" behavior). After creating the chat, it activates that peer chat through
+the normal `ISessionsService.openChat(session, sideChat.resource)` flow so the
+standard session/chat focus behavior applies, then sends the prompt on that
+chat through the normal foreground send path.
 
 The agent host accepts the anchor when it is either in `turns` or
 `activeTurn`. Claude and Copilot serialize side-chat creation on the new chat's
 key rather than the source session's send key, allowing their native fork
 primitive to snapshot all provider transcript/events written up to that moment
-while the source turn continues. Native Copilot forks do not persist streamed
-assistant deltas before the final assistant message, so AgentService separately
-captures the active turn's user-visible markdown (bounded to 20,000 characters).
+while the source turn continues. Native Copilot forks do not persist an active turn until it reaches the backing
+transcript, so AgentService separately snapshots the active turn's user request
+plus any user-visible assistant markdown already streamed (both bounded to
+20,000 characters).
 The provider wraps the first SDK prompt in a private `<side-chat-context>`
 block. Every side chat receives the succinct instruction: "Prefer explanation
 over action; do not make changes or carry out work unless the user explicitly

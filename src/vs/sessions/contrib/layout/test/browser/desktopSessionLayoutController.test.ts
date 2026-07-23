@@ -32,7 +32,6 @@ import { CHANGES_VIEW_CONTAINER_ID, CHANGES_VIEW_ID } from '../../../changes/com
 import '../../../changes/browser/changesActions.js';
 import { SESSIONS_FILES_CONTAINER_ID } from '../../../files/browser/files.contribution.js';
 import { NewChangesTabAction, NewFileTabAction } from '../../../editor/browser/addTabActions.js';
-import { SideChatEditorInput } from '../../../sideChat/browser/sideChatEditorInput.js';
 import { createTestHarness, ICreateOptions, ITestLayoutHarness, makeChange, makeSession, TestStubEditorInput } from './layoutControllerTestUtils.js';
 
 suite('LayoutController (desktop)', () => {
@@ -286,7 +285,7 @@ suite('LayoutController (desktop)', () => {
 		);
 	});
 
-	test('[single-pane] gives browser and side-chat tabs the full side pane and restores docked details afterward', async () => {
+	test('[single-pane] gives browser tabs the full side pane and restores docked details afterward', async () => {
 		createSinglePaneController({ activateAux: true });
 		await timeout(0);
 		const hasDockedDetails = () => harness.contextKeyService.getContextKeyValue(HasDockedDetailsContext.key);
@@ -324,27 +323,6 @@ suite('LayoutController (desktop)', () => {
 		assert.ok(
 			harness.openedViewContainers.includes(SESSIONS_FILES_CONTAINER_ID),
 			'file tabs should reopen the Files container after browser hides it'
-		);
-
-		harness.setPartHiddenCalls = [];
-		harness.activeEditorInput = store.add(new SideChatEditorInput());
-		harness.onDidActiveEditorChange.fire();
-		assert.strictEqual(hasDockedDetails(), false, 'side-chat target should clear the editor chevron context');
-		await timeout(0);
-
-		assert.ok(
-			harness.setPartHiddenCalls.some(c => c.part === Parts.AUXILIARYBAR_PART && c.hidden === true),
-			'side-chat tabs should hide the detail panel'
-		);
-
-		harness.setPartHiddenCalls = [];
-		harness.activeEditorInput = store.add(new EmptyFileEditorInput());
-		harness.onDidActiveEditorChange.fire();
-		await timeout(0);
-
-		assert.ok(
-			harness.setPartHiddenCalls.some(c => c.part === Parts.AUXILIARYBAR_PART && c.hidden === false),
-			'file tabs should restore the detail panel after side chat hides it'
 		);
 
 		// A search tab (any non-changes/non-file editor) has no detail panel, so

@@ -580,8 +580,8 @@ export interface ISessionCapabilities {
 	/**
 	 * Whether this session supports creating a side chat from a turn (via
 	 * `/btw`). Side chats inherit the source chat's model/agent and are shown
-	 * in a dedicated top-level Side Chat editor, never in the conversation tab
-	 * strip. Defaults to falsy (no side chat) when omitted.
+	 * as ordinary peer chats in the session's standard chat tabs. Defaults to
+	 * falsy (no side chat) when omitted.
 	 */
 	readonly supportsSideChat?: boolean;
 	/**

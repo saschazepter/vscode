@@ -20,7 +20,7 @@ import { INativeEnvironmentService } from '../../../environment/common/environme
 import { ILogService } from '../../../log/common/log.js';
 import { IProductService } from '../../../product/common/productService.js';
 import { IAgentPluginManager, ISyncedCustomization } from '../../common/agentPluginManager.js';
-import { AgentSessionEntry, decodeProviderData, encodeProviderData, prepareSideChatPrompt, stripSideChatContext, type IPersistedChat } from '../agentPeerChats.js';
+import { AgentSessionEntry, buildSideChatSourceContext, decodeProviderData, encodeProviderData, prepareSideChatPrompt, stripSideChatContext, type IPersistedChat } from '../agentPeerChats.js';
 import { AgentHostConfigKey, agentHostCustomizationConfigSchema } from '../../common/agentHostCustomizationConfig.js';
 import { createSchema, platformSessionSchema, schemaProperty } from '../../common/agentHostSchema.js';
 import { ClaudePermissionMode, ClaudeSessionConfigKey, narrowClaudePermissionMode } from '../../common/claudeSessionConfigKeys.js';
@@ -32,7 +32,7 @@ import { ActionType, AuthRequiredReason, type AuthRequiredParams } from '../../c
 import type { ResolveSessionConfigResult, SessionConfigCompletionsResult } from '../../common/state/protocol/commands.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { PolicyState, ProtectedResourceMetadata, type AgentSelection, type ModelSelection, type ToolDefinition } from '../../common/state/protocol/state.js';
-import { isSubagentSession, parseSubagentSessionUri, buildDefaultChatUri, parseChatUri, parseRequiredSessionUriFromChatUri, isDefaultChatUri, ChatInputResponseKind, type ClientPluginCustomization, type Customization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, type ToolCallResult, type Turn } from '../../common/state/sessionState.js';
+import { isSubagentSession, parseSubagentSessionUri, buildDefaultChatUri, parseChatUri, parseRequiredSessionUriFromChatUri, isDefaultChatUri, ChatInputResponseKind, type ChatState, type ClientPluginCustomization, type Customization, type MessageAttachment, type PendingMessage, type ChatInputAnswer, type ToolCallResult, type Turn } from '../../common/state/sessionState.js';
 import { IAgentConfigurationService } from '../agentConfigurationService.js';
 import { IAgentHostGitHubEndpointService } from '../agentHostGitHubEndpointService.js';
 import { IAgentHostGitService } from '../../common/agentHostGitService.js';
@@ -53,6 +53,7 @@ import { resolvePromptToContentBlocks } from './claudePromptResolver.js';
 import { IClaudeProxyHandle, IClaudeProxyService, type ClaudeTransport } from './claudeProxyService.js';
 import { readClaudePermissionMode } from './claudeSessionPermissionMode.js';
 import { ClaudeSessionMetadataStore, IClaudeSessionOverlay } from './claudeSessionMetadataStore.js';
+import { AgentHostStateManager, IAgentHostStateManager } from '../agentHostStateManager.js';
 
 const USER_AGENT_PREFIX = 'vscode_claude_code';
 
@@ -436,6 +437,7 @@ export class ClaudeAgent extends Disposable implements IAgent {
 		@ICopilotApiService private readonly _copilotApiService: ICopilotApiService,
 		@IClaudeProxyService private readonly _claudeProxyService: IClaudeProxyService,
 		@IClaudeAgentSdkService private readonly _sdkService: IClaudeAgentSdkService,
+		@IAgentHostStateManager private readonly _stateManager: AgentHostStateManager,
 		@IAgentHostGitService private readonly _gitService: IAgentHostGitService,
 		@IAgentConfigurationService private readonly _configurationService: IAgentConfigurationService,
 		@IAgentHostGitHubEndpointService private readonly _gitHubEndpointService: IAgentHostGitHubEndpointService,
@@ -1256,13 +1258,15 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			} else if (options?.sideChat) {
 				const forked = await this._forkChat(session, options.sideChat);
 				sdkSessionId = forked?.sessionId;
-				if (!forked) {
+				const fallbackContext = options.sideChat.sourceContext ?? (!forked ? this._buildSideChatContext(session, options.sideChat.source, options.sideChat.turnId) : undefined);
+				if (!forked && !fallbackContext && !options.sideChat.partialResponse) {
 					throw new Error(`[Claude] createChat side chat: source turn ${options.sideChat.turnId} could not be forked`);
 				}
 				sideChat = {
 					source: options.sideChat.source.toString(),
 					turnId: options.sideChat.turnId,
-					inheritedTurnCount: forked.inheritedTurnCount,
+					inheritedTurnCount: forked?.inheritedTurnCount ?? 0,
+					...(fallbackContext ? { context: fallbackContext } : {}),
 					...(options.sideChat.partialResponse ? { partialResponse: options.sideChat.partialResponse } : {}),
 				};
 			}
@@ -1395,6 +1399,27 @@ export class ClaudeAgent extends Disposable implements IAgent {
 			return inMemory;
 		}
 		return this._resolveChatBacking(chatUri)?.sdkSessionId;
+	}
+
+	private _getSourceChatState(session: URI, chatUri: URI): ChatState | undefined {
+		if (isDefaultChatUri(chatUri) || chatUri.toString() === session.toString()) {
+			return this._stateManager.getDefaultChatState(session.toString());
+		}
+		return this._stateManager.getChatState(chatUri.toString());
+	}
+
+	private _buildSideChatContext(session: URI, chatUri: URI, turnId: string): string | undefined {
+		const state = this._getSourceChatState(session, chatUri);
+		if (!state) {
+			return undefined;
+		}
+		const completedIndex = state.turns.findIndex(turn => turn.id === turnId);
+		const boundedTurns = completedIndex >= 0
+			? state.turns.slice(0, completedIndex + 1)
+			: state.activeTurn?.id === turnId
+				? state.turns
+				: undefined;
+		return boundedTurns ? buildSideChatSourceContext(boundedTurns, state.activeTurn?.id === turnId ? state.activeTurn : undefined) : undefined;
 	}
 
 	/**

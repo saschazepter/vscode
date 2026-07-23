@@ -3292,7 +3292,7 @@ suite('CopilotAgent', () => {
 			_sessions: Map<string, CopilotSessionEntry>;
 			_createAgentSession: (launchPlan: CopilotSessionLaunchPlan, customizationDirectory: URI | undefined, activeClient: unknown, identity?: { sessionUri: URI; chatChannelUri: URI }) => CopilotAgentSession;
 			_sessionSequencer: { queue<T>(key: string, task: () => Promise<T>): Promise<T> };
-			_forkSdkChat: (client: unknown, sourceEntry: unknown, turnId: string, targetDbDir: URI) => Promise<string>;
+			_forkSdkChat: (client: unknown, sourceEntry: unknown, turnId: string, targetDbDir: URI) => Promise<{ sessionId: string; inheritedTurnCount: number }>;
 			_resolveAgentName: (snapshot: IActiveClientSnapshot, agent: AgentSelection) => string | undefined;
 		};
 
@@ -3436,7 +3436,7 @@ suite('CopilotAgent', () => {
 				let forkArgs: { sourceEntry: unknown; turnId: string } | undefined;
 				internals._forkSdkChat = async (_client, sourceEntry, turnId) => {
 					forkArgs = { sourceEntry, turnId };
-					return 'forked-sdk-id';
+					return { sessionId: 'forked-sdk-id', inheritedTurnCount: 0 };
 				};
 				let captured: CopilotSessionLaunchPlan | undefined;
 				internals._createAgentSession = (launchPlan) => {
@@ -3488,7 +3488,8 @@ suite('CopilotAgent', () => {
 					usage: undefined,
 				};
 				const partialResponse = 'partial source answer';
-				const injectedPrompt = injectSideChatContext('side', partialResponse);
+				const sourceContext = 'User request:\nsource\n\nAgent response:\nsource answer\n\n---\n\nUser request:\nactive source';
+				const injectedPrompt = injectSideChatContext('side', partialResponse, sourceContext);
 				const sideTurn: Turn = {
 					id: 't2',
 					state: TurnState.Complete,
@@ -3499,7 +3500,7 @@ suite('CopilotAgent', () => {
 				const source = makeFakeChatSession(session, 'source-sdk', async () => [sourceTurn]);
 				setDefaultSessionStub(agent, AgentSession.id(session), source.fake);
 				const internals = agent as unknown as ChatInternals;
-				internals._forkSdkChat = async () => 'side-sdk-id';
+				internals._forkSdkChat = async () => ({ sessionId: 'side-sdk-id', inheritedTurnCount: 1 });
 				let messageReadCount = 0;
 				let sideRecorder: IFakeChatRecorder | undefined;
 				internals._createAgentSession = launchPlan => {
@@ -3523,7 +3524,7 @@ suite('CopilotAgent', () => {
 				const createTimeout = timeout(5_000);
 				try {
 					result = await Promise.race([
-						agent.chats.createChat(chatUri, { sideChat: { source: URI.parse(buildDefaultChatUri(session)), turnId: 't1', partialResponse } }),
+						agent.chats.createChat(chatUri, { sideChat: { source: URI.parse(buildDefaultChatUri(session)), turnId: 'active-turn', sourceContext, partialResponse } }),
 						createTimeout.then(() => { throw new Error('Side chat creation waited for the source turn lock'); }),
 					]);
 				} finally {
@@ -3547,7 +3548,7 @@ suite('CopilotAgent', () => {
 					sentPrompts: [injectedPrompt, 'follow-up'],
 					turns: ['t2'],
 					visiblePrompt: 'side',
-					sideChat: { source: buildDefaultChatUri(session), turnId: 't1', inheritedTurnCount: 1, partialResponse },
+					sideChat: { source: buildDefaultChatUri(session), turnId: 'active-turn', inheritedTurnCount: 1, context: sourceContext, partialResponse },
 				});
 			} finally {
 				await disposeAgent(agent);
@@ -3920,9 +3921,9 @@ suite('CopilotAgent', () => {
 				installFake(agent, AgentSession.id(session), 'session', session);
 
 				const forkArgs: { turnId: string }[] = [];
-				(agent as unknown as { _forkSdkChat: (client: unknown, sourceEntry: unknown, turnId: string) => Promise<string> })._forkSdkChat = async (_c, _s, turnId) => {
+				(agent as unknown as { _forkSdkChat: (client: unknown, sourceEntry: unknown, turnId: string) => Promise<{ sessionId: string; inheritedTurnCount: number }> })._forkSdkChat = async (_c, _s, turnId) => {
 					forkArgs.push({ turnId });
-					return 'forked-sdk-id';
+					return { sessionId: 'forked-sdk-id', inheritedTurnCount: 0 };
 				};
 				stubBackingSession(agent);
 

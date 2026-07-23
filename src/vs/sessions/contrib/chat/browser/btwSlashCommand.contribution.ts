@@ -8,31 +8,26 @@ import { localize } from '../../../../nls.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
-import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
 import { IWorkbenchEnvironmentService } from '../../../../workbench/services/environment/common/environmentService.js';
-import { IEditorGroupsService } from '../../../../workbench/services/editor/common/editorGroupsService.js';
-import { IEditorService } from '../../../../workbench/services/editor/common/editorService.js';
 import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
 import { IChatService } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { IChatSlashCommandService } from '../../../../workbench/contrib/chat/common/participants/chatSlashCommands.js';
 import { IsSessionsWindowContext } from '../../../../workbench/common/contextkeys.js';
+import { ISessionsService } from '../../../services/sessions/browser/sessionsService.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { SessionIsArchivedContext, SessionIsCreatedContext, SessionSupportsSideChatContext } from '../../../common/contextkeys.js';
 import { SessionStatus } from '../../../services/sessions/common/session.js';
-import { SideChatEditorInput } from '../../sideChat/browser/sideChatEditorInput.js';
 
-class BtwSlashCommandContribution extends Disposable implements IWorkbenchContribution {
+export class BtwSlashCommandContribution extends Disposable implements IWorkbenchContribution {
 
 	static readonly ID = 'sessions.contrib.btwSlashCommand';
 
 	constructor(
 		@IChatSlashCommandService slashCommandService: IChatSlashCommandService,
+		@ISessionsService sessionsService: ISessionsService,
 		@ISessionsManagementService sessionsManagementService: ISessionsManagementService,
 		@IChatService chatService: IChatService,
-		@IEditorService editorService: IEditorService,
-		@IEditorGroupsService editorGroupsService: IEditorGroupsService,
-		@IInstantiationService instantiationService: IInstantiationService,
 		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 		@ILogService logService: ILogService,
 		@INotificationService notificationService: INotificationService,
@@ -90,9 +85,8 @@ class BtwSlashCommandContribution extends Disposable implements IWorkbenchContri
 				return;
 			}
 
-			const group = editorGroupsService.mainPart.activeGroup;
-			await editorService.openEditor(instantiationService.createInstance(SideChatEditorInput), { pinned: true, index: group.count }, group);
-			await sessionsManagementService.sendRequest(session, sideChat, { query: remainder, background: true });
+			await sessionsService.openChat(session, sideChat.resource);
+			await sessionsManagementService.sendRequest(session, sideChat, { query: remainder });
 		}));
 	}
 }

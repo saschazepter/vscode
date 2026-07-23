@@ -18,13 +18,14 @@ const CHAT_TRANSCRIPT_PREAMBLE =
 
 /**
  * Returns the referenced chat's turns bounded through {@link endTurn}, inclusive.
- * When {@link endTurn} is not present (e.g. the source chat was pruned or
- * truncated past the branch point) every retained turn is returned as a
- * best-effort fallback.
+ * Throws when {@link endTurn} is not a retained completed turn.
  */
 export function boundChatTranscriptTurns(turns: readonly Turn[], endTurn: string): readonly Turn[] {
 	const index = turns.findIndex(t => t.id === endTurn);
-	return index < 0 ? turns : turns.slice(0, index + 1);
+	if (index < 0) {
+		throw new Error(`Chat attachment endTurn ${endTurn} was not found in the retained transcript.`);
+	}
+	return turns.slice(0, index + 1);
 }
 
 /**

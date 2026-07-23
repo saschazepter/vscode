@@ -1630,16 +1630,29 @@ export class AgentSideEffects extends Disposable {
 			if (sourceSession !== URI.parse(sessionChannel).toString()) {
 				throw new Error(`Chat attachment source must belong to the target session: ${attachment.resource}`);
 			}
+			const sourceState = this._resolveSourceChatState(attachment.resource);
+			if (sourceState?.activeTurn?.id === attachment.endTurn) {
+				throw new Error(`Chat attachment endTurn must reference a completed turn: ${attachment.resource}#${attachment.endTurn}`);
+			}
 			const sourceTurns = await this._options.resolveChatAttachmentTurns?.(attachment.resource)
-				?? this._resolveSourceChatTurns(attachment.resource);
+				?? sourceState?.turns
+				?? [];
 			return resolveChatAttachment(attachment, sourceTurns);
 		}));
 	}
 
-	private _resolveSourceChatTurns(sourceUri: string): readonly Turn[] {
+	private _resolveSourceChatState(sourceUri: string) {
 		const peerState = this._stateManager.getChatState(sourceUri);
-		const state = peerState ?? this._stateManager.getDefaultChatState(sourceUri);
-		return state?.turns ?? [];
+		if (peerState) {
+			return peerState;
+		}
+		if (!isAhpChatChannel(sourceUri)) {
+			return this._stateManager.getDefaultChatState(sourceUri);
+		}
+		if (isDefaultChatUri(sourceUri)) {
+			return this._stateManager.getDefaultChatState(parseRequiredSessionUriFromChatUri(sourceUri));
+		}
+		return undefined;
 	}
 
 	/**

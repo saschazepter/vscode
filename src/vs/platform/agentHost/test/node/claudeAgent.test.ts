@@ -47,7 +47,7 @@ import { INativeEnvironmentService } from '../../../environment/common/environme
 import { IAgentChatDataChange, IAgentMaterializeSessionEvent, IAgentSpawnChatEvent, AgentSession, AgentSignal, GITHUB_COPILOT_PROTECTED_RESOURCE } from '../../common/agentService.js';
 import { AgentFeedbackAttachmentDisplayKind } from '../../common/meta/agentFeedbackAttachments.js';
 import { ActionType, type AuthRequiredParams } from '../../common/state/sessionActions.js';
-import { CustomizationLoadStatus, CustomizationType, MessageAttachmentKind, MessageKind, ResponsePartKind, ChatInputResponseKind, SessionStatus, ToolResultContentType, buildChatUri, buildDefaultChatUri, buildSubagentChatUri, buildSubagentSessionUri, customizationId, parseChatUri, parseDefaultChatUri, type ClientPluginCustomization, type Customization, type PluginCustomization } from '../../common/state/sessionState.js';
+import { CustomizationLoadStatus, CustomizationType, MessageAttachmentKind, MessageKind, ResponsePartKind, ChatInputResponseKind, SessionStatus, ToolResultContentType, TurnState, buildChatUri, buildDefaultChatUri, buildSubagentChatUri, buildSubagentSessionUri, customizationId, parseChatUri, parseDefaultChatUri, type ClientPluginCustomization, type Customization, type PluginCustomization, type Turn } from '../../common/state/sessionState.js';
 import { ISessionDataService } from '../../common/sessionDataService.js';
 import { AHP_AUTH_REQUIRED, ProtocolError } from '../../common/state/sessionProtocol.js';
 import { ProtectedResourceMetadata, ChatInputAnswerState, ChatInputAnswerValueKind, ToolCallStatus, type SessionConfigState, type ChatInputRequest, type ToolDefinition } from '../../common/state/protocol/state.js';
@@ -6807,6 +6807,42 @@ suite('ClaudeAgent — Phase 11 customizations', () => {
 			sentPrompt: injectedPrompt,
 			turns: ['side question'],
 			sideChat: { source: created.session.toString(), turnId: 'u1', inheritedTurnCount: 1, partialResponse },
+		});
+	});
+
+	test('createChat({ sideChat }) falls back to injected source context when the source transcript is unavailable', async () => {
+		const { agent, sdk, stateManager } = createTestContext(disposables);
+		await agent.authenticate(GITHUB_COPILOT_PROTECTED_RESOURCE.resource, 'tok');
+		const created = await agent.createSession({ workingDirectory: URI.file('/work') });
+		stateManager.restoreSession({
+			resource: created.session.toString(),
+			provider: 'claude',
+			title: 't',
+			status: SessionStatus.Idle,
+			createdAt: new Date().toISOString(),
+			modifiedAt: new Date().toISOString(),
+		}, [{
+			id: 'turn-source',
+			state: TurnState.Complete,
+			message: { text: 'remember', origin: { kind: MessageKind.User } },
+			responseParts: [{ kind: ResponsePartKind.Markdown, id: 'turn-source-md', content: 'ready' }],
+			usage: undefined,
+		} satisfies Turn]);
+
+		const chatUri = URI.parse(buildChatUri(created.session.toString(), 'chat-side-live'));
+		const result = await agent.chats.createChat(chatUri, { sideChat: { source: defaultChatUri(created.session), turnId: 'turn-source' } });
+
+		assert.deepStrictEqual({
+			forked: sdk.forkSessionCalls.length,
+			sideChat: result ? JSON.parse(result.providerData!).sideChat : undefined,
+		}, {
+			forked: 0,
+			sideChat: {
+				source: defaultChatUri(created.session).toString(),
+				turnId: 'turn-source',
+				inheritedTurnCount: 0,
+				context: 'User request:\nremember\n\nAgent response:\nready',
+			},
 		});
 	});
 

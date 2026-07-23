@@ -2943,7 +2943,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}
 
 		this.input.acceptInput(storeToHistory, preserveFocus);
-		const prompt = parsedRequest.text.substring(commandPart.slashCommand.command.length + 1).trimStart();
+		const prompt = parsedRequest.text.slice(commandPart.range.endExclusive).trimStart();
 		try {
 			await this.chatSlashCommandService.executeCommand(
 				commandPart.slashCommand.command,

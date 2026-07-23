@@ -25,7 +25,6 @@ import { CHANGES_VIEW_CONTAINER_ID } from '../../../changes/common/changes.js';
 import { ISessionChangesService } from '../../../changes/browser/sessionChangesService.js';
 import { EmptyFileEditorInput } from '../../../editor/browser/emptyFileEditorInput.js';
 import { SESSIONS_FILES_CONTAINER_ID } from '../../../files/browser/files.contribution.js';
-import { SideChatEditorInput } from '../../../sideChat/browser/sideChatEditorInput.js';
 import { ISinglePaneLayoutContext, SinglePaneLayoutStrategy } from './singlePaneLayoutStrategy.js';
 
 const enum DetailPanelTarget {
@@ -123,7 +122,7 @@ export class SinglePaneDetailPanelStrategy extends SinglePaneLayoutStrategy {
 			return activeSession?.isCreated.read(reader) ? DetailPanelTarget.Changes : DetailPanelTarget.Files;
 		}
 
-		if (activeEditor instanceof BrowserEditorInput || activeEditor instanceof SideChatEditorInput) {
+		if (activeEditor instanceof BrowserEditorInput) {
 			return DetailPanelTarget.FullWidthEditor;
 		}
 

@@ -30,12 +30,12 @@ import { ActionType, ActionEnvelope, AuthRequiredReason, INotification, type Cha
 import type { CompletionsParams, CompletionsResult, CreateTerminalParams, ResolveSessionConfigResult, SessionConfigCompletionsResult, SessionConfigPropertySchema } from '../common/state/protocol/commands.js';
 import type { InvokeChangesetOperationParams, InvokeChangesetOperationResult } from '../common/state/protocol/channels-changeset/commands.js';
 import { AhpErrorCodes, AHP_SESSION_NOT_FOUND, ContentEncoding, JSON_RPC_INTERNAL_ERROR, ProtocolError, ResourceChangeType, ResourceType, ResourceWriteMode, type CreateResourceWatchParams, type CreateResourceWatchResult, type DirectoryEntry, type ResourceCopyParams, type ResourceCopyResult, type ResourceDeleteParams, type ResourceDeleteResult, type ResourceListResult, type ResourceMkdirParams, type ResourceMkdirResult, type ResourceMoveParams, type ResourceMoveResult, type ResourceReadResult, type ResourceResolveParams, type ResourceResolveResult, type ResourceWatchState, type ResourceWriteParams, type ResourceWriteResult, type IStateSnapshot } from '../common/state/sessionProtocol.js';
-import { ChangesSummary, ChatInteractivity, ChatOriginKind, MessageAttachmentKind, type ChatOrigin, type Message, type MessageAttachment, type MessageResourceAttachment } from '../common/state/protocol/state.js';
+import { ChangesSummary, ChatInteractivity, ChatOriginKind, ChatSourceTurnKind, MessageAttachmentKind, type ChatOrigin, type Message, type MessageAttachment, type MessageResourceAttachment } from '../common/state/protocol/state.js';
 import type { ChatPendingMessageSetAction, ChatTurnStartedAction } from '../common/state/protocol/actions.js';
 import { ISessionGitHubState, ISessionGitState, MessageKind, ResponsePartKind, SESSION_META_GITHUB_KEY, SESSION_META_GIT_KEY, readSessionSpawnDepth, withSessionSpawnDepth, SessionStatus, ToolCallStatus, ToolResultContentType, AH_META_WORKSPACELESS_DB_KEY, AH_META_IS_ARCHIVED_DB_KEY, AH_META_IS_DONE_DB_KEY, buildChatUri, buildDefaultChatUri, buildResourceWatchChannelUri, buildSubagentChatUri, buildSubagentSessionUriPrefix, hostBuildInfoFromProduct, isAhpChatChannel, isDefaultChatUri, isSubagentChatUri, isSubagentSession, parseDefaultChatUri, parseRequiredSessionUriFromChatUri, parseResourceWatchChannelUri, parseSubagentSessionUri, readSessionGitState, readSessionWorkspaceless, withSessionGitHubState, withSessionGitState, withSessionWorkspaceless, type SessionConfigState, type SessionSummary, type ToolResultSubagentContent, type Turn } from '../common/state/sessionState.js';
 import { readToolCallMeta } from '../common/meta/agentToolCallMeta.js';
 import { IProductService } from '../../product/common/productService.js';
-import { renderResponseMarkdown, truncateMiddle } from '../common/agentHostConversationContext.js';
+import { buildSideChatSourceContext, getSideChatPartialResponse } from './agentPeerChats.js';
 import { AgentConfigurationService, IAgentConfigurationService } from './agentConfigurationService.js';
 import { AgentHostTerminalManager, IAgentHostTerminalManager } from './agentHostTerminalManager.js';
 import { ISessionDbUriFields, parseSessionDbUri } from './shared/fileEditTracker.js';
@@ -48,7 +48,6 @@ import { AgentServerToolHost } from './shared/agentServerToolHost.js';
 import { buildServerToolGroups } from './shared/serverToolGroups.js';
 import { type IChatContextSnapshot, type ISessionServerToolAccessor } from './shared/sessionServerTools.js';
 
-const MAX_SIDE_CHAT_PARTIAL_RESPONSE_CHARS = 20_000;
 import { WorktreeIsolation, WORKTREE_META_REPOSITORY_ROOT, worktreeProjectFromRepositoryRoot } from './shared/worktreeIsolation.js';
 import { AgentHostChangesetService } from './agentHostChangesetService.js';
 import { AgentHostFileMonitorService, IAgentHostFileMonitorService } from './agentHostFileMonitorService.js';
@@ -1191,12 +1190,12 @@ export class AgentService extends Disposable implements IAgentService {
 				...options,
 				sideChat: {
 					...options.sideChat,
+					source: URI.parse(resolvedSideChat.sourceChat),
+					...(resolvedSideChat.sourceContext ? { sourceContext: resolvedSideChat.sourceContext } : {}),
 					...(resolvedSideChat.partialResponse ? { partialResponse: resolvedSideChat.partialResponse } : {}),
 				},
 			};
-			const sourceKey = options.sideChat.source.toString();
-			const sourceChatUri = this._stateManager.getChatState(sourceKey) ? sourceKey : buildDefaultChatUri(sourceKey);
-			const concreteTurnId = this._localTurns.resolveConcreteTurnId(sourceChatUri, options.sideChat.turnId);
+			const concreteTurnId = this._localTurns.resolveConcreteTurnId(resolvedSideChat.sourceChat, options.sideChat.turnId);
 			if (concreteTurnId !== undefined) {
 				createOptions = { ...createOptions, sideChat: { ...createOptions.sideChat!, turnId: concreteTurnId } };
 			}
@@ -1283,30 +1282,56 @@ export class AgentService extends Disposable implements IAgentService {
 	 * origin. Throws when the source chat is not part of `session` or when the
 	 * referenced completed or active turn is absent.
 	 */
-	private _resolveSideChatOrigin(session: URI, sideChat: IAgentCreateChatSideChatSource): { origin: ChatOrigin; partialResponse?: string } {
+	private _resolveSideChatOrigin(session: URI, sideChat: IAgentCreateChatSideChatSource): { origin: ChatOrigin; sourceChat: string; sourceContext?: string; partialResponse?: string } {
 		const sessionKey = session.toString();
 		const sourceKey = sideChat.source.toString();
-		// The source chat MUST belong to the target session. A source addressed
-		// by a peer-chat URI carries its session in the URI; otherwise it is the
-		// session URI itself (the default chat).
-		const sourceSessionKey = isAhpChatChannel(sourceKey) ? parseRequiredSessionUriFromChatUri(sourceKey) : sourceKey;
+		const { sourceChatKey, sourceSessionKey, sourceState } = this._resolveSessionSourceChat(session, sideChat.source);
+		// The source chat MUST belong to the target session. Older callers may
+		// still address the main chat by session URI; synced AHP clients send the
+		// actual default-chat URI.
 		if (sourceSessionKey !== sessionKey) {
 			throw new Error(`[AgentService] createChat: side chat source ${sourceKey} does not belong to session ${sessionKey}`);
 		}
 		// The bounded turn must be a real completed or currently-active turn.
-		const peerState = this._stateManager.getChatState(sourceKey);
-		const sourceState = peerState ?? this._stateManager.getDefaultChatState(sourceKey);
 		const activeTurn = sourceState?.activeTurn?.id === sideChat.turnId ? sourceState.activeTurn : undefined;
 		if (!sourceState?.turns.some(t => t.id === sideChat.turnId) && !activeTurn) {
 			throw new Error(`[AgentService] createChat: side chat source turn ${sideChat.turnId} not found in ${sourceKey}`);
 		}
-		const responseMarkdown = activeTurn ? renderResponseMarkdown(activeTurn.responseParts) : '';
-		const partialResponse = responseMarkdown
-			? truncateMiddle(responseMarkdown, MAX_SIDE_CHAT_PARTIAL_RESPONSE_CHARS)
-			: undefined;
+		const partialResponse = getSideChatPartialResponse(activeTurn);
+		const sourceContext = activeTurn ? buildSideChatSourceContext(sourceState?.turns ?? [], activeTurn) : undefined;
 		return {
-			origin: { kind: ChatOriginKind.SideChat, chat: sourceKey, turnId: sideChat.turnId },
+			origin: {
+				kind: ChatOriginKind.SideChat,
+				chat: sourceChatKey,
+				turn: {
+					kind: activeTurn ? ChatSourceTurnKind.Active : ChatSourceTurnKind.Completed,
+					turnId: sideChat.turnId,
+				},
+			},
+			sourceChat: sourceChatKey,
+			...(sourceContext ? { sourceContext } : {}),
 			...(partialResponse ? { partialResponse } : {}),
+		};
+	}
+
+	private _resolveSessionSourceChat(session: URI, source: URI): { sourceChatKey: string; sourceSessionKey: string; sourceState: ReturnType<AgentHostStateManager['getChatState']> | undefined } {
+		const sessionKey = session.toString();
+		const sourceKey = source.toString();
+		const sourceSessionKey = isAhpChatChannel(sourceKey) ? parseRequiredSessionUriFromChatUri(sourceKey) : sourceKey;
+		const defaultChatKey = this._stateManager.getSessionState(sessionKey)?.defaultChat ?? buildDefaultChatUri(sessionKey);
+		const sourceChatKey = sourceKey === sessionKey
+			? defaultChatKey
+			: this._stateManager.getChatState(sourceKey)
+				? sourceKey
+				: isDefaultChatUri(sourceKey) && sourceSessionKey === sessionKey
+					? defaultChatKey
+					: sourceKey;
+		return {
+			sourceSessionKey,
+			sourceChatKey,
+			sourceState: sourceChatKey === defaultChatKey
+				? (this._stateManager.getChatState(defaultChatKey) ?? this._stateManager.getDefaultChatState(sessionKey))
+				: this._stateManager.getChatState(sourceChatKey),
 		};
 	}
 

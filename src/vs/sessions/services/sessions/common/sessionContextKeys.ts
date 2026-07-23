@@ -181,7 +181,7 @@ export function setActiveSessionContextKeys(session: IActiveSession | undefined,
 	// real chat. Counts the whole chat list (open or closed) so a committed chat
 	// that was closed still keeps the menu available to reopen it.
 	const committedChatCount = session?.chats.read(reader)
-		.reduce((count, chat) => chat.status.read(reader) === SessionStatus.Untitled || chat.origin?.kind === ChatOriginKind.Tool || chat.origin?.kind === ChatOriginKind.SideChat ? count : count + 1, 0) ?? 0;
+		.reduce((count, chat) => chat.status.read(reader) === SessionStatus.Untitled || chat.origin?.kind === ChatOriginKind.Tool ? count : count + 1, 0) ?? 0;
 	keys.hasMultipleCommittedChats.set(committedChatCount > 1);
 
 	// The tab strip is shown when the session has more than one chat (counting

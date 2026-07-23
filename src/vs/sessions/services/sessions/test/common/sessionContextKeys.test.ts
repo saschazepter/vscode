@@ -10,9 +10,10 @@ import { URI } from '../../../../../base/common/uri.js';
 import { upcastPartial } from '../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { MockContextKeyService } from '../../../../../platform/keybinding/test/common/mockKeybindingService.js';
-import { SessionHasGitRepositoryContext, SessionSupportsSideChatContext } from '../../../../common/contextkeys.js';
-import { ChatInteractivity, IChat, ISession } from '../../common/session.js';
-import { setSessionContextKeys } from '../../common/sessionContextKeys.js';
+import { SessionHasGitRepositoryContext, SessionHasMultipleCommittedChatsContext, SessionSupportsSideChatContext } from '../../../../common/contextkeys.js';
+import { ChatInteractivity, ChatOriginKind, IChat, ISession, SessionStatus } from '../../common/session.js';
+import { IActiveSession } from '../../common/sessionsManagement.js';
+import { setActiveSessionContextKeys, setSessionContextKeys } from '../../common/sessionContextKeys.js';
 
 function createSession(hasGitRepository: ISettableObservable<boolean>): ISession {
 	return upcastPartial<ISession>({
@@ -138,5 +139,34 @@ suite('setSessionContextKeys - side chat', () => {
 
 		setSessionContextKeys(undefined, contextKeyService, undefined);
 		assert.strictEqual(SessionSupportsSideChatContext.getValue(contextKeyService), false);
+	});
+
+	test('counts side chats as committed chats but still excludes tool-origin chats', () => {
+		const contextKeyService = disposables.add(new MockContextKeyService());
+		const mainChat = { ...stubChat, resource: URI.parse('test:///chat/main'), status: constObservable(SessionStatus.Completed) };
+		const sideChat = { ...stubChat, resource: URI.parse('test:///chat/side'), origin: { kind: ChatOriginKind.SideChat }, status: constObservable(SessionStatus.Completed) };
+		const toolChat = { ...stubChat, resource: URI.parse('test:///chat/tool'), origin: { kind: ChatOriginKind.Tool }, status: constObservable(SessionStatus.Completed) };
+
+		const withSideChat = upcastPartial<IActiveSession>({
+			...stubSession({ sessionId: 'side', chats: constObservable([mainChat, sideChat]), mainChat: constObservable(mainChat) }),
+			isCreated: constObservable(true),
+			sticky: constObservable(false),
+			activeChat: constObservable(mainChat),
+			visibleChatTabs: constObservable([mainChat, sideChat]),
+			shouldShowChatTabs: constObservable(true),
+		});
+		setActiveSessionContextKeys(withSideChat, contextKeyService, undefined);
+		assert.strictEqual(SessionHasMultipleCommittedChatsContext.getValue(contextKeyService), true);
+
+		const withToolChat = upcastPartial<IActiveSession>({
+			...stubSession({ sessionId: 'tool', chats: constObservable([mainChat, toolChat]), mainChat: constObservable(mainChat) }),
+			isCreated: constObservable(true),
+			sticky: constObservable(false),
+			activeChat: constObservable(mainChat),
+			visibleChatTabs: constObservable([mainChat]),
+			shouldShowChatTabs: constObservable(false),
+		});
+		setActiveSessionContextKeys(withToolChat, contextKeyService, undefined);
+		assert.strictEqual(SessionHasMultipleCommittedChatsContext.getValue(contextKeyService), false);
 	});
 });

@@ -26,7 +26,7 @@ import { IChatEditorOptions } from '../../../../../workbench/contrib/chat/browse
 import { IChatWidgetHistoryService } from '../../../../../workbench/contrib/chat/common/widget/chatWidgetHistoryService.js';
 import { PreferredGroup } from '../../../../../workbench/services/editor/common/editorService.js';
 import { nullExtensionDescription } from '../../../../../workbench/services/extensions/common/extensions.js';
-import { ChatInteractivity, IChat, ISession, ISessionType, ISessionWorkspace, SessionStatus } from '../../common/session.js';
+import { ChatInteractivity, ChatOriginKind, IChat, ISession, ISessionType, ISessionWorkspace, SessionStatus } from '../../common/session.js';
 import { ILanguageModelChatMetadataAndIdentifier } from '../../../../../workbench/contrib/chat/common/languageModels.js';
 import { ISessionChangeEvent, ISendRequestOptions, ISessionModelsSnapshot, ISessionModelPickerOptions, ISessionsProvider } from '../../common/sessionsProvider.js';
 import { SessionsManagementService } from '../../browser/sessionsManagementService.js';
@@ -846,6 +846,46 @@ suite('SessionsManagementService', () => {
 		});
 
 		completeSendRequest?.();
+	});
+
+	test('send-follow activates only visible chat tabs', async () => {
+		const mainChat: IChat = { ...stubChat, resource: URI.parse('test:///chat/main'), title: constObservable('main') };
+		const sideChat: IChat = { ...stubChat, resource: URI.parse('test:///chat/side'), title: constObservable('side'), origin: { kind: ChatOriginKind.SideChat } };
+		const toolChat: IChat = { ...stubChat, resource: URI.parse('test:///chat/tool'), title: constObservable('tool'), origin: { kind: ChatOriginKind.Tool }, interactivity: constObservable(ChatInteractivity.ReadOnly) };
+		const session = stubSession({
+			sessionId: 's1',
+			providerId: 'test',
+			chats: constObservable([mainChat, sideChat, toolChat]),
+			mainChat: constObservable(mainChat),
+			capabilities: constObservable({ supportsMultipleChats: true }),
+		});
+		const provider = new class extends TestSessionsProvider {
+			override async sendRequest(_sessionId: string, _chatResource: URI, _options: ISendRequestOptions): Promise<ISession> {
+				return session;
+			}
+		}(session);
+		const { service, view } = createSessionsManagementService(session, disposables, provider);
+
+		await view.openSession(session.resource);
+		await view.openChat(session, sideChat.resource);
+		await service.sendRequest(session, toolChat, { query: 'hidden tool' });
+		await Promise.resolve();
+		const afterHiddenSend = view.activeSession.get()?.activeChat.get().resource.toString();
+
+		await view.openChat(session, toolChat.resource);
+		await service.sendRequest(session, toolChat, { query: 'visible tool' });
+		await Promise.resolve();
+		const afterVisibleSend = view.activeSession.get()?.activeChat.get().resource.toString();
+
+		assert.deepStrictEqual({
+			visibleTabs: view.activeSession.get()?.visibleChatTabs.get().map(chat => chat.title.get()),
+			afterHiddenSend,
+			afterVisibleSend,
+		}, {
+			visibleTabs: ['main', 'side', 'tool'],
+			afterHiddenSend: sideChat.resource.toString(),
+			afterVisibleSend: toolChat.resource.toString(),
+		});
 	});
 
 	test('createAndSendNewChatRequest sends without changing the active view', async () => {
@@ -1873,8 +1913,14 @@ suite('SessionsManagementService', () => {
 
 	suite('closed chats persistence', () => {
 
-		function chat(id: string, status: SessionStatus = SessionStatus.Completed): IChat {
-			return { ...stubChat, resource: URI.parse(`test:///chat/${id}`), title: constObservable(id), status: constObservable(status) };
+		function chat(id: string, status: SessionStatus = SessionStatus.Completed, origin?: ChatOriginKind): IChat {
+			return {
+				...stubChat,
+				resource: URI.parse(`test:///chat/${id}`),
+				title: constObservable(id),
+				status: constObservable(status),
+				origin: origin ? { kind: origin } : undefined,
+			};
 		}
 
 		function multiChatSession(id: string, chats: IChat[]): ISession {
@@ -1971,6 +2017,23 @@ suite('SessionsManagementService', () => {
 			await view.openSession(sessionA.resource);
 
 			assert.deepStrictEqual(closedTitles(view), []);
+		});
+
+		test('a closed side chat stays closed after switching away and back', async () => {
+			const sessionA = multiChatSession('A', [chat('mainA'), chat('side', SessionStatus.Completed, ChatOriginKind.SideChat)]);
+			const sessionB = multiChatSession('B', [chat('mainB')]);
+			const { view } = setup([sessionA, sessionB]);
+
+			await view.openSession(sessionA.resource);
+			const activeA = view.activeSession.get()!;
+			const sideChat = sessionA.chats.get().find(c => c.title.get() === 'side')!;
+			await view.closeChat(activeA, sideChat);
+			assert.deepStrictEqual(closedTitles(view), ['side']);
+
+			await view.openSession(sessionB.resource);
+			await view.openSession(sessionA.resource);
+
+			assert.deepStrictEqual(closedTitles(view), ['side']);
 		});
 
 		test('a closed chat stays closed across a restart', async () => {

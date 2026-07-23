@@ -28,15 +28,14 @@ suite('chatAttachmentContext', () => {
 
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('boundChatTranscriptTurns bounds through endTurn (inclusive) and falls back to all when absent', () => {
+	test('boundChatTranscriptTurns bounds through endTurn (inclusive)', () => {
 		const turns = [turn('t1', 'a', 'A'), turn('t2', 'b', 'B'), turn('t3', 'c', 'C')];
-		assert.deepStrictEqual({
-			bounded: boundChatTranscriptTurns(turns, 't2').map(t => t.id),
-			missing: boundChatTranscriptTurns(turns, 'nope').map(t => t.id),
-		}, {
-			bounded: ['t1', 't2'],
-			missing: ['t1', 't2', 't3'],
-		});
+		assert.deepStrictEqual(boundChatTranscriptTurns(turns, 't2').map(t => t.id), ['t1', 't2']);
+	});
+
+	test('boundChatTranscriptTurns rejects an unknown endTurn', () => {
+		const turns = [turn('t1', 'a', 'A'), turn('t2', 'b', 'B')];
+		assert.throws(() => boundChatTranscriptTurns(turns, 'missing'), /endTurn missing was not found/);
 	});
 
 	test('formatChatTranscript renders user + assistant text only (ignores tool calls)', () => {
@@ -65,5 +64,12 @@ suite('chatAttachmentContext', () => {
 		assert.ok(!resolved.modelRepresentation!.includes('ahp-chat://c/other'));
 		assert.ok(!resolved.modelRepresentation!.includes('Nested'));
 		assert.ok(resolved.modelRepresentation!.includes('User: ask'));
+	});
+
+	test('resolveChatAttachment rejects an attachment whose endTurn is not retained', () => {
+		assert.throws(
+			() => resolveChatAttachment({ type: MessageAttachmentKind.Chat, resource: 'ahp-chat://c/src', endTurn: 'missing', label: 'Conversation so far' }, [turn('t1', 'ask', 'answer')]),
+			/endTurn missing was not found/,
+		);
 	});
 });

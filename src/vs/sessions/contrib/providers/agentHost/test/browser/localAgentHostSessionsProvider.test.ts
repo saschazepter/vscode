@@ -2992,14 +2992,14 @@ suite('LocalAgentHostSessionsProvider', () => {
 				forkedIsPeer: !!forked.resource.fragment,
 				forkedInCatalog: session.chats.get().some(c => c.resource.toString() === forked.resource.toString()),
 			}, {
-				forkSource: sessionUri,
+				forkSource: defaultChat,
 				forkTurnId: 'turn-1',
 				forkedIsPeer: true,
 				forkedInCatalog: true,
 			});
 		}));
 
-		test('createSideChat forwards the source chat and turn to the host and inherits the source chat model/agent', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+		test('createSideChat forwards the source chat and turn to the host and surfaces a new peer chat', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
 			agentHost.setAgents([{ provider: 'copilotcli', displayName: 'Copilot', description: '', models: [], capabilities: { multipleChats: { fork: true, sideChat: true } } } as AgentInfo]);
 			const provider = createProvider(disposables, agentHost);
 			const session = setupMultiChatSession(provider, 'multi-side-chat');
@@ -3021,10 +3021,72 @@ suite('LocalAgentHostSessionsProvider', () => {
 				sideChatIsPeer: !!sideChat.resource.fragment,
 				sideChatInCatalog: session.chats.get().some(c => c.resource.toString() === sideChat.resource.toString()),
 			}, {
-				sideChatSource: sessionUri,
+				sideChatSource: defaultChat,
 				sideChatTurnId: 'turn-1',
 				sideChatIsPeer: true,
 				sideChatInCatalog: true,
+			});
+		}));
+
+		test('createSideChat inherits model and agent selection from the source peer chat', () => runWithFakedTimers<void>({ useFakeTimers: true }, async () => {
+			agentHost.setAgents([{ provider: 'copilotcli', displayName: 'Copilot', description: '', models: [], capabilities: { multipleChats: { fork: true, sideChat: true } } } as AgentInfo]);
+			const activeSession = observableValue<IActiveSession | undefined>('test.activeSession', undefined);
+			const inputStates: { resource: string; state: Partial<IChatModelInputState> }[] = [];
+			const provider = createProvider(disposables, agentHost, undefined, {
+				activeSession,
+				lookupLanguageModel: createTestLanguageModel,
+				acquireOrLoadSession: async resource => {
+					const inputModel = new class extends mock<IInputModel>() {
+						override readonly state = constObservable<IChatModelInputState | undefined>(undefined);
+						override setState(state: Partial<IChatModelInputState>): void {
+							inputStates.push({ resource: resource.toString(), state });
+						}
+						override clearState(): void { }
+						override toJSON(): undefined { return undefined; }
+					}();
+					const chatModel = new class extends mock<IChatModel>() {
+						override readonly inputModel = inputModel;
+					}();
+					return {
+						object: chatModel,
+						dispose() { },
+					} satisfies IChatModelReference;
+				},
+			});
+			const session = setupMultiChatSession(provider, 'multi-side-chat-peer-selection');
+			const sessionUri = AgentSession.uri('copilotcli', 'multi-side-chat-peer-selection').toString();
+			const defaultChat = buildDefaultChatUri(sessionUri);
+			const peerChat = buildChatUri(sessionUri, 'peer-1');
+			agentHost.setSessionState('multi-side-chat-peer-selection', 'copilotcli', makeState([
+				makeChatSummary(defaultChat, ''),
+				makeChatSummary(peerChat, 'Peer'),
+			], { defaultChat }));
+
+			const peer = session.chats.get().find(c => c.resource.fragment === 'peer-1');
+			assert.ok(peer);
+			activeSession.set({ sessionId: session.sessionId, activeChat: constObservable(peer!) } as IActiveSession, undefined);
+			provider.setModel(session.sessionId, 'agent-host-copilotcli:peer-model');
+			provider.setAgent?.(session.sessionId, { uri: 'agent://peer', name: 'peer' });
+
+			const sideChat = await provider.createSideChat(session.sessionId, peer!.resource, 'turn-1');
+			const call = agentHost.createdChats.at(-1);
+
+			assert.deepStrictEqual({
+				sideChatSource: call?.options?.sideChat?.source.toString(),
+				createdModel: call?.options?.model,
+				peerInputSelectedModels: inputStates
+					.filter(entry => entry.resource === sideChat.resource.toString())
+					.map(entry => entry.state.selectedModel?.identifier)
+					.filter((id): id is string => id !== undefined),
+				peerInputModes: inputStates
+					.filter(entry => entry.resource === sideChat.resource.toString())
+					.map(entry => entry.state.mode?.id)
+					.filter((id): id is string => id !== undefined),
+			}, {
+				sideChatSource: peerChat,
+				createdModel: { id: 'peer-model' },
+				peerInputSelectedModels: ['agent-host-copilotcli:peer-model'],
+				peerInputModes: ['agent://peer'],
 			});
 		}));
 
