@@ -1176,10 +1176,6 @@ export class ProtocolServerHandler extends Disposable {
 					provider: params.provider,
 					workingDirectories,
 					primaryWorkingDirectory,
-					// TRANSITIONAL: keep the singular alias populated (= primary, or the first
-					// requested directory) until all readers migrate to the plural fields, so
-					// provider cwd resolution is unchanged during the migration.
-					workingDirectory: primaryWorkingDirectory ?? workingDirectories?.[0],
 					session: URI.parse(params.channel),
 					fork,
 					config: params.config,

@@ -831,7 +831,8 @@ export class ClaudeAgent extends Disposable implements IAgent {
 
 		await this.createSession({
 			session,
-			workingDirectory,
+			workingDirectories: workingDirectory ? [workingDirectory] : undefined,
+			primaryWorkingDirectory: workingDirectory,
 			...(overlay.model ? { model: overlay.model } : {}),
 			...(overlay.agent ? { agent: overlay.agent } : {}),
 			...(overlay.permissionMode ? { config: { [ClaudeSessionConfigKey.PermissionMode]: overlay.permissionMode } } : {}),

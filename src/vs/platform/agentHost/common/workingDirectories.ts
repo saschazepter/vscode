@@ -19,23 +19,13 @@ import type { IAgentCreateSessionConfig } from './agentService.js';
  */
 
 /**
- * The requested working-directory set for a create-session config.
- *
- * Precedence: the explicit {@link IAgentCreateSessionConfig.workingDirectories}
- * when present (including an empty array, which means "explicitly no
- * directories"), otherwise the transitional singular
- * {@link IAgentCreateSessionConfig.workingDirectory} wrapped in a one-element
- * array, otherwise `undefined` (meaning "inherit / unspecified").
- *
- * The `!== undefined` check (rather than `.length`) is deliberate so the
- * distinction between `undefined` (inherit) and `[]` (explicitly none) is
- * preserved.
+ * The requested working-directory set for a create-session config: the explicit
+ * {@link IAgentCreateSessionConfig.workingDirectories}, or `undefined` when
+ * absent (meaning "inherit / unspecified"). An empty array means "explicitly no
+ * directories" and is preserved as-is.
  */
 export function getConfigWorkingDirectories(config: IAgentCreateSessionConfig | undefined): readonly URI[] | undefined {
-	if (config?.workingDirectories !== undefined) {
-		return config.workingDirectories;
-	}
-	return config?.workingDirectory ? [config.workingDirectory] : undefined;
+	return config?.workingDirectories;
 }
 
 /**
@@ -44,8 +34,7 @@ export function getConfigWorkingDirectories(config: IAgentCreateSessionConfig | 
  *
  * Precedence: an explicit {@link IAgentCreateSessionConfig.primaryWorkingDirectory},
  * otherwise the first entry of the {@link getConfigWorkingDirectories | requested
- * set} (which already folds in the transitional singular field). Returns
- * `undefined` when the config requests no directories.
+ * set}. Returns `undefined` when the config requests no directories.
  */
 export function getConfigPrimaryWorkingDirectory(config: IAgentCreateSessionConfig | undefined): URI | undefined {
 	return config?.primaryWorkingDirectory ?? getConfigWorkingDirectories(config)?.[0];

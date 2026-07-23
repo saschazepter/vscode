@@ -592,7 +592,8 @@ export async function applyCreateSessionTool(accessor: ISessionServerToolAccesso
 	const sessions = await accessor.listSessions();
 	const args = getCreateSessionArgs(rawArgs, sessions, accessor.getModels());
 	const config: IAgentCreateSessionConfig = {
-		workingDirectory: args.workspace,
+		workingDirectories: args.workspace ? [args.workspace] : undefined,
+		primaryWorkingDirectory: args.workspace,
 		...(args.model !== undefined ? { provider: args.model.provider, model: { id: args.model.id } } : {}),
 	};
 	const session = await accessor.createSession(config);

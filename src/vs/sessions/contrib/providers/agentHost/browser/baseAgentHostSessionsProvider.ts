@@ -1617,7 +1617,8 @@ class NewSession extends Disposable {
 				await connection.createSession({
 					provider: this.agentProvider,
 					session: backendUri,
-					workingDirectory: this.workspaceUri,
+					workingDirectories: this.workspaceUri ? [this.workspaceUri] : undefined,
+					primaryWorkingDirectory: this.workspaceUri,
 					config: this._config?.values,
 					// MCP-style opt-in: offer to receive `progress` for any
 					// long-running bring-up (chiefly the lazy first-use SDK

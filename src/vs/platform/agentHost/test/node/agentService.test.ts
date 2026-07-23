@@ -402,7 +402,8 @@ suite('AgentService (node dispatcher)', () => {
 		await localService.createSession({
 			provider: 'codex',
 			session,
-			workingDirectory,
+			workingDirectories: workingDirectory ? [workingDirectory] : undefined,
+			primaryWorkingDirectory: workingDirectory,
 			config: { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' },
 		});
 		const failedSession = AgentSession.uri('codex', 'failed-before-create');
@@ -410,7 +411,8 @@ suite('AgentService (node dispatcher)', () => {
 		await assert.rejects(localService.createSession({
 			provider: 'codex',
 			session: failedSession,
-			workingDirectory,
+			workingDirectories: workingDirectory ? [workingDirectory] : undefined,
+			primaryWorkingDirectory: workingDirectory,
 			config: { [SessionConfigKey.Isolation]: 'worktree', [SessionConfigKey.Branch]: 'main' },
 		}), /create failed/);
 
@@ -455,12 +457,14 @@ suite('AgentService (node dispatcher)', () => {
 
 		const creatingSession = await localService.createSession({
 			provider: 'codex',
-			workingDirectory: URI.file('/workspace/repo'),
+			workingDirectories: URI.file('/workspace/repo') ? [URI.file('/workspace/repo')] : undefined,
+			primaryWorkingDirectory: URI.file('/workspace/repo'),
 			config: { [SessionConfigKey.Isolation]: 'folder' },
 		});
 		const readySession = await localService.createSession({
 			provider: 'copilot',
-			workingDirectory: URI.file('/workspace/repo'),
+			workingDirectories: URI.file('/workspace/repo') ? [URI.file('/workspace/repo')] : undefined,
+			primaryWorkingDirectory: URI.file('/workspace/repo'),
 			config: { [SessionConfigKey.Isolation]: 'folder' },
 		});
 		const creatingInitially = localService.configurationService.isWorkingDirectoryPending(creatingSession.toString());
@@ -1717,7 +1721,11 @@ suite('AgentService (node dispatcher)', () => {
 
 			// A normal session passes an input workingDirectory, so it is not
 			// inferred workspace-less; `_meta` carries only the git overlay.
-			const session = await localService.createSession({ provider: 'copilot', workingDirectory });
+			const session = await localService.createSession({
+				provider: 'copilot',
+				workingDirectories: workingDirectory ? [workingDirectory] : undefined,
+				primaryWorkingDirectory: workingDirectory
+			});
 
 			// _attachGitState is fire-and-forget; drain microtasks until the
 			// git service's promise has resolved and setSessionMeta has run.
@@ -4795,7 +4803,11 @@ suite('AgentService (node dispatcher)', () => {
 			service.registerProvider(copilotAgent);
 
 			const sourceDir = URI.file('/source/repo');
-			const session = await service.createSession({ provider: 'copilot', workingDirectory: sourceDir });
+			const session = await service.createSession({
+				provider: 'copilot',
+				workingDirectories: sourceDir ? [sourceDir] : undefined,
+				primaryWorkingDirectory: sourceDir
+			});
 
 			// The state manager should have the worktree path, not the source path
 			const state = service.stateManager.getSessionState(session.toString());
@@ -4808,7 +4820,11 @@ suite('AgentService (node dispatcher)', () => {
 			service.registerProvider(copilotAgent);
 
 			const sourceDir = URI.file('/source/repo');
-			const session = await service.createSession({ provider: 'copilot', workingDirectory: sourceDir });
+			const session = await service.createSession({
+				provider: 'copilot',
+				workingDirectories: sourceDir ? [sourceDir] : undefined,
+				primaryWorkingDirectory: sourceDir
+			});
 
 			const state = service.stateManager.getSessionState(session.toString());
 			assert.strictEqual(state?.workingDirectories?.[0], sourceDir.toString());

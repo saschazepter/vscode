@@ -2484,7 +2484,8 @@ export class AgentService extends Disposable implements IAgentService {
 		// `SessionConfigChanged`) on top of the provider's resolved defaults.
 		const [restoredConfig, restoredCustomizations] = await Promise.all([
 			this._resolveCreatedSessionConfig(agent, {
-				workingDirectory: meta.workingDirectory,
+				workingDirectories: meta.workingDirectory ? [meta.workingDirectory] : undefined,
+				primaryWorkingDirectory: meta.workingDirectory,
 				config: persistedConfigValues,
 			}),
 			agent.getSessionCustomizations

@@ -864,14 +864,6 @@ export interface IAgentCreateSessionConfig {
 	readonly agent?: AgentSelection;
 	readonly session?: URI;
 	/**
-	 * @deprecated TRANSITIONAL — this singular field is scaffolding for the
-	 * multi-root migration and will be removed once all producers/consumers use
-	 * {@link workingDirectories} / {@link primaryWorkingDirectory}. Do NOT use in
-	 * new code. While present it is treated as `workingDirectories: [workingDirectory]`.
-	 * Read it only via the helpers in `workingDirectories.ts`.
-	 */
-	readonly workingDirectory?: URI;
-	/**
 	 * The working directories the session's agent is granted tool access to.
 	 * A session's directories are equal peers — a session has no primary of its
 	 * own. A client MUST NOT supply more than one entry unless the agent

@@ -207,8 +207,8 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 
 	/**
 	 * If set, the next {@link createSession} call seeds the session summary's
-	 * `workingDirectory` to this URI instead of echoing back
-	 * `config.workingDirectory`. Used to simulate the server resolving the
+	 * `workingDirectory` to this URI instead of echoing back the config's
+	 * primary working directory. Used to simulate the server resolving the
 	 * working directory to a worktree path that differs from the requested
 	 * directory.
 	 */
@@ -227,7 +227,7 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 		// Simulate the server's eager active-client claim: if the caller
 		// provided activeClient, seed the session state so subscribers see it.
 		if (config?.activeClient) {
-			const resolvedWorkingDir = (this.nextResolvedWorkingDirectory ?? config.workingDirectory)?.toString();
+			const resolvedWorkingDir = (this.nextResolvedWorkingDirectory ?? config.primaryWorkingDirectory ?? config.workingDirectories?.[0])?.toString();
 			const summary: SessionSummary = {
 				resource: session.toString(),
 				provider: 'copilot',
@@ -7165,7 +7165,7 @@ suite('AgentHostChatContribution', () => {
 			await turnPromise;
 
 			assert.strictEqual(agentHostService.createSessionCalls.length, 1);
-			assert.strictEqual(agentHostService.createSessionCalls[0].workingDirectory?.toString(), URI.file('/custom/working/dir').toString());
+			assert.strictEqual((agentHostService.createSessionCalls[0].primaryWorkingDirectory ?? agentHostService.createSessionCalls[0].workingDirectories?.[0])?.toString(), URI.file('/custom/working/dir').toString());
 		}));
 
 		test('handler forwards request session config to createSession', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
@@ -7560,7 +7560,7 @@ suite('AgentHostChatContribution', () => {
 			await turnPromise;
 
 			assert.strictEqual(agentHostService.createSessionCalls.length, 1);
-			assert.strictEqual(agentHostService.createSessionCalls[0].workingDirectory?.toString(), resolvedWorkingDirectory.toString());
+			assert.strictEqual((agentHostService.createSessionCalls[0].primaryWorkingDirectory ?? agentHostService.createSessionCalls[0].workingDirectories?.[0])?.toString(), resolvedWorkingDirectory.toString());
 		}));
 
 		test('handler passes vscode-agent-host URI as-is to createSession', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
@@ -7593,7 +7593,7 @@ suite('AgentHostChatContribution', () => {
 			await turnPromise;
 
 			assert.strictEqual(agentHostService.createSessionCalls.length, 1);
-			assert.strictEqual(agentHostService.createSessionCalls[0].workingDirectory?.toString(), agentHostUri.toString());
+			assert.strictEqual((agentHostService.createSessionCalls[0].primaryWorkingDirectory ?? agentHostService.createSessionCalls[0].workingDirectories?.[0])?.toString(), agentHostUri.toString());
 		}));
 
 		test('list controller includes description in items', async () => {

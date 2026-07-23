@@ -57,7 +57,8 @@ suite('localAhpJsonlLogging', () => {
 		await wrapped.createSession({
 			provider: 'copilot',
 			session,
-			workingDirectory,
+			workingDirectories: workingDirectory ? [workingDirectory] : undefined,
+			primaryWorkingDirectory: workingDirectory,
 			fork: { session: forkSession, turnIndex: 3, turnId: 'turn-1' },
 			config: { autoApprove: 'autoApprove' },
 		});
