@@ -37,6 +37,19 @@ suite('git smoke test', function () {
 		await workspace.applyEdit(edit);
 	}
 
+	async function waitForRepository(repositoryPath: string): Promise<Repository> {
+		for (let i = 0; i < 100; i++) {
+			const repository = git.repositories.find(repository => repository.rootUri.fsPath === repositoryPath);
+			if (repository) {
+				return repository;
+			}
+
+			await new Promise(resolve => setTimeout(resolve, 100));
+		}
+
+		throw new Error(`Repository was not detected: ${repositoryPath}`);
+	}
+
 	let git: API;
 	let repository: Repository;
 
@@ -91,30 +104,14 @@ suite('git smoke test', function () {
 	test('detects nested submodules', async function () {
 		const nestedRepositoryPath = file('nested-submodule-fixture');
 		const submodulePath = path.join(nestedRepositoryPath, 'folder1/moduleA');
-		let submodule = git.repositories.find(repository => repository.rootUri.fsPath === submodulePath);
-
-		if (!submodule) {
-			submodule = await new Promise<Repository>(resolve => {
-				const disposable = git.onDidOpenRepository(repository => {
-					if (repository.rootUri.fsPath === submodulePath) {
-						disposable.dispose();
-						resolve(repository);
-					}
-				});
-			});
-		}
+		const submodule = await waitForRepository(submodulePath);
 
 		assert.strictEqual(submodule.rootUri.fsPath, submodulePath);
 
-		const onDidCloseRepository = eventToPromise(git.onDidCloseRepository);
 		await commands.executeCommand('git.close', submodule);
-		await onDidCloseRepository;
 
-		const nestedRepository = git.repositories.find(repository => repository.rootUri.fsPath === nestedRepositoryPath)!;
-		assert(nestedRepository);
-		const onDidCloseNestedRepository = eventToPromise(git.onDidCloseRepository);
+		const nestedRepository = await waitForRepository(nestedRepositoryPath);
 		await commands.executeCommand('git.close', nestedRepository);
-		await onDidCloseNestedRepository;
 	});
 
 	test('reflects working tree changes', async function () {
