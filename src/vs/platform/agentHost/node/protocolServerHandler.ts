@@ -1251,7 +1251,7 @@ export class ProtocolServerHandler extends Disposable {
 					createdAt: new Date(s.startTime).toISOString(),
 					modifiedAt: new Date(s.modifiedTime).toISOString(),
 					...(s.project ? { project: { uri: s.project.uri.toString(), displayName: s.project.displayName } } : {}),
-					workingDirectories: s.workingDirectory ? [s.workingDirectory.toString()] : [],
+					workingDirectories: s.workingDirectory ? [s.workingDirectory.toString()] : undefined,
 					changes: s.changes,
 				} satisfies ListSessionsResult['items'][number];
 			});
