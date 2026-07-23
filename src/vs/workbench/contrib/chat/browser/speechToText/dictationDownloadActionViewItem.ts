@@ -48,7 +48,16 @@ export class DictationDownloadActionViewItem extends MenuEntryActionViewItem {
 		super.render(container);
 
 		container.classList.add('dictation-download-item');
-		this._register(new DictationDownloadRing(container, this._speechToTextService));
+		// The on-device backend downloads a model, so show a progress ring around
+		// the download icon. The cloud backend only connects (no download), so
+		// show a plain spinner instead, matching the composer mic affordance.
+		if (this._speechToTextService.currentBackend === 'mai') {
+			if (this.label) {
+				this.label.className = 'action-label codicon codicon-loading codicon-modifier-spin';
+			}
+		} else {
+			this._register(new DictationDownloadRing(container, this._speechToTextService));
+		}
 
 		// Keep the mic context menu available while the model prepares so the
 		// affordance doesn't lose Select Microphone / Disable Dictation during
@@ -61,6 +70,6 @@ export class DictationDownloadActionViewItem extends MenuEntryActionViewItem {
 	}
 
 	protected override getHoverContents(): IManagedHoverContent {
-		return getDictationDownloadHoverContent();
+		return getDictationDownloadHoverContent(this._speechToTextService);
 	}
 }

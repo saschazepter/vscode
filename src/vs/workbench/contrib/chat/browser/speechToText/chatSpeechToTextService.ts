@@ -642,6 +642,11 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		// We are initiating the connection; mark ownership before connecting so a
 		// failed/partial connect is still torn down by our teardown path.
 		this._maiOwnsConnection = true;
+		// Connecting to the cloud voice service and opening the session takes a
+		// moment on the first dictation; surface the same spinner affordance the
+		// on-device path uses while its model prepares. Cleared once the session
+		// is established (below) or by teardown on failure.
+		this._setPreparingModel(true);
 		await this._voiceClientService.connect(window, authToken);
 		await this._awaitVoiceConnected();
 
@@ -660,6 +665,9 @@ export class ChatSpeechToTextService extends Disposable implements IChatSpeechTo
 		this._voiceClientService.sendStartSession(context, this._telemetryService.machineId, undefined, turnConfig);
 		await this._awaitSessionInit();
 
+		// Session is live; drop the connecting spinner so the mic reads as
+		// recording when start() transitions to the Recording state.
+		this._setPreparingModel(false);
 		this._voiceClientService.sendPttStart(this._maiTurnId);
 	}
 

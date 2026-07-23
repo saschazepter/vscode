@@ -88,7 +88,7 @@ import { runDictationShortcut } from '../../../../workbench/contrib/chat/browser
 import { notifyDictationSubmitted } from '../../../../workbench/contrib/chat/browser/speechToText/dictationSession.js';
 import { combineVoiceInput } from '../../../../workbench/contrib/chat/browser/voiceClient/voiceInputUtils.js';
 import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
-import { DictationDownloadRing } from '../../../../workbench/contrib/chat/browser/speechToText/dictationDownloadRing.js';
+import { DictationDownloadRing, getDictationPreparingLabel } from '../../../../workbench/contrib/chat/browser/speechToText/dictationDownloadRing.js';
 import { IVoiceSessionController } from '../../../../workbench/contrib/chat/browser/voiceClient/voiceSessionController.js';
 
 
@@ -818,18 +818,22 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 			dom.clearNode(button);
 			downloadRing.clear();
 			if (preparing) {
-				// First-use only: render a download icon wrapped by a determinate
-				// progress ring instead of a plain spinner, matching the chat
-				// toolbar, so the model download reads as progress rather than a hang.
-				dom.append(button, renderIcon(Codicon.cloudDownload));
-				downloadRing.value = new DictationDownloadRing(button, sttService);
+				// First-use only. The on-device backend downloads a model, so
+				// render a download icon wrapped by a progress ring; the cloud
+				// backend just connects, so render a plain spinner instead.
+				if (sttService.currentBackend === 'mai') {
+					dom.append(button, renderIcon(ThemeIcon.modify(Codicon.loading, 'spin')));
+				} else {
+					dom.append(button, renderIcon(Codicon.cloudDownload));
+					downloadRing.value = new DictationDownloadRing(button, sttService);
+				}
 			} else {
 				dom.append(button, renderIcon(recording ? Codicon.stopCircle : Codicon.mic));
 			}
 			button.classList.toggle('recording', recording && !preparing);
 			button.classList.toggle('preparing', preparing);
 			button.ariaLabel = preparing
-				? localize('sessionsStt.preparing', "Preparing Speech to Text Model…")
+				? getDictationPreparingLabel(sttService)
 				: (recording ? stopLabel : micLabel);
 		};
 		renderState();
