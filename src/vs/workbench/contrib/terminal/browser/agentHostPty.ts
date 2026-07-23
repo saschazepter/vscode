@@ -110,10 +110,6 @@ export class AgentHostPty extends BasePty implements ITerminalChildProcess {
 	private _supportsCommandDetection = false;
 	get supportsCommandDetection(): boolean { return this._supportsCommandDetection; }
 
-	private _isPlainTextOutput = false;
-	/** Whether the channel is output-only plain text (`TerminalState.isPty === false`). Known once the process is ready. */
-	get isPlainTextOutput(): boolean { return this._isPlainTextOutput; }
-
 	/**
 	 * Command IDs for sentinel commands that should be suppressed from shell
 	 * integration events. When the copilot shell tools fall back to sentinel-
@@ -168,7 +164,6 @@ export class AgentHostPty extends BasePty implements ITerminalChildProcess {
 				this._supportsCommandDetection = true;
 				this._onSupportsCommandDetection.fire();
 			}
-			this._isPlainTextOutput = state.isPty === false;
 			this._replayContent(state.content);
 
 			// 5. Track initial cwd
@@ -432,7 +427,6 @@ export class AgentHostPty extends BasePty implements ITerminalChildProcess {
 				this._supportsCommandDetection = true;
 				this._onSupportsCommandDetection.fire();
 			}
-			this._isPlainTextOutput = state.isPty === false;
 
 			// Clear the terminal buffer before replaying to avoid duplicate
 			// content. ESC[2J clears the screen, ESC[3J clears scrollback,

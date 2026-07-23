@@ -99,8 +99,6 @@ export interface IXtermTerminalOptions {
 	xtermAddonImporter?: XtermAddonImporter;
 	/** Whether to disable the overview ruler. */
 	disableOverviewRuler?: boolean;
-	/** Treat LF as a new line at column zero, for plain-text output. */
-	convertEol?: boolean;
 	/**
 	 * When true, skips registering listeners on global singleton services
 	 * (configuration, theme, log level) to avoid accumulating listeners when
@@ -239,7 +237,6 @@ export class XtermTerminal extends Disposable implements IXtermTerminal, IDetach
 			allowProposedApi: true,
 			cols: options.cols,
 			rows: options.rows,
-			convertEol: options.convertEol,
 			documentOverride: layoutService.mainContainer.ownerDocument,
 			altClickMovesCursor: config.altClickMovesCursor && editorOptions.multiCursorModifier === 'alt',
 			scrollback: config.scrollback,

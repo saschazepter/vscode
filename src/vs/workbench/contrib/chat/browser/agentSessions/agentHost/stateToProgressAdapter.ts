@@ -1180,7 +1180,7 @@ function getTerminalOutput(tc: ToolCallState) {
 	}
 
 	return {
-		text,
+		text: text.replace(/\r?\n/g, '\r\n'),
 		...(terminalResult?.truncated !== undefined ? { truncated: terminalResult.truncated } : {}),
 	};
 }

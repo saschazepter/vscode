@@ -618,7 +618,6 @@ export class DetachedTerminalSnapshotMirror extends Disposable {
 			readonly: true,
 			processInfo,
 			disableOverviewRuler: true,
-			convertEol: true,
 			colorProvider: {
 				getBackgroundColor: theme => {
 					const storedBackground = this._getTheme()?.background;

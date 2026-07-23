@@ -625,7 +625,7 @@ export interface IChatTerminalToolInvocationData {
 	alternativeRecommendation?: string;
 	language: string;
 	terminalToolSessionId?: string;
-	/** False for an output-only AHP channel that must not create a workbench terminal instance. */
+	/** False for output-only data that must not create a workbench terminal instance. */
 	isPty?: boolean;
 	/** The predefined command ID that will be used for this terminal command */
 	terminalCommandId?: string;

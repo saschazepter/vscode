@@ -37,7 +37,10 @@ export class AgentHostOutputChannel extends Disposable implements IChatTerminalO
 	}
 
 	private _acceptState(state: TerminalState): void {
-		this._output = state.content.map(part => part.type === 'command' ? part.output : part.value).join('');
+		this._output = state.content
+			.map(part => part.type === 'command' ? part.output : part.value)
+			.join('')
+			.replace(/\r?\n/g, '\r\n');
 		this._exitCode = state.exitCode;
 		this._onDidChange.fire();
 	}

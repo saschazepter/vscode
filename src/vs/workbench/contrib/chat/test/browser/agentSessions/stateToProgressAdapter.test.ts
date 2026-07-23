@@ -936,7 +936,7 @@ suite('stateToProgressAdapter', () => {
 			const invocation = toolCallStateToInvocation(tc);
 			assert.strictEqual(invocation.toolSpecificData?.kind, 'terminal');
 			const termData = invocation.toolSpecificData as { kind: 'terminal'; terminalCommandOutput?: { text: string } };
-			assert.strictEqual(termData.terminalCommandOutput?.text, 'hi\n');
+			assert.strictEqual(termData.terminalCommandOutput?.text, 'hi\r\n');
 		});
 
 		test('does not render terminal pill for terminal toolKind without a command (falls back to invocationMessage)', () => {
@@ -1289,7 +1289,7 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(IChatToolInvocation.resultDetails(invocation), undefined);
 		});
 
-		test('leaves plain-text line endings unchanged for xterm convertEol', () => {
+		test('normalizes plain-text line endings for the detached terminal', () => {
 			const tc = createToolCallState({
 				toolInput: 'grep -n foo',
 				status: ToolCallStatus.Running,
@@ -1316,7 +1316,7 @@ suite('stateToProgressAdapter', () => {
 			});
 
 			const termData = invocation.toolSpecificData as { kind: 'terminal'; terminalCommandOutput?: { text: string } };
-			assert.strictEqual(termData.terminalCommandOutput?.text, 'line1\nline2\r\nline3\n');
+			assert.strictEqual(termData.terminalCommandOutput?.text, 'line1\r\nline2\r\nline3\r\n');
 		});
 
 		test('finalizes generic tool with input/output details', () => {
@@ -1982,7 +1982,7 @@ suite('stateToProgressAdapter', () => {
 			const serialized = response.parts[0] as IChatToolInvocationSerialized;
 			const termData = getSerializedTerminalData(serialized);
 			assert.strictEqual(termData.terminalCommandState?.exitCode, 127);
-			assert.strictEqual(termData.terminalCommandOutput?.text, 'preview only\n');
+			assert.strictEqual(termData.terminalCommandOutput?.text, 'preview only\r\n');
 			assert.strictEqual(termData.terminalCommandOutput?.truncated, true);
 			assert.ok(!termData.terminalCommandOutput?.text.includes('shellId'));
 		});
@@ -2036,7 +2036,7 @@ suite('stateToProgressAdapter', () => {
 			const termData = getSerializedTerminalData(serialized);
 			// The legacy block's completion data is preserved instead of
 			// degrading to the Text fallback and the tool success flag.
-			assert.strictEqual(termData.terminalCommandOutput?.text, 'legacy preview\n');
+			assert.strictEqual(termData.terminalCommandOutput?.text, 'legacy preview\r\n');
 			assert.strictEqual(termData.terminalCommandState?.exitCode, 127);
 		});
 
@@ -2407,7 +2407,7 @@ suite('stateToProgressAdapter', () => {
 			updateRunningToolSpecificData(invocation, runningTc);
 			const termData = invocation.toolSpecificData as { kind: 'terminal'; terminalCommandOutput?: { text: string } };
 			assert.strictEqual(termData.kind, 'terminal');
-			assert.strictEqual(termData.terminalCommandOutput?.text, 'hi\n');
+			assert.strictEqual(termData.terminalCommandOutput?.text, 'hi\r\n');
 		});
 
 		test('preserves AHP terminal fields (terminalToolSessionId, terminalCommandUri) when refreshing output', () => {
@@ -2448,7 +2448,7 @@ suite('stateToProgressAdapter', () => {
 			assert.strictEqual(termData.terminalToolSessionId, 'session-id-from-revive');
 			assert.strictEqual(termData.terminalCommandUri, reviveUri);
 			assert.strictEqual(termData.terminalCommandId, 'cmd-id-from-revive');
-			assert.strictEqual(termData.terminalCommandOutput?.text, 'hi\n');
+			assert.strictEqual(termData.terminalCommandOutput?.text, 'hi\r\n');
 		});
 	});
 

@@ -415,8 +415,6 @@ export interface IDetachedXTermOptions {
 	readonly?: boolean;
 	processInfo: ITerminalProcessInfo;
 	disableOverviewRuler?: boolean;
-	/** Treat LF as a new line at column zero, for plain-text output. */
-	convertEol?: boolean;
 }
 
 /**

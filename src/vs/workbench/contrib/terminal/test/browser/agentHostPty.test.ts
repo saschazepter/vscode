@@ -204,13 +204,13 @@ suite('AgentHostPty', () => {
 		disposables.add(conn);
 		const source = disposables.add(new AgentHostOutputChannel(conn, terminalUri));
 
-		assert.strictEqual(source.output, 'existing\n');
+		assert.strictEqual(source.output, 'existing\r\n');
 		conn.fireAction(terminalUri, { type: ActionType.TerminalData, data: 'next\n' });
-		assert.strictEqual(source.output, 'existing\nnext\n');
+		assert.strictEqual(source.output, 'existing\r\nnext\r\n');
 		conn.fireAction(terminalUri, { type: ActionType.TerminalCleared });
 		conn.fireAction(terminalUri, { type: ActionType.TerminalData, data: 'fresh\n' });
 		conn.fireAction(terminalUri, { type: ActionType.TerminalExited, exitCode: 3 });
-		assert.strictEqual(source.output, 'fresh\n');
+		assert.strictEqual(source.output, 'fresh\r\n');
 		assert.strictEqual(source.exitCode, 3);
 	});
 
