@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { DeferredPromise, raceTimeout } from '../../../../../base/common/async.js';
+import { DeferredPromise, raceCancellationError, raceTimeout } from '../../../../../base/common/async.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../../base/common/cancellation.js';
 import { IStringDictionary } from '../../../../../base/common/collections.js';
 import { toErrorMessage } from '../../../../../base/common/errorMessage.js';
@@ -147,6 +147,27 @@ export function backfillRestoredPickerState(
 		return stateToApply;
 	}
 	return { ...stateToApply, mode };
+}
+
+/**
+ * Recover the selected model on a transferred input state when it was dropped during a cold
+ * handoff.
+ *
+ * At cold restore an agent-host transferred draft can arrive without its `selectedModel` (the live
+ * model list is not loaded yet, so the model resolved to `undefined`). Fall back to the model
+ * derived from the session's request history so the picker restores the last-used model instead of
+ * Auto. The history-derived model carries full metadata (including `targetChatSessionType`), so the
+ * input part can wait for the model pool and apply it once it loads. An explicit model already
+ * present on `transferredState` is never overridden.
+ */
+export function backfillTransferredModel(
+	transferredState: ISerializableChatModelInputState | undefined,
+	historyModel: ISerializableChatModelInputState['selectedModel'],
+): ISerializableChatModelInputState | undefined {
+	if (!transferredState || transferredState.selectedModel || !historyModel) {
+		return transferredState;
+	}
+	return { ...transferredState, selectedModel: historyModel };
 }
 
 export class ChatService extends Disposable implements IChatService {
@@ -520,8 +541,8 @@ export class ChatService extends Disposable implements IChatService {
 	}
 
 	private _startSession(props: IStartSessionProps): ChatModel {
-		const { initialData, location, sessionResource, canUseTools, transferEditingSession, disableBackgroundKeepAlive, inputState } = props;
-		const model = this.instantiationService.createInstance(ChatModel, initialData, { initialLocation: location, canUseTools, resource: sessionResource, disableBackgroundKeepAlive, inputState });
+		const { initialData, location, sessionResource, canUseTools, transferEditingSession, disableBackgroundKeepAlive, inputState, isReadOnly } = props;
+		const model = this.instantiationService.createInstance(ChatModel, initialData, { initialLocation: location, canUseTools, resource: sessionResource, disableBackgroundKeepAlive, inputState, isReadOnly });
 		if (location === ChatAgentLocation.Chat) {
 			model.startEditingSession(true, transferEditingSession);
 		}
@@ -649,7 +670,7 @@ export class ChatService extends Disposable implements IChatService {
 			}
 		}
 
-		if (!await this.chatSessionService.canResolveChatSession(getChatSessionType(sessionResource))) {
+		if (!await raceCancellationError(this.chatSessionService.canResolveChatSession(getChatSessionType(sessionResource)), token)) {
 			return undefined;
 		}
 
@@ -685,7 +706,18 @@ export class ChatService extends Disposable implements IChatService {
 			const modelConfiguration = storedInputState?.selectedModel?.identifier === modelId
 				? storedModelConfiguration
 				: undefined;
-			const selectedModel: ISerializableChatModelInputState['selectedModel'] = modelId && modelMetadata ? { identifier: modelId, metadata: modelMetadata, modelConfiguration } : undefined;
+			// When the live model list has not loaded yet (cold restore) `lookupLanguageModel`
+			// returns undefined. Don't discard the known model: fall back to the session's saved
+			// draft model, which carries the full serialized metadata (including
+			// `targetChatSessionType`), when it refers to the same id the request history reports
+			// as last used. Handing the input part a model-with-metadata lets it wait for the
+			// model pool and apply it once it loads, instead of falling back to Auto.
+			const storedSelectedModel = storedInputState?.selectedModel;
+			const selectedModel: ISerializableChatModelInputState['selectedModel'] = modelId && modelMetadata
+				? { identifier: modelId, metadata: modelMetadata, modelConfiguration }
+				: (modelId && storedSelectedModel && storedSelectedModel.identifier === modelId
+					? { ...storedSelectedModel, modelConfiguration }
+					: undefined);
 			historySelectedModel = selectedModel?.identifier;
 			historyDerivedModel = selectedModel;
 			// This is used to initialize the state of the chat input box, with the selected model, mode, etc
@@ -729,8 +761,13 @@ export class ChatService extends Disposable implements IChatService {
 			: undefined;
 		// At cold restore the agent-host transferred draft can drop the user's per-session picker
 		// selections (model/mode); restore them from the session's own saved `storedInputState`
-		// (see {@link backfillRestoredPickerState}).
-		const stateToApply = providedSession.transferredState?.inputState ?? restoredDraft;
+		// (mode, via {@link backfillRestoredPickerState}) and from the history-derived model
+		// (via {@link backfillTransferredModel}). The persisted draft already contains
+		// `historyDerivedModel`, so only a transferred draft needs this backfill.
+		const transferredInputState = providedSession.transferredState?.inputState;
+		const stateToApply = transferredInputState
+			? backfillTransferredModel(transferredInputState, historyDerivedModel)
+			: restoredDraft;
 		const inputState = backfillRestoredPickerState(stateToApply, storedInputState, ChatMode.Agent.id);
 		const modelRef = this._sessionModels.acquireOrCreate({
 			initialData,
@@ -739,6 +776,7 @@ export class ChatService extends Disposable implements IChatService {
 			canUseTools: false,
 			transferEditingSession: providedSession.transferredState?.editingSession,
 			inputState,
+			isReadOnly: providedSession.isReadOnly,
 		}, debugOwner ?? 'ChatService#loadRemoteSession');
 
 		logChangesToStateModel(modelRef.object.inputModel, `loadRemoteSession inputState source: session=${sessionResource.toString()}, chatSessionType=${chatSessionType}, historyModelId=${modelId}, agentUri=${agentUri?.toString()}, historySelectedModel=${historySelectedModel}, transferredSelectedModel=${providedSession.transferredState?.inputState?.selectedModel?.identifier}, storedSelectedModel=${storedInputState?.selectedModel?.identifier}, finalSelectedModel=${modelRef.object.inputModel.state.get()?.selectedModel?.identifier}, hasTransferredInputState=${!!providedSession.transferredState?.inputState}, hasStoredInputState=${!!storedInputState}, hasInitialData=${!!initialData}`, modelRef.object.inputModel.state.get(), undefined, this.logService);
@@ -1021,6 +1059,9 @@ export class ChatService extends Disposable implements IChatService {
 		if (!model && model !== request.session) {
 			throw new Error(`Unknown session: ${request.session.sessionResource}`);
 		}
+		if (model.isReadOnly.get()) {
+			return;
+		}
 
 		const cts = this._pendingRequests.get(request.session.sessionResource);
 		if (cts) {
@@ -1100,6 +1141,13 @@ export class ChatService extends Disposable implements IChatService {
 		if (!model) {
 			throw new Error(`Unknown session: ${sessionResource}`);
 		}
+		if (model.isReadOnly.get()) {
+			return {
+				kind: 'rejected',
+				reason: 'Session is read-only',
+				...(newSessionResource ? { newSessionResource } : {}),
+			};
+		}
 
 		// Internally blank widgets use special sessions with an untitled- path.
 		// We do not want these leaking out to the rest of code. On the first
@@ -1113,6 +1161,9 @@ export class ChatService extends Disposable implements IChatService {
 				sessionResource = materialized.sessionResource;
 				newSessionResource = materialized.newSessionResource;
 			}
+		}
+		if (model.isReadOnly.get()) {
+			return { kind: 'rejected', reason: 'Session is read-only', newSessionResource };
 		}
 
 		const hasPendingRequest = this._pendingRequests.has(sessionResource);
