@@ -623,9 +623,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 				// preToolUse hook that returned `ask` explicitly forces a
 				// confirmation, so never let `preApproved` override it.
 				const preResolvedAutoConfirmed = resolvedAutoConfirmed
-					?? (preToolUseHookResult?.permissionDecision === 'ask' || tool.data.requiresUserConfirmation
-						? undefined
-						: dto.preApproved);
+					?? (preToolUseHookResult?.permissionDecision === 'ask' ? undefined : dto.preApproved);
 
 				// In Autopilot, run the risk classifier on an auto-approved call that would
 				// otherwise show a confirmation. A "red" rating skips the call; anything else
@@ -669,6 +667,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 					};
 					return toolResult;
 				}
+				dto.confirmationReason = autoConfirmed;
 
 				if (preparedInvocation?.confirmationMessages?.title) {
 					if (!IChatToolInvocation.executionConfirmedOrDenied(toolInvocation) && !autoConfirmed) {
@@ -688,6 +687,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 						};
 						return toolResult;
 					}
+					dto.confirmationReason = userConfirmed;
 
 					if (userConfirmed.type === ToolConfirmKind.UserAction && userConfirmed.selectedButton) {
 						dto.selectedCustomButton = userConfirmed.selectedButton;
@@ -707,11 +707,13 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 
 				const { autoConfirmed: fallbackAutoConfirmed, preparedInvocation: updatedPreparedInvocation } = await this.resolveAutoConfirmFromHook(preToolUseHookResult, tool, dto, preparedInvocation, undefined);
 				preparedInvocation = updatedPreparedInvocation;
+				dto.confirmationReason = fallbackAutoConfirmed;
 				if (preparedInvocation?.confirmationMessages?.title && !fallbackAutoConfirmed) {
 					const result = await this._dialogService.confirm({ message: renderAsPlaintext(preparedInvocation.confirmationMessages.title), detail: renderAsPlaintext(preparedInvocation.confirmationMessages.message!) });
 					if (!result.confirmed) {
 						throw new CancellationError();
 					}
+					dto.confirmationReason = { type: ToolConfirmKind.UserAction };
 				}
 				dto.toolSpecificData = preparedInvocation?.toolSpecificData;
 			}
@@ -859,8 +861,7 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		preparedInvocation: IPreparedToolInvocation | undefined,
 		sessionResource: URI | undefined,
 	): Promise<{ autoConfirmed: ConfirmedReason | undefined; preparedInvocation: IPreparedToolInvocation | undefined }> {
-		const requiresExplicitConfirmation = tool.data.requiresUserConfirmation === true;
-		if (hookResult?.permissionDecision === 'allow' && !requiresExplicitConfirmation) {
+		if (hookResult?.permissionDecision === 'allow') {
 			this._logService.debug(`[LanguageModelToolsService#invokeTool] Tool ${dto.toolId} auto-approved by preToolUse hook`);
 			return { autoConfirmed: { type: ToolConfirmKind.ConfirmationNotNeeded, reason: localize('hookAllowed', "Allowed by hook") }, preparedInvocation };
 		}
@@ -918,10 +919,6 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 					};
 				}
 			}
-			return { autoConfirmed: undefined, preparedInvocation };
-		}
-
-		if (requiresExplicitConfirmation) {
 			return { autoConfirmed: undefined, preparedInvocation };
 		}
 
@@ -1339,9 +1336,6 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 
 	private isToolEligibleForAutoApproval(toolData: IToolData): boolean {
 		const fullReferenceName = this.getEligibleForAutoApprovalSpecialCase(toolData) ?? getToolFullReferenceName(toolData);
-		if (toolData.requiresUserConfirmation) {
-			return false;
-		}
 		if (toolData.id === 'copilot_fetchWebPage') {
 			// Special case, this fetch will call an internal tool 'vscode_fetchWebPage_internal'
 			return true;

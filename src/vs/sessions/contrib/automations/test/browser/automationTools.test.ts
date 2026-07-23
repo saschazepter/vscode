@@ -17,9 +17,10 @@ import { AutomationTarget, IAutomation, IAutomationSchedule } from '../../../../
 import { IAutomationDialogResult, IAutomationDialogService, IShowAutomationDialogOptions } from '../../../../../workbench/contrib/chat/common/automations/automationDialogService.js';
 import { IAutomationService, ICreateAutomationOptions, IGuardedAutomationUpdateResult, IUpdateAutomationOptions } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { ChatAutomationsEnabledContext, CHAT_AUTOMATIONS_ENABLED_SETTING } from '../../../../../workbench/contrib/chat/common/automations/automationsEnabled.js';
+import { ConfirmedReason, ToolConfirmKind } from '../../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { IToolImpl, IToolResult, ToolProgress } from '../../../../../workbench/contrib/chat/common/tools/languageModelToolsService.js';
-import { IChat, ISession, ISessionWorkspace } from '../../../../services/sessions/common/session.js';
-import { ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
+import { IChat, ISession, ISessionType, ISessionWorkspace } from '../../../../services/sessions/common/session.js';
+import { IProviderSessionType, ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
 import { ConfigureAutomationTool, ConfigureAutomationToolId, DeleteAutomationTool, DeleteAutomationToolId, ListAutomationsTool, ListAutomationsToolId } from '../../browser/automationTools.js';
 
 const FOLDER = URI.parse('file:///workspace');
@@ -145,6 +146,8 @@ class FakeSessionsManagementService extends mock<ISessionsManagementService>() {
 	constructor(
 		private readonly session: ISession | undefined,
 		private readonly resolveFromChatResource = false,
+		private readonly folderSessionTypes: readonly IProviderSessionType[] = [],
+		private readonly quickChatSessionTypes: readonly IProviderSessionType[] = [],
 	) {
 		super();
 	}
@@ -157,6 +160,14 @@ class FakeSessionsManagementService extends mock<ISessionsManagementService>() {
 		return this.resolveFromChatResource && this.session
 			? { session: this.session, chat: upcastPartial<IChat>({ resource: CHAT_RESOURCE }) }
 			: undefined;
+	}
+
+	override getSessionTypesForFolder(): IProviderSessionType[] {
+		return [...this.folderSessionTypes];
+	}
+
+	override getQuickChatSessionTypes(): IProviderSessionType[] {
+		return [...this.quickChatSessionTypes];
 	}
 }
 
@@ -179,13 +190,21 @@ function createSession(options?: { readonly quickChat?: boolean; readonly worksp
 	});
 }
 
-async function invoke(tool: IToolImpl, parameters: Record<string, unknown>, sessionResource = SESSION_RESOURCE, token = CancellationToken.None, selectedCustomButton?: string): Promise<IToolResult> {
+function providerSessionType(providerId: string, sessionTypeId: string, supportsWorktreeConfiguration = false): IProviderSessionType {
+	return {
+		providerId,
+		sessionType: upcastPartial<ISessionType>({ id: sessionTypeId, supportsWorktreeConfiguration }),
+	};
+}
+
+async function invoke(tool: IToolImpl, parameters: Record<string, unknown>, sessionResource = SESSION_RESOURCE, token = CancellationToken.None, selectedCustomButton?: string, confirmationReason?: ConfirmedReason): Promise<IToolResult> {
 	return tool.invoke({
 		callId: 'call-1',
 		toolId: 'tool-1',
 		parameters,
 		context: { sessionResource },
 		selectedCustomButton,
+		confirmationReason,
 	}, async () => 0, progress, token);
 }
 
@@ -219,7 +238,6 @@ suite('AutomationTools', () => {
 			aiEnabledGate: serialize(tool).includes(ChatContextKeys.enabled.key),
 			automationsEnabledGate: serialize(tool).includes(ChatAutomationsEnabledContext.key),
 			runsInWorkspace: tool.runsInWorkspace,
-			requiresUserConfirmation: tool.requiresUserConfirmation,
 		})), [
 			{
 				id: ListAutomationsToolId,
@@ -227,7 +245,6 @@ suite('AutomationTools', () => {
 				aiEnabledGate: true,
 				automationsEnabledGate: true,
 				runsInWorkspace: false,
-				requiresUserConfirmation: undefined,
 			},
 			{
 				id: ConfigureAutomationToolId,
@@ -235,7 +252,6 @@ suite('AutomationTools', () => {
 				aiEnabledGate: true,
 				automationsEnabledGate: true,
 				runsInWorkspace: false,
-				requiresUserConfirmation: undefined,
 			},
 			{
 				id: DeleteAutomationToolId,
@@ -243,7 +259,6 @@ suite('AutomationTools', () => {
 				aiEnabledGate: true,
 				automationsEnabledGate: true,
 				runsInWorkspace: false,
-				requiresUserConfirmation: true,
 			},
 		]);
 	});
@@ -279,7 +294,7 @@ suite('AutomationTools', () => {
 		});
 	});
 
-	test('deleteAutomation requires an explicit Delete confirmation', async () => {
+	test('deleteAutomation provides Delete and Cancel confirmation options', async () => {
 		const automation = createAutomation();
 		const automationService = new FakeAutomationService([automation]);
 		const tool = new DeleteAutomationTool(automationService, createConfigurationService());
@@ -304,7 +319,7 @@ suite('AutomationTools', () => {
 		}, {
 			confirmationTitle: 'Delete Automation?',
 			confirmationMessage: 'Delete **Daily review** (`automation-1`)? Its saved configuration and run history will be permanently removed. Runs already in flight will continue.',
-			allowAutoConfirm: false,
+			allowAutoConfirm: undefined,
 			options: [
 				{ id: 'delete', label: 'Delete', kind: ConfirmationOptionKind.Approve },
 				{ id: 'cancel', label: 'Cancel', kind: ConfirmationOptionKind.Deny },
@@ -363,12 +378,19 @@ suite('AutomationTools', () => {
 		});
 	});
 
-	test('deleteAutomation missing Delete option makes no changes', async () => {
+	test('deleteAutomation runs without a button when the approval policy auto-approves it', async () => {
 		const automation = createAutomation();
 		const automationService = new FakeAutomationService([automation]);
 		const tool = new DeleteAutomationTool(automationService, createConfigurationService());
 
-		const result = await invoke(tool, { automationId: automation.id });
+		const result = await invoke(
+			tool,
+			{ automationId: automation.id },
+			SESSION_RESOURCE,
+			CancellationToken.None,
+			undefined,
+			{ type: ToolConfirmKind.Setting, id: 'chat.permissions' },
+		);
 
 		assert.deepStrictEqual({
 			result: JSON.parse(getText(result)),
@@ -376,11 +398,11 @@ suite('AutomationTools', () => {
 			automations: automationService.automations.get(),
 		}, {
 			result: {
-				status: 'cancelled',
-				message: 'The automation was not deleted.',
+				status: 'deleted',
+				automation: { id: automation.id, name: automation.name },
 			},
-			deleted: [],
-			automations: [automation],
+			deleted: [automation.id],
+			automations: [],
 		});
 	});
 
@@ -489,6 +511,129 @@ suite('AutomationTools', () => {
 					nextRunAt: null,
 				},
 			},
+		});
+	});
+
+	test('configureAutomation directly creates when the approval policy auto-approves it', async () => {
+		const automationService = new FakeAutomationService();
+		const dialogService = new RecordingAutomationDialogService();
+		const session = createSession({ workspace: FOLDER });
+		const tool = new ConfigureAutomationTool(
+			automationService,
+			dialogService,
+			new FakeSessionsManagementService(session),
+			createConfigurationService(),
+		);
+
+		const result = await invoke(
+			tool,
+			{
+				name: 'Approved review',
+				prompt: 'Review the repository',
+				schedule: { interval: 'manual' },
+			},
+			SESSION_RESOURCE,
+			CancellationToken.None,
+			undefined,
+			{ type: ToolConfirmKind.Setting, id: 'chat.permissions' },
+		);
+
+		assert.deepStrictEqual({
+			dialogCalls: dialogService.callCount,
+			created: automationService.created,
+			status: JSON.parse(getText(result)).status,
+		}, {
+			dialogCalls: 0,
+			created: [{
+				name: 'Approved review',
+				prompt: 'Review the repository',
+				schedule: { interval: 'manual', scheduleHour: 9, scheduleMinute: 0, scheduleDay: 1 },
+				target: {
+					kind: 'workspace',
+					folderUri: FOLDER,
+					providerId: 'local-agent-host',
+					sessionTypeId: 'copilot',
+					isolation: { kind: 'default' },
+				},
+			}],
+			status: 'created',
+		});
+	});
+
+	test('configureAutomation directly applies guarded updates when auto-approved', async () => {
+		const existing = createAutomation();
+		const automationService = new FakeAutomationService([existing]);
+		const dialogService = new RecordingAutomationDialogService();
+		const tool = new ConfigureAutomationTool(
+			automationService,
+			dialogService,
+			new FakeSessionsManagementService(undefined),
+			createConfigurationService(),
+		);
+
+		const result = await invoke(
+			tool,
+			{ automationId: existing.id, name: 'Auto-approved update' },
+			SESSION_RESOURCE,
+			CancellationToken.None,
+			undefined,
+			{ type: ToolConfirmKind.LmServicePerTool, scope: 'session' },
+		);
+
+		assert.deepStrictEqual({
+			dialogCalls: dialogService.callCount,
+			updated: automationService.updated,
+			status: JSON.parse(getText(result)).status,
+		}, {
+			dialogCalls: 0,
+			updated: [{ id: existing.id, patch: { name: 'Auto-approved update' } }],
+			status: 'updated',
+		});
+	});
+
+	test('configureAutomation validates explicit targets before an auto-approved write', async () => {
+		const automationService = new FakeAutomationService();
+		const dialogService = new RecordingAutomationDialogService();
+		const tool = new ConfigureAutomationTool(
+			automationService,
+			dialogService,
+			new FakeSessionsManagementService(
+				undefined,
+				false,
+				[providerSessionType('local-agent-host', 'copilot', false)],
+			),
+			createConfigurationService(),
+		);
+
+		const result = await invoke(
+			tool,
+			{
+				name: 'Invalid worktree',
+				prompt: 'Do not save',
+				schedule: { interval: 'manual' },
+				target: {
+					kind: 'workspace',
+					folderUri: FOLDER.toString(),
+					providerId: 'local-agent-host',
+					sessionTypeId: 'copilot',
+					isolation: 'worktree',
+					branch: 'main',
+				},
+			},
+			SESSION_RESOURCE,
+			CancellationToken.None,
+			undefined,
+			{ type: ToolConfirmKind.Setting, id: 'chat.permissions' },
+		);
+
+		assert.deepStrictEqual({
+			error: result.toolResultError,
+			dialogCalls: dialogService.callCount,
+			created: automationService.created,
+		}, {
+			error: 'Session type "copilot" does not support worktree isolation.',
+			dialogCalls: 0,
+			created: [],
 		});
 	});
 

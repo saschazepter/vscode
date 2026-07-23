@@ -54,8 +54,6 @@ export interface IToolData {
 	readonly modelDescription: string;
 	readonly inputSchema?: IJSONSchema;
 	readonly canBeReferencedInPrompt?: boolean;
-	/** Whether every invocation requires an explicit user action and cannot be auto-approved. */
-	readonly requiresUserConfirmation?: boolean;
 	/**
 	 * True if the tool runs in the (possibly remote) workspace, false if it runs
 	 * on the host, undefined if known.
@@ -209,6 +207,8 @@ export interface IToolInvocation {
 	 * anyway.
 	 */
 	preApproved?: ConfirmedReason;
+	/** The confirmation decision resolved by the tools service before invoking the implementation. */
+	confirmationReason?: ConfirmedReason;
 	/**
 	 * Optional W3C trace context `traceparent` value identifying the parent distributed
 	 * tracing span for this tool invocation. Forwarded to MCP tool implementations as

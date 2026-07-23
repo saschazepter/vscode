@@ -18,12 +18,13 @@ import { IWorkbenchContribution } from '../../../../workbench/common/contributio
 import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 import { AutomationInterval, AutomationTarget, AutomationWorkspaceIsolation, IAutomation, IAutomationSchedule } from '../../../../workbench/contrib/chat/common/automations/automation.js';
 import { IAutomationDialogService } from '../../../../workbench/contrib/chat/common/automations/automationDialogService.js';
-import { IAutomationService, IUpdateAutomationOptions } from '../../../../workbench/contrib/chat/common/automations/automationService.js';
+import { IAutomationService, ICreateAutomationOptions, IUpdateAutomationOptions } from '../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { ChatAutomationsEnabledContext, CHAT_AUTOMATIONS_ENABLED_SETTING } from '../../../../workbench/contrib/chat/common/automations/automationsEnabled.js';
+import { ToolConfirmKind } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { ChatModeKind, ChatPermissionLevel } from '../../../../workbench/contrib/chat/common/constants.js';
 import { CountTokensCallback, ILanguageModelToolsService, IPreparedToolInvocation, IToolData, IToolImpl, IToolInvocation, IToolInvocationPreparationContext, IToolResult, ToolDataSource, ToolProgress } from '../../../../workbench/contrib/chat/common/tools/languageModelToolsService.js';
 import { ISession } from '../../../services/sessions/common/session.js';
-import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
+import { IProviderSessionType, ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 
 export const ListAutomationsToolId = 'vscode_listAutomations';
 export const ConfigureAutomationToolId = 'vscode_configureAutomation';
@@ -64,11 +65,19 @@ interface IAutomationToolOutput {
 	readonly nextRunAt: string | null;
 }
 
-interface IAutomationDialogProposal {
-	readonly existing: IAutomation | undefined;
-	readonly initialValues: IUpdateAutomationOptions;
-	readonly preserveUnavailableInitialTarget: boolean | undefined;
-}
+type IAutomationProposal =
+	| {
+		readonly kind: 'create';
+		readonly existing: undefined;
+		readonly initialValues: ICreateAutomationOptions;
+		readonly preserveUnavailableInitialTarget: boolean;
+	}
+	| {
+		readonly kind: 'update';
+		readonly existing: IAutomation;
+		readonly initialValues: IUpdateAutomationOptions;
+		readonly preserveUnavailableInitialTarget: boolean | undefined;
+	};
 
 class AutomationToolInputError extends Error { }
 
@@ -135,9 +144,8 @@ export class DeleteAutomationTool implements IToolImpl {
 			icon: Codicon.trash,
 			displayName: localize('automation.tool.delete.displayName', "Delete Automation"),
 			userDescription: localize('automation.tool.delete.userDescription', "Delete a scheduled agent automation"),
-			modelDescription: 'Delete an automation by stable ID after explicit user confirmation. Call listAutomations first to obtain the current ID. The user must activate Delete in the confirmation; this action cannot be auto-approved.',
+			modelDescription: 'Delete an automation by stable ID. Call listAutomations first to obtain the current ID. The current approval policy may approve the action automatically; otherwise the user is shown a Delete/Cancel confirmation.',
 			source: ToolDataSource.Internal,
-			requiresUserConfirmation: true,
 			when: automationToolWhen,
 			runsInWorkspace: false,
 			inputSchema: {
@@ -170,7 +178,6 @@ export class DeleteAutomationTool implements IToolImpl {
 					automation.name,
 					automation.id,
 				)),
-				allowAutoConfirm: false,
 				customOptions: [
 					{ id: deleteAutomationConfirmationId, label: localize('automation.tool.delete.confirm', "Delete"), kind: ConfirmationOptionKind.Approve },
 					{ id: 'cancel', label: localize('automation.tool.delete.cancel', "Cancel"), kind: ConfirmationOptionKind.Deny },
@@ -197,7 +204,7 @@ export class DeleteAutomationTool implements IToolImpl {
 			throw error;
 		}
 
-		if (invocation.selectedCustomButton !== deleteAutomationConfirmationId) {
+		if (invocation.selectedCustomButton !== undefined && invocation.selectedCustomButton !== deleteAutomationConfirmationId) {
 			return automationDeleteCancelled();
 		}
 
@@ -246,11 +253,11 @@ export class ConfigureAutomationTool implements IToolImpl {
 			icon: Codicon.watch,
 			displayName: localize('automation.tool.configure.displayName', "Configure Automation"),
 			userDescription: localize('automation.tool.configure.userDescription', "Propose creating or updating an automation"),
-			modelDescription: `Open a user-review dialog prefilled with a proposed automation creation or update.
+			modelDescription: `Create or update a scheduled automation.
 
 Omit "automationId" to create an automation; "name", "prompt", and "schedule.interval" are then required. If "target" is omitted, the automation targets the current Agents window session.
 Include "automationId" to update an existing automation, and only provide fields that should change. Call listAutomations first to obtain the stable ID and current values.
-The proposal is not persisted unless the user explicitly selects Create or Save in the review dialog. If the user cancels, do not retry unless they ask you to.`,
+The current approval policy may approve the change automatically. Otherwise the automation editor opens with the proposal prefilled, and the change is not persisted unless the user selects Create or Save. If the user cancels, do not retry unless they ask you to.`,
 			source: ToolDataSource.Internal,
 			when: automationToolWhen,
 			runsInWorkspace: false,
@@ -358,11 +365,11 @@ The proposal is not persisted unless the user explicitly selects Create or Save 
 		const isUpdate = typeof context.parameters?.automationId === 'string';
 		return {
 			invocationMessage: isUpdate
-				? localize('automation.tool.configure.update.invocationMessage', "Opening automation changes for review")
-				: localize('automation.tool.configure.create.invocationMessage', "Opening a new automation for review"),
+				? localize('automation.tool.configure.update.invocationMessage', "Configuring automation")
+				: localize('automation.tool.configure.create.invocationMessage', "Configuring a new automation"),
 			pastTenseMessage: isUpdate
-				? localize('automation.tool.configure.update.pastTenseMessage', "Reviewed automation changes")
-				: localize('automation.tool.configure.create.pastTenseMessage', "Reviewed a new automation"),
+				? localize('automation.tool.configure.update.pastTenseMessage', "Configured automation")
+				: localize('automation.tool.configure.create.pastTenseMessage', "Configured a new automation"),
 		};
 	}
 
@@ -379,7 +386,7 @@ The proposal is not persisted unless the user explicitly selects Create or Save 
 			return automationToolCancelled();
 		}
 
-		let proposal: IAutomationDialogProposal;
+		let proposal: IAutomationProposal;
 		try {
 			proposal = this.parseProposal(invocation);
 		} catch (error) {
@@ -387,6 +394,17 @@ The proposal is not persisted unless the user explicitly selects Create or Save 
 				return automationToolError(error.message);
 			}
 			throw error;
+		}
+
+		if (isAutoApprovedInvocation(invocation)) {
+			try {
+				return await this.applyAutoApprovedProposal(proposal, token);
+			} catch (error) {
+				if (error instanceof AutomationToolInputError) {
+					return automationToolError(error.message);
+				}
+				throw error;
+			}
 		}
 
 		const dialogResult = await this.automationDialogService.showAutomationDialog({
@@ -403,33 +421,85 @@ The proposal is not persisted unless the user explicitly selects Create or Save 
 			return automationToolError('Automations were disabled before the proposal was saved. No changes were made.');
 		}
 
-		if (proposal.existing) {
+		if (proposal.kind === 'update') {
 			if (dialogResult.kind !== 'update' || dialogResult.id !== proposal.existing.id) {
 				throw new Error('Automation review returned an unexpected update target.');
 			}
-			const updateResult = await this.automationService.updateAutomationIfUnchanged(proposal.existing.id, dialogResult.value, proposal.existing);
-			if (updateResult.kind === 'conflict' && !updateResult.current) {
-				return automationToolError(`Automation "${proposal.existing.id}" was deleted during review. No changes were made.`);
-			}
-			if (updateResult.kind === 'conflict') {
-				return automationToolError(`Automation "${proposal.existing.id}" changed during review. Call listAutomations to refresh it before proposing new changes. No changes were made.`);
-			}
-			const updated = updateResult.automation;
-			const result = automationToolResult(JSON.stringify({ status: 'updated', automation: toAutomationToolOutput(updated) }, undefined, 2));
-			result.toolResultMessage = localize('automation.tool.configure.updated', "Updated automation {0}", updated.name);
-			return result;
+			return this.applyUpdate(proposal.existing, dialogResult.value);
 		}
 
 		if (dialogResult.kind !== 'create') {
 			throw new Error('Automation review returned an unexpected create result.');
 		}
-		const created = await this.automationService.createAutomation(dialogResult.value);
+		return this.applyCreate(dialogResult.value);
+	}
+
+	private async applyAutoApprovedProposal(proposal: IAutomationProposal, token: CancellationToken): Promise<IToolResult> {
+		if (token.isCancellationRequested) {
+			return automationToolCancelled();
+		}
+		if (!isAutomationsEnabled(this.configurationService)) {
+			return automationToolError('Automations were disabled before the proposal was saved. No changes were made.');
+		}
+
+		if (proposal.kind === 'create') {
+			const target = proposal.preserveUnavailableInitialTarget
+				? proposal.initialValues.target
+				: this.resolveAvailableTarget(proposal.initialValues.target);
+			return this.applyCreate({ ...proposal.initialValues, target });
+		}
+
+		const target = proposal.initialValues.target
+			? proposal.preserveUnavailableInitialTarget
+				? proposal.initialValues.target
+				: this.resolveAvailableTarget(proposal.initialValues.target)
+			: undefined;
+		const patch = target ? { ...proposal.initialValues, target } : proposal.initialValues;
+		return this.applyUpdate(proposal.existing, patch);
+	}
+
+	private async applyCreate(options: ICreateAutomationOptions): Promise<IToolResult> {
+		const created = await this.automationService.createAutomation(options);
 		const result = automationToolResult(JSON.stringify({ status: 'created', automation: toAutomationToolOutput(created) }, undefined, 2));
 		result.toolResultMessage = localize('automation.tool.configure.created', "Created automation {0}", created.name);
 		return result;
 	}
 
-	private parseProposal(invocation: IToolInvocation): IAutomationDialogProposal {
+	private async applyUpdate(existing: IAutomation, patch: IUpdateAutomationOptions): Promise<IToolResult> {
+		const updateResult = await this.automationService.updateAutomationIfUnchanged(existing.id, patch, existing);
+		if (updateResult.kind === 'conflict' && !updateResult.current) {
+			return automationToolError(`Automation "${existing.id}" was deleted during review. No changes were made.`);
+		}
+		if (updateResult.kind === 'conflict') {
+			return automationToolError(`Automation "${existing.id}" changed during review. Call listAutomations to refresh it before proposing new changes. No changes were made.`);
+		}
+		const updated = updateResult.automation;
+		const result = automationToolResult(JSON.stringify({ status: 'updated', automation: toAutomationToolOutput(updated) }, undefined, 2));
+		result.toolResultMessage = localize('automation.tool.configure.updated', "Updated automation {0}", updated.name);
+		return result;
+	}
+
+	private resolveAvailableTarget(target: AutomationTarget): AutomationTarget {
+		const candidates = target.kind === 'quickChat'
+			? this.sessionsManagementService.getQuickChatSessionTypes()
+			: this.sessionsManagementService.getSessionTypesForFolder(target.folderUri);
+		const candidate = findSessionType(candidates, target.providerId, target.sessionTypeId);
+		if (!candidate) {
+			throw new AutomationToolInputError(target.kind === 'quickChat'
+				? `The quick-chat target "${target.providerId}/${target.sessionTypeId}" is not available.`
+				: 'The proposed workspace target is not available for the selected provider and session type.');
+		}
+		if (target.kind === 'workspace' && target.isolation.kind === 'worktree' && !candidate.sessionType.supportsWorktreeConfiguration) {
+			throw new AutomationToolInputError(`Session type "${candidate.sessionType.id}" does not support worktree isolation.`);
+		}
+		return {
+			...target,
+			providerId: candidate.providerId,
+			sessionTypeId: candidate.sessionType.id,
+		};
+	}
+
+	private parseProposal(invocation: IToolInvocation): IAutomationProposal {
 		const rawInput: unknown = invocation.parameters;
 		if (!isRecord(rawInput)) {
 			throw new AutomationToolInputError('configureAutomation input must be an object.');
@@ -455,16 +525,12 @@ The proposal is not persisted unless the user explicitly selects Create or Save 
 		const schedule = parseSchedule(input, existing?.schedule, !existing);
 		const currentTarget = this.getCurrentSessionTarget(invocation);
 		const target = parseTarget(input, existing, currentTarget);
-		if (!existing && !target) {
-			throw new AutomationToolInputError('A target could not be derived from the current session. Provide an explicit "target".');
-		}
-
 		const modelId = readOptionalNullableNonEmptyString(input, 'modelId');
 		const mode = readOptionalNullableEnum(input, 'mode', chatModes);
 		const permissionLevel = readOptionalNullableEnum(input, 'permissionLevel', chatPermissionLevels);
 		const enabled = readOptionalBoolean(input, 'enabled');
 
-		const initialValues: IUpdateAutomationOptions = {
+		const proposedValues: IUpdateAutomationOptions = {
 			...(name !== undefined ? { name } : {}),
 			...(prompt !== undefined ? { prompt } : {}),
 			...(schedule ? { schedule } : {}),
@@ -477,7 +543,33 @@ The proposal is not persisted unless the user explicitly selects Create or Save 
 		const preserveUnavailableInitialTarget = input.target === undefined
 			? existing ? undefined : true
 			: isRecord(input.target) && input.target.kind === 'currentSession';
-		return { existing, initialValues, preserveUnavailableInitialTarget };
+		if (existing) {
+			return { kind: 'update', existing, initialValues: proposedValues, preserveUnavailableInitialTarget };
+		}
+		if (!schedule) {
+			throw new AutomationToolInputError('"schedule" is required when creating an automation.');
+		}
+		if (!target) {
+			throw new AutomationToolInputError('A target could not be derived from the current session. Provide an explicit "target".');
+		}
+		if (name === undefined || prompt === undefined) {
+			throw new Error('Automation create proposal is missing required values.');
+		}
+		return {
+			kind: 'create',
+			existing: undefined,
+			initialValues: {
+				name,
+				prompt,
+				schedule,
+				target,
+				...(modelId ? { modelId } : {}),
+				...(mode ? { mode } : {}),
+				...(permissionLevel ? { permissionLevel } : {}),
+				...(enabled !== undefined ? { enabled } : {}),
+			},
+			preserveUnavailableInitialTarget: preserveUnavailableInitialTarget === true,
+		};
 	}
 
 	private getCurrentSessionTarget(invocation: IToolInvocation): AutomationTarget | undefined {
@@ -512,6 +604,23 @@ export class AutomationToolsContribution extends Disposable implements IWorkbenc
 
 function isAutomationsEnabled(configurationService: IConfigurationService): boolean {
 	return configurationService.getValue<boolean>(CHAT_AUTOMATIONS_ENABLED_SETTING) === true;
+}
+
+function isAutoApprovedInvocation(invocation: IToolInvocation): boolean {
+	switch (invocation.confirmationReason?.type) {
+		case ToolConfirmKind.ConfirmationNotNeeded:
+		case ToolConfirmKind.Setting:
+		case ToolConfirmKind.LmServicePerTool:
+			return true;
+		default:
+			return false;
+	}
+}
+
+function findSessionType(candidates: readonly IProviderSessionType[], providerId: string | undefined, sessionTypeId: string | undefined): IProviderSessionType | undefined {
+	return candidates.find(candidate =>
+		(providerId === undefined || candidate.providerId === providerId)
+		&& (sessionTypeId === undefined || candidate.sessionType.id === sessionTypeId));
 }
 
 function automationTargetFromSession(session: ISession): AutomationTarget | undefined {
