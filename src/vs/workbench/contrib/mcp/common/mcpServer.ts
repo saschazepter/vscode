@@ -724,7 +724,12 @@ export class McpServer extends Disposable implements IMcpServer {
 			return { name: this.definition.label, url: launch.uri.toString(true) };
 		}
 		if (launch?.type === McpServerTransportType.Stdio) {
-			return { name: this.definition.label, command: [launch.command, ...launch.args] };
+			// `launch.command` is typed as `string` but can be `undefined` at runtime when it
+			// originates from user/discovery configuration that omitted the field. Exclude it so the
+			// produced `IMcpServerIdentity.command` never contains a non-string entry (which would
+			// otherwise break policy matching and `_hasUnresolvedVariables`).
+			const command = launch.command ? [launch.command, ...launch.args] : [...launch.args];
+			return { name: this.definition.label, command };
 		}
 		return { name: this.definition.label };
 	}
