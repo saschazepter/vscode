@@ -90,7 +90,7 @@ export class OpenWorkspaceInAgentsWindowChatTitleAction extends Action2 {
 	}
 
 	async run(accessor: ServicesAccessor): Promise<void> {
-		await openCurrentWorkspaceInAgentsWindow(accessor, AgentsWindowOpenSource.ChatTitleBar);
+		await accessor.get(ICommandService).executeCommand(OPEN_WORKSPACE_IN_AGENTS_WINDOW_COMMAND_ID, { source: AgentsWindowOpenSource.ChatTitleBar });
 	}
 }
 
@@ -113,7 +113,7 @@ export class OpenWorkspaceInAgentsWindowTitleBarAction extends Action2 {
 	}
 
 	async run(accessor: ServicesAccessor): Promise<void> {
-		await openCurrentWorkspaceInAgentsWindow(accessor, AgentsWindowOpenSource.TitleBar);
+		await accessor.get(ICommandService).executeCommand(OPEN_WORKSPACE_IN_AGENTS_WINDOW_COMMAND_ID, { source: AgentsWindowOpenSource.TitleBar });
 	}
 }
 
