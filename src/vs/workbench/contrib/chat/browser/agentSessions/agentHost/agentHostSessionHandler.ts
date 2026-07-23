@@ -2720,6 +2720,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			}, opts.chatURI);
 			return;
 		}
+		const requiresUserConfirmation = toolData.requiresUserConfirmation === true;
 
 		const invocation = this._toolsService.beginToolCall({
 			toolCallId,
@@ -2757,7 +2758,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		store.add(autorun(reader => {
 			const state = invocation.state.read(reader);
 			const tc = part$.read(reader).toolCall;
-			if (state.type === IChatToolInvocation.StateKind.WaitingForConfirmation && shouldAutoApproveClientToolCall(tc)) {
+			if (state.type === IChatToolInvocation.StateKind.WaitingForConfirmation && shouldAutoApproveClientToolCall(tc) && !requiresUserConfirmation) {
 				state.confirm({ type: ToolConfirmKind.Setting, id: SessionConfigKey.AutoApprove });
 				return;
 			}
@@ -2830,7 +2831,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		store.add(autorun(reader => {
 			const tc = part$.read(reader).toolCall;
 			const state = invocation.state.read(reader);
-			if (state.type === IChatToolInvocation.StateKind.WaitingForConfirmation && shouldAutoApproveClientToolCall(tc)) {
+			if (state.type === IChatToolInvocation.StateKind.WaitingForConfirmation && shouldAutoApproveClientToolCall(tc) && !requiresUserConfirmation) {
 				state.confirm({ type: ToolConfirmKind.Setting, id: SessionConfigKey.AutoApprove });
 			}
 			if (tc.status === ToolCallStatus.Cancelled || tc.status === ToolCallStatus.Completed) {
@@ -2902,7 +2903,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 				// pass it through so the invocation transitions straight to
 				// executing instead of briefly flashing a confirmation prompt
 				// (which would flicker "needs input" in the sessions list).
-				preApproved: shouldAutoApproveClientToolCall(tc)
+				preApproved: shouldAutoApproveClientToolCall(tc) && !requiresUserConfirmation
 					? { type: ToolConfirmKind.Setting, id: SessionConfigKey.AutoApprove }
 					: undefined,
 			};

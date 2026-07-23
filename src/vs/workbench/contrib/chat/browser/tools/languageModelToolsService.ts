@@ -623,7 +623,9 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 				// preToolUse hook that returned `ask` explicitly forces a
 				// confirmation, so never let `preApproved` override it.
 				const preResolvedAutoConfirmed = resolvedAutoConfirmed
-					?? (preToolUseHookResult?.permissionDecision === 'ask' ? undefined : dto.preApproved);
+					?? (preToolUseHookResult?.permissionDecision === 'ask' || tool.data.requiresUserConfirmation
+						? undefined
+						: dto.preApproved);
 
 				// In Autopilot, run the risk classifier on an auto-approved call that would
 				// otherwise show a confirmation. A "red" rating skips the call; anything else
@@ -857,7 +859,8 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 		preparedInvocation: IPreparedToolInvocation | undefined,
 		sessionResource: URI | undefined,
 	): Promise<{ autoConfirmed: ConfirmedReason | undefined; preparedInvocation: IPreparedToolInvocation | undefined }> {
-		if (hookResult?.permissionDecision === 'allow') {
+		const requiresExplicitConfirmation = tool.data.requiresUserConfirmation === true;
+		if (hookResult?.permissionDecision === 'allow' && !requiresExplicitConfirmation) {
 			this._logService.debug(`[LanguageModelToolsService#invokeTool] Tool ${dto.toolId} auto-approved by preToolUse hook`);
 			return { autoConfirmed: { type: ToolConfirmKind.ConfirmationNotNeeded, reason: localize('hookAllowed', "Allowed by hook") }, preparedInvocation };
 		}
@@ -915,6 +918,10 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 					};
 				}
 			}
+			return { autoConfirmed: undefined, preparedInvocation };
+		}
+
+		if (requiresExplicitConfirmation) {
 			return { autoConfirmed: undefined, preparedInvocation };
 		}
 
@@ -1332,6 +1339,9 @@ export class LanguageModelToolsService extends Disposable implements ILanguageMo
 
 	private isToolEligibleForAutoApproval(toolData: IToolData): boolean {
 		const fullReferenceName = this.getEligibleForAutoApprovalSpecialCase(toolData) ?? getToolFullReferenceName(toolData);
+		if (toolData.requiresUserConfirmation) {
+			return false;
+		}
 		if (toolData.id === 'copilot_fetchWebPage') {
 			// Special case, this fetch will call an internal tool 'vscode_fetchWebPage_internal'
 			return true;

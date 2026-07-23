@@ -275,7 +275,7 @@ export class BrowserStorageService extends AbstractStorageService {
 	}
 }
 
-interface IIndexedDBStorageDatabase extends IStorageDatabase, IDisposable {
+export interface IIndexedDBStorageDatabase extends IStorageDatabase, IDisposable {
 
 	/**
 	 * Name of the database.
@@ -288,6 +288,8 @@ interface IIndexedDBStorageDatabase extends IStorageDatabase, IDisposable {
 	 */
 	readonly hasPendingUpdate: boolean;
 
+	compareAndSwap(key: string, expectedValue: string | undefined, newValue: string): Promise<{ readonly swapped: boolean; readonly currentValue: string | undefined }>;
+
 	/**
 	 * For testing only.
 	 */
@@ -298,6 +300,17 @@ class InMemoryIndexedDBStorageDatabase extends InMemoryStorageDatabase implement
 
 	readonly hasPendingUpdate = false;
 	readonly name = 'in-memory-indexedb-storage';
+
+	async compareAndSwap(key: string, expectedValue: string | undefined, newValue: string): Promise<{ readonly swapped: boolean; readonly currentValue: string | undefined }> {
+		const items = await this.getItems();
+		const currentValue = items.get(key);
+		if (currentValue !== expectedValue) {
+			return { swapped: false, currentValue };
+		}
+
+		await this.updateItems({ insert: new Map([[key, newValue]]) });
+		return { swapped: true, currentValue: newValue };
+	}
 
 	async clear(): Promise<void> {
 		(await this.getItems()).clear();
@@ -426,6 +439,21 @@ export class IndexedDBStorageDatabase extends Disposable implements IIndexedDBSt
 
 			this.broadcastChannel.postData(event);
 		}
+	}
+
+	async compareAndSwap(key: string, expectedValue: string | undefined, newValue: string): Promise<{ readonly swapped: boolean; readonly currentValue: string | undefined }> {
+		const db = await this.whenConnected;
+		const result = await db.compareAndSwap(
+			IndexedDBStorageDatabase.STORAGE_OBJECT_STORE,
+			key,
+			expectedValue,
+			newValue,
+			(value): value is string => typeof value === 'string',
+		);
+		if (this.broadcastChannel && result.swapped) {
+			this.broadcastChannel.postData({ changed: new Map([[key, newValue]]) });
+		}
+		return result;
 	}
 
 	private async doUpdateItems(request: IUpdateRequest): Promise<boolean> {

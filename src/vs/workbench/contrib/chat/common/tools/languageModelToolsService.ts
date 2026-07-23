@@ -54,6 +54,8 @@ export interface IToolData {
 	readonly modelDescription: string;
 	readonly inputSchema?: IJSONSchema;
 	readonly canBeReferencedInPrompt?: boolean;
+	/** Whether every invocation requires an explicit user action and cannot be auto-approved. */
+	readonly requiresUserConfirmation?: boolean;
 	/**
 	 * True if the tool runs in the (possibly remote) workspace, false if it runs
 	 * on the host, undefined if known.
@@ -362,6 +364,7 @@ export interface IToolConfirmationMessages {
 	disclaimer?: string | IMarkdownString;
 	/** Model-provided assessment of whether automatic approval is safe. */
 	approvalReason?: IToolApprovalReason;
+	/** Whether this confirmation is eligible for automatic approval. */
 	allowAutoConfirm?: boolean;
 	terminalCustomActions?: ToolConfirmationAction[];
 	/** If true, confirmation will be requested after the tool executes and before results are sent to the model */

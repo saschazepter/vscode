@@ -39,6 +39,10 @@ export interface IUpdateAutomationOptions {
 	readonly enabled?: boolean;
 }
 
+export type IGuardedAutomationUpdateResult =
+	| { readonly kind: 'updated'; readonly automation: IAutomation }
+	| { readonly kind: 'conflict'; readonly current: IAutomation | undefined };
+
 /** Patch for `updateRun`. Absent fields are unchanged. */
 export interface IUpdateAutomationRunOptions {
 	readonly status?: IAutomationRun['status'];
@@ -69,6 +73,7 @@ export interface IAutomationService {
 
 	createAutomation(options: ICreateAutomationOptions): Promise<IAutomation>;
 	updateAutomation(id: string, patch: IUpdateAutomationOptions): Promise<IAutomation>;
+	updateAutomationIfUnchanged(id: string, patch: IUpdateAutomationOptions, expected: IAutomation): Promise<IGuardedAutomationUpdateResult>;
 	deleteAutomation(id: string): Promise<void>;
 
 	/** Records a new run as `pending` and advances the schedule for scheduled/catch-up runs. Throws if the automation does not exist. */

@@ -79,6 +79,8 @@ Manual automation runs announce that they started once session dispatch commits,
 
 Automations use a discriminated target that is either workspace-backed or a workspace-less quick chat. The workspace dropdown owns both choices: selecting **No workspace** switches to the existing quick-chat provider/session-type catalog, while selecting a folder restores repository configuration. Workspace-less targets display and announce as `without a workspace` in the list and cannot carry folder, isolation, or branch configuration; workspace-backed targets require a folder, with Worktree isolation requiring its base branch. Ledger schema v3 persists this target union and migrates schema-v1/v2 flat records while preserving valid workspace-backed targets.
 
+The Agents window contributes a built-in **Automations** client-tool set with `listAutomations`, `configureAutomation`, and `deleteAutomation`. Listing is read-only and returns stable IDs plus editable fields. Configuration uses the invoking session as the default target for new entries, but never writes directly: it opens the existing create/edit dialog with the proposal prefilled, and only the user's explicit **Create** or **Save** action is committed through `IAutomationService`. Deletion requires a stable ID and a dedicated **Delete** confirmation that cannot be auto-approved; confirming removes the automation and its retained run history while already-dispatched sessions continue. Cancellation, invalid IDs, disabled Automations, and cancelled tool invocations leave the ledger unchanged.
+
 ### IAICustomizationWorkspaceService
 
 The `IAICustomizationWorkspaceService` interface controls per-window behavior:

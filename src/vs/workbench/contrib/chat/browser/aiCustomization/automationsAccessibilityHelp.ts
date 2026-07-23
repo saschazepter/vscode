@@ -62,6 +62,7 @@ export function buildAutomationsHelpContent(keybindingService: IKeybindingServic
 
 	lines.push(nls.localize('automations.help.header', 'Accessibility Help: Automations'));
 	lines.push(nls.localize('automations.help.intro', 'Automations let you schedule agent sessions to run on a cadence you choose. When an automation is due, a fresh chat session is created in the background and the prompt is sent automatically.'));
+	lines.push(nls.localize('automations.help.agentProposals', 'Agents can propose creating or updating an automation. The existing Create/Edit dialog opens with the proposal prefilled for review. Nothing is saved unless you explicitly activate Create or Save; cancelling the dialog makes no changes. Agents can also request deletion, which requires activating Delete in a separate confirmation and cannot be auto-approved.'));
 	lines.push('');
 
 	lines.push(nls.localize('automations.help.layoutHeader', 'Layout:'));

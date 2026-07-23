@@ -599,7 +599,12 @@ export class AutomationsListWidget extends Disposable {
 			return;
 		}
 		try {
-			await this.automationService.updateAutomation(result.id, result.value);
+			const updateResult = await this.automationService.updateAutomationIfUnchanged(result.id, result.value, automation);
+			if (updateResult.kind === 'conflict') {
+				throw new Error(updateResult.current
+					? localize('automationChangedDuringEdit', "This automation changed while the dialog was open. Reopen it to review the latest values.")
+					: localize('automationDeletedDuringEdit', "This automation was deleted while the dialog was open."));
+			}
 			status(localize('automationUpdatedStatus', "Updated automation {0}", automation.name));
 		} catch (err) {
 			this.logService.error('[Automations] Failed to update automation', err);

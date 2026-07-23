@@ -177,6 +177,14 @@ interface IRenderFormHandle {
 	readonly getFocusableElements: () => readonly HTMLElement[];
 }
 
+export function shouldPreserveUnavailableAutomationTarget(options: IShowAutomationDialogOptions): boolean {
+	return options.preserveUnavailableInitialTarget ?? options.initialValues?.target === undefined;
+}
+
+export function resolveAutomationPickerValue<T>(selectedValue: T | undefined, initialValue: T | undefined, preserveInitialValue: boolean, wasChangedByUser: boolean): T | undefined {
+	return preserveInitialValue && !wasChangedByUser ? initialValue : selectedValue;
+}
+
 
 const AUTOMATIONS_HARNESS_CHIP_ACTION_ID = 'workbench.action.chat.renderAutomationsHarnessChip';
 const AUTOMATIONS_WORKSPACE_PICKER_ACTION_ID = 'workbench.action.chat.renderAutomationsWorkspacePicker';
@@ -736,13 +744,13 @@ export function renderForm(
 	const isolationModel = new AutomationIsolationModel(state);
 	const workspaceControlsVisible = derived(reader => !isolationModel.isQuickChatObs.read(reader));
 	const sessionTypePicker = disposables.add(instantiationService.createInstance(MobileSessionTypePicker, constObservable<ISession | undefined>(undefined), { persistSelection: false, telemetrySource: 'AutomationSessionTypePicker' }));
+	sessionTypePicker.setQuickChatSource(isolationModel.isQuickChatObs);
 	sessionTypePicker.setFolderSource(isolationModel.folderUriObs, {
 		initialPick: state.sessionTypeId
 			? { providerId: state.providerId, sessionTypeId: state.sessionTypeId }
 			: undefined,
-		preserveUnavailableInitialPick: true,
+		preserveUnavailableInitialPick: shouldPreserveUnavailableAutomationTarget(options),
 	});
-	sessionTypePicker.setQuickChatSource(isolationModel.isQuickChatObs);
 	// The dialog has no session, so the input part reads the active session type from the picker via this delegate.
 	const onDidChangeSessionType = disposables.add(new Emitter<AgentSessionTarget>());
 	const onDidChangeSessionTarget = disposables.add(new Emitter<void>());
@@ -774,7 +782,7 @@ export function renderForm(
 	workspacePicker.setLayoutService(layoutService);
 
 	if (state.folderUri) {
-		workspacePicker.setSelectedWorkspace(state.folderUri, { fireEvent: false });
+		workspacePicker.setSelectedWorkspace(state.folderUri, { fireEvent: false, persist: false });
 	}
 
 	disposables.add(workspacePicker.onDidSelectWorkspace(uri => {
@@ -879,6 +887,27 @@ export function renderForm(
 	);
 	chatInput.render(promptHost, initialPrompt, stubWidget as IChatWidget);
 	chatInput.inputEditor.updateOptions({ placeholder: localize('automation.form.prompt.placeholder', "Describe what you want to automate") });
+	let modeWasChangedByUser = false;
+	let permissionLevelWasChangedByUser = false;
+	let modelWasChangedByUser = false;
+	const preserveInitialMode = options.isAgentProposal === true && (options.initialValues?.mode === undefined || options.initialValues.mode === null);
+	const preserveInitialPermissionLevel = options.isAgentProposal === true && (options.initialValues?.permissionLevel === undefined || options.initialValues.permissionLevel === null);
+	const preserveInitialModel = options.isAgentProposal === true && (options.initialValues?.modelId === undefined || options.initialValues.modelId === null);
+	const initialModeRetry = disposables.add(new MutableDisposable<IDisposable>());
+	const initialModelRetry = disposables.add(new MutableDisposable<IDisposable>());
+	disposables.add(chatInput.onDidChangeCurrentChatMode(event => {
+		if (event.isUserInitiated) {
+			modeWasChangedByUser = true;
+			initialModeRetry.clear();
+		}
+	}));
+	disposables.add(chatInput.onDidChangeCurrentPermissionLevel(event => permissionLevelWasChangedByUser ||= event.isUserInitiated));
+	disposables.add(chatInput.onDidChangeCurrentLanguageModel(event => {
+		if (event.isUserInitiated) {
+			modelWasChangedByUser = true;
+			initialModelRetry.clear();
+		}
+	}));
 
 	if (initialMode) {
 		const getUnfilteredInitialMode = () => {
@@ -897,22 +926,21 @@ export function renderForm(
 		}
 		// Retry on cold-start when extension-contributed modes arrive late.
 		if (chatInput.currentModeObs.get().id !== initialMode && !isHiddenCustomInitialMode()) {
-			const retry = disposables.add(new MutableDisposable<IDisposable>());
 			const tryApply = () => {
 				if (isHiddenCustomInitialMode()) {
 					logService.trace(`[AutomationDialog] Skipping hidden custom initial mode "${initialMode}" after modes updated. Falling back to the default mode.`);
-					retry.clear();
+					initialModeRetry.clear();
 					return;
 				}
 				const modes = chatInput.currentChatModesObs.get();
 				if (modes.findModeById(initialMode) || modes.findModeByName(initialMode)) {
 					chatInput.setChatMode(initialMode, /* storeSelection */ false);
 					if (chatInput.currentModeObs.get().id === initialMode) {
-						retry.clear();
+						initialModeRetry.clear();
 					}
 				}
 			};
-			retry.value = autorun(reader => {
+			initialModeRetry.value = autorun(reader => {
 				const modes = chatInput.currentChatModesObs.read(reader);
 				reader.store.add(modes.onDidChange(tryApply));
 				tryApply();
@@ -928,14 +956,13 @@ export function renderForm(
 	if (initialModelId && !chatInput.switchModelByIdentifier(initialModelId, /* storeSelection */ false)) {
 		const languageModelsService = instantiationService.invokeFunction(accessor => accessor.get(ILanguageModelsService));
 		const baseline = chatInput.selectedLanguageModel.get()?.identifier;
-		const retry = disposables.add(new MutableDisposable<IDisposable>());
-		retry.value = languageModelsService.onDidChangeLanguageModels(() => {
+		initialModelRetry.value = languageModelsService.onDidChangeLanguageModels(() => {
 			if (chatInput.selectedLanguageModel.get()?.identifier !== baseline) {
-				retry.clear();
+				initialModelRetry.clear();
 				return;
 			}
 			if (chatInput.switchModelByIdentifier(initialModelId, /* storeSelection */ false)) {
-				retry.clear();
+				initialModelRetry.clear();
 			}
 		});
 	}
@@ -981,9 +1008,9 @@ export function renderForm(
 
 	return {
 		getPrompt: () => chatInput.inputEditor.getValue(),
-		getMode: () => chatInput.currentModeObs.get().id,
-		getPermissionLevel: () => chatInput.currentPermissionLevelObs.get(),
-		getModelId: () => chatInput.selectedLanguageModel.get()?.identifier,
+		getMode: () => resolveAutomationPickerValue(chatInput.currentModeObs.get().id, initialMode, preserveInitialMode, modeWasChangedByUser),
+		getPermissionLevel: () => resolveAutomationPickerValue(chatInput.currentPermissionLevelObs.get(), initialPermissionLevel, preserveInitialPermissionLevel, permissionLevelWasChangedByUser),
+		getModelId: () => resolveAutomationPickerValue(chatInput.selectedLanguageModel.get()?.identifier, initialModelId, preserveInitialModel, modelWasChangedByUser),
 		getBranch: () => isolationModel.persistedBranch,
 		getFocusableElements: () => {
 			// eslint-disable-next-line no-restricted-syntax -- the dialog owns this form subtree and supplies its dynamic focus order.

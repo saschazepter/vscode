@@ -655,7 +655,15 @@ suite('LanguageModelToolsService', () => {
 		assert.strictEqual(result.content[0].value, 'ok');
 	});
 
-	test('confirmationMessages with customOptions disables allowAutoConfirm', async () => {
+	test('requiresUserConfirmation overrides hook and caller pre-approval', async () => {
+		let invoked = false;
+		const toolData: IToolData = {
+			id: 'testToolCustomBtnNoAuto',
+			modelDescription: 'Test Tool',
+			displayName: 'Test Tool',
+			source: ToolDataSource.Internal,
+			requiresUserConfirmation: true,
+		};
 		const tool = registerToolForTest(service, store, 'testToolCustomBtnNoAuto', {
 			prepareToolInvocation: async () => ({
 				confirmationMessages: {
@@ -668,22 +676,29 @@ suite('LanguageModelToolsService', () => {
 					allowAutoConfirm: false,
 				}
 			}),
-			invoke: async () => ({ content: [{ kind: 'text', value: 'done' }] }),
-		});
+			invoke: async () => {
+				invoked = true;
+				return { content: [{ kind: 'text', value: 'done' }] };
+			},
+		}, toolData);
 
 		const sessionId = 'sessionId-custom-noauto';
 		const capture: { invocation?: any } = {};
 		stubGetSession(chatService, sessionId, { requestId: 'requestId-custom-noauto', capture });
 
 		const dto = tool.makeDto({ x: 1 }, { sessionId });
+		dto.preApproved = { type: ToolConfirmKind.Setting, id: 'test-auto-approve' };
+		dto.preToolUseResult = { permissionDecision: 'allow' };
 
 		const promise = service.invokeTool(dto, async () => 0, CancellationToken.None);
 		const published = await waitForPublishedInvocation(capture);
 		assert.ok(published, 'expected ChatToolInvocation to be published');
 		assert.deepStrictEqual(published.confirmationMessages?.customOptions?.map(o => o.label), ['Yes', 'No']);
+		assert.strictEqual(invoked, false, 'invoke should not run before explicit confirmation');
 
 		IChatToolInvocation.confirmWith(published, { type: ToolConfirmKind.UserAction, selectedButton: 'Yes' });
 		await promise;
+		assert.strictEqual(invoked, true);
 	});
 
 	test('skipping modified-files confirmation returns the shared skip message and does not invoke the tool', async () => {

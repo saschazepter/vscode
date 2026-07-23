@@ -263,6 +263,7 @@ suite('AgentHostClientTools', () => {
 				invokeTool: async (invocation: IToolInvocation) => {
 					invokedToolCalls.push(invocation);
 					const toolInvocation = pendingToolCalls.get(invocation.chatStreamToolCallId ?? invocation.callId);
+					const toolData = tools.find(tool => tool.id === invocation.toolId);
 					pendingToolCalls.delete(invocation.chatStreamToolCallId ?? invocation.callId);
 					if (options?.throwBeforeConfirmation) {
 						throw options.throwBeforeConfirmation;
@@ -278,7 +279,7 @@ suite('AgentHostClientTools', () => {
 								title: 'Confirm tool execution',
 								message: 'Run the task?',
 							},
-						}, invocation.parameters, invocation.preApproved);
+						}, invocation.parameters, toolData?.requiresUserConfirmation ? undefined : invocation.preApproved);
 						await IChatToolInvocation.awaitConfirmation(toolInvocation, CancellationToken.None);
 					} else {
 						toolInvocation?.transitionFromStreaming(undefined, invocation.parameters, { type: ToolConfirmKind.ConfirmationNotNeeded });
@@ -927,6 +928,74 @@ suite('AgentHostClientTools', () => {
 					sawWaitingForConfirmation: false,
 				},
 			);
+		});
+
+		test('requiresUserConfirmation ignores Agent Host auto-approval until the user confirms', async () => {
+			const requiresConfirmationTool: IToolData = {
+				...testRunTaskTool,
+				requiresUserConfirmation: true,
+			};
+			const { handler, connection, toolsService } = createHandlerWithMocks(disposables, [requiresConfirmationTool], { requireConfirmation: true });
+			const sessionResource = URI.parse('agent-host-copilot:/session-1');
+			const backendSession = AgentSession.uri('copilot', 'session-1').toString();
+
+			connection.applySessionAction(URI.parse(buildDefaultChatUri(backendSession)), {
+				type: ActionType.ChatTurnStarted,
+				turnId: 'turn-1',
+				startedAt: '2025-01-01T00:00:00.000Z',
+				message: { text: 'run the task', origin: { kind: MessageKind.User } },
+			} as ChatAction);
+			connection.applySessionAction(URI.parse(buildDefaultChatUri(backendSession)), {
+				type: ActionType.ChatToolCallStart,
+				turnId: 'turn-1',
+				toolCallId: 'tool-call-1',
+				toolName: 'runTask',
+				displayName: 'Run Task',
+				contributor: { kind: ToolCallContributorKind.Client, clientId: connection.clientId },
+			} as ChatAction);
+			connection.applySessionAction(URI.parse(buildDefaultChatUri(backendSession)), {
+				type: ActionType.ChatToolCallReady,
+				turnId: 'turn-1',
+				toolCallId: 'tool-call-1',
+				invocationMessage: 'Run Task',
+				toolInput: '{"task":"build"}',
+				confirmationTitle: 'Run Task',
+				_meta: { autoApproveBySetting: true },
+			} as ChatAction);
+
+			await handler.provideChatSessionContent(sessionResource, CancellationToken.None);
+			await timeout(0);
+			await timeout(0);
+			await timeout(0);
+
+			assert.deepStrictEqual({
+				preApproved: toolsService.invokedToolCalls[0]?.preApproved,
+				sawWaitingForConfirmation: (toolsService.recordedStateKinds.get('tool-call-1') ?? []).includes(IChatToolInvocation.StateKind.WaitingForConfirmation),
+				actionsBeforeConfirmation: getToolCallConfirmationAndCompletionActions(connection),
+			}, {
+				preApproved: undefined,
+				sawWaitingForConfirmation: true,
+				actionsBeforeConfirmation: [],
+			});
+
+			IChatToolInvocation.confirmWith(toolsService.begunToolCalls[0], { type: ToolConfirmKind.UserAction });
+			await timeout(0);
+			await timeout(0);
+
+			assert.deepStrictEqual(getToolCallConfirmationAndCompletionActions(connection), [
+				{
+					type: ActionType.ChatToolCallConfirmed,
+					approved: true,
+					success: undefined,
+					error: undefined,
+				},
+				{
+					type: ActionType.ChatToolCallComplete,
+					approved: undefined,
+					success: true,
+					error: undefined,
+				},
+			]);
 		});
 
 		test('reconnecting to an active turn with owned client tool completes the initial snapshot invocation', async () => {

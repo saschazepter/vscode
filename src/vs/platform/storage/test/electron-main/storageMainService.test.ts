@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { notStrictEqual, strictEqual } from 'assert';
+import { deepStrictEqual, notStrictEqual, strictEqual } from 'assert';
 import { Schemas } from '../../../../base/common/network.js';
 import { joinPath } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -17,7 +17,9 @@ import product from '../../../product/common/product.js';
 import { IProductService } from '../../../product/common/productService.js';
 import { SaveStrategy, StateService } from '../../../state/node/stateService.js';
 import { IS_NEW_KEY, StorageScope } from '../../common/storage.js';
+import { ISerializableCompareAndSwapRequest, ISerializableGetValueRequest, ISerializableUpdateRequest } from '../../common/storageIpc.js';
 import { IStorageChangeEvent, IStorageMain, IStorageMainOptions } from '../../electron-main/storageMain.js';
+import { StorageDatabaseChannel } from '../../electron-main/storageIpc.js';
 import { StorageMainService } from '../../electron-main/storageMainService.js';
 import { currentSessionDateStorageKey, firstSessionDateStorageKey } from '../../../telemetry/common/telemetry.js';
 import { UriIdentityService } from '../../../uriIdentity/common/uriIdentityService.js';
@@ -149,6 +151,36 @@ suite('StorageMainService', function () {
 		const storageMainService = createStorageService();
 
 		return testStorage(storageMainService.workspaceStorage(workspace), StorageScope.WORKSPACE);
+	});
+
+	test('storage channel compareAndSwap uses the authoritative application value', async function () {
+		const storageMainService = createStorageService();
+		const channel = disposables.add(new StorageDatabaseChannel(new NullLogService(), storageMainService));
+		const request = { profile: undefined, workspace: undefined };
+		const getValueRequest: ISerializableGetValueRequest = { ...request, key: 'key' };
+		const getUnrelatedValueRequest: ISerializableGetValueRequest = { ...request, key: 'unrelated' };
+		const seedUnrelatedRequest: ISerializableUpdateRequest = { ...request, insert: [['unrelated', 'sentinel']] };
+		const compareAndSwap = (expectedValue: string | undefined, newValue: string) => {
+			const compareAndSwapRequest: ISerializableCompareAndSwapRequest = { ...request, key: 'key', expectedValue, newValue };
+			return channel.call(undefined, 'compareAndSwap', compareAndSwapRequest);
+		};
+
+		await channel.call(undefined, 'updateItems', seedUnrelatedRequest);
+		const initial = await channel.call(undefined, 'getValue', getValueRequest);
+		const inserted = await compareAndSwap(undefined, 'first');
+		const rejected = await compareAndSwap(undefined, 'stale');
+		const updated = await compareAndSwap('first', 'second');
+		const final = await channel.call(undefined, 'getValue', getValueRequest);
+		const unrelated = await channel.call(undefined, 'getValue', getUnrelatedValueRequest);
+
+		deepStrictEqual({ initial, inserted, rejected, updated, final, unrelated }, {
+			initial: undefined,
+			inserted: { swapped: true, currentValue: 'first' },
+			rejected: { swapped: false, currentValue: 'first' },
+			updated: { swapped: true, currentValue: 'second' },
+			final: 'second',
+			unrelated: 'sentinel',
+		});
 	});
 
 	test('storage closed onWillShutdown', async function () {
