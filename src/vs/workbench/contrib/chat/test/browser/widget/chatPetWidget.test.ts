@@ -5,7 +5,7 @@
 
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { getChatPetBaseState } from '../../../browser/widget/chatPetWidget.js';
+import { getChatPetBaseState, getChatPetBuddyName } from '../../../browser/widget/chatPetWidget.js';
 
 suite('ChatPetWidget', () => {
 
@@ -22,6 +22,18 @@ suite('ChatPetWidget', () => {
 			'sleep',
 			'processing',
 			'clapping',
+		]);
+	});
+
+	test('selects the buddy for the product quality', () => {
+		assert.deepStrictEqual([
+			getChatPetBuddyName('stable'),
+			getChatPetBuddyName('insider'),
+			getChatPetBuddyName(undefined),
+		], [
+			'buddy-idle-stable',
+			'buddy-idle-insiders',
+			'buddy-idle-insiders',
 		]);
 	});
 });

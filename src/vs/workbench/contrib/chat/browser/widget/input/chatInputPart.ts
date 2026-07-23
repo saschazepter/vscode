@@ -437,8 +437,8 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		return this.inputContainer;
 	}
 
-	get domNode(): HTMLElement {
-		return this.container;
+	get petHostElement(): HTMLElement {
+		return this.inputContainer.parentElement ?? this.container;
 	}
 
 	get persistentContentContainerElement(): HTMLElement {

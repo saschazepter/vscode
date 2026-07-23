@@ -9,8 +9,8 @@
 
 .chat-pet-button {
 	position: absolute;
-	right: var(--vscode-spacing-size120);
-	bottom: calc(100% - var(--vscode-spacing-size80));
+	right: var(--vscode-spacing-size320);
+	bottom: 100%;
 	z-index: 100;
 	width: 48px;
 	height: 48px;
@@ -25,10 +25,51 @@
 	display: none;
 }
 
-.chat-pet-button:focus-visible {
-	outline: var(--vscode-strokeThickness) solid var(--vscode-focusBorder);
-	outline-offset: 0;
-	border-radius: var(--vscode-cornerRadius-small);
+.chat-pet-button.entering {
+	animation: chat-pet-enter 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.chat-pet-button.exiting {
+	pointer-events: none;
+	animation: chat-pet-exit 220ms ease-in forwards;
+}
+
+@keyframes chat-pet-enter {
+	0% {
+		opacity: 0;
+		transform: translateY(var(--vscode-spacing-size160)) scale(0.5) rotate(-12deg);
+	}
+
+	65% {
+		opacity: 1;
+		transform: translateY(calc(-1 * var(--vscode-spacing-size40))) scale(1.08) rotate(4deg);
+	}
+
+	100% {
+		opacity: 1;
+		transform: translateY(0) scale(1) rotate(0);
+	}
+}
+
+@keyframes chat-pet-exit {
+	0% {
+		opacity: 1;
+		transform: translateY(0) scale(1) rotate(0);
+	}
+
+	35% {
+		transform: translateY(calc(-1 * var(--vscode-spacing-size40))) scale(1.04) rotate(-4deg);
+	}
+
+	100% {
+		opacity: 0;
+		transform: translateY(var(--vscode-spacing-size160)) scale(0.55) rotate(10deg);
+	}
+}
+
+.monaco-workbench .chat-pet-host > button.chat-pet-button:focus,
+.monaco-workbench .chat-pet-host > button.chat-pet-button:focus-visible {
+	outline: none;
 }
 
 .chat-pet-sprite {
@@ -40,11 +81,9 @@
 	pointer-events: none;
 }
 
-.agent-sessions-workbench .interactive-input-part.chat-pet-host > .chat-pet-button {
-	right: calc(var(--vscode-spacing-size320) + var(--vscode-spacing-size120));
-}
-
-.new-chat-input-container.chat-pet-host > .chat-pet-button {
-	right: var(--vscode-spacing-size120);
-	bottom: calc(100% - var(--vscode-spacing-size80));
+@media (prefers-reduced-motion: reduce) {
+	.chat-pet-button.entering,
+	.chat-pet-button.exiting {
+		animation: none;
+	}
 }

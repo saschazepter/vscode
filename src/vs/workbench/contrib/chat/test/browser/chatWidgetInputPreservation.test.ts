@@ -4,8 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import { Range } from '../../../../../editor/common/core/range.js';
+import { OffsetRange } from '../../../../../editor/common/core/ranges/offsetRange.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
 import { IChatWidget, setModelPreservingInputTypedWhileLoading } from '../../browser/chat.js';
+import { ChatAgentLocation } from '../../common/constants.js';
+import { ChatRequestSlashCommandPart, ChatRequestTextPart, IParsedChatRequest } from '../../common/requestParser/chatParserTypes.js';
+import { getImmediateSlashCommandPart } from '../../browser/widget/chatWidget.js';
 
 suite('setModelPreservingInputTypedWhileLoading', () => {
 
@@ -52,5 +57,44 @@ suite('setModelPreservingInputTypedWhileLoading', () => {
 		setModelPreservingInputTypedWhileLoading(widget.asWidget(), inputBeforeLoad, () => widget.bind());
 
 		assert.strictEqual(widget.getInput(), '');
+	});
+
+	test('identifies only leading execute-immediately slash commands', () => {
+		const command = new ChatRequestSlashCommandPart(
+			new OffsetRange(0, 7),
+			new Range(1, 1, 1, 8),
+			{
+				command: 'models',
+				detail: 'Open models',
+				executeImmediately: true,
+				locations: [ChatAgentLocation.Chat],
+			},
+		);
+		const delayedCommand = new ChatRequestSlashCommandPart(
+			new OffsetRange(0, 7),
+			new Range(1, 1, 1, 8),
+			{
+				command: 'rename',
+				detail: 'Rename chat',
+				executeImmediately: false,
+				locations: [ChatAgentLocation.Chat],
+			},
+		);
+		const prefix = new ChatRequestTextPart(new OffsetRange(0, 1), new Range(1, 1, 1, 2), ' ');
+		const shiftedCommand = new ChatRequestSlashCommandPart(
+			new OffsetRange(1, 8),
+			new Range(1, 2, 1, 9),
+			command.slashCommand,
+		);
+
+		assert.deepStrictEqual([
+			getImmediateSlashCommandPart({ text: '/models', parts: [command] } satisfies IParsedChatRequest)?.slashCommand.command,
+			getImmediateSlashCommandPart({ text: '/rename', parts: [delayedCommand] } satisfies IParsedChatRequest)?.slashCommand.command,
+			getImmediateSlashCommandPart({ text: ' /models', parts: [prefix, shiftedCommand] } satisfies IParsedChatRequest)?.slashCommand.command,
+		], [
+			'models',
+			undefined,
+			undefined,
+		]);
 	});
 });

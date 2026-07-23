@@ -5,7 +5,9 @@
 
 import './media/chatPet.css';
 import * as dom from '../../../../../base/browser/dom.js';
-import { createInstantHoverDelegate } from '../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
+import { IHoverDelegate } from '../../../../../base/browser/ui/hover/hoverDelegate.js';
+import { getDefaultHoverDelegate } from '../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
+import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.js';
 import { status } from '../../../../../base/browser/ui/aria/aria.js';
 import { RunOnceScheduler } from '../../../../../base/common/async.js';
 import { Disposable } from '../../../../../base/common/lifecycle.js';
@@ -14,6 +16,7 @@ import { autorun, IObservable, observableFromEvent, observableValue } from '../.
 import { localize } from '../../../../../nls.js';
 import { IAccessibilityService } from '../../../../../platform/accessibility/common/accessibility.js';
 import { IHoverService } from '../../../../../platform/hover/browser/hover.js';
+import product from '../../../../../platform/product/common/product.js';
 import { IChatModel } from '../../common/model/chatModel.js';
 import { IChatPetService } from '../chatPetService.js';
 
@@ -22,20 +25,26 @@ export type ChatPetState = 'idle' | 'sleep' | 'processing' | 'complete' | 'love'
 const IDLE_SLEEP_DELAY = 60_000;
 const TRANSIENT_STATE_DURATION = 2_000;
 
+export function getChatPetBuddyName(quality: string | undefined): 'buddy-idle-stable' | 'buddy-idle-insiders' {
+	return quality === 'stable' ? 'buddy-idle-stable' : 'buddy-idle-insiders';
+}
+
+const buddyName = getChatPetBuddyName(product.quality);
+const buddySources = createSpriteSources(buddyName);
 const spriteSources: Record<ChatPetState, { animated: string; reducedMotion: string }> = {
-	idle: createSpriteSources('idle'),
-	sleep: createSpriteSources('sleep'),
-	processing: createSpriteSources('processing'),
-	complete: createSpriteSources('complete'),
-	love: createSpriteSources('love'),
-	clapping: createSpriteSources('clapping'),
+	idle: buddySources,
+	sleep: buddySources,
+	processing: buddySources,
+	complete: buddySources,
+	love: buddySources,
+	clapping: buddySources,
 };
 
 function createSpriteSources(name: string): { animated: string; reducedMotion: string } {
 	const root = 'vs/workbench/contrib/chat/browser/widget/media/chatPet';
 	return {
-		animated: FileAccess.asBrowserUri(`${root}/${name}.gif`).toString(true),
-		reducedMotion: FileAccess.asBrowserUri(`${root}/${name}.png`).toString(true),
+		animated: FileAccess.asBrowserUri(`${root}/${name}-96.gif`).toString(true),
+		reducedMotion: FileAccess.asBrowserUri(`${root}/${name}-96.png`).toString(true),
 	};
 }
 
@@ -59,6 +68,8 @@ export class ChatPetWidget extends Disposable {
 	private readonly _transientScheduler = this._register(new RunOnceScheduler(() => this._transientState.set(undefined, undefined), TRANSIENT_STATE_DURATION));
 	private _currentState: ChatPetState = 'idle';
 	private _motionReduced = false;
+	private _enabled = false;
+	private _enablementInitialized = false;
 
 	constructor(
 		parent: HTMLElement,
@@ -72,22 +83,38 @@ export class ChatPetWidget extends Disposable {
 		parent.classList.add('chat-pet-host');
 		this._button = dom.append(parent, dom.$('button.chat-pet-button')) as HTMLButtonElement;
 		this._button.type = 'button';
-		this._button.setAttribute('aria-label', localize('chatPet.love', "Show the VS Code pet some love"));
+		this._button.setAttribute('aria-label', localize('chatPet.love', "Show the VS Code pet some love!"));
 		this._image = dom.append(this._button, dom.$('img.chat-pet-sprite')) as HTMLImageElement;
 		this._image.alt = '';
 		this._image.setAttribute('aria-hidden', 'true');
+		this._register(dom.addDisposableListener(this._button, dom.EventType.ANIMATION_END, event => {
+			if (event.animationName === 'chat-pet-exit' && !this._enabled) {
+				this._finishDisable();
+			}
+		}));
 
-		const hoverDelegate = this._register(createInstantHoverDelegate());
-		this._register(hoverService.setupManagedHover(
+		const defaultHoverDelegate = getDefaultHoverDelegate('element');
+		const hoverDelegate: IHoverDelegate = {
+			get delay() { return defaultHoverDelegate.delay; },
+			showHover: (options, focus) => hoverService.showInstantHover({
+				...options,
+				position: {
+					...options.position,
+					hoverPosition: HoverPosition.ABOVE,
+				},
+			}, focus),
+		};
+		const managedHover = this._register(hoverService.setupManagedHover(
 			hoverDelegate,
 			this._button,
-			localize('chatPet.love', "Show the VS Code pet some love"),
+			localize('chatPet.hover', "Show the VS Code pet some love! Stay tuned for more interactions..."),
 		));
 
 		this._register(dom.addDisposableListener(this._button, dom.EventType.CLICK, e => {
 			e.preventDefault();
 			e.stopPropagation();
 			this._showTransientState('love');
+			managedHover.show();
 			status(localize('chatPet.loved', "The VS Code pet feels loved"));
 		}));
 
@@ -102,10 +129,25 @@ export class ChatPetWidget extends Disposable {
 			const idleExpired = this._idleExpired.read(reader);
 			const transientState = this._transientState.read(reader);
 
-			this._button.classList.toggle('hidden', !enabled);
+			if (!this._enablementInitialized || enabled !== this._enabled) {
+				const wasInitialized = this._enablementInitialized;
+				this._enablementInitialized = true;
+				this._enabled = enabled;
+				if (enabled) {
+					this._startEnableAnimation();
+				} else if (wasInitialized) {
+					this._startDisableAnimation();
+				} else {
+					this._finishDisable();
+				}
+			}
+
 			if (!enabled) {
 				this._idleScheduler.cancel();
 				this._transientScheduler.cancel();
+				if (this._motionReduced) {
+					this._finishDisable();
+				}
 				return;
 			}
 
@@ -132,6 +174,31 @@ export class ChatPetWidget extends Disposable {
 				}
 			}));
 		}));
+	}
+
+	private _startEnableAnimation(): void {
+		this._button.classList.remove('hidden', 'exiting', 'entering');
+		this._button.tabIndex = 0;
+		this._button.getBoundingClientRect();
+		if (!this._motionReduced) {
+			this._button.classList.add('entering');
+		}
+	}
+
+	private _startDisableAnimation(): void {
+		this._button.tabIndex = -1;
+		this._button.classList.remove('entering');
+		if (this._motionReduced || this._button.classList.contains('hidden')) {
+			this._finishDisable();
+			return;
+		}
+		this._button.classList.add('exiting');
+	}
+
+	private _finishDisable(): void {
+		this._button.classList.remove('entering', 'exiting');
+		this._button.classList.add('hidden');
+		this._image.removeAttribute('src');
 	}
 
 	private _showTransientState(state: ChatPetState): void {

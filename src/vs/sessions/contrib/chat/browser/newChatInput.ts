@@ -416,7 +416,6 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 	render(parent: HTMLElement, root: HTMLElement): void {
 		// Input slot
 		const chatInputContainer = dom.append(parent, dom.$('.new-chat-input-container'));
-		this._register(this.instantiationService.createInstance(ChatPetWidget, chatInputContainer, constObservable(undefined)));
 
 		// Overflow widget DOM node at the top level so the suggest widget
 		// is not clipped by any overflow:hidden ancestor.
@@ -439,7 +438,9 @@ export class NewChatInputWidget extends Disposable implements IHistoryNavigation
 		notificationContainer.appendChild(notificationWidget.domNode);
 
 		// Input area inside the input slot
-		const inputArea = dom.append(chatInputContainer, dom.$('.new-chat-input-area'));
+		const inputAreaWrapper = dom.append(chatInputContainer, dom.$('.new-chat-input-area-wrapper'));
+		const inputArea = dom.append(inputAreaWrapper, dom.$('.new-chat-input-area'));
+		this._register(this.instantiationService.createInstance(ChatPetWidget, inputAreaWrapper, constObservable(undefined)));
 
 		// Attachments row (pills only) inside input area, above editor
 		const attachRow = dom.append(inputArea, dom.$('.sessions-chat-attach-row'));
