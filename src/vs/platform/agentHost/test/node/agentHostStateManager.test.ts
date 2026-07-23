@@ -1364,6 +1364,39 @@ suite('AgentHostStateManager', () => {
 			);
 		});
 
+		test('createSession seeds the default chat primaryWorkingDirectory, and refreshDefaultChatPrimaryWorkingDirectory updates it in place', () => {
+			manager.createSession(makeSessionSummary(), { primaryWorkingDirectory: 'file:///workspace' });
+
+			assert.strictEqual(manager.getDefaultChatState(sessionUri)?.primaryWorkingDirectory, 'file:///workspace');
+			assert.strictEqual(manager.getSessionState(sessionUri)?.chats[0]?.primaryWorkingDirectory, 'file:///workspace');
+
+			// Simulate a worktree-isolated session's materialization replacing the
+			// pre-materialization directory the default chat's primary was seeded from.
+			manager.refreshDefaultChatPrimaryWorkingDirectory(sessionUri, 'file:///worktree');
+
+			assert.deepStrictEqual(
+				{
+					chatStatePrimary: manager.getDefaultChatState(sessionUri)?.primaryWorkingDirectory,
+					catalogPrimary: manager.getSessionState(sessionUri)?.chats[0]?.primaryWorkingDirectory,
+				},
+				{
+					chatStatePrimary: 'file:///worktree',
+					catalogPrimary: 'file:///worktree',
+				},
+			);
+		});
+
+		test('refreshDefaultChatPrimaryWorkingDirectory is a no-op for an undefined value or unknown session', () => {
+			manager.createSession(makeSessionSummary(), { primaryWorkingDirectory: 'file:///workspace' });
+
+			manager.refreshDefaultChatPrimaryWorkingDirectory(sessionUri, undefined);
+			assert.strictEqual(manager.getDefaultChatState(sessionUri)?.primaryWorkingDirectory, 'file:///workspace');
+
+			// Should not throw for an unknown session.
+			manager.refreshDefaultChatPrimaryWorkingDirectory('copilot:///unknown-session', 'file:///whatever');
+		});
+
+
 		test('_ensureDefaultChat seeds the default-chat pointer on restoreSession too', () => {
 			const turns = [
 				{

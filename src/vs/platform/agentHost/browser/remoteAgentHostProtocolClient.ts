@@ -806,12 +806,16 @@ export class RemoteAgentHostProtocolClient extends Disposable implements IAgentC
 		if (config?.activeClient?.customizations) {
 			this._grantImplicitReadsForCustomizations(config.activeClient.customizations);
 		}
+		// Single-root client: the default chat's primary is the same as the
+		// (only) working directory unless the caller supplied an explicit one.
+		const primaryWorkingDirectory = config?.primaryWorkingDirectory ?? config?.workingDirectory;
 		// Use `.then` (not `async`) so the tracked promise and the returned promise are the same object — callers
 		// awaiting via `getInflightSessionCreate` resume on the same microtask queue as direct `createSession()` awaiters.
 		const promise = this._sendRequest('createSession', {
 			channel: session.toString(),
 			provider,
 			workingDirectories: config?.workingDirectory ? [fromAgentHostUri(config.workingDirectory).toString()] : undefined,
+			primaryWorkingDirectory: primaryWorkingDirectory ? fromAgentHostUri(primaryWorkingDirectory).toString() : undefined,
 			config: config?.config,
 			activeClient: config?.activeClient,
 		}).then(() => session);

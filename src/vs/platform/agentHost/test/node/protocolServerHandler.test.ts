@@ -701,6 +701,30 @@ suite('ProtocolServerHandler', () => {
 		});
 	});
 
+	test('createSession forwards primaryWorkingDirectory to the agent service', async () => {
+		const transport = connectClient('client-create-primary');
+		transport.sent.length = 0;
+		const responsePromise = waitForResponse(transport, 2);
+
+		const newSession = URI.parse('copilot:///created-session-primary').toString();
+		const workingDirectory = 'file:///workspace';
+		transport.simulateMessage(request(2, 'createSession', {
+			channel: newSession,
+			workingDirectories: [workingDirectory],
+			primaryWorkingDirectory: workingDirectory,
+		}));
+		await responsePromise;
+
+		const config = agentService.createSessionConfigs.at(-1);
+		assert.deepStrictEqual({
+			workingDirectory: config?.workingDirectory?.toString(),
+			primaryWorkingDirectory: config?.primaryWorkingDirectory?.toString(),
+		}, {
+			workingDirectory,
+			primaryWorkingDirectory: workingDirectory,
+		});
+	});
+
 	suite('createChat / disposeChat', () => {
 		const peerChat = buildChatUri(sessionUri, 'peer-1');
 

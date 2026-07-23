@@ -987,6 +987,12 @@ export class AgentService extends Disposable implements IAgentService {
 
 		this._logService.trace(`[AgentService] createSession: provider=${provider.id} model=${config?.model?.id ?? '(default)'}`);
 		this._sessionToProvider.set(session.toString(), provider.id);
+		// The default chat's primary defaults to the resolved working directory
+		// (robust against pre-materialization staleness — see
+		// `_onDidMaterializeSession`); a client-supplied `primaryWorkingDirectory`
+		// is honored when present (spec-faithful, and forward-compatible for
+		// multi-root sessions with several effective working directories).
+		const defaultChatPrimaryWorkingDirectory = config?.primaryWorkingDirectory ?? created.workingDirectory ?? config?.workingDirectory;
 		// Record this session's opt-in so a cold SDK download triggered at
 		// materialization (first message) is surfaced as progress. The download
 		// is provider-global, so we only track interest here; emission is keyed
@@ -1048,7 +1054,7 @@ export class AgentService extends Disposable implements IAgentService {
 				? (sourceTitle.startsWith(forkedTitlePrefix) ? sourceTitle : `${forkedTitlePrefix}${sourceTitle}`)
 				: localize('agentHost.forkedSessionFallback', "Forked Session");
 			const summary = this._buildInitialSummary(provider, session, config, created, forkedTitle);
-			const state = this._stateManager.createSession(summary);
+			const state = this._stateManager.createSession(summary, { primaryWorkingDirectory: defaultChatPrimaryWorkingDirectory?.toString() });
 			state.config = sessionConfig;
 			this._stateManager.seedDefaultChatTurns(summary.resource, sourceTurns);
 			state.activeClients = config.activeClient ? [config.activeClient] : [];
@@ -1072,7 +1078,7 @@ export class AgentService extends Disposable implements IAgentService {
 			const importedTurns = [...config.importConversation.turns];
 			const importedTitle = this._buildImportedTitle(importedTurns);
 			const summary = this._buildInitialSummary(provider, session, config, created, importedTitle);
-			const state = this._stateManager.createSession(summary);
+			const state = this._stateManager.createSession(summary, { primaryWorkingDirectory: defaultChatPrimaryWorkingDirectory?.toString() });
 			state.config = sessionConfig;
 			this._stateManager.seedDefaultChatTurns(summary.resource, importedTurns);
 			state.activeClients = config.activeClient ? [config.activeClient] : [];
@@ -1097,7 +1103,7 @@ export class AgentService extends Disposable implements IAgentService {
 			// clients can subscribe and stream config / model changes that
 			// the agent will pick up at materialization time.
 			const summary = this._buildInitialSummary(provider, session, config, created, '');
-			const state = this._stateManager.createSession(summary, { emitNotification: !created.provisional });
+			const state = this._stateManager.createSession(summary, { emitNotification: !created.provisional, primaryWorkingDirectory: defaultChatPrimaryWorkingDirectory?.toString() });
 			state.config = sessionConfig;
 			state.activeClients = config?.activeClient ? [config.activeClient] : [];
 			if (initialCustomizations && initialCustomizations.length > 0) {
@@ -1460,6 +1466,12 @@ export class AgentService extends Disposable implements IAgentService {
 		if (configValues && Object.keys(configValues).length > 0) {
 			this._persistConfigValues(e.session, configValues);
 		}
+		// Refresh the default chat's primary working directory before
+		// persisting/announcing the summary below: for worktree-isolated
+		// sessions, `workingDirectories[0]` above just replaced the
+		// pre-materialization directory the chat's primary was seeded from
+		// at create time, so the primary would otherwise go stale.
+		this._stateManager.refreshDefaultChatPrimaryWorkingDirectory(sessionKey, e.workingDirectory?.toString());
 		// Persist the AH-owned workspace-less marker now that the session has a
 		// real on-disk database (deferred from create for provisional sessions).
 		this._persistWorkspaceless(e.session, readSessionWorkspaceless(summary._meta));

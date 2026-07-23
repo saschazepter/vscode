@@ -543,7 +543,7 @@ export class AgentHostStateManager extends Disposable {
 	 * and writes its on-disk metadata). Call {@link markSessionPersisted}
 	 * afterwards to fire the deferred notification.
 	 */
-	createSession(summary: SessionSummary, options?: { readonly emitNotification?: boolean }): SessionState {
+	createSession(summary: SessionSummary, options?: { readonly emitNotification?: boolean; readonly primaryWorkingDirectory?: URI }): SessionState {
 		const key = summary.resource;
 		const existing = this._sessionStates.get(key);
 		if (existing) {
@@ -553,7 +553,7 @@ export class AgentHostStateManager extends Disposable {
 
 		const state = createSessionState(summary);
 		this._sessionStates.set(key, this._newEntry(state, summary));
-		this._ensureDefaultChat(key, summary);
+		this._ensureDefaultChat(key, summary, undefined, undefined, undefined, options?.primaryWorkingDirectory);
 
 		this._logService.trace(`[AgentHostStateManager] Created session: ${key}`);
 
@@ -657,16 +657,20 @@ export class AgentHostStateManager extends Disposable {
 	 * deterministically from the session URI. The chat is seeded with any
 	 * pre-populated `turns` (used by {@link restoreSession}).
 	 *
+	 * `primaryWorkingDirectory`, when supplied, seeds the default chat's
+	 * read-only primary (from {@link CreateSessionParams.primaryWorkingDirectory}
+	 * or the resolved working directory) — fixed at creation per the protocol.
+	 *
 	 * The session's `chats` catalog and `defaultChat` pointer are updated
 	 * in place rather than via dispatched actions: there are no subscribers
 	 * at creation/restore time, so the snapshot a client later receives on
 	 * subscribe already reflects the default chat.
 	 */
-	private _ensureDefaultChat(sessionKey: string, summary: SessionSummary, turns?: Turn[], draft?: Message, defaultChatTitle?: string): void {
+	private _ensureDefaultChat(sessionKey: string, summary: SessionSummary, turns?: Turn[], draft?: Message, defaultChatTitle?: string, primaryWorkingDirectory?: URI): void {
 		const chatUri = buildDefaultChatUri(sessionKey);
 		// Empty title means "inherit the session title"; a persisted independent
 		// rename (`defaultChatTitle`) is seeded back here so it survives restore.
-		const chatSummary: ChatSummary = { ...createDefaultChatSummary(summary, chatUri), title: defaultChatTitle ?? '' };
+		const chatSummary: ChatSummary = { ...createDefaultChatSummary(summary, chatUri), title: defaultChatTitle ?? '', primaryWorkingDirectory: primaryWorkingDirectory?.toString() };
 		this._chatStates.set(chatUri, { ...createChatState(chatSummary), turns: turns ?? [], draft });
 		const entry = this._sessionStates.get(sessionKey);
 		if (entry) {
@@ -813,6 +817,34 @@ export class AgentHostStateManager extends Disposable {
 			this._chatStates.set(chatUri, { ...chatState, title });
 		}
 		this.dispatchServerAction(session, { type: ActionType.SessionChatUpdated, chat: chatUri, changes: { title } });
+	}
+
+	/**
+	 * Refreshes the default chat's primary working directory in place, e.g.
+	 * after worktree materialization replaces the session's pre-materialization
+	 * working directory with the resolved one. Per the protocol,
+	 * `primaryWorkingDirectory` is read-only and does NOT participate in
+	 * `session/chatUpdated`, so this updates the chat's authoritative state and
+	 * catalog entry directly without dispatching a notification — the
+	 * refreshed value rides along on whatever summary/state snapshot a
+	 * subscriber next receives (e.g. the deferred `sessionAdded` for
+	 * provisional sessions).
+	 */
+	refreshDefaultChatPrimaryWorkingDirectory(session: URI, primaryWorkingDirectory: URI | undefined): void {
+		if (!primaryWorkingDirectory) {
+			return;
+		}
+		const chatUri = buildDefaultChatUri(session);
+		const chatState = this._chatStates.get(chatUri);
+		if (!chatState) {
+			return;
+		}
+		const value = primaryWorkingDirectory.toString();
+		this._chatStates.set(chatUri, { ...chatState, primaryWorkingDirectory: value });
+		const entry = this._sessionStates.get(session);
+		if (entry) {
+			entry.state.chats = entry.state.chats.map(c => c.resource === chatUri ? { ...c, primaryWorkingDirectory: value } : c);
+		}
 	}
 
 	/**
