@@ -57,6 +57,8 @@ export interface IAgentSessionsControlOptions {
 	readonly hideSessionBadge?: boolean;
 	readonly useStatusOnlyIcons?: boolean;
 	readonly compactShowMore?: boolean;
+	readonly itemHeight?: number;
+	readonly sectionHeight?: number;
 
 	getHoverPosition(): HoverPosition;
 	trackActiveEditorSession(): boolean;
@@ -280,8 +282,8 @@ export class AgentSessionsControl extends Disposable implements IAgentSessionsCo
 			new AgentSessionsListDelegate(
 				approvalModel,
 				this.options.compactShowMore,
-				() => this.configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true ? AgentSessionsListDelegate.COMPACT_ITEM_HEIGHT : AgentSessionsListDelegate.ITEM_HEIGHT,
-				() => this.configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true ? AgentSessionsListDelegate.SPACED_SECTION_HEIGHT : AgentSessionsListDelegate.SECTION_HEIGHT,
+				() => this.options.itemHeight ?? (this.configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true ? AgentSessionsListDelegate.COMPACT_ITEM_HEIGHT : AgentSessionsListDelegate.ITEM_HEIGHT),
+				() => this.options.sectionHeight ?? (this.configurationService.getValue<boolean>(LayoutSettings.MODERN_UI) === true ? AgentSessionsListDelegate.SPACED_SECTION_HEIGHT : AgentSessionsListDelegate.SECTION_HEIGHT),
 			),
 			new AgentSessionsCompressionDelegate(),
 			[
