@@ -10,7 +10,7 @@
  */
 
 import assert from 'assert';
-import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from '../../../../../base/common/path.js';
 import { URI } from '../../../../../base/common/uri.js';
@@ -238,7 +238,7 @@ suite('Agent Host Provider Integration — Copilot Customizations', function () 
 		const workspaceDir = await mkdtemp(`${tmpdir()}/${prefix}`);
 		tempDirs.push(workspaceDir);
 		if (isRepoRoot) {
-			// Create a minimal .git directory to simulate a repository root, so that discover does not travers up to find a outer repo.
+			// Create a minimal repository root so discovery does not traverse into an outer repository.
 			const gitDir = join(workspaceDir, '.git');
 			await Promise.all([
 				mkdir(join(gitDir, 'objects'), { recursive: true }),
@@ -250,7 +250,7 @@ suite('Agent Host Provider Integration — Copilot Customizations', function () 
 				writeFile(join(gitDir, 'config'), '[core]\n\trepositoryformatversion = 0\n\tfilemode = false\n\tbare = false\n'),
 			]);
 		}
-		return workspaceDir;
+		return realpath(workspaceDir);
 	}
 
 	async function setupSession(sessionUri: string, clientId: string, discoveryMode: SessionCustomizationDiscoveryMode, turnId = 'turn-customizations-empty-mock', configuredCustomizations?: readonly { uri: string; displayName: string; description?: string }[]): Promise<ISessionWithDefaultChat> {
