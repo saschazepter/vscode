@@ -32,6 +32,7 @@ import { MessageAttachmentKind, MessageKind, ResponsePartKind, ChatInputAnswerSt
 import { TerminalClaimKind } from '../../common/state/protocol/state.js';
 import { CustomizationType, McpAuthRequiredReason, McpServerStatus, type Customization } from '../../common/state/protocol/channels-session/state.js';
 import { CopilotAgentSession } from '../../node/copilot/copilotAgentSession.js';
+import { buildNonPtyShellTerminalUri } from '../../node/copilot/copilotNonPtyShellTerminals.js';
 import { ActiveClientToolSet } from '../../node/activeClientState.js';
 import { type CopilotSessionLaunchPlan, type IActiveClientSnapshot, type ICopilotSessionLauncher, type ICopilotSessionRuntime } from '../../node/copilot/copilotSessionLauncher.js';
 import { CopilotSessionWrapper } from '../../node/copilot/copilotSessionWrapper.js';
@@ -2923,11 +2924,23 @@ suite('CopilotAgentSession', () => {
 			assert.strictEqual((toolStart.action as ChatToolCallStartAction).intention, 'List files in the repo root');
 		});
 
+		test('non-pty shell terminal URIs are scoped by session and tool call', () => {
+			assert.deepStrictEqual([
+				buildNonPtyShellTerminalUri(AgentSession.uri('copilot', 'session-1'), 'tool-call-1'),
+				buildNonPtyShellTerminalUri(AgentSession.uri('copilot', 'session-1'), 'tool-call-2'),
+				buildNonPtyShellTerminalUri(AgentSession.uri('copilot', 'session-2'), 'tool-call-1'),
+			], [
+				'agenthost-terminal://shell/session-1/tool-call-1',
+				'agenthost-terminal://shell/session-1/tool-call-2',
+				'agenthost-terminal://shell/session-2/tool-call-1',
+			]);
+		});
+
 		test('tool partial results stream into an output-only terminal channel', async () => {
 			const { session, mockSession, signals, waitForSignal, terminalManager } = await createAgentSession(disposables);
 			session.resetTurnState('turn-stream');
 
-			const terminalUri = 'agenthost-terminal://shell/copilotNonPtyShells/tc-stream';
+			const terminalUri = 'agenthost-terminal://shell/test-session-1/tc-stream';
 			mockSession.fire('tool.execution_start', {
 				toolCallId: 'tc-stream',
 				toolName: 'bash',
@@ -2994,7 +3007,7 @@ suite('CopilotAgentSession', () => {
 		test('tool partial results reset the channel when the runtime rewrites its snapshot', async () => {
 			const { mockSession, terminalManager } = await createAgentSession(disposables);
 
-			const terminalUri = 'agenthost-terminal://shell/copilotNonPtyShells/tc-rewrite';
+			const terminalUri = 'agenthost-terminal://shell/test-session-1/tc-rewrite';
 			mockSession.fire('tool.execution_start', {
 				toolCallId: 'tc-rewrite',
 				toolName: 'bash',
@@ -3029,7 +3042,7 @@ suite('CopilotAgentSession', () => {
 		test('zero-partial shell completion creates, seeds, and finalizes the output channel', async () => {
 			const { mockSession, signals, terminalManager } = await createAgentSession(disposables);
 
-			const terminalUri = 'agenthost-terminal://shell/copilotNonPtyShells/tc-quiet';
+			const terminalUri = 'agenthost-terminal://shell/test-session-1/tc-quiet';
 			mockSession.fire('tool.execution_start', {
 				toolCallId: 'tc-quiet',
 				toolName: 'bash',
@@ -3098,8 +3111,8 @@ suite('CopilotAgentSession', () => {
 				finalized: terminalManager.outputTerminalsFinalized,
 			}, {
 				data: [
-					{ uri: 'agenthost-terminal://shell/copilotNonPtyShells/tc-err', data: 'boom\n' },
-					{ uri: 'agenthost-terminal://shell/copilotNonPtyShells/tc-ok', data: 'fine\n' },
+					{ uri: 'agenthost-terminal://shell/test-session-1/tc-err', data: 'boom\n' },
+					{ uri: 'agenthost-terminal://shell/test-session-1/tc-ok', data: 'fine\n' },
 				],
 				finalized: [],
 			});
@@ -3107,7 +3120,7 @@ suite('CopilotAgentSession', () => {
 
 		test('stable shell completion fallback finalizes when the SDK strips shell_exit', async () => {
 			const { mockSession, signals, waitForSignal, terminalManager } = await createAgentSession(disposables);
-			const terminalUri = 'agenthost-terminal://shell/copilotNonPtyShells/tc-exit-fallback';
+			const terminalUri = 'agenthost-terminal://shell/test-session-1/tc-exit-fallback';
 
 			mockSession.fire('tool.execution_start', {
 				toolCallId: 'tc-exit-fallback',
@@ -3313,7 +3326,7 @@ suite('CopilotAgentSession', () => {
 					{ type: ToolResultContentType.Text, text: 'command not found\n' },
 					{
 						type: ToolResultContentType.Terminal,
-						resource: 'agenthost-terminal://shell/copilotNonPtyShells/tc-shell-exit',
+						resource: 'agenthost-terminal://shell/test-session-1/tc-shell-exit',
 						title: 'Run Shell Command',
 						isPty: false,
 						result: { exitCode: 127 },
@@ -3327,9 +3340,9 @@ suite('CopilotAgentSession', () => {
 				data: terminalManager.outputTerminalData,
 				finalized: terminalManager.outputTerminalsFinalized,
 			}, {
-				created: ['agenthost-terminal://shell/copilotNonPtyShells/tc-shell-exit'],
+				created: ['agenthost-terminal://shell/test-session-1/tc-shell-exit'],
 				data: [],
-				finalized: [{ uri: 'agenthost-terminal://shell/copilotNonPtyShells/tc-shell-exit', exitCode: 127 }],
+				finalized: [{ uri: 'agenthost-terminal://shell/test-session-1/tc-shell-exit', exitCode: 127 }],
 			});
 		});
 

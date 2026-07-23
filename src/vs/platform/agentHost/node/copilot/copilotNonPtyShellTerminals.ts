@@ -5,16 +5,18 @@
 
 import { Disposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
+import { AgentSession } from '../../common/agentService.js';
 import { TerminalClaimKind, type TerminalCommandResult, type TerminalSessionClaim } from '../../common/state/protocol/state.js';
 import { IAgentHostTerminalManager } from '../agentHostTerminalManager.js';
 
 /**
  * Builds the terminal channel URI for a runtime-executed (non-pty) shell tool
- * call. Keyed by tool call id so the URI is stable across live streaming and
- * history replay of the same command.
+ * call. The session owns the terminal namespace and each tool call addresses a
+ * distinct child terminal, keeping the URI stable across live streaming and
+ * history replay without colliding with other sessions or tool calls.
  */
-export function buildNonPtyShellTerminalUri(toolCallId: string): string {
-	return `agenthost-terminal://shell/copilotNonPtyShells/${toolCallId}`;
+export function buildNonPtyShellTerminalUri(session: URI | string, toolCallId: string): string {
+	return `agenthost-terminal://shell/${encodeURIComponent(AgentSession.id(session))}/${encodeURIComponent(toolCallId)}`;
 }
 
 interface INonPtyShellStream {
@@ -90,7 +92,7 @@ export class NonPtyShellTerminalStreams extends Disposable {
 	track(toolCallId: string, title: string): void {
 		if (!this._streams.has(toolCallId)) {
 			this._streams.set(toolCallId, {
-				uri: buildNonPtyShellTerminalUri(toolCallId),
+				uri: buildNonPtyShellTerminalUri(this._sessionUri, toolCallId),
 				title,
 				lastEmitted: '',
 				finalized: false,

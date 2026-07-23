@@ -60,7 +60,7 @@ export interface ISdkShellExit {
 	readonly result: TerminalCommandResult;
 }
 
-export function appendSdkToolResultContent(content: ToolResultContent[], sdkContents: readonly ToolExecutionCompleteContent[] | undefined, terminal?: { toolCallId: string; title: string }): ISdkShellExit | undefined {
+export function appendSdkToolResultContent(content: ToolResultContent[], sdkContents: readonly ToolExecutionCompleteContent[] | undefined, terminal?: { session: URI | string; toolCallId: string; title: string }): ISdkShellExit | undefined {
 	let shellExit: ISdkShellExit | undefined;
 	for (const sdkContent of sdkContents ?? []) {
 		switch (sdkContent.type) {
@@ -78,7 +78,7 @@ export function appendSdkToolResultContent(content: ToolResultContent[], sdkCont
 				} else if (terminal) {
 					content.push({
 						type: ToolResultContentType.Terminal,
-						resource: buildNonPtyShellTerminalUri(terminal.toolCallId),
+						resource: buildNonPtyShellTerminalUri(terminal.session, terminal.toolCallId),
 						title: terminal.title,
 						isPty: false,
 						result,
@@ -749,7 +749,7 @@ function makeCompletedToolCallPart(
 	if (toolOutput !== undefined) {
 		content.push({ type: ToolResultContentType.Text, text: toolOutput });
 	}
-	appendSdkToolResultContent(content, d.result?.contents, { toolCallId: d.toolCallId, title: info.displayName });
+	appendSdkToolResultContent(content, d.result?.contents, { session: sessionUriStr, toolCallId: d.toolCallId, title: info.displayName });
 
 	// Restore file edit content references from the database.
 	const edits = storedEdits?.get(d.toolCallId);

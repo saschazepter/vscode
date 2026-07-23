@@ -3296,7 +3296,7 @@ export class CopilotAgentSession extends Disposable {
 				});
 			}
 
-			const shellExit = appendSdkToolResultContent(content, e.data.result?.contents, { toolCallId: e.data.toolCallId, title: tracked.displayName });
+			const shellExit = appendSdkToolResultContent(content, e.data.result?.contents, { session: this.sessionUri, toolCallId: e.data.toolCallId, title: tracked.displayName });
 			if (isShellTool(tracked.toolName) && !ptyTerminalUri) {
 				const completion = this._nonPtyShellTerminals.completeToolCall(e.data.toolCallId, toolOutput, shellExit);
 				if (completion) {

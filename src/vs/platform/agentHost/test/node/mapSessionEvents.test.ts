@@ -235,7 +235,7 @@ suite('mapSessionEvents — history replay', () => {
 			{ type: ToolResultContentType.Text, text: 'hi\n' },
 			{
 				type: ToolResultContentType.Terminal,
-				resource: 'agenthost-terminal://shell/copilotNonPtyShells/tc-1',
+				resource: 'agenthost-terminal://shell/test-session/tc-1',
 				title: 'Run Shell Command',
 				isPty: false,
 				result: { exitCode: 0, preview: 'hi\n' },
@@ -270,7 +270,7 @@ suite('mapSessionEvents — history replay', () => {
 		assert.strictEqual(part.toolCall.success, true);
 		assert.deepStrictEqual(part.toolCall.content?.find(content => content.type === ToolResultContentType.Terminal), {
 			type: ToolResultContentType.Terminal,
-			resource: 'agenthost-terminal://shell/copilotNonPtyShells/tc-1',
+			resource: 'agenthost-terminal://shell/test-session/tc-1',
 			title: 'Run Shell Command',
 			isPty: false,
 			result: { exitCode: 127 },
@@ -746,7 +746,7 @@ suite('appendSdkToolResultContent', () => {
 
 		const result = appendSdkToolResultContent(content, [
 			{ type: 'shell_exit', shellId: '0', exitCode: 2, outputPreview: 'boom\n', outputTruncated: false },
-		], { toolCallId: 'tc-1', title: 'Run Shell Command' });
+		], { session: AgentSession.uri('copilot', 'test-session'), toolCallId: 'tc-1', title: 'Run Shell Command' });
 
 		assert.deepStrictEqual(result, { shellId: '0', result: { exitCode: 2, preview: 'boom\n', truncated: false } });
 		assert.deepStrictEqual(content, [
