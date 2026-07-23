@@ -187,20 +187,20 @@ The output has a fixed structure. Do not skip sections and do not reorder them.
 
 *1. `## Top cost drivers` — MUST appear before any recommendations.*
 
-List the top 3-5 material patterns you actually observed, most impactful first. For each driver:
+List the material patterns you actually observed, most impactful first — **up to 5, fewer is fine** (do not pad the list with non-material findings just to reach a count). For each driver:
 
 - Name it in one line (e.g. "Late compaction on long chat sessions", "Premium model used for routine edits").
 - Give the evidence with rough numbers (session count, turn count, token totals when available, file paths, model names).
-- Classify the evidence as one of **exact**, **proxy**, or **mixed** and label it inline:
+- Classify **this driver's** evidence as one of **exact**, **proxy**, or **mixed** and label it inline:
 	- **exact** — grounded in cloud `events` fields `usage_input_tokens`, `usage_output_tokens`, `usage_model` (from `assistant.usage` rows).
 	- **proxy** — inferred from local turns, checkpoints, session_files, tool_requests, or message lengths only. No real token numbers.
-	- **mixed** — a report combining exact and proxy drivers. Label each driver individually.
+	- **mixed** — this same driver is backed by both exact usage rows and proxy signals reinforcing the same pattern (e.g. exact token totals plus a checkpoint-gap or repeated-file-read signal). A report that simply contains one exact driver and one proxy driver is not itself mixed — label each driver individually.
 
 	Every explicit token or cost claim requires **exact** evidence. Turn counts, checkpoint gaps, file-read counts, and message lengths are proxies — describe them as such, and do not translate them into token or dollar figures.
 
 - Only include percentages when you can compute them against a real **period grand total** (e.g. sum of `usage_input_tokens + usage_output_tokens` across every in-scope VS Code Chat `assistant.usage` event in the window). Never compute a share against a truncated top-N sum. If the grand total cannot be established, drop the percentage rather than guessing.
 - A context-growth driver ("input tokens keep climbing turn-over-turn") is only material when the late-window vs early-window input tokens grow by **>=50%** (inclusive). Anything smaller is noise; do not call it out.
-- Treat attachments (`attachments` rows, file references, images) as neutral work artifacts. Do not label attachment presence itself as waste. Only flag them when you have concrete evidence of the same attachment / same file being repeatedly ingested across turns or sessions when it did not need to be.
+- Treat file references, images, and pasted content as neutral work artifacts. Do not label their presence itself as waste. Only flag them when you have concrete evidence — repeated `session_files` rows for the same path within one session, or repeated large `user_message` / `user_content` payloads containing the same content across turns — that the same material is being ingested when it did not need to be.
 
 *2. `## Recommendations` — at most 3, ordered by expected impact.*
 
@@ -224,13 +224,13 @@ Include:
 - **In-scope**: which `agent_name` values were included (`'VS Code Chat'` on cloud, `'GitHub Copilot Chat'` on local by default), and how many sessions matched.
 - **Fallbacks and precision limits**: e.g. "no per-event token data on local — drivers are proxies from turn / checkpoint / file counts", "cloud store empty in window, all findings drawn from local proxies", "percentages omitted because the period grand total could not be computed".
 
-**Sparse or insufficient data**
+**Sparse or insufficient data (the only exception to the "no recommendation without a named driver" rule)**
 
-If the in-scope query returns very little data (e.g. cloud store is empty, only a small handful of VS Code Chat sessions matched, or local has almost no `checkpoints` / `session_files` rows), do NOT invent findings to pad the report. Instead:
+If the in-scope query returns very little data (e.g. cloud store is empty, only a small handful of VS Code Chat sessions matched, or local has almost no `checkpoints` / `session_files` rows), do NOT invent findings to pad the report. The fixed three-section structure above still applies — do not drop any section header. Instead:
 
-- Say so plainly and still fill out `## Data caveats` above.
-- Skip `## Top cost drivers` or leave it as "No material drivers observed in this window."
-- In place of grounded recommendations, offer **no more than 2-3** clearly labeled **general habits** (prefix each with "General habit — not observed in your data:"). Keep them anchored to VS Code chat features: model picker for routine work, `/compact` or a fresh chat on long sessions, reusable instructions when a workflow starts to repeat. Do not use arbitrary hard thresholds (turn counts, token counts) that the data cannot support.
+- Still fill out `## Data caveats` in full.
+- Emit `## Top cost drivers` with the literal placeholder body **`No material drivers observed in this window.`** (do not omit the section).
+- Under `## Recommendations`, in place of grounded recommendations, offer **no more than 2-3** clearly labeled **general habits**. Prefix each with `General habit — not observed in your data:`. These habits are the only recommendations allowed to appear without a matching driver, and only under this sparse-data path. Keep them anchored to VS Code chat features: model picker for routine work, `/compact` or a fresh chat on long sessions, reusable instructions when a workflow starts to repeat. Do not use arbitrary hard thresholds (turn counts, token counts) that the data cannot support.
 - If the user is on local-only storage, close by noting that enabling `chat.sessionSync.enabled` unlocks per-event token analysis for sharper future reports.
 
 Never fabricate specific sessions, files, models, token counts, or percentages to fill out the report.
