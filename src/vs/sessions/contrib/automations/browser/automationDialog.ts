@@ -177,6 +177,24 @@ interface IRenderFormHandle {
 	readonly getFocusableElements: () => readonly HTMLElement[];
 }
 
+export function resolveAutomationModelIdentifier(
+	languageModelsService: Pick<ILanguageModelsService, 'getLanguageModelIds' | 'lookupLanguageModel'>,
+	identifier: string,
+	logicalSessionType: string | undefined,
+	modelTarget: string | undefined,
+): string {
+	if (!logicalSessionType || !modelTarget) {
+		return identifier;
+	}
+	const sourceModel = languageModelsService.lookupLanguageModel(identifier);
+	if (sourceModel?.targetChatSessionType !== logicalSessionType) {
+		return identifier;
+	}
+	return languageModelsService.getLanguageModelIds().find(candidateIdentifier => {
+		const candidate = languageModelsService.lookupLanguageModel(candidateIdentifier);
+		return candidate?.targetChatSessionType === modelTarget && candidate.id === sourceModel.id;
+	}) ?? identifier;
+}
 
 const AUTOMATIONS_HARNESS_CHIP_ACTION_ID = 'workbench.action.chat.renderAutomationsHarnessChip';
 const AUTOMATIONS_WORKSPACE_PICKER_ACTION_ID = 'workbench.action.chat.renderAutomationsWorkspacePicker';
@@ -644,6 +662,7 @@ export function renderForm(
 	contextKeyService: IContextKeyService,
 	contextViewService: IContextViewService,
 	configurationService: IConfigurationService,
+	languageModelsService: ILanguageModelsService,
 	layoutService: IWorkbenchLayoutService,
 	logService: ILogService,
 	productService: IProductService,
@@ -928,16 +947,26 @@ export function renderForm(
 	// On edit, apply the saved model with late-arrival retry if needed.
 	chatInput.resetLanguageModelToDefault();
 
-	if (initialModelId && !chatInput.switchModelByIdentifier(initialModelId, /* storeSelection */ false)) {
-		const languageModelsService = instantiationService.invokeFunction(accessor => accessor.get(ILanguageModelsService));
+	const resolveInitialModelId = () => initialModelId ? resolveAutomationModelIdentifier(
+		languageModelsService,
+		initialModelId,
+		state.sessionTypeId,
+		sessionTypePicker.modelTargetChatSessionType.get(),
+	) : undefined;
+	const resolvedInitialModelId = resolveInitialModelId();
+	if (resolvedInitialModelId && !chatInput.switchModelByIdentifier(resolvedInitialModelId, /* storeSelection */ false)) {
 		const baseline = chatInput.selectedLanguageModel.get()?.identifier;
 		const retry = disposables.add(new MutableDisposable<IDisposable>());
-		retry.value = languageModelsService.onDidChangeLanguageModels(() => {
+		retry.value = Event.any(
+			languageModelsService.onDidChangeLanguageModels,
+			Event.fromObservableLight(sessionTypePicker.modelTargetChatSessionType),
+		)(() => {
 			if (chatInput.selectedLanguageModel.get()?.identifier !== baseline) {
 				retry.clear();
 				return;
 			}
-			if (chatInput.switchModelByIdentifier(initialModelId, /* storeSelection */ false)) {
+			const modelIdentifier = resolveInitialModelId();
+			if (modelIdentifier && chatInput.switchModelByIdentifier(modelIdentifier, /* storeSelection */ false)) {
 				retry.clear();
 			}
 		});
