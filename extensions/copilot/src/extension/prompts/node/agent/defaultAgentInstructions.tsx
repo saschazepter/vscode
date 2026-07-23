@@ -492,7 +492,7 @@ export class ApplyPatchInstructions extends PromptElement<DefaultAgentPromptProp
 			To edit files in the workspace, use the {ToolName.ApplyPatch} tool. If you have issues with it, you should first try to fix your patch and continue using {ToolName.ApplyPatch}. {this.props.tools[ToolName.EditFile] && <>If you are stuck, you can fall back on the {ToolName.EditFile} tool, but {ToolName.ApplyPatch} is much faster and is the preferred tool.</>}<br />
 			{isGpt5 && <>Prefer the smallest set of changes needed to satisfy the task. Avoid reformatting unrelated code; preserve existing style and public APIs unless the task requires changes. When practical, complete all edits for a file within a single message.<br /></>}
 			{!useSimpleInstructions && <>
-				The tool call requires both `input`, a string representing the patch to apply, and `explanation`, a short description of what the patch aims to achieve. The input follows a special format. For each snippet of code that needs to be changed, repeat the following:<br />
+				The tool call requires both `input`, a string representing the patch to apply, and `explanation`, a short description of what the patch aims to achieve. The input follows a special format. For each file that needs to be changed, include one file section using the following format, with multiple @@ hunks when changing multiple regions in that file:<br />
 				<ApplyPatchFormatInstructions /><br />
 				NEVER print this out to the user, instead call the tool and the edits will be applied and shown to the user.<br />
 			</>}
