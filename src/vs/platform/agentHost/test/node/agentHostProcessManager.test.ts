@@ -12,6 +12,7 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/c
 import { IAgentHostConnection, IAgentHostStarter } from '../../common/agent.js';
 import { AgentHostProcessManager } from '../../node/agentHostService.js';
 import { NullLoggerService, NullLogService } from '../../../log/common/log.js';
+import { NullTelemetryService } from '../../../telemetry/common/telemetryUtils.js';
 
 class TestAgentHostStarter extends Disposable implements IAgentHostStarter {
 	private readonly _onRequestConnection = this._register(new Emitter<void>());
@@ -77,7 +78,7 @@ suite('AgentHostProcessManager', () => {
 
 	test('ignores connection requests while no enabled clients exist', async () => {
 		const starter = disposables.add(new TestAgentHostStarter());
-		disposables.add(new TestAgentHostProcessManager(starter, new NullLogService(), disposables.add(new NullLoggerService())));
+		disposables.add(new TestAgentHostProcessManager(starter, new NullLogService(), disposables.add(new NullLoggerService()), NullTelemetryService));
 
 		starter.requestConnection();
 		await timeout(0);
@@ -89,7 +90,7 @@ suite('AgentHostProcessManager', () => {
 
 	test('does not retry a failed start without a new request', async () => {
 		const starter = disposables.add(new TestAgentHostStarter());
-		disposables.add(new TestAgentHostProcessManager(starter, new NullLogService(), disposables.add(new NullLoggerService())));
+		disposables.add(new TestAgentHostProcessManager(starter, new NullLogService(), disposables.add(new NullLoggerService()), NullTelemetryService));
 		starter.failNextStart();
 
 		starter.setActiveClientCount(1);
@@ -101,7 +102,7 @@ suite('AgentHostProcessManager', () => {
 
 	test('serializes a restart behind an in-flight start', async () => {
 		const starter = disposables.add(new TestAgentHostStarter());
-		disposables.add(new TestAgentHostProcessManager(starter, new NullLogService(), disposables.add(new NullLoggerService())));
+		disposables.add(new TestAgentHostProcessManager(starter, new NullLogService(), disposables.add(new NullLoggerService()), NullTelemetryService));
 		const firstStart = starter.pauseNextStart();
 
 		starter.setActiveClientCount(1);
@@ -128,7 +129,7 @@ suite('AgentHostProcessManager', () => {
 
 	test('stops after the last enabled client disconnects and restarts when one returns', async () => {
 		const starter = disposables.add(new TestAgentHostStarter());
-		disposables.add(new TestAgentHostProcessManager(starter, new NullLogService(), disposables.add(new NullLoggerService())));
+		disposables.add(new TestAgentHostProcessManager(starter, new NullLogService(), disposables.add(new NullLoggerService()), NullTelemetryService));
 
 		starter.setActiveClientCount(2);
 		await timeout(0);

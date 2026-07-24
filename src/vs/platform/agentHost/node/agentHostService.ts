@@ -6,7 +6,9 @@
 import { Disposable, DisposableStore, IDisposable, MutableDisposable } from '../../../base/common/lifecycle.js';
 import { ILogService, ILoggerService } from '../../log/common/log.js';
 import { RemoteLoggerChannelClient } from '../../log/common/logIpc.js';
+import { ITelemetryService } from '../../telemetry/common/telemetry.js';
 import { IAgentHostStarter } from '../common/agent.js';
+import { reportAgentHostProcessError } from '../common/agentHostProcessTelemetry.js';
 import { AgentHostIpcChannels } from '../common/agentService.js';
 
 enum Constants {
@@ -35,6 +37,7 @@ export class AgentHostProcessManager extends Disposable {
 		private readonly _starter: IAgentHostStarter,
 		@ILogService private readonly _logService: ILogService,
 		@ILoggerService private readonly _loggerService: ILoggerService,
+		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 	) {
 		super();
 		this._tracksActiveClients = !!this._starter.onDidChangeActiveClientCount;
@@ -105,7 +108,14 @@ export class AgentHostProcessManager extends Disposable {
 				if (!this._wasQuitRequested && !this._store.isDisposed) {
 					this._started = false;
 					this._activeProcess.clear();
-					if (this._shouldRun() && this._restartCount <= Constants.MaxRestarts) {
+					const willRestart = this._shouldRun() && this._restartCount <= Constants.MaxRestarts;
+					reportAgentHostProcessError(this._telemetryService, {
+						kind: 'unexpectedExit',
+						code: e.code,
+						restartCount: this._restartCount,
+						willRestart,
+					});
+					if (willRestart) {
 						this._logService.error(`AgentHostProcessManager: agent host terminated unexpectedly with code ${e.code}`);
 						this._restartCount++;
 						this._ensureStarted();
@@ -118,6 +128,11 @@ export class AgentHostProcessManager extends Disposable {
 			if (generation === this._startGeneration) {
 				this._started = false;
 				this._logService.error('AgentHostProcessManager: failed to start agent host', error);
+				reportAgentHostProcessError(this._telemetryService, {
+					kind: 'startFailed',
+					restartCount: this._restartCount,
+					willRestart: false,
+				}, error);
 			}
 		}
 	}

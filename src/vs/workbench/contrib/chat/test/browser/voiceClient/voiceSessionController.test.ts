@@ -646,6 +646,10 @@ suite('VoiceSessionController', () => {
 		);
 		await controller.connect(mainWindow);
 		Reflect.get(controller, '_isConnected').set(true, undefined);
+		// Install a focused window so the multi-window hands-free focus gate
+		// (#8507) lets the passive barge-in turn open; the headless test window
+		// reports `document.hasFocus()` as false.
+		Reflect.set(controller, '_window', { document: { hasFocus: () => true } });
 
 		voiceClientService.fireAudioResponse({
 			audio: 'story-start',
@@ -673,6 +677,55 @@ suite('VoiceSessionController', () => {
 			pttTurns: [passiveTurnId],
 			passiveTurnPromoted: true,
 		});
+	});
+
+	test('forced pttDown cancels pending toggle mode and keeps the turn recording instead of finishing it', async () => {
+		const voiceClientService = new TestVoiceClientService();
+		const controller = createController(voiceClientService);
+		await controller.connect(mainWindow);
+		Reflect.get(controller, '_isConnected').set(true, undefined);
+
+		// Advance off the fake-clock epoch (0) so pttDown records a truthy
+		// `_telemetryPttDownMs`; at time 0 the tap/hold split reads the press as
+		// "no press recorded" (Infinity hold) and never enters toggle mode.
+		clock.setSystemTime(5_000);
+
+		// Press + quick release: a sub-threshold tap enters toggle mode, which keeps
+		// the mic recording until the next tap.
+		controller.pttDown();
+		controller.pttUp();
+		assert.deepStrictEqual({
+			toggle: Reflect.get(controller, '_pttToggleMode'),
+			held: Reflect.get(controller, '_pttHeld'),
+		}, { toggle: true, held: true }, 'short tap enters toggle mode while still recording');
+
+		// A forced press (the hold-to-talk gesture) cancels the pending toggle mode
+		// and keeps recording the same turn, rather than finishing it as a normal
+		// second tap would.
+		controller.pttDown('explicit', true);
+		assert.deepStrictEqual({
+			toggle: Reflect.get(controller, '_pttToggleMode'),
+			held: Reflect.get(controller, '_pttHeld'),
+		}, { toggle: false, held: true }, 'forced pttDown bypasses toggle mode and stays recording');
+	});
+
+	test('forced pttUp finishes a sub-threshold turn instead of entering toggle mode', async () => {
+		const voiceClientService = new TestVoiceClientService();
+		const controller = createController(voiceClientService);
+		await controller.connect(mainWindow);
+		Reflect.get(controller, '_isConnected').set(true, undefined);
+
+		controller.pttDown();
+		assert.strictEqual(Reflect.get(controller, '_pttHeld'), true, 'pttDown starts recording');
+
+		// A forced release (hold-to-talk release) finishes and sends immediately even
+		// for a short hold, instead of dropping into toggle mode and leaving `_pttHeld`
+		// active with the mic still open.
+		controller.pttUp('explicit', true);
+		assert.deepStrictEqual({
+			toggle: Reflect.get(controller, '_pttToggleMode'),
+			held: Reflect.get(controller, '_pttHeld'),
+		}, { toggle: false, held: false }, 'forced pttUp finishes the turn rather than entering toggle mode');
 	});
 
 	test('restores idle state when solicited narration never starts returning audio', () => {
@@ -770,12 +823,85 @@ suite('VoiceSessionController', () => {
 		const mic = new RecordingMicCaptureService();
 		const controller = createController(voiceClientService, undefined, undefined, undefined, mic);
 		(Reflect.get(controller, '_isConnected') as { set(value: boolean, tx: undefined): void }).set(true, undefined);
+		Reflect.set(controller, '_window', { document: { hasFocus: () => true } });
 
 		const enterAutoListen = Reflect.get(controller, '_enterAutoListen') as () => void;
 		enterAutoListen.call(controller);
 
 		assert.strictEqual(mic.pttDownCalls.length, 1);
 		assert.strictEqual(mic.pttDownCalls[0].passive, true);
+	});
+
+	test('auto-listen is skipped when window does not have focus (multi-window hands-free)', () => {
+		const voiceClientService = new TestVoiceClientService();
+		const mic = new RecordingMicCaptureService();
+		const controller = createController(voiceClientService, undefined, undefined, undefined, mic);
+		(Reflect.get(controller, '_isConnected') as { set(value: boolean, tx: undefined): void }).set(true, undefined);
+		Reflect.set(controller, '_window', { document: { hasFocus: () => false } });
+
+		const enterAutoListen = Reflect.get(controller, '_enterAutoListen') as () => void;
+		enterAutoListen.call(controller);
+
+		assert.strictEqual(mic.pttDownCalls.length, 0);
+	});
+
+	test('window blur aborts an open passive turn so the background window stops recording', () => {
+		const voiceClientService = new TestVoiceClientService();
+		const mic = new RecordingMicCaptureService();
+		const controller = createController(voiceClientService, undefined, undefined, undefined, mic);
+		(Reflect.get(controller, '_isConnected') as { set(value: boolean, tx: undefined): void }).set(true, undefined);
+
+		Reflect.set(controller, '_pttCurrentTurnId', 'passive-turn');
+		Reflect.set(controller, '_pttCurrentTurnPassive', true);
+		Reflect.set(controller, '_pttHeld', true);
+
+		(Reflect.get(controller, '_onWindowBlur') as () => void).call(controller);
+
+		assert.strictEqual(mic.abortCalls, 1);
+		assert.strictEqual(Reflect.get(controller, '_pttHeld'), false);
+	});
+
+	test('window blur does not abort a deliberate (non-passive) turn', () => {
+		const voiceClientService = new TestVoiceClientService();
+		const mic = new RecordingMicCaptureService();
+		const controller = createController(voiceClientService, undefined, undefined, undefined, mic);
+		(Reflect.get(controller, '_isConnected') as { set(value: boolean, tx: undefined): void }).set(true, undefined);
+
+		Reflect.set(controller, '_pttCurrentTurnId', 'deliberate-turn');
+		Reflect.set(controller, '_pttCurrentTurnPassive', false);
+		Reflect.set(controller, '_pttHeld', true);
+
+		(Reflect.get(controller, '_onWindowBlur') as () => void).call(controller);
+
+		assert.strictEqual(mic.abortCalls, 0);
+		assert.strictEqual(Reflect.get(controller, '_pttHeld'), true);
+	});
+
+	test('window focus re-arms hands-free auto-listen in the focused window', () => {
+		const voiceClientService = new TestVoiceClientService();
+		const mic = new RecordingMicCaptureService();
+		const controller = createController(voiceClientService, undefined, undefined, undefined, mic,
+			new TestConfigurationService({ 'agents.voice.handsFree': true }));
+		(Reflect.get(controller, '_isConnected') as { set(value: boolean, tx: undefined): void }).set(true, undefined);
+		Reflect.set(controller, '_window', { document: { hasFocus: () => true } });
+
+		(Reflect.get(controller, '_onWindowFocus') as () => void).call(controller);
+
+		assert.strictEqual(mic.pttDownCalls.length, 1);
+		assert.strictEqual(mic.pttDownCalls[0].passive, true);
+	});
+
+	test('window focus does not re-arm auto-listen when hands-free is disabled', () => {
+		const voiceClientService = new TestVoiceClientService();
+		const mic = new RecordingMicCaptureService();
+		const controller = createController(voiceClientService, undefined, undefined, undefined, mic,
+			new TestConfigurationService({ 'agents.voice.handsFree': false }));
+		(Reflect.get(controller, '_isConnected') as { set(value: boolean, tx: undefined): void }).set(true, undefined);
+		Reflect.set(controller, '_window', { document: { hasFocus: () => true } });
+
+		(Reflect.get(controller, '_onWindowFocus') as () => void).call(controller);
+
+		assert.strictEqual(mic.pttDownCalls.length, 0);
 	});
 
 	test('a deliberate user press opens a non-passive mic turn', () => {
