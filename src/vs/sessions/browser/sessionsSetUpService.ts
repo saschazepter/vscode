@@ -27,8 +27,8 @@ import { IMarkdownRendererService } from '../../platform/markdown/browser/markdo
 import { WELCOME_COMPLETE_KEY } from '../common/welcome.js';
 import { SessionsWelcomeVisibleContext } from '../common/contextkeys.js';
 
-import { IConfigurationService } from '../../platform/configuration/common/configuration.js';
-import { ChatAIDisabledSettingId } from '../../platform/chat/common/chatSettings.js';
+import { ConfigurationTarget, IConfigurationService } from '../../platform/configuration/common/configuration.js';
+import { ChatAIDisabledSettingId, isChatAIDisabled } from '../../platform/chat/common/chatSettings.js';
 import { Codicon } from '../../base/common/codicons.js';
 import { $, append } from '../../base/browser/dom.js';
 import { Dialog, DialogContentsAlignment } from '../../base/browser/ui/dialog/dialog.js';
@@ -183,7 +183,7 @@ class SessionsSetUpWidget extends Disposable {
 
 		disposables.add(this.configurationService.onDidChangeConfiguration(e => {
 			if (e.affectsConfiguration(ChatAIDisabledSettingId)) {
-				if (this.configurationService.getValue<boolean>(ChatAIDisabledSettingId)) {
+				if (isChatAIDisabled(this.configurationService)) {
 					this._showAIDisabledDialog();
 				} else {
 					// AI features re-enabled — dismiss any AI disabled dialog
@@ -196,9 +196,8 @@ class SessionsSetUpWidget extends Disposable {
 	}
 
 	private async _ensureAIFeaturesEnabled(): Promise<void> {
-		if (this.configurationService.getValue<boolean>(ChatAIDisabledSettingId)) {
-			this.logService.info('[sessions welcome] AI features disabled, enabling');
-			await this.configurationService.updateValue(ChatAIDisabledSettingId, false);
+		if (isChatAIDisabled(this.configurationService)) {
+			await this._showAIDisabledDialog();
 		}
 	}
 
@@ -238,7 +237,7 @@ class SessionsSetUpWidget extends Disposable {
 
 		if (button === 0) {
 			this.logService.info('[sessions welcome] User chose to enable AI features');
-			await this.configurationService.updateValue(ChatAIDisabledSettingId, false);
+			await this.configurationService.updateValue(ChatAIDisabledSettingId, false, ConfigurationTarget.USER);
 		}
 	}
 
