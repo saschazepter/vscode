@@ -1576,6 +1576,10 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			this._onDidChangeSessionTypes.fire();
 			this._refreshSessionCache();
 		}));
+		this._register(this.agentHostEnablementService.onDidChangeEnabled(() => {
+			this._onDidChangeSessionTypes.fire();
+			this._refreshSessionCache();
+		}));
 
 		this.browseActions = [
 			{

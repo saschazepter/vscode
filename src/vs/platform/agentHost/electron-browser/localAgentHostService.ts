@@ -4,8 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { DeferredPromise } from '../../../base/common/async.js';
-import { Emitter, Relay } from '../../../base/common/event.js';
-import { Disposable, DisposableStore, IReference } from '../../../base/common/lifecycle.js';
+import { Emitter, Event, Relay } from '../../../base/common/event.js';
+import { Disposable, DisposableStore, IReference, MutableDisposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { IObservable, ISettableObservable, observableValue } from '../../../base/common/observable.js';
 import { generateUuid } from '../../../base/common/uuid.js';
 import { getDelayedChannel, IChannelServer, ProxyChannel } from '../../../base/parts/ipc/common/ipc.js';
@@ -17,7 +17,7 @@ import { IConfigurationService } from '../../configuration/common/configuration.
 import { IEnvironmentService } from '../../environment/common/environment.js';
 import { ILogService } from '../../log/common/log.js';
 import { AgentHostAhpJsonlLoggingSettingId, AgentHostByokModelsEnabledSettingId, AgentHostCodexAgentEnabledSettingId, AgentHostIpcChannels, IAgentCreateChatOptions, IAgentCreateSessionConfig, IAgentHostInspectInfo, IAgentHostNetworkDiagnosticsInfo, IAgentHostNetworkFetchResult, IAgentHostService, IAgentResolveSessionConfigParams, IAgentService, IAgentSessionConfigCompletionsParams, IAgentSessionMetadata, AuthenticateParams, AuthenticateResult, IAgentHostSocketInfo, IConnectionTrackerService, IMcpNotification, AgentHostOTelPolicyIpcChannel, readAgentHostOTelPolicySettings, AgentHostSystemProxyEnabledSettingId } from '../common/agentService.js';
-import { IAgentHostEnablementService } from '../common/agentHostEnablementService.js';
+import { AgentHostClientStateIpcChannel, IAgentHostEnablementService } from '../common/agentHostEnablementService.js';
 import { AhpJsonlLogger } from '../common/ahpJsonlLogger.js';
 import type { InitializeResult } from '../common/state/protocol/common/commands.js';
 import { PROTOCOL_VERSION } from '../common/state/protocol/version/registry.js';
@@ -50,12 +50,16 @@ export class LocalAgentHostServiceClient extends Disposable implements IAgentHos
 	/** Unique identifier for this window, used in action envelope origin tracking. */
 	readonly clientId = generateUuid();
 
-	private readonly _clientEventually = new DeferredPromise<MessagePortClient>();
-	private readonly _proxy: IAgentService;
+	private _clientEventually!: DeferredPromise<MessagePortClient>;
+	private _proxy!: IAgentService;
 	private readonly _ahpLogger: AhpJsonlLogger | undefined;
-	private readonly _connectionTracker: IConnectionTrackerService;
+	private _connectionTracker!: IConnectionTrackerService;
 	private readonly _subscriptionManager: AgentSubscriptionManager;
 	private readonly _subscribedResources = new Map<string, number>();
+	private readonly _connection = this._register(new MutableDisposable<DisposableStore>());
+	private _connectionGeneration = 0;
+	private _connectPromise: Promise<void> | undefined;
+	private _enabled: boolean;
 
 	private readonly _onAgentHostExit = this._register(new Emitter<number>());
 	readonly onAgentHostExit = this._onAgentHostExit.event;
@@ -103,12 +107,6 @@ export class LocalAgentHostServiceClient extends Disposable implements IAgentHos
 	) {
 		super();
 
-		// Create a proxy backed by a delayed channel - usable immediately,
-		// calls queue until the MessagePort connection is established.
-		const rawProxy = ProxyChannel.toService<IAgentService>(
-			getDelayedChannel(this._clientEventually.p.then(client => client.getChannel(AgentHostIpcChannels.AgentHost)))
-		);
-
 		// Optionally wrap the proxy with a logging layer that synthesizes JSON-RPC
 		// frames for every request/response/notification on the in-process MessagePort
 		// channel, mirroring the AHP transport JSONL logs produced by remote agent hosts.
@@ -119,11 +117,7 @@ export class LocalAgentHostServiceClient extends Disposable implements IAgentHos
 				transport: 'local',
 			}))
 			: undefined;
-		this._proxy = this._ahpLogger ? wrapAgentServiceWithAhpLogging(rawProxy, this._ahpLogger) : rawProxy;
-
-		this._connectionTracker = ProxyChannel.toService<IConnectionTrackerService>(
-			getDelayedChannel(this._clientEventually.p.then(client => client.getChannel(AgentHostIpcChannels.ConnectionTracker)))
-		);
+		this._resetProxies();
 
 		this._subscriptionManager = this._register(new AgentSubscriptionManager(
 			this.clientId,
@@ -163,12 +157,68 @@ export class LocalAgentHostServiceClient extends Disposable implements IAgentHos
 			}
 		}));
 
-		if (agentHostEnablementService.enabled) {
-			this._connect();
+		this._enabled = agentHostEnablementService.enabled;
+		this._setClientState(this._enabled);
+		this._register(toDisposable(() => this._setClientState(false)));
+		this._register(agentHostEnablementService.onDidChangeEnabled(enabled => {
+			this._enabled = enabled;
+			this._setClientState(enabled);
+			if (enabled) {
+				void this._connect();
+			} else {
+				this._disconnect();
+			}
+		}));
+
+		if (this._enabled) {
+			void this._connect();
 		}
 	}
 
-	private async _connect(): Promise<void> {
+	private _resetProxies(): void {
+		this._clientEventually = new DeferredPromise<MessagePortClient>();
+		const rawProxy = ProxyChannel.toService<IAgentService>(
+			getDelayedChannel(this._clientEventually.p.then(client => client.getChannel(AgentHostIpcChannels.AgentHost)))
+		);
+		this._proxy = this._ahpLogger ? wrapAgentServiceWithAhpLogging(rawProxy, this._ahpLogger) : rawProxy;
+		this._connectionTracker = ProxyChannel.toService<IConnectionTrackerService>(
+			getDelayedChannel(this._clientEventually.p.then(client => client.getChannel(AgentHostIpcChannels.ConnectionTracker)))
+		);
+	}
+
+	private _setClientState(enabled: boolean): void {
+		ipcRenderer.send(AgentHostClientStateIpcChannel, enabled);
+	}
+
+	private _disconnect(): void {
+		this._connectionGeneration++;
+		this._connectPromise = undefined;
+		this._connection.clear();
+		this._onMcpNotification.input = Event.None;
+		this._initializeResult.set(undefined, undefined);
+		this._completionTriggerCharactersOnce = undefined;
+		void this._clientEventually.p.catch(() => { });
+		void this._clientEventually.error(new Error('Agent Host was disabled.'));
+		this._resetProxies();
+	}
+
+	private _connect(): Promise<void> {
+		if (this._connectPromise) {
+			return this._connectPromise;
+		}
+
+		const generation = ++this._connectionGeneration;
+		const clientEventually = this._clientEventually;
+		const proxy = this._proxy;
+		this._connectPromise = this._doConnect(generation, clientEventually, proxy).finally(() => {
+			if (generation === this._connectionGeneration) {
+				this._connectPromise = undefined;
+			}
+		});
+		return this._connectPromise;
+	}
+
+	private async _doConnect(generation: number, clientEventually: DeferredPromise<MessagePortClient>, proxy: IAgentService): Promise<void> {
 		this._logService.info('[AgentHost:renderer] Acquiring MessagePort to agent host...');
 		// Forward the enterprise-resolved OTel policy to the main-process starter BEFORE
 		// requesting the connection. The main config service does not include the renderer-only
@@ -178,9 +228,14 @@ export class LocalAgentHostServiceClient extends Disposable implements IAgentHos
 		// request. See `AgentHostOTelPolicyIpcChannel`.
 		ipcRenderer.send(AgentHostOTelPolicyIpcChannel, readAgentHostOTelPolicySettings(this._configurationService));
 		const port = await acquirePort('vscode:createAgentHostMessageChannel', 'vscode:createAgentHostMessageChannelResult');
+		if (!this._enabled || generation !== this._connectionGeneration) {
+			port.close();
+			return;
+		}
 		this._logService.info('[AgentHost:renderer] MessagePort acquired, creating client...');
 
-		const store = this._register(new DisposableStore());
+		const store = new DisposableStore();
+		this._connection.value = store;
 		// Use clientId as the IPC ctx so the agent host can route reverse-RPC
 		// calls (vscode-agent-client filesystem reads) back to this renderer
 		// via `IPCServer.getChannel(name, c => c.ctx === clientId)`.
@@ -196,7 +251,7 @@ export class LocalAgentHostServiceClient extends Disposable implements IAgentHos
 		// afterwards observes it.
 		this._initializeResult.set({ protocolVersion: PROTOCOL_VERSION, serverSeq: 0, snapshots: [], terminalCommandPrefix: '!' }, undefined);
 
-		this._clientEventually.complete(client);
+		clientEventually.complete(client);
 		this._updateTelemetryLevel();
 		this._updateSessionSyncEnabled();
 		this._updateTerminalAutoApproveEnabled();
@@ -207,7 +262,7 @@ export class LocalAgentHostServiceClient extends Disposable implements IAgentHos
 		this._updateTerminalAutoApproveRules();
 		this._updateCodexEnabled();
 
-		store.add(this._proxy.onDidAction(e => {
+		store.add(proxy.onDidAction(e => {
 			const revived = revive(e) as ActionEnvelope;
 			if (!isActionEnvelopeRelevantToSubscriptionUris(revived, this._subscribedResources.keys())) {
 				return;
@@ -219,23 +274,42 @@ export class LocalAgentHostServiceClient extends Disposable implements IAgentHos
 			this._subscriptionManager.receiveEnvelope(revived);
 			this._onDidAction.fire(revived);
 		}));
-		store.add(this._proxy.onDidNotification(e => {
+		store.add(proxy.onDidNotification(e => {
 			if (this._ahpLogger) {
 				const frame = { jsonrpc: '2.0' as const, method: 'notification', params: { notification: e } };
 				this._ahpLogger.log(frame, 's2c');
 			}
 			this._onDidNotification.fire(revive(e));
 		}));
-		this._onMcpNotification.input = this._proxy.onMcpNotification;
+		this._onMcpNotification.input = proxy.onMcpNotification;
 		this._logService.info('[AgentHost:renderer] Direct MessagePort connection established');
 		this._onAgentHostStart.fire();
 
-		// Subscribe to root state
-		this.subscribe(URI.parse(ROOT_STATE_URI)).then(snapshot => {
-			this._subscriptionManager.handleRootSnapshot(snapshot.state as RootState, snapshot.fromSeq);
-		}).catch(err => {
-			this._logService.error('[AgentHost:renderer] Failed to subscribe to root state', err);
-		});
+		await this._restoreSubscriptions(proxy);
+	}
+
+	private async _restoreSubscriptions(proxy: IAgentService): Promise<void> {
+		const rootResource = URI.parse(ROOT_STATE_URI);
+		if (!this._subscribedResources.has(ROOT_STATE_URI)) {
+			this._addSubscribedResource(rootResource);
+		}
+
+		await Promise.all([...this._subscribedResources.keys()].map(async resourceString => {
+			const resource = URI.parse(resourceString);
+			try {
+				const snapshot = await proxy.subscribe(resource, this.clientId);
+				if (resourceString === ROOT_STATE_URI) {
+					this._subscriptionManager.handleRootSnapshot(snapshot.state as RootState, snapshot.fromSeq);
+				} else {
+					this._subscriptionManager.applyReconnectSnapshot(resourceString, snapshot.state, snapshot.fromSeq);
+				}
+			} catch (err) {
+				this._logService.error(`[AgentHost:renderer] Failed to restore subscription ${resourceString}`, err);
+				if (resourceString !== ROOT_STATE_URI) {
+					this._subscriptionManager.markSubscriptionsMissing([resource]);
+				}
+			}
+		}));
 	}
 
 	private _updateTelemetryLevel(): void {

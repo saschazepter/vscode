@@ -25,9 +25,10 @@ Agent host providers implement `IAgentHostSessionsProvider` (defined in sessions
 
 Registered by `LocalAgentHostContribution` in `browser/localAgentHost.contribution.ts`:
 
-- **Gated on `chat.agentHost.enabled`** (`AgentHostEnabledSettingId`). If the setting is off the contribution returns early and registers nothing.
+- **Gated on Agent Host enablement**, which requires `chat.agentHost.enabled` and enabled AI features. The contribution registers and unregisters the provider as live AI enablement changes.
 - The local Codex session type is additionally gated directly on `chat.agentHost.codexAgent.enabled`. The Agents window does not register the OpenAI extension's Codex session type, so it has no separate Codex `preferAgentHost` setting.
-- The enablement bit is read once through the sessions-layer `AgentHostEnablementService`; the contribution does not subscribe to config changes.
+- The contribution subscribes to `IAgentHostEnablementService.onDidChangeEnabled`, removing the provider while AI features are disabled and recreating it when they are enabled again.
+- **Do not snapshot AI disablement at startup.** `chat.disableAIFeatures` is window-scoped and live; Agent Host providers and process ownership must follow `onDidChangeEnabled` so disabling AI tears down the window's Agent Host surfaces and connection.
 - Creates `LocalAgentHostSessionsProvider` via `IInstantiationService` and registers it through `ISessionsProvidersService.registerProvider`.
 - Registers a per-session-type **working-directory resolver** (`IAgentHostSessionWorkingDirectoryResolver`) for each `agent-host-${sessionType.id}` scheme, refreshed on `onDidChangeSessionTypes`.
 - The same module also wires the heavy lifting from the workbench chat layer at `WorkbenchPhase.AfterRestored`:
@@ -48,7 +49,7 @@ The Electron-only `electron-browser/agentHost.contribution.ts` adds desktop-only
 | `label` | `"Local Agent Host"` |
 | `icon` | `Codicon.vm` |
 | `supportsLocalWorkspaces` | `true` |
-| `supportsQuickChats` | snapshots agent-host enablement at construction — `true` when `chat.agentHost.enabled` was on then, else `false` |
+| `supportsQuickChats` | reflects the current Agent Host enablement; the provider itself is only registered while enabled |
 | `browseActions` | `[]` (local folders are browsed through the shared workspace picker) |
 | `order` | `-1` when `chat.agentHost.defaultSessionsProvider` is enabled (sorts before all other providers), else `1` |
 | `sessionTypes` | Dynamically populated from the local agent host's `rootState.agents`; the type label is the agent's unadorned `displayName` (e.g. `"Copilot"`), the type **id** is the agent provider name (e.g. `copilotcli`) so the same agent shares one session type across local and remote hosts |

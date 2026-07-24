@@ -7,6 +7,7 @@ import { isWeb } from '../../../base/common/platform.js';
 import * as nls from '../../../nls.js';
 import { Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../configuration/common/configurationRegistry.js';
 import { RawContextKey } from '../../contextkey/common/contextkey.js';
+import { Event } from '../../../base/common/event.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
 import product from '../../product/common/product.js';
 import { Registry } from '../../registry/common/platform.js';
@@ -17,13 +18,16 @@ const agentHostEnabledSettingId = 'chat.agentHost.enabled';
 /** Context key set by {@link IAgentHostEnablementService}. Use in `when` clauses to gate UI on whether Agent Host features are enabled. */
 export const AGENT_HOST_ENABLED_CONTEXT_KEY = new RawContextKey<boolean>('agentHostEnabled', false, { type: 'boolean', description: nls.localize('agentHostEnabled', "Whether Agent Host features are enabled.") });
 
+export const AgentHostClientStateIpcChannel = 'vscode:agentHostClientState';
+
 export const IAgentHostEnablementService = createDecorator<IAgentHostEnablementService>('agentHostEnablementService');
 
 export interface IAgentHostEnablementService {
 	readonly _serviceBrand: undefined;
+	readonly onDidChangeEnabled: Event<boolean>;
 	/**
 	 * Whether Agent Host features are enabled in this runtime.
-	 * Requires `chat.agentHost.enabled`, a non-web runtime, and enabled AI features. This value is fixed at startup and never changes.
+	 * Requires `chat.agentHost.enabled`, a non-web runtime, and enabled AI features.
 	 */
 	readonly enabled: boolean;
 }

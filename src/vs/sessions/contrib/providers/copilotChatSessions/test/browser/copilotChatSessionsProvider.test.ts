@@ -179,7 +179,7 @@ function createProviderWithConfig(
 
 	instantiationService.stub(IConfigurationService, configService);
 	instantiationService.stub(IContextKeyService, disposables.add(new MockContextKeyService()));
-	instantiationService.stub(IAgentHostEnablementService, { _serviceBrand: undefined, enabled: opts?.agentHostEnabled ?? true });
+	instantiationService.stub(IAgentHostEnablementService, { _serviceBrand: undefined, enabled: opts?.agentHostEnabled ?? true, onDidChangeEnabled: Event.None });
 	instantiationService.stub(IStorageService, disposables.add(new TestStorageService()));
 	instantiationService.stub(IFileDialogService, {});
 	instantiationService.stub(IDialogService, {
@@ -238,7 +238,7 @@ function createProviderWithConfig(
 		getUriLabel: (uri: URI) => uri.path,
 	});
 	instantiationService.stub(IUriIdentityService, { extUri });
-	instantiationService.stub(IAgentHostEnablementService, { _serviceBrand: undefined, enabled: opts?.agentHostEnabled ?? true });
+	instantiationService.stub(IAgentHostEnablementService, { _serviceBrand: undefined, enabled: opts?.agentHostEnabled ?? true, onDidChangeEnabled: Event.None });
 
 	const provider = disposables.add(instantiationService.createInstance(CopilotChatSessionsProvider));
 	return { provider, configService };
@@ -313,7 +313,7 @@ function createProviderForSendTests(
 		getUriLabel: (uri: URI) => uri.path,
 	});
 	instantiationService.stub(IUriIdentityService, { extUri });
-	instantiationService.stub(IAgentHostEnablementService, { _serviceBrand: undefined, enabled: opts?.agentHostEnabled ?? true });
+	instantiationService.stub(IAgentHostEnablementService, { _serviceBrand: undefined, enabled: opts?.agentHostEnabled ?? true, onDidChangeEnabled: Event.None });
 	instantiationService.stub(IContextKeyService, new MockContextKeyService());
 
 	return disposables.add(instantiationService.createInstance(CopilotChatSessionsProvider));
@@ -1829,4 +1829,3 @@ suite('CopilotChatSessionsProvider', () => {
 		);
 	});
 });
-

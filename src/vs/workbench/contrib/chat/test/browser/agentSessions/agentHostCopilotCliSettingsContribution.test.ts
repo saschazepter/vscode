@@ -89,7 +89,7 @@ function setup(disposables: DisposableStore, settings: Record<string, unknown>) 
 	const configurationService = new TestConfigurationService(settings);
 	instantiationService.stub(IAgentHostService, agentHostService);
 	instantiationService.stub(IConfigurationService, configurationService);
-	instantiationService.stub(IAgentHostEnablementService, { _serviceBrand: undefined, enabled: true });
+	instantiationService.stub(IAgentHostEnablementService, { _serviceBrand: undefined, enabled: true, onDidChangeEnabled: Event.None });
 	disposables.add(instantiationService.createInstance(AgentHostCopilotCliSettingsContribution));
 	return { agentHostService };
 }

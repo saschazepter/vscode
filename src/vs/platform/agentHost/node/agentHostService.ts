@@ -3,8 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Event } from '../../../base/common/event.js';
-import { Disposable, toDisposable } from '../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, IDisposable, MutableDisposable } from '../../../base/common/lifecycle.js';
 import { ILogService, ILoggerService } from '../../log/common/log.js';
 import { RemoteLoggerChannelClient } from '../../log/common/logIpc.js';
 import { IAgentHostStarter } from '../common/agent.js';
@@ -25,6 +24,12 @@ export class AgentHostProcessManager extends Disposable {
 	private _started = false;
 	private _wasQuitRequested = false;
 	private _restartCount = 0;
+	private _startGeneration = 0;
+	private _activeClientCount = 0;
+	private _startPromise: Promise<void> | undefined;
+	private _restartAfterStart = false;
+	private readonly _tracksActiveClients: boolean;
+	private readonly _activeProcess = this._register(new MutableDisposable<DisposableStore>());
 
 	constructor(
 		private readonly _starter: IAgentHostStarter,
@@ -32,12 +37,24 @@ export class AgentHostProcessManager extends Disposable {
 		@ILoggerService private readonly _loggerService: ILoggerService,
 	) {
 		super();
+		this._tracksActiveClients = !!this._starter.onDidChangeActiveClientCount;
 
 		this._register(this._starter);
 
 		// Start lazily when the first window asks for a connection
 		if (this._starter.onRequestConnection) {
-			this._register(Event.once(this._starter.onRequestConnection)(() => this._ensureStarted()));
+			this._register(this._starter.onRequestConnection(() => this._ensureStarted()));
+		}
+
+		if (this._starter.onDidChangeActiveClientCount) {
+			this._register(this._starter.onDidChangeActiveClientCount(count => {
+				this._activeClientCount = count;
+				if (count > 0) {
+					this._ensureStarted();
+				} else {
+					this._stop();
+				}
+			}));
 		}
 
 		if (this._starter.onWillShutdown) {
@@ -46,45 +63,83 @@ export class AgentHostProcessManager extends Disposable {
 	}
 
 	private _ensureStarted(): void {
-		if (!this._started) {
-			this._start();
+		if (this._started || !this._shouldRun()) {
+			return;
 		}
+		if (this._startPromise) {
+			this._restartAfterStart = true;
+			return;
+		}
+
+		this._startPromise = this._start().finally(() => {
+			this._startPromise = undefined;
+			const restartAfterStart = this._restartAfterStart;
+			this._restartAfterStart = false;
+			if (restartAfterStart && !this._started && this._shouldRun()) {
+				this._ensureStarted();
+			}
+		});
 	}
 
 	private async _start(): Promise<void> {
 		this._started = true;
+		const generation = ++this._startGeneration;
 		try {
 			const connection = await this._starter.start();
 
-			if (this._store.isDisposed) {
+			if (this._store.isDisposed || !this._started || generation !== this._startGeneration) {
 				connection.store.dispose();
 				return;
 			}
 
 			this._logService.info('AgentHostProcessManager: agent host started');
+			const processStore = new DisposableStore();
+			this._activeProcess.value = processStore;
+			processStore.add(connection.store);
 
 			// Connect logger channel so agent host logs appear in the output channel
-			this._register(new RemoteLoggerChannelClient(this._loggerService, connection.client.getChannel(AgentHostIpcChannels.Logger)));
+			processStore.add(this._createLoggerClient(connection));
 
 			// Handle unexpected exit
-			this._register(connection.onDidProcessExit(e => {
+			processStore.add(connection.onDidProcessExit(e => {
 				if (!this._wasQuitRequested && !this._store.isDisposed) {
-					if (this._restartCount <= Constants.MaxRestarts) {
+					this._started = false;
+					this._activeProcess.clear();
+					if (this._shouldRun() && this._restartCount <= Constants.MaxRestarts) {
 						this._logService.error(`AgentHostProcessManager: agent host terminated unexpectedly with code ${e.code}`);
 						this._restartCount++;
-						this._started = false;
-						connection.store.dispose();
-						this._start();
-					} else {
+						this._ensureStarted();
+					} else if (this._shouldRun()) {
 						this._logService.error(`AgentHostProcessManager: agent host terminated with code ${e.code}, giving up after ${Constants.MaxRestarts} restarts`);
 					}
 				}
 			}));
-
-			this._register(toDisposable(() => connection.store.dispose()));
 		} catch (error) {
-			this._started = false;
-			this._logService.error('AgentHostProcessManager: failed to start agent host', error);
+			if (generation === this._startGeneration) {
+				this._started = false;
+				this._logService.error('AgentHostProcessManager: failed to start agent host', error);
+			}
 		}
+	}
+
+	protected _createLoggerClient(connection: Awaited<ReturnType<IAgentHostStarter['start']>>): IDisposable {
+		return new RemoteLoggerChannelClient(this._loggerService, connection.client.getChannel(AgentHostIpcChannels.Logger));
+	}
+
+	private _shouldRun(): boolean {
+		return !this._tracksActiveClients || this._activeClientCount > 0;
+	}
+
+	private _stop(): void {
+		if (!this._started) {
+			return;
+		}
+
+		this._started = false;
+		this._restartCount = 0;
+		this._restartAfterStart = false;
+		this._startGeneration++;
+		this._activeProcess.clear();
+		this._logService.info('AgentHostProcessManager: agent host stopped because no enabled clients remain');
 	}
 }

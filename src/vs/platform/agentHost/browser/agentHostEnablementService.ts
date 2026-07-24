@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { IPolicyData } from '../../../base/common/defaultAccount.js';
+import { Emitter } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { isWeb } from '../../../base/common/platform.js';
 import { PolicyCategory } from '../../../base/common/policy.js';
@@ -55,17 +56,40 @@ export class AgentHostEnablementService extends Disposable implements IAgentHost
 
 	declare readonly _serviceBrand: undefined;
 
-	readonly enabled: boolean;
+	private readonly _agentHostConfigured: boolean;
+	private readonly _enabledContextKey;
+	private readonly _onDidChangeEnabled = this._register(new Emitter<boolean>());
+	readonly onDidChangeEnabled = this._onDidChangeEnabled.event;
+
+	private _enabled: boolean;
+	get enabled(): boolean {
+		return this._enabled;
+	}
 
 	constructor(
 		@IConfigurationService configurationService: IConfigurationService,
 		@IContextKeyService contextKeyService: IContextKeyService,
 	) {
 		super();
-		this.enabled = !isWeb
-			&& (configurationService.getValue<boolean>(agentHostEnabledSettingId) ?? false)
-			&& configurationService.getValue<boolean>(aiFeaturesDisabledSettingId) !== true;
-		AGENT_HOST_ENABLED_CONTEXT_KEY.bindTo(contextKeyService).set(this.enabled);
+		this._agentHostConfigured = !isWeb && (configurationService.getValue<boolean>(agentHostEnabledSettingId) ?? false);
+		this._enabled = this._agentHostConfigured && configurationService.getValue<boolean>(aiFeaturesDisabledSettingId) !== true;
+		this._enabledContextKey = AGENT_HOST_ENABLED_CONTEXT_KEY.bindTo(contextKeyService);
+		this._enabledContextKey.set(this._enabled);
+
+		this._register(configurationService.onDidChangeConfiguration(e => {
+			if (!e.affectsConfiguration(aiFeaturesDisabledSettingId)) {
+				return;
+			}
+
+			const enabled = this._agentHostConfigured && configurationService.getValue<boolean>(aiFeaturesDisabledSettingId) !== true;
+			if (enabled === this._enabled) {
+				return;
+			}
+
+			this._enabled = enabled;
+			this._enabledContextKey.set(enabled);
+			this._onDidChangeEnabled.fire(enabled);
+		}));
 	}
 }
 
