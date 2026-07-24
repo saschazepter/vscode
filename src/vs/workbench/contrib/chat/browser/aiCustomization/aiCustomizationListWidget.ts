@@ -1549,7 +1549,12 @@ export class AICustomizationListWidget extends Disposable {
 	layout(height: number, width: number): void {
 		this.lastLayoutHeight = height;
 		this.lastLayoutWidth = width;
-		this.element.style.height = `${height}px`;
+		// Clear any previously set explicit height so the CSS-computed height
+		// (height: 100% within the padded parent container) is used. Reading
+		// clientHeight after clearing gives the actual available space inside
+		// the parent's padding box, preventing the list from being clipped by
+		// the parent's overflow:hidden edge.
+		this.element.style.height = '';
 		this.searchInput.layout();
 
 		// Measure sibling elements to calculate the remaining space for the list.
@@ -1571,7 +1576,8 @@ export class AICustomizationListWidget extends Disposable {
 		}
 		const headerHeight = this.sectionTitleHeader.offsetHeight;
 		this.lastHeaderHeight = headerHeight;
-		const listHeight = Math.max(0, height - searchBarHeight - headerHeight);
+		const availableHeight = this.element.clientHeight || height;
+		const listHeight = Math.max(0, availableHeight - searchBarHeight - headerHeight);
 
 		this.listContainer.style.height = `${listHeight}px`;
 		this.list.layout(listHeight, width);
