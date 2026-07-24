@@ -5,6 +5,7 @@
 
 import './media/chatPet.css';
 import * as dom from '../../../../../base/browser/dom.js';
+import { Button } from '../../../../../base/browser/ui/button/button.js';
 import { IHoverDelegate } from '../../../../../base/browser/ui/hover/hoverDelegate.js';
 import { getDefaultHoverDelegate } from '../../../../../base/browser/ui/hover/hoverDelegateFactory.js';
 import { HoverPosition } from '../../../../../base/browser/ui/hover/hoverWidget.js';
@@ -58,14 +59,31 @@ export function getChatPetBaseState(hasActiveRequest: boolean, needsInput: boole
 	return idleExpired ? 'sleep' : 'idle';
 }
 
+export function getChatPetGazeDirection(cursorX: number, cursorY: number, petCenterX: number, petCenterY: number): readonly [number, number] {
+	const deltaX = cursorX - petCenterX;
+	const deltaY = cursorY - petCenterY;
+	const distance = Math.hypot(deltaX, deltaY);
+	if (distance === 0) {
+		return [0, 0];
+	}
+
+	return [
+		Math.round(deltaX / distance),
+		Math.round(deltaY / distance),
+	];
+}
+
 export class ChatPetWidget extends Disposable {
 
-	private readonly _button: HTMLButtonElement;
+	private readonly _button: Button;
 	private readonly _image: HTMLImageElement;
+	private readonly _pupils: HTMLElement[] = [];
+	private readonly _gazeScheduler: dom.AnimationFrameScheduler;
 	private readonly _idleExpired = observableValue(this, false);
 	private readonly _transientState = observableValue<ChatPetState | undefined>(this, undefined);
 	private readonly _idleScheduler = this._register(new RunOnceScheduler(() => this._idleExpired.set(true, undefined), IDLE_SLEEP_DELAY));
 	private readonly _transientScheduler = this._register(new RunOnceScheduler(() => this._transientState.set(undefined, undefined), TRANSIENT_STATE_DURATION));
+	private _cursorPosition: readonly [number, number] | undefined;
 	private _currentState: ChatPetState = 'idle';
 	private _motionReduced = false;
 	private _enabled = false;
@@ -81,13 +99,28 @@ export class ChatPetWidget extends Disposable {
 		super();
 
 		parent.classList.add('chat-pet-host');
-		this._button = dom.append(parent, dom.$('button.chat-pet-button')) as HTMLButtonElement;
-		this._button.type = 'button';
-		this._button.setAttribute('aria-label', localize('chatPet.love', "Show the VS Code pet some love!"));
-		this._image = dom.append(this._button, dom.$('img.chat-pet-sprite')) as HTMLImageElement;
+		this._button = this._register(new Button(parent, {
+			ariaLabel: localize('chatPet.love', "Show the VS Code pet some love!"),
+		}));
+		this._button.element.classList.add('chat-pet-button');
+		this._button.element.dataset.buddy = buddyName;
+		this._image = dom.append(this._button.element, dom.$('img.chat-pet-sprite')) as HTMLImageElement;
 		this._image.alt = '';
 		this._image.setAttribute('aria-hidden', 'true');
-		this._register(dom.addDisposableListener(this._button, dom.EventType.ANIMATION_END, event => {
+		const eyes = dom.append(this._button.element, dom.$('.chat-pet-eyes'));
+		eyes.setAttribute('aria-hidden', 'true');
+		for (const side of ['left', 'right']) {
+			const eye = dom.append(eyes, dom.$(`.chat-pet-eye.${side}`));
+			this._pupils.push(dom.append(eye, dom.$('.chat-pet-pupil')));
+		}
+		this._gazeScheduler = this._register(new dom.AnimationFrameScheduler(this._button.element, () => this._updateGaze()));
+		this._register(dom.addDisposableListener(dom.getWindow(this._button.element).document, dom.EventType.POINTER_MOVE, (event: PointerEvent) => {
+			this._cursorPosition = [event.clientX, event.clientY];
+			if (this._enabled) {
+				this._gazeScheduler.schedule();
+			}
+		}));
+		this._register(dom.addDisposableListener(this._button.element, dom.EventType.ANIMATION_END, event => {
 			if (event.animationName === 'chat-pet-exit' && !this._enabled) {
 				this._finishDisable();
 			}
@@ -106,13 +139,12 @@ export class ChatPetWidget extends Disposable {
 		};
 		const managedHover = this._register(hoverService.setupManagedHover(
 			hoverDelegate,
-			this._button,
+			this._button.element,
 			localize('chatPet.hover', "Show the VS Code pet some love! Stay tuned for more interactions..."),
 		));
 
-		this._register(dom.addDisposableListener(this._button, dom.EventType.CLICK, e => {
-			e.preventDefault();
-			e.stopPropagation();
+		this._register(this._button.onDidClick(e => {
+			dom.EventHelper.stop(e, true);
 			this._showTransientState('love');
 			managedHover.show();
 			status(localize('chatPet.loved', "The VS Code pet feels loved"));
@@ -145,6 +177,9 @@ export class ChatPetWidget extends Disposable {
 			if (!enabled) {
 				this._idleScheduler.cancel();
 				this._transientScheduler.cancel();
+				if (transientState !== undefined) {
+					this._transientState.set(undefined, undefined);
+				}
 				if (this._motionReduced) {
 					this._finishDisable();
 				}
@@ -165,39 +200,58 @@ export class ChatPetWidget extends Disposable {
 
 		this._register(autorun(reader => {
 			const chatModel = model.read(reader);
-			if (!chatModel) {
+			const response = chatModel?.lastRequestObs.read(reader)?.response;
+			if (!response) {
 				return;
 			}
-			reader.store.add(chatModel.onDidChange(e => {
-				if (e.kind === 'completedRequest' && !e.request.response?.isCanceled) {
+			reader.store.add(response.onDidChange(e => {
+				if (e.reason === 'completedRequest' && !response.isCanceled) {
 					this._showTransientState('complete');
 				}
 			}));
 		}));
 	}
 
+	private _updateGaze(): void {
+		if (!this._cursorPosition) {
+			return;
+		}
+
+		const bounds = this._button.element.getBoundingClientRect();
+		const [x, y] = getChatPetGazeDirection(
+			this._cursorPosition[0],
+			this._cursorPosition[1],
+			bounds.left + bounds.width / 2,
+			bounds.top + bounds.height / 2,
+		);
+		for (const pupil of this._pupils) {
+			pupil.style.transform = `translate(${x * 2}px, ${y * 2}px)`;
+		}
+	}
+
 	private _startEnableAnimation(): void {
-		this._button.classList.remove('hidden', 'exiting', 'entering');
-		this._button.tabIndex = 0;
-		this._button.getBoundingClientRect();
+		this._button.element.classList.remove('hidden', 'exiting', 'entering');
+		this._button.element.tabIndex = 0;
+		this._button.element.getBoundingClientRect();
+		this._gazeScheduler.schedule();
 		if (!this._motionReduced) {
-			this._button.classList.add('entering');
+			this._button.element.classList.add('entering');
 		}
 	}
 
 	private _startDisableAnimation(): void {
-		this._button.tabIndex = -1;
-		this._button.classList.remove('entering');
-		if (this._motionReduced || this._button.classList.contains('hidden')) {
+		this._button.element.tabIndex = -1;
+		this._button.element.classList.remove('entering');
+		if (this._motionReduced || this._button.element.classList.contains('hidden')) {
 			this._finishDisable();
 			return;
 		}
-		this._button.classList.add('exiting');
+		this._button.element.classList.add('exiting');
 	}
 
 	private _finishDisable(): void {
-		this._button.classList.remove('entering', 'exiting');
-		this._button.classList.add('hidden');
+		this._button.element.classList.remove('entering', 'exiting');
+		this._button.element.classList.add('hidden');
 		this._image.removeAttribute('src');
 	}
 
@@ -222,6 +276,6 @@ export class ChatPetWidget extends Disposable {
 			this._image.src = source;
 		}
 		this._currentState = state;
-		this._button.dataset.state = state;
+		this._button.element.dataset.state = state;
 	}
 }

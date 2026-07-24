@@ -5,7 +5,7 @@
 
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { getChatPetBaseState, getChatPetBuddyName } from '../../../browser/widget/chatPetWidget.js';
+import { getChatPetBaseState, getChatPetBuddyName, getChatPetGazeDirection } from '../../../browser/widget/chatPetWidget.js';
 
 suite('ChatPetWidget', () => {
 
@@ -34,6 +34,30 @@ suite('ChatPetWidget', () => {
 			'buddy-idle-stable',
 			'buddy-idle-insiders',
 			'buddy-idle-insiders',
+		]);
+	});
+
+	test('maps the cursor to pixel-snapped gaze directions', () => {
+		assert.deepStrictEqual([
+			getChatPetGazeDirection(10, 0, 0, 0),
+			getChatPetGazeDirection(10, 10, 0, 0),
+			getChatPetGazeDirection(0, 10, 0, 0),
+			getChatPetGazeDirection(-10, 10, 0, 0),
+			getChatPetGazeDirection(-10, 0, 0, 0),
+			getChatPetGazeDirection(-10, -10, 0, 0),
+			getChatPetGazeDirection(0, -10, 0, 0),
+			getChatPetGazeDirection(10, -10, 0, 0),
+			getChatPetGazeDirection(0, 0, 0, 0),
+		], [
+			[1, 0],
+			[1, 1],
+			[0, 1],
+			[-1, 1],
+			[-1, 0],
+			[-1, -1],
+			[0, -1],
+			[1, -1],
+			[0, 0],
 		]);
 	});
 });

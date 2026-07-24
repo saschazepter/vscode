@@ -67,8 +67,7 @@
 	}
 }
 
-.monaco-workbench .chat-pet-host > button.chat-pet-button:focus,
-.monaco-workbench .chat-pet-host > button.chat-pet-button:focus-visible {
+.monaco-workbench .chat-pet-host > .chat-pet-button:focus:not(:focus-visible) {
 	outline: none;
 }
 
@@ -81,9 +80,72 @@
 	pointer-events: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-	.chat-pet-button.entering,
-	.chat-pet-button.exiting {
-		animation: none;
+.chat-pet-eyes {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	animation: chat-pet-eye-bob 2s steps(1, end) infinite;
+}
+
+.chat-pet-eye {
+	position: absolute;
+	top: 30px;
+	width: 8px;
+	height: 8px;
+	background: #23a8f2;
+}
+
+.chat-pet-button[data-buddy='buddy-idle-insiders'] .chat-pet-eye {
+	background: #24bfa5;
+}
+
+.chat-pet-eye.left {
+	left: 18px;
+}
+
+.chat-pet-eye.right {
+	left: 30px;
+}
+
+.chat-pet-pupil {
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 4px;
+	height: 4px;
+	background: #191a1b;
+	animation: chat-pet-eye-blink 2s steps(1, end) infinite;
+}
+
+@keyframes chat-pet-eye-bob {
+	0%,
+	39.999% {
+		transform: translateY(0);
 	}
+
+	40%,
+	100% {
+		transform: translateY(2px);
+	}
+}
+
+@keyframes chat-pet-eye-blink {
+	0%,
+	45.999%,
+	56%,
+	100% {
+		clip-path: inset(0);
+	}
+
+	46%,
+	55.999% {
+		clip-path: inset(1px 0);
+	}
+}
+
+.monaco-workbench.monaco-reduce-motion .chat-pet-button.entering,
+.monaco-workbench.monaco-reduce-motion .chat-pet-button.exiting,
+.monaco-workbench.monaco-reduce-motion .chat-pet-eyes,
+.monaco-workbench.monaco-reduce-motion .chat-pet-pupil {
+	animation: none;
 }

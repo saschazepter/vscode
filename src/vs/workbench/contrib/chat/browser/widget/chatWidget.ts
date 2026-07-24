@@ -142,11 +142,12 @@ function isInlineChat(widget: IChatWidget): boolean {
 	return isIChatResourceViewContext(widget.viewContext) && Boolean(widget.viewContext.isInlineChat);
 }
 
-export function getImmediateSlashCommandPart(parsedRequest: IParsedChatRequest): ChatRequestSlashCommandPart | undefined {
+export function getImmediateSilentSlashCommandPart(parsedRequest: IParsedChatRequest): ChatRequestSlashCommandPart | undefined {
 	return parsedRequest.parts.find((part): part is ChatRequestSlashCommandPart =>
 		part instanceof ChatRequestSlashCommandPart
 		&& part.range.start === 0
 		&& part.slashCommand.executeImmediately === true
+		&& part.slashCommand.silent === true
 	);
 }
 
@@ -802,7 +803,8 @@ export class ChatWidget extends Disposable implements IChatWidget {
 		}
 
 		if (this.location === ChatAgentLocation.Chat && !isInlineChat(this)) {
-			this._register(this.instantiationService.createInstance(ChatPetWidget, this.inputPart.petHostElement, this._viewModelObs.map(viewModel => viewModel?.model)));
+			const petHost = this.inputPart.inputContainerElement?.parentElement ?? this.inputPart.element;
+			this._register(this.instantiationService.createInstance(ChatPetWidget, petHost, this._viewModelObs.map(viewModel => viewModel?.model)));
 		}
 
 		this.renderWelcomeViewContentIfNeeded();
@@ -2959,7 +2961,7 @@ export class ChatWidget extends Disposable implements IChatWidget {
 				forcedAgent: this._lockedAgent?.id ? this.chatAgentService.getAgent(this._lockedAgent.id) : undefined,
 				sessionType: getChatSessionType(viewModel.model.sessionResource)
 			});
-		const commandPart = getImmediateSlashCommandPart(parsedRequest);
+		const commandPart = getImmediateSilentSlashCommandPart(parsedRequest);
 		if (!commandPart) {
 			return false;
 		}
