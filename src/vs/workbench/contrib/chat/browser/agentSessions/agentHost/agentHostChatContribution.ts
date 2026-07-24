@@ -5,7 +5,7 @@
 
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Event } from '../../../../../../base/common/event.js';
-import { Disposable, DisposableMap, DisposableStore, MutableDisposable, toDisposable } from '../../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap, DisposableStore, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { localize } from '../../../../../../nls.js';
 import { affectsAgentHostProviderPreference, IAgentHostService, shouldSurfaceLocalAgentHostProvider, type AgentProvider } from '../../../../../../platform/agentHost/common/agentService.js';
@@ -88,14 +88,13 @@ export { AgentHostSessionHandler } from './agentHostSessionHandler.js';
  * registers each one as a chat session type with its own session handler,
  * customization harness, and language model provider.
  *
- * Gated on live Agent Host enablement.
+ * Gated on the `chat.agentHost.enabled` setting.
  */
 export class AgentHostContribution extends Disposable implements IWorkbenchContribution {
 
 	static readonly ID = 'workbench.contrib.agentHostContribution';
 
 	private readonly _agentRegistrations = this._register(new DisposableMap<AgentProvider, DisposableStore>());
-	private readonly _enabledStore = this._register(new MutableDisposable<DisposableStore>());
 	/** Model providers keyed by agent provider, for pushing model updates. */
 	private readonly _modelProviders = new Map<AgentProvider, AgentHostLanguageModelProvider>();
 
@@ -113,45 +112,31 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		@ILogService private readonly _logService: ILogService,
 		@ILanguageModelsService private readonly _languageModelsService: ILanguageModelsService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
-		@IAgentHostFileSystemService private readonly _agentHostFileSystemService: IAgentHostFileSystemService,
+		@IAgentHostFileSystemService _agentHostFileSystemService: IAgentHostFileSystemService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@ICustomizationHarnessService private readonly _customizationHarnessService: ICustomizationHarnessService,
 		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 		@IAgentHostActiveClientService private readonly _activeClientService: IAgentHostActiveClientService,
-		@IAgentHostEnablementService private readonly _agentHostEnablementService: IAgentHostEnablementService,
+		@IAgentHostEnablementService agentHostEnablementService: IAgentHostEnablementService,
 	) {
 		super();
 		this._isSessionsWindow = environmentService.isSessionsWindow;
 		this._enableSmokeTestDriver = !!environmentService.enableSmokeTestDriver;
 
-		this._register(this._agentHostEnablementService.onDidChangeEnabled(() => this._updateEnabled()));
-		this._updateEnabled();
-	}
-
-	private _updateEnabled(): void {
-		if (!this._agentHostEnablementService.enabled) {
-			this._enabledStore.clear();
-			this._agentRegistrations.clearAndDisposeAll();
-			this._modelProviders.clear();
-			this._authTokenCache.clear();
-			return;
-		}
-		if (this._enabledStore.value) {
+		if (!agentHostEnablementService.enabled) {
 			return;
 		}
 
-		const store = new DisposableStore();
-		this._enabledStore.value = store;
-		store.add(this._agentHostFileSystemService.registerAuthority('local', this._agentHostService));
+		this._register(_agentHostFileSystemService.registerAuthority('local', this._agentHostService));
 
 		// React to root state changes (agent discovery / removal)
-		store.add(this._agentHostService.rootState.onDidChange(rootState => {
+		this._register(this._agentHostService.rootState.onDidChange(rootState => {
 			this._handleRootStateChange(rootState);
 		}));
 
 		// Clear the auth cache whenever the local agent host (re)starts so the
 		// first post-restart authenticate RPC is never skipped as "unchanged".
-		store.add(this._agentHostService.onAgentHostStart(() => {
+		this._register(this._agentHostService.onAgentHostStart(() => {
 			this._authTokenCache.clear();
 		}));
 
@@ -162,8 +147,8 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 		// contribution runs in both windows). The matching `createSession`
 		// opt-in (`progressToken`) lives in the editor-window session handlers.
 		if (!this._isSessionsWindow) {
-			const downloadProgress = store.add(this._instantiationService.createInstance(AgentHostDownloadProgress));
-			store.add(this._agentHostService.onDidNotification(n => {
+			const downloadProgress = this._register(this._instantiationService.createInstance(AgentHostDownloadProgress));
+			this._register(this._agentHostService.onDidNotification(n => {
 				if (n.type === NotificationType.Progress) {
 					downloadProgress.handleProgress(n);
 				}
@@ -172,11 +157,11 @@ export class AgentHostContribution extends Disposable implements IWorkbenchContr
 
 		// Process initial root state if already available
 		const initialRootState = this._agentHostService.rootState.value;
-		if (this._agentHostService.initializeResult.get() && initialRootState && !(initialRootState instanceof Error)) {
+		if (initialRootState && !(initialRootState instanceof Error)) {
 			this._handleRootStateChange(initialRootState);
 		}
 
-		store.add(this._configurationService.onDidChangeConfiguration(e => {
+		this._register(this._configurationService.onDidChangeConfiguration(e => {
 			if (!affectsAgentHostProviderPreference(e, this._isSessionsWindow)) {
 				return;
 			}

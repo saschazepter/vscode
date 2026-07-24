@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableMap, DisposableStore, MutableDisposable } from '../../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap, DisposableStore } from '../../../../../../base/common/lifecycle.js';
 import { affectsAgentHostProviderPreference, IAgentHostService, shouldSurfaceLocalAgentHostProvider, type AgentProvider } from '../../../../../../platform/agentHost/common/agentService.js';
 import { IAgentHostEnablementService } from '../../../../../../platform/agentHost/common/agentHostEnablementService.js';
 import { type AgentInfo, type RootState } from '../../../../../../platform/agentHost/common/state/sessionState.js';
@@ -21,7 +21,6 @@ export class AgentHostSessionListContribution extends Disposable implements IWor
 	static readonly ID = 'workbench.contrib.agentHostSessionListContribution';
 
 	private readonly _agentRegistrations = this._register(new DisposableMap<AgentProvider, DisposableStore>());
-	private readonly _enabledStore = this._register(new MutableDisposable<DisposableStore>());
 
 	private readonly _isSessionsWindow: boolean;
 
@@ -32,47 +31,32 @@ export class AgentHostSessionListContribution extends Disposable implements IWor
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 		@IAgentHostSessionWorkingDirectoryResolver private readonly _workingDirectoryResolver: IAgentHostSessionWorkingDirectoryResolver,
-		@IAgentHostEnablementService private readonly _agentHostEnablementService: IAgentHostEnablementService,
+		@IAgentHostEnablementService agentHostEnablementService: IAgentHostEnablementService,
 	) {
 		super();
 
 		this._isSessionsWindow = environmentService.isSessionsWindow;
-		if (this._isSessionsWindow) {
+
+		if (this._isSessionsWindow || !agentHostEnablementService.enabled) {
 			return;
 		}
 
-		this._register(this._agentHostEnablementService.onDidChangeEnabled(() => this._updateEnabled()));
-		this._updateEnabled();
-	}
+		const sessionListStore = this._register(this._instantiationService.createInstance(AgentHostSessionListStore, this._agentHostService));
 
-	private _updateEnabled(): void {
-		if (!this._agentHostEnablementService.enabled) {
-			this._enabledStore.clear();
-			this._agentRegistrations.clearAndDisposeAll();
-			return;
-		}
-		if (this._enabledStore.value) {
-			return;
-		}
-
-		const store = new DisposableStore();
-		this._enabledStore.value = store;
-		const sessionListStore = store.add(this._instantiationService.createInstance(AgentHostSessionListStore, this._agentHostService));
-
-		store.add(this._agentHostService.rootState.onDidChange(rootState => {
+		this._register(this._agentHostService.rootState.onDidChange(rootState => {
 			this._handleRootStateChange(rootState, sessionListStore);
 		}));
 
-		store.add(this._agentHostService.onAgentHostStart(() => {
+		this._register(this._agentHostService.onAgentHostStart(() => {
 			sessionListStore.resetCache();
 		}));
 
 		const initialRootState = this._agentHostService.rootState.value;
-		if (this._agentHostService.initializeResult.get() && initialRootState && !(initialRootState instanceof Error)) {
+		if (initialRootState && !(initialRootState instanceof Error)) {
 			this._handleRootStateChange(initialRootState, sessionListStore);
 		}
 
-		store.add(this._configurationService.onDidChangeConfiguration(e => {
+		this._register(this._configurationService.onDidChangeConfiguration(e => {
 			if (!affectsAgentHostProviderPreference(e, this._isSessionsWindow)) {
 				return;
 			}

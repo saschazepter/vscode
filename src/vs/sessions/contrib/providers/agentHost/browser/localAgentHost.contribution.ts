@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, DisposableMap, DisposableStore, MutableDisposable } from '../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableMap } from '../../../../../base/common/lifecycle.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../../workbench/common/contributions.js';
 import { AgentHostContribution } from '../../../../../workbench/contrib/chat/browser/agentSessions/agentHost/agentHostChatContribution.js';
@@ -44,7 +44,6 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
 class LocalAgentHostContribution extends Disposable implements IWorkbenchContribution {
 
 	static readonly ID = 'sessions.contrib.localAgentHostContribution';
-	private readonly _enabledStore = this._register(new MutableDisposable<DisposableStore>());
 
 	constructor(
 		@IAgentHostEnablementService private readonly _agentHostEnablementService: IAgentHostEnablementService,
@@ -54,29 +53,14 @@ class LocalAgentHostContribution extends Disposable implements IWorkbenchContrib
 	) {
 		super();
 
-		this._register(this._agentHostEnablementService.onDidChangeEnabled(() => this._updateEnabled(instantiationService, sessionsProvidersService, workingDirectoryResolver)));
-		this._updateEnabled(instantiationService, sessionsProvidersService, workingDirectoryResolver);
-	}
-
-	private _updateEnabled(
-		instantiationService: IInstantiationService,
-		sessionsProvidersService: ISessionsProvidersService,
-		workingDirectoryResolver: IAgentHostSessionWorkingDirectoryResolver,
-	): void {
 		if (!this._agentHostEnablementService.enabled) {
-			this._enabledStore.clear();
-			return;
-		}
-		if (this._enabledStore.value) {
 			return;
 		}
 
-		const store = new DisposableStore();
-		this._enabledStore.value = store;
-		const provider = store.add(instantiationService.createInstance(LocalAgentHostSessionsProvider));
-		store.add(sessionsProvidersService.registerProvider(provider));
+		const provider = this._register(instantiationService.createInstance(LocalAgentHostSessionsProvider));
+		this._register(sessionsProvidersService.registerProvider(provider));
 
-		const resolverRegistrations = store.add(new DisposableMap<string>());
+		const resolverRegistrations = this._register(new DisposableMap<string>());
 		const registerResolvers = () => {
 			const sessionTypeIds = new Set(provider.sessionTypes.map(sessionType => `agent-host-${sessionType.id}`));
 			for (const [sessionTypeId] of resolverRegistrations) {
@@ -98,7 +82,7 @@ class LocalAgentHostContribution extends Disposable implements IWorkbenchContrib
 			}
 		};
 		registerResolvers();
-		store.add(provider.onDidChangeSessionTypes(registerResolvers));
+		this._register(provider.onDidChangeSessionTypes(registerResolvers));
 	}
 }
 

@@ -194,28 +194,10 @@ function rootStateWithGithubEnterpriseUriKey(): RootState {
 interface ITestSetup {
 	contribution: AgentHostTerminalContribution;
 	agentHostService: MockAgentHostService;
-	enablementService: TestAgentHostEnablementService;
 	resolver: MockTerminalProfileResolverService;
 	profileService: MockTerminalProfileService;
 	configurationService: TestConfigurationService;
 	defaultAccountService: MockDefaultAccountService;
-}
-
-class TestAgentHostEnablementService implements IAgentHostEnablementService {
-	declare readonly _serviceBrand: undefined;
-	private readonly _onDidChangeEnabled = new Emitter<boolean>();
-	readonly onDidChangeEnabled = this._onDidChangeEnabled.event;
-
-	constructor(public enabled: boolean) { }
-
-	setEnabled(enabled: boolean): void {
-		this.enabled = enabled;
-		this._onDidChangeEnabled.fire(enabled);
-	}
-
-	dispose(): void {
-		this._onDidChangeEnabled.dispose();
-	}
 }
 
 function setup(disposables: DisposableStore, agentHostEnabled: boolean = true): ITestSetup {
@@ -230,12 +212,9 @@ function setup(disposables: DisposableStore, agentHostEnabled: boolean = true): 
 	const configurationService = new TestConfigurationService({
 		[AgentHostCustomTerminalToolEnabledSettingId]: true,
 	});
-	const enablementService = new TestAgentHostEnablementService(agentHostEnabled);
-	disposables.add(enablementService);
-
 	instantiationService.stub(IAgentHostService, agentHostService);
 	instantiationService.stub(IConfigurationService, configurationService);
-	instantiationService.stub(IAgentHostEnablementService, enablementService);
+	instantiationService.stub(IAgentHostEnablementService, { _serviceBrand: undefined, enabled: agentHostEnabled });
 	instantiationService.stub(ITerminalProfileResolverService, resolver);
 	instantiationService.stub(ITerminalProfileService, profileService);
 	instantiationService.stub(IDefaultAccountService, defaultAccountService);
@@ -245,7 +224,7 @@ function setup(disposables: DisposableStore, agentHostEnabled: boolean = true): 
 	});
 
 	const contribution = disposables.add(instantiationService.createInstance(AgentHostTerminalContribution));
-	return { contribution, agentHostService, enablementService, resolver, profileService, configurationService, defaultAccountService };
+	return { contribution, agentHostService, resolver, profileService, configurationService, defaultAccountService };
 }
 
 /** Wait for any in-flight `_pushDefaultShell` promises to settle. */
@@ -275,28 +254,6 @@ suite('AgentHostTerminalContribution', () => {
 		await flush();
 
 		assert.deepStrictEqual(agentHostService.dispatchedActions, []);
-	});
-
-	test('starts and stops forwarding as Agent Host enablement changes', async () => {
-		const { agentHostService, enablementService } = setup(disposables, false);
-		agentHostService.setRootState(rootStateWithDefaultShellKey());
-		await flush();
-
-		enablementService.setEnabled(true);
-		await flush();
-		const enabledCount = agentHostService.dispatchedActions.length;
-
-		enablementService.setEnabled(false);
-		agentHostService.fireAgentHostStart();
-		await flush();
-
-		assert.deepStrictEqual({
-			enabledCount,
-			disabledCount: agentHostService.dispatchedActions.length,
-		}, {
-			enabledCount: 1,
-			disabledCount: 1,
-		});
 	});
 
 	test('does not dispatch while rootState has not hydrated', async () => {

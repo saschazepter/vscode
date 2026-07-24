@@ -22,7 +22,7 @@ import { IAgentHostConnection, IAgentHostStarter } from '../common/agent.js';
 import { buildAgentHostTelemetryIdEnv, IAgentHostForwardedTelemetryIds } from '../common/agentHostTelemetryEnv.js';
 import { AgentHostByokModelsEnabledSettingId, AgentHostClaudeAgentEnabledSettingId, AgentHostCodexAgentBinaryArgsSettingId, AgentHostCodexAgentEnabledSettingId, AgentHostCodexAgentSdkRootSettingId, AgentHostCodexAgentCodexHomeSettingId, AgentHostOTelCaptureContentSettingId, AgentHostOTelDbSpanExporterEnabledSettingId, AgentHostOTelEnabledSettingId, AgentHostOTelExporterTypeSettingId, AgentHostOTelOtlpEndpointSettingId, AgentHostOTelOtlpProtocolSettingId, AgentHostOTelOutfileSettingId, AgentHostOTelResourceAttributesSettingId, AgentHostOTelServiceNameSettingId, AgentHostOTelPolicyIpcChannel, buildAgentHostOTelEnv, buildAgentSdkEnv, IAgentHostOTelSettings, sanitizeAgentHostOTelPolicySettings } from '../common/agentService.js';
 import { deepClone } from '../../../base/common/objects.js';
-import { AgentHostClientStateIpcChannel } from '../common/agentHostEnablementService.js';
+import '../common/agentHostEnablementService.js';
 import '../common/agentHostStarter.config.contribution.js';
 
 export class ElectronAgentHostStarter extends Disposable implements IAgentHostStarter {
@@ -32,12 +32,8 @@ export class ElectronAgentHostStarter extends Disposable implements IAgentHostSt
 
 	private readonly _onRequestConnection = this._register(new Emitter<void>());
 	readonly onRequestConnection = this._onRequestConnection.event;
-	private readonly _onDidChangeActiveClientCount = this._register(new Emitter<number>());
-	readonly onDidChangeActiveClientCount = this._onDidChangeActiveClientCount.event;
 	private readonly _onWillShutdown = this._register(new Emitter<void>());
 	readonly onWillShutdown = this._onWillShutdown.event;
-	private readonly _activeClientWindowIds = new Set<number>();
-	private readonly _trackedClientWindowIds = new Set<number>();
 
 	/**
 	 * Enterprise OTel policy forwarded by the renderer (see `AgentHostOTelPolicyIpcChannel`).
@@ -69,46 +65,12 @@ export class ElectronAgentHostStarter extends Disposable implements IAgentHostSt
 			validatedIpcMain.removeListener(AgentHostOTelPolicyIpcChannel, onOTelPolicy);
 		}));
 
-		const onClientState = (e: IpcMainEvent, enabled: boolean) => this._updateClientState(e, enabled);
-		validatedIpcMain.on(AgentHostClientStateIpcChannel, onClientState);
-		this._register(toDisposable(() => {
-			validatedIpcMain.removeListener(AgentHostClientStateIpcChannel, onClientState);
-		}));
-
 		// Listen for new windows to establish a direct MessagePort connection to the agent host
 		const onWindowConnection = (e: IpcMainEvent, nonce: string) => this._onWindowConnection(e, nonce);
 		validatedIpcMain.on('vscode:createAgentHostMessageChannel', onWindowConnection);
 		this._register(toDisposable(() => {
 			validatedIpcMain.removeListener('vscode:createAgentHostMessageChannel', onWindowConnection);
 		}));
-	}
-
-	private _updateClientState(e: IpcMainEvent, enabled: boolean): void {
-		if (typeof enabled !== 'boolean') {
-			return;
-		}
-
-		const windowId = e.sender.id;
-		if (!this._trackedClientWindowIds.has(windowId)) {
-			this._trackedClientWindowIds.add(windowId);
-			e.sender.once('destroyed', () => {
-				this._trackedClientWindowIds.delete(windowId);
-				if (this._activeClientWindowIds.delete(windowId)) {
-					this._onDidChangeActiveClientCount.fire(this._activeClientWindowIds.size);
-				}
-			});
-		}
-
-		let changed: boolean;
-		if (enabled) {
-			changed = !this._activeClientWindowIds.has(windowId);
-			this._activeClientWindowIds.add(windowId);
-		} else {
-			changed = this._activeClientWindowIds.delete(windowId);
-		}
-		if (changed) {
-			this._onDidChangeActiveClientCount.fire(this._activeClientWindowIds.size);
-		}
 	}
 
 	async start(): Promise<IAgentHostConnection> {
@@ -234,11 +196,6 @@ export class ElectronAgentHostStarter extends Disposable implements IAgentHostSt
 	}
 
 	private async _onWindowConnection(e: IpcMainEvent, nonce: string): Promise<void> {
-		if (!this._activeClientWindowIds.has(e.sender.id)) {
-			this._logService.warn('AgentHostStarter: ignoring connection request from a window with Agent Host disabled');
-			return;
-		}
-
 		this._onRequestConnection.fire();
 
 		// Wait for utilityProcess.start() to actually run before calling connect(),

@@ -6,11 +6,11 @@
 import assert from 'assert';
 import { isWeb } from '../../../../base/common/platform.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
-import { ConfigurationTarget } from '../../../configuration/common/configuration.js';
 import { TestConfigurationService } from '../../../configuration/test/common/testConfigurationService.js';
+import { getSingletonServiceDescriptors } from '../../../instantiation/common/extensions.js';
 import { MockContextKeyService } from '../../../keybinding/test/common/mockKeybindingService.js';
 import { AgentHostEnablementService } from '../../browser/agentHostEnablementService.js';
-import { AGENT_HOST_ENABLED_CONTEXT_KEY } from '../../common/agentHostEnablementService.js';
+import { AGENT_HOST_ENABLED_CONTEXT_KEY, IAgentHostEnablementService } from '../../common/agentHostEnablementService.js';
 
 suite('AgentHostEnablementService', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
@@ -42,44 +42,9 @@ suite('AgentHostEnablementService', () => {
 		]);
 	});
 
-	test('reacts to AI feature enablement changes', async () => {
-		const configurationService = new TestConfigurationService({
-			'chat.agentHost.enabled': true,
-			'chat.disableAIFeatures': false,
-		});
-		const contextKeyService = disposables.add(new MockContextKeyService());
-		const service = disposables.add(new AgentHostEnablementService(configurationService, contextKeyService));
-		const changes: boolean[] = [];
-		disposables.add(service.onDidChangeEnabled(enabled => changes.push(enabled)));
+	test('defers enablement until window configuration is restored', () => {
+		const descriptor = getSingletonServiceDescriptors().find(([id]) => id === IAgentHostEnablementService)?.[1];
 
-		await configurationService.setUserConfiguration('chat.disableAIFeatures', true);
-		configurationService.onDidChangeConfigurationEmitter.fire({
-			affectedKeys: new Set(['chat.disableAIFeatures']),
-			affectsConfiguration: key => key === 'chat.disableAIFeatures',
-			change: { keys: ['chat.disableAIFeatures'], overrides: [] },
-			source: ConfigurationTarget.USER,
-		});
-
-		await configurationService.setUserConfiguration('chat.disableAIFeatures', false);
-		configurationService.onDidChangeConfigurationEmitter.fire({
-			affectedKeys: new Set(['chat.disableAIFeatures']),
-			affectsConfiguration: key => key === 'chat.disableAIFeatures',
-			change: { keys: ['chat.disableAIFeatures'], overrides: [] },
-			source: ConfigurationTarget.USER,
-		});
-
-		assert.deepStrictEqual({
-			changes,
-			enabled: service.enabled,
-			contextKey: contextKeyService.getContextKeyValue(AGENT_HOST_ENABLED_CONTEXT_KEY.key),
-		}, isWeb ? {
-			changes: [],
-			enabled: false,
-			contextKey: false,
-		} : {
-			changes: [false, true],
-			enabled: true,
-			contextKey: true,
-		});
+		assert.strictEqual(descriptor?.supportsDelayedInstantiation, true);
 	});
 });
