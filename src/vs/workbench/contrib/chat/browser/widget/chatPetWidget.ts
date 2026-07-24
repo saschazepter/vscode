@@ -44,8 +44,8 @@ const spriteSources: Record<ChatPetState, { animated: string; reducedMotion: str
 function createSpriteSources(name: string): { animated: string; reducedMotion: string } {
 	const root = 'vs/workbench/contrib/chat/browser/widget/media/chatPet';
 	return {
-		animated: FileAccess.asBrowserUri(`${root}/${name}-96.gif`).toString(true),
-		reducedMotion: FileAccess.asBrowserUri(`${root}/${name}-96.png`).toString(true),
+		animated: FileAccess.asBrowserUri(`${root}/${name}-tracking-96.gif`).toString(true),
+		reducedMotion: FileAccess.asBrowserUri(`${root}/${name}-tracking-96.png`).toString(true),
 	};
 }
 
@@ -103,7 +103,6 @@ export class ChatPetWidget extends Disposable {
 			ariaLabel: localize('chatPet.love', "Show the VS Code pet some love!"),
 		}));
 		this._button.element.classList.add('chat-pet-button');
-		this._button.element.dataset.buddy = buddyName;
 		this._image = dom.append(this._button.element, dom.$('img.chat-pet-sprite')) as HTMLImageElement;
 		this._image.alt = '';
 		this._image.setAttribute('aria-hidden', 'true');

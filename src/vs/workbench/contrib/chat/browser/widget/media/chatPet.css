@@ -92,11 +92,7 @@
 	top: 30px;
 	width: 8px;
 	height: 8px;
-	background: #23a8f2;
-}
-
-.chat-pet-button[data-buddy='buddy-idle-insiders'] .chat-pet-eye {
-	background: #24bfa5;
+	overflow: hidden;
 }
 
 .chat-pet-eye.left {
