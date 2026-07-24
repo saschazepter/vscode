@@ -1215,7 +1215,13 @@ export class ProtocolServerHandler extends Disposable {
 						options = { fork: { source: URI.parse(source.chat), turnId: source.turnId } };
 						break;
 					case ChatSourceKind.SideChat:
-						options = { sideChat: { source: URI.parse(source.chat), turnId: source.turnId } };
+						options = {
+							sideChat: {
+								source: URI.parse(source.chat),
+								turnId: source.turnId,
+								...(source.selection ? { selection: source.selection } : {}),
+							},
+						};
 						break;
 					default:
 						throw new ProtocolError(JsonRpcErrorCodes.InvalidParams, `Unsupported createChat source kind: ${String((source as { kind?: unknown }).kind)}`);

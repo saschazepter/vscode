@@ -3231,6 +3231,19 @@ suite('AgentService (node dispatcher)', () => {
 			);
 		});
 
+		test('rejects an empty side-chat selection snapshot', async () => {
+			const agent = disposables.add(new SideChatAgent('copilot'));
+			service.registerProvider(agent);
+			const session = await service.createSession({ provider: 'copilot' });
+			service.stateManager.seedDefaultChatTurns(session.toString(), [completedTurn('t1')]);
+			const chatUri = URI.parse(buildChatUri(session, 'side-1'));
+
+			await assert.rejects(
+				() => service.createChat(session, chatUri, { sideChat: { source: session, turnId: 't1', selection: { text: ' \n ' } } }),
+				/selection text must be non-empty/,
+			);
+		});
+
 		test('rejects a side chat whose source chat is in a different session', async () => {
 			const agent = disposables.add(new SideChatAgent('copilot'));
 			service.registerProvider(agent);
@@ -3252,8 +3265,9 @@ suite('AgentService (node dispatcher)', () => {
 			service.stateManager.seedDefaultChatTurns(session.toString(), [completedTurn('t1'), completedTurn('t2')]);
 			const chatUri = URI.parse(buildChatUri(session, 'side-1'));
 			const defaultChatUri = buildDefaultChatUri(session);
+			const selection = { text: '  selected text  ', responsePartId: 'response-part-1' };
 
-			await service.createChat(session, chatUri, { sideChat: { source: session, turnId: 't1' } });
+			await service.createChat(session, chatUri, { sideChat: { source: session, turnId: 't1', selection } });
 			const state = service.stateManager.getChatState(chatUri.toString());
 
 			assert.deepStrictEqual({
@@ -3262,10 +3276,10 @@ suite('AgentService (node dispatcher)', () => {
 				forkForwarded: agent.lastCreateOptions?.fork,
 				sideChatForwarded: agent.lastCreateOptions?.sideChat,
 			}, {
-				origin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turnId: 't1' },
+				origin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turnId: 't1', selection },
 				copiedTurns: 0,
 				forkForwarded: undefined,
-				sideChatForwarded: { source: URI.parse(defaultChatUri), turnId: 't1' },
+				sideChatForwarded: { source: URI.parse(defaultChatUri), turnId: 't1', selection },
 			});
 		});
 
@@ -3394,7 +3408,8 @@ suite('AgentService (node dispatcher)', () => {
 			localService.stateManager.seedDefaultChatTurns(session.toString(), [completedTurn('t1')]);
 			const chatUri = URI.parse(buildChatUri(session, 'side-1'));
 			const defaultChatUri = buildDefaultChatUri(session);
-			await localService.createChat(session, chatUri, { sideChat: { source: session, turnId: 't1' } });
+			const selection = { text: '  selected text  ', responsePartId: 'response-part-1' };
+			await localService.createChat(session, chatUri, { sideChat: { source: session, turnId: 't1', selection } });
 
 			let persistedOrigin: unknown;
 			for (let i = 0; i < 50; i++) {
@@ -3416,8 +3431,8 @@ suite('AgentService (node dispatcher)', () => {
 				persistedOrigin,
 				restoredOrigin: localService.stateManager.getChatState(chatUri.toString())?.origin,
 			}, {
-				persistedOrigin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turnId: 't1' },
-				restoredOrigin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turnId: 't1' },
+				persistedOrigin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turnId: 't1', selection },
+				restoredOrigin: { kind: ChatOriginKind.SideChat, chat: defaultChatUri, turnId: 't1', selection },
 			});
 		});
 

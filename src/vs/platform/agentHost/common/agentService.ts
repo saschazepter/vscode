@@ -939,12 +939,22 @@ export interface IAgentCreateChatForkSource {
 	readonly turnIdMapping?: ReadonlyMap<string, string>;
 }
 
+/** Immutable selected-text snapshot captured when a side chat is created. */
+export interface IAgentCreateChatSideChatSelection {
+	/** Exact selected-text snapshot captured at side-chat creation time. */
+	readonly text: string;
+	/** Optional provenance for the response part that contained {@link text}. */
+	readonly responsePartId?: string;
+}
+
 /** Identifies a source chat and turn a side chat (`/btw`) branches from. */
 export interface IAgentCreateChatSideChatSource {
 	/** URI of the existing chat the side chat branches from. */
 	readonly source: URI;
 	/** Turn ID in the source chat the side chat records as its provenance. */
 	readonly turnId: string;
+	/** Optional selected-text snapshot captured from the source chat transcript. */
+	readonly selection?: IAgentCreateChatSideChatSelection;
 	/** Concrete provider turn ID to fork/resume from when `turnId` names a host-only local turn. */
 	readonly providerAnchorTurnId?: string;
 	/** Bounded source-chat context captured from host state when the provider transcript lags. */

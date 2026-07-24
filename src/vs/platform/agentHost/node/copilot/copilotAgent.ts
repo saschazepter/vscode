@@ -2259,6 +2259,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 				sideChat = {
 					source: options.sideChat.source.toString(),
 					turnId: options.sideChat.turnId,
+					...(options.sideChat.selection ? { selection: options.sideChat.selection } : {}),
 					...(options.sideChat.providerAnchorTurnId ? { providerAnchorTurnId: options.sideChat.providerAnchorTurnId } : {}),
 					inheritedTurnCount: forked.inheritedTurnCount,
 					...(options.sideChat.sourceContext ? { context: options.sideChat.sourceContext } : {}),

@@ -810,6 +810,7 @@ suite('ProtocolServerHandler', () => {
 					kind: ChatSourceKind.SideChat,
 					chat: buildDefaultChatUri(sessionUri),
 					turnId: 'turn-active',
+					selection: { text: '  selected text  ', responsePartId: 'response-part-1' },
 				},
 			}));
 			const resp = await responsePromise;
@@ -823,7 +824,7 @@ suite('ProtocolServerHandler', () => {
 					session: sessionUri,
 					chat: peerChat,
 					options: {
-						sideChat: { source: URI.parse(buildDefaultChatUri(sessionUri)), turnId: 'turn-active' },
+						sideChat: { source: URI.parse(buildDefaultChatUri(sessionUri)), turnId: 'turn-active', selection: { text: '  selected text  ', responsePartId: 'response-part-1' } },
 					},
 				}],
 			});

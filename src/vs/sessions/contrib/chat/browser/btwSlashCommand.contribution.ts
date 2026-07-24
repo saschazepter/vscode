@@ -3,12 +3,14 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import * as dom from '../../../../base/browser/dom.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { localize } from '../../../../nls.js';
 import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../../workbench/common/contributions.js';
+import { IChatWidgetService } from '../../../../workbench/contrib/chat/browser/chat.js';
 import { IWorkbenchEnvironmentService } from '../../../../workbench/services/environment/common/environmentService.js';
 import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
 import { IChatService } from '../../../../workbench/contrib/chat/common/chatService/chatService.js';
@@ -17,7 +19,27 @@ import { IsSessionsWindowContext } from '../../../../workbench/common/contextkey
 import { ISessionsService } from '../../../services/sessions/browser/sessionsService.js';
 import { ISessionsManagementService } from '../../../services/sessions/common/sessionsManagement.js';
 import { SessionIsArchivedContext, SessionIsCreatedContext, SessionSupportsSideChatContext } from '../../../common/contextkeys.js';
-import { SessionStatus } from '../../../services/sessions/common/session.js';
+import { ISideChatSelection, SessionStatus } from '../../../services/sessions/common/session.js';
+
+function captureSideChatSelection(widget: IChatWidgetService['lastFocusedWidget']): ISideChatSelection | undefined {
+	if (!widget) {
+		return undefined;
+	}
+	const nativeSelection = dom.getActiveWindow().getSelection();
+	const selectedText = nativeSelection?.toString();
+	if (!nativeSelection || !selectedText || !selectedText.trim()) {
+		return undefined;
+	}
+	const { anchorNode, focusNode } = nativeSelection;
+	if (!anchorNode || !focusNode || !dom.isAncestor(anchorNode, widget.domNode) || !dom.isAncestor(focusNode, widget.domNode)) {
+		return undefined;
+	}
+	const inputEditorDomNode = widget.inputEditor.getDomNode();
+	if (inputEditorDomNode && (dom.isAncestor(anchorNode, inputEditorDomNode) || dom.isAncestor(focusNode, inputEditorDomNode))) {
+		return undefined;
+	}
+	return { text: selectedText };
+}
 
 export class BtwSlashCommandContribution extends Disposable implements IWorkbenchContribution {
 
@@ -28,6 +50,7 @@ export class BtwSlashCommandContribution extends Disposable implements IWorkbenc
 		@ISessionsService sessionsService: ISessionsService,
 		@ISessionsManagementService sessionsManagementService: ISessionsManagementService,
 		@IChatService chatService: IChatService,
+		@IChatWidgetService chatWidgetService: IChatWidgetService,
 		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 		@ILogService logService: ILogService,
 		@INotificationService notificationService: INotificationService,
@@ -75,10 +98,11 @@ export class BtwSlashCommandContribution extends Disposable implements IWorkbenc
 				notificationService.warn(localize('btw.noTurn', "Send a message in this conversation before starting a side chat."));
 				return;
 			}
+			const selection = captureSideChatSelection(chatWidgetService.getWidgetBySessionResource(chat.resource));
 
 			let sideChat;
 			try {
-				sideChat = await sessionsManagementService.createSideChatInSession(session, chat.resource, sourceTurn.id);
+				sideChat = await sessionsManagementService.createSideChatInSession(session, chat.resource, sourceTurn.id, selection);
 			} catch (err) {
 				logService.error('[btw] Failed to create side chat', err);
 				notificationService.error(localize('btw.createFailed', "The side chat could not be created."));

@@ -373,6 +373,11 @@ export const enum ChatOriginKind {
 	SideChat = 'sideChat',
 }
 
+export interface ISideChatSelection {
+	readonly text: string;
+	readonly responsePartId?: string;
+}
+
 export interface IChatOrigin {
 	readonly kind: ChatOriginKind;
 	/**
@@ -381,6 +386,7 @@ export interface IChatOrigin {
 	 * resource of the chat that spawned it. Undefined for user-originated chats.
 	 */
 	readonly parentChat?: URI;
+	readonly selection?: ISideChatSelection;
 }
 
 /**

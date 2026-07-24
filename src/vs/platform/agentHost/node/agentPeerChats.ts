@@ -16,6 +16,7 @@ export const MAX_SIDE_CHAT_CONTEXT_CHARS = 20_000;
 export interface IPersistedSideChat {
 	readonly source: string;
 	readonly turnId: string;
+	readonly selection?: { readonly text: string; readonly responsePartId?: string };
 	readonly providerAnchorTurnId?: string;
 	readonly inheritedTurnCount: number;
 	readonly partialResponse?: string;
@@ -59,8 +60,16 @@ export function buildBoundedSideChatSourceContext(turns: readonly Turn[], turnId
 	return turnIndex === -1 ? undefined : buildSideChatSourceContext(turns.slice(0, turnIndex + 1));
 }
 
-export function injectSideChatContext(prompt: string, partialResponse?: string, sourceContext?: string): string {
+export function injectSideChatContext(prompt: string, partialResponse?: string, sourceContext?: string, selectionText?: string): string {
 	const context = [SIDE_CHAT_GUIDANCE];
+	if (selectionText) {
+		context.push(
+			'',
+			'Selected text:',
+			'',
+			selectionText,
+		);
+	}
 	if (sourceContext) {
 		context.push(
 			'',
@@ -95,7 +104,7 @@ export function prepareSideChatPrompt(prompt: string, turns: readonly Turn[], si
 			partialResponse = undefined;
 		}
 	}
-	return injectSideChatContext(prompt, partialResponse, sourceContext);
+	return injectSideChatContext(prompt, partialResponse, sourceContext, sideChat.selection?.text);
 }
 
 function buildSideChatContextBlock(message: string, response: string | undefined): string | undefined {
@@ -189,7 +198,16 @@ export function decodeProviderData(providerData: string): IPersistedChat | undef
 		const validModel = model && typeof model === 'object' && typeof (model as { id?: unknown }).id === 'string'
 			? model as ModelSelection
 			: undefined;
-		const sideChat = value.sideChat as { source?: unknown; turnId?: unknown; providerAnchorTurnId?: unknown; inheritedTurnCount?: unknown; partialResponse?: unknown; context?: unknown } | undefined;
+		const sideChat = value.sideChat as { source?: unknown; turnId?: unknown; selection?: unknown; providerAnchorTurnId?: unknown; inheritedTurnCount?: unknown; partialResponse?: unknown; context?: unknown } | undefined;
+		const validSelection = sideChat?.selection
+			&& typeof sideChat.selection === 'object'
+			&& typeof (sideChat.selection as { text?: unknown }).text === 'string'
+			&& (((sideChat.selection as { responsePartId?: unknown }).responsePartId) === undefined || typeof (sideChat.selection as { responsePartId?: unknown }).responsePartId === 'string')
+			? {
+				text: (sideChat.selection as { text: string }).text,
+				...((sideChat.selection as { responsePartId?: string }).responsePartId ? { responsePartId: (sideChat.selection as { responsePartId?: string }).responsePartId } : {}),
+			}
+			: undefined;
 		const validSideChat = sideChat
 			&& typeof sideChat.source === 'string'
 			&& typeof sideChat.turnId === 'string'
@@ -200,6 +218,7 @@ export function decodeProviderData(providerData: string): IPersistedChat | undef
 			? {
 				source: sideChat.source,
 				turnId: sideChat.turnId,
+				...(validSelection ? { selection: validSelection } : {}),
 				...(sideChat.providerAnchorTurnId ? { providerAnchorTurnId: sideChat.providerAnchorTurnId } : {}),
 				inheritedTurnCount: sideChat.inheritedTurnCount,
 				...(sideChat.partialResponse ? { partialResponse: sideChat.partialResponse } : {}),

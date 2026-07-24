@@ -3012,17 +3012,20 @@ suite('LocalAgentHostSessionsProvider', () => {
 
 			assert.strictEqual(session.capabilities.get().supportsSideChat, true);
 
-			const sideChat = await provider.createSideChat(session.sessionId, session.resource, 'turn-1');
+			const selection = { text: '  selected text  ' };
+			const sideChat = await provider.createSideChat(session.sessionId, session.resource, 'turn-1', selection);
 
 			const call = agentHost.createdChats.at(-1);
 			assert.deepStrictEqual({
 				sideChatSource: call?.options?.sideChat?.source.toString(),
 				sideChatTurnId: call?.options?.sideChat?.turnId,
+				sideChatSelection: call?.options?.sideChat?.selection,
 				sideChatIsPeer: !!sideChat.resource.fragment,
 				sideChatInCatalog: session.chats.get().some(c => c.resource.toString() === sideChat.resource.toString()),
 			}, {
 				sideChatSource: defaultChat,
 				sideChatTurnId: 'turn-1',
+				sideChatSelection: selection,
 				sideChatIsPeer: true,
 				sideChatInCatalog: true,
 			});

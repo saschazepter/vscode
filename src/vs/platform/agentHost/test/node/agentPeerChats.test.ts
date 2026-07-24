@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { MessageKind, ResponsePartKind, TurnState, type Turn } from '../../common/state/sessionState.js';
-import { buildSideChatSourceContext, injectSideChatContext, prepareSideChatPrompt, stripSideChatContext, type IPersistedSideChat } from '../../node/agentPeerChats.js';
+import { buildSideChatSourceContext, decodeProviderData, encodeProviderData, injectSideChatContext, prepareSideChatPrompt, stripSideChatContext, type IPersistedSideChat } from '../../node/agentPeerChats.js';
 
 suite('agentPeerChats', () => {
 
@@ -52,6 +52,29 @@ suite('agentPeerChats', () => {
 		};
 
 		assert.strictEqual(prepareSideChatPrompt('Follow up', [sourceTurn, existingSideTurn], sideChat), 'Follow up');
+	});
+
+	test('injects selected text exactly once and keeps it out of visible history', () => {
+		const selectedText = '  selected text  ';
+		const prepared = prepareSideChatPrompt('Explain the branch', [sourceTurn], {
+			...sideChat,
+			selection: { text: selectedText },
+		});
+		const visible = stripSideChatContext([{
+			...sourceTurn,
+			id: 'side-turn',
+			message: { ...sourceTurn.message, text: prepared },
+		}], sideChat);
+
+		assert.deepStrictEqual({
+			selectedTextCount: countOccurrences(prepared, 'Selected text:'),
+			includesExactSelection: prepared.includes(selectedText),
+			visiblePrompt: visible[0]?.message.text,
+		}, {
+			selectedTextCount: 1,
+			includesExactSelection: true,
+			visiblePrompt: 'Explain the branch',
+		});
 	});
 
 	test('captures the first active user message even without completed turns', () => {
@@ -155,5 +178,20 @@ suite('agentPeerChats', () => {
 		}], sideChat);
 
 		assert.strictEqual(visible[0]?.message.text, 'Visible prompt');
+	});
+
+	test('round-trips side-chat selection through provider data', () => {
+		const providerData = encodeProviderData({
+			sdkSessionId: 'sdk-session',
+			sideChat: {
+				...sideChat,
+				selection: { text: '  selected text  ', responsePartId: 'response-part-1' },
+			},
+		});
+
+		assert.deepStrictEqual(decodeProviderData(providerData)?.sideChat?.selection, {
+			text: '  selected text  ',
+			responsePartId: 'response-part-1',
+		});
 	});
 });

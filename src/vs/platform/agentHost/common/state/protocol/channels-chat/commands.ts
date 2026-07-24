@@ -8,7 +8,7 @@
 
 import type { URI } from '../common/state.js';
 import type { BaseParams } from '../common/commands.js';
-import type { Message } from './state.js';
+import type { Message, SideChatSelection } from './state.js';
 
 // ─── createChat ──────────────────────────────────────────────────────────────
 
@@ -58,6 +58,14 @@ export interface SideChatSource {
 	 * by this same identifier.
 	 */
 	turnId: string;
+	/**
+	 * Optional immutable selected-text snapshot to carry into the created side
+	 * chat's origin.
+	 *
+	 * When present, the host MUST snapshot and preserve this exact selection when
+	 * it accepts `createChat`; later source-turn deltas do not alter it.
+	 */
+	selection?: SideChatSelection;
 }
 
 /**
@@ -94,7 +102,10 @@ export interface CreateChatParams extends BaseParams {
 	 * turns. Side chats also carry a stable `turnId`, which the host resolves
 	 * against the source chat's current active turn or retained history. If it
 	 * resolves to the active turn, the host snapshots the currently available
-	 * partial response when accepting `createChat`.
+	 * partial response when accepting `createChat`. When
+	 * `source.kind === "sideChat"` and `source.selection` is present, the host
+	 * also snapshots and preserves that exact selected text in the created chat's
+	 * origin; any `responsePartId` there is provenance only, not a live range.
 	 */
 	source?: ChatSource;
 	/**

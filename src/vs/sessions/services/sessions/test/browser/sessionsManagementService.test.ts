@@ -26,7 +26,7 @@ import { IChatEditorOptions } from '../../../../../workbench/contrib/chat/browse
 import { IChatWidgetHistoryService } from '../../../../../workbench/contrib/chat/common/widget/chatWidgetHistoryService.js';
 import { PreferredGroup } from '../../../../../workbench/services/editor/common/editorService.js';
 import { nullExtensionDescription } from '../../../../../workbench/services/extensions/common/extensions.js';
-import { ChatInteractivity, ChatOriginKind, IChat, ISession, ISessionType, ISessionWorkspace, SessionStatus } from '../../common/session.js';
+import { ChatInteractivity, ChatOriginKind, IChat, ISession, ISessionType, ISessionWorkspace, ISideChatSelection, SessionStatus } from '../../common/session.js';
 import { ILanguageModelChatMetadataAndIdentifier } from '../../../../../workbench/contrib/chat/common/languageModels.js';
 import { ISessionChangeEvent, ISendRequestOptions, ISessionModelsSnapshot, ISessionModelPickerOptions, ISessionsProvider } from '../../common/sessionsProvider.js';
 import { SessionsManagementService } from '../../browser/sessionsManagementService.js';
@@ -172,7 +172,7 @@ class TestSessionsProvider extends mock<ISessionsProvider>() {
 	override async sendRequest(_sessionId: string, _chatResource: URI, _options: ISendRequestOptions): Promise<ISession> { return this._session; }
 	override async createNewChat(): Promise<IChat> { return this._session.mainChat.get(); }
 	override async forkChat(_sessionId: string, _sourceChat: URI, _turnId: string): Promise<IChat> { throw new Error('not implemented'); }
-	override async createSideChat(_sessionId: string, _sourceChat: URI, _turnId: string): Promise<IChat> { throw new Error('not implemented'); }
+	override async createSideChat(_sessionId: string, _sourceChat: URI, _turnId: string, _selection?: ISideChatSelection): Promise<IChat> { throw new Error('not implemented'); }
 }
 
 function createSessionsManagementService(session: ISession, disposables: ReturnType<typeof ensureNoDisposablesAreLeakedInTestSuite>, provider: ISessionsProvider = new TestSessionsProvider(session)): { service: ISessionsManagementService; view: SessionsService; chatWidgetService: TestChatWidgetService; chatService: TestChatService } {
@@ -1874,24 +1874,25 @@ suite('SessionsManagementService', () => {
 			const sourceChat = URI.parse('test:///source');
 			const sideChat: IChat = { ...stubChat, resource: URI.parse('test:///side') };
 			const session = stubSession({ sessionId: 'side', providerId: 'test', capabilities: constObservable({ supportsMultipleChats: true, supportsSideChat: true }) });
-			let createSideChatArgs: readonly [string, URI, string] | undefined;
+			const selection = { text: '  selected text  ' };
+			let createSideChatArgs: readonly [string, URI, string, ISideChatSelection | undefined] | undefined;
 			const provider = new class extends TestSessionsProvider {
 				constructor() { super(session); }
-				override async createSideChat(sessionId: string, sourceChat: URI, turnId: string): Promise<IChat> {
-					createSideChatArgs = [sessionId, sourceChat, turnId];
+				override async createSideChat(sessionId: string, sourceChat: URI, turnId: string, selection?: ISideChatSelection): Promise<IChat> {
+					createSideChatArgs = [sessionId, sourceChat, turnId, selection];
 					return sideChat;
 				}
 			};
 			const { service } = createSessionsManagementService(session, disposables, provider);
 
-			const result = await service.createSideChatInSession(session, sourceChat, 'turn-1');
+			const result = await service.createSideChatInSession(session, sourceChat, 'turn-1', selection);
 
 			assert.deepStrictEqual({
 				result: result.resource.toString(),
 				args: createSideChatArgs?.map(arg => URI.isUri(arg) ? arg.toString() : arg),
 			}, {
 				result: sideChat.resource.toString(),
-				args: ['side', sourceChat.toString(), 'turn-1'],
+				args: ['side', sourceChat.toString(), 'turn-1', selection],
 			});
 		});
 

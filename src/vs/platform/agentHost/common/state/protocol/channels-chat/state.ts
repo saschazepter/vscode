@@ -174,6 +174,31 @@ export const enum ChatOriginKind {
 }
 
 /**
+ * Immutable selected-text snapshot captured when a side chat is created.
+ *
+ * The host records this exact text when it accepts `createChat`; later changes
+ * to the source chat do not alter it.
+ *
+ * @category Chat State
+ */
+export interface SideChatSelection {
+	/**
+	 * Exact selected-text snapshot captured at `createChat` acceptance.
+	 *
+	 * MUST be non-empty.
+	 */
+	text: string;
+	/**
+	 * Optional provenance for the response part that contained {@link text} when
+	 * the host took the snapshot.
+	 *
+	 * Advisory only: this is not a live range or offset and MUST NOT be used to
+	 * recompute `text`.
+	 */
+	responsePartId?: string;
+}
+
+/**
  * How a chat came into existence. Clients MAY use it to render
  * contextual UI (parent indicators, fork markers, "spawned by tool" badges).
  *
@@ -188,7 +213,9 @@ export const enum ChatOriginKind {
  * message and any partial assistant response already available. Later
  * source-turn deltas do not retroactively change the created side chat's
  * starting context, and once the source turn completes it is still referenced
- * by the same `turnId`.
+ * by the same `turnId`. Side-chat origins MAY also retain an immutable
+ * {@link SideChatSelection | selected-text snapshot} captured at acceptance
+ * time; any `responsePartId` there is provenance only, not a range.
  *
  * The `tool` variant records a tool-spawned worker from the worker's side: its
  * `chat`/`toolCallId` identify the spawning tool call in the parent chat. This
@@ -201,7 +228,7 @@ export const enum ChatOriginKind {
 export type ChatOrigin =
 	| { kind: ChatOriginKind.User }
 	| { kind: ChatOriginKind.Fork; chat: URI; turnId: string }
-	| { kind: ChatOriginKind.SideChat; chat: URI; turnId: string }
+	| { kind: ChatOriginKind.SideChat; chat: URI; turnId: string; selection?: SideChatSelection }
 	| { kind: ChatOriginKind.Tool; chat: URI; toolCallId: string };
 
 /**

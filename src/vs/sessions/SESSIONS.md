@@ -517,7 +517,7 @@ provider from `agentCapabilities.multipleChats.sideChat` (mirroring
 `supportsMultipleChats`/`fork`). Only providers with a complete side-chat
 context/restore implementation advertise it (currently Claude and Copilot).
 
-Origin: side chats carry `IChat.origin.kind === ChatOriginKind.SideChat`.
+Origin: side chats carry `IChat.origin.kind === ChatOriginKind.SideChat`. They may also carry `IChat.origin.selection`, an immutable `{ text, responsePartId? }` snapshot captured when the side chat was created. It is provenance only, not a live range back into the source chat.
 Unlike subagent (`Tool`) chats, side chats participate in the normal
 user-facing peer-chat surfaces: the chat tab strip
 (`shouldShowChatTabs`/`visibleChatTabs`), the **Conversations** menu
@@ -527,21 +527,21 @@ the special case: they stay hidden/read-only by default and surface only when
 explicitly opened.
 
 Creation: `ISessionsManagementService.createSideChatInSession(session,
-sourceChat, turnId)` → `ISessionsProvider.createSideChat`. The service throws
+sourceChat, turnId, selection?)` → `ISessionsProvider.createSideChat`. The service throws
 if the provider or session doesn't support side chats (mirroring
 `forkChatInSession`); it never returns `undefined`. On the agent host,
 `createSideChat` mints a client-chosen chat URI and calls
 `connection.createChat(sessionUri, chatUri, { model, sideChat: { source,
-turnId } })` — analogous to `forkChat`'s `{ fork: { source, turnId } }`, but
+turnId, selection? } })` — analogous to `forkChat`'s `{ fork: { source, turnId } }`, but
 the new chat inherits the **source chat's own** model/agent selection (not the
 session-level default), read via `getChatModelId(sourceChat)`/
 `getChatMode(sourceChat)` and re-applied to the new chat once it appears in the
 catalog (`setChatModelId`/`setChatAgent`/`_updateChatSessionState`), matching
 the plan's "inherits model/agent" requirement for a side chat asking a
 tangential question with the same context as the turn it branched from.
-The host records the `SideChat` origin but does not mutate the first user
+The host records the `SideChat` origin, rejects empty `selection.text`, and does not mutate the first user
 message. Claude and Copilot use their SDK fork primitives to inherit source
-context privately, persist the inherited-prefix length in providerData, and
+context privately, persist the inherited-prefix length plus any selected-text snapshot in providerData, and
 filter those inherited turns from `getMessages()` so the side chat only
 shows turns authored in that side chat.
 
@@ -556,7 +556,7 @@ request/response row is added to the **source** chat) and
 `executeDuringRequest: true`, so the chat widget invokes it directly instead of
 queueing or steering it behind an active source turn. It anchors to the source
 chat's latest request, including an in-progress turn; only a chat with no turns
-shows a localized warning.
+shows a localized warning. When the widget has a non-empty native DOM selection whose anchor/focus nodes belong to that chat's transcript, `/btw` snapshots the exact selected string (trimming only to decide emptiness) and forwards it as `selection.text`.
 Each invocation creates a **fresh** side chat (there is no "reuse the last side
 chat" behavior). After creating the chat, it activates that peer chat through
 the normal `ISessionsService.openChat(session, sideChat.resource)` flow so the
@@ -574,7 +574,7 @@ plus any user-visible assistant markdown already streamed (both bounded to
 The provider wraps the first SDK prompt in a private `<side-chat-context>`
 block. Every side chat receives the succinct instruction: "Prefer explanation
 over action; do not make changes or carry out work unless the user explicitly
-asks." When present, the partial-response snapshot follows that instruction.
+asks." When present, the injected context also includes `Selected text:` followed by the immutable snapshot exactly once in that first hidden prompt, plus any partial-response snapshot.
 Provider reconstruction strips the whole block from the first visible side-chat
 turn, so the UI and restored transcript continue to show only the user's `/btw`
 question. Reasoning, tool payloads, and other non-markdown response parts are
