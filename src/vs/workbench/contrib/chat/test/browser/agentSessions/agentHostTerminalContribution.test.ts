@@ -212,6 +212,7 @@ function setup(disposables: DisposableStore, agentHostEnabled: boolean = true): 
 	const configurationService = new TestConfigurationService({
 		[AgentHostCustomTerminalToolEnabledSettingId]: true,
 	});
+
 	instantiationService.stub(IAgentHostService, agentHostService);
 	instantiationService.stub(IConfigurationService, configurationService);
 	instantiationService.stub(IAgentHostEnablementService, { _serviceBrand: undefined, enabled: agentHostEnabled });

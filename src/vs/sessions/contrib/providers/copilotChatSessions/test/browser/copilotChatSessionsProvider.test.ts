@@ -327,6 +327,7 @@ suite('CopilotChatSessionsProvider', () => {
 		model = new MockAgentSessionsModel();
 		disposables.add(toDisposable(() => model.dispose()));
 	});
+
 	teardown(() => {
 		disposables.clear();
 	});
