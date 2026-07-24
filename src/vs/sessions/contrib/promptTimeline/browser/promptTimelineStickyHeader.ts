@@ -19,7 +19,7 @@ const NEXT_ACTION_ID = 'promptTimeline.sticky.next';
 /**
  * A flat, opaque header pinned to the top of the chat transcript, modelled on the editor's sticky
  * scroll: it names the prompt currently scrolled off the top and offers previous/next actions to
- * step through prompts. Activating the label opens the prompt picker to jump elsewhere. Purely
+ * step through prompts. Activating the label reveals the prompt it names. Purely
  * presentational — the owner drives its content and visibility.
  */
 export class PromptTimelineStickyHeader extends Disposable {
@@ -32,7 +32,7 @@ export class PromptTimelineStickyHeader extends Disposable {
 	private readonly _nextAction: Action;
 
 	private readonly _onDidActivate = this._register(new Emitter<void>());
-	/** Fired when the label is clicked or activated by keyboard (opens the prompt picker). */
+	/** Fired when the label is clicked or activated by keyboard. */
 	readonly onDidActivate: Event<void> = this._onDidActivate.event;
 
 	private readonly _onDidNavigate = this._register(new Emitter<number>());
