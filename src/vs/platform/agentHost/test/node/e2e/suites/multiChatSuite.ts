@@ -28,7 +28,7 @@ import {
 } from '../../../../common/state/sessionState.js';
 import { createRealSession } from '../harness/agentHostE2ETestHarness.js';
 import { getActionEnvelope, isActionNotification } from '../../serverIntegrationTestHelpers.js';
-import { hostOnlyTest, type IAgentHostE2ETestContext } from './e2eTestContext.js';
+import { conformanceTest, providerHostOnlyTest, type IAgentHostE2ETestContext } from './e2eTestContext.js';
 
 export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 	const { config, createdSessions, tempDirs, shellToolReplayEnabled } = context;
@@ -91,6 +91,9 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 	}
 
 	function providerTest(title: string, run: Mocha.AsyncFunc, enabled = config.supportsMultipleChats): void {
+		if (context.tier !== 'parity') {
+			return;
+		}
 		(enabled ? test : test.skip)(title, function () {
 			this.timeout(180_000);
 			return run.call(this);
@@ -136,6 +139,9 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 	}
 
 	function forkProviderTest(title: string, run: Mocha.AsyncFunc): void {
+		if (context.tier !== 'parity') {
+			return;
+		}
 		(config.supportsChatForkE2E ? test : test.skip)(title, function () {
 			this.timeout(180_000);
 			return run.call(this);
@@ -214,7 +220,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		return pieces.join('');
 	}
 
-	hostOnlyTest(context, 'agent advertises its multiple chat capability', async function () {
+	providerHostOnlyTest(context, 'agent advertises its multiple chat capability', async function () {
 		await createSession('capability');
 		const root = await context.client.call<SubscribeResult>('subscribe', { channel: ROOT_STATE_URI });
 		const agent = (root.snapshot!.state as RootState).agents.find(agent => agent.provider === config.provider);
@@ -228,7 +234,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		});
 	});
 
-	hostOnlyTest(context, 'provider without multiple chat capability rejects peer creation', async function () {
+	providerHostOnlyTest(context, 'provider without multiple chat capability rejects peer creation', async function () {
 		const { sessionUri } = await createSession('unsupported');
 
 		await assert.rejects(
@@ -237,14 +243,14 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		);
 	}, !config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'creating a peer chat adds it to the session catalog', async function () {
+	conformanceTest(context, 'creating a peer chat adds it to the session catalog', async function () {
 		const { sessionUri } = await createSession('catalog-add');
 		const peer = await createPeer(sessionUri, 'peer');
 
 		assert.ok((await sessionState(sessionUri)).chats.some(chat => chat.resource === peer));
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'peer chat subscription starts empty and idle', async function () {
+	conformanceTest(context, 'peer chat subscription starts empty and idle', async function () {
 		const { sessionUri } = await createSession('empty-peer');
 		const peer = await createPeer(sessionUri, 'peer');
 
@@ -257,7 +263,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		});
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'creating the same peer chat twice is idempotent', async function () {
+	conformanceTest(context, 'creating the same peer chat twice is idempotent', async function () {
 		const { sessionUri } = await createSession('idempotent');
 		const peer = await createPeer(sessionUri, 'peer');
 
@@ -266,7 +272,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.strictEqual((await sessionState(sessionUri)).chats.filter(chat => chat.resource === peer).length, 1);
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'creating two peer chats preserves both catalog entries', async function () {
+	conformanceTest(context, 'creating two peer chats preserves both catalog entries', async function () {
 		const { sessionUri } = await createSession('two-peers');
 		const first = await createPeer(sessionUri, 'first');
 		const second = await createPeer(sessionUri, 'second');
@@ -276,7 +282,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.ok(peers.includes(first) && peers.includes(second));
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'disposing a peer chat removes its catalog entry', async function () {
+	conformanceTest(context, 'disposing a peer chat removes its catalog entry', async function () {
 		const { sessionUri } = await createSession('dispose');
 		const peer = await createPeer(sessionUri, 'peer');
 
@@ -285,7 +291,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.strictEqual((await sessionState(sessionUri)).chats.some(chat => chat.resource === peer), false);
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'disposing one peer chat preserves its sibling', async function () {
+	conformanceTest(context, 'disposing one peer chat preserves its sibling', async function () {
 		const { sessionUri } = await createSession('dispose-one');
 		const first = await createPeer(sessionUri, 'first');
 		const second = await createPeer(sessionUri, 'second');
@@ -296,7 +302,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.ok(!peers.includes(first) && peers.includes(second));
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'recreating a disposed peer chat starts empty', async function () {
+	conformanceTest(context, 'recreating a disposed peer chat starts empty', async function () {
 		const { sessionUri } = await createSession('recreate');
 		const peer = await createPeer(sessionUri, 'peer');
 		await context.client.call('disposeChat', { channel: peer }, 30_000);
@@ -306,7 +312,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.deepStrictEqual((await chatState(peer)).turns, []);
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'renaming a peer chat updates its catalog title', async function () {
+	conformanceTest(context, 'renaming a peer chat updates its catalog title', async function () {
 		const { sessionUri } = await createSession('rename-peer');
 		const peer = await createPeer(sessionUri, 'peer');
 
@@ -315,7 +321,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.strictEqual((await sessionState(sessionUri)).chats.find(chat => chat.resource === peer)?.title, 'Peer Title');
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'renaming a peer chat leaves the session title unchanged', async function () {
+	conformanceTest(context, 'renaming a peer chat leaves the session title unchanged', async function () {
 		const { sessionUri } = await createSession('rename-isolated');
 		await rename(sessionUri, 'Session Title');
 		const peer = await createPeer(sessionUri, 'peer');
@@ -325,7 +331,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.strictEqual((await sessionState(sessionUri)).title, 'Session Title');
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'peer chat survives unsubscribe and resubscribe', async function () {
+	conformanceTest(context, 'peer chat survives unsubscribe and resubscribe', async function () {
 		const { sessionUri } = await createSession('resubscribe');
 		const peer = await createPeer(sessionUri, 'peer');
 		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
@@ -335,7 +341,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.strictEqual((await chatState(peer)).resource, peer);
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'peer creation does not leak a provider backing as a top-level session', async function () {
+	conformanceTest(context, 'peer creation does not leak a provider backing as a top-level session', async function () {
 		const { sessionUri } = await createSession('session-list');
 		const before = await context.client.call<ListSessionsResult>('listSessions', { channel: ROOT_STATE_URI });
 
@@ -350,7 +356,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.deepStrictEqual(unexpected, []);
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'peer file completion uses the parent workspace', async function () {
+	conformanceTest(context, 'peer file completion uses the parent workspace', async function () {
 		const { sessionUri, workspace } = await createSession('completion');
 		writeFileSync(join(workspace, 'peer-target.txt'), 'target');
 		const peer = await createPeer(sessionUri, 'peer');
@@ -365,7 +371,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.deepStrictEqual(completions.items.map(item => item.insertText), ['@peer-target.txt']);
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'first peer chat snapshots the session title onto the default chat', async function () {
+	conformanceTest(context, 'first peer chat snapshots the session title onto the default chat', async function () {
 		const { sessionUri, defaultChatUri } = await createSession('default-title');
 		await rename(sessionUri, 'Original Session');
 
@@ -374,7 +380,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.strictEqual((await sessionState(sessionUri)).chats.find(chat => chat.resource === defaultChatUri)?.title, 'Original Session');
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'session rename after peer creation preserves the default chat title', async function () {
+	conformanceTest(context, 'session rename after peer creation preserves the default chat title', async function () {
 		const { sessionUri, defaultChatUri } = await createSession('independent-title');
 		await rename(sessionUri, 'Original Session');
 		await createPeer(sessionUri, 'peer');
@@ -384,7 +390,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.strictEqual((await sessionState(sessionUri)).chats.find(chat => chat.resource === defaultChatUri)?.title, 'Original Session');
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'forking an unknown turn creates a fresh empty peer chat', async function () {
+	conformanceTest(context, 'forking an unknown turn creates a fresh empty peer chat', async function () {
 		const { sessionUri, defaultChatUri } = await createSession('unknown-fork');
 
 		const peer = await createPeer(sessionUri, 'fork', { chat: defaultChatUri, turnId: 'missing-turn' });
@@ -464,7 +470,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.strictEqual((await sessionState(sessionUri)).chats.some(chat => chat.resource === peer), false);
 	});
 
-	hostOnlyTest(context, 'peer rename command updates the peer title and records a local turn', async function () {
+	conformanceTest(context, 'peer rename command updates the peer title and records a local turn', async function () {
 		const { sessionUri } = await createSession('local-rename');
 		const peer = await createPeer(sessionUri, 'peer');
 		await context.client.call<SubscribeResult>('subscribe', { channel: peer });
@@ -481,7 +487,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		});
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'empty peer rename command leaves the peer title unchanged', async function () {
+	conformanceTest(context, 'empty peer rename command leaves the peer title unchanged', async function () {
 		const { sessionUri } = await createSession('local-empty-rename');
 		const peer = await createPeer(sessionUri, 'peer');
 		await rename(peer, 'Original Peer');
@@ -492,7 +498,7 @@ export function defineMultiChatTests(context: IAgentHostE2ETestContext): void {
 		assert.strictEqual((await chatState(peer)).title, 'Original Peer');
 	}, config.supportsMultipleChats);
 
-	hostOnlyTest(context, 'failing peer bang command records a failed terminal tool call', async function () {
+	conformanceTest(context, 'failing peer bang command records a failed terminal tool call', async function () {
 		const { sessionUri } = await createSession('local-bang-failure');
 		const peer = await createPeer(sessionUri, 'peer');
 		await context.client.call<SubscribeResult>('subscribe', { channel: peer });

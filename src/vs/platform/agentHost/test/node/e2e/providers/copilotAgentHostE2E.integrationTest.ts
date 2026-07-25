@@ -56,6 +56,7 @@ const COPILOT_CONFIG: IAgentHostE2EProviderConfig = {
 	supportsMultipleChats: true,
 	supportsChatFork: true,
 	supportsChatForkE2E: true,
+	stableNewScenarioResponse: true,
 };
 
 defineAgentHostE2ETests(COPILOT_CONFIG);
