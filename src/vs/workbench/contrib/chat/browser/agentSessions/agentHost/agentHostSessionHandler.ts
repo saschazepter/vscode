@@ -3461,7 +3461,10 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			&& !isPty
 			&& terminalContent.result?.exitCode !== undefined
 			&& terminalContent.result.preview !== undefined;
-		if (!isPty && !hasStaticNonPtyResult && outputTerminalAttachment.sessionId !== sessionId) {
+		if (hasStaticNonPtyResult) {
+			outputTerminalAttachment.disposable.clear();
+			outputTerminalAttachment.sessionId = undefined;
+		} else if (!isPty && outputTerminalAttachment.sessionId !== sessionId) {
 			outputTerminalAttachment.disposable.value = this._agentHostTerminalService.attachOutputTerminal(this._config.connection, terminalCommandUri, sessionId);
 			outputTerminalAttachment.sessionId = sessionId;
 		}

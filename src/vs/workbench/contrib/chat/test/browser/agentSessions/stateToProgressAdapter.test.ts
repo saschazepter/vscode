@@ -2068,6 +2068,29 @@ suite('stateToProgressAdapter', () => {
 			assert.ok(!termData.terminalCommandOutput?.text.includes('shellId'));
 		});
 
+		test('preserves an explicitly empty terminal completion preview', () => {
+			const tc = createCompletedToolCall({
+				_meta: { toolKind: 'terminal' },
+				toolInput: 'true',
+				content: [
+					{ type: ToolResultContentType.Terminal, resource: 'agenthost-terminal://shell/copilotNonPtyShells/tc-1', title: 'Run Shell Command', isPty: false, result: { exitCode: 0, preview: '' } },
+				],
+				success: true,
+			});
+
+			const turn = createTurn({
+				responseParts: [{ kind: ResponsePartKind.ToolCall, toolCall: tc } as ToolCallResponsePart],
+			});
+
+			const history = turnsToHistory(URI.file('/'), [turn], 'p');
+			const response = history[1];
+			assert.strictEqual(response.type, 'response');
+			if (response.type !== 'response') { return; }
+			const serialized = response.parts[0] as IChatToolInvocationSerialized;
+			const termData = getSerializedTerminalData(serialized);
+			assert.deepStrictEqual(termData.terminalCommandOutput, { text: '' });
+		});
+
 		test('does not use text content when a terminal block owns the output', () => {
 			const tc = createCompletedToolCall({
 				_meta: { toolKind: 'terminal' },
