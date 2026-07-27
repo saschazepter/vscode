@@ -83,8 +83,7 @@ export class AutomationRunner implements IAutomationRunner {
 				: undefined;
 			const branch = target.kind === 'workspace' && target.isolation.kind === 'worktree' ? target.isolation.branch : undefined;
 
-			const createOptions: ICreateNewSessionOptions | undefined = target.providerId !== undefined || target.sessionTypeId !== undefined || automation.modelId !== undefined || automation.mode !== undefined || automation.permissionLevel !== undefined || isolationMode !== undefined || branch !== undefined
-				? {
+			const createOptions: ICreateNewSessionOptions = {
 					providerId: target.providerId,
 					sessionTypeId: target.sessionTypeId,
 					modelId: automation.modelId,
@@ -92,8 +91,8 @@ export class AutomationRunner implements IAutomationRunner {
 					permissionLevel: automation.permissionLevel,
 					isolationMode,
 					branch,
-				}
-				: undefined;
+					source: 'automation',
+				};
 
 			const targetAvailable = target.kind === 'quickChat'
 				? this.sessionsManagementService.isQuickChatTargetAvailable(createOptions)

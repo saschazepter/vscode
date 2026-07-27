@@ -93,6 +93,12 @@ export interface ICreateNewSessionOptions {
 	 * Skipped if the provider does not implement the setter.
 	 */
 	readonly branch?: string;
+	/**
+	 * Optional creation source tag stored by the management service so
+	 * consumers can filter sessions by origin (e.g. `'automation'`).
+	 * Not forwarded to the provider.
+	 */
+	readonly source?: string;
 }
 
 /**

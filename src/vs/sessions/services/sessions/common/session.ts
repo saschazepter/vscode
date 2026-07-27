@@ -535,6 +535,8 @@ export interface ISession {
 	readonly worktreePending?: IObservable<boolean>;
 	/** Whether this is a workspace-less "quick chat". Only quick-chat-capable providers set this; absent means `false`. */
 	readonly isQuickChat?: IObservable<boolean>;
+	/** Optional creation source tag (e.g. `'automation'`). Set by the management service when a session is created with a source. */
+	readonly source?: string;
 
 	// Reactive properties
 

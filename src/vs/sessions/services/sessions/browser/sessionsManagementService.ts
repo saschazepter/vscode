@@ -652,6 +652,10 @@ export class SessionsManagementService extends Disposable implements ISessionsMa
 		token: CancellationToken,
 		folderUri?: URI,
 	): Promise<ISession | undefined> {
+		if (createOptions?.source) {
+			(session as { source?: string }).source = createOptions.source;
+		}
+
 		try {
 			if (token.isCancellationRequested) {
 				throw new CancellationError();

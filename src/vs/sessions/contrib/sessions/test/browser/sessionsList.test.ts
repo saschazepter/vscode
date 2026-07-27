@@ -17,6 +17,7 @@ function createSession(id: string, opts: {
 	createdAt?: Date;
 	updatedAt?: Date;
 	isArchived?: boolean;
+	source?: string;
 }): ISession {
 	const createdAt = opts.createdAt ?? new Date();
 	const updatedAt = opts.updatedAt ?? createdAt;
@@ -27,6 +28,7 @@ function createSession(id: string, opts: {
 		sessionType: 'test',
 		icon: Codicon.account,
 		createdAt,
+		source: opts.source,
 		workspace: observableValue(`workspace-${id}`, opts.workspaceLabel !== undefined ? {
 			uri: URI.parse(`session://workspace/${id}`),
 			label: opts.workspaceLabel,
@@ -388,6 +390,23 @@ suite('Sessions - SessionsList Helpers', () => {
 			assert.strictEqual(sections[0].id, 'pinned');
 			assert.strictEqual(sections[1].id, 'quickchats');
 			assert.deepStrictEqual(sections[1].sessions.map(s => s.sessionId), ['quick']);
+		});
+
+		test('excludes automation sessions when includeSession rejects them', () => {
+			const regular = createSession('regular', { workspaceLabel: 'Beta', createdAt: new Date('2024-06-01') });
+			const automation = createSession('automation', { workspaceLabel: 'Alpha', createdAt: new Date('2024-06-02'), source: 'automation' });
+			const sections = groupSessionsForList(
+				[regular, automation],
+				SessionsGrouping.Workspace,
+				SessionsSorting.Created,
+				() => false,
+				undefined,
+				session => session.source !== 'automation',
+			);
+
+			assert.deepStrictEqual(sections.map(section => ({ id: section.id, sessions: section.sessions.map(session => session.sessionId) })), [
+				{ id: 'workspace:Beta', sessions: ['regular'] },
+			]);
 		});
 	});
 

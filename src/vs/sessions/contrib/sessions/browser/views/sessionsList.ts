@@ -2265,12 +2265,13 @@ export class SessionsList extends Disposable implements ISessionsList {
 		if (this._excludeRead) {
 			filtered = filtered.filter(s => !s.isRead.get());
 		}
+		filtered = filtered.filter(s => s.source !== 'automation');
 
 		// Always include the active session even if it was filtered out,
 		// so it remains visible while selected
 		if (activeSession && !filtered.some(s => s.sessionId === activeSession.sessionId)) {
 			const match = this.sessions.find(s => s.sessionId === activeSession.sessionId);
-			if (match) {
+			if (match && match.source !== 'automation') {
 				filtered = [...filtered, match];
 			}
 		}
@@ -2322,7 +2323,7 @@ export class SessionsList extends Disposable implements ISessionsList {
 			.sort((a, b) => b.group.createdAt - a.group.createdAt)
 			.map(item => `group:${item.group.id}`);
 
-		const sections = groupSessionsForList(forSections, grouping, sorting, session => this.isSessionPinned(session), (s, srt) => this._sessionsListModelService.getSortKey(s, sortingToMode(srt)));
+		const sections = groupSessionsForList(forSections, grouping, sorting, session => this.isSessionPinned(session), (s, srt) => this._sessionsListModelService.getSortKey(s, sortingToMode(srt)), session => session.source !== 'automation');
 
 		const hasRecentSessions = sections.some(s => s.id === 'recent' && s.sessions.length > 0);
 
@@ -3444,8 +3445,9 @@ export function groupSessionsForList(
 	sorting: SessionsSorting,
 	isSessionPinned: (session: ISession) => boolean,
 	getSortKey?: (session: ISession, sorting: SessionsSorting) => number,
+	includeSession: (session: ISession) => boolean = () => true,
 ): ISessionSection[] {
-	const sorted = sortSessions(sessions, sorting, getSortKey);
+	const sorted = sortSessions(sessions.filter(includeSession), sorting, getSortKey);
 
 	// Archived wins over pinned (done sessions stay grouped); pinned wins over the
 	// quick-chats bucket so a pinned quick chat still surfaces in Pinned.
