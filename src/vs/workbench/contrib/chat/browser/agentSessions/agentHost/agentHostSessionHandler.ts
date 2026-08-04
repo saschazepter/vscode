@@ -761,6 +761,8 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 	private readonly _serverTurnWatchers = this._register(new DisposableResourceMap());
 	/** Per-session subscription silently resolving existing MCP authentication grants. */
 	private readonly _mcpAuthWatchers = this._register(new DisposableResourceMap());
+	/** Per-session subscription reconciling client data after session state hydration. */
+	private readonly _activeClientRefreshSubscriptions = this._register(new DisposableResourceMap());
 	/** Historical turns with file edits, pending hydration into the editing session. */
 	private readonly _pendingHistoryTurns = new ResourceMap<readonly Turn[]>();
 	/**
@@ -1244,6 +1246,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			historySubagentObservations,
 			() => {
 				this._activeSessions.delete(sessionResource);
+				this._activeClientRefreshSubscriptions.deleteAndDispose(sessionResource);
 				this._pendingMessageSubscriptions.deleteAndDispose(sessionResource);
 				this._draftSyncSubscriptions.deleteAndDispose(sessionResource);
 				this._serverTurnWatchers.deleteAndDispose(sessionResource);
@@ -1277,6 +1280,10 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			},
 		);
 		this._activeSessions.set(sessionResource, session);
+		if (sessionSubscription) {
+			this._ensureActiveClientRefreshSubscription(sessionResource, resolvedSession, sessionSubscription);
+		}
+		this._refreshActiveClientIfPresent(resolvedSession);
 
 		if (!isNewSession) {
 			// Only wire up pending-message/draft sync once the chat URI has been
@@ -1796,6 +1803,35 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 			type: ActionType.SessionActiveClientSet,
 			activeClient,
 		});
+	}
+
+	/**
+	 * Refresh this client's tools and customizations when it is already active.
+	 * Unlike {@link _ensureActiveClient}, this never claims a session owned by a
+	 * different client, so opening a session cannot interrupt another window's
+	 * in-progress turn. This closes the initialization race where customization
+	 * discovery finishes before the session is added to `_activeSessions`.
+	 */
+	private _refreshActiveClientIfPresent(backendSession: URI): void {
+		const state = this._getSessionState(backendSession.toString());
+		const activeClient = this._getCurrentActiveClient();
+		const existing = state?.activeClients.find(c => c.clientId === activeClient.clientId);
+		if (!existing || equals(existing, activeClient)) {
+			return;
+		}
+		this._dispatchAction(backendSession, {
+			type: ActionType.SessionActiveClientSet,
+			activeClient,
+		});
+	}
+
+	private _ensureActiveClientRefreshSubscription(sessionResource: URI, backendSession: URI, sessionSubscription: IAgentSubscription<SessionState>): void {
+		if (this._activeClientRefreshSubscriptions.has(sessionResource)) {
+			return;
+		}
+		this._activeClientRefreshSubscriptions.set(sessionResource, sessionSubscription.onDidChange(() => {
+			this._refreshActiveClientIfPresent(backendSession);
+		}));
 	}
 
 	/**
@@ -4311,6 +4347,7 @@ export class AgentHostSessionHandler extends Disposable implements IChatSessionC
 		// Subscribe to the new session's state
 		onFailureStage?.('subscribeSession');
 		const newSub = this._ensureSessionSubscription(session.toString());
+		this._ensureActiveClientRefreshSubscription(sessionResource, session, newSub);
 		if (!this._getSessionState(session.toString())) {
 			// Wait for the subscription to hydrate. `_whenSubscriptionHydrated`
 			// settles on snapshot, error, or cancellation and attaches its
