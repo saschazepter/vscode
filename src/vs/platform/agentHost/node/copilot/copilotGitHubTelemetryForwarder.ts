@@ -34,7 +34,7 @@ import { ITelemetryData, ITelemetryService } from '../../../telemetry/common/tel
 */
 
 /* __GDPR__
-	"copilotCli/response.success": {
+	"copilotSdk/response.success": {
 		"owner": "amunger",
 		"comment": "Reports performance and usage details for successful Copilot CLI model responses forwarded by the Copilot SDK.",
 		"${include}": [ "${CopilotCliForwardedTelemetry}" ],
@@ -75,7 +75,7 @@ import { ITelemetryData, ITelemetryService } from '../../../telemetry/common/tel
 */
 
 /* __GDPR__
-	"copilotCli/response.error": {
+	"copilotSdk/response.error": {
 		"owner": "amunger",
 		"comment": "Reports performance and usage details for failed Copilot CLI model responses forwarded by the Copilot SDK.",
 		"${include}": [ "${CopilotCliForwardedTelemetry}" ],
@@ -93,7 +93,7 @@ import { ITelemetryData, ITelemetryService } from '../../../telemetry/common/tel
 */
 
 /* __GDPR__
-	"copilotCli/task_complete_todo_state": {
+	"copilotSdk/task_complete_todo_state": {
 		"owner": "amunger",
 		"comment": "Reports the aggregate state of the Copilot CLI todo list when task completion is recorded. Contains only todo-status counts and derived boolean indicators; it does not contain todo text or other user content.",
 		"${include}": [ "${CopilotCliForwardedTelemetry}" ],
@@ -158,6 +158,6 @@ export class CopilotGitHubTelemetryForwarder {
 			}
 		}
 
-		this._telemetryService.publicLog(`copilotCli/${event.kind}`, data);
+		this._telemetryService.publicLog(`copilotSdk/${event.kind}`, data);
 	}
 }
