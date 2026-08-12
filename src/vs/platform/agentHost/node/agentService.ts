@@ -36,7 +36,7 @@ import type { InvokeChangesetOperationParams, InvokeChangesetOperationResult } f
 import { AhpErrorCodes, AHP_SESSION_NOT_FOUND, ContentEncoding, JSON_RPC_INTERNAL_ERROR, ProtocolError, ResourceChangeType, ResourceType, ResourceWriteMode, type CreateResourceWatchParams, type CreateResourceWatchResult, type DirectoryEntry, type ResourceCopyParams, type ResourceCopyResult, type ResourceDeleteParams, type ResourceDeleteResult, type ResourceListResult, type ResourceMkdirParams, type ResourceMkdirResult, type ResourceMoveParams, type ResourceMoveResult, type ResourceReadResult, type ResourceResolveParams, type ResourceResolveResult, type ResourceWatchState, type ResourceWriteParams, type ResourceWriteResult, type IStateSnapshot } from '../common/state/sessionProtocol.js';
 import { ChangesSummary, ChatInteractivity, ChatOriginKind, MessageAttachmentKind, type ChatOrigin, type Customization, type Message, type MessageAttachment, type MessageResourceAttachment } from '../common/state/protocol/state.js';
 import type { ChatPendingMessageSetAction, ChatTurnStartedAction } from '../common/state/protocol/actions.js';
-import { ISessionGitHubState, ISessionGitState, MessageKind, ResponsePartKind, SESSION_META_GITHUB_KEY, SESSION_META_GIT_KEY, SESSION_META_MULTI_ROOT_KEY, SESSION_META_SOURCE_CONTROL_KEY, readSessionSpawnDepth, withSessionSpawnDepth, SessionLifecycle, SessionStatus, ToolCallStatus, ToolResultContentType, AH_META_WORKSPACELESS_DB_KEY, AH_META_IS_ARCHIVED_DB_KEY, AH_META_IS_DONE_DB_KEY, AH_META_IS_READ_DB_KEY, buildChatUri, buildDefaultChatUri, buildResourceWatchChannelUri, buildSubagentChatUri, buildSubagentSessionUriPrefix, hostBuildInfoFromProduct, isAhpChatChannel, isDefaultChatUri, isSubagentChatUri, isSubagentSession, parseChatUri, parseDefaultChatUri, parseRequiredSessionUriFromChatUri, parseResourceWatchChannelUri, parseSessionMultiRootMetadata, parseSubagentSessionUri, readSessionGitHubState, readSessionGitState, readSessionMultiRootMetadata, readSessionSourceControlState, readSessionWorkspaceless, withSessionGitHubState, withSessionGitState, withSessionMultiRootMetadata, withSessionSourceControlState, withSessionStatusFlag, withSessionWorkspaceless, readSessionEhcliAdoptable, withSessionEhcliAdoptable, type ISessionSourceControlState, type SessionConfigState, type SessionSummary, type ToolResultSubagentContent, type Turn, type UsageInfo, chatStorageUri, hasReportedUsage } from '../common/state/sessionState.js';
+import { ISessionGitHubState, ISessionGitState, MessageKind, ResponsePartKind, SESSION_META_GITHUB_KEY, SESSION_META_GIT_KEY, SESSION_META_MULTI_ROOT_KEY, SESSION_META_SOURCE_CONTROL_KEY, readSessionSpawnDepth, withSessionSpawnDepth, SessionLifecycle, SessionStatus, ToolCallStatus, ToolResultContentType, AH_META_WORKSPACELESS_DB_KEY, AH_META_IS_ARCHIVED_DB_KEY, AH_META_IS_DONE_DB_KEY, AH_META_IS_READ_DB_KEY, buildChatUri, buildDefaultChatUri, buildResourceWatchChannelUri, buildSubagentChatUri, buildSubagentSessionUriPrefix, hostBuildInfoFromProduct, isAhpChatChannel, isDefaultChatUri, isSubagentChatUri, isSubagentSession, parseChatUri, parseDefaultChatUri, parseRequiredSessionUriFromChatUri, parseResourceWatchChannelUri, parseSessionMultiRootMetadata, parseSubagentSessionUri, readSessionExternal, readSessionGitHubState, readSessionGitState, readSessionMultiRootMetadata, readSessionSourceControlState, readSessionWorkspaceless, withSessionExternal, withSessionGitHubState, withSessionGitState, withSessionMultiRootMetadata, withSessionSourceControlState, withSessionStatusFlag, withSessionWorkspaceless, readSessionEhcliAdoptable, type ISessionSourceControlState, type SessionConfigState, type SessionSummary, type ToolResultSubagentContent, type Turn, type UsageInfo, chatStorageUri, hasReportedUsage } from '../common/state/sessionState.js';
 import { readToolCallMeta } from '../common/meta/agentToolCallMeta.js';
 import { IProductService } from '../../product/common/productService.js';
 import { buildBoundedSideChatSourceContext, getSideChatPartialResponse } from './agentPeerChats.js';
@@ -86,7 +86,7 @@ import { ITelemetryService } from '../../telemetry/common/telemetry.js';
 import { NullTelemetryService } from '../../telemetry/common/telemetryUtils.js';
 import { AgentHostAuthenticationService } from './agentHostAuthenticationService.js';
 import { updateAgentHostTelemetryLevelFromConfig } from './agentHostTelemetryService.js';
-import { AgentHostEditTelemetryEnabledConfigKey, AgentHostMigrateLegacyCopilotCliEnabledConfigKey, platformRootSchema } from '../common/agentHostSchema.js';
+import { AgentHostEditTelemetryEnabledConfigKey, AgentHostExternalSessionsMode, AgentHostMigrateLegacyCopilotCliEnabledConfigKey, AgentHostShowExternalSessionsConfigKey, platformRootSchema } from '../common/agentHostSchema.js';
 import { AgentHostOctoKitService, IAgentHostOctoKitService } from './shared/agentHostOctoKitService.js';
 import { IAgentHostChangesetService, CHANGESET_DB_METADATA_KEYS, META_CHANGES_SUMMARY } from '../common/agentHostChangesetService.js';
 import { IAgentHostChangesetSubscriptionService } from '../common/agentHostChangesetSubscriptionService.js';
@@ -295,6 +295,7 @@ export class AgentService extends Disposable implements IAgentService {
 	 * attempt, so a later `force` while one is still queued is a no-op.
 	 */
 	private readonly _providerBackfills = new Map<AgentProvider, IProviderBackfillState>();
+	private readonly _sessionsUsedByAgentHost = new Set<string>();
 
 	/**
 	 * Backing-session URIs (as strings) whose {@link CHAT_BACKING_METADATA_KEY}
@@ -492,6 +493,7 @@ export class AgentService extends Disposable implements IAgentService {
 		providerConfigurations: readonly IAgentCustomizationSettingsRegistration[] = [],
 		private readonly _hostLaunchKind = AgentHostLaunchKind.Unknown,
 		orchestratorDatabase?: IAgentHostDatabase,
+		private readonly _now: () => number = Date.now,
 	) {
 		super();
 		this._logService.info('AgentService initialized');
@@ -519,6 +521,14 @@ export class AgentService extends Disposable implements IAgentService {
 		// via DI rather than being plumbed plain-class references.
 		const configurationService = this._register(new AgentConfigurationService(this._stateManager, this._logService, this._rootConfigResource, providerConfigurations));
 		this._configurationService = configurationService;
+		let externalSessionsMode = this._getExternalSessionsMode();
+		this._register(configurationService.onDidRootConfigChange(() => {
+			const nextMode = this._getExternalSessionsMode();
+			if (nextMode !== externalSessionsMode) {
+				externalSessionsMode = nextMode;
+				this._queueSessionListReconciliation();
+			}
+		}));
 		const fileMonitorService = _fileMonitorService ?? this._register(new AgentHostFileMonitorService(this._fileService, this._logService));
 		updateAgentHostTelemetryLevelFromConfig(this._telemetryService, this._stateManager.rootState.config?.values);
 		const services = new ServiceCollection(
@@ -1191,7 +1201,7 @@ export class AgentService extends Disposable implements IAgentService {
 			if (isSubagentSession(s.session.toString()) || await this._isChatBacking(s.session)) {
 				return undefined;
 			}
-			return { session: s.session, provider: provider.id, startTime: s.startTime };
+			return { session: s.session, provider: provider.id, startTime: s.startTime, isExternal: true };
 		}));
 		for (const { session, provider: providerId, startTime } of identities.filter((s): s is IRegisteredSession => s !== undefined)) {
 			await this._sessionRegistry.registerIfNotTombstoned(session, providerId, startTime);
@@ -1240,7 +1250,7 @@ export class AgentService extends Disposable implements IAgentService {
 		// chat backings and subagent sessions never enter it, and a transiently
 		// missing provider snapshot no longer evicts a session.
 		const registered = await this._sessionRegistry.list();
-		const results = await Promise.all(registered.map(async ({ session, provider }): Promise<IAgentSessionMetadata | undefined> => {
+		const results = await Promise.all(registered.map(async ({ session, provider, isExternal }): Promise<IAgentSessionMetadata | undefined> => {
 			// Idle provisional sessions stay hidden until they materialize or gain
 			// turn activity (#321269). The state-manager overlay below re-surfaces
 			// them then.
@@ -1253,7 +1263,14 @@ export class AgentService extends Disposable implements IAgentService {
 				return undefined;
 			}
 			try {
-				return await this._registeredSessionMetadata(agent, session);
+				const metadata = await this._registeredSessionMetadata(agent, session);
+				if (!metadata) {
+					return undefined;
+				}
+				return this._withSessionOwnershipMetadata(
+					metadata,
+					isExternal,
+				);
 			} catch (err) {
 				this._logService.warn(`[AgentService] listSessions: failed to read metadata for ${session}`, err);
 				return undefined;
@@ -1405,6 +1422,7 @@ export class AgentService extends Disposable implements IAgentService {
 			}
 			return s;
 		});
+		const withForcedRead = withStatus.map(session => this._forceUnusedExternalSessionRead(session));
 
 		// Overlay any session known to state but missing from the providers'
 		// `listSessions` snapshot, so renderer-side caches don't evict a
@@ -1417,7 +1435,7 @@ export class AgentService extends Disposable implements IAgentService {
 		// Idle provisional sessions are deliberately *not* overlaid so the
 		// new-session composer's eagerly-created session doesn't leak into the
 		// list before its first message (#321269).
-		const known = new Set(withStatus.map(s => s.session.toString()));
+		const known = new Set(withForcedRead.map(s => s.session.toString()));
 		const additions: IAgentSessionMetadata[] = [];
 		for (const summary of this._stateManager.getOverlaySessionSummaries()) {
 			if (known.has(summary.resource)) {
@@ -1449,10 +1467,53 @@ export class AgentService extends Disposable implements IAgentService {
 				...(summary._meta !== undefined ? { _meta: summary._meta } : {}),
 			});
 		}
-		const combined = additions.length > 0 ? [...withStatus, ...additions] : withStatus;
+		const combined = additions.length > 0 ? [...withForcedRead, ...additions.map(session => this._forceUnusedExternalSessionRead(session))] : withForcedRead;
+		const visible = combined.filter(session => this._shouldIncludeSession(session));
+		this._visibleExternalSessions.clear();
+		for (const session of visible) {
+			if (readSessionExternal(session._meta)) {
+				this._visibleExternalSessions.add(session.session.toString());
+			}
+		}
 
-		this._logService.trace(`[AgentService] listSessions returned ${combined.length} sessions (${additions.length} state-manager fallback)`);
-		return combined;
+		this._logService.trace(`[AgentService] listSessions returned ${visible.length} sessions (${additions.length} state-manager fallback)`);
+		return visible;
+	}
+
+	private _withSessionOwnershipMetadata(session: IAgentSessionMetadata, external: boolean): IAgentSessionMetadata {
+		const { _meta: existingMeta, ...rest } = session;
+		const _meta = withSessionExternal(existingMeta, external);
+		return { ...rest, ...(_meta !== undefined ? { _meta } : {}) };
+	}
+
+	private _forceUnusedExternalSessionRead(session: IAgentSessionMetadata): IAgentSessionMetadata {
+		if (!readSessionExternal(session._meta) || this._sessionsUsedByAgentHost.has(session.session.toString())) {
+			return session;
+		}
+		return {
+			...session,
+			status: withSessionStatusFlag(session.status ?? SessionStatus.Idle, SessionStatus.IsRead, true),
+		};
+	}
+
+	private _getExternalSessionsMode(): AgentHostExternalSessionsMode {
+		return this._configurationService.getRootValue(platformRootSchema, AgentHostShowExternalSessionsConfigKey) ?? AgentHostExternalSessionsMode.Last7Days;
+	}
+
+	private _shouldIncludeSession(session: IAgentSessionMetadata): boolean {
+		if (!readSessionExternal(session._meta) || readSessionEhcliAdoptable(session._meta) || this._stateManager.getSessionState(session.session.toString())) {
+			return true;
+		}
+		switch (this._getExternalSessionsMode()) {
+			case AgentHostExternalSessionsMode.All:
+				return true;
+			case AgentHostExternalSessionsMode.Last24Hours:
+				return session.modifiedTime >= this._now() - 24 * 60 * 60 * 1000;
+			case AgentHostExternalSessionsMode.Last7Days:
+				return session.modifiedTime >= this._now() - 7 * 24 * 60 * 60 * 1000;
+			case AgentHostExternalSessionsMode.None:
+				return false;
+		}
 	}
 
 	/**
@@ -1477,30 +1538,65 @@ export class AgentService extends Disposable implements IAgentService {
 		return this._sessionRegistry.isBackfilled();
 	}
 
-	/** Debounces provider `onDidChangeChatList` bursts into one surface pass. */
+	/** Debounces provider `onDidChangeChatList` bursts into one reconciliation pass. */
 	private readonly _surfaceSessionsDebounce = this._register(new MutableDisposable());
-	/** Adoptable-legacy session keys already announced this AH lifetime, so bursts don't re-announce them. */
-	private readonly _announcedSurfacedKeys = new Set<string>();
+	private readonly _visibleExternalSessions = new Set<string>();
+	private readonly _announcedAdoptableLegacySessions = new Set<string>();
+	private _sessionListReconciliation = Promise.resolve();
 
-	/**
-	 * A provider reported its on-disk session set may have changed (e.g. a legacy
-	 * Copilot CLI session created by the extension host). Re-list and announce any
-	 * adoptable-legacy sessions not yet known to clients so they surface without a
-	 * manual reload.
-	 */
+	/** Debounces provider catalog changes before reconciling against the last catalog returned to clients. */
 	private _onProviderChatListChanged(): void {
 		this._surfaceSessionsDebounce.value = disposableTimeout(() => {
-			void this._surfaceAdoptableLegacySessions();
+			this._queueSessionListReconciliation();
 		}, 250);
 	}
 
-	private async _surfaceAdoptableLegacySessions(): Promise<void> {
+	private _queueSessionListReconciliation(): void {
+		this._sessionListReconciliation = this._sessionListReconciliation
+			.then(async () => {
+				await this._reconcileExternalSessions();
+				await this._surfaceAdoptableLegacySessions();
+			})
+			.catch(error => this._logService.warn('[AgentService] External session reconciliation failed', error));
+	}
+
+	private async _reconcileExternalSessions(): Promise<void> {
+		const previouslyVisible = new Set(this._visibleExternalSessions);
 		try {
 			await this._ensureRegistryBackfilled();
 		} catch (err) {
-			this._logService.warn('[AgentService] surfaceAdoptableLegacySessions: registry backfill failed', err);
+			this._logService.warn('[AgentService] external session reconciliation: registry backfill failed', err);
 			return;
 		}
+		const listed = await this.listSessions();
+		const visible = new Set<string>();
+		for (const meta of listed) {
+			if (!readSessionExternal(meta._meta)) {
+				continue;
+			}
+			const provider = AgentSession.provider(meta.session);
+			if (!provider) {
+				continue;
+			}
+			const key = meta.session.toString();
+			visible.add(key);
+			if (this._stateManager.getSessionState(key)) {
+				continue;
+			}
+			if (!previouslyVisible.has(key)) {
+				this._stateManager.announceSurfacedSession(this._surfacedSessionSummary(meta, provider));
+			}
+		}
+
+		for (const key of previouslyVisible) {
+			if (!visible.has(key) && !this._stateManager.getSessionState(key)) {
+				this._stateManager.retractSurfacedSession(key);
+			}
+		}
+	}
+
+	private async _surfaceAdoptableLegacySessions(): Promise<void> {
+		await this._ensureRegistryBackfilled();
 		const results = await Promise.allSettled([...this._providers.values()].map(provider => this._enumerateProviderSessions(provider)));
 		const listed: IAgentSessionMetadata[] = [];
 		for (const result of results) {
@@ -1510,49 +1606,31 @@ export class AgentService extends Disposable implements IAgentService {
 		}
 		const registered = new Set((await this._sessionRegistry.list()).map(entry => entry.session.toString()));
 		for (const meta of listed) {
-			// Only announce sessions surfaced as adoptable-legacy — never native
-			// sessions (which clients already know from their own listSessions).
-			if (!registered.has(meta.session.toString()) || !readSessionEhcliAdoptable(meta._meta)) {
+			const key = meta.session.toString();
+			if (!registered.has(key) || !readSessionEhcliAdoptable(meta._meta) || this._announcedAdoptableLegacySessions.has(key)) {
 				continue;
 			}
 			const provider = AgentSession.provider(meta.session);
-			if (!provider) {
-				continue; // defensive: malformed session URI
-			}
-			const key = meta.session.toString();
-			if (this._announcedSurfacedKeys.has(key)) {
-				continue; // already announced this lifetime
-			}
-			if (this._stateManager.getSessionState(key)) {
-				continue; // already adopted / restored
-			}
-			if (await this._sessionRegistry.isTombstoned(meta.session)) {
+			if (!provider || this._stateManager.getSessionState(key) || await this._sessionRegistry.isTombstoned(meta.session)) {
 				continue;
 			}
 			this._stateManager.announceSurfacedSession(this._surfacedSessionSummary(meta, provider));
-			this._announcedSurfacedKeys.add(key);
+			this._announcedAdoptableLegacySessions.add(key);
 		}
 	}
 
-	/** Synthesizes the minimal {@link SessionSummary} for an adoptable session surfaced by {@link listSessions}. */
+	/** Synthesizes the minimal {@link SessionSummary} for a session surfaced by {@link listSessions}. */
 	private _surfacedSessionSummary(meta: IAgentSessionMetadata, provider: string): SessionSummary {
 		return {
 			resource: meta.session.toString(),
 			provider,
 			title: meta.summary ?? '',
-			// Surfaced legacy sessions predate agent-host read ownership, which has
-			// no per-session read flag for them yet. Default them to read: the
-			// client trusts the provider's read state once it owns it, so an
-			// unflagged summary would otherwise flip every previously-seen session
-			// to unread the moment migration is turned on.
 			status: withSessionStatusFlag(meta.status ?? SessionStatus.Idle, SessionStatus.IsRead, true),
 			createdAt: new Date(meta.startTime).toISOString(),
 			modifiedAt: new Date(meta.modifiedTime).toISOString(),
 			...(meta.project ? { project: { uri: meta.project.uri.toString(), displayName: meta.project.displayName } } : {}),
 			workingDirectories: meta.workingDirectories?.map(d => d.toString()),
-			// Marks the session adoptable so clients don't passively subscribe (and
-			// thereby migrate) it before the user opens it.
-			_meta: withSessionEhcliAdoptable(meta._meta),
+			...(meta._meta !== undefined ? { _meta: meta._meta } : {}),
 		};
 	}
 
@@ -3292,6 +3370,9 @@ export class AgentService extends Disposable implements IAgentService {
 			}
 		}
 		this._stateManager.dispatchClientAction(channel, action, origin);
+		if (action.type === ActionType.ChatTurnStarted) {
+			this._markSessionUsedByAgentHost(sessionChannel);
+		}
 		if (action.type === ActionType.RootConfigChanged) {
 			this._configurationService.persistRootConfig();
 			const editTelemetryEnabled = action.config[AgentHostEditTelemetryEnabledConfigKey];
@@ -3300,6 +3381,21 @@ export class AgentService extends Disposable implements IAgentService {
 			}
 		}
 		this._sideEffects.handleAction(channel, action, clientId, clientContext);
+	}
+
+	private _markSessionUsedByAgentHost(session: string): void {
+		this._sessionsUsedByAgentHost.add(session);
+		const sessionUri = URI.parse(session);
+		const state = this._stateManager.getSessionState(session);
+		if (state && readSessionExternal(state._meta)) {
+			this._stateManager.setSessionMeta(session, withSessionExternal(state._meta, false));
+		}
+		void this._retryRegistryMutation(
+			() => this._sessionRegistry.markUsedByAgentHost(sessionUri),
+			`used marker for ${session}`,
+		).catch(error => {
+			this._logService.warn(`[AgentService] Failed to mark session as used by Agent Host: ${session}`, error);
+		});
 	}
 	private _getUnresolvedPeerChats(sessionChannel: string): readonly string[] | undefined {
 		return this._stateManager.getSessionState(sessionChannel)?.chats.filter(chat => !isDefaultChatUri(chat.resource) && !this._stateManager.getChatState(chat.resource)).map(chat => chat.resource);
@@ -3593,6 +3689,8 @@ export class AgentService extends Disposable implements IAgentService {
 		try {
 			const facts = await this._restoreSessionState(agent, session, sessionStr, adopted);
 			if (adopted) {
+				this._sessionsUsedByAgentHost.add(sessionStr);
+				await this._sessionRegistry.markUsedByAgentHost(session);
 				this._reportLegacyMigration(agent.id, 'migrated', migrationStartTime, facts);
 			} else if (adoption.eligible) {
 				// Migrate setting on and a genuine legacy candidate, but not adopted

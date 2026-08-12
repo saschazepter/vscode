@@ -13,10 +13,11 @@ export interface IAgentHostDatabaseSession {
 	readonly session: string;
 	readonly provider: AgentProvider;
 	readonly startTime: number;
+	readonly isExternal: boolean;
 }
 
 export interface IAgentHostDatabase extends IDisposable {
-	registerSession(session: string, provider: AgentProvider, startTime: number): Promise<void>;
+	registerSession(session: string, provider: AgentProvider, startTime: number, isExternal: boolean): Promise<void>;
 	/**
 	 * Atomically registers `session` unless it is currently tombstoned (a
 	 * single statement, so a concurrent {@link markSessionTombstoned} cannot
@@ -27,6 +28,7 @@ export interface IAgentHostDatabase extends IDisposable {
 	 * explicitly create one.
 	 */
 	registerSessionIfNotTombstoned(session: string, provider: AgentProvider, startTime: number): Promise<boolean>;
+	markSessionUsedByAgentHost(session: string): Promise<void>;
 	unregisterSession(session: string): Promise<void>;
 	/** Atomically tombstones and removes a session so concurrent backfill cannot re-register it. */
 	tombstoneAndUnregisterSession(session: string): Promise<void>;
@@ -64,7 +66,8 @@ const migrations = [
 			`CREATE TABLE IF NOT EXISTS sessions (
 				session_uri TEXT PRIMARY KEY NOT NULL,
 				provider    TEXT NOT NULL,
-				start_time  INTEGER NOT NULL
+				start_time  INTEGER NOT NULL,
+				is_external INTEGER NOT NULL
 			)`,
 			`CREATE TABLE IF NOT EXISTS metadata (
 				key   TEXT PRIMARY KEY NOT NULL,
@@ -120,6 +123,10 @@ function providerBackfillKey(provider: AgentProvider): string {
 	return `sessionRegistryBackfilled:${provider}`;
 }
 
+function sessionCreatedByAgentHostKey(session: string): string {
+	return `agentHost.createdByAgentHost:${session}`;
+}
+
 /** Metadata key for a session's durable "explicitly deleted" tombstone. */
 function tombstoneKey(session: string): string {
 	return `sessionTombstone:${session}`;
@@ -140,13 +147,18 @@ export class AgentHostDatabase implements IAgentHostDatabase {
 
 	constructor(private readonly _path: string) { }
 
-	registerSession(session: string, provider: AgentProvider, startTime: number): Promise<void> {
-		return this._run(
-			`INSERT INTO sessions (session_uri, provider, start_time)
-				VALUES (?, ?, ?)
-				ON CONFLICT(session_uri) DO UPDATE SET provider = excluded.provider`,
-			[session, provider, startTime],
+	async registerSession(session: string, provider: AgentProvider, startTime: number, isExternal: boolean): Promise<void> {
+		await this._run(
+			`INSERT INTO sessions (session_uri, provider, start_time, is_external)
+				VALUES (?, ?, ?, ?)
+				ON CONFLICT(session_uri) DO UPDATE SET
+					provider = excluded.provider,
+					is_external = MIN(sessions.is_external, excluded.is_external)`,
+			[session, provider, startTime, isExternal ? 1 : 0],
 		);
+		if (!isExternal) {
+			await this._setMetadata(sessionCreatedByAgentHostKey(session), 'true');
+		}
 	}
 
 	async registerSessionIfNotTombstoned(session: string, provider: AgentProvider, startTime: number): Promise<boolean> {
@@ -157,13 +169,17 @@ export class AgentHostDatabase implements IAgentHostDatabase {
 		// inserted) and 1 when the row was inserted or updated.
 		const changes = await runReturningChanges(
 			await this._ensureDatabase(),
-			`INSERT INTO sessions (session_uri, provider, start_time)
-				SELECT ?, ?, ?
+			`INSERT INTO sessions (session_uri, provider, start_time, is_external)
+				SELECT ?, ?, ?, 1
 				WHERE NOT EXISTS (SELECT 1 FROM metadata WHERE key = ? AND value = 'true')
 				ON CONFLICT(session_uri) DO UPDATE SET provider = excluded.provider`,
 			[session, provider, startTime, tombstoneKey(session)],
 		);
 		return changes > 0;
+	}
+
+	markSessionUsedByAgentHost(session: string): Promise<void> {
+		return this._run('UPDATE sessions SET is_external = 0 WHERE session_uri = ?', [session]);
 	}
 
 	unregisterSession(session: string): Promise<void> {
@@ -194,11 +210,12 @@ export class AgentHostDatabase implements IAgentHostDatabase {
 	}
 
 	async listSessions(): Promise<readonly IAgentHostDatabaseSession[]> {
-		const rows = await all(await this._ensureDatabase(), 'SELECT session_uri, provider, start_time FROM sessions', []);
+		const rows = await all(await this._ensureDatabase(), 'SELECT session_uri, provider, start_time, is_external FROM sessions', []);
 		return rows.map(row => ({
 			session: row.session_uri as string,
 			provider: row.provider as AgentProvider,
 			startTime: row.start_time as number,
+			isExternal: row.is_external === 1,
 		}));
 	}
 
@@ -252,6 +269,13 @@ export class AgentHostDatabase implements IAgentHostDatabase {
 
 	private async _run(sql: string, parameters: readonly unknown[]): Promise<void> {
 		await run(await this._ensureDatabase(), sql, parameters);
+	}
+
+	private _setMetadata(key: string, value: string): Promise<void> {
+		return this._run(
+			'INSERT INTO metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+			[key, value],
+		);
 	}
 
 	private _ensureDatabase(): Promise<Database> {

@@ -1649,6 +1649,23 @@ export const SESSION_META_WORKSPACELESS_KEY = 'workspaceless';
  * on resume) and never persist it themselves.
  */
 export const AH_META_WORKSPACELESS_DB_KEY = 'agentHost.workspaceless';
+const SESSION_META_EXTERNAL = 'agentHost.external';
+
+export function readSessionExternal(meta: SessionSummaryMeta | undefined): boolean {
+	return meta?.[SESSION_META_EXTERNAL] === true;
+}
+
+export function withSessionExternal(meta: SessionSummaryMeta | undefined, external: boolean): SessionSummaryMeta | undefined {
+	if (external) {
+		return { ...meta, [SESSION_META_EXTERNAL]: true };
+	}
+	if (!meta || meta[SESSION_META_EXTERNAL] === undefined) {
+		return meta;
+	}
+	const updated = { ...meta };
+	delete updated[SESSION_META_EXTERNAL];
+	return Object.keys(updated).length === 0 ? undefined : updated;
+}
 
 /**
  * Session-database metadata key recording whether a session is archived. Written by

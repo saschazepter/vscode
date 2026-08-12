@@ -14,6 +14,7 @@ export interface IRegisteredSession {
 	readonly provider: AgentProvider;
 	/** Session creation time (ms since epoch) as first observed by the orchestrator. */
 	readonly startTime: number;
+	readonly isExternal: boolean;
 }
 
 /**
@@ -61,7 +62,7 @@ export class AgentSessionRegistry extends Disposable {
 	 * again rather than explicitly create one.
 	 */
 	async register(session: URI, provider: AgentProvider, startTime: number): Promise<void> {
-		await this._database.registerSession(session.toString(), provider, startTime);
+		await this._database.registerSession(session.toString(), provider, startTime, false);
 		await this._database.clearSessionTombstone(session.toString());
 	}
 
@@ -84,12 +85,17 @@ export class AgentSessionRegistry extends Disposable {
 		await this._database.tombstoneAndUnregisterSession(session.toString());
 	}
 
+	async markUsedByAgentHost(session: URI): Promise<void> {
+		await this._database.markSessionUsedByAgentHost(session.toString());
+	}
+
 	/** Every session currently recorded, in no particular order. */
 	async list(): Promise<IRegisteredSession[]> {
 		return (await this._database.listSessions()).map(entry => ({
 			session: URI.parse(entry.session),
 			provider: entry.provider,
 			startTime: entry.startTime,
+			isExternal: entry.isExternal,
 		}));
 	}
 

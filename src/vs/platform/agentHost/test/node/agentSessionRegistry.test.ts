@@ -30,10 +30,10 @@ class TestAgentHostDatabase implements IAgentHostDatabase {
 		this._readFailures++;
 	}
 
-	async registerSession(session: string, provider: string, startTime: number): Promise<void> {
+	async registerSession(session: string, provider: string, startTime: number, isExternal: boolean): Promise<void> {
 		this._throwWriteFailure();
 		const existing = this.sessions.get(session);
-		this.sessions.set(session, { session, provider, startTime: existing?.startTime ?? startTime });
+		this.sessions.set(session, { session, provider, startTime: existing?.startTime ?? startTime, isExternal: (existing?.isExternal ?? true) && isExternal });
 	}
 
 	async registerSessionIfNotTombstoned(session: string, provider: string, startTime: number): Promise<boolean> {
@@ -42,8 +42,15 @@ class TestAgentHostDatabase implements IAgentHostDatabase {
 			return false;
 		}
 		const existing = this.sessions.get(session);
-		this.sessions.set(session, { session, provider, startTime: existing?.startTime ?? startTime });
+		this.sessions.set(session, { session, provider, startTime: existing?.startTime ?? startTime, isExternal: existing?.isExternal ?? true });
 		return true;
+	}
+
+	async markSessionUsedByAgentHost(session: string): Promise<void> {
+		const existing = this.sessions.get(session);
+		if (existing) {
+			this.sessions.set(session, { ...existing, isExternal: false });
+		}
 	}
 
 	async unregisterSession(session: string): Promise<void> {
@@ -170,6 +177,31 @@ suite('AgentSessionRegistry', () => {
 
 		const [entry] = await registry.list();
 		assert.strictEqual(entry.startTime, 100);
+	});
+
+	test('external classification becomes internal when the Agent Host creates or uses a session', async () => {
+		const registry = createRegistry();
+		await registry.registerIfNotTombstoned(a, 'copilot', 100);
+		await registry.registerIfNotTombstoned(b, 'claude', 200);
+		const before = (await registry.list()).map(entry => ({ session: entry.session.toString(), isExternal: entry.isExternal })).sort((x, y) => x.session.localeCompare(y.session));
+
+		await registry.register(a, 'copilot', 100);
+		await registry.markUsedByAgentHost(b);
+		const after = (await registry.list()).map(entry => ({ session: entry.session.toString(), isExternal: entry.isExternal })).sort((x, y) => x.session.localeCompare(y.session));
+
+		assert.deepStrictEqual(
+			{ before, after },
+			{
+				before: [
+					{ session: b.toString(), isExternal: true },
+					{ session: a.toString(), isExternal: true },
+				].sort((x, y) => x.session.localeCompare(y.session)),
+				after: [
+					{ session: b.toString(), isExternal: false },
+					{ session: a.toString(), isExternal: false },
+				].sort((x, y) => x.session.localeCompare(y.session)),
+			},
+		);
 	});
 
 	test('register and unregister preserve submission order', async () => {

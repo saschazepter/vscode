@@ -185,10 +185,10 @@ class TransientRegistryWriteDatabase implements IAgentHostDatabase {
 		this._remainingRegistryWriteFailures = count;
 	}
 
-	async registerSession(session: string, provider: string, startTime: number): Promise<void> {
+	async registerSession(session: string, provider: string, startTime: number, isExternal: boolean): Promise<void> {
 		this._beforeWrite();
 		const existing = this._sessions.get(session);
-		this._sessions.set(session, { session, provider, startTime: existing?.startTime ?? startTime });
+		this._sessions.set(session, { session, provider, startTime: existing?.startTime ?? startTime, isExternal: (existing?.isExternal ?? true) && isExternal });
 	}
 
 	async registerSessionIfNotTombstoned(session: string, provider: string, startTime: number): Promise<boolean> {
@@ -197,8 +197,15 @@ class TransientRegistryWriteDatabase implements IAgentHostDatabase {
 			return false;
 		}
 		const existing = this._sessions.get(session);
-		this._sessions.set(session, { session, provider, startTime: existing?.startTime ?? startTime });
+		this._sessions.set(session, { session, provider, startTime: existing?.startTime ?? startTime, isExternal: existing?.isExternal ?? true });
 		return true;
+	}
+
+	async markSessionUsedByAgentHost(session: string): Promise<void> {
+		const existing = this._sessions.get(session);
+		if (existing) {
+			this._sessions.set(session, { ...existing, isExternal: false });
+		}
 	}
 
 	async unregisterSession(session: string): Promise<void> {
@@ -3148,7 +3155,7 @@ suite('AgentService (node dispatcher)', () => {
 
 			const sessions = await svc.listSessions();
 			assert.strictEqual(sessions.length, 1);
-			assert.deepStrictEqual(sessions[0]._meta, { workspaceless: true });
+			assert.deepStrictEqual(sessions[0]._meta, { workspaceless: true, 'agentHost.external': true });
 		});
 
 		test('listSessions restores persisted multi-root metadata', async () => {
