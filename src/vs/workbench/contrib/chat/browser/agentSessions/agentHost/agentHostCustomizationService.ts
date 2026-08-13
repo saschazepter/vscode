@@ -16,7 +16,7 @@ import { getCustomizationDisabledReason, isCustomizationEnabled, withCustomizati
 import { type IAgentSubscription } from '../../../../../../platform/agentHost/common/state/agentSubscription.js';
 import { ActionType } from '../../../../../../platform/agentHost/common/state/protocol/actions.js';
 import { CustomizationEnablementKind, CustomizationType, McpServerCustomization, McpServerStatus, type Customization, type CustomizationEnablement, type McpServerState, type PluginCustomization, type RootConfigState, type SessionState } from '../../../../../../platform/agentHost/common/state/protocol/state.js';
-import { AgentCustomization, ROOT_STATE_URI, StateComponents } from '../../../../../../platform/agentHost/common/state/sessionState.js';
+import { AgentCustomization, ROOT_STATE_URI, StateComponents, readSessionFolderPickerDecision, type ISessionFolderPickerDecision } from '../../../../../../platform/agentHost/common/state/sessionState.js';
 import { InstantiationType, registerSingleton } from '../../../../../../platform/instantiation/common/extensions.js';
 import { createDecorator, IInstantiationService } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { IMcpServerConfiguration } from '../../../../../../platform/mcp/common/mcpPlatformTypes.js';
@@ -39,6 +39,14 @@ export interface IAgentHostCustomizationService {
 	getCustomAgents(sessionResource: URI): readonly AgentCustomization[];
 
 	getCustomizations(sessionResource: URI): readonly Customization[];
+
+	/**
+	 * The harness-owned decision about the multi-root Folder picker for a
+	 * session (or `undefined` when the provider expressed no opinion). Read from
+	 * the session's `_meta`; changes are reported via
+	 * {@link onDidChangeCustomizations}.
+	 */
+	getFolderPickerDecision(sessionResource: URI): ISessionFolderPickerDecision | undefined;
 
 	getWorkingDirectory(sessionResource: URI): string | undefined;
 
@@ -98,6 +106,9 @@ export class NullAgentHostCustomizationService implements IAgentHostCustomizatio
 	getCustomizations(_sessionResource: URI): readonly Customization[] {
 		return [];
 	}
+	getFolderPickerDecision(_sessionResource: URI): ISessionFolderPickerDecision | undefined {
+		return undefined;
+	}
 	getWorkingDirectory(sessionResource: URI): string | undefined {
 		return undefined;
 	}
@@ -123,6 +134,7 @@ export class NullAgentHostCustomizationService implements IAgentHostCustomizatio
 
 export interface IAgentHostCustomizationTarget {
 	readonly customizations: readonly Customization[];
+	readonly folderPickerDecision?: ISessionFolderPickerDecision;
 	readonly workingDirectory?: string;
 	readonly workingDirectories?: readonly string[];
 	readonly rootConfig?: RootConfigState;
@@ -167,6 +179,10 @@ export abstract class AbstractAgentHostCustomizationService extends Disposable i
 
 	getCustomizations(sessionResource: URI): readonly Customization[] {
 		return this._resolveTarget(sessionResource)?.customizations ?? [];
+	}
+
+	getFolderPickerDecision(sessionResource: URI): ISessionFolderPickerDecision | undefined {
+		return this._resolveTarget(sessionResource)?.folderPickerDecision;
 	}
 
 	getWorkingDirectory(sessionResource: URI): string | undefined {
@@ -419,6 +435,7 @@ class WorkbenchAgentHostCustomizationService extends AbstractAgentHostCustomizat
 		const channel = target.backendSession.toString();
 		return {
 			customizations: sessionState?.customizations ?? [],
+			folderPickerDecision: readSessionFolderPickerDecision(sessionState?._meta),
 			workingDirectory: sessionState?.workingDirectories?.[0],
 			workingDirectories: sessionState?.workingDirectories,
 			rootConfig: rootState && !(rootState instanceof Error) ? rootState.config : undefined,
