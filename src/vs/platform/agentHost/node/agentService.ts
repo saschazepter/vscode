@@ -295,8 +295,6 @@ export class AgentService extends Disposable implements IAgentService {
 	 * attempt, so a later `force` while one is still queued is a no-op.
 	 */
 	private readonly _providerBackfills = new Map<AgentProvider, IProviderBackfillState>();
-	private readonly _sessionsUsedByAgentHost = new Set<string>();
-
 	/**
 	 * Backing-session URIs (as strings) whose {@link CHAT_BACKING_METADATA_KEY}
 	 * durable marker write kept failing after a retry in `createChat`. The chat
@@ -1212,7 +1210,23 @@ export class AgentService extends Disposable implements IAgentService {
 		for (const { session, provider: providerId, startTime } of identities.filter((s): s is IRegisteredSession => s !== undefined)) {
 			await this._sessionRegistry.registerIfNotTombstoned(session, providerId, startTime);
 		}
+		const discoveredSessionKeys = new Set(identities.filter((session): session is IRegisteredSession => session !== undefined).map(session => session.session.toString()));
+		const externalSessions = (await this._sessionRegistry.list())
+			.filter(session => session.isExternal && discoveredSessionKeys.has(session.session.toString()))
+			.map(session => session.session);
+		await Promise.all(externalSessions.map(session => this._initializeExternalSessionReadState(session)));
 		await this._sessionRegistry.markProviderBackfilled(provider.id);
+	}
+
+	private async _initializeExternalSessionReadState(session: URI): Promise<void> {
+		const ref = this._sessionDataService.openDatabase(session);
+		try {
+			if (await ref.object.getMetadata(AH_META_IS_READ_DB_KEY) === undefined) {
+				await ref.object.setMetadata(AH_META_IS_READ_DB_KEY, 'true');
+			}
+		} finally {
+			ref.dispose();
+		}
 	}
 
 	private async _retryRegistryMutation<T>(operation: () => Promise<T>, description: string): Promise<T> {
@@ -1270,9 +1284,6 @@ export class AgentService extends Disposable implements IAgentService {
 			}
 			try {
 				const metadata = await this._registeredSessionMetadata(agent, session);
-				if (!metadata) {
-					return undefined;
-				}
 				return this._withSessionOwnershipMetadata(
 					metadata,
 					isExternal,
@@ -1428,8 +1439,6 @@ export class AgentService extends Disposable implements IAgentService {
 			}
 			return s;
 		});
-		const withForcedRead = withStatus.map(session => this._forceUnusedExternalSessionRead(session));
-
 		// Overlay any session known to state but missing from the providers'
 		// `listSessions` snapshot, so renderer-side caches don't evict a
 		// live/active session (which would close the chat view holding the
@@ -1441,7 +1450,7 @@ export class AgentService extends Disposable implements IAgentService {
 		// Idle provisional sessions are deliberately *not* overlaid so the
 		// new-session composer's eagerly-created session doesn't leak into the
 		// list before its first message (#321269).
-		const known = new Set(withForcedRead.map(s => s.session.toString()));
+		const known = new Set(withStatus.map(s => s.session.toString()));
 		const additions: IAgentSessionMetadata[] = [];
 		for (const summary of this._stateManager.getOverlaySessionSummaries()) {
 			if (known.has(summary.resource)) {
@@ -1473,28 +1482,20 @@ export class AgentService extends Disposable implements IAgentService {
 				...(summary._meta !== undefined ? { _meta: summary._meta } : {}),
 			});
 		}
-		const combined = additions.length > 0 ? [...withForcedRead, ...additions.map(session => this._forceUnusedExternalSessionRead(session))] : withForcedRead;
+		const combined = additions.length > 0 ? [...withStatus, ...additions] : withStatus;
 		const visible = combined.filter(session => this._shouldIncludeSession(session, mode));
-		this._scheduleExternalSessionExpiry(visible, mode);
 
 		this._logService.trace(`[AgentService] listSessions returned ${visible.length} sessions (${additions.length} state-manager fallback)`);
 		return visible;
 	}
 
-	private _withSessionOwnershipMetadata(session: IAgentSessionMetadata, external: boolean): IAgentSessionMetadata {
+	private _withSessionOwnershipMetadata(session: IAgentSessionMetadata | undefined, external: boolean): IAgentSessionMetadata | undefined {
+		if (!session) {
+			return undefined;
+		}
 		const { _meta: existingMeta, ...rest } = session;
 		const _meta = withSessionExternal(existingMeta, external);
 		return { ...rest, ...(_meta !== undefined ? { _meta } : {}) };
-	}
-
-	private _forceUnusedExternalSessionRead(session: IAgentSessionMetadata): IAgentSessionMetadata {
-		if (!readSessionExternal(session._meta) || this._sessionsUsedByAgentHost.has(session.session.toString())) {
-			return session;
-		}
-		return {
-			...session,
-			status: withSessionStatusFlag(session.status ?? SessionStatus.Idle, SessionStatus.IsRead, true),
-		};
 	}
 
 	private _getExternalSessionsMode(): AgentHostExternalSessionsMode {
@@ -1515,29 +1516,6 @@ export class AgentService extends Disposable implements IAgentService {
 			case AgentHostExternalSessionsMode.None:
 				return false;
 		}
-	}
-
-	private _scheduleExternalSessionExpiry(sessions: readonly IAgentSessionMetadata[], mode: AgentHostExternalSessionsMode): void {
-		const window = mode === AgentHostExternalSessionsMode.Last24Hours
-			? 24 * 60 * 60 * 1000
-			: mode === AgentHostExternalSessionsMode.Last7Days
-				? 7 * 24 * 60 * 60 * 1000
-				: undefined;
-		if (window === undefined) {
-			this._externalSessionExpiry.clear();
-			return;
-		}
-		let nextExpiry: number | undefined;
-		for (const session of sessions) {
-			if (!readSessionExternal(session._meta) || readSessionEhcliAdoptable(session._meta) || this._stateManager.getSessionState(session.session.toString())) {
-				continue;
-			}
-			const expiresAt = session.modifiedTime + window + 1;
-			nextExpiry = nextExpiry === undefined ? expiresAt : Math.min(nextExpiry, expiresAt);
-		}
-		this._externalSessionExpiry.value = nextExpiry === undefined
-			? undefined
-			: disposableTimeout(() => this._queueSessionListReconciliation(), Math.max(0, nextExpiry - this._now()));
 	}
 
 	/**
@@ -1564,7 +1542,6 @@ export class AgentService extends Disposable implements IAgentService {
 
 	/** Debounces provider `onDidChangeChatList` bursts into one reconciliation pass. */
 	private readonly _surfaceSessionsDebounce = this._register(new MutableDisposable());
-	private readonly _externalSessionExpiry = this._register(new MutableDisposable());
 	private readonly _broadcastExternalSessions = new Set<string>();
 	private readonly _announcedAdoptableLegacySessions = new Set<string>();
 	private _sessionListReconciliation = Promise.resolve();
@@ -3420,7 +3397,6 @@ export class AgentService extends Disposable implements IAgentService {
 	}
 
 	private _markSessionUsedByAgentHost(session: string): void {
-		this._sessionsUsedByAgentHost.add(session);
 		const sessionUri = URI.parse(session);
 		const state = this._stateManager.getSessionState(session);
 		if (state && readSessionExternal(state._meta)) {
@@ -3725,7 +3701,6 @@ export class AgentService extends Disposable implements IAgentService {
 		try {
 			const facts = await this._restoreSessionState(agent, session, sessionStr, adopted);
 			if (adopted) {
-				this._sessionsUsedByAgentHost.add(sessionStr);
 				await this._sessionRegistry.markUsedByAgentHost(session);
 				const state = this._stateManager.getSessionState(sessionStr);
 				if (state && readSessionExternal(state._meta)) {

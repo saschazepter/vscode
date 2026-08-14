@@ -37,7 +37,7 @@ import { META_GITHUB_STATE, META_SOURCE_CONTROL_STATE } from '../../common/agent
 import { SessionConfigKey } from '../../common/sessionConfigKeys.js';
 import { SessionDatabase } from '../../node/sessionDatabase.js';
 import { ActionType, ActionEnvelope, NotificationType } from '../../common/state/sessionActions.js';
-import { ChangesetStatus, CustomizationType, MessageAttachmentKind, MessageKind, SessionActiveClient, ResponsePartKind, ROOT_STATE_URI, SESSION_META_MULTI_ROOT_KEY, SessionLifecycle, SessionSourceControlOutcome, SessionStatus, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildChatUri, buildDefaultChatUri, buildSubagentChatUri, buildSubagentSessionUri, customizationId, isDefaultChatUri, isSubagentSession, parseChatUri, parseSubagentSessionUri, readSessionEhcliAdoptable, readSessionExternal, readSessionGitHubState, readSessionMultiRootMetadata, readSessionSourceControlState, withSessionEhcliAdoptable, withSessionMultiRootMetadata, ChatOriginKind, type ChangesetState, type ISessionWithDefaultChat, type MarkdownResponsePart, type SessionState, type SessionSummary, type ToolCallCompletedState, type ToolCallResponsePart, type Turn } from '../../common/state/sessionState.js';
+import { AH_META_IS_READ_DB_KEY, ChangesetStatus, CustomizationType, MessageAttachmentKind, MessageKind, SessionActiveClient, ResponsePartKind, ROOT_STATE_URI, SESSION_META_MULTI_ROOT_KEY, SessionLifecycle, SessionSourceControlOutcome, SessionStatus, ToolCallCancellationReason, ToolCallConfirmationReason, ToolCallStatus, ToolResultContentType, TurnState, buildChatUri, buildDefaultChatUri, buildSubagentChatUri, buildSubagentSessionUri, customizationId, isDefaultChatUri, isSubagentSession, parseChatUri, parseSubagentSessionUri, readSessionEhcliAdoptable, readSessionExternal, readSessionGitHubState, readSessionMultiRootMetadata, readSessionSourceControlState, withSessionEhcliAdoptable, withSessionMultiRootMetadata, ChatOriginKind, type ChangesetState, type ISessionWithDefaultChat, type MarkdownResponsePart, type SessionState, type SessionSummary, type ToolCallCompletedState, type ToolCallResponsePart, type Turn } from '../../common/state/sessionState.js';
 import { ChatInteractivity, type MessageResourceAttachment } from '../../common/state/protocol/state.js';
 import { IProductService } from '../../../product/common/productService.js';
 import { AgentService } from '../../node/agentService.js';
@@ -2328,11 +2328,11 @@ suite('AgentService (node dispatcher)', () => {
 			}
 		}
 
-		function createExternalSessionService(now: () => number): AgentService {
+		function createExternalSessionService(now: () => number, db = new TestSessionDatabase()): AgentService {
 			return disposables.add(new AgentService(
 				new NullLogService(),
 				fileService,
-				createSessionDataService(),
+				createSessionDataService(db),
 				{ _serviceBrand: undefined } as IProductService,
 				createNoopGitService(),
 				undefined,
@@ -2360,10 +2360,6 @@ suite('AgentService (node dispatcher)', () => {
 
 		async function waitForSessionListReconciliation(service: AgentService): Promise<void> {
 			await (service as unknown as { _sessionListReconciliation: Promise<void> })._sessionListReconciliation;
-		}
-
-		function clearExternalSessionExpiry(service: AgentService): void {
-			(service as unknown as { _externalSessionExpiry: { clear(): void } })._externalSessionExpiry.clear();
 		}
 
 		test('listSessions aggregates sessions from all providers', async () => {
@@ -2397,9 +2393,7 @@ suite('AgentService (node dispatcher)', () => {
 			for (const mode of [AgentHostExternalSessionsMode.None, AgentHostExternalSessionsMode.All, AgentHostExternalSessionsMode.Last24Hours, AgentHostExternalSessionsMode.Last7Days]) {
 				setExternalSessionsMode(svc, mode, clientSeq++);
 				await waitForSessionListReconciliation(svc);
-				clearExternalSessionExpiry(svc);
 				const listed = await svc.listSessions();
-				clearExternalSessionExpiry(svc);
 				listedByMode[mode] = listed.map(session => AgentSession.id(session.session)).sort();
 			}
 
@@ -2435,9 +2429,10 @@ suite('AgentService (node dispatcher)', () => {
 			});
 		});
 
-		test('forces unused external sessions read until a message is sent through the Agent Host', async () => {
+		test('persists external sessions as read before exposing them', async () => {
 			const now = Date.now();
-			const svc = createExternalSessionService(() => now);
+			const db = new TestSessionDatabase();
+			const svc = createExternalSessionService(() => now, db);
 			const agent = disposables.add(new ExternalCatalogAgent('copilot'));
 			const session = agent.addSession('forced-read', now, SessionStatus.Idle);
 			svc.registerProvider(agent);
@@ -2450,11 +2445,13 @@ suite('AgentService (node dispatcher)', () => {
 			const after = (await svc.listSessions())[0];
 
 			assert.deepStrictEqual({
+				persisted: await db.getMetadata(AH_META_IS_READ_DB_KEY),
 				before: { external: readSessionExternal(before._meta), read: !!(before.status! & SessionStatus.IsRead) },
-				after: { external: readSessionExternal(after._meta), read: !!(after.status! & SessionStatus.IsRead) },
+				afterUse: { external: readSessionExternal(after._meta), read: !!(after.status! & SessionStatus.IsRead) },
 			}, {
+				persisted: 'true',
 				before: { external: true, read: true },
-				after: { external: false, read: false },
+				afterUse: { external: false, read: true },
 			});
 		});
 
@@ -2492,12 +2489,12 @@ suite('AgentService (node dispatcher)', () => {
 			]);
 		});
 
-		test('reconciles when a visible external session crosses the configured time cutoff', async () => {
+		test('filters an external session on the next list after it crosses the configured time cutoff', async () => {
 			const day = 24 * 60 * 60 * 1000;
 			let now = Date.now();
 			const svc = createExternalSessionService(() => now);
 			const agent = disposables.add(new ExternalCatalogAgent('copilot'));
-			const session = agent.addSession('expiring', now - day + 10);
+			agent.addSession('expiring', now - day + 10);
 			const removed: string[] = [];
 			disposables.add(svc.onDidNotification(notification => {
 				if (notification.type === NotificationType.SessionRemoved) {
@@ -2512,14 +2509,13 @@ suite('AgentService (node dispatcher)', () => {
 
 			now += 20;
 			await timeout(30);
-			await waitForSessionListReconciliation(svc);
 
 			assert.deepStrictEqual({
 				listed: (await svc.listSessions()).map(entry => entry.session.toString()),
 				removed,
 			}, {
 				listed: [],
-				removed: [session.toString()],
+				removed: [],
 			});
 		});
 
