@@ -112,6 +112,7 @@ export class MockAgent implements IAgent {
 	sessionMessages: IHistoryRecord[] = [];
 	/** Usage stamped onto every reconstructed turn (e.g. an Auto-model stub). */
 	turnUsageOverride: UsageInfo | undefined = undefined;
+	chatModel: ModelSelection | undefined;
 
 	/** Optional overrides applied to session metadata from listSessions. */
 	sessionMetadataOverrides: Partial<Omit<IAgentSessionMetadata, 'session'>> = {};
@@ -361,6 +362,7 @@ export class MockAgent implements IAgent {
 			const { session } = this._resolveChatTarget(chat, context);
 			return this.abortSession(session);
 		},
+		getModel: (): ModelSelection | undefined => this.chatModel,
 		changeModel: (chatUri: URI, model: ModelSelection, context: URI | IAgentChatContext): Promise<void> => {
 			const { session, chat } = this._resolveChatTarget(chatUri, context);
 			return this.changeModel(session, model, chat);
