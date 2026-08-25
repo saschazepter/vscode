@@ -41,4 +41,5 @@ function findNodeModulesFiles(location: string, inNodeModules: boolean, result: 
 
 const result: string[] = [];
 findNodeModulesFiles('', false, result);
+result.push('.build/typings/electron.d.ts');
 fs.writeFileSync(process.argv[2], result.join('\n') + '\n');
