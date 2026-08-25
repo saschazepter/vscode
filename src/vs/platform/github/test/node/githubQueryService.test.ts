@@ -255,6 +255,8 @@ suite('GitHubQueryService', () => {
 		await withServer(async server => {
 			const hydrationStarted = new DeferredPromise<void>();
 			const releaseHydration = new DeferredPromise<void>();
+			const refreshStarted = new DeferredPromise<void>();
+			const releaseRefresh = new DeferredPromise<void>();
 			server.enqueue(
 				gitHubGraphQLStep({
 					queryIncludes: 'HydrateGitHubResources',
@@ -265,6 +267,8 @@ suite('GitHubQueryService', () => {
 				gitHubRestStep({
 					method: 'GET',
 					path: '/repos/octo/repo',
+					assert: async () => refreshStarted.complete(),
+					waitFor: releaseRefresh.p,
 					response: gitHubJsonResponse(repositoryResponse('new-owner/new-repo')),
 				}),
 			);
@@ -274,9 +278,13 @@ suite('GitHubQueryService', () => {
 			const hydration = service.hydrateResources([{ kind: 'repository', ref }], signal());
 			await hydrationStarted.p;
 
-			await repository.refresh();
+			const refresh = repository.refresh();
 			await releaseHydration.complete();
 			await hydration;
+			await refreshStarted.p;
+			assert.strictEqual(repository.resource.state.get().status, 'loading');
+			await releaseRefresh.complete();
+			await refresh;
 
 			assert.strictEqual(repository.resource.state.get().value?.nameWithOwner, 'new-owner/new-repo');
 			server.assertSatisfied();
@@ -329,6 +337,8 @@ suite('GitHubQueryService', () => {
 						owner: { id: '1', login: 'new-owner' },
 						name: 'new-repo',
 						nameWithOwner: 'new-owner/new-repo',
+						language: undefined,
+						stars: undefined,
 						defaultBranch: 'main',
 						private: true,
 						description: 'repo',
