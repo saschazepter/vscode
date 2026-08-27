@@ -101,7 +101,7 @@ Multiple filter dimensions combine:
 | Status | All shown | Hides sessions by `SessionStatus` (InProgress, NeedsInput, Error, Completed, Untitled) |
 | Archived | Hidden | Shows/hides the Done section |
 | Read | All shown | Optionally shows only unread sessions |
-| Agent host | All | Scopes to a specific agent host provider |
+| Agent host | All | Scopes to the selected host filter entry — every provider it covers (a grouped entry such as Cloud Sandboxes covers one per member) |
 
 The **active session is always visible** even if it would be excluded by filters.
 

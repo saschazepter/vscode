@@ -139,8 +139,7 @@ export class WebWorkspacePicker extends WorkspacePicker {
 			return items;
 		}
 
-		// 1. Recent workspaces for the scoped host — for a grouped entry that
-		// spans every member (e.g. all of the user's sandbox environments).
+		// 1. Recent workspaces across every provider the entry scopes to.
 		const recents = this._getRecentWorkspaces().filter(w => scopedProviderIds.has(w.providerId));
 		for (const { workspace, providerId } of recents) {
 			const folderUri = workspace.folders[0]?.root;
@@ -158,11 +157,8 @@ export class WebWorkspacePicker extends WorkspacePicker {
 			});
 		}
 
-		// 2. "Select Folder..." — dispatches the scoped host's first browse
-		// action. Offered only for a real host: a grouped entry has no single
-		// machine to browse, and its members (cloud sandboxes) are created by
-		// the service rather than by picking a folder here.
-		if (!scoped.connectable) {
+		// 2. "Select Folder..." — a grouped entry has no single machine to browse.
+		if (scoped.grouped) {
 			return items;
 		}
 		const allBrowseActions = this._getAllBrowseActions();
