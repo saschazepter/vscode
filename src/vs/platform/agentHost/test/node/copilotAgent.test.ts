@@ -3546,7 +3546,7 @@ suite('CopilotAgent', () => {
 			const proxyState = agent as unknown as {
 				_resolvedProxy: string | undefined;
 				_resolveProxyForSdk(env: Record<string, string | undefined>): Promise<string | undefined>;
-				_applyProxyEnv(env: Record<string, string | undefined>): void;
+				_createCopilotCliEnvironment(env: Record<string, string | undefined>): Record<string, string | undefined>;
 			};
 			const env = {
 				HTTP_PROXY: 'http://uppercase-http.example:8080',
@@ -3559,14 +3559,23 @@ suite('CopilotAgent', () => {
 			const expectedEnv = { ...env };
 			try {
 				proxyState._resolvedProxy = await proxyState._resolveProxyForSdk(env);
-				proxyState._applyProxyEnv(env);
+				const createdEnv = proxyState._createCopilotCliEnvironment(env);
 
 				assert.deepStrictEqual({
-					env,
+					sourceEnv: env,
+					createdProxyEnv: {
+						HTTP_PROXY: createdEnv['HTTP_PROXY'],
+						HTTPS_PROXY: createdEnv['HTTPS_PROXY'],
+						http_proxy: createdEnv['http_proxy'],
+						https_proxy: createdEnv['https_proxy'],
+						ALL_PROXY: createdEnv['ALL_PROXY'],
+						all_proxy: createdEnv['all_proxy'],
+					},
 					resolvedProxy: proxyState._resolvedProxy,
 					resolveProxyCalls: proxyResolver.resolveProxyCalls,
 				}, {
-					env: expectedEnv,
+					sourceEnv: expectedEnv,
+					createdProxyEnv: expectedEnv,
 					resolvedProxy: undefined,
 					resolveProxyCalls: 0,
 				});
@@ -3588,7 +3597,7 @@ suite('CopilotAgent', () => {
 			const proxyState = agent as unknown as {
 				_resolvedProxy: string | undefined;
 				_resolveProxyForSdk(env: Record<string, string | undefined>): Promise<string | undefined>;
-				_applyProxyEnv(env: Record<string, string | undefined>): void;
+				_createCopilotCliEnvironment(env: Record<string, string | undefined>): Record<string, string | undefined>;
 			};
 			const env = {
 				HTTP_PROXY: 'http://uppercase-http.example:8080',
@@ -3598,17 +3607,31 @@ suite('CopilotAgent', () => {
 				ALL_PROXY: 'http://uppercase-all.example:8080',
 				all_proxy: 'http://lowercase-all.example:8080',
 			};
+			const expectedEnv = { ...env };
 			try {
 				proxyState._resolvedProxy = await proxyState._resolveProxyForSdk(env);
-				proxyState._applyProxyEnv(env);
+				const createdEnv = proxyState._createCopilotCliEnvironment(env);
 
 				assert.deepStrictEqual({
-					env,
+					sourceEnv: env,
+					createdProxyEnv: {
+						HTTP_PROXY: createdEnv['HTTP_PROXY'],
+						HTTPS_PROXY: createdEnv['HTTPS_PROXY'],
+						http_proxy: createdEnv['http_proxy'],
+						https_proxy: createdEnv['https_proxy'],
+						ALL_PROXY: createdEnv['ALL_PROXY'],
+						all_proxy: createdEnv['all_proxy'],
+					},
 					resolveProxyCalls: proxyResolver.resolveProxyCalls,
 				}, {
-					env: {
+					sourceEnv: expectedEnv,
+					createdProxyEnv: {
 						HTTP_PROXY: configuredProxy,
 						HTTPS_PROXY: configuredProxy,
+						http_proxy: undefined,
+						https_proxy: undefined,
+						ALL_PROXY: undefined,
+						all_proxy: undefined,
 					},
 					resolveProxyCalls: 0,
 				});
@@ -3624,20 +3647,35 @@ suite('CopilotAgent', () => {
 					[AgentHostProxyConfigKey.Proxy]: configuredProxy,
 				},
 			});
-			const applyProxyEnv = (env: Record<string, string | undefined>) => (agent as unknown as {
-				_applyProxyEnv(env: Record<string, string | undefined>): void;
-			})._applyProxyEnv(env);
+			const createEnvironment = (env: Record<string, string | undefined>) => (agent as unknown as {
+				_createCopilotCliEnvironment(env: Record<string, string | undefined>): Record<string, string | undefined>;
+			})._createCopilotCliEnvironment(env);
 			const env = {
 				Http_Proxy: 'http://inherited-proxy.example:8080',
 				No_Proxy: 'inherited.example',
 			};
+			const expectedEnv = { ...env };
 			try {
-				applyProxyEnv(env);
+				const createdEnv = createEnvironment(env);
 
-				assert.deepStrictEqual(env, {
-					HTTP_PROXY: configuredProxy,
-					HTTPS_PROXY: configuredProxy,
-					NO_PROXY: 'inherited.example',
+				assert.deepStrictEqual({
+					sourceEnv: env,
+					createdProxyEnv: {
+						Http_Proxy: createdEnv['Http_Proxy'],
+						No_Proxy: createdEnv['No_Proxy'],
+						HTTP_PROXY: createdEnv['HTTP_PROXY'],
+						HTTPS_PROXY: createdEnv['HTTPS_PROXY'],
+						NO_PROXY: createdEnv['NO_PROXY'],
+					},
+				}, {
+					sourceEnv: expectedEnv,
+					createdProxyEnv: {
+						Http_Proxy: undefined,
+						No_Proxy: undefined,
+						HTTP_PROXY: configuredProxy,
+						HTTPS_PROXY: configuredProxy,
+						NO_PROXY: 'inherited.example',
+					},
 				});
 			} finally {
 				await disposeAgent(agent);

@@ -138,7 +138,7 @@ export async function getCopilotManagedSettingsDiagnostics(
 	proxy: string | undefined = undefined,
 	noProxy: string | undefined = undefined,
 ): Promise<{ account?: string; resolved: ManagedSettingsResolvedData }> {
-	const request = invokeWithProxyEnvironment(proxy, noProxy, () => runtimeSdk.getManagedSettings({
+	const request = invokeWithProxyEnvironment(process.env, proxy, noProxy, undefined, () => runtimeSdk.getManagedSettings({
 		...(token ? { authInfo: { type: 'token', host, token } as const, token } : {}),
 		signal,
 	}));
@@ -149,36 +149,34 @@ export async function getCopilotManagedSettingsDiagnostics(
 	return result;
 }
 
-function invokeWithProxyEnvironment<T>(proxy: string | undefined, noProxy: string | undefined, invoke: () => Promise<T>): Promise<T> {
-	if (!proxy && !noProxy) {
+function invokeWithProxyEnvironment<T>(environment: Record<string, string | undefined>, proxy: string | undefined, noProxy: string | undefined, kerberosSpn: string | undefined, invoke: () => T): T {
+	if (!proxy && !noProxy && !kerberosSpn) {
 		return invoke();
 	}
 	const keys = [
 		...(proxy ? COPILOT_PROXY_ENV_KEYS : []),
 		...(noProxy ? COPILOT_NO_PROXY_ENV_KEYS : []),
+		...(kerberosSpn ? COPILOT_PROXY_KERBEROS_ENV_KEYS : []),
 	];
-	const environmentKeys = getPlatformEnvironmentKeys(keys);
-	const previousValues = environmentKeys.map(key => process.env[key]);
-	deleteEnvironmentVariables(process.env, keys);
+	const previousEntries = getEnvironmentEntries(environment, keys);
+	deleteEnvironmentVariables(environment, keys);
 	if (proxy) {
 		for (const key of COPILOT_PROXY_SET_ENV_KEYS) {
-			process.env[key] = proxy;
+			environment[key] = proxy;
 		}
 	}
 	if (noProxy) {
-		process.env['NO_PROXY'] = noProxy;
+		environment['NO_PROXY'] = noProxy;
+	}
+	if (kerberosSpn) {
+		environment['COPILOT_PROXY_KERBEROS_SPN'] = kerberosSpn;
 	}
 	try {
-		// The SDK snapshots process.env while constructing the native request.
 		return invoke();
 	} finally {
-		deleteEnvironmentVariables(process.env, keys);
-		for (let index = 0; index < environmentKeys.length; index++) {
-			const key = environmentKeys[index];
-			const value = previousValues[index];
-			if (value !== undefined) {
-				process.env[key] = value;
-			}
+		deleteEnvironmentVariables(environment, keys);
+		for (const [key, value] of previousEntries) {
+			environment[key] = value;
 		}
 	}
 }
@@ -200,6 +198,7 @@ function isCopilotConnectionClosedError(error: unknown): boolean {
  */
 const COPILOT_PROXY_ENV_KEYS = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy'] as const;
 const COPILOT_NO_PROXY_ENV_KEYS = ['no_proxy', 'NO_PROXY'] as const;
+const COPILOT_PROXY_KERBEROS_ENV_KEYS = ['COPILOT_PROXY_KERBEROS_SPN'] as const;
 /**
  * Proxy env vars we set when injecting the resolved CAPI proxy.
  */
@@ -207,6 +206,21 @@ const COPILOT_PROXY_SET_ENV_KEYS = ['HTTP_PROXY', 'HTTPS_PROXY'] as const;
 
 function getPlatformEnvironmentKeys(keys: readonly string[]): readonly string[] {
 	return isWindows ? [...new Set(keys.map(key => key.toLowerCase()))] : keys;
+}
+
+function getEnvironmentEntries(env: Record<string, string | undefined>, keys: readonly string[]): [string, string][] {
+	if (!isWindows || env === process.env) {
+		const entries: [string, string][] = [];
+		for (const key of getPlatformEnvironmentKeys(keys)) {
+			const value = env[key];
+			if (value !== undefined) {
+				entries.push([key, value]);
+			}
+		}
+		return entries;
+	}
+	const keySet = new Set(getPlatformEnvironmentKeys(keys));
+	return Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined && keySet.has(entry[0].toLowerCase()));
 }
 
 function getEnvironmentValue(env: Record<string, string | undefined>, keys: readonly string[]): string | undefined {
@@ -2042,12 +2056,11 @@ export class CopilotAgent extends Disposable implements IAgent {
 
 			// Build a clean env for the CLI subprocess, stripping Electron/VS Code vars
 			// that can interfere with the Node.js process the SDK spawns.
-			const env = createCopilotCliEnvironment();
+			const env = this._createCopilotCliEnvironment();
 			// Family aliases are host-side (prompt and tool-profile routing) and
 			// deliberately never reach the runtime; an ambient value here would
 			// re-introduce a process-wide alias for every session behind its back.
 			delete env['COPILOT_MODEL_FAMILY'];
-			this._applyProxyEnv(env);
 			setCopilotBuiltinGitHubMcpEnvironment(env, startupConfig.githubMcpServer);
 
 			// On Linux the MXC bubblewrap sandbox backend does not forward a PTY into
@@ -4723,27 +4736,18 @@ export class CopilotAgent extends Disposable implements IAgent {
 		return this._configurationService.getRootValue(agentHostProxyConfigSchema, AgentHostProxyConfigKey.Proxy)?.trim() || undefined;
 	}
 
-	private _applyProxyEnv(env: Record<string, string | undefined>): void {
+	private _createCopilotCliEnvironment(environment: NodeJS.ProcessEnv = process.env): Record<string, string | undefined> {
 		const proxy = this._readConfiguredProxy() ?? (this._isSystemProxyEnabled() ? this._resolvedProxy : undefined);
 		this._appliedProxy = proxy;
+		const noProxy = this._readNoProxy(environment);
+		this._appliedNoProxy = noProxy;
+		const kerberosSpn = this._readKerberosSpn(environment);
+		this._appliedProxyKerberosSpn = kerberosSpn;
+		const env = invokeWithProxyEnvironment(environment, proxy, noProxy, kerberosSpn, () => createCopilotCliEnvironment(environment));
 		if (proxy) {
-			deleteEnvironmentVariables(env, COPILOT_PROXY_ENV_KEYS);
-			for (const key of COPILOT_PROXY_SET_ENV_KEYS) {
-				env[key] = proxy;
-			}
 			this._logService.info('[Copilot] Resolved CAPI proxy and forwarded HTTP_PROXY/HTTPS_PROXY to Copilot SDK');
 		}
-		const noProxy = this._readNoProxy(env);
-		this._appliedNoProxy = noProxy;
-		if (noProxy) {
-			deleteEnvironmentVariables(env, COPILOT_NO_PROXY_ENV_KEYS);
-			env['NO_PROXY'] = noProxy;
-		}
-		const kerberosSpn = this._readKerberosSpn(env);
-		this._appliedProxyKerberosSpn = kerberosSpn;
-		if (kerberosSpn && !env['COPILOT_PROXY_KERBEROS_SPN']) {
-			env['COPILOT_PROXY_KERBEROS_SPN'] = kerberosSpn;
-		}
+		return env;
 	}
 
 	private async _resolveProxyForSdk(env: Record<string, string | undefined> = process.env): Promise<string | undefined> {
