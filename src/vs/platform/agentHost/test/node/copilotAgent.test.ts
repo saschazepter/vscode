@@ -3617,6 +3617,33 @@ suite('CopilotAgent', () => {
 			}
 		});
 
+		(process.platform === 'win32' ? test : test.skip)('normalizes mixed-case proxy environment variables on Windows', async () => {
+			const configuredProxy = 'http://configured-proxy.example:8080';
+			const { agent } = createTestAgentContext(disposables, {
+				rootConfig: {
+					[AgentHostProxyConfigKey.Proxy]: configuredProxy,
+				},
+			});
+			const applyProxyEnv = (env: Record<string, string | undefined>) => (agent as unknown as {
+				_applyProxyEnv(env: Record<string, string | undefined>): void;
+			})._applyProxyEnv(env);
+			const env = {
+				Http_Proxy: 'http://inherited-proxy.example:8080',
+				No_Proxy: 'inherited.example',
+			};
+			try {
+				applyProxyEnv(env);
+
+				assert.deepStrictEqual(env, {
+					HTTP_PROXY: configuredProxy,
+					HTTPS_PROXY: configuredProxy,
+					NO_PROXY: 'inherited.example',
+				});
+			} finally {
+				await disposeAgent(agent);
+			}
+		});
+
 		test('does not block client startup on system proxy resolution', async () => {
 			const client = new TestCopilotClient([]);
 			const proxyResolver = new TestProxyResolver();

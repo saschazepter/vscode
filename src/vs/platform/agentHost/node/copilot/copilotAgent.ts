@@ -19,6 +19,7 @@ import { formatTokenCount } from '../../../../base/common/numbers.js';
 import { equals } from '../../../../base/common/objects.js';
 import { autorun, observableValue, observableValueOpts, type IObservable, type ISettableObservable } from '../../../../base/common/observable.js';
 import { delimiter, dirname, join } from '../../../../base/common/path.js';
+import { isWindows } from '../../../../base/common/platform.js';
 import { basename as resourceBasename, isEqual, isEqualOrParent, joinPath as resourceJoinPath, relativePath } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
@@ -156,10 +157,8 @@ function invokeWithProxyEnvironment<T>(proxy: string | undefined, noProxy: strin
 		...(proxy ? COPILOT_PROXY_ENV_KEYS : []),
 		...(noProxy ? COPILOT_NO_PROXY_ENV_KEYS : []),
 	];
-	const previousValues = keys.map(key => process.env[key]);
-	for (const key of keys) {
-		delete process.env[key];
-	}
+	const previousEntries = getEnvironmentEntries(process.env, keys);
+	deleteEnvironmentVariables(process.env, keys);
 	if (proxy) {
 		for (const key of COPILOT_PROXY_SET_ENV_KEYS) {
 			process.env[key] = proxy;
@@ -172,14 +171,9 @@ function invokeWithProxyEnvironment<T>(proxy: string | undefined, noProxy: strin
 		// The SDK snapshots process.env while constructing the native request.
 		return invoke();
 	} finally {
-		for (let index = 0; index < keys.length; index++) {
-			const key = keys[index];
-			const value = previousValues[index];
-			if (value === undefined) {
-				delete process.env[key];
-			} else {
-				process.env[key] = value;
-			}
+		deleteEnvironmentVariables(process.env, keys);
+		for (const [key, value] of previousEntries) {
+			process.env[key] = value;
 		}
 	}
 }
@@ -200,11 +194,44 @@ function isCopilotConnectionClosedError(error: unknown): boolean {
  * Proxy env vars recognized by the Copilot runtime.
  */
 const COPILOT_PROXY_ENV_KEYS = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy'] as const;
-const COPILOT_NO_PROXY_ENV_KEYS = ['NO_PROXY', 'no_proxy'] as const;
+const COPILOT_NO_PROXY_ENV_KEYS = ['no_proxy', 'NO_PROXY'] as const;
 /**
  * Proxy env vars we set when injecting the resolved CAPI proxy.
  */
 const COPILOT_PROXY_SET_ENV_KEYS = ['HTTP_PROXY', 'HTTPS_PROXY'] as const;
+
+function isEnvironmentVariableKey(key: string, candidates: readonly string[]): boolean {
+	return candidates.some(candidate => isWindows ? candidate.toLowerCase() === key.toLowerCase() : candidate === key);
+}
+
+function getEnvironmentEntries(env: Record<string, string | undefined>, keys: readonly string[]): [string, string][] {
+	const entries: [string, string][] = [];
+	for (const key of Object.keys(env)) {
+		const value = env[key];
+		if (value !== undefined && isEnvironmentVariableKey(key, keys)) {
+			entries.push([key, value]);
+		}
+	}
+	return entries;
+}
+
+function getEnvironmentValue(env: Record<string, string | undefined>, keys: readonly string[]): string | undefined {
+	for (const key of keys) {
+		const entry = Object.entries(env).find(([candidate]) => isEnvironmentVariableKey(candidate, [key]));
+		if (entry?.[1]) {
+			return entry[1];
+		}
+	}
+	return undefined;
+}
+
+function deleteEnvironmentVariables(env: Record<string, string | undefined>, keys: readonly string[]): void {
+	for (const key of Object.keys(env)) {
+		if (isEnvironmentVariableKey(key, keys)) {
+			delete env[key];
+		}
+	}
+}
 
 async function fileExists(filePath: string): Promise<boolean> {
 	try {
@@ -4677,7 +4704,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 			.map(value => value.trim())
 			.filter(Boolean)
 			.join(',');
-		return configuredNoProxy || (env['no_proxy'] || env['NO_PROXY'] || '').trim() || undefined;
+		return configuredNoProxy || getEnvironmentValue(env, COPILOT_NO_PROXY_ENV_KEYS)?.trim() || undefined;
 	}
 
 	private _readConfiguredProxy(): string | undefined {
@@ -4688,9 +4715,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		const proxy = this._readConfiguredProxy() ?? (this._isSystemProxyEnabled() ? this._resolvedProxy : undefined);
 		this._appliedProxy = proxy;
 		if (proxy) {
-			for (const key of COPILOT_PROXY_ENV_KEYS) {
-				delete env[key];
-			}
+			deleteEnvironmentVariables(env, COPILOT_PROXY_ENV_KEYS);
 			for (const key of COPILOT_PROXY_SET_ENV_KEYS) {
 				env[key] = proxy;
 			}
@@ -4699,9 +4724,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		const noProxy = this._readNoProxy(env);
 		this._appliedNoProxy = noProxy;
 		if (noProxy) {
-			for (const key of COPILOT_NO_PROXY_ENV_KEYS) {
-				delete env[key];
-			}
+			deleteEnvironmentVariables(env, COPILOT_NO_PROXY_ENV_KEYS);
 			env['NO_PROXY'] = noProxy;
 		}
 		const kerberosSpn = this._readKerberosSpn(env);
@@ -4719,7 +4742,7 @@ export class CopilotAgent extends Disposable implements IAgent {
 		if (!this._isSystemProxyEnabled()) {
 			return undefined;
 		}
-		if (COPILOT_PROXY_ENV_KEYS.some(key => env[key])) {
+		if (getEnvironmentValue(env, COPILOT_PROXY_ENV_KEYS)) {
 			this._logService.debug('[Copilot] Proxy env var already set; leaving Copilot SDK proxy configuration to the environment');
 			return undefined;
 		}
