@@ -157,7 +157,8 @@ function invokeWithProxyEnvironment<T>(proxy: string | undefined, noProxy: strin
 		...(proxy ? COPILOT_PROXY_ENV_KEYS : []),
 		...(noProxy ? COPILOT_NO_PROXY_ENV_KEYS : []),
 	];
-	const previousEntries = getEnvironmentEntries(process.env, keys);
+	const environmentKeys = getPlatformEnvironmentKeys(keys);
+	const previousValues = environmentKeys.map(key => process.env[key]);
 	deleteEnvironmentVariables(process.env, keys);
 	if (proxy) {
 		for (const key of COPILOT_PROXY_SET_ENV_KEYS) {
@@ -172,8 +173,12 @@ function invokeWithProxyEnvironment<T>(proxy: string | undefined, noProxy: strin
 		return invoke();
 	} finally {
 		deleteEnvironmentVariables(process.env, keys);
-		for (const [key, value] of previousEntries) {
-			process.env[key] = value;
+		for (let index = 0; index < environmentKeys.length; index++) {
+			const key = environmentKeys[index];
+			const value = previousValues[index];
+			if (value !== undefined) {
+				process.env[key] = value;
+			}
 		}
 	}
 }
@@ -200,34 +205,41 @@ const COPILOT_NO_PROXY_ENV_KEYS = ['no_proxy', 'NO_PROXY'] as const;
  */
 const COPILOT_PROXY_SET_ENV_KEYS = ['HTTP_PROXY', 'HTTPS_PROXY'] as const;
 
-function isEnvironmentVariableKey(key: string, candidates: readonly string[]): boolean {
-	return candidates.some(candidate => isWindows ? candidate.toLowerCase() === key.toLowerCase() : candidate === key);
-}
-
-function getEnvironmentEntries(env: Record<string, string | undefined>, keys: readonly string[]): [string, string][] {
-	const entries: [string, string][] = [];
-	for (const key of Object.keys(env)) {
-		const value = env[key];
-		if (value !== undefined && isEnvironmentVariableKey(key, keys)) {
-			entries.push([key, value]);
-		}
-	}
-	return entries;
+function getPlatformEnvironmentKeys(keys: readonly string[]): readonly string[] {
+	return isWindows ? [...new Set(keys.map(key => key.toLowerCase()))] : keys;
 }
 
 function getEnvironmentValue(env: Record<string, string | undefined>, keys: readonly string[]): string | undefined {
-	for (const key of keys) {
-		const entry = Object.entries(env).find(([candidate]) => isEnvironmentVariableKey(candidate, [key]));
-		if (entry?.[1]) {
-			return entry[1];
+	const environmentKeys = getPlatformEnvironmentKeys(keys);
+	if (!isWindows || env === process.env) {
+		for (const key of environmentKeys) {
+			const value = env[key];
+			if (value) {
+				return value;
+			}
+		}
+		return undefined;
+	}
+	const keySet = new Set(environmentKeys);
+	for (const [key, value] of Object.entries(env)) {
+		if (value && keySet.has(key.toLowerCase())) {
+			return value;
 		}
 	}
 	return undefined;
 }
 
 function deleteEnvironmentVariables(env: Record<string, string | undefined>, keys: readonly string[]): void {
+	const environmentKeys = getPlatformEnvironmentKeys(keys);
+	if (!isWindows || env === process.env) {
+		for (const key of environmentKeys) {
+			delete env[key];
+		}
+		return;
+	}
+	const keySet = new Set(environmentKeys);
 	for (const key of Object.keys(env)) {
-		if (isEnvironmentVariableKey(key, keys)) {
+		if (keySet.has(key.toLowerCase())) {
 			delete env[key];
 		}
 	}
