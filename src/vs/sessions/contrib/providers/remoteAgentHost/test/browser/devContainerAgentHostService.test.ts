@@ -230,6 +230,7 @@ suite('Dev Container Agent Host Service', () => {
 				config: {
 					address,
 					name: 'Source Dev Container',
+					devContainerWorktreeScope: getComparisonKey(sourceWorkspace),
 					omitHostFromWorkspaceLabel: true,
 				},
 				connected: true,
