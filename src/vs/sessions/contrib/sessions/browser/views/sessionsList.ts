@@ -48,7 +48,7 @@ import { IUriIdentityService } from '../../../../../platform/uriIdentity/common/
 import { IOpenerService } from '../../../../../platform/opener/common/opener.js';
 import { ILabelService } from '../../../../../platform/label/common/label.js';
 import { ChatSessionArchiveActionWording, ChatSessionArchiveActionWordingSettingId, getChatSessionArchivedSectionLabel, getChatSessionArchiveActionWording } from '../../../../../platform/chat/common/sessionArchiveActions.js';
-import { ChatInteractivity, ChatOriginKind, getChatCapabilities, getSessionStatusMessage, getSessionWorkspaceKind, GITHUB_REMOTE_FILE_SCHEME, IChat, ISession, ISessionWorkspace, SessionStatus, SessionWorkspaceKind } from '../../../../services/sessions/common/session.js';
+import { ChatInteractivity, ChatOriginKind, getChatCapabilities, getGitHubPullRequestRefs, getHighestPriorityPullRequestIcon, getSessionStatusMessage, getSessionWorkspaceKind, GITHUB_REMOTE_FILE_SCHEME, IChat, ISession, ISessionWorkspace, SessionStatus, SessionWorkspaceKind } from '../../../../services/sessions/common/session.js';
 import { AgentSessionApprovalModel, agentSessionApprovalId, IAgentSessionApprovalInfo } from '../../../../../workbench/contrib/chat/browser/agentSessions/agentSessionApprovalModel.js';
 import { IVoicePlaybackService } from '../../../../../workbench/contrib/chat/common/voicePlaybackService.js';
 import { Button } from '../../../../../base/browser/ui/button/button.js';
@@ -679,6 +679,7 @@ interface ISessionItemTemplate {
 	readonly contextKeyService: IContextKeyService;
 	readonly statusContext: IContextKey<SessionStatus>;
 	readonly isReadContext: IContextKey<boolean>;
+	readonly isArchivedContext: IContextKey<boolean>;
 	readonly supportsDeleteContext: IContextKey<boolean>;
 	readonly disposables: DisposableStore;
 	readonly elementDisposables: DisposableStore;
@@ -843,6 +844,7 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 		const contextKeyService = disposables.add(this.contextKeyService.createScoped(container));
 		const statusContext = SessionItemStatusContext.bindTo(contextKeyService);
 		const isReadContext = SessionIsReadContext.bindTo(contextKeyService);
+		const isArchivedContext = SessionIsArchivedContext.bindTo(contextKeyService);
 		const supportsDeleteContext = SessionSupportsDeleteContext.bindTo(contextKeyService);
 		const scopedInstantiationService = disposables.add(this.instantiationService.createChild(new ServiceCollection([IContextKeyService, contextKeyService])));
 		let titleToolbar: MenuWorkbenchToolBar | undefined;
@@ -854,7 +856,7 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 			}));
 		}
 
-		return { container, statusIcon, title, titleContainer, titleToolbar, pendingVoiceIndicator, detailsRow, approvalRow, approvalLabel, approvalButtonContainer, ciRow, ciLabel, ciButtonContainer, contextKeyService, statusContext, isReadContext, supportsDeleteContext, disposables, elementDisposables };
+		return { container, statusIcon, title, titleContainer, titleToolbar, pendingVoiceIndicator, detailsRow, approvalRow, approvalLabel, approvalButtonContainer, ciRow, ciLabel, ciButtonContainer, contextKeyService, statusContext, isReadContext, isArchivedContext, supportsDeleteContext, disposables, elementDisposables };
 	}
 
 	renderElement(node: ITreeNode<SessionListItem, FuzzyScore>, _index: number, template: ISessionItemTemplate): void {
@@ -926,7 +928,6 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 		// Context keys
 		const isPinned = this.options.isPinned(element);
 		IsSessionPinnedContext.bindTo(template.contextKeyService).set(isPinned);
-		SessionIsArchivedContext.bindTo(template.contextKeyService).set(element.isArchived.get());
 		SessionItemHasBranchNameContext.bindTo(template.contextKeyService).set(!!element.workspace.get()?.folders[0]?.gitRepository?.branchName?.trim());
 
 		// Pinned & archived styling — reactive
@@ -964,11 +965,13 @@ class SessionItemRenderer implements ITreeRenderer<SessionListItem, FuzzyScore, 
 			const isRead = element.isRead.read(reader);
 			template.isReadContext.set(isRead);
 			const isArchived = element.isArchived.read(reader);
+			template.isArchivedContext.set(isArchived);
 			const capabilities = element.capabilities.read(reader);
 			template.supportsDeleteContext.set(capabilities.supportsDelete === true);
 			const gitHubInfo = element.workspace.read(reader)?.folders[0]?.gitRepository?.gitHubInfo.read(reader);
 			const isQuickChat = element.isQuickChat?.read(reader) ?? false;
-			const completedStateIcon = element.completedStateIcon?.read(reader) ?? gitHubInfo?.pullRequest?.icon;
+			const completedStateIcon = element.completedStateIcon?.read(reader)
+				?? getHighestPriorityPullRequestIcon(getGitHubPullRequestRefs(gitHubInfo).map(pullRequest => pullRequest.icon));
 
 			// The status icon widget snaps on row recycling and cross-fades real state changes.
 			template.statusIcon.setStatus(sessionStatus, isRead, isArchived, completedStateIcon, element.resource);
@@ -4377,23 +4380,26 @@ export function groupByWorkspace(sessions: ISession[]): ISessionSection[] {
 
 /** Maximum number of sessions shown in the "Recent" date section. */
 const RECENT_SESSIONS_LIMIT = 10;
+const RECENT_SESSIONS_LIMIT_WITH_UPDATES = 15;
+const RECENTLY_UPDATED_SESSION_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
 export function groupByDate(sessions: ISession[], sorting: SessionsSorting, getSortKey?: (session: ISession, sorting: SessionsSorting) => number): ISessionSection[] {
 	const key = getSortKey ?? defaultSortKey;
 	const now = new Date();
 	const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 	const startOfWeek = startOfToday - 7 * 86_400_000;
+	const recentlyUpdatedThreshold = now.getTime() - RECENTLY_UPDATED_SESSION_THRESHOLD_MS;
 
 	const recent: ISession[] = [];
 	const older: ISession[] = [];
 
-	// `sessions` arrive sorted most-recent-first, so the first sessions within
-	// the last 7 days (capped at RECENT_SESSIONS_LIMIT) form the "Recent"
-	// section; everything else falls into "Older".
 	for (const session of sessions) {
 		const time = key(session, sorting);
+		const wasRecentlyUpdated = sorting === SessionsSorting.Created && session.updatedAt.get().getTime() >= recentlyUpdatedThreshold;
+		const isWithinRecentLimit = recent.length < RECENT_SESSIONS_LIMIT && time >= startOfWeek;
+		const isWithinUpdatedRecentLimit = recent.length < RECENT_SESSIONS_LIMIT_WITH_UPDATES && wasRecentlyUpdated;
 
-		if (time >= startOfWeek && recent.length < RECENT_SESSIONS_LIMIT) {
+		if (isWithinRecentLimit || isWithinUpdatedRecentLimit) {
 			recent.push(session);
 		} else {
 			older.push(session);
@@ -4447,6 +4453,10 @@ export interface ISessionsFlatListOptions {
 	readonly toolbarMenuId?: MenuId;
 	/** Allows focused list surfaces to handle actions from their custom toolbar menu. */
 	readonly onToolbarAction?: (action: IAction, session: ISession) => boolean | Promise<boolean>;
+	/** Optional context menu shown for each session row. */
+	readonly contextMenuId?: MenuId;
+	/** Allows focused list surfaces to handle actions from their custom context menu. */
+	readonly onContextMenuAction?: (action: IAction, session: ISession) => boolean | Promise<boolean>;
 	/** Whether opening a row immediately marks its session as read. Defaults to `true`. */
 	readonly markSessionReadOnOpen?: boolean;
 	/**
@@ -4488,9 +4498,12 @@ export class SessionsFlatList extends Disposable {
 		@ISessionsListModelService private readonly _sessionsListModelService: ISessionsListModelService,
 		@ISessionsManagementService private readonly _sessionsManagementService: ISessionsManagementService,
 		@IInstantiationService instantiationService: IInstantiationService,
-		@IContextKeyService contextKeyService: IContextKeyService,
+		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IMarkdownRendererService markdownRendererService: IMarkdownRendererService,
 		@IHoverService hoverService: IHoverService,
+		@IMenuService private readonly menuService: IMenuService,
+		@IContextMenuService private readonly contextMenuService: IContextMenuService,
+		@IKeybindingService private readonly keybindingService: IKeybindingService,
 		@ISessionsProvidersService sessionsProvidersService: ISessionsProvidersService,
 		@IVoicePlaybackService voicePlaybackService: IVoicePlaybackService,
 		@IAgentHostConnectionsService agentHostConnectionsService: IAgentHostConnectionsService,
@@ -4582,6 +4595,9 @@ export class SessionsFlatList extends Disposable {
 			const preserveFocus = isLeftClick ? false : (e.editorOptions.preserveFocus ?? false);
 			this.options.onSessionOpen(element.resource, preserveFocus, e.sideBySide);
 		}));
+		if (this.options.contextMenuId) {
+			this._register(this.tree.onContextMenu(e => this.onContextMenu(e)));
+		}
 
 		this._register(sessionRenderer.onDidChangeItemHeight(session => {
 			if (this.tree.hasElement(session)) {
@@ -4591,6 +4607,40 @@ export class SessionsFlatList extends Disposable {
 		}));
 
 		this._register(sessionRenderer.onDidApproveSession(approved => this._onDidApproveSession.fire(approved)));
+	}
+
+	private onContextMenu(e: ITreeContextMenuEvent<SessionListItem | null>): void {
+		const session = e.element;
+		if (!session || !isSessionItem(session) || !this.options.contextMenuId) {
+			return;
+		}
+
+		const disposables = new DisposableStore();
+		const contextKeyService = this.contextKeyService.createOverlay([
+			[SessionIsArchivedContext.key, session.isArchived.get()],
+			[SessionIsReadContext.key, session.isRead.get()],
+			[SessionTypeContext.key, session.sessionType],
+			[SessionProviderIdContext.key, session.providerId],
+			[SessionSupportsRenameContext.key, session.capabilities.get().supportsRename ?? false],
+			[SessionSupportsDeleteContext.key, session.capabilities.get().supportsDelete ?? false],
+			[SessionItemStatusContext.key, session.status.get()],
+		]);
+		const menu = disposables.add(this.menuService.createMenu(this.options.contextMenuId, contextKeyService));
+		const actions = Separator.join(...menu.getActions({ shouldForwardArgs: true }).map(([, groupActions]) => groupActions));
+		if (actions.length === 0) {
+			disposables.dispose();
+			return;
+		}
+
+		const actionRunner = disposables.add(new SessionItemActionRunner(selected => [selected], this.options.onContextMenuAction));
+		this.contextMenuService.showContextMenu({
+			getActions: () => actions,
+			getActionsContext: () => session,
+			getAnchor: () => e.anchor,
+			getKeyBinding: action => this.keybindingService.lookupKeybinding(action.id, contextKeyService, true) ?? undefined,
+			actionRunner,
+			onHide: () => disposables.dispose(),
+		});
 	}
 
 	setSessions(sessions: readonly ISession[]): void {

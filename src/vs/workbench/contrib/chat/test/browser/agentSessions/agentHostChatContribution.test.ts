@@ -26,7 +26,7 @@ import { ILogService, NullLogService } from '../../../../../../platform/log/comm
 import { IConfigurationService } from '../../../../../../platform/configuration/common/configuration.js';
 import { IAgentCreateSessionConfig, IAgentHostService, IAgentSessionMetadata, AgentSession } from '../../../../../../platform/agentHost/common/agentService.js';
 import type { ChatInputRequestWithPlanReview } from '../../../../../../platform/agentHost/common/agentHostPlanReview.js';
-import { createAgentHostResourceUriMapper, identityAgentHostResourceUriMapper, toAgentHostUri } from '../../../../../../platform/agentHost/common/agentHostUri.js';
+import { agentHostAuthority, createAgentHostResourceUriMapper, fromAgentHostUri, identityAgentHostResourceUriMapper, toAgentHostUri } from '../../../../../../platform/agentHost/common/agentHostUri.js';
 import { AgentFeedbackAttachmentDisplayKind, AgentFeedbackAttachmentMetadataKey } from '../../../../../../platform/agentHost/common/meta/agentFeedbackAttachments.js';
 import { VSCODE_EPHEMERAL_SESSION_META_KEY } from '../../../../../../platform/agentHost/common/meta/agentEphemeralSessionMeta.js';
 import { getElementAttachmentCorrelationId, toElementAttachmentMeta } from '../../../../../../platform/agentHost/common/meta/agentElementAttachments.js';
@@ -1000,6 +1000,7 @@ function createTestServices(disposables: DisposableStore, workingDirectoryResolv
 		getSyncProvider: () => syncProvider,
 		getOrigin: () => undefined,
 		acquireScope,
+		acquireMcpServerSupportScope: () => undefined,
 		areScopeRootsEqual: (first, second) => JSON.stringify(first) === JSON.stringify(second),
 		isBundledMcpServer: () => false,
 	};
@@ -1268,6 +1269,90 @@ suite('AgentHostChatContribution', () => {
 			assert.ok(chatAgentService.registeredAgents.has('agent-host-copilot'));
 		});
 
+	});
+
+	suite('response resource links', () => {
+		test('uses the WSL connection for file links despite a local session authority', () => {
+			const { sessionHandler, agentHostService } = createContribution(disposables);
+			const authority = agentHostAuthority('vscode-remote://wsl+Ubuntu');
+			agentHostService.resourceUris = createAgentHostResourceUriMapper(authority);
+			const session = URI.parse('agent-host-copilot:/session');
+			const file = URI.file('/home/user/project/src/file.ts').with({ fragment: 'L42,7' });
+			const targets = [
+				'/home/user/project/src/file.ts:42:7',
+				'file:///home/user/project/src/file.ts#L42,7',
+			];
+
+			assert.deepStrictEqual(targets.map(href => {
+				const resolved = URI.parse(sessionHandler.resolveChatResponseUri(session, href, 'link'));
+				return { resolved: resolved.toString(), hostUri: fromAgentHostUri(resolved).toString() };
+			}), targets.map(() => ({
+				resolved: toAgentHostUri(file, authority).toString(),
+				hostUri: file.toString(),
+			})));
+		});
+
+		test('uses the WSL connection for image paths and preserves encoded path characters', () => {
+			const { sessionHandler, agentHostService } = createContribution(disposables);
+			const authority = agentHostAuthority('vscode-remote://wsl+Ubuntu');
+			agentHostService.resourceUris = createAgentHostResourceUriMapper(authority);
+			const session = URI.parse('agent-host-copilot:/session');
+			const image = URI.file('/home/user/my project/image.png');
+
+			assert.strictEqual(
+				sessionHandler.resolveChatResponseUri(session, '/home/user/my%20project/image.png', 'image'),
+				toAgentHostUri(image, authority).toString(),
+			);
+		});
+
+		for (const host of ['local', 'WSL']) {
+			test(`routes ${host} internal resource links and images through the owning Agent Host`, () => {
+				const { sessionHandler, agentHostService } = createContribution(disposables);
+				const authority = host === 'local' ? 'local' : agentHostAuthority('vscode-remote://wsl+Ubuntu');
+				agentHostService.resourceUris = host === 'local' ? identityAgentHostResourceUriMapper : createAgentHostResourceUriMapper(authority);
+				const session = URI.parse('agent-host-copilot:/session');
+				const resources = [
+					URI.parse('agenthost-content:///session/my%20result.txt?view=raw#L42,7'),
+					URI.parse('git-blob:///project/src/file.ts?ref=HEAD#L7'),
+				];
+
+				assert.deepStrictEqual(resources.map(resource => {
+					const href = resource.toString();
+					const link = sessionHandler.resolveChatResponseUri(session, href, 'link');
+					return {
+						link,
+						image: sessionHandler.resolveChatResponseUri(session, href, 'image'),
+						unwrapped: fromAgentHostUri(URI.parse(link)).toString(),
+						alreadyMapped: sessionHandler.resolveChatResponseUri(session, toAgentHostUri(resource, authority).toString(), 'link'),
+					};
+				}), resources.map(resource => ({
+					link: toAgentHostUri(resource, authority).toString(),
+					image: toAgentHostUri(resource, authority).toString(),
+					unwrapped: resource.toString(),
+					alreadyMapped: toAgentHostUri(resource, authority).toString(),
+				})));
+			});
+		}
+
+		test('preserves local file links and external or already mapped links', () => {
+			const { sessionHandler, agentHostService } = createContribution(disposables);
+			const session = URI.parse('agent-host-copilot:/session');
+			const local = sessionHandler.resolveChatResponseUri(session, '/project/file.ts:42', 'link');
+			const authority = agentHostAuthority('vscode-remote://wsl+Ubuntu');
+			agentHostService.resourceUris = createAgentHostResourceUriMapper(authority);
+			const mapped = toAgentHostUri(URI.file('/home/user/file.ts'), authority).toString();
+			const external = 'https://example.com/file.ts';
+
+			assert.deepStrictEqual({
+				local,
+				mapped: sessionHandler.resolveChatResponseUri(session, mapped, 'link'),
+				external: sessionHandler.resolveChatResponseUri(session, external, 'link'),
+			}, {
+				local: URI.file('/project/file.ts').with({ fragment: 'L42' }).toString(),
+				mapped,
+				external,
+			});
+		});
 	});
 
 	// ---- Download progress notification (editor window) -----------------
@@ -5263,6 +5348,79 @@ suite('AgentHostChatContribution', () => {
 			}, {
 				credits: 5.0,
 				modelName: 'OpenRouter/Amazon: Nova Micro 1.0',
+			});
+		}));
+
+		test('subagent model reads Auto when explainability is hidden and the routed model when it is not', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			// The subagent bills to the model Auto routed it to. Which of the two
+			// names the pill shows is the whole point of the treatment.
+			const runWithTreatment = async (hideAutoExplainability: boolean): Promise<string | undefined> => {
+				const languageModels = new Map<string, ILanguageModelChatMetadata>([
+					['agent-host-copilot:auto', upcastPartial<ILanguageModelChatMetadata>({ name: 'Auto' })],
+					['agent-host-copilot:gpt-5.4-mini', upcastPartial<ILanguageModelChatMetadata>({ name: 'GPT-5.4 mini' })],
+				]);
+				const { sessionHandler, agentHostService, chatAgentService } = createContribution(disposables, {
+					languageModels,
+					hideAutoExplainability,
+				});
+				const { turnPromise, collected, session, turnId, fire } = await startTurn(sessionHandler, agentHostService, chatAgentService, disposables, {
+					userSelectedModelId: 'agent-host-copilot:auto',
+				});
+
+				const parentToolCallId = `tc-sub-auto-${hideAutoExplainability}`;
+				const parentSession = parseDefaultChatUri(session);
+				assert.ok(parentSession);
+				const childSessionUri = buildSubagentChatUri(parentSession, parentToolCallId);
+				fire({
+					type: 'chat/toolCallStart', session, turnId,
+					toolCallId: parentToolCallId, toolName: 'task', displayName: 'Task',
+					_meta: { toolKind: 'subagent', subagentDescription: 'research' },
+				} as ChatAction);
+				fire({
+					type: 'chat/toolCallReady', session, turnId,
+					toolCallId: parentToolCallId, invocationMessage: 'Spawning subagent',
+					confirmed: 'not-needed',
+				} as ChatAction);
+				fire({
+					type: 'chat/toolCallContentChanged', session, turnId,
+					toolCallId: parentToolCallId,
+					content: [{ type: ToolResultContentType.Subagent, resource: childSessionUri, title: 'Subagent' }],
+				} as ChatAction);
+
+				await timeout(50);
+
+				// The subagent's own turn reports the model Auto routed it to.
+				const childTurnId = `child-turn-auto-${hideAutoExplainability}`;
+				const fireChild = (action: SessionAction | ChatAction) => {
+					agentHostService.fireAction({ channel: childSessionUri, action, serverSeq: 1000, origin: undefined });
+				};
+				fireChild({
+					type: 'chat/turnStarted', startedAt: '2025-01-01T00:00:00.000Z',
+					turnId: childTurnId,
+					message: { text: '', origin: { kind: MessageKind.User } },
+				} as ChatAction);
+				fireChild({
+					type: 'chat/usage', session: childSessionUri, turnId: childTurnId,
+					usage: { model: 'gpt-5.4-mini', _meta: { autoModeResolved: { chosenModel: 'gpt-5.4-mini' } } },
+				} as ChatAction);
+
+				await timeout(50);
+
+				fire({ type: 'chat/turnComplete', endedAt: '2025-01-01T00:00:00.000Z', session, turnId } as ChatAction);
+				await turnPromise;
+
+				const subagentInvocation = collected.flat()
+					.filter((p): p is IChatToolInvocation => p.kind === 'toolInvocation')
+					.find(p => p.toolSpecificData?.kind === 'subagent');
+				return (subagentInvocation?.toolSpecificData as IChatSubagentToolInvocationData | undefined)?.modelName;
+			};
+
+			assert.deepStrictEqual({
+				hidden: await runWithTreatment(true),
+				shown: await runWithTreatment(false),
+			}, {
+				hidden: 'Auto',
+				shown: 'GPT-5.4 mini',
 			});
 		}));
 
@@ -14275,6 +14433,43 @@ suite('AgentHostChatContribution', () => {
 
 			assert.strictEqual(result?.items[0].label, '/yolo on');
 			assert.strictEqual(result?.items[0].insertText, '');
+		});
+
+		test('preserves the runtime skill distinction on command attachments', async () => {
+			const { sessionHandler, agentHostService } = createContribution(disposables);
+
+			(agentHostService as unknown as { completions: (p: CompletionsParams) => Promise<CompletionsResult> }).completions = async () => ({
+				items: [{
+					insertText: '/runtime-skill ',
+					attachment: {
+						type: MessageAttachmentKind.Simple,
+						label: '/runtime-skill ',
+						_meta: {
+							command: 'runtime-skill',
+							isSkill: true,
+							description: 'Run a runtime skill',
+						},
+					},
+				}],
+			});
+
+			const result = await sessionHandler.provideChatInputCompletions(
+				URI.from({ scheme: 'agent-host-copilot', path: '/abc' }),
+				{ text: '/', offset: 1 },
+				CancellationToken.None,
+			);
+
+			assert.deepStrictEqual(result?.items[0].attachment, {
+				kind: 'command',
+				command: 'runtime-skill',
+				isSkill: true,
+				description: 'Run a runtime skill',
+				_meta: {
+					command: 'runtime-skill',
+					isSkill: true,
+					description: 'Run a runtime skill',
+				},
+			});
 		});
 
 		test('routes untitled completions to the current opaque provisional backend', async () => {

@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import type { CopilotSession, CurrentToolMetadata, ElicitationContext, ElicitationFieldValue, ElicitationResult, ElicitationSchema, ElicitationSchemaField, ExitPlanModeCompletedData, ExitPlanModeRequest, ExitPlanModeResult, JsonValue, McpServersLoadedServer, MessageOptions, PermissionAllowAllMode, PermissionAutoApproval, PermissionRequest, PermissionRequestResult, PermissionResult, SessionConfig, SessionHooks, SessionMode as CopilotSdkMode, Tool, ToolResultObject, McpServerStatus as SdkMcpServerStatus } from '@github/copilot-sdk';
+import type { CopilotSession, CurrentToolMetadata, ElicitationContext, ElicitationFieldValue, ElicitationResult, ElicitationSchema, ElicitationSchemaField, ExitPlanModeCompletedData, ExitPlanModeRequest, ExitPlanModeResult, JsonValue, McpServersLoadedServer, MessageOptions, PermissionMode, PermissionAssistedApproval, PermissionRequest, PermissionRequestResult, PermissionResult, SessionConfig, SessionHooks, SessionMode as CopilotSdkMode, Tool, ToolResultObject, McpServerStatus as SdkMcpServerStatus } from '@github/copilot-sdk';
 import { cp, rm } from 'fs/promises';
 import { DeferredPromise, raceCancellation, RunOnceScheduler, Sequencer, SequencerByKey, Throttler, timeout } from '../../../../base/common/async.js';
 import { encodeBase64, VSBuffer } from '../../../../base/common/buffer.js';
@@ -31,6 +31,7 @@ import product from '../../../product/common/product.js';
 import { ITelemetryService } from '../../../telemetry/common/telemetry.js';
 import { getCopilotHomePath } from '../../common/copilotHome.js';
 import { CopilotCliConfigKey, copilotCliConfigSchema } from '../../common/copilotCliConfig.js';
+import type { AutoModeTier } from '../../common/autoModeTiers.js';
 import type { ChatInputRequestWithPlanReview, IAgentHostPlanReviewAction } from '../../common/agentHostPlanReview.js';
 import { ChatInputRequestPurpose, withChatInputRequestPurpose } from '../../common/meta/agentChatInputRequestMeta.js';
 import { gitHubMcpServerUrl } from '../../common/githubEndpoints.js';
@@ -85,6 +86,7 @@ import type { ErrorInfo, ProtectedResourceMetadata } from '../../common/state/pr
 import { CopilotSlashCommandProvider } from './copilotSlashCommandProvider.js';
 import { createCopilotFailureCorrelation, reportCopilotModelCallFailure, reportCopilotSdkSessionError } from './copilotFailureTelemetry.js';
 import { reportCopilotTodoStoreOperation } from './copilotTodoStoreTelemetry.js';
+import { ModelCallTurnCorrelation } from './modelCallTurnCorrelation.js';
 
 type CopilotSdkAttachment = Required<MessageOptions>['attachments'][number];
 type CopilotCommandInvocationResult = Awaited<ReturnType<CopilotSession['rpc']['commands']['invoke']>>;
@@ -746,12 +748,18 @@ export class CopilotAgentSession extends Disposable {
 	 */
 	private readonly _parentToolCallIdsByAgentId = new Map<string, string>();
 	private readonly _rootTurnIdBySubagentToolCallId = new Map<string, string>();
+	readonly modelCallTurnCorrelation = new ModelCallTurnCorrelation();
 	private readonly _subagentDirectUsageByToolCallId = new Map<string, DirectUsageAccumulator>();
 	private readonly _lastSubagentUsageByToolCallId = new Map<string, UsageInfo>();
+	/**
+	 * Auto's routing decision per subagent. Keyed by tool call rather than turn: a
+	 * subagent outlives the root turn that spawned it when steering mints a new one.
+	 */
+	private readonly _autoModeResolvedByToolCallId = new Map<string, NonNullable<UsageInfoMeta['autoModeResolved']>>();
 	private readonly _activeSubagentAgentIds = new Set<string>();
 	private readonly _unroutableSubagentToolCallIds = new Set<string>();
-	private readonly _autoApprovals = new Map<string, PermissionAutoApproval | null>();
-	private readonly _pendingAutoApprovals = new PendingRequestRegistry<PermissionAutoApproval | undefined>();
+	private readonly _autoApprovals = new Map<string, PermissionAssistedApproval | null>();
+	private readonly _pendingAutoApprovals = new PendingRequestRegistry<PermissionAssistedApproval | undefined>();
 	/** Correlates tool execution with the SDK permission lifecycle for `chat.toolApproval` telemetry. */
 	private readonly _toolApprovalRecords = new Map<string, {
 		permissionRequested: boolean;
@@ -934,7 +942,7 @@ export class CopilotAgentSession extends Disposable {
 	private readonly _slashCommandProvider: CopilotSlashCommandProvider;
 	/** Last agent mode pushed to the SDK via {@link applyMode}, to elide redundant `rpc.mode.set` calls. */
 	private _lastAppliedMode: CopilotSdkMode | undefined;
-	private _lastAppliedPermissionMode: PermissionAllowAllMode | undefined;
+	private _lastAppliedPermissionMode: PermissionMode | undefined;
 	private _autoApprovalExperimentalModeEnabled = false;
 	private readonly _permissionModeSequencer = new Sequencer();
 	private readonly _mcpEnablementSequencer = new Sequencer();
@@ -1337,6 +1345,7 @@ export class CopilotAgentSession extends Disposable {
 			this._rootTurnIdBySubagentToolCallId.delete(parentToolCallId);
 			this._subagentDirectUsageByToolCallId.delete(parentToolCallId);
 			this._lastSubagentUsageByToolCallId.delete(parentToolCallId);
+			this._autoModeResolvedByToolCallId.delete(parentToolCallId);
 			return;
 		}
 		this._onDidSessionProgress.fire({
@@ -1347,6 +1356,7 @@ export class CopilotAgentSession extends Disposable {
 		this._rootTurnIdBySubagentToolCallId.delete(parentToolCallId);
 		this._subagentDirectUsageByToolCallId.delete(parentToolCallId);
 		this._lastSubagentUsageByToolCallId.delete(parentToolCallId);
+		this._autoModeResolvedByToolCallId.delete(parentToolCallId);
 	}
 
 	private _directUsageFor(parentToolCallId: string | undefined, create: boolean): DirectUsageAccumulator | undefined {
@@ -2081,6 +2091,17 @@ export class CopilotAgentSession extends Disposable {
 			wrapper.dispose();
 			throw new CancellationError();
 		}
+		const samplingInterest = await wrapper.session.rpc.eventLog.registerInterest({ eventType: 'sampling.requested' });
+		if (this._store.isDisposed) {
+			await wrapper.session.rpc.eventLog.releaseInterest({ handle: samplingInterest.handle });
+			wrapper.dispose();
+			throw new CancellationError();
+		}
+		this._register(toDisposable(() => {
+			void wrapper.session.rpc.eventLog.releaseInterest({ handle: samplingInterest.handle }).catch(error => {
+				this._logService.error(error, `[Copilot:${this.sessionId}] Failed to release sampling event interest`);
+			});
+		}));
 		this._wrapper = this._register(wrapper);
 		this._register(this._customizationEnablementService.onDidChange(event => {
 			if (!event.sessions.includes(this._ownerSessionUri.toString())) {
@@ -3184,6 +3205,14 @@ export class CopilotAgentSession extends Disposable {
 		await this._wrapper.disconnect();
 	}
 
+	/**
+	 * The Auto routing profile this session launched with, which the runtime fixes for the session's
+	 * lifetime. Read from the frozen plan so a later gate flip cannot change what it reports.
+	 */
+	get launchAutoTier(): AutoModeTier | undefined {
+		return this._launchPlan.kind === 'create' ? this._launchPlan.autoTier : this._launchPlan.fallback.autoTier;
+	}
+
 	async setModel(model: string, reasoningEffort?: SessionConfig['reasoningEffort'], contextTier?: SessionConfig['contextTier']): Promise<void> {
 		this._logService.info(`[Copilot:${this.sessionId}] Changing model to: ${model}`);
 		this._lastSeenModelId = model;
@@ -3414,6 +3443,17 @@ export class CopilotAgentSession extends Disposable {
 		}
 	}
 
+	private async _rejectSamplingRequest(requestId: string): Promise<void> {
+		try {
+			const result = await this._wrapper.session.rpc.ui.handlePendingSampling({ requestId });
+			if (!result.success) {
+				this._logService.warn(`[Copilot:${this.sessionId}] Sampling request was no longer pending: requestId=${requestId}`);
+			}
+		} catch (error) {
+			this._logService.error(error, `[Copilot:${this.sessionId}] Failed to reject sampling request: requestId=${requestId}`);
+		}
+	}
+
 	/**
 	 * Selects (or clears) a custom agent on the live SDK session.
 	 * Mirrors the SDK's `rpc.agent.select` / `rpc.agent.deselect` pair.
@@ -3465,7 +3505,7 @@ export class CopilotAgentSession extends Disposable {
 			const requestSandboxBypass = request.kind === 'shell' || request.kind === 'write' || request.kind === 'read' || request.kind === 'url'
 				? request.requestSandboxBypass
 				: undefined;
-			const autoApproval = !managedApprovalRequired && this._lastAppliedPermissionMode === 'auto'
+			const autoApproval = !managedApprovalRequired && this._lastAppliedPermissionMode === 'assisted'
 				? await this._takeAutoApproval(toolCallId)
 				: undefined;
 			const recommendation = autoApproval?.recommendation;
@@ -3626,7 +3666,7 @@ export class CopilotAgentSession extends Disposable {
 			}
 
 			const isNewFile = edits?.items.some(edit => !edit.before && !!edit.after);
-			const { confirmationTitle, invocationMessage, toolInput, permissionKind, permissionPath } = getPermissionDisplay(request, this._workingDirectory, isNewFile);
+			const { confirmationTitle, invocationMessage, toolInput, permissionKind, permissionPath } = getPermissionDisplay(request, this._workingDirectory, isNewFile, this._appliedAdditionalDirectories);
 
 			// Fire a pending_confirmation signal to transition the tool to PendingConfirmation
 			const toolName = request.kind === 'mcp' || request.kind === 'custom-tool' || request.kind === 'hook'
@@ -3766,13 +3806,13 @@ export class CopilotAgentSession extends Disposable {
 		return this._configurationService.getEffectiveValue(this._ownerSessionUri.toString(), platformSessionSchema, SessionConfigKey.AutoApprove) === 'autoApprove';
 	}
 
-	private _getSdkPermissionMode(): PermissionAllowAllMode {
+	private _getSdkPermissionMode(): PermissionMode {
 		if (this._isBypassApprovals()) {
-			return 'on';
+			return 'allow-all';
 		}
 		return this._getConfiguredApprovalLevel() === 'assisted'
-			? 'auto'
-			: 'off';
+			? 'assisted'
+			: 'manual';
 	}
 
 	private _getConfiguredApprovalLevel(): string {
@@ -3811,7 +3851,7 @@ export class CopilotAgentSession extends Disposable {
 		}
 	}
 
-	private async _takeAutoApproval(toolCallId: string): Promise<PermissionAutoApproval | undefined> {
+	private async _takeAutoApproval(toolCallId: string): Promise<PermissionAssistedApproval | undefined> {
 		if (this._autoApprovals.has(toolCallId)) {
 			const autoApproval = this._autoApprovals.get(toolCallId) ?? undefined;
 			this._autoApprovals.delete(toolCallId);
@@ -3820,7 +3860,7 @@ export class CopilotAgentSession extends Disposable {
 		return this._pendingAutoApprovals.register(toolCallId);
 	}
 
-	private _recordAutoApproval(toolCallId: string, autoApproval: PermissionAutoApproval | undefined): void {
+	private _recordAutoApproval(toolCallId: string, autoApproval: PermissionAssistedApproval | undefined): void {
 		if (this._pendingAutoApprovals.respond(toolCallId, autoApproval)) {
 			return;
 		}
@@ -3832,7 +3872,7 @@ export class CopilotAgentSession extends Disposable {
 			const mode = this._getSdkPermissionMode();
 			const configuredLevel = this._getConfiguredApprovalLevel();
 			this._logService.info(`[Copilot:${this.sessionId}] Syncing permission mode: source=${source}, agentMode=${this._getConfiguredAgentMode()}, configuredLevel=${configuredLevel}, sdkMode=${mode}, previousSdkMode=${this._lastAppliedPermissionMode ?? 'unknown'}, globalAutoApprove=${this._configurationService.getRootValue(platformRootSchema, AgentHostGlobalAutoApproveEnabledConfigKey) === true}`);
-			const experimentalModeEnabled = mode === 'auto';
+			const experimentalModeEnabled = mode === 'assisted';
 			if (this._autoApprovalExperimentalModeEnabled !== experimentalModeEnabled) {
 				const experimentalResult = await this._wrapper.session.rpc.options.update({ isExperimentalMode: experimentalModeEnabled });
 				if (!experimentalResult.success) {
@@ -3844,7 +3884,7 @@ export class CopilotAgentSession extends Disposable {
 			if (this._lastAppliedPermissionMode === mode) {
 				return;
 			}
-			const result = await this._wrapper.session.rpc.permissions.setAllowAll({ mode });
+			const result = await this._wrapper.session.rpc.permissions.setMode({ mode });
 			if (!result.success || (result.mode !== undefined && result.mode !== mode)) {
 				throw new Error(`Copilot SDK rejected permission mode '${mode}'`);
 			}
@@ -4572,13 +4612,17 @@ export class CopilotAgentSession extends Disposable {
 			}
 		}));
 
+		this._register(wrapper.onSamplingRequested(e => {
+			void this._rejectSamplingRequest(e.data.requestId);
+		}));
+
 		// TODO@connor4312: Remove this correlation once the SDK permission callback includes auto-approval data.
 		this._register(wrapper.onPermissionRequested(e => {
 			const toolCallId = e.data.permissionRequest.toolCallId;
 			if (!toolCallId) {
 				return;
 			}
-			this._recordAutoApproval(toolCallId, e.data.promptRequest?.autoApproval);
+			this._recordAutoApproval(toolCallId, e.data.promptRequest?.assistedApproval);
 			const existing = this._toolApprovalRecords.get(toolCallId);
 			const permissionRequest = e.data.permissionRequest as { requestSandboxBypass?: boolean; toolName?: string };
 			this._toolApprovalRecords.set(toolCallId, {
@@ -4820,7 +4864,7 @@ export class CopilotAgentSession extends Disposable {
 				return;
 			}
 
-			const clientToolAutoApproved = contributor?.kind === ToolCallContributorKind.Client && this._lastAppliedPermissionMode === 'on';
+			const clientToolAutoApproved = contributor?.kind === ToolCallContributorKind.Client && this._lastAppliedPermissionMode === 'allow-all';
 			if (isToolSearch && clientToolAutoApproved) {
 				meta.autoApproveBySetting = true;
 			}
@@ -5137,7 +5181,9 @@ export class CopilotAgentSession extends Disposable {
 			this._lastSeenModelId = e.data.chosenModel;
 			const turnId = this._turnId;
 			this._logService.info(`[Copilot:${sessionId}] Auto mode resolved to ${e.data.chosenModel}${e.data.reasoningBucket ? ` (${e.data.reasoningBucket})` : ''}`);
-			if (!turnId) {
+			// A subagent's routing is recorded against its tool call, so unlike the
+			// parent's it does not need an active root turn to attach to.
+			if (!turnId && !e.agentId) {
 				return;
 			}
 			if (!e.agentId) {
@@ -5160,6 +5206,18 @@ export class CopilotAgentSession extends Disposable {
 					chosenShortfall: e.data.chosenShortfall,
 					hasImage: e.data.hasImage,
 				});
+			}
+			// A subagent routes its own model calls, so record the decision against the
+			// subagent rather than letting it describe the parent turn. Auto routes
+			// before the model call, so the usage event that follows picks this up.
+			if (e.agentId) {
+				const subagentToolCallId = this._parentToolCallIdForSubagentEvent(e);
+				if (!subagentToolCallId) {
+					this._logService.warn(`[Copilot:${sessionId}] Unable to attribute Auto mode resolution for unknown subagent agentId=${e.agentId}; leaving the parent turn's routing untouched`);
+				} else {
+					this._autoModeResolvedByToolCallId.set(subagentToolCallId, e.data);
+				}
+				return;
 			}
 			autoModeResolved = { turnId, data: e.data };
 			const priorUsage = lastParentUsageTurnId === turnId ? lastParentUsage : undefined;
@@ -5256,6 +5314,11 @@ export class CopilotAgentSession extends Disposable {
 				}
 				if (isParentScope && autoModeResolved?.turnId === this._turnId) {
 					metadata.autoModeResolved = autoModeResolved.data;
+				} else if (!isParentScope && directOwnerToolCallId) {
+					const subagentAutoMode = this._autoModeResolvedByToolCallId.get(directOwnerToolCallId);
+					if (subagentAutoMode) {
+						metadata.autoModeResolved = subagentAutoMode;
+					}
 				}
 				if (scopedCopilotUsage) {
 					metadata.copilotUsage = scopedCopilotUsage;
@@ -5457,6 +5520,9 @@ export class CopilotAgentSession extends Disposable {
 			if (parentToolCallId && directUsage) {
 				const priorUsage = this._lastSubagentUsageByToolCallId.get(parentToolCallId);
 				const metadata: UsageInfoMeta = { ...(priorUsage?._meta ?? {}) };
+				// A compaction can be the first usage this subagent reports, so carry
+				// its routing across rather than describing it by a concrete model.
+				metadata.autoModeResolved ??= this._autoModeResolvedByToolCallId.get(parentToolCallId);
 				if (directUsage.tokenTotals) {
 					metadata.directTurnTokenTotals = directUsage.tokenTotals;
 				}
