@@ -11,7 +11,7 @@ independently by different hooks.
 | Hook | Fires | Contributions, in order |
 |---|---|---|
 | `onIncomingRequest` | A turn request asks to proceed to a provider. Synchronous, fails closed. | `localCommand` 50, `turnAdmission` 100 |
-| `onTurnEnd` | A turn reached a terminal outcome. | `checkpointAndChangeset` 100, `queueDrain` 200, `githubReferences` 300, `sessionTitle` 400, `markUnread` 500, `sideChat` 500 |
+| `onTurnEnd` | A turn reached a terminal outcome. | `checkpointAndChangeset` 100, `quickChatWorkspaceConversion` 150, `queueDrain` 200, `githubReferences` 300, `sessionTitle` 400, `markUnread` 500, `sideChat` 500 |
 | `onAction` | A client action was reduced into host state. | `queueDrain` 200, `sessionTitle` 400, `chatDraft` 600 |
 | `onOutgoingTurn` | A turn is about to be sent. | `turnDelegation` 50, `markdownPlanRichLinks` 100, `artifactTools` 200, `chatSurface` 300, `sessionTitle` 400, `sideChat` 500 |
 | `onHydrateTurns` | A provider returned a restored turn list. | `turnDelegation` 50, `persistedTurnUsage` 100, `worktreeAnnouncement` 200, `sideChat` 500 |
@@ -45,6 +45,8 @@ service graph. Keep it a function unless it acquires state.
 
 - `checkpointAndChangeset` (100) captures the checkpoint before scheduling the changeset
   recompute; filters to `kind === 'success' || kind === 'error'`.
+- `quickChatWorkspaceConversion` (150) starts a tool-scheduled in-place conversion after
+  the invoking turn succeeds. Queue draining treats its pending state as a barrier.
 - `queueDrain` (200) owns queued-sender mementos and pending-message synchronization, and
   decides when a queued message may start a turn; drains for
   `kind === 'success' || kind === 'localCommand'`.

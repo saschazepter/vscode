@@ -274,17 +274,24 @@ export function isAhpAutomationRunChannel(uri: string): boolean {
 
 const MESSAGE_HIDDEN_FROM_TRANSCRIPT_META_KEY = 'vscode.chat.hiddenFromTranscript';
 const MESSAGE_HIDDEN_FROM_TRANSCRIPT_PREFIX = '<!-- vscode-hidden-from-transcript -->\n';
+const MESSAGE_SYSTEM_INITIATED_LABEL_META_KEY = 'vscode.chat.systemInitiatedLabel';
 
-function readMessageMeta(message: Message): { readonly hiddenFromTranscript: boolean } {
+function readMessageMeta(message: Message): { readonly hiddenFromTranscript: boolean; readonly systemInitiatedLabel: string | undefined } {
 	const meta = message._meta;
+	const systemInitiatedLabel = meta?.[MESSAGE_SYSTEM_INITIATED_LABEL_META_KEY];
 	return {
 		hiddenFromTranscript: meta?.[MESSAGE_HIDDEN_FROM_TRANSCRIPT_META_KEY] === true,
+		systemInitiatedLabel: typeof systemInitiatedLabel === 'string' ? systemInitiatedLabel : undefined,
 	};
 }
 
 export function isMessageHiddenFromTranscript(message: Message): boolean {
 	return readMessageMeta(message).hiddenFromTranscript
 		|| message.text.startsWith(MESSAGE_HIDDEN_FROM_TRANSCRIPT_PREFIX);
+}
+
+export function readMessageSystemInitiatedLabel(message: Message): string | undefined {
+	return readMessageMeta(message).systemInitiatedLabel;
 }
 
 export function withMessageHiddenFromTranscript(message: Message, hidden: boolean | undefined): Message {
@@ -297,6 +304,16 @@ export function withMessageHiddenFromTranscript(message: Message, hidden: boolea
 		_meta: {
 			...message._meta,
 			[MESSAGE_HIDDEN_FROM_TRANSCRIPT_META_KEY]: true,
+		},
+	};
+}
+
+export function withMessageSystemInitiatedLabel(message: Message, label: string): Message {
+	return {
+		...message,
+		_meta: {
+			...message._meta,
+			[MESSAGE_SYSTEM_INITIATED_LABEL_META_KEY]: label,
 		},
 	};
 }
