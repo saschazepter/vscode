@@ -484,14 +484,16 @@ export function systemNotificationToChatPart(content: StringOrMarkdown | undefin
 			return meta.severity === AgentSystemNotificationSeverity.Warning
 				? { kind: 'warning', content: markdown }
 				: { kind: 'systemNotification', content: markdown };
-		// Agent Merge reports a state change rather than a completed step, so the
-		// default check would misdescribe both of these.
+		// Agent Merge state changes use icons that describe the transition rather
+		// than the default completed-step check.
 		case AgentSystemNotificationKind.AgentMergeEnabled:
 			return { kind: 'systemNotification', content: markdown, icon: Codicon.gitMerge, collapsible: true };
 		case AgentSystemNotificationKind.AgentMergeConfigurationChanged:
 			return { kind: 'systemNotification', content: markdown, icon: Codicon.settingsGear, collapsible: true };
 		case AgentSystemNotificationKind.AgentMergeDisabled:
 			return { kind: 'systemNotification', content: markdown, icon: Codicon.circleSlash };
+		case AgentSystemNotificationKind.AgentMergePullRequestMerged:
+			return { kind: 'systemNotification', content: markdown, icon: Codicon.gitMerge };
 		default:
 			return { kind: 'systemNotification', content: markdown };
 	}
