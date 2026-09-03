@@ -488,6 +488,13 @@ export interface ICopilotAgentSessionOptions {
 	readonly realpath?: (path: string) => Promise<string>;
 }
 
+/** Keeps provider-owned state consistent with a live SDK working-directory mutation. */
+export interface ICopilotWorkingDirectoryChangeTransaction {
+	prepare(): Promise<void>;
+	rollback(): Promise<void>;
+	reconcile(authoritativeWorkingDirectory: URI): Promise<void>;
+}
+
 /**
  * Lifecycle state of a {@link CopilotTurn}.
  *
@@ -976,6 +983,7 @@ export class CopilotAgentSession extends Disposable {
 	/** SDK session wrapper, set by {@link initializeSession}. */
 	private _wrapper!: CopilotSessionWrapper;
 	private _workingDirectoryMutationInProgress = false;
+	private _requiresRestartAfterWorkingDirectoryChange = false;
 	private readonly _slashCommandProvider: CopilotSlashCommandProvider;
 	/** Last agent mode pushed to the SDK via {@link applyMode}, to elide redundant `rpc.mode.set` calls. */
 	private _lastAppliedMode: CopilotSdkMode | undefined;
@@ -1854,6 +1862,10 @@ export class CopilotAgentSession extends Disposable {
 		return this._appliedSnapshot;
 	}
 
+	get requiresRestartAfterWorkingDirectoryChange(): boolean {
+		return this._requiresRestartAfterWorkingDirectoryChange;
+	}
+
 	get requiresMcpLaunchConfigurationRefresh(): boolean {
 		this._markMcpLaunchConfigurationDirty();
 		return this._mcpLaunchConfigurationDirty;
@@ -2400,11 +2412,7 @@ export class CopilotAgentSession extends Disposable {
 
 	// ---- session operations -------------------------------------------------
 
-	async setWorkingDirectory(workingDirectory: URI, transaction?: {
-		prepare(): Promise<void>;
-		revert(): Promise<void>;
-		reconcile(authoritativeWorkingDirectory: URI): Promise<void>;
-	}): Promise<void> {
+	async setWorkingDirectory(workingDirectory: URI, transaction: ICopilotWorkingDirectoryChangeTransaction): Promise<void> {
 		if (!this._wrapper) {
 			throw new Error('Cannot change the working directory before the session is initialized');
 		}
@@ -2422,39 +2430,35 @@ export class CopilotAgentSession extends Disposable {
 
 		this._workingDirectoryMutationInProgress = true;
 		try {
-			if (transaction) {
+			try {
+				await transaction.prepare();
+			} catch (prepareError) {
 				try {
-					await transaction.prepare();
-				} catch (prepareError) {
-					try {
-						await transaction.revert();
-					} catch (revertError) {
-						throw new Error(`Working directory preparation failed: ${getErrorMessage(prepareError)}; failed to revert the prepared working directory: ${getErrorMessage(revertError)}`);
-					}
-					throw prepareError;
+					await transaction.rollback();
+				} catch (rollbackError) {
+					throw new Error(`Working directory preparation failed: ${getErrorMessage(prepareError)}; failed to roll back the prepared working directory: ${getErrorMessage(rollbackError)}`);
 				}
+				throw prepareError;
+			}
 
-				if (this.hasActiveTurn) {
-					const activeTurnError = new Error('Cannot change the working directory while a turn is active');
-					try {
-						await transaction.revert();
-					} catch (revertError) {
-						throw new Error(`${activeTurnError.message}; failed to revert the prepared working directory: ${getErrorMessage(revertError)}`);
-					}
-					throw activeTurnError;
+			if (this.hasActiveTurn) {
+				const activeTurnError = new Error('Cannot change the working directory while a turn is active');
+				try {
+					await transaction.rollback();
+				} catch (rollbackError) {
+					throw new Error(`${activeTurnError.message}; failed to roll back the prepared working directory: ${getErrorMessage(rollbackError)}`);
 				}
+				throw activeTurnError;
 			}
 
 			let result: Awaited<ReturnType<CopilotSession['rpc']['metadata']['setWorkingDirectory']>>;
 			try {
 				result = await this._wrapper.session.rpc.metadata.setWorkingDirectory({ workingDirectory: workingDirectory.fsPath });
 			} catch (sdkError) {
-				if (transaction) {
-					try {
-						await transaction.revert();
-					} catch (revertError) {
-						throw new Error(`Failed to change the SDK working directory: ${getErrorMessage(sdkError)}; failed to revert the prepared working directory: ${getErrorMessage(revertError)}`);
-					}
+				try {
+					await transaction.rollback();
+				} catch (rollbackError) {
+					throw new Error(`Failed to change the SDK working directory: ${getErrorMessage(sdkError)}; failed to roll back the prepared working directory: ${getErrorMessage(rollbackError)}`);
 				}
 				throw sdkError;
 			}
@@ -2479,6 +2483,7 @@ export class CopilotAgentSession extends Disposable {
 				} finally {
 					this._workingDirectory = workingDirectory;
 					this._customizationDirectory = workingDirectory;
+					this._requiresRestartAfterWorkingDirectoryChange = true;
 				}
 				const alignmentErrors = [runtimeAlignmentError, shellAlignmentError].filter(isDefined);
 				if (alignmentErrors.length > 0) {
@@ -2496,13 +2501,12 @@ export class CopilotAgentSession extends Disposable {
 			} finally {
 				this._workingDirectory = actualUri;
 				this._customizationDirectory = actualUri;
+				this._requiresRestartAfterWorkingDirectoryChange = true;
 			}
-			if (transaction) {
-				try {
-					await transaction.reconcile(actualUri);
-				} catch (reconcileError) {
-					alignmentErrors.push(`failed to reconcile the authoritative working directory: ${getErrorMessage(reconcileError)}`);
-				}
+			try {
+				await transaction.reconcile(actualUri);
+			} catch (reconcileError) {
+				alignmentErrors.push(`failed to reconcile the authoritative working directory: ${getErrorMessage(reconcileError)}`);
 			}
 			if (alignmentErrors.length > 0) {
 				throw new AgentWorkingDirectoryChangedError(actualUri, `${mismatchError.message}; ${alignmentErrors.join('; ')}`);
