@@ -215,11 +215,13 @@ function createFixtureAgentHostItemProvider(files: readonly IFixtureFile[], remo
 					uri: URI.file(`/workspace/.github/${folderName}`),
 					label: '.github',
 					source: PromptsStorage.local,
+					destinationGroupId: 'workspace-github',
 				},
 				{
 					uri: URI.file(`/home/dev/.copilot/${folderName}`),
 					label: '~/.copilot',
 					source: PromptsStorage.user,
+					destinationGroupId: 'user-copilot',
 				},
 			];
 		},
@@ -886,6 +888,7 @@ async function renderEditor(ctx: ComponentFixtureContext, options: IRenderEditor
 					showGettingStartedBanner: true,
 				};
 				override readonly activeProjectRoot = observableValue('root', URI.file('/workspace'));
+				override readonly activeProjectLabel = observableValue('label', 'workspace');
 				override readonly hasOverrideProjectRoot = observableValue('hasOverride', false);
 				override getActiveProjectRoot() { return URI.file('/workspace'); }
 				override clearOverrideProjectRoot() { }
@@ -1170,6 +1173,8 @@ async function renderEditor(ctx: ComponentFixtureContext, options: IRenderEditor
 
 	if (options.scrollToBottom) {
 		editor.revealLastItem();
+		// Allow the 500ms hide delay and 800ms fade transition to complete.
+		await new Promise(resolve => setTimeout(resolve, 1400));
 	}
 
 	if (options.migrationCategory) {
@@ -1273,6 +1278,7 @@ async function renderMcpBrowseMode(ctx: ComponentFixtureContext): Promise<void> 
 					showGettingStartedBanner: true,
 				};
 				override readonly activeProjectRoot = observableValue('root', URI.file('/workspace'));
+				override readonly activeProjectLabel = observableValue('label', 'workspace');
 				override readonly hasOverrideProjectRoot = observableValue('hasOverride', false);
 				override getActiveProjectRoot() { return URI.file('/workspace'); }
 			}());
@@ -1389,6 +1395,10 @@ async function renderPluginCatalog(ctx: ComponentFixtureContext, browse: boolean
 		makeInstalledPlugin('Sentry', URI.file('/home/dev/.vscode/agent-plugins/example/sentry-plugin'), true),
 		makeInstalledPlugin('Datadog', URI.file('/home/dev/.vscode/agent-plugins/example/datadog-plugin'), false, true),
 	];
+	const marketplaceInstalledPlugins = noInstalledPlugins ? [] : marketplacePlugins.slice(0, 3).map((plugin, index) => ({
+		pluginUri: browseInstalledPlugins[index].uri,
+		plugin,
+	}));
 
 	// Map plugin source descriptors to install URIs, matching installed URIs above
 	const pluginInstallUris = new Map<string, URI>([
@@ -1418,7 +1428,7 @@ async function renderPluginCatalog(ctx: ComponentFixtureContext, browse: boolean
 				override readonly enablementModel = undefined!;
 			}());
 			reg.defineInstance(IPluginMarketplaceService, new class extends mock<IPluginMarketplaceService>() {
-				override readonly installedPlugins = constObservable([]);
+				override readonly installedPlugins = constObservable(marketplaceInstalledPlugins);
 				override readonly recommendedPlugins = constObservable(new Set(['Figma@copilot', 'Stripe@copilot']));
 				override readonly onDidChangeMarketplaces = Event.None;
 				override async fetchMarketplacePlugins() { return marketplacePlugins; }
@@ -2136,6 +2146,7 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 	// Scrolled-to-bottom variants — verify last items are fully visible above footer
 	PromptsTabScrolled: defineComponentFixture({
 		labels: { kind: 'screenshot' },
+		virtualTime: { durationMs: 1500 },
 		render: ctx => renderEditor(ctx, {
 			sessionResource: localSessionResource,
 			selectedSection: AICustomizationManagementSection.Prompts,
@@ -2145,6 +2156,7 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 
 	McpServersTabScrolled: defineComponentFixture({
 		labels: { kind: 'screenshot' },
+		virtualTime: { durationMs: 1500 },
 		render: ctx => renderEditor(ctx, {
 			sessionResource: localSessionResource,
 			selectedSection: AICustomizationManagementSection.McpServers,
@@ -2154,6 +2166,7 @@ export default defineThemedFixtureGroup({ path: 'chat/aiCustomizations/' }, {
 
 	PluginsTabScrolled: defineComponentFixture({
 		labels: { kind: 'screenshot' },
+		virtualTime: { durationMs: 1500 },
 		render: ctx => renderEditor(ctx, {
 			sessionResource: localSessionResource,
 			selectedSection: AICustomizationManagementSection.Plugins,

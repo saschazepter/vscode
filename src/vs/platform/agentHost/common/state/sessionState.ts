@@ -280,19 +280,29 @@ export function isAhpAutomationRunChannel(uri: string): boolean {
 const MESSAGE_HIDDEN_FROM_TRANSCRIPT_META_KEY = 'vscode.chat.hiddenFromTranscript';
 const MESSAGE_HIDDEN_FROM_TRANSCRIPT_PREFIX = '<!-- vscode-hidden-from-transcript -->\n';
 const MESSAGE_SYSTEM_INITIATED_LABEL_META_KEY = 'vscode.chat.systemInitiatedLabel';
+const MESSAGE_REQUEST_HIDDEN_FROM_TRANSCRIPT_META_KEY = 'vscode.chat.requestHiddenFromTranscript';
+const MESSAGE_REQUEST_HIDDEN_FROM_TRANSCRIPT_PREFIX = '<!-- vscode-request-hidden-from-transcript -->\n';
 
-function readMessageMeta(message: Message): { readonly hiddenFromTranscript: boolean; readonly systemInitiatedLabel: string | undefined } {
+function readMessageMeta(message: Message): { readonly hiddenFromTranscript: boolean; readonly requestHiddenFromTranscript: boolean; readonly systemInitiatedLabel: string | undefined } {
 	const meta = message._meta;
+	const hiddenFromTranscript = meta?.[MESSAGE_HIDDEN_FROM_TRANSCRIPT_META_KEY] === true
+		|| message.text.startsWith(MESSAGE_HIDDEN_FROM_TRANSCRIPT_PREFIX);
 	const systemInitiatedLabel = meta?.[MESSAGE_SYSTEM_INITIATED_LABEL_META_KEY];
 	return {
-		hiddenFromTranscript: meta?.[MESSAGE_HIDDEN_FROM_TRANSCRIPT_META_KEY] === true,
+		hiddenFromTranscript,
+		requestHiddenFromTranscript: meta?.[MESSAGE_REQUEST_HIDDEN_FROM_TRANSCRIPT_META_KEY] === true
+			|| message.text.startsWith(MESSAGE_REQUEST_HIDDEN_FROM_TRANSCRIPT_PREFIX),
 		systemInitiatedLabel: typeof systemInitiatedLabel === 'string' ? systemInitiatedLabel : undefined,
 	};
 }
 
 export function isMessageHiddenFromTranscript(message: Message): boolean {
-	return readMessageMeta(message).hiddenFromTranscript
-		|| message.text.startsWith(MESSAGE_HIDDEN_FROM_TRANSCRIPT_PREFIX);
+	return readMessageMeta(message).hiddenFromTranscript;
+}
+
+/** Whether only the message's request row is hidden while its response remains visible. */
+export function isMessageRequestHiddenFromTranscript(message: Message): boolean {
+	return readMessageMeta(message).requestHiddenFromTranscript;
 }
 
 export function readMessageSystemInitiatedLabel(message: Message): string | undefined {
@@ -319,6 +329,21 @@ export function withMessageSystemInitiatedLabel(message: Message, label: string)
 		_meta: {
 			...message._meta,
 			[MESSAGE_SYSTEM_INITIATED_LABEL_META_KEY]: label,
+		},
+	};
+}
+
+/** Marks only the message's request row as hidden while preserving its response. */
+export function withMessageRequestHiddenFromTranscript(message: Message, hidden: boolean | undefined): Message {
+	if (!hidden || isMessageHiddenFromTranscript(message)) {
+		return message;
+	}
+	return {
+		...message,
+		text: message.text.startsWith(MESSAGE_REQUEST_HIDDEN_FROM_TRANSCRIPT_PREFIX) ? message.text : MESSAGE_REQUEST_HIDDEN_FROM_TRANSCRIPT_PREFIX + message.text,
+		_meta: {
+			...message._meta,
+			[MESSAGE_REQUEST_HIDDEN_FROM_TRANSCRIPT_META_KEY]: true,
 		},
 	};
 }
