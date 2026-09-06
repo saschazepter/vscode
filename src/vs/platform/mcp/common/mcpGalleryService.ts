@@ -687,15 +687,28 @@ namespace McpServerSchemaVersion_v0 {
 				return undefined;
 			}
 			const candidate = input as { readonly servers?: unknown; readonly metadata?: unknown };
-			if (!Array.isArray(candidate.servers)) {
+			if (!Array.isArray(candidate.servers) || !isObject(candidate.metadata)) {
 				return undefined;
 			}
-			const isV0_1 = candidate.servers.some(server => {
-				return isObject(server) && isObject((server as { readonly server?: unknown }).server);
-			}) || (candidate.servers.length === 0 && isObject(candidate.metadata) && Object.hasOwn(candidate.metadata, 'nextCursor'));
-			return isV0_1
-				? McpServerSchemaVersion_v0_1.SERIALIZER.toRawGalleryMcpServerResult(input)
-				: McpServerSchemaVersion_v2025_07_09.SERIALIZER.toRawGalleryMcpServerResult(input);
+			const metadata = candidate.metadata as { readonly count?: unknown; readonly nextCursor?: unknown; readonly next_cursor?: unknown };
+			if (typeof metadata.count !== 'number') {
+				return undefined;
+			}
+
+			const servers: IRawGalleryMcpServer[] = [];
+			for (const server of candidate.servers) {
+				const rawServer = this.toRawGalleryMcpServer(server);
+				if (rawServer) {
+					servers.push(rawServer);
+				}
+			}
+			return {
+				metadata: {
+					count: metadata.count,
+					nextCursor: isString(metadata.nextCursor) ? metadata.nextCursor : isString(metadata.next_cursor) ? metadata.next_cursor : undefined,
+				},
+				servers,
+			};
 		}
 
 		public toRawGalleryMcpServer(input: unknown): IRawGalleryMcpServer | undefined {

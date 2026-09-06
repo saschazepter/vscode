@@ -359,4 +359,26 @@ suite('McpGalleryService - getMcpServer validation', () => {
 
 		assert.deepStrictEqual(page.items.map(server => server.name), ['io.github.owner/supported']);
 	});
+
+	test('skips malformed wrapped entries without misclassifying a modern gallery page', async () => {
+		const data = {
+			metadata: { count: 2, next_cursor: 'next-page' },
+			servers: [
+				{ server: {} },
+				modernServerDocumentData('io.github.owner/supported', ['npm'])
+			]
+		};
+		const requestService = new StatusRequestService(200, JSON.stringify(data));
+		const service = createService(requestService);
+
+		const page = (await service.query()).firstPage;
+
+		assert.deepStrictEqual({
+			names: page.items.map(server => server.name),
+			hasMore: page.hasMore
+		}, {
+			names: ['io.github.owner/supported'],
+			hasMore: true
+		});
+	});
 });
