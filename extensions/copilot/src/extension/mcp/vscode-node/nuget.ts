@@ -376,6 +376,23 @@ interface IRawGalleryMcpServer {
 	readonly remotes?: ReadonlyArray<SseTransport | StreamableHttpTransport>;
 }
 
+function toSupportedPackageRegistryType(input: unknown): RegistryType | undefined {
+	switch (input) {
+		case 'npm':
+			return RegistryType.NODE;
+		case 'docker':
+		case 'docker-hub':
+		case 'oci':
+			return RegistryType.DOCKER;
+		case 'pypi':
+			return RegistryType.PYTHON;
+		case 'nuget':
+			return RegistryType.NUGET;
+		default:
+			return undefined;
+	}
+}
+
 export namespace McpServerSchemaVersion_v2025_07_09 {
 
 	export const VERSION = 'v0-2025-07-09';
@@ -545,38 +562,34 @@ export namespace McpServerSchemaVersion_v2025_07_09 {
 				}
 			}
 
-			function convertRegistryType(input: string): RegistryType {
-				switch (input) {
-					case 'npm':
-						return RegistryType.NODE;
-					case 'docker':
-					case 'docker-hub':
-					case 'oci':
-						return RegistryType.DOCKER;
-					case 'pypi':
-						return RegistryType.PYTHON;
-					case 'nuget':
-						return RegistryType.NUGET;
-					case 'mcpb':
-						return RegistryType.MCPB;
-					default:
-						return RegistryType.NODE;
+			let packages: IMcpServerPackage[] | undefined;
+			if (from.packages) {
+				packages = [];
+				for (const serverPackage of from.packages) {
+					const registryType = toSupportedPackageRegistryType(serverPackage.registry_type ?? serverPackage.registry_name);
+					if (!registryType) {
+						continue;
+					}
+					packages.push({
+						identifier: serverPackage.identifier ?? serverPackage.name,
+						registryType,
+						version: serverPackage.version,
+						fileSha256: serverPackage.file_sha256,
+						registryBaseUrl: serverPackage.registry_base_url,
+						transport: serverPackage.transport ? convertTransport(serverPackage.transport) : { type: TransportType.STDIO },
+						packageArguments: serverPackage.package_arguments?.map(convertServerArgument),
+						runtimeHint: serverPackage.runtime_hint,
+						runtimeArguments: serverPackage.runtime_arguments?.map(convertServerArgument),
+						environmentVariables: serverPackage.environment_variables?.map(convertKeyValueInput),
+					});
 				}
+			}
+			if (!packages?.length && !from.remotes?.length) {
+				return undefined;
 			}
 
 			return {
-				packages: from.packages?.map<IMcpServerPackage>(p => ({
-					identifier: p.identifier ?? p.name,
-					registryType: convertRegistryType(p.registry_type ?? p.registry_name),
-					version: p.version,
-					fileSha256: p.file_sha256,
-					registryBaseUrl: p.registry_base_url,
-					transport: p.transport ? convertTransport(p.transport) : { type: TransportType.STDIO },
-					packageArguments: p.package_arguments?.map(convertServerArgument),
-					runtimeHint: p.runtime_hint,
-					runtimeArguments: p.runtime_arguments?.map(convertServerArgument),
-					environmentVariables: p.environment_variables?.map(convertKeyValueInput),
-				})),
+				packages,
 				remotes: from.remotes?.map(remote => {
 					const type = (<RawGalleryTransport>remote).type ?? (<McpServerDeprecatedRemote>remote).transport_type ?? (<McpServerDeprecatedRemote>remote).transport;
 					return {
@@ -651,7 +664,7 @@ namespace McpServerSchemaVersion_v0_1 {
 	}
 
 	interface RawGalleryMcpServerPackage {
-		readonly registryType: RegistryType;
+		readonly registryType: string;
 		readonly identifier: string;
 		readonly version: string;
 		readonly transport: RawGalleryTransport;
@@ -692,8 +705,26 @@ namespace McpServerSchemaVersion_v0_1 {
 				return undefined;
 			}
 
+			let packages: IMcpServerPackage[] | undefined;
+			if (from.server.packages) {
+				packages = [];
+				for (const serverPackage of from.server.packages) {
+					const registryType = toSupportedPackageRegistryType(serverPackage.registryType);
+					if (!registryType) {
+						continue;
+					}
+					packages.push({
+						...serverPackage,
+						registryType,
+					});
+				}
+			}
+			if (!packages?.length && !from.server.remotes?.length) {
+				return undefined;
+			}
+
 			return {
-				packages: from.server.packages,
+				packages,
 				remotes: from.server.remotes,
 			};
 		}
@@ -716,6 +747,9 @@ export namespace McpServerSchemaVersion_v0 {
 		}
 
 		public toRawGalleryMcpServer(input: unknown): IRawGalleryMcpServer | undefined {
+			if (isObject(input) && isObject((input as { readonly server?: unknown }).server)) {
+				return McpServerSchemaVersion_v0_1.SERIALIZER.toRawGalleryMcpServer(input);
+			}
 			for (const serializer of this.galleryMcpServerDataSerializers) {
 				const result = serializer.toRawGalleryMcpServer(input);
 				if (result) {
@@ -858,6 +892,7 @@ export class McpMappingUtility {
 		if (!serverPackage) {
 			throw new Error(`No server package found`);
 		}
+		const command = this.getCommandName(serverPackage.registryType);
 
 		const args: string[] = [];
 		const inputs: IMcpServerVariable[] = [];
@@ -921,7 +956,7 @@ export class McpMappingUtility {
 			mcpServerConfiguration: {
 				config: {
 					type: McpServerType.LOCAL,
-					command: this.getCommandName(serverPackage.registryType),
+					command,
 					args: args.length ? args : undefined,
 					env: Object.keys(env).length ? env : undefined,
 				},
@@ -936,8 +971,8 @@ export class McpMappingUtility {
 			case RegistryType.DOCKER: return 'docker';
 			case RegistryType.PYTHON: return 'uvx';
 			case RegistryType.NUGET: return 'dnx';
+			default: throw new Error(`Unsupported MCP server package registry type: ${packageType}`);
 		}
-		return packageType;
 	}
 
 	protected getVariables(variableInputs: Record<string, IMcpServerInput>): IMcpServerVariable[] {

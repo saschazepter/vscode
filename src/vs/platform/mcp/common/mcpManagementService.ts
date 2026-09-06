@@ -94,6 +94,7 @@ export abstract class AbstractCommonMcpManagementService extends Disposable impl
 		if (!serverPackage) {
 			throw new Error(`No server package found`);
 		}
+		const command = this.getCommandName(serverPackage.registryType);
 
 		const args: string[] = [];
 		const inputs: IMcpServerVariable[] = [];
@@ -171,7 +172,7 @@ export abstract class AbstractCommonMcpManagementService extends Disposable impl
 			mcpServerConfiguration: {
 				config: {
 					type: McpServerType.LOCAL,
-					command: this.getCommandName(serverPackage.registryType),
+					command,
 					args: args.length ? args : undefined,
 					env: Object.keys(env).length ? env : undefined,
 				},
@@ -186,8 +187,8 @@ export abstract class AbstractCommonMcpManagementService extends Disposable impl
 			case RegistryType.DOCKER: return 'docker';
 			case RegistryType.PYTHON: return 'uvx';
 			case RegistryType.NUGET: return 'dnx';
+			default: throw new Error(`Unsupported MCP server package registry type: ${packageType}`);
 		}
-		return packageType;
 	}
 
 	protected getVariables(variableInputs: Record<string, IMcpServerInput>): IMcpServerVariable[] {

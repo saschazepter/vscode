@@ -7,6 +7,7 @@ import assert from 'assert';
 import { bufferToStream, VSBuffer } from '../../../../base/common/buffer.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { IRequestContext, IRequestOptions } from '../../../../base/parts/request/common/request.js';
+import { request } from '../../../../base/parts/request/common/requestImpl.js';
 import { NullLogService } from '../../../log/common/log.js';
 import { AbstractRequestService, AuthInfo, Credentials, IRequestCompleteEvent, NO_FETCH_TELEMETRY } from '../../common/request.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
@@ -97,5 +98,32 @@ suite('AbstractRequestService', () => {
 		await service.request({ url: 'http://test/2', callSite: 'second' }, CancellationToken.None);
 
 		assert.deepStrictEqual(events.map(e => e.callSite), ['first', 'second']);
+	});
+});
+
+suite('Request', () => {
+
+	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('disables redirect following when requested', async () => {
+		let requestInit: RequestInit | undefined;
+		const fetcher: typeof fetch = async (_input, init) => {
+			requestInit = init;
+			return new Response(null, { status: 302, headers: { location: 'https://redirect.test' } });
+		};
+
+		const result = await request({
+			url: 'https://request.test',
+			followRedirects: 0,
+			callSite: 'test.noRedirects'
+		}, CancellationToken.None, undefined, fetcher);
+
+		assert.deepStrictEqual({
+			redirect: requestInit?.redirect,
+			statusCode: result.res.statusCode
+		}, {
+			redirect: 'manual',
+			statusCode: 302
+		});
 	});
 });

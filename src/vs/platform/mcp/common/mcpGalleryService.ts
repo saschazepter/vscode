@@ -62,6 +62,42 @@ interface IGalleryMcpServersResult {
 	readonly servers: IGalleryMcpServer[];
 }
 
+function toSupportedPackageRegistryType(input: unknown): RegistryType | undefined {
+	switch (input) {
+		case 'npm':
+			return RegistryType.NODE;
+		case 'docker':
+		case 'docker-hub':
+		case 'oci':
+			return RegistryType.DOCKER;
+		case 'pypi':
+			return RegistryType.PYTHON;
+		case 'nuget':
+			return RegistryType.NUGET;
+		default:
+			return undefined;
+	}
+}
+
+function getMcpServerUrlInGallery(mcpServerUrl: string, mcpGalleryManifest: IMcpGalleryManifest): string | undefined {
+	const mcpGalleryUrl = getMcpGalleryManifestResourceUri(mcpGalleryManifest, McpGalleryResourceType.McpServersQueryService) ?? mcpGalleryManifest.url;
+	try {
+		const serverUrl = new URL(mcpServerUrl);
+		const galleryUrl = new URL(mcpGalleryUrl);
+		if (serverUrl.username || serverUrl.password || galleryUrl.username || galleryUrl.password || serverUrl.origin !== galleryUrl.origin) {
+			return undefined;
+		}
+
+		const galleryPath = galleryUrl.pathname.replace(/\/+$/, '');
+		if (serverUrl.pathname !== galleryPath && !serverUrl.pathname.startsWith(`${galleryPath}/`)) {
+			return undefined;
+		}
+		return serverUrl.href;
+	} catch {
+		return undefined;
+	}
+}
+
 interface IRawGalleryMcpServer {
 	readonly name: string;
 	readonly description: string;
@@ -257,7 +293,7 @@ namespace McpServerSchemaVersion_v2025_07_09 {
 			for (const server of from.servers) {
 				const rawServer = this.toRawGalleryMcpServer(server);
 				if (!rawServer) {
-					return undefined;
+					continue;
 				}
 				servers.push(rawServer);
 			}
@@ -362,23 +398,30 @@ namespace McpServerSchemaVersion_v2025_07_09 {
 				}
 			}
 
-			function convertRegistryType(input: string): RegistryType {
-				switch (input) {
-					case 'npm':
-						return RegistryType.NODE;
-					case 'docker':
-					case 'docker-hub':
-					case 'oci':
-						return RegistryType.DOCKER;
-					case 'pypi':
-						return RegistryType.PYTHON;
-					case 'nuget':
-						return RegistryType.NUGET;
-					case 'mcpb':
-						return RegistryType.MCPB;
-					default:
-						return RegistryType.NODE;
+			let packages: IMcpServerPackage[] | undefined;
+			if (from.packages) {
+				packages = [];
+				for (const serverPackage of from.packages) {
+					const registryType = toSupportedPackageRegistryType(serverPackage.registry_type ?? serverPackage.registry_name);
+					if (!registryType) {
+						continue;
+					}
+					packages.push({
+						identifier: serverPackage.identifier ?? serverPackage.name,
+						registryType,
+						version: serverPackage.version,
+						fileSha256: serverPackage.file_sha256,
+						registryBaseUrl: serverPackage.registry_base_url,
+						transport: serverPackage.transport ? convertTransport(serverPackage.transport) : { type: TransportType.STDIO },
+						packageArguments: serverPackage.package_arguments?.map(convertServerArgument),
+						runtimeHint: serverPackage.runtime_hint,
+						runtimeArguments: serverPackage.runtime_arguments?.map(convertServerArgument),
+						environmentVariables: serverPackage.environment_variables?.map(convertKeyValueInput),
+					});
 				}
+			}
+			if (!packages?.length && !from.remotes?.length) {
+				return undefined;
 			}
 
 			const gitHubInfo: RawGitHubInfo | undefined = from._meta['io.modelcontextprotocol.registry/publisher-provided']?.github as RawGitHubInfo | undefined;
@@ -396,18 +439,7 @@ namespace McpServerSchemaVersion_v2025_07_09 {
 				version: from.version,
 				createdAt: from.created_at,
 				updatedAt: from.updated_at,
-				packages: from.packages?.map<IMcpServerPackage>(p => ({
-					identifier: p.identifier ?? p.name,
-					registryType: convertRegistryType(p.registry_type ?? p.registry_name),
-					version: p.version,
-					fileSha256: p.file_sha256,
-					registryBaseUrl: p.registry_base_url,
-					transport: p.transport ? convertTransport(p.transport) : { type: TransportType.STDIO },
-					packageArguments: p.package_arguments?.map(convertServerArgument),
-					runtimeHint: p.runtime_hint,
-					runtimeArguments: p.runtime_arguments?.map(convertServerArgument),
-					environmentVariables: p.environment_variables?.map(convertKeyValueInput),
-				})),
+				packages,
 				remotes: from.remotes?.map(remote => {
 					const type = (<RawGalleryTransport>remote).type ?? (<McpServerDeprecatedRemote>remote).transport_type ?? (<McpServerDeprecatedRemote>remote).transport;
 					return {
@@ -502,7 +534,7 @@ namespace McpServerSchemaVersion_v0_1 {
 
 	interface RawGalleryMcpServerPackage {
 		readonly identifier: string;
-		readonly registryType: RegistryType;
+		readonly registryType: string;
 		readonly transport: RawGalleryTransport;
 		readonly fileSha256?: string;
 		readonly environmentVariables?: ReadonlyArray<RawGalleryMcpServerKeyValueInput>;
@@ -567,11 +599,7 @@ namespace McpServerSchemaVersion_v0_1 {
 			for (const server of from.servers) {
 				const rawServer = this.toRawGalleryMcpServer(server);
 				if (!rawServer) {
-					if (servers.length === 0) {
-						return undefined;
-					} else {
-						continue;
-					}
+					continue;
 				}
 				servers.push(rawServer);
 			}
@@ -600,6 +628,23 @@ namespace McpServerSchemaVersion_v0_1 {
 
 			const { 'io.modelcontextprotocol.registry/official': registryInfo, ...apicInfo } = from._meta;
 			const githubInfo = from.server._meta?.['io.modelcontextprotocol.registry/publisher-provided']?.github as IGitHubInfo | undefined;
+			let packages: IMcpServerPackage[] | undefined;
+			if (from.server.packages) {
+				packages = [];
+				for (const serverPackage of from.server.packages) {
+					const registryType = toSupportedPackageRegistryType(serverPackage.registryType);
+					if (!registryType) {
+						continue;
+					}
+					packages.push({
+						...serverPackage,
+						registryType,
+					});
+				}
+			}
+			if (!packages?.length && !from.server.remotes?.length) {
+				return undefined;
+			}
 
 			return {
 				name: from.server.name,
@@ -614,7 +659,7 @@ namespace McpServerSchemaVersion_v0_1 {
 				readme: githubInfo?.readme,
 				icons: from.server.icons,
 				websiteUrl: from.server.websiteUrl,
-				packages: from.server.packages,
+				packages,
 				remotes: from.server.remotes,
 				status: registryInfo?.status,
 				registryInfo,
@@ -633,31 +678,27 @@ namespace McpServerSchemaVersion_v0 {
 
 	class Serializer implements IGalleryMcpServerDataSerializer {
 
-		private readonly galleryMcpServerDataSerializers: IGalleryMcpServerDataSerializer[] = [];
-
-		constructor() {
-			this.galleryMcpServerDataSerializers.push(McpServerSchemaVersion_v0_1.SERIALIZER);
-			this.galleryMcpServerDataSerializers.push(McpServerSchemaVersion_v2025_07_09.SERIALIZER);
-		}
-
 		public toRawGalleryMcpServerResult(input: unknown): IRawGalleryMcpServersResult | undefined {
-			for (const serializer of this.galleryMcpServerDataSerializers) {
-				const result = serializer.toRawGalleryMcpServerResult(input);
-				if (result) {
-					return result;
-				}
+			if (!isObject(input)) {
+				return undefined;
 			}
-			return undefined;
+			const candidate = input as { readonly servers?: unknown; readonly metadata?: unknown };
+			if (!Array.isArray(candidate.servers)) {
+				return undefined;
+			}
+			const isV0_1 = candidate.servers.some(server => {
+				return isObject(server) && isObject((server as { readonly server?: unknown }).server);
+			}) || (candidate.servers.length === 0 && isObject(candidate.metadata) && Object.hasOwn(candidate.metadata, 'nextCursor'));
+			return isV0_1
+				? McpServerSchemaVersion_v0_1.SERIALIZER.toRawGalleryMcpServerResult(input)
+				: McpServerSchemaVersion_v2025_07_09.SERIALIZER.toRawGalleryMcpServerResult(input);
 		}
 
 		public toRawGalleryMcpServer(input: unknown): IRawGalleryMcpServer | undefined {
-			for (const serializer of this.galleryMcpServerDataSerializers) {
-				const result = serializer.toRawGalleryMcpServer(input);
-				if (result) {
-					return result;
-				}
+			if (isObject(input) && isObject((input as { readonly server?: unknown }).server)) {
+				return McpServerSchemaVersion_v0_1.SERIALIZER.toRawGalleryMcpServer(input);
 			}
-			return undefined;
+			return McpServerSchemaVersion_v2025_07_09.SERIALIZER.toRawGalleryMcpServer(input);
 		}
 	}
 
@@ -801,7 +842,7 @@ export class McpGalleryService extends Disposable implements IMcpGalleryService 
 			}
 			attempted = true;
 			try {
-				const mcpServer = await this.getMcpServer(url);
+				const mcpServer = await this.getMcpServer(url, mcpGalleryManifest);
 				if (mcpServer) {
 					if (mcpServer.name === name) {
 						return mcpServer;
@@ -1021,9 +1062,19 @@ export class McpGalleryService extends Disposable implements IMcpGalleryService 
 	}
 
 	async getMcpServer(mcpServerUrl: string, mcpGalleryManifest?: IMcpGalleryManifest | null): Promise<IGalleryMcpServer | undefined> {
+		const manifest = mcpGalleryManifest ?? await this.mcpGalleryManifestService.getMcpGalleryManifest();
+		if (!manifest) {
+			throw new Error('Cannot fetch MCP server because no MCP gallery is configured');
+		}
+		const validatedMcpServerUrl = getMcpServerUrlInGallery(mcpServerUrl, manifest);
+		if (!validatedMcpServerUrl) {
+			throw new Error('Cannot fetch MCP server from outside the configured MCP gallery');
+		}
+
 		const context = await this.requestService.request({
 			type: 'GET',
-			url: mcpServerUrl,
+			url: validatedMcpServerUrl,
+			followRedirects: 0,
 			callSite: 'mcpGalleryService.getMcpServer'
 		}, CancellationToken.None);
 
@@ -1034,7 +1085,7 @@ export class McpGalleryService extends Disposable implements IMcpGalleryService 
 			return undefined;
 		}
 
-		if (context.res.statusCode && context.res.statusCode >= 400) {
+		if (!isSuccess(context)) {
 			throw new Error(`Failed to fetch MCP server from ${mcpServerUrl}: server responded with ${context.res.statusCode}`);
 		}
 
@@ -1043,17 +1094,12 @@ export class McpGalleryService extends Disposable implements IMcpGalleryService 
 			throw new Error(`Failed to fetch MCP server from ${mcpServerUrl}: empty response`);
 		}
 
-		if (!mcpGalleryManifest) {
-			mcpGalleryManifest = await this.mcpGalleryManifestService.getMcpGalleryManifest();
-		}
-		mcpGalleryManifest = mcpGalleryManifest && mcpServerUrl.startsWith(mcpGalleryManifest.url) ? mcpGalleryManifest : null;
-
-		const server = this.serializeMcpServer(data, mcpGalleryManifest);
+		const server = this.serializeMcpServer(data, manifest);
 		if (!server) {
 			throw new Error(`Failed to serialize MCP server from ${mcpServerUrl}`, data);
 		}
 
-		return this.toGalleryMcpServer(server, mcpGalleryManifest);
+		return this.toGalleryMcpServer(server, manifest);
 	}
 
 	private serializeMcpServer(data: unknown, mcpGalleryManifest: IMcpGalleryManifest | null): IRawGalleryMcpServer | undefined {
