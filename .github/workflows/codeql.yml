@@ -4,24 +4,25 @@ on:
   push:
     branches:
       - main
-      - 'release/*'
+      - 'release/**/*'
   pull_request:
     branches:
       - main
-      - 'release/*'
+      - 'release/**/*'
   schedule:
     - cron: '17 19 * * 6'
 
-permissions:
-  actions: read
-  contents: read
-  packages: read
-  security-events: write
+permissions: {}
 
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      security-events: write
     strategy:
       fail-fast: false
       matrix:
