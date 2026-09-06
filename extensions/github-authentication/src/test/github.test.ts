@@ -9,25 +9,8 @@ import { AccountLinks } from '../common/accountLinks';
 import { IGitHubUserInfo } from '../common/gitHubAccount';
 import { Log } from '../common/logger';
 import { EntraTokenExchangeError, EntraTokenExchangeFailure, IEntraRenewal, IEntraRenewedToken } from '../entraTokenExchange';
-import { AuthProviderType, GitHubAuthenticationProvider } from '../github';
+import { AuthProviderType, GitHubAuthenticationProvider, readSessionsFromKeychain } from '../github';
 import { TestMemento } from './testMemento';
-
-interface TestGitHubAuthenticationProvider {
-	readonly _keychain: {
-		getToken(): Promise<string>;
-		deleteToken(): Promise<void>;
-	};
-	readonly _githubServer: {
-		getUserInfo(token: string): Promise<{ id: string; accountName: string; avatarUrl: string | undefined }>;
-	};
-	readonly _logger: {
-		error(message: string): void;
-		info(message: string): void;
-		trace(message: string): void;
-	};
-	readSessions(): Promise<vscode.AuthenticationSession[]>;
-	storeSessions(sessions: vscode.AuthenticationSession[]): Promise<void>;
-}
 
 suite('GitHub session persistence', () => {
 	test('does not loop when Codespaces secret storage drops hydrated account data', async () => {
@@ -40,38 +23,38 @@ suite('GitHub session persistence', () => {
 		let secretWrites = 0;
 		const secretChangeReads: Promise<vscode.AuthenticationSession[]>[] = [];
 
-		const provider: TestGitHubAuthenticationProvider = {
-			_keychain: {
-				getToken: async () => storedSessions,
-				deleteToken: async () => { }
-			},
-			_githubServer: {
-				getUserInfo: async _token => {
-					userInfoRequests++;
-					return {
-						id: 'account-id',
-						accountName: 'octocat',
-						avatarUrl: 'https://avatars.githubusercontent.com/u/1'
-					};
-				}
-			},
-			_logger: {
-				error: _message => { },
-				info: _message => { },
-				trace: _message => { }
-			},
-			readSessions: GitHubAuthenticationProvider.prototype['readSessions'],
-			storeSessions: async _sessions => {
-				secretWrites++;
-				// Browser secret storage fires a change event for every write. The Codespaces
-				// provider then exposes the original accountless session on the next read.
-				if (secretWrites === 1) {
-					secretChangeReads.push(provider.readSessions());
-				}
+		const keychain = {
+			getToken: async () => storedSessions,
+			deleteToken: async () => { }
+		};
+		const githubServer = {
+			getUserInfo: async (_token: string) => {
+				userInfoRequests++;
+				return {
+					id: 'account-id',
+					accountName: 'octocat',
+					avatarUrl: 'https://avatars.githubusercontent.com/u/1'
+				};
 			}
 		};
+		const logger = {
+			error: (_message: string) => { },
+			info: (_message: string) => { },
+			trace: (_message: string) => { }
+		};
+		async function storeSessions(_sessions: vscode.AuthenticationSession[]): Promise<void> {
+			secretWrites++;
+			// Browser secret storage fires a change event for every write. The Codespaces
+			// provider then exposes the original accountless session on the next read.
+			if (secretWrites === 1) {
+				secretChangeReads.push(readSessions());
+			}
+		}
+		function readSessions(): Promise<vscode.AuthenticationSession[]> {
+			return readSessionsFromKeychain(keychain, githubServer, logger, storeSessions);
+		}
 
-		const sessions = await provider.readSessions();
+		const sessions = await readSessions();
 		await Promise.all(secretChangeReads);
 
 		assert.deepStrictEqual({
