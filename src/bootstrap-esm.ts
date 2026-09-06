@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as fs from 'node:fs';
-import { createRequire, isBuiltin, registerHooks } from 'node:module';
+import { createRequire, isBuiltin, registerHooks, type Module } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { product, pkg } from './bootstrap-meta.js';
@@ -85,6 +85,15 @@ function enableASARSupport(): void {
 		return slash === -1 ? specifier : specifier.slice(0, slash);
 	};
 
+	const resolutionCache = new Map<string, Module.ResolveFnOutput>();
+	const resolutionCacheKey = (specifier: string, parentPath: string, context: Module.ResolveHookContext): string => {
+		let key = `${specifier}\0${parentPath}\0${context.conditions.join('\0')}`;
+		for (const [name, value] of Object.entries(context.importAttributes ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+			key += `\0${name}\0${value}`;
+		}
+		return key;
+	};
+
 	const appRoot = dirname(import.meta.dirname);
 	const resourcesPath = process.env['VSCODE_DEV'] ? undefined : normalizeDriveLetter(appRoot);
 	// Root require.resolve() inside the archive; the leading './' below avoids a node_modules walk.
@@ -126,6 +135,13 @@ function enableASARSupport(): void {
 				try { parentPath = normalizeDriveLetter(fileURLToPath(context.parentURL)); } catch { parentPath = undefined; }
 				if (parentPath && parentPath.startsWith(resourcesPath)) {
 					trace?.(`resolve "${specifier}" from "${context.parentURL}"`);
+					const cacheKey = resolutionCacheKey(specifier, parentPath, context);
+					const cached = resolutionCache.get(cacheKey);
+					if (cached) {
+						trace?.(`  cache -> ${cached.url} (ACCEPT)`);
+						return cached;
+					}
+
 					let defaultResult;
 					let defaultError: Error | undefined;
 					// A closer dependency bundled by the importer takes precedence over the application archive.
@@ -165,6 +181,7 @@ function enableASARSupport(): void {
 						try { selfRefPath = normalizeDriveLetter(fileURLToPath(selfRef.url)); } catch { selfRefPath = undefined; }
 						if (selfRefPath && selfRefPath.startsWith(resourcesPath)) {
 							trace?.(`  self-ref -> ${selfRef.url} (in app, ACCEPT)`);
+							resolutionCache.set(cacheKey, { ...selfRef, shortCircuit: true });
 							return selfRef;
 						}
 						trace?.(`  self-ref -> ${selfRef.url} (escaped app, reject)`);
@@ -175,7 +192,9 @@ function enableASARSupport(): void {
 					const resolved = asarRequire.resolve(`./${specifier}`);
 					const url = pathToFileURL(resolved).href;
 					trace?.(`  direct -> ${url} (ACCEPT)`);
-					return { url, shortCircuit: true };
+					const result = { url, shortCircuit: true };
+					resolutionCache.set(cacheKey, result);
+					return result;
 				}
 				trace?.(`defer "${specifier}" (parent outside app resources: ${context.parentURL})`);
 			}
