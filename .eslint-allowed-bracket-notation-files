@@ -527,3 +527,6 @@ test/smoke/test/index.js
 test/unit/electron/index.js
 test/unit/electron/preload.js
 test/unit/electron/renderer.js
+
+# Default account service tests (1 file)
+src/vs/workbench/services/accounts/test/browser/defaultAccount.test.ts

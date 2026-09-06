@@ -234,7 +234,7 @@ export class DefaultAccountService extends Disposable implements IDefaultAccount
 	}
 }
 
-export interface IAccountPolicyData {
+interface IAccountPolicyData {
 	readonly accountId: string;
 	readonly policyData: IPolicyData;
 	readonly entitlementsFetchedAt?: number;
@@ -250,7 +250,7 @@ interface ICachedAccountData {
 	readonly copilotTokenInfo?: ICopilotTokenInfo;
 }
 
-export interface IDefaultAccountData {
+interface IDefaultAccountData {
 	accountId: string;
 	defaultAccount: IDefaultAccount;
 	policyData: IAccountPolicyData | null;
@@ -268,7 +268,7 @@ type ManagedSettingsRequestResult =
 
 type ManagedSettingsBlockedFreshness = Extract<IManagedSettingsFreshness, { state: ManagedSettingsFreshnessState.Blocked }>;
 
-export interface IManagedSettingsSources {
+interface IManagedSettingsSources {
 	readonly nativeMdm: ManagedSettingsData;
 	readonly file: ManagedSettingsData;
 }
@@ -342,7 +342,7 @@ export class DefaultAccountProvider extends Disposable implements IDefaultAccoun
 	readonly onDidChangeManagedSettingsFreshness = this._onDidChangeManagedSettingsFreshness.event;
 
 	private readonly accountStatusContext: IContextKey<string>;
-	protected initialized = false;
+	private initialized = false;
 	private readonly initPromise: Promise<void>;
 	private readonly updateThrottler = this._register(new ThrottledDelayer(100));
 	private readonly accountDataPollScheduler = this._register(new RunOnceScheduler(() => this.refetchDefaultAccount(), ACCOUNT_DATA_POLL_INTERVAL_MS));
@@ -619,7 +619,7 @@ export class DefaultAccountProvider extends Disposable implements IDefaultAccoun
 			|| this.authenticationService.isAuthenticationProviderRegistered(accountProvider.id);
 	}
 
-	protected setDefaultAccount(account: IDefaultAccountData | null): void {
+	private setDefaultAccount(account: IDefaultAccountData | null): void {
 		if (equals(this._defaultAccount, account)) {
 			return;
 		}
@@ -665,7 +665,7 @@ export class DefaultAccountProvider extends Disposable implements IDefaultAccoun
 		this._onDidChangePolicyData.fire(this._policyData?.policyData ?? null);
 	}
 
-	protected setManagedSettingsCompatibilityError(error: IManagedSettingsCompatibilityError | null): void {
+	private setManagedSettingsCompatibilityError(error: IManagedSettingsCompatibilityError | null): void {
 		if (equals(this._managedSettingsCompatibilityError, error)) {
 			return;
 		}
@@ -673,7 +673,7 @@ export class DefaultAccountProvider extends Disposable implements IDefaultAccoun
 		this._onDidChangeManagedSettingsCompatibilityError.fire(error);
 	}
 
-	protected setManagedSettingsFreshness(freshness: IManagedSettingsFreshness): void {
+	private setManagedSettingsFreshness(freshness: IManagedSettingsFreshness): void {
 		if (equals(this._managedSettingsFreshness, freshness)) {
 			return;
 		}
@@ -698,7 +698,7 @@ export class DefaultAccountProvider extends Disposable implements IDefaultAccoun
 			: MANAGED_SETTINGS_FRESHNESS_NOT_REQUIRED);
 	}
 
-	protected onManagedSettingsSourceChanged(): void {
+	private onManagedSettingsSourceChanged(): void {
 		if (this.initialized) {
 			void this.updateDefaultAccount();
 		}
@@ -813,7 +813,7 @@ export class DefaultAccountProvider extends Disposable implements IDefaultAccoun
 		}
 	}
 
-	protected async getDefaultAccountFromAuthenticatedSessions(
+	private async getDefaultAccountFromAuthenticatedSessions(
 		authenticationProvider: IDefaultAccountAuthenticationProvider,
 		sessions: AuthenticationSession[],
 		options?: IDefaultAccountRefreshOptions,
@@ -917,7 +917,7 @@ export class DefaultAccountProvider extends Disposable implements IDefaultAccoun
 		}
 	}
 
-	protected async findMatchingProviderSession(authProviderId: string, allScopes: string[][]): Promise<AuthenticationSession[] | undefined> {
+	private async findMatchingProviderSession(authProviderId: string, allScopes: string[][]): Promise<AuthenticationSession[] | undefined> {
 		const sessions = await this.getSessions(authProviderId);
 		const matchingSessions = sessions.filter(session => {
 			this.logService.debug('[DefaultAccount] Checking session with scopes', session.scopes);
@@ -1100,7 +1100,7 @@ export class DefaultAccountProvider extends Disposable implements IDefaultAccoun
 		}
 	}
 
-	protected async getManagedSettings(
+	private async getManagedSettings(
 		sessions: AuthenticationSession[],
 		accountPolicyData: IAccountPolicyData | undefined,
 		options?: IDefaultAccountRefreshOptions,
@@ -1442,7 +1442,7 @@ export class DefaultAccountProvider extends Disposable implements IDefaultAccoun
 		return false;
 	}
 
-	protected _rateLimitBackoffUntil = 0;
+	private _rateLimitBackoffUntil = 0;
 
 	private async request(url: string, type: 'GET', body: undefined, sessions: AuthenticationSession[], token: CancellationToken, callSite: string, options?: IAuthenticatedRequestOptions): Promise<IRequestContext | undefined>;
 	private async request(url: string, type: 'POST', body: object, sessions: AuthenticationSession[], token: CancellationToken, callSite: string, options?: IAuthenticatedRequestOptions): Promise<IRequestContext | undefined>;

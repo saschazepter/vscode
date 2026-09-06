@@ -6,7 +6,6 @@
 import assert from 'assert';
 import { DeferredPromise, timeout } from '../../../../../base/common/async.js';
 import { bufferToStream, VSBuffer } from '../../../../../base/common/buffer.js';
-import { IDefaultAccountAuthenticationProvider } from '../../../../../base/common/defaultAccount.js';
 import { Emitter, Event } from '../../../../../base/common/event.js';
 import { isWeb } from '../../../../../base/common/platform.js';
 import { IRequestContext, IRequestOptions } from '../../../../../base/parts/request/common/request.js';
@@ -15,11 +14,10 @@ import { ICommandService } from '../../../../../platform/commands/common/command
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
 import { IContextKeyService } from '../../../../../platform/contextkey/common/contextkey.js';
-import { IDefaultAccountRefreshOptions, IManagedSettingsCompatibilityError } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { MockContextKeyService } from '../../../../../platform/keybinding/test/common/mockKeybindingService.js';
 import { TestInstantiationService } from '../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { ILogService, NullLogService } from '../../../../../platform/log/common/log.js';
-import { COPILOT_FORCE_REMOTE_SETTINGS_REFRESH_KEY, IFileManagedSettingsService, INativeManagedSettingsService, ManagedSettingsData, NullFileManagedSettingsService, NullNativeManagedSettingsService, resolveForceRemoteSettingsRefresh } from '../../../../../platform/policy/common/copilotManagedSettings.js';
+import { COPILOT_FORCE_REMOTE_SETTINGS_REFRESH_KEY, IFileManagedSettingsService, INativeManagedSettingsService, ManagedSettingsData, NullFileManagedSettingsService, NullNativeManagedSettingsService } from '../../../../../platform/policy/common/copilotManagedSettings.js';
 import { IManagedSettingsFreshness, ManagedSettingsFreshnessFailure, ManagedSettingsFreshnessState } from '../../../../../platform/policy/common/managedSettingsFreshness.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
 import { IRequestService } from '../../../../../platform/request/common/request.js';
@@ -30,68 +28,9 @@ import { AuthenticationSession, AuthenticationSessionsChangeEvent, IAuthenticati
 import { IWorkbenchEnvironmentService } from '../../../environment/common/environmentService.js';
 import { IExtensionService } from '../../../extensions/common/extensions.js';
 import { IHostService } from '../../../host/browser/host.js';
-import { DefaultAccountProvider, DefaultAccountService, IAccountPolicyData, IDefaultAccountData, IManagedSettingsSources } from '../../browser/defaultAccount.js';
+import { DefaultAccountProvider, DefaultAccountService } from '../../browser/defaultAccount.js';
 import { TestProductService } from '../../../../test/common/workbenchTestServices.js';
 import { AccountPolicyGateState, AccountPolicyService } from '../../../policies/common/accountPolicyService.js';
-
-class TestDefaultAccountProvider extends DefaultAccountProvider {
-
-	override setDefaultAccount(account: IDefaultAccountData | null): void {
-		super.setDefaultAccount(account);
-	}
-
-	override setManagedSettingsCompatibilityError(error: IManagedSettingsCompatibilityError | null): void {
-		super.setManagedSettingsCompatibilityError(error);
-	}
-
-	override setManagedSettingsFreshness(freshness: IManagedSettingsFreshness): void {
-		super.setManagedSettingsFreshness(freshness);
-	}
-
-	override onManagedSettingsSourceChanged(): void {
-		super.onManagedSettingsSourceChanged();
-	}
-
-	override async getDefaultAccountFromAuthenticatedSessions(
-		authenticationProvider: IDefaultAccountAuthenticationProvider,
-		sessions: AuthenticationSession[],
-		options?: IDefaultAccountRefreshOptions,
-		managedSettingsSources?: IManagedSettingsSources
-	): Promise<IDefaultAccountData | null> {
-		return super.getDefaultAccountFromAuthenticatedSessions(authenticationProvider, sessions, options, managedSettingsSources);
-	}
-
-	override async findMatchingProviderSession(authProviderId: string, allScopes: string[][]): Promise<AuthenticationSession[] | undefined> {
-		return super.findMatchingProviderSession(authProviderId, allScopes);
-	}
-
-	override async getManagedSettings(
-		sessions: AuthenticationSession[],
-		accountPolicyData: IAccountPolicyData | undefined,
-		options?: IDefaultAccountRefreshOptions,
-		authenticationProvider?: IDefaultAccountAuthenticationProvider,
-		managedSettingsSources?: IManagedSettingsSources,
-		refreshRequirement?: ReturnType<typeof resolveForceRemoteSettingsRefresh>
-	) {
-		return super.getManagedSettings(sessions, accountPolicyData, options, authenticationProvider, managedSettingsSources, refreshRequirement);
-	}
-
-	get initializedForTest(): boolean {
-		return this.initialized;
-	}
-
-	set initializedForTest(value: boolean) {
-		this.initialized = value;
-	}
-
-	get rateLimitBackoffUntilForTest(): number {
-		return this._rateLimitBackoffUntil;
-	}
-
-	set rateLimitBackoffUntilForTest(value: number) {
-		this._rateLimitBackoffUntil = value;
-	}
-}
 
 suite('DefaultAccountProvider', () => {
 
@@ -112,8 +51,8 @@ suite('DefaultAccountProvider', () => {
 		const provider = await createProvider(requestService);
 		const cachedPolicy = createCachedPolicy(true);
 
-		const first = await provider.getManagedSettings(sessions, cachedPolicy);
-		const second = await provider.getManagedSettings(sessions, cachedPolicy);
+		const first = await provider['getManagedSettings'](sessions, cachedPolicy);
+		const second = await provider['getManagedSettings'](sessions, cachedPolicy);
 
 		assert.deepStrictEqual({
 			requestCount: requestService.requestCount,
@@ -137,8 +76,8 @@ suite('DefaultAccountProvider', () => {
 		const provider = await createProvider(requestService);
 		const cachedPolicy = createCachedPolicy(false);
 
-		const first = await provider.getManagedSettings(sessions, cachedPolicy);
-		const second = await provider.getManagedSettings(sessions, cachedPolicy);
+		const first = await provider['getManagedSettings'](sessions, cachedPolicy);
+		const second = await provider['getManagedSettings'](sessions, cachedPolicy);
 
 		assert.deepStrictEqual({
 			requestCount: requestService.requestCount,
@@ -159,9 +98,9 @@ suite('DefaultAccountProvider', () => {
 		const cachedPolicy = createCachedPolicy(false);
 
 		// Without forceRefresh the fresh cache is served with no network round-trip.
-		const cached = await provider.getManagedSettings(sessions, cachedPolicy);
+		const cached = await provider['getManagedSettings'](sessions, cachedPolicy);
 		// The forceRefresh command bypasses the fresh cache and fetches.
-		const forced = await provider.getManagedSettings(sessions, cachedPolicy, { forceRefresh: true, retryManagedSettings: true });
+		const forced = await provider['getManagedSettings'](sessions, cachedPolicy, { forceRefresh: true, retryManagedSettings: true });
 
 		assert.deepStrictEqual({
 			requestCount: requestService.requestCount,
@@ -203,7 +142,7 @@ suite('DefaultAccountProvider', () => {
 			entitlementsFetchedAt: fetchedAt,
 			managedSettingsFetchedAt: fetchedAt,
 		};
-		provider.setDefaultAccount({
+		provider['setDefaultAccount']({
 			defaultAccount: {
 				authenticationProvider: { id: 'github', name: 'GitHub', enterprise: false },
 				accountName: sessions[0].account.label,
@@ -215,7 +154,7 @@ suite('DefaultAccountProvider', () => {
 			policyData,
 			copilotTokenInfo: null,
 		});
-		provider.setManagedSettingsFreshness({
+		provider['setManagedSettingsFreshness']({
 			state: ManagedSettingsFreshnessState.Satisfied,
 			source: 'server',
 			scope: managedSettingsScope,
@@ -223,7 +162,7 @@ suite('DefaultAccountProvider', () => {
 			satisfiedAt: fetchedAt,
 		});
 
-		const refreshedEntitlements = await provider.getDefaultAccountFromAuthenticatedSessions(
+		const refreshedEntitlements = await provider['getDefaultAccountFromAuthenticatedSessions'](
 			{ id: 'github', name: 'GitHub', enterprise: false },
 			sessions,
 			{ refreshEntitlements: true }
@@ -251,9 +190,9 @@ suite('DefaultAccountProvider', () => {
 		const provider = await createProvider(requestService);
 		const cachedPolicy = createCachedPolicy(false);
 
-		await provider.getManagedSettings(sessions, cachedPolicy);
-		await provider.getManagedSettings(sessions, cachedPolicy);
-		await provider.getManagedSettings(sessions, {
+		await provider['getManagedSettings'](sessions, cachedPolicy);
+		await provider['getManagedSettings'](sessions, cachedPolicy);
+		await provider['getManagedSettings'](sessions, {
 			...cachedPolicy,
 			managedSettingsFetchedAt: Date.now() - 60 * 60 * 1000,
 		});
@@ -264,10 +203,10 @@ suite('DefaultAccountProvider', () => {
 	test('outstanding compatibility error revalidates instead of serving a fresh cache', async () => {
 		const requestService = new TestRequestService(async () => jsonResponse({}));
 		const provider = await createProvider(requestService);
-		provider.setManagedSettingsCompatibilityError({ errorCode: 'client_update_required' });
+		provider['setManagedSettingsCompatibilityError']({ errorCode: 'client_update_required' });
 		const cachedPolicy = createCachedPolicy(false);
 
-		const result = await provider.getManagedSettings(sessions, cachedPolicy);
+		const result = await provider['getManagedSettings'](sessions, cachedPolicy);
 
 		assert.deepStrictEqual({
 			requestCount: requestService.requestCount,
@@ -294,7 +233,7 @@ suite('DefaultAccountProvider', () => {
 
 		// The cache was captured for a different provider/endpoint than the current github/api.github.com
 		// scope, so it must be revalidated rather than served for the rest of the cache lifetime.
-		const result = await provider.getManagedSettings(sessions, cachedPolicy);
+		const result = await provider['getManagedSettings'](sessions, cachedPolicy);
 
 		assert.deepStrictEqual({
 			requestCount: requestService.requestCount,
@@ -319,7 +258,7 @@ suite('DefaultAccountProvider', () => {
 			},
 		};
 
-		const result = await provider.getManagedSettings(sessions, cachedPolicy);
+		const result = await provider['getManagedSettings'](sessions, cachedPolicy);
 
 		assert.deepStrictEqual({
 			requestCount: requestService.requestCount,
@@ -352,8 +291,8 @@ suite('DefaultAccountProvider', () => {
 			},
 		};
 
-		const failed = await provider.getManagedSettings(sessions, cachedPolicy);
-		const blocked = await provider.getManagedSettings(sessions, cachedPolicy);
+		const failed = await provider['getManagedSettings'](sessions, cachedPolicy);
+		const blocked = await provider['getManagedSettings'](sessions, cachedPolicy);
 
 		assert.deepStrictEqual({
 			requestCount: requestService.requestCount,
@@ -395,7 +334,7 @@ suite('DefaultAccountProvider', () => {
 		const provider = await createProvider(requestService);
 		const cachedPolicy = createCachedPolicy(true);
 
-		const result = await provider.getManagedSettings(sessions, cachedPolicy);
+		const result = await provider['getManagedSettings'](sessions, cachedPolicy);
 
 		assert.deepStrictEqual({
 			requestCount: requestService.requestCount,
@@ -416,7 +355,7 @@ suite('DefaultAccountProvider', () => {
 		const requestService = new TestRequestService(async () => jsonResponse({}, 404));
 		const provider = await createProvider(requestService);
 
-		const result = await provider.getManagedSettings([
+		const result = await provider['getManagedSettings']([
 			sessions[0],
 			{ ...sessions[0], id: 'second-session' },
 		], undefined);
@@ -436,7 +375,7 @@ suite('DefaultAccountProvider', () => {
 		const requestService = new TestRequestService(async () => jsonResponse({}, 404));
 		const provider = await createProvider(requestService, { [COPILOT_FORCE_REMOTE_SETTINGS_REFRESH_KEY]: true });
 
-		await provider.getManagedSettings(sessions, undefined);
+		await provider['getManagedSettings'](sessions, undefined);
 
 		assert.deepStrictEqual(describeFreshness(provider.managedSettingsFreshness), {
 			state: ManagedSettingsFreshnessState.Satisfied,
@@ -461,7 +400,7 @@ suite('DefaultAccountProvider', () => {
 		const provider = await createProvider(requestService);
 		const cachedPolicy = createCachedPolicy(false);
 
-		const result = await provider.getManagedSettings(sessions, cachedPolicy, { forceRefresh: true });
+		const result = await provider['getManagedSettings'](sessions, cachedPolicy, { forceRefresh: true });
 
 		assert.deepStrictEqual({
 			status: provider.managedSettingsFetchStatus,
@@ -482,7 +421,7 @@ suite('DefaultAccountProvider', () => {
 		const requestService = new TestRequestService(async () => jsonResponse({ error_code: 'unexpected' }, 466));
 		const provider = await createProvider(requestService);
 
-		const result = await provider.getManagedSettings(sessions, createCachedPolicy(false), { forceRefresh: true });
+		const result = await provider['getManagedSettings'](sessions, createCachedPolicy(false), { forceRefresh: true });
 
 		assert.deepStrictEqual({
 			data: result.data,
@@ -501,7 +440,7 @@ suite('DefaultAccountProvider', () => {
 		const provider = await createProvider(requestService);
 		const cachedPolicy = createCachedPolicy(true);
 
-		const result = await provider.getManagedSettings(sessions, cachedPolicy);
+		const result = await provider['getManagedSettings'](sessions, cachedPolicy);
 
 		assert.deepStrictEqual({
 			freshness: describeFreshness(provider.managedSettingsFreshness),
@@ -525,7 +464,7 @@ suite('DefaultAccountProvider', () => {
 		const provider = await createProvider(requestService);
 		const cachedPolicy = createCachedPolicy(false);
 
-		const result = await provider.getManagedSettings(sessions, cachedPolicy, { forceRefresh: true });
+		const result = await provider['getManagedSettings'](sessions, cachedPolicy, { forceRefresh: true });
 
 		assert.deepStrictEqual({
 			requestCount: requestService.requestCount,
@@ -545,7 +484,7 @@ suite('DefaultAccountProvider', () => {
 		const provider = await createProvider(requestService);
 		const cachedPolicy = createCachedPolicy(true);
 
-		const result = await provider.getManagedSettings(sessions, cachedPolicy);
+		const result = await provider['getManagedSettings'](sessions, cachedPolicy);
 
 		assert.deepStrictEqual({
 			requestCount: requestService.requestCount,
@@ -575,13 +514,13 @@ suite('DefaultAccountProvider', () => {
 		const provider = await createProvider(requestService);
 		const cachedPolicy = createCachedPolicy(true);
 
-		const first = await provider.getManagedSettings(sessions, cachedPolicy);
+		const first = await provider['getManagedSettings'](sessions, cachedPolicy);
 		const retryPolicy = {
 			...cachedPolicy,
 			policyData: first.data ?? {},
 			managedSettingsFetchedAt: first.fetchedAt,
 		};
-		await provider.getManagedSettings(sessions, retryPolicy, { forceRefresh: true, retryManagedSettings: true });
+		await provider['getManagedSettings'](sessions, retryPolicy, { forceRefresh: true, retryManagedSettings: true });
 
 		assert.deepStrictEqual({
 			requestCount: requestService.requestCount,
@@ -605,9 +544,9 @@ suite('DefaultAccountProvider', () => {
 		const provider = await createProvider(requestService);
 		const cachedPolicy = createCachedPolicy(true);
 
-		await provider.getManagedSettings(sessions, cachedPolicy);
-		await provider.getManagedSettings(sessions, cachedPolicy, { forceRefresh: true });
-		await provider.getManagedSettings(sessions, cachedPolicy, { forceRefresh: true, retryManagedSettings: true });
+		await provider['getManagedSettings'](sessions, cachedPolicy);
+		await provider['getManagedSettings'](sessions, cachedPolicy, { forceRefresh: true });
+		await provider['getManagedSettings'](sessions, cachedPolicy, { forceRefresh: true, retryManagedSettings: true });
 
 		assert.deepStrictEqual({
 			requestCount: requestService.requestCount,
@@ -631,8 +570,8 @@ suite('DefaultAccountProvider', () => {
 		const provider = await createProvider(requestService);
 		const cachedPolicy = createCachedPolicy(false);
 
-		await provider.getManagedSettings(sessions, cachedPolicy, { forceRefresh: true });
-		await provider.getManagedSettings(sessions, cachedPolicy, { forceRefresh: true });
+		await provider['getManagedSettings'](sessions, cachedPolicy, { forceRefresh: true });
+		await provider['getManagedSettings'](sessions, cachedPolicy, { forceRefresh: true });
 
 		assert.strictEqual(requestService.requestCount, 2);
 	});
@@ -760,7 +699,7 @@ suite('DefaultAccountProvider', () => {
 			const requestService = new TestRequestService(async () => failure.response());
 			const provider = await createProvider(requestService);
 			const cachedPolicy = createCachedPolicy(false);
-			const result = await provider.getManagedSettings(sessions, cachedPolicy, { forceRefresh: true });
+			const result = await provider['getManagedSettings'](sessions, cachedPolicy, { forceRefresh: true });
 			outcomes.push({
 				name: failure.name,
 				status: provider.managedSettingsFetchStatus,
@@ -805,10 +744,10 @@ suite('DefaultAccountProvider', () => {
 		});
 		const provider = await createProvider(requestService, { [COPILOT_FORCE_REMOTE_SETTINGS_REFRESH_KEY]: true });
 
-		await provider.getManagedSettings(sessions, undefined);
-		provider.initializedForTest = false;
-		provider.onManagedSettingsSourceChanged();
-		await provider.getDefaultAccountFromAuthenticatedSessions(
+		await provider['getManagedSettings'](sessions, undefined);
+		provider['initialized'] = false;
+		provider['onManagedSettingsSourceChanged']();
+		await provider['getDefaultAccountFromAuthenticatedSessions'](
 			{ id: 'github', name: 'GitHub', enterprise: false },
 			sessions,
 			{ forceRefresh: true }
@@ -835,8 +774,8 @@ suite('DefaultAccountProvider', () => {
 		});
 		const provider = await createProvider(requestService, { [COPILOT_FORCE_REMOTE_SETTINGS_REFRESH_KEY]: true });
 
-		await provider.getManagedSettings(sessions, undefined);
-		await provider.getManagedSettings([
+		await provider['getManagedSettings'](sessions, undefined);
+		await provider['getManagedSettings']([
 			{ ...sessions[0], account: { id: 'second-account', label: 'hubot' } },
 		], undefined);
 
@@ -849,7 +788,7 @@ suite('DefaultAccountProvider', () => {
 		});
 		const provider = await createProvider(requestService, { [COPILOT_FORCE_REMOTE_SETTINGS_REFRESH_KEY]: true });
 
-		await provider.getManagedSettings([
+		await provider['getManagedSettings']([
 			sessions[0],
 			{ ...sessions[0], id: 'second-session' },
 		], undefined);
@@ -865,7 +804,7 @@ suite('DefaultAccountProvider', () => {
 		});
 		const provider = await createProvider(requestService);
 
-		await provider.getManagedSettings([
+		await provider['getManagedSettings']([
 			sessions[0],
 			{ ...sessions[0], id: 'second-session' },
 		], undefined);
@@ -886,7 +825,7 @@ suite('DefaultAccountProvider', () => {
 			{ getSessions: async () => [broadSession] }
 		);
 
-		const matching = await provider.findMatchingProviderSession('github', [
+		const matching = await provider['findMatchingProviderSession']('github', [
 			['read:user', 'user:email', 'repo', 'workflow'],
 			['user:email'],
 			['read:user'],
@@ -901,7 +840,7 @@ suite('DefaultAccountProvider', () => {
 		}));
 		const provider = await createProvider(requestService);
 
-		await provider.getManagedSettings(sessions, undefined);
+		await provider['getManagedSettings'](sessions, undefined);
 
 		assert.deepStrictEqual(describeFreshness(provider.managedSettingsFreshness), {
 			state: ManagedSettingsFreshnessState.Satisfied,
@@ -921,7 +860,7 @@ suite('DefaultAccountProvider', () => {
 		const response = new Promise<IRequestContext>(resolve => resolveRequest = resolve);
 		const provider = await createProvider(new TestRequestService(() => response));
 
-		const refresh = provider.getManagedSettings(sessions, createCachedPolicy(true));
+		const refresh = provider['getManagedSettings'](sessions, createCachedPolicy(true));
 		await timeout(0);
 		assert.deepStrictEqual(describeFreshness(provider.managedSettingsFreshness), {
 			state: ManagedSettingsFreshnessState.Pending,
@@ -947,8 +886,8 @@ suite('DefaultAccountProvider', () => {
 		const provider = await createProvider(requestService);
 		const cachedPolicy = createCachedPolicy(true);
 
-		const failed = await provider.getManagedSettings(sessions, cachedPolicy);
-		await provider.getManagedSettings(sessions, {
+		const failed = await provider['getManagedSettings'](sessions, cachedPolicy);
+		await provider['getManagedSettings'](sessions, {
 			...cachedPolicy,
 			policyData: failed.data ?? {},
 			managedSettingsFetchedAt: failed.fetchedAt,
@@ -974,16 +913,16 @@ suite('DefaultAccountProvider', () => {
 			throw new Error(`Unexpected request: ${options.url}`);
 		});
 		const provider = await createProvider(requestService, { [COPILOT_FORCE_REMOTE_SETTINGS_REFRESH_KEY]: true });
-		const account = await provider.getDefaultAccountFromAuthenticatedSessions(
+		const account = await provider['getDefaultAccountFromAuthenticatedSessions'](
 			{ id: 'github', name: 'GitHub', enterprise: false },
 			sessions,
 			{ forceRefresh: true }
 		);
 		assert.ok(account);
-		provider.setDefaultAccount(account);
+		provider['setDefaultAccount'](account);
 		assert.strictEqual(provider.managedSettingsFreshness.state, ManagedSettingsFreshnessState.Satisfied);
 
-		provider.setDefaultAccount(null);
+		provider['setDefaultAccount'](null);
 
 		assert.deepStrictEqual(provider.managedSettingsFreshness, {
 			state: ManagedSettingsFreshnessState.Blocked,
@@ -999,7 +938,7 @@ suite('DefaultAccountProvider', () => {
 		const provider = await createProvider(requestService, { [COPILOT_FORCE_REMOTE_SETTINGS_REFRESH_KEY]: false });
 		const cachedPolicy = createCachedPolicy(true);
 
-		const result = await provider.getManagedSettings(sessions, cachedPolicy);
+		const result = await provider['getManagedSettings'](sessions, cachedPolicy);
 
 		assert.deepStrictEqual({
 			freshness: provider.managedSettingsFreshness,
@@ -1014,7 +953,7 @@ suite('DefaultAccountProvider', () => {
 		const requestService = new TestRequestService(async () => jsonResponse({}, 503));
 		const provider = await createProvider(requestService, {}, { [COPILOT_FORCE_REMOTE_SETTINGS_REFRESH_KEY]: true });
 
-		await provider.getManagedSettings(sessions, undefined);
+		await provider['getManagedSettings'](sessions, undefined);
 
 		assert.deepStrictEqual(describeFreshness(provider.managedSettingsFreshness), {
 			state: ManagedSettingsFreshnessState.Blocked,
@@ -1038,7 +977,7 @@ suite('DefaultAccountProvider', () => {
 			},
 		};
 
-		await provider.getManagedSettings(sessions, cachedPolicy);
+		await provider['getManagedSettings'](sessions, cachedPolicy);
 
 		assert.deepStrictEqual(describeFreshness(provider.managedSettingsFreshness), {
 			state: ManagedSettingsFreshnessState.Blocked,
@@ -1054,10 +993,10 @@ suite('DefaultAccountProvider', () => {
 		const requestService = new TestRequestService(async () => jsonResponse({}, 429, { 'retry-after': '60' }));
 		const provider = await createProvider(requestService, { [COPILOT_FORCE_REMOTE_SETTINGS_REFRESH_KEY]: true });
 
-		await provider.getManagedSettings(sessions, undefined);
-		await provider.getManagedSettings(sessions, undefined, { forceRefresh: true });
-		provider.rateLimitBackoffUntilForTest = 0;
-		await provider.getManagedSettings(sessions, undefined, { forceRefresh: true, retryManagedSettings: true });
+		await provider['getManagedSettings'](sessions, undefined);
+		await provider['getManagedSettings'](sessions, undefined, { forceRefresh: true });
+		provider['_rateLimitBackoffUntil'] = 0;
+		await provider['getManagedSettings'](sessions, undefined, { forceRefresh: true, retryManagedSettings: true });
 
 		assert.deepStrictEqual({
 			requestCount: requestService.requestCount,
@@ -1079,10 +1018,10 @@ suite('DefaultAccountProvider', () => {
 		const provider = await createProvider(requestService);
 		const cachedPolicy = createCachedPolicy(true);
 
-		provider.rateLimitBackoffUntilForTest = Date.now() + 60_000;
-		await provider.getManagedSettings(sessions, cachedPolicy);
-		provider.rateLimitBackoffUntilForTest = 0;
-		await provider.getManagedSettings(sessions, cachedPolicy);
+		provider['_rateLimitBackoffUntil'] = Date.now() + 60_000;
+		await provider['getManagedSettings'](sessions, cachedPolicy);
+		provider['_rateLimitBackoffUntil'] = 0;
+		await provider['getManagedSettings'](sessions, cachedPolicy);
 
 		assert.deepStrictEqual({
 			requestCount: requestService.requestCount,
@@ -1100,7 +1039,7 @@ suite('DefaultAccountProvider', () => {
 		}));
 		const provider = await createProvider(requestService, { [COPILOT_FORCE_REMOTE_SETTINGS_REFRESH_KEY]: true });
 
-		await provider.getManagedSettings(sessions, undefined);
+		await provider['getManagedSettings'](sessions, undefined);
 
 		assert.deepStrictEqual(describeFreshness(provider.managedSettingsFreshness), {
 			state: ManagedSettingsFreshnessState.Blocked,
@@ -1114,7 +1053,7 @@ suite('DefaultAccountProvider', () => {
 	test('forced refresh without an endpoint fails closed', async () => {
 		const provider = await createProvider(new TestRequestService(async () => jsonResponse({})), { [COPILOT_FORCE_REMOTE_SETTINGS_REFRESH_KEY]: true }, {}, '');
 
-		await provider.getManagedSettings(sessions, undefined);
+		await provider['getManagedSettings'](sessions, undefined);
 
 		assert.deepStrictEqual(describeFreshness(provider.managedSettingsFreshness), {
 			state: ManagedSettingsFreshnessState.Blocked,
@@ -1135,7 +1074,7 @@ suite('DefaultAccountProvider', () => {
 			},
 		};
 
-		await provider.getManagedSettings(sessions, cachedPolicy);
+		await provider['getManagedSettings'](sessions, cachedPolicy);
 
 		assert.deepStrictEqual(describeFreshness(provider.managedSettingsFreshness), {
 			state: ManagedSettingsFreshnessState.Blocked,
@@ -1151,9 +1090,9 @@ suite('DefaultAccountProvider', () => {
 		});
 		const provider = await createProvider(requestService, { [COPILOT_FORCE_REMOTE_SETTINGS_REFRESH_KEY]: true });
 
-		await provider.getManagedSettings(sessions, undefined);
-		provider.setManagedSettingsFreshness({ state: ManagedSettingsFreshnessState.NotRequired });
-		await provider.getManagedSettings(sessions, undefined, { forceRefresh: true });
+		await provider['getManagedSettings'](sessions, undefined);
+		provider['setManagedSettingsFreshness']({ state: ManagedSettingsFreshnessState.NotRequired });
+		await provider['getManagedSettings'](sessions, undefined, { forceRefresh: true });
 
 		assert.deepStrictEqual({
 			requestCount: requestService.requestCount,
@@ -1190,8 +1129,8 @@ suite('DefaultAccountProvider', () => {
 		const freshlyCached = createCachedPolicy(false);
 		const staleFetchedAt = Date.now() - 2 * 60 * 60 * 1000; // twice the one-hour poll interval
 
-		const whileFresh = await provider.getManagedSettings(sessions, freshlyCached, { forceRefresh: true });
-		const onceStale = await provider.getManagedSettings(
+		const whileFresh = await provider['getManagedSettings'](sessions, freshlyCached, { forceRefresh: true });
+		const onceStale = await provider['getManagedSettings'](
 			sessions,
 			{ ...freshlyCached, managedSettingsFetchedAt: staleFetchedAt },
 			{ forceRefresh: true }
@@ -1222,8 +1161,8 @@ suite('DefaultAccountProvider', () => {
 		const provider = await createProvider(requestService);
 		const cachedPolicy = createCachedPolicy(false);
 
-		await provider.getManagedSettings(sessions, cachedPolicy, { forceRefresh: true });
-		const result = await provider.getManagedSettings(sessions, cachedPolicy, { forceRefresh: true });
+		await provider['getManagedSettings'](sessions, cachedPolicy, { forceRefresh: true });
+		const result = await provider['getManagedSettings'](sessions, cachedPolicy, { forceRefresh: true });
 
 		assert.deepStrictEqual({
 			status: provider.managedSettingsFetchStatus,
@@ -1247,15 +1186,15 @@ suite('DefaultAccountProvider', () => {
 			throw new Error(`Unexpected request: ${options.url}`);
 		});
 		const provider = await createProvider(requestService);
-		provider.setManagedSettingsCompatibilityError({ errorCode: 'client_update_required' });
+		provider['setManagedSettingsCompatibilityError']({ errorCode: 'client_update_required' });
 
-		const account = await provider.getDefaultAccountFromAuthenticatedSessions(
+		const account = await provider['getDefaultAccountFromAuthenticatedSessions'](
 			{ id: 'github', name: 'GitHub', enterprise: false },
 			sessions,
 			{ forceRefresh: true }
 		);
 		assert.ok(account);
-		provider.setDefaultAccount(account);
+		provider['setDefaultAccount'](account);
 
 		assert.deepStrictEqual({
 			compatibilityError: provider.managedSettingsCompatibilityError,
@@ -1382,7 +1321,7 @@ suite('DefaultAccountProvider', () => {
 		fileManagedSettings: ManagedSettingsData = {},
 		managedSettingsUrl = 'https://api.github.com/copilot_internal/managed_settings',
 		authenticationServiceOverrides: Partial<IAuthenticationService> = {},
-	): Promise<TestDefaultAccountProvider> {
+	): Promise<DefaultAccountProvider> {
 		const instantiationService = disposables.add(new TestInstantiationService());
 		instantiationService.stub(IConfigurationService, new TestConfigurationService());
 		instantiationService.stub(IAuthenticationService, {
@@ -1436,7 +1375,7 @@ suite('DefaultAccountProvider', () => {
 			initialize: async () => fileManagedSettings,
 		});
 
-		const provider = disposables.add(instantiationService.createInstance(TestDefaultAccountProvider, {
+		const provider = disposables.add(instantiationService.createInstance(DefaultAccountProvider, {
 			preferredExtensions: [],
 			authenticationProvider: {
 				default: { id: 'github', name: 'GitHub' },
