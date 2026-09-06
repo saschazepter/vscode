@@ -43,6 +43,10 @@ export class FontMeasurementsImpl extends Disposable {
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	public readonly onDidChange = this._onDidChange.event;
 
+	constructor(private readonly _readCharWidths: typeof readCharWidths = readCharWidths) {
+		super();
+	}
+
 	public override dispose(): void {
 		if (this._evictUntrustedReadingsTimeout !== -1) {
 			clearTimeout(this._evictUntrustedReadingsTimeout);
@@ -69,9 +73,9 @@ export class FontMeasurementsImpl extends Disposable {
 		return cache;
 	}
 
-	private _writeToCache(targetWindow: Window, item: BareFontInfo, value: FontInfo): void {
+	private _writeToCache(targetWindow: Window, item: BareFontInfo, value: FontInfo, isRestored: boolean): void {
 		const cache = this._ensureCache(targetWindow);
-		cache.put(item, value);
+		cache.put(item, value, isRestored);
 
 		if (!value.isTrusted && this._evictUntrustedReadingsTimeout === -1) {
 			// Try reading again after some time
@@ -102,9 +106,10 @@ export class FontMeasurementsImpl extends Disposable {
 	 */
 	public serializeFontInfo(targetWindow: Window): ISerializedFontInfo[] | undefined {
 		const cache = this._ensureCache(targetWindow);
-		const fontInfo = cache.getValues();
-		const trustedFontInfo = fontInfo.filter(item => item.isTrusted);
-		return fontInfo.length > 0 && trustedFontInfo.length === 0 ? undefined : trustedFontInfo;
+		if (cache.hasOnlyRestoredValues()) {
+			return undefined;
+		}
+		return cache.getValues().filter(item => item.isTrusted);
 	}
 
 	/**
@@ -119,7 +124,7 @@ export class FontMeasurementsImpl extends Disposable {
 				continue;
 			}
 			const fontInfo = new FontInfo(savedFontInfo, false);
-			this._writeToCache(targetWindow, fontInfo, fontInfo);
+			this._writeToCache(targetWindow, fontInfo, fontInfo, true);
 		}
 	}
 
@@ -153,7 +158,7 @@ export class FontMeasurementsImpl extends Disposable {
 				}, false);
 			}
 
-			this._writeToCache(targetWindow, bareFontInfo, readConfig);
+			this._writeToCache(targetWindow, bareFontInfo, readConfig, false);
 		}
 		return cache.get(bareFontInfo);
 	}
@@ -201,7 +206,7 @@ export class FontMeasurementsImpl extends Disposable {
 			this._createRequest(monospaceTestChars.charAt(i), CharWidthRequestType.Bold, all, monospace);
 		}
 
-		readCharWidths(targetWindow, bareFontInfo, all);
+		this._readCharWidths(targetWindow, bareFontInfo, all);
 
 		const maxDigitWidth = Math.max(digit0.width, digit1.width, digit2.width, digit3.width, digit4.width, digit5.width, digit6.width, digit7.width, digit8.width, digit9.width);
 
@@ -250,6 +255,7 @@ class FontMeasurementsCache {
 
 	private readonly _keys: { [key: string]: BareFontInfo };
 	private readonly _values: { [key: string]: FontInfo };
+	private readonly _restoredValues = new Set<string>();
 
 	constructor() {
 		this._keys = Object.create(null);
@@ -266,20 +272,30 @@ class FontMeasurementsCache {
 		return this._values[itemId];
 	}
 
-	public put(item: BareFontInfo, value: FontInfo): void {
+	public put(item: BareFontInfo, value: FontInfo, isRestored: boolean): void {
 		const itemId = item.getId();
 		this._keys[itemId] = item;
 		this._values[itemId] = value;
+		if (isRestored) {
+			this._restoredValues.add(itemId);
+		} else {
+			this._restoredValues.delete(itemId);
+		}
 	}
 
 	public remove(item: FontInfo): void {
 		const itemId = item.getId();
 		delete this._keys[itemId];
 		delete this._values[itemId];
+		this._restoredValues.delete(itemId);
 	}
 
 	public getValues(): FontInfo[] {
 		return Object.keys(this._keys).map(id => this._values[id]);
+	}
+
+	public hasOnlyRestoredValues(): boolean {
+		return this._restoredValues.size > 0 && this._restoredValues.size === Object.keys(this._keys).length;
 	}
 }
 
