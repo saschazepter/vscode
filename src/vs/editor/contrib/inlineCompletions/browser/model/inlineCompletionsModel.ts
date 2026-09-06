@@ -64,7 +64,6 @@ export class InlineCompletionsModel extends Disposable {
 	private readonly _noDelaySignal = observableSignal(this);
 
 	private readonly _fetchSpecificProviderSignal = observableSignal<{ provider: InlineCompletionsProvider; changeHint?: IInlineCompletionChangeHint } | undefined>(this);
-	private readonly _providerAvailabilityChangeSignal = observableSignal(this);
 
 	// We use a semantic id to keep the same inline completion selected even if the provider reorders the completions.
 	private readonly _selectedInlineCompletionId = observableValue<string | undefined>(this, undefined);
@@ -220,10 +219,13 @@ export class InlineCompletionsModel extends Disposable {
 			}
 
 			store.add(provider.onDidChangeInlineCompletions(changeHint => {
-				if (!this.shouldHandleProviderChange()) {
+				if (!this._enabled.get()) {
 					return;
 				}
-				if (provider.isAvailable?.({ triggerKind: InlineCompletionTriggerKind.Automatic }) === false) {
+
+				// Only update the active editor
+				const activeEditor = this._codeEditorService.getFocusedCodeEditor() || this._codeEditorService.getActiveCodeEditor();
+				if (activeEditor !== this._editor) {
 					return;
 				}
 
@@ -248,36 +250,7 @@ export class InlineCompletionsModel extends Disposable {
 			}));
 		}).recomputeInitiallyAndOnChange(this._store);
 
-		const providerAvailabilityChangeEvents = inlineCompletionProviders.map(providers => [...new Set(providers.map(provider => provider.onDidChangeAvailability).filter(isDefined))]);
-		mapObservableArrayCached(this, providerAvailabilityChangeEvents, (event, store) => {
-			store.add(event(() => {
-				if (!this.shouldHandleProviderChange()) {
-					return;
-				}
-
-				const providerBecameAvailable = inlineCompletionProviders.get().some(provider =>
-					provider.onDidChangeAvailability === event
-					&& provider.isAvailable?.({ triggerKind: InlineCompletionTriggerKind.Automatic }) !== false
-				);
-				if (!providerBecameAvailable) {
-					return;
-				}
-				transaction(tx => {
-					this._providerAvailabilityChangeSignal.trigger(tx);
-				});
-			}));
-		}).recomputeInitiallyAndOnChange(this._store);
-
 		this._didUndoInlineEdits.recomputeInitiallyAndOnChange(this._store);
-	}
-
-	private shouldHandleProviderChange(): boolean {
-		if (!this._enabled.get()) {
-			return false;
-		}
-
-		const activeEditor = this._codeEditorService.getFocusedCodeEditor() || this._codeEditorService.getActiveCodeEditor();
-		return activeEditor === this._editor;
 	}
 
 	private _lastShownInlineCompletionInfo: { alternateTextModelVersionId: number; /* already freed! */ inlineCompletion: InlineSuggestionItem } | undefined = undefined;
@@ -363,7 +336,6 @@ export class InlineCompletionsModel extends Disposable {
 				inlineCompletionTriggerKind: InlineCompletionTriggerKind.Automatic,
 				onlyRequestInlineEdits: false,
 				shouldDebounce: true,
-				forceUpdate: false,
 				provider: undefined as InlineCompletionsProvider | undefined,
 				changeHint: undefined as IInlineCompletionChangeHint | undefined,
 				textChange: false,
@@ -385,11 +357,9 @@ export class InlineCompletionsModel extends Disposable {
 					changeSummary.dontRefetch = true;
 				} else if (ctx.didChange(this._onlyRequestInlineEditsSignal)) {
 					changeSummary.onlyRequestInlineEdits = true;
-					changeSummary.forceUpdate = true;
 				} else if (ctx.didChange(this._fetchSpecificProviderSignal)) {
 					changeSummary.provider = ctx.change?.provider;
 					changeSummary.changeHint = ctx.change?.changeHint;
-					changeSummary.forceUpdate = true;
 				}
 				return true;
 			},
@@ -402,7 +372,6 @@ export class InlineCompletionsModel extends Disposable {
 		this._onlyRequestInlineEditsSignal.read(reader);
 		this._forceUpdateExplicitlySignal.read(reader);
 		this._fetchSpecificProviderSignal.read(reader);
-		this._providerAvailabilityChangeSignal.read(reader);
 		const shouldUpdate = !this._isSuppressed()
 			&& ((this._enabled.read(reader) && this._selectedSuggestItem.read(reader)) || this._isActive.read(reader))
 			&& (!this._inlineCompletionsService.isSnoozing() || changeSummary.inlineCompletionTriggerKind === InlineCompletionTriggerKind.Explicit);
@@ -485,28 +454,17 @@ export class InlineCompletionsModel extends Disposable {
 		const providers = changeSummary.provider
 			? { providers: [changeSummary.provider], label: 'single:' + changeSummary.provider.providerId?.toString() }
 			: { providers: this._languageFeaturesService.inlineCompletionsProvider.all(this.textModel), label: undefined }; // TODO: should use inlineCompletionProviders
-		const availableProviders = this.getAvailableProviders(providers.providers, context);
+		const availableProviders = this.getAvailableProviders(providers.providers);
 		requestInfo.availableProviders = availableProviders.map(p => p.providerId).filter(isDefined);
 
-		return this._source.fetch(
-			availableProviders,
-			providers.label,
-			context,
-			itemToPreserve?.identity,
-			changeSummary.shouldDebounce,
-			userJumpedToActiveCompletion,
-			requestInfo,
-			changeSummary.forceUpdate,
-			() => this.getAvailableProviders(providers.providers, context),
-		);
+		return this._source.fetch(availableProviders, providers.label, context, itemToPreserve?.identity, changeSummary.shouldDebounce, userJumpedToActiveCompletion, requestInfo);
 	});
 
 	// TODO: This is not an ideal implementation of excludesGroupIds, however as this is currently still behind proposed API
 	// and due to the time constraints, we are using a simplified approach
-	private getAvailableProviders(providers: InlineCompletionsProvider[], context: InlineCompletionContextWithoutUuid): InlineCompletionsProvider[] {
-		const eligibleProviders = providers.filter(provider => provider.isAvailable?.(context) !== false);
+	private getAvailableProviders(providers: InlineCompletionsProvider[]): InlineCompletionsProvider[] {
 		const suppressedProviderGroupIds = this._suppressedInlineCompletionGroupIds.get();
-		const unsuppressedProviders = eligibleProviders.filter(provider => !(provider.groupId && suppressedProviderGroupIds.has(provider.groupId)));
+		const unsuppressedProviders = providers.filter(provider => !(provider.groupId && suppressedProviderGroupIds.has(provider.groupId)));
 
 		const excludedGroupIds = new Set<string>();
 		for (const provider of unsuppressedProviders) {

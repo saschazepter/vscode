@@ -566,7 +566,6 @@ export interface MainThreadLanguageFeaturesShape extends IDisposable {
 		displayName: string | undefined,
 		debounceDelayMs: number | undefined,
 		excludesExtensionIds: string[],
-		meteredNetworkAware: boolean,
 		supportsSetModelId: boolean,
 		supportsOnDidChange: boolean,
 		initialModelInfo: IInlineCompletionModelInfoDto | undefined,
