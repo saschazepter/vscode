@@ -79,6 +79,25 @@ function toSupportedPackageRegistryType(input: unknown): RegistryType | undefine
 	}
 }
 
+function filterMcpPackages<T>(
+	packages: readonly T[] | undefined,
+	getRegistryType: (serverPackage: T) => unknown,
+	convert: (serverPackage: T, registryType: RegistryType) => IMcpServerPackage,
+): IMcpServerPackage[] | undefined {
+	if (!packages) {
+		return undefined;
+	}
+
+	const result: IMcpServerPackage[] = [];
+	for (const serverPackage of packages) {
+		const registryType = toSupportedPackageRegistryType(getRegistryType(serverPackage));
+		if (registryType) {
+			result.push(convert(serverPackage, registryType));
+		}
+	}
+	return result;
+}
+
 function getMcpServerUrlInGallery(mcpServerUrl: string, mcpGalleryManifest: IMcpGalleryManifest): string | undefined {
 	const mcpGalleryUrl = getMcpGalleryManifestResourceUri(mcpGalleryManifest, McpGalleryResourceType.McpServersQueryService) ?? mcpGalleryManifest.url;
 	try {
@@ -398,28 +417,22 @@ namespace McpServerSchemaVersion_v2025_07_09 {
 				}
 			}
 
-			let packages: IMcpServerPackage[] | undefined;
-			if (from.packages) {
-				packages = [];
-				for (const serverPackage of from.packages) {
-					const registryType = toSupportedPackageRegistryType(serverPackage.registry_type ?? serverPackage.registry_name);
-					if (!registryType) {
-						continue;
-					}
-					packages.push({
-						identifier: serverPackage.identifier ?? serverPackage.name,
-						registryType,
-						version: serverPackage.version,
-						fileSha256: serverPackage.file_sha256,
-						registryBaseUrl: serverPackage.registry_base_url,
-						transport: serverPackage.transport ? convertTransport(serverPackage.transport) : { type: TransportType.STDIO },
-						packageArguments: serverPackage.package_arguments?.map(convertServerArgument),
-						runtimeHint: serverPackage.runtime_hint,
-						runtimeArguments: serverPackage.runtime_arguments?.map(convertServerArgument),
-						environmentVariables: serverPackage.environment_variables?.map(convertKeyValueInput),
-					});
-				}
-			}
+			const packages = filterMcpPackages(
+				from.packages,
+				serverPackage => serverPackage.registry_type ?? serverPackage.registry_name,
+				(serverPackage, registryType) => ({
+					identifier: serverPackage.identifier ?? serverPackage.name,
+					registryType,
+					version: serverPackage.version,
+					fileSha256: serverPackage.file_sha256,
+					registryBaseUrl: serverPackage.registry_base_url,
+					transport: serverPackage.transport ? convertTransport(serverPackage.transport) : { type: TransportType.STDIO },
+					packageArguments: serverPackage.package_arguments?.map(convertServerArgument),
+					runtimeHint: serverPackage.runtime_hint,
+					runtimeArguments: serverPackage.runtime_arguments?.map(convertServerArgument),
+					environmentVariables: serverPackage.environment_variables?.map(convertKeyValueInput),
+				}),
+			);
 			if (!packages?.length && !from.remotes?.length) {
 				return undefined;
 			}
@@ -628,20 +641,11 @@ namespace McpServerSchemaVersion_v0_1 {
 
 			const { 'io.modelcontextprotocol.registry/official': registryInfo, ...apicInfo } = from._meta;
 			const githubInfo = from.server._meta?.['io.modelcontextprotocol.registry/publisher-provided']?.github as IGitHubInfo | undefined;
-			let packages: IMcpServerPackage[] | undefined;
-			if (from.server.packages) {
-				packages = [];
-				for (const serverPackage of from.server.packages) {
-					const registryType = toSupportedPackageRegistryType(serverPackage.registryType);
-					if (!registryType) {
-						continue;
-					}
-					packages.push({
-						...serverPackage,
-						registryType,
-					});
-				}
-			}
+			const packages = filterMcpPackages(
+				from.server.packages,
+				serverPackage => serverPackage.registryType,
+				(serverPackage, registryType) => ({ ...serverPackage, registryType }),
+			);
 			if (!packages?.length && !from.server.remotes?.length) {
 				return undefined;
 			}

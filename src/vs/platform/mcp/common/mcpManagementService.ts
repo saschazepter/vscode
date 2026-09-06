@@ -94,7 +94,6 @@ export abstract class AbstractCommonMcpManagementService extends Disposable impl
 		if (!serverPackage) {
 			throw new Error(`No server package found`);
 		}
-		const command = this.getCommandName(serverPackage.registryType);
 
 		const args: string[] = [];
 		const inputs: IMcpServerVariable[] = [];
@@ -172,7 +171,7 @@ export abstract class AbstractCommonMcpManagementService extends Disposable impl
 			mcpServerConfiguration: {
 				config: {
 					type: McpServerType.LOCAL,
-					command,
+					command: this.getCommandName(serverPackage.registryType),
 					args: args.length ? args : undefined,
 					env: Object.keys(env).length ? env : undefined,
 				},
