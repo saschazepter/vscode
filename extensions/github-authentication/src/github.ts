@@ -150,102 +150,6 @@ function generateSessionId(): string {
 	return crypto.getRandomValues(new Uint32Array(2)).reduce((prev, curr) => prev += curr.toString(16), '');
 }
 
-/**
- * Reads and verifies the sessions persisted in the authentication keychain.
- */
-export async function readSessionsFromKeychain(
-	keychain: Pick<Keychain, 'getToken' | 'deleteToken'>,
-	githubServer: Pick<IGitHubServer, 'getUserInfo'>,
-	logger: Pick<Log, 'error' | 'info' | 'trace'>,
-	storeSessions: (sessions: vscode.AuthenticationSession[]) => Promise<void>
-): Promise<vscode.AuthenticationSession[]> {
-	let sessionData: SessionData[];
-	try {
-		logger.info('Reading sessions from keychain...');
-		const storedSessions = await keychain.getToken();
-		if (!storedSessions) {
-			return [];
-		}
-		logger.info('Got stored sessions!');
-
-		try {
-			sessionData = JSON.parse(storedSessions);
-		} catch (e) {
-			await keychain.deleteToken();
-			throw e;
-		}
-	} catch (e) {
-		logger.error(`Error reading token: ${e}`);
-		return [];
-	}
-
-	// Unfortunately, we were using a number secretly for the account id for some time... this is due to a bad `any`.
-	// AuthenticationSession's account id is a string, so we need to detect when there is a number accountId and re-store
-	// the sessions to migrate away from the bad number usage.
-	// TODO@TylerLeonhardt: Remove this after we are confident that all users have migrated to the new id.
-	let seenNumberAccountId: boolean = false;
-	// TODO: eventually remove this Set because we should only have one session per set of scopes.
-	const scopesSeen = new Set<string>();
-	const sessionPromises = sessionData.map(async (session: SessionData): Promise<vscode.AuthenticationSession | undefined> => {
-		// For GitHub scope list, order doesn't matter so we immediately sort the scopes
-		const scopesStr = [...session.scopes].sort().join(' ');
-		let userInfo: IGitHubUserInfo | undefined;
-		if (!session.account) {
-			try {
-				userInfo = await githubServer.getUserInfo(session.accessToken);
-				logger.info(`Verified session with the following scopes: ${scopesStr}`);
-			} catch (e) {
-				if (e.message === 'Unauthorized') {
-					return undefined;
-				}
-			}
-		}
-
-		logger.trace(`Read the following session from the keychain with the following scopes: ${scopesStr}`);
-		scopesSeen.add(scopesStr);
-
-		let accountId: string;
-		if (session.account?.id) {
-			if (typeof session.account.id === 'number') {
-				seenNumberAccountId = true;
-			}
-			accountId = `${session.account.id}`;
-		} else {
-			accountId = userInfo?.id ?? '<unknown>';
-		}
-		const icon = session.account?.icon
-			? vscode.Uri.from(session.account.icon)
-			: userInfo?.avatarUrl ? vscode.Uri.parse(userInfo.avatarUrl) : undefined;
-		return {
-			id: session.id,
-			account: {
-				label: session.account
-					? session.account.label ?? session.account.displayName ?? '<unknown>'
-					: (userInfo?.accountName ?? '<unknown>'),
-				id: accountId,
-				icon,
-			},
-			// we set this to session.scopes to maintain the original order of the scopes requested
-			// by the extension that called getSession()
-			scopes: session.scopes,
-			accessToken: session.accessToken
-		};
-	});
-
-	const verifiedSessions = (await Promise.allSettled(sessionPromises))
-		.filter(p => p.status === 'fulfilled')
-		.map(p => (p as PromiseFulfilledResult<vscode.AuthenticationSession | undefined>).value)
-		.filter(<T>(p?: T): p is T => Boolean(p));
-
-	logger.info(`Got ${verifiedSessions.length} verified sessions.`);
-	// Account data discovered during reads must not trigger a secret write because web embedders can re-expose accountless sessions.
-	if (seenNumberAccountId || verifiedSessions.length !== sessionData.length) {
-		await storeSessions(verifiedSessions);
-	}
-
-	return verifiedSessions;
-}
-
 export class GitHubAuthenticationProvider implements vscode.AuthenticationProvider, vscode.Disposable {
 	private readonly _sessionChangeEmitter = new vscode.EventEmitter<vscode.AuthenticationProviderAuthenticationSessionsChangeEvent>();
 	private readonly _logger: Log;
@@ -713,12 +617,91 @@ export class GitHubAuthenticationProvider implements vscode.AuthenticationProvid
 	}
 
 	private async readSessions(): Promise<vscode.AuthenticationSession[]> {
-		return readSessionsFromKeychain(
-			this._keychain,
-			this._githubServer,
-			this._logger,
-			sessions => this.storeSessions(sessions)
-		);
+		let sessionData: SessionData[];
+		try {
+			this._logger.info('Reading sessions from keychain...');
+			const storedSessions = await this._keychain.getToken();
+			if (!storedSessions) {
+				return [];
+			}
+			this._logger.info('Got stored sessions!');
+
+			try {
+				sessionData = JSON.parse(storedSessions);
+			} catch (e) {
+				await this._keychain.deleteToken();
+				throw e;
+			}
+		} catch (e) {
+			this._logger.error(`Error reading token: ${e}`);
+			return [];
+		}
+
+		// Unfortunately, we were using a number secretly for the account id for some time... this is due to a bad `any`.
+		// AuthenticationSession's account id is a string, so we need to detect when there is a number accountId and re-store
+		// the sessions to migrate away from the bad number usage.
+		// TODO@TylerLeonhardt: Remove this after we are confident that all users have migrated to the new id.
+		let seenNumberAccountId: boolean = false;
+		// TODO: eventually remove this Set because we should only have one session per set of scopes.
+		const scopesSeen = new Set<string>();
+		const sessionPromises = sessionData.map(async (session: SessionData): Promise<vscode.AuthenticationSession | undefined> => {
+			// For GitHub scope list, order doesn't matter so we immediately sort the scopes
+			const scopesStr = [...session.scopes].sort().join(' ');
+			let userInfo: IGitHubUserInfo | undefined;
+			if (!session.account) {
+				try {
+					userInfo = await this._githubServer.getUserInfo(session.accessToken);
+					this._logger.info(`Verified session with the following scopes: ${scopesStr}`);
+				} catch (e) {
+					if (e.message === 'Unauthorized') {
+						return undefined;
+					}
+				}
+			}
+
+			this._logger.trace(`Read the following session from the keychain with the following scopes: ${scopesStr}`);
+			scopesSeen.add(scopesStr);
+
+			let accountId: string;
+			if (session.account?.id) {
+				if (typeof session.account.id === 'number') {
+					seenNumberAccountId = true;
+				}
+				accountId = `${session.account.id}`;
+			} else {
+				accountId = userInfo?.id ?? '<unknown>';
+			}
+			const icon = session.account?.icon
+				? vscode.Uri.from(session.account.icon)
+				: userInfo?.avatarUrl ? vscode.Uri.parse(userInfo.avatarUrl) : undefined;
+			return {
+				id: session.id,
+				account: {
+					label: session.account
+						? session.account.label ?? session.account.displayName ?? '<unknown>'
+						: (userInfo?.accountName ?? '<unknown>'),
+					id: accountId,
+					icon,
+				},
+				// we set this to session.scopes to maintain the original order of the scopes requested
+				// by the extension that called getSession()
+				scopes: session.scopes,
+				accessToken: session.accessToken
+			};
+		});
+
+		const verifiedSessions = (await Promise.allSettled(sessionPromises))
+			.filter(p => p.status === 'fulfilled')
+			.map(p => (p as PromiseFulfilledResult<vscode.AuthenticationSession | undefined>).value)
+			.filter(<T>(p?: T): p is T => Boolean(p));
+
+		this._logger.info(`Got ${verifiedSessions.length} verified sessions.`);
+		// Account data discovered during reads must not trigger a secret write because web embedders can re-expose accountless sessions.
+		if (seenNumberAccountId || verifiedSessions.length !== sessionData.length) {
+			await this.storeSessions(verifiedSessions);
+		}
+
+		return verifiedSessions;
 	}
 
 	private async storeSessions(sessions: vscode.AuthenticationSession[]): Promise<void> {

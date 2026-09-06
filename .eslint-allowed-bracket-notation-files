@@ -463,6 +463,9 @@ src/vs/workbench/services/telemetry/common/workbenchCommonProperties.ts
 src/vs/workbench/services/telemetry/test/browser/commonProperties.test.ts
 src/vs/workbench/services/telemetry/test/node/commonProperties.test.ts
 
+# GitHub authentication service tests (1 file)
+extensions/github-authentication/src/test/github.test.ts
+
 # Language feature extensions (22 files)
 extensions/css-language-features/client/src/node/cssClientMain.ts
 extensions/css-language-features/server/src/cssServer.ts
