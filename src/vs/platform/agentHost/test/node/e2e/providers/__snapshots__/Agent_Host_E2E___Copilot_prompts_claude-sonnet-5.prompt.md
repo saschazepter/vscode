@@ -61,7 +61,7 @@
           },
           "detach": {
             "type": "boolean",
-            "description": "(Optional) Only valid when mode=\"async\". If true, the process runs as a fully independent background process that persists even after agent shutdown (ALWAYS use for servers, daemons, and any process that must stay alive). If false or omitted, the async process is attached to the session and WILL BE KILLED when session shuts down."
+            "description": "(Optional) Only valid when mode=\"async\". If true, the process runs as a fully independent background process. Only set this when the user explicitly requires the process to survive after the CLI session exits; a request to run or leave a command in the background is not by itself a reason to detach. If false or omitted, the async process is attached to the session: it keeps running across later turns and is terminated at session shutdown."
           },
           "initial_wait": {
             "type": "number",
