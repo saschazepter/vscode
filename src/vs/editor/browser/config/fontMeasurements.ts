@@ -43,10 +43,6 @@ export class FontMeasurementsImpl extends Disposable {
 	private readonly _onDidChange = this._register(new Emitter<void>());
 	public readonly onDidChange = this._onDidChange.event;
 
-	constructor(private readonly _readCharWidths: typeof readCharWidths = readCharWidths) {
-		super();
-	}
-
 	public override dispose(): void {
 		if (this._evictUntrustedReadingsTimeout !== -1) {
 			clearTimeout(this._evictUntrustedReadingsTimeout);
@@ -106,7 +102,7 @@ export class FontMeasurementsImpl extends Disposable {
 	 */
 	public serializeFontInfo(targetWindow: Window): ISerializedFontInfo[] | undefined {
 		const cache = this._ensureCache(targetWindow);
-		if (cache.hasOnlyRestoredValues()) {
+		if (cache.shouldPreservePersistedValues()) {
 			return undefined;
 		}
 		return cache.getValues().filter(item => item.isTrusted);
@@ -206,7 +202,7 @@ export class FontMeasurementsImpl extends Disposable {
 			this._createRequest(monospaceTestChars.charAt(i), CharWidthRequestType.Bold, all, monospace);
 		}
 
-		this._readCharWidths(targetWindow, bareFontInfo, all);
+		readCharWidths(targetWindow, bareFontInfo, all);
 
 		const maxDigitWidth = Math.max(digit0.width, digit1.width, digit2.width, digit3.width, digit4.width, digit5.width, digit6.width, digit7.width, digit8.width, digit9.width);
 
@@ -255,7 +251,8 @@ class FontMeasurementsCache {
 
 	private readonly _keys: { [key: string]: BareFontInfo };
 	private readonly _values: { [key: string]: FontInfo };
-	private readonly _restoredValues = new Set<string>();
+	private _wasPopulatedWithRestoredValues = false;
+	private _wasPopulatedWithCurrentSessionValues = false;
 
 	constructor() {
 		this._keys = Object.create(null);
@@ -277,9 +274,9 @@ class FontMeasurementsCache {
 		this._keys[itemId] = item;
 		this._values[itemId] = value;
 		if (isRestored) {
-			this._restoredValues.add(itemId);
+			this._wasPopulatedWithRestoredValues = true;
 		} else {
-			this._restoredValues.delete(itemId);
+			this._wasPopulatedWithCurrentSessionValues = true;
 		}
 	}
 
@@ -287,15 +284,14 @@ class FontMeasurementsCache {
 		const itemId = item.getId();
 		delete this._keys[itemId];
 		delete this._values[itemId];
-		this._restoredValues.delete(itemId);
 	}
 
 	public getValues(): FontInfo[] {
 		return Object.keys(this._keys).map(id => this._values[id]);
 	}
 
-	public hasOnlyRestoredValues(): boolean {
-		return this._restoredValues.size > 0 && this._restoredValues.size === Object.keys(this._keys).length;
+	public shouldPreservePersistedValues(): boolean {
+		return this._wasPopulatedWithRestoredValues && !this._wasPopulatedWithCurrentSessionValues;
 	}
 }
 

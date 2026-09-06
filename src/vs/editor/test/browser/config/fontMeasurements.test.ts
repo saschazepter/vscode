@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import assert from 'assert';
+import sinon from 'sinon';
 import { mainWindow } from '../../../../base/browser/window.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../base/test/common/utils.js';
 import { FontMeasurementsImpl, ISerializedFontInfo } from '../../../browser/config/fontMeasurements.js';
@@ -11,6 +12,11 @@ import { FontInfo, SERIALIZED_FONT_INFO_VERSION } from '../../../common/config/f
 
 suite('FontMeasurements', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
+
+	teardown(() => {
+		sinon.restore();
+	});
+
 	const restoredFontInfo: ISerializedFontInfo = {
 		version: SERIALIZED_FONT_INFO_VERSION,
 		pixelRatio: 1,
@@ -31,31 +37,44 @@ suite('FontMeasurements', () => {
 		maxDigitWidth: 8,
 	};
 
-	test('does not serialize restored untrusted font information', () => {
+	test('preserves restored untrusted font information through eviction', () => {
+		const clock = sinon.useFakeTimers();
 		const fontMeasurements = store.add(new FontMeasurementsImpl());
 		const initiallySerialized = fontMeasurements.serializeFontInfo(mainWindow);
+		let changeCount = 0;
+		store.add(fontMeasurements.onDidChange(() => changeCount++));
 
 		fontMeasurements.restoreFontInfo(mainWindow, [restoredFontInfo]);
+		const isTrusted = fontMeasurements.readFontInfo(mainWindow, new FontInfo(restoredFontInfo, false)).isTrusted;
+		const serializedBeforeEviction = fontMeasurements.serializeFontInfo(mainWindow);
+
+		clock.tick(5000);
+
+		const serializedAfterEviction = fontMeasurements.serializeFontInfo(mainWindow);
+		const changeCountAfterEviction = changeCount;
+
+		fontMeasurements.clearAllFontInfos();
 
 		assert.deepStrictEqual({
 			initiallySerialized,
-			isTrusted: fontMeasurements.readFontInfo(mainWindow, new FontInfo(restoredFontInfo, false)).isTrusted,
-			serialized: fontMeasurements.serializeFontInfo(mainWindow),
+			isTrusted,
+			serializedBeforeEviction,
+			serializedAfterEviction,
+			changeCountAfterEviction,
+			serializedAfterClear: fontMeasurements.serializeFontInfo(mainWindow),
 		}, {
 			initiallySerialized: [],
 			isTrusted: false,
-			serialized: undefined,
+			serializedBeforeEviction: undefined,
+			serializedAfterEviction: undefined,
+			changeCountAfterEviction: 1,
+			serializedAfterClear: [],
 		});
 	});
 
 	test('serializes empty current-session failed font measurements', () => {
-		const fontMeasurements = store.add(new FontMeasurementsImpl((_targetWindow, _bareFontInfo, requests) => {
-			for (const request of requests) {
-				request.fulfill(1);
-			}
-		}));
-
-		const fontInfo = fontMeasurements.readFontInfo(mainWindow, new FontInfo(restoredFontInfo, false));
+		const fontMeasurements = store.add(new FontMeasurementsImpl());
+		const fontInfo = fontMeasurements.readFontInfo(mainWindow, new FontInfo({ ...restoredFontInfo, fontSize: 0 }, false));
 
 		assert.deepStrictEqual({
 			isTrusted: fontInfo.isTrusted,
