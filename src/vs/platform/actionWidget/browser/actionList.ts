@@ -951,7 +951,8 @@ export class ActionListWidget<T> extends Disposable {
 		this._list.style(defaultListStyles);
 
 		this._register(this._list.onMouseClick(e => this.onListClick(e)));
-		// Ignore mouseover from opening a menu under a stationary cursor so it doesn't take keyboard focus.
+		// Ignore the initial mouseover when a keyboard-invoked menu appears beneath a stationary pointer,
+		// so the item under the pointer does not take keyboard focus.
 		this._register(this._list.onMouseOver(e => {
 			if (!this._ignoreInitialHover) {
 				this.onListHover(e);
