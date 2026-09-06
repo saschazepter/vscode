@@ -50,7 +50,7 @@ export async function activate(context: ExtensionContext) {
 	};
 
 	// pass the location of the localization bundle to the server
-	process.env['VSCODE_L10N_BUNDLE_LOCATION'] = l10n.uri?.toString() ?? '';
+	process.env.VSCODE_L10N_BUNDLE_LOCATION = l10n.uri?.toString() ?? '';
 
 	const schemaRequests = await getSchemaRequestService(context, logOutputChannel);
 
@@ -118,7 +118,7 @@ async function getSchemaRequestService(context: ExtensionContext, log: LogOutput
 
 			const response = await xhr({ url: uri, followRedirects: 5, headers });
 			if (cache) {
-				const etag = response.headers['etag'];
+				const etag = response.headers.etag;
 				if (typeof etag === 'string') {
 					log.trace(`[json schema cache] Storing schema ${uri} etag ${etag} in cache`);
 					await cache.putSchema(uri, etag, response.responseText);
