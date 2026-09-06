@@ -25,7 +25,7 @@ import { ITelemetryService } from '../../../../../platform/telemetry/common/tele
 import { assertAutomationSessionTemplate, type AutomationRunTrigger, type AutomationTarget, type IAutomationDescriptor, type IAutomationRun, type IAutomationSchedule, type IAutomationSessionTemplate } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
 import { AutomationActiveRunError, assertAutomationSessionTemplateAuthority, type AutomationMutationGuard, type IAutomationRunClaim, type ICreateAutomationOptions, type IGuardedAutomationUpdateResult, isAutomationActiveRunError, serializeAutomationEditableState, type IUpdateAutomationOptions, type IUpdateAutomationRunOptions } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { publishAutomationMigration } from '../../../../../workbench/contrib/chat/common/automations/automationTelemetry.js';
-import type { IAutomation, IAutomationSnapshotImportResult, IGuardedAutomationSnapshotRemovalResult, ISessionsProviderAutomations } from '../../../../services/sessions/common/sessionsProvider.js';
+import type { AutomationInitialDiscoveryState, IAutomation, IAutomationSnapshotImportResult, IGuardedAutomationSnapshotRemovalResult, ISessionsProviderAutomations } from '../../../../services/sessions/common/sessionsProvider.js';
 import { IAutomationStorageService } from '../../../automations/common/automationStorageService.js';
 
 const MUTATION_TIMEOUT_MS = 30_000;
@@ -85,6 +85,7 @@ export class AgentHostAutomationStore extends Disposable implements ISessionsPro
 	private _migrationPromise: Promise<void> | undefined;
 	private _lastPreflightDeferralKey: string | undefined;
 
+	readonly initialDiscoveryState = derived<AutomationInitialDiscoveryState>(this, reader => this._ready.read(reader) ? 'ready' : 'pending');
 	readonly automations: IObservable<readonly IAutomationDescriptor[]>;
 	readonly runs: IObservable<readonly IAutomationRun[]>;
 
