@@ -40,7 +40,7 @@ const argvConfig = configureCommandlineSwitchesSync(args);
 // 1) disabled via command line using either
 //    `--no-sandbox` or `--disable-chromium-sandbox` argument.
 // 2) argv.json contains `disable-chromium-sandbox: true`.
-if (args['sandbox'] &&
+if (args.sandbox &&
 	!args['disable-chromium-sandbox'] &&
 	!argvConfig['disable-chromium-sandbox']) {
 	app.enableSandbox();
@@ -153,7 +153,7 @@ if (process.platform === 'win32' || process.platform === 'linux') {
 
 // Load our code once ready
 app.once('ready', function () {
-	if (args['trace']) {
+	if (args.trace) {
 		let traceOptions: Electron.TraceConfig | Electron.TraceCategoriesAndOptions;
 		if (args['trace-memory-infra']) {
 			const customCategories = args['trace-category-filter']?.split(',') || [];
@@ -209,8 +209,8 @@ async function onReady() {
  * Main startup routine
  */
 async function startup(codeCachePath: string | undefined, nlsConfig: INLSConfiguration): Promise<void> {
-	process.env['VSCODE_NLS_CONFIG'] = JSON.stringify(nlsConfig);
-	process.env['VSCODE_CODE_CACHE_PATH'] = codeCachePath || '';
+	process.env.VSCODE_NLS_CONFIG = JSON.stringify(nlsConfig);
+	process.env.VSCODE_CODE_CACHE_PATH = codeCachePath || '';
 
 	// Bootstrap ESM
 	await bootstrapESM();
@@ -442,13 +442,13 @@ function createDefaultArgvConfigSync(argvConfigPath: string): void {
 }
 
 function getArgvConfigPath(): string {
-	const vscodePortable = process.env['VSCODE_PORTABLE'];
+	const vscodePortable = process.env.VSCODE_PORTABLE;
 	if (vscodePortable) {
 		return path.join(vscodePortable, 'argv.json');
 	}
 
 	let dataFolderName = product.dataFolderName;
-	if (process.env['VSCODE_DEV']) {
+	if (process.env.VSCODE_DEV) {
 		dataFolderName = `${dataFolderName}-dev`;
 	}
 
@@ -506,7 +506,7 @@ function configureCrashReporter(): void {
 					} else {
 						switch (process.arch) {
 							case 'x64':
-								submitURL = appCenter['darwin'];
+								submitURL = appCenter.darwin;
 								break;
 							case 'arm64':
 								submitURL = appCenter['darwin-arm64'];
@@ -536,10 +536,10 @@ function configureCrashReporter(): void {
 	// Start crash reporter for all processes
 	const productName = (product.crashReporter ? product.crashReporter.productName : undefined) || product.nameShort;
 	const companyName = (product.crashReporter ? product.crashReporter.companyName : undefined) || 'Microsoft';
-	const uploadToServer = Boolean(!process.env['VSCODE_DEV'] && submitURL && !crashReporterDirectory);
+	const uploadToServer = Boolean(!process.env.VSCODE_DEV && submitURL && !crashReporterDirectory);
 	crashReporter.start({
 		companyName,
-		productName: process.env['VSCODE_DEV'] ? `${productName} Dev` : productName,
+		productName: process.env.VSCODE_DEV ? `${productName} Dev` : productName,
 		submitURL,
 		uploadToServer,
 		compress: true,
@@ -625,7 +625,7 @@ function getCodeCachePath(): string | undefined {
 	}
 
 	// running out of sources
-	if (process.env['VSCODE_DEV']) {
+	if (process.env.VSCODE_DEV) {
 		return undefined;
 	}
 
@@ -727,7 +727,7 @@ async function resolveNlsConfiguration(): Promise<INLSConfiguration> {
  * the locale we receive from the user or OS.
  */
 function getUserDefinedLocale(argvConfig: IArgvConfig): string | undefined {
-	const locale = args['locale'];
+	const locale = args.locale;
 	if (locale) {
 		return locale.toLowerCase(); // a directly provided --locale always wins
 	}

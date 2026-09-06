@@ -228,9 +228,9 @@ export async function collectLaunchConfigs(folder: string): Promise<WorkspaceSta
 			return [];
 		}
 
-		if (getNodeType(json) === 'object' && json['configurations']) {
-			for (const each of json['configurations']) {
-				const type = each['type'];
+		if (getNodeType(json) === 'object' && json.configurations) {
+			for (const each of json.configurations) {
+				const type = each.type;
 				if (type) {
 					if (launchConfigs.has(type)) {
 						launchConfigs.set(type, launchConfigs.get(type)! + 1);
@@ -350,10 +350,10 @@ export class DiagnosticsService implements IDiagnosticsService {
 
 		if (isLinux) {
 			systemInfo.linuxEnv = {
-				desktopSession: process.env['DESKTOP_SESSION'],
-				xdgSessionDesktop: process.env['XDG_SESSION_DESKTOP'],
-				xdgCurrentDesktop: process.env['XDG_CURRENT_DESKTOP'],
-				xdgSessionType: process.env['XDG_SESSION_TYPE']
+				desktopSession: process.env.DESKTOP_SESSION,
+				xdgSessionDesktop: process.env.XDG_SESSION_DESKTOP,
+				xdgCurrentDesktop: process.env.XDG_CURRENT_DESKTOP,
+				xdgSessionType: process.env.XDG_SESSION_TYPE
 			};
 		}
 

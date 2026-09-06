@@ -100,10 +100,10 @@ export async function getResolvedShellEnv(configurationService: IConfigurationSe
 }
 
 async function doResolveUnixShellEnv(logService: ILogService, token: CancellationToken): Promise<typeof process.env> {
-	const runAsNode = process.env['ELECTRON_RUN_AS_NODE'];
+	const runAsNode = process.env.ELECTRON_RUN_AS_NODE;
 	logService.trace('getUnixShellEnvironment#runAsNode', runAsNode);
 
-	const noAttach = process.env['ELECTRON_NO_ATTACH_CONSOLE'];
+	const noAttach = process.env.ELECTRON_NO_ATTACH_CONSOLE;
 	logService.trace('getUnixShellEnvironment#noAttach', noAttach);
 
 	const mark = generateUuid().replace(/-/g, '').substr(0, 12);
@@ -195,21 +195,21 @@ async function doResolveUnixShellEnv(logService: ILogService, token: Cancellatio
 				const env = JSON.parse(rawStripped);
 
 				if (runAsNode) {
-					env['ELECTRON_RUN_AS_NODE'] = runAsNode;
+					env.ELECTRON_RUN_AS_NODE = runAsNode;
 				} else {
-					delete env['ELECTRON_RUN_AS_NODE'];
+					delete env.ELECTRON_RUN_AS_NODE;
 				}
 
 				if (noAttach) {
-					env['ELECTRON_NO_ATTACH_CONSOLE'] = noAttach;
+					env.ELECTRON_NO_ATTACH_CONSOLE = noAttach;
 				} else {
-					delete env['ELECTRON_NO_ATTACH_CONSOLE'];
+					delete env.ELECTRON_NO_ATTACH_CONSOLE;
 				}
 
-				delete env['VSCODE_RESOLVING_ENVIRONMENT'];
+				delete env.VSCODE_RESOLVING_ENVIRONMENT;
 
 				// https://github.com/microsoft/vscode/issues/22593#issuecomment-336050758
-				delete env['XDG_RUNTIME_DIR'];
+				delete env.XDG_RUNTIME_DIR;
 
 				logService.trace('getUnixShellEnvironment#result', env);
 				resolve(env);
