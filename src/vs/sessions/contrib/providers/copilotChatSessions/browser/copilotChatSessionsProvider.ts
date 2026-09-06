@@ -33,7 +33,7 @@ import { IAutomationSessionConfiguration, IDeleteChatOptions, ISendRequestOption
 import { ISessionOptionGroup } from '../../../chat/browser/newSession.js';
 import { UNIFIED_WORKSPACE_PICKER_SETTING } from '../../../chat/common/constants.js';
 import { ILanguageModelToolsService } from '../../../../../workbench/contrib/chat/common/tools/languageModelToolsService.js';
-import { ChatMode, IChatMode, IChatModeService, isBuiltinChatMode } from '../../../../../workbench/contrib/chat/common/chatModes.js';
+import { ChatMode, IChatMode, IChatModes, IChatModeService, isBuiltinChatMode } from '../../../../../workbench/contrib/chat/common/chatModes.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../../base/common/cancellation.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../../../workbench/contrib/chat/common/languageModels.js';
@@ -323,6 +323,7 @@ class CopilotCLISession extends Disposable implements ICopilotChatSession {
 	private _mode: IChatMode | undefined;
 	private _query: string | undefined;
 	private _attachedContext: IChatRequestVariableEntry[] | undefined;
+	private readonly _lifetimeCts = this._register(new CancellationTokenSource());
 
 	readonly target = AgentSessionProviders.Background;
 	readonly selectedOptions = new Map<string, IChatSessionProviderOptionItem>();
@@ -331,6 +332,7 @@ class CopilotCLISession extends Disposable implements ICopilotChatSession {
 	get chatMode(): IChatMode | undefined { return this._mode; }
 	get query(): string | undefined { return this._query; }
 	get attachedContext(): IChatRequestVariableEntry[] | undefined { return this._attachedContext; }
+	get cancellationToken(): CancellationToken { return this._lifetimeCts.token; }
 	get gitRepository(): IGitRepository | undefined { return this._gitRepository; }
 	get disabled(): boolean {
 		if (!this._repoUri) {
@@ -517,6 +519,7 @@ class CopilotCLISession extends Disposable implements ICopilotChatSession {
 	}
 
 	setModeById(modeId: string, modeKind: string): void {
+		this._mode = undefined;
 		this._modeObservable.set({ id: modeId, kind: modeKind }, undefined);
 	}
 
@@ -537,7 +540,7 @@ class CopilotCLISession extends Disposable implements ICopilotChatSession {
 	}
 
 	setMode(mode: IChatMode | undefined): void {
-		if (this._mode?.id !== mode?.id) {
+		if (this._mode !== mode || this._modeObservable.get()?.id !== mode?.id) {
 			this._mode = mode;
 			this._modeObservable.set(mode ? { id: mode.id, kind: mode.kind } : undefined, undefined);
 			const modeName = mode?.isBuiltin ? undefined : mode?.name.get();
@@ -588,6 +591,11 @@ class CopilotCLISession extends Disposable implements ICopilotChatSession {
 			this._checkpoints.set(session.checkpoints.get(), tx);
 			this._description.set(session.description.get(), tx);
 		});
+	}
+
+	override dispose(): void {
+		this._lifetimeCts.cancel();
+		super.dispose();
 	}
 }
 
@@ -1701,27 +1709,30 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			throw new Error(`Cannot resolve workspace for URI: ${workspaceUri.toString()}`);
 		}
 		const automationConfiguration = options?.automationConfiguration;
+		let session: NewSession;
 
 		if (workspaceUri.scheme === GITHUB_REMOTE_FILE_SCHEME) {
 			if (sessionTypeId !== CopilotCloudSessionType.id) {
 				throw new Error('Only Copilot Cloud sessions can be created for GitHub repositories');
 			}
 			const resource = URI.from({ scheme: AgentSessionProviders.Cloud, path: `/untitled-${generateUuid()}` });
-			const session = this.instantiationService.createInstance(RemoteNewSession, resource, workspace, AgentSessionProviders.Cloud, this.id, automationConfiguration);
-			this._applyAutomationSessionConfiguration(session, automationConfiguration);
-			this._newSessions.set(session.sessionId, session);
-			return this._chatToSession(session);
+			session = this.instantiationService.createInstance(RemoteNewSession, resource, workspace, AgentSessionProviders.Cloud, this.id, automationConfiguration);
+		} else {
+			if (sessionTypeId !== CopilotCLISessionType.id) {
+				throw new Error(`Unsupported session type '${sessionTypeId}' for local workspaces`);
+			}
+			const resource = URI.from({ scheme: AgentSessionProviders.Background, path: `/untitled-${generateUuid()}` });
+			session = this.instantiationService.createInstance(CopilotCLISession, resource, workspace, this.id, automationConfiguration);
+			session.setPermissionLevel(this._defaultPermissionLevel());
 		}
-
-		if (sessionTypeId !== CopilotCLISessionType.id) {
-			throw new Error(`Unsupported session type '${sessionTypeId}' for local workspaces`);
-		}
-		const resource = URI.from({ scheme: AgentSessionProviders.Background, path: `/untitled-${generateUuid()}` });
-		const session = this.instantiationService.createInstance(CopilotCLISession, resource, workspace, this.id, automationConfiguration);
-		session.setPermissionLevel(this._defaultPermissionLevel());
-		this._applyAutomationSessionConfiguration(session, automationConfiguration);
 		this._newSessions.set(session.sessionId, session);
-		return this._chatToSession(session);
+		try {
+			this._applyAutomationSessionConfiguration(session, automationConfiguration);
+			return this._chatToSession(session);
+		} catch (error) {
+			this._newSessions.deleteAndDispose(session.sessionId);
+			throw error;
+		}
 	}
 
 	async getAutomationSessionConfiguration(sessionId: string): Promise<IAutomationSessionConfiguration | undefined> {
@@ -1733,7 +1744,9 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		const initialConfiguration = session.initialAutomationSessionConfiguration;
 		const initialTemplate = initialConfiguration?.sessionTemplate;
 		const initialMode = initialConfiguration?.mode ?? initialTemplate?.config?.[SessionConfigKey.Mode];
-		const mode = session.mode.get()?.id ?? (typeof initialMode === 'string' ? initialMode : undefined);
+		const mode = session instanceof CopilotCLISession
+			? session.mode.get()?.id
+			: typeof initialMode === 'string' ? initialMode : undefined;
 		const initialPermissionLevel = initialConfiguration?.permissionLevel ?? initialTemplate?.config?.[SessionConfigKey.AutoApprove];
 		const permissionLevel = session instanceof RemoteNewSession && isChatPermissionLevel(initialPermissionLevel)
 			? initialPermissionLevel
@@ -1745,7 +1758,10 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			delete config[SessionConfigKey.Mode];
 		}
 		config[SessionConfigKey.AutoApprove] = permissionLevel;
-		const agent = initialTemplate?.agent;
+		const agentUri = session.chatMode?.uri?.get();
+		const agent = agentUri
+			? { uri: agentUri.toString() }
+			: initialTemplate?.agent && mode === initialTemplate.agent.uri ? initialTemplate.agent : undefined;
 		const sessionTemplate: IAutomationSessionTemplate = {
 			...(modelId ? { modelId } : {}),
 			...(agent ? { agent } : {}),
@@ -1779,16 +1795,25 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			return;
 		}
 		const template = configuration.sessionTemplate;
+		if (template?.agent && session instanceof RemoteNewSession) {
+			throw new Error(localize('automationCloudAgentUnsupported', "This provider does not support custom agents in Automation session templates."));
+		}
+		if (template?.agent) {
+			try {
+				URI.parse(template.agent.uri, true);
+			} catch (error) {
+				throw new Error(localize('automationAgentUriInvalid', "The Automation's selected agent must have an absolute URI."), { cause: error });
+			}
+		}
 		const modelId = template?.modelId ?? configuration.modelId;
 		if (modelId) {
 			session.setModelId(modelId, ChatModelSource.Chosen);
 		}
-		const mode = template?.config?.[SessionConfigKey.Mode] ?? configuration.mode;
+		const mode = template?.agent?.uri ?? template?.config?.[SessionConfigKey.Mode] ?? configuration.mode;
 		if (typeof mode === 'string') {
 			const restored = this._setSessionMode(session, mode);
 			if (!restored && session instanceof CopilotCLISession) {
 				session.setModeById(mode, ChatModeKind.Agent);
-				void this._resolveAutomationSessionMode(session, mode);
 			}
 		}
 		const permissionLevel = template?.config?.[SessionConfigKey.AutoApprove] ?? configuration.permissionLevel;
@@ -1937,7 +1962,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			default: {
 				const modes = this.chatModeService.createModes(session.resource);
 				try {
-					mode = modes.findModeById(modeId) ?? modes.findModeByName(modeId);
+					mode = this._findSessionMode(session, modes, modeId);
 				} finally {
 					modes.dispose();
 				}
@@ -1951,21 +1976,38 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		return false;
 	}
 
-	private async _resolveAutomationSessionMode(session: CopilotCLISession, modeId: string): Promise<void> {
-		const modes = this.chatModeService.createModes(session.resource);
-		try {
-			await modes.waitForPendingUpdates();
-			if (this._newSessions.get(session.sessionId) !== session || session.mode.get()?.id !== modeId) {
+	private _findSessionMode(session: ICopilotChatSession, modes: IChatModes, modeId: string): IChatMode | undefined {
+		const initialAgent = session.initialAutomationSessionConfiguration?.sessionTemplate?.agent;
+		return initialAgent?.uri === modeId
+			? modes.custom.find(mode => isEqual(mode.uri?.get(), URI.parse(initialAgent.uri)))
+			: modes.findModeById(modeId) ?? modes.findModeByName(modeId);
+	}
+
+	private async _resolveAutomationSessionMode(session: CopilotCLISession): Promise<void> {
+		while (true) {
+			const modeId = session.mode.get()?.id;
+			if (!modeId || modeId === ChatModeKind.Agent || modeId === ChatModeKind.Ask || modeId === ChatModeKind.Edit) {
 				return;
 			}
-			const mode = modes.findModeById(modeId) ?? modes.findModeByName(modeId);
-			if (mode) {
+			const selectedMode = session.chatMode;
+			const modes = this.chatModeService.createModes(session.resource);
+			try {
+				await raceCancellationError(modes.waitForPendingUpdates(), session.cancellationToken);
+				if (this._newSessions.get(session.sessionId) !== session) {
+					throw new CancellationError();
+				}
+				if (session.mode.get()?.id !== modeId || session.chatMode !== selectedMode) {
+					continue;
+				}
+				const mode = this._findSessionMode(session, modes, modeId);
+				if (!mode) {
+					throw new Error(localize('automationAgentUnavailable', "The Automation's selected agent '{0}' is unavailable. Choose another agent or restore it before running the Automation.", modeId));
+				}
 				session.setMode(mode);
+				return;
+			} finally {
+				modes.dispose();
 			}
-		} catch (error) {
-			this.logService.error(`[CopilotChatSessionsProvider] Failed to restore Automation mode '${modeId}'.`, error);
-		} finally {
-			modes.dispose();
 		}
 	}
 
@@ -2473,6 +2515,9 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	}
 
 	private async _sendFirstChat(session: NewSession, chatResource: URI, options: ISendRequestOptions): Promise<ISession> {
+		if (session instanceof CopilotCLISession && session.initialAutomationSessionConfiguration) {
+			await this._resolveAutomationSessionMode(session);
+		}
 
 		const { query, attachedContext } = options;
 

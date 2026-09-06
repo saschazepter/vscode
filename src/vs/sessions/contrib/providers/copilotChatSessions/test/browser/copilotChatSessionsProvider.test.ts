@@ -6,7 +6,7 @@
 import assert from 'assert';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
-import { timeout } from '../../../../../../base/common/async.js';
+import { DeferredPromise, timeout } from '../../../../../../base/common/async.js';
 import { DisposableStore, IDisposable, ImmortalReference, toDisposable } from '../../../../../../base/common/lifecycle.js';
 import { ThemeIcon } from '../../../../../../base/common/themables.js';
 import { URI } from '../../../../../../base/common/uri.js';
@@ -35,7 +35,7 @@ import { IChatWidget, IChatWidgetService } from '../../../../../../workbench/con
 import { ILanguageModelChatMetadata, ILanguageModelChatMetadataAndIdentifier, ILanguageModelsService } from '../../../../../../workbench/contrib/chat/common/languageModels.js';
 import { ILanguageModelToolsService } from '../../../../../../workbench/contrib/chat/common/tools/languageModelToolsService.js';
 import { IChatResponseModel } from '../../../../../../workbench/contrib/chat/common/model/chatModel.js';
-import { IChatModes, IChatModeService } from '../../../../../../workbench/contrib/chat/common/chatModes.js';
+import { ChatMode, CustomChatMode, IChatMode, IChatModes, IChatModeService } from '../../../../../../workbench/contrib/chat/common/chatModes.js';
 import { IChatAgentData } from '../../../../../../workbench/contrib/chat/common/participants/chatAgents.js';
 import { IGitRepository, IGitService } from '../../../../../../workbench/contrib/git/common/gitService.js';
 import { ISessionChangeEvent } from '../../../../../services/sessions/common/sessionsProvider.js';
@@ -62,6 +62,8 @@ import { IGitHubService } from '../../../../github/browser/githubService.js';
 import { GitHubPullRequestModel } from '../../../../github/browser/models/githubPullRequestModel.js';
 import { IPullRequestIconCache } from '../../../../github/browser/pullRequestIconCache.js';
 import { computePullRequestIcon, GitHubPullRequestState, IGitHubPullRequest } from '../../../../github/common/types.js';
+import { Target } from '../../../../../../workbench/contrib/chat/common/promptSyntax/promptTypes.js';
+import { PromptsStorage } from '../../../../../../workbench/contrib/chat/common/promptSyntax/service/promptsService.js';
 
 // ---- Helpers ----------------------------------------------------------------
 
@@ -402,7 +404,7 @@ function createProviderForSendTests(
 	disposables: DisposableStore,
 	model: MockAgentSessionsModel,
 	sendRequest: (resource: URI, message: string, options?: IChatSendRequestOptions) => Promise<ChatSendResult>,
-	opts?: { onDidCommitSession?: Event<{ original: URI; committed: URI }>; configurationService?: TestConfigurationService; agentHostEnabled?: boolean; getOptionGroups?: () => IChatSessionProviderOptionGroup[] | undefined; notifications?: string[] },
+	opts?: { onDidCommitSession?: Event<{ original: URI; committed: URI }>; configurationService?: TestConfigurationService; agentHostEnabled?: boolean; getOptionGroups?: () => IChatSessionProviderOptionGroup[] | undefined; notifications?: string[]; chatModeService?: IChatModeService },
 ): TestSandboxCopilotProvider {
 	const instantiationService = disposables.add(new TestInstantiationService());
 
@@ -451,7 +453,7 @@ function createProviderForSendTests(
 	instantiationService.stub(INotificationService, new class extends mock<INotificationService>() {
 		override warn(message: unknown): void { opts?.notifications?.push(String(message)); }
 	}());
-	instantiationService.stub(IChatModeService, {
+	instantiationService.stub(IChatModeService, opts?.chatModeService ?? {
 		createModes: () => upcastPartial<IChatModes & IDisposable>({
 			onDidChange: Event.None,
 			builtin: [],
@@ -2355,6 +2357,270 @@ suite('CopilotChatSessionsProvider', () => {
 				capturedMode: mode,
 				templateMode: mode,
 			});
+		});
+	});
+
+	suite('Automation custom agent restoration', () => {
+		const workspace = URI.file('/test/repo');
+
+		function createAgent(name: string): IChatMode {
+			return new CustomChatMode({
+				id: name,
+				uri: URI.file(`/test/repo/.github/agents/${name}.agent.md`),
+				name,
+				agentInstructions: { content: `Instructions for ${name}`, toolReferences: [] },
+				source: { storage: PromptsStorage.local },
+				target: Target.GitHubCopilot,
+				visibility: { userInvocable: true, agentInvocable: true },
+				enabled: true,
+			});
+		}
+
+		function createModeService(getModes: () => readonly IChatMode[], waitForPendingUpdates: () => Promise<void> = async () => { }, onDispose: () => void = () => { }): IChatModeService {
+			return new class extends mock<IChatModeService>() {
+				override createModes(): IChatModes & IDisposable {
+					return {
+						onDidChange: Event.None,
+						builtin: [ChatMode.Agent],
+						get custom() { return getModes(); },
+						findModeById: id => getModes().find(mode => mode.id === id),
+						findModeByName: name => getModes().find(mode => mode.name.get() === name),
+						waitForPendingUpdates,
+						dispose: onDispose,
+					};
+				}
+			}();
+		}
+
+		test('restores canonical agent selection and captures changes and clearing', async () => {
+			const reviewer = createAgent('reviewer');
+			const writer = createAgent('writer');
+			const provider = createProviderForSendTests(disposables, model, async () => ({ kind: 'rejected', reason: 'Unexpected send' }), {
+				chatModeService: createModeService(() => [reviewer, writer]),
+			});
+			const session = provider.createNewSession(workspace, CopilotCLISessionType.id, {
+				automationConfiguration: {
+					sessionTemplate: {
+						agent: { uri: reviewer.id },
+						config: { mode: ChatModeKind.Agent, providerOption: true },
+					},
+				},
+			});
+			const initial = await provider.getAutomationSessionConfiguration(session.sessionId);
+			const selected = session.mode.get()?.id;
+			provider.getSession(session.sessionId)?.setMode(writer);
+			const changed = await provider.getAutomationSessionConfiguration(session.sessionId);
+			provider.getSession(session.sessionId)?.setMode(undefined);
+			const cleared = await provider.getAutomationSessionConfiguration(session.sessionId);
+
+			assert.deepStrictEqual({
+				selected,
+				agents: [initial, changed, cleared].map(configuration => configuration?.sessionTemplate?.agent),
+				clearedMode: cleared?.mode,
+				opaqueValue: cleared?.sessionTemplate?.config?.providerOption,
+			}, {
+				selected: reviewer.id,
+				agents: [{ uri: reviewer.id }, { uri: writer.id }, undefined],
+				clearedMode: undefined,
+				opaqueValue: true,
+			});
+		});
+
+		for (const canonical of [true, false]) {
+			test(`waits for ${canonical ? 'canonical agent' : 'legacy custom mode'} discovery before sending`, async () => {
+				const reviewer = createAgent('reviewer');
+				const ready = new DeferredPromise<void>();
+				const discoveryStarted = new DeferredPromise<void>();
+				let modes: readonly IChatMode[] = [];
+				let sentOptions: IChatSendRequestOptions | undefined;
+				const provider = createProviderForSendTests(disposables, model, async (_resource, _message, options) => {
+					sentOptions = options;
+					return { kind: 'rejected', reason: 'Request recorded' };
+				}, {
+					chatModeService: createModeService(() => modes, async () => {
+						await discoveryStarted.complete();
+						await ready.p;
+					}),
+				});
+				const session = provider.createNewSession(workspace, CopilotCLISessionType.id, {
+					automationConfiguration: canonical
+						? { sessionTemplate: { agent: { uri: reviewer.id } } }
+						: { mode: reviewer.id },
+				});
+				const chat = await provider.createNewChat(session.sessionId);
+				const sending = assert.rejects(provider.sendRequest(session.sessionId, chat.resource, { query: 'Review changes' }), /Request recorded/);
+				await discoveryStarted.p;
+				const sentBeforeDiscovery = sentOptions !== undefined;
+				modes = [reviewer];
+				await ready.complete();
+				await sending;
+
+				assert.deepStrictEqual({
+					sentBeforeDiscovery,
+					instructions: sentOptions?.modeInfo?.modeInstructions?.content,
+					agent: sentOptions?.modeInfo?.modeInstructions?.name,
+					isBuiltin: sentOptions?.modeInfo?.isBuiltin,
+				}, {
+					sentBeforeDiscovery: false,
+					instructions: 'Instructions for reviewer',
+					agent: 'reviewer',
+					isBuiltin: false,
+				});
+			});
+		}
+
+		test('preserves an unavailable canonical agent but rejects running without it', async () => {
+			let sent = false;
+			const provider = createProviderForSendTests(disposables, model, async () => {
+				sent = true;
+				return { kind: 'rejected', reason: 'Unexpected send' };
+			});
+			const agent = { uri: 'file:///agents/missing.agent.md' };
+			const session = provider.createNewSession(workspace, CopilotCLISessionType.id, {
+				automationConfiguration: { sessionTemplate: { agent } },
+			});
+			const captured = await provider.getAutomationSessionConfiguration(session.sessionId);
+			await assert.rejects(provider.sendRequest(session.sessionId, session.mainChat.get().resource, { query: 'Review changes' }), /selected agent.*unavailable/);
+
+			assert.deepStrictEqual({ sent, agent: captured?.sessionTemplate?.agent, status: session.status.get() }, {
+				sent: false,
+				agent,
+				status: SessionStatus.Untitled,
+			});
+		});
+
+		test('rejects a cached canonical agent that disappears during fresh discovery', async () => {
+			const reviewer = createAgent('reviewer');
+			let availableModes: readonly IChatMode[] = [reviewer];
+			let sent = false;
+			const provider = createProviderForSendTests(disposables, model, async () => {
+				sent = true;
+				return { kind: 'rejected', reason: 'Unexpected send' };
+			}, {
+				chatModeService: createModeService(() => availableModes, async () => { availableModes = []; }),
+			});
+			const session = provider.createNewSession(workspace, CopilotCLISessionType.id, {
+				automationConfiguration: { sessionTemplate: { agent: { uri: reviewer.id } } },
+			});
+			const cachedSelection = session.mode.get()?.id;
+			await assert.rejects(provider.sendRequest(session.sessionId, session.mainChat.get().resource, { query: 'Review changes' }), /selected agent.*unavailable/);
+
+			assert.deepStrictEqual({ cachedSelection, sent, status: session.status.get() }, {
+				cachedSelection: reviewer.id,
+				sent: false,
+				status: SessionStatus.Untitled,
+			});
+		});
+
+		test('clearing an unresolved canonical agent does not restore the initial selection', async () => {
+			const provider = createProviderForSendTests(disposables, model, async () => ({ kind: 'rejected', reason: 'Unexpected send' }));
+			const session = provider.createNewSession(workspace, CopilotCLISessionType.id, {
+				automationConfiguration: {
+					sessionTemplate: {
+						agent: { uri: 'file:///agents/missing.agent.md' },
+						config: { mode: 'file:///agents/previous.agent.md' },
+					},
+				},
+			});
+			provider.getSession(session.sessionId)?.setMode(undefined);
+			const captured = await provider.getAutomationSessionConfiguration(session.sessionId);
+
+			assert.deepStrictEqual({
+				mode: captured?.mode,
+				templateMode: captured?.sessionTemplate?.config?.mode,
+				agent: captured?.sessionTemplate?.agent,
+			}, { mode: undefined, templateMode: undefined, agent: undefined });
+		});
+
+		test('does not overwrite a user-selected agent when discovery completes', async () => {
+			const reviewer = createAgent('reviewer');
+			const writer = createAgent('writer');
+			const ready = new DeferredPromise<void>();
+			const discoveryStarted = new DeferredPromise<void>();
+			let sentOptions: IChatSendRequestOptions | undefined;
+			const provider = createProviderForSendTests(disposables, model, async (_resource, _message, options) => {
+				sentOptions = options;
+				return { kind: 'rejected', reason: 'Request recorded' };
+			}, {
+				chatModeService: createModeService(() => [writer], async () => {
+					await discoveryStarted.complete();
+					await ready.p;
+				}),
+			});
+			const session = provider.createNewSession(workspace, CopilotCLISessionType.id, {
+				automationConfiguration: { sessionTemplate: { agent: { uri: reviewer.id } } },
+			});
+			const sending = assert.rejects(provider.sendRequest(session.sessionId, session.mainChat.get().resource, { query: 'Review changes' }), /Request recorded/);
+			await discoveryStarted.p;
+			provider.getSession(session.sessionId)?.setMode(writer);
+			await ready.complete();
+			await sending;
+
+			assert.deepStrictEqual({
+				agent: sentOptions?.modeInfo?.modeInstructions?.name,
+				instructions: sentOptions?.modeInfo?.modeInstructions?.content,
+			}, { agent: 'writer', instructions: 'Instructions for writer' });
+		});
+
+		test('propagates discovery errors without sending default Agent instructions', async () => {
+			const error = new Error('Agent discovery failed');
+			let sent = false;
+			const provider = createProviderForSendTests(disposables, model, async () => {
+				sent = true;
+				return { kind: 'rejected', reason: 'Unexpected send' };
+			}, {
+				chatModeService: createModeService(() => [], async () => { throw error; }),
+			});
+			const session = provider.createNewSession(workspace, CopilotCLISessionType.id, {
+				automationConfiguration: { sessionTemplate: { agent: { uri: 'file:///agents/reviewer.agent.md' } } },
+			});
+
+			await assert.rejects(provider.sendRequest(session.sessionId, session.mainChat.get().resource, { query: 'Review changes' }), actual => actual === error);
+			assert.strictEqual(sent, false);
+		});
+
+		test('disposes pending discovery when its draft is discarded', async () => {
+			const ready = new DeferredPromise<void>();
+			const discoveryStarted = new DeferredPromise<void>();
+			let disposed = 0;
+			let sent = false;
+			const provider = createProviderForSendTests(disposables, model, async () => {
+				sent = true;
+				return { kind: 'rejected', reason: 'Unexpected send' };
+			}, {
+				chatModeService: createModeService(() => [], async () => {
+					await discoveryStarted.complete();
+					await ready.p;
+				}, () => disposed++),
+			});
+			const session = provider.createNewSession(workspace, CopilotCLISessionType.id, {
+				automationConfiguration: { mode: 'file:///agents/reviewer.agent.md' },
+			});
+			const sending = assert.rejects(provider.sendRequest(session.sessionId, session.mainChat.get().resource, { query: 'Review changes' }), /Canceled/);
+			await discoveryStarted.p;
+			provider.deleteNewSession(session.sessionId);
+			try {
+				await sending;
+				assert.deepStrictEqual({ sent, disposed }, { sent: false, disposed: 2 });
+			} finally {
+				await ready.complete();
+			}
+		});
+
+		test('rejects unsupported canonical custom agents on cloud drafts', () => {
+			const provider = createProviderForSendTests(disposables, model, async () => ({ kind: 'rejected', reason: 'Unexpected send' }));
+			assert.throws(() => provider.createNewSession(
+				URI.from({ scheme: GITHUB_REMOTE_FILE_SCHEME, path: '/owner/repo/HEAD' }),
+				CopilotCloudSessionType.id,
+				{ automationConfiguration: { sessionTemplate: { agent: { uri: 'file:///agents/reviewer.agent.md' } } } },
+			), /does not support custom agents/);
+		});
+
+		test('rejects non-URI canonical agents instead of interpreting them as built-in modes', () => {
+			const provider = createProviderForSendTests(disposables, model, async () => ({ kind: 'rejected', reason: 'Unexpected send' }));
+			assert.throws(() => provider.createNewSession(workspace, CopilotCLISessionType.id, {
+				automationConfiguration: { sessionTemplate: { agent: { uri: ChatModeKind.Agent } } },
+			}), /absolute URI/);
 		});
 	});
 
