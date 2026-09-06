@@ -232,7 +232,7 @@ export class TabbedActionListWidget extends Disposable {
 				};
 				applyWidgetClassNames();
 
-				// Keep outside mouse-down events from reaching the underlying UI.
+				// Intercept mouse-down events outside the picker so those clicks do not interact with controls behind it.
 				const block = dom.append(container, dom.$('.context-view-block'));
 				renderDisposables.add(dom.addDisposableGenericMouseDownListener(block, e => e.stopPropagation()));
 
