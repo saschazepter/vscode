@@ -894,7 +894,7 @@ function parseTarget(input: Record<string, unknown>, existing: IAutomationDescri
 }
 
 function parseSessionTemplate(input: Record<string, unknown>): IAutomationSessionTemplate | null | undefined {
-	const value = input['sessionTemplate'];
+	const value = input.sessionTemplate;
 	if (value === undefined || value === null) {
 		return value;
 	}
@@ -903,7 +903,7 @@ function parseSessionTemplate(input: Record<string, unknown>): IAutomationSessio
 	}
 	assertKnownProperties(value, ['modelId', 'modelConfiguration', 'agent', 'config'], '"sessionTemplate"');
 	const modelId = readOptionalNullableNonEmptyString(value, 'modelId');
-	const modelConfiguration = parseSessionTemplateConfiguration(value['modelConfiguration'], 'sessionTemplate.modelConfiguration');
+	const modelConfiguration = parseSessionTemplateConfiguration(value.modelConfiguration, 'sessionTemplate.modelConfiguration');
 	if (modelConfiguration !== undefined && !isAutomationModelConfiguration(modelConfiguration)) {
 		throw new AutomationToolInputError('"sessionTemplate.modelConfiguration" must contain only JSON primitive values.');
 	}
@@ -911,7 +911,7 @@ function parseSessionTemplate(input: Record<string, unknown>): IAutomationSessio
 		throw new AutomationToolInputError('"sessionTemplate.modelConfiguration" requires "sessionTemplate.modelId".');
 	}
 
-	const rawAgent = value['agent'];
+	const rawAgent = value.agent;
 	let agent: IAutomationSessionTemplate['agent'];
 	if (rawAgent !== undefined && rawAgent !== null) {
 		if (!isRecord(rawAgent)) {
@@ -925,7 +925,7 @@ function parseSessionTemplate(input: Record<string, unknown>): IAutomationSessio
 		agent = { uri };
 	}
 
-	const config = parseSessionTemplateConfiguration(value['config'], 'sessionTemplate.config');
+	const config = parseSessionTemplateConfiguration(value.config, 'sessionTemplate.config');
 	return {
 		...(modelId ? { modelId } : {}),
 		...(modelConfiguration ? { modelConfiguration } : {}),
