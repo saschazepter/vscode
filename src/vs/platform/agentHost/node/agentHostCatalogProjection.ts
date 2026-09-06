@@ -411,7 +411,7 @@ export function decodeAgentHostCatalogPayload(payload: string): AgentHostCatalog
 	if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
 		return invalidPayload('Expected a payload object.');
 	}
-	const payloadVersion = (parsed as Record<string, unknown>)['payloadVersion'];
+	const payloadVersion = (parsed as Record<string, unknown>).payloadVersion;
 	if (typeof payloadVersion !== 'number' || !Number.isSafeInteger(payloadVersion) || payloadVersion < 0) {
 		return invalidPayload('Expected a non-negative safe integer payloadVersion.');
 	}

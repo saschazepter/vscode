@@ -338,7 +338,10 @@ suite('AgentHostDatabase sessions_v2', () => {
 		}, { checkTombstone: false });
 		const release = new DeferredPromise<void>();
 		const queued = new DeferredPromise<void>();
-		const blocker = sequencedDatabase['_transactionSequencer'].queue(async () => {
+		const transactionSequencer = (sequencedDatabase as unknown as {
+			readonly _transactionSequencer: { queue<T>(task: () => Promise<T>): Promise<T> };
+		})._transactionSequencer;
+		const blocker = transactionSequencer.queue(async () => {
 			await queued.complete();
 			await release.p;
 		});
