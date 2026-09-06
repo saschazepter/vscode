@@ -27,8 +27,10 @@ const { createPackage, uncache } = nodeRequire('asar') as {
 	let fixturePath: string;
 	let reentrantHookPath: string;
 	let packagedFixturePath: string;
+	let packagedCollisionFixturePath: string;
 	let packagedBootstrapPath: string;
 	let packagedTracePath: string;
+	let packagedCollisionTracePath: string;
 	let packagedArchivePath: string;
 
 	suiteSetup(async () => {
@@ -91,12 +93,28 @@ const { createPackage, uncache } = nodeRequire('asar') as {
 		await mkdir(packageRoot, { recursive: true });
 		await writeFile(join(packageRoot, 'package.json'), '{"name":"cache-test","type":"module","exports":"./index.js"}');
 		await writeFile(join(packageRoot, 'index.js'), 'export const value = 1;');
+
+		const collisionPackageRoot = join(archiveSource, 'cache-collision');
+		await mkdir(collisionPackageRoot, { recursive: true });
+		await writeFile(join(collisionPackageRoot, 'package.json'), JSON.stringify({
+			name: 'cache-collision',
+			type: 'module',
+			exports: {
+				type: './condition.js',
+				default: './attribute.json'
+			}
+		}));
+		await writeFile(join(collisionPackageRoot, 'condition.js'), 'export const value = "condition";');
+		await writeFile(join(collisionPackageRoot, 'attribute.json'), '{"value":"attribute"}');
+
 		packagedArchivePath = join(packagedAppRoot, 'node_modules.asar');
 		await createPackage(archiveSource, packagedArchivePath);
 
 		packagedFixturePath = join(packagedOutRoot, 'cache-fixture.mjs');
+		packagedCollisionFixturePath = join(packagedOutRoot, 'cache-collision-fixture.mjs');
 		packagedBootstrapPath = join(packagedOutRoot, 'bootstrap-esm.js');
 		packagedTracePath = join(fixtureDirectory, 'asar-trace.log');
+		packagedCollisionTracePath = join(fixtureDirectory, 'asar-collision-trace.log');
 		await writeFile(join(packagedOutRoot, 'cache-parent-a.mjs'), `
 			export const first = () => import('cache-test');
 			export const second = () => import('cache-test');
@@ -115,6 +133,27 @@ const { createPackage, uncache } = nodeRequire('asar') as {
 				secondParent.second()
 			]);
 			process.stdout.write(JSON.stringify(modules.map(module => module.value)));
+		`);
+		await writeFile(packagedCollisionFixturePath, `
+			import { registerHooks } from 'node:module';
+
+			let first = true;
+			registerHooks({
+				resolve(specifier, context, nextResolve) {
+					if (specifier === 'cache-collision' && first) {
+						first = false;
+						return nextResolve(specifier, {
+							...context,
+							conditions: [...context.conditions, 'type', 'json']
+						});
+					}
+					return nextResolve(specifier, context);
+				}
+			});
+
+			const conditional = await import('cache-collision');
+			const attributed = await import('cache-collision', { with: { type: 'json' } });
+			process.stdout.write(JSON.stringify([conditional.value, attributed.default.value]));
 		`);
 	});
 
@@ -186,6 +225,35 @@ const { createPackage, uncache } = nodeRequire('asar') as {
 			resolveCount: 4,
 			archiveLookupCount: 2,
 			cacheHitCount: 2,
+		});
+	});
+
+	test('distinguishes conditions from import attributes in the resolution cache', async () => {
+		const env: NodeJS.ProcessEnv = {
+			...process.env,
+			ELECTRON_RUN_AS_NODE: '1',
+			VSCODE_ASAR_TRACE: packagedCollisionTracePath
+		};
+		delete env['NODE_OPTIONS'];
+		delete env['VSCODE_DEV'];
+
+		const { stdout } = await execFileAsync(process.execPath, [
+			'--import',
+			pathToFileURL(packagedBootstrapPath).href,
+			packagedCollisionFixturePath
+		], { env });
+		const trace = await readFile(packagedCollisionTracePath, 'utf8');
+
+		assert.deepStrictEqual({
+			values: JSON.parse(stdout),
+			resolveCount: trace.match(/resolve "cache-collision"/g)?.length,
+			archiveLookupCount: trace.match(/archive pkg\.json/g)?.length,
+			cacheHitCount: trace.match(/cache ->/g)?.length ?? 0,
+		}, {
+			values: ['condition', 'attribute'],
+			resolveCount: 2,
+			archiveLookupCount: 2,
+			cacheHitCount: 0,
 		});
 	});
 });

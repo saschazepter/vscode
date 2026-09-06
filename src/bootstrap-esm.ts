@@ -87,11 +87,8 @@ function enableASARSupport(): void {
 
 	const resolutionCache = new Map<string, Module.ResolveFnOutput>();
 	const resolutionCacheKey = (specifier: string, parentPath: string, context: Module.ResolveHookContext): string => {
-		let key = `${specifier}\0${parentPath}\0${context.conditions.join('\0')}`;
-		for (const [name, value] of Object.entries(context.importAttributes ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
-			key += `\0${name}\0${value}`;
-		}
-		return key;
+		const importAttributes = Object.entries(context.importAttributes ?? {}).sort(([a], [b]) => a.localeCompare(b));
+		return JSON.stringify([specifier, parentPath, context.conditions, importAttributes]);
 	};
 
 	const appRoot = dirname(import.meta.dirname);
