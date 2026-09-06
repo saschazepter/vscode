@@ -127,6 +127,12 @@ interface IRecentLocalSessionUpdate {
 	readonly modifiedTime: number;
 }
 
+interface IBackgroundCatalogStateWrite {
+	promise: Promise<void>;
+	trailing: boolean;
+	trailingOverrides: Record<string, string>;
+}
+
 interface ISessionListComputation {
 	epoch: number;
 	readonly promise: Promise<readonly IAgentSessionMetadata[]>;
@@ -475,7 +481,7 @@ export class AgentService extends Disposable implements IAgentService {
 	private readonly _catalogListRepair = this._register(new MutableDisposable<IDisposable>());
 	private readonly _catalogSyncSuppressedSessions = new Set<string>();
 	private readonly _deferredCatalogMetadataOverrides = new Map<string, Record<string, string>>();
-	private readonly _backgroundCatalogStateWrites = new Map<string, Set<Promise<void>>>();
+	private readonly _backgroundCatalogStateWrites = new Map<string, IBackgroundCatalogStateWrite>();
 	private readonly _peerChatCleanupRepairs = this._register(new DisposableMap<string>());
 	/** Serializes durable last-modified advances emitted by live session state. */
 	private _sessionModifiedTimeWrites: Promise<void> = Promise.resolve();
@@ -904,7 +910,7 @@ export class AgentService extends Disposable implements IAgentService {
 	async whenCatalogReconciliationIdle(): Promise<void> {
 		await this._catalogReconciliationService.whenIdle();
 		while (this._backgroundCatalogStateWrites.size > 0) {
-			await Promise.allSettled([...this._backgroundCatalogStateWrites.values()].flatMap(writes => [...writes]));
+			await Promise.allSettled([...this._backgroundCatalogStateWrites.values()].map(write => write.promise));
 		}
 	}
 
@@ -1727,23 +1733,43 @@ export class AgentService extends Disposable implements IAgentService {
 			|| !this._stateManager.getSessionState(sessionKey)) {
 			return;
 		}
-		let writes = this._backgroundCatalogStateWrites.get(sessionKey);
-		if (!writes) {
-			writes = new Set();
-			this._backgroundCatalogStateWrites.set(sessionKey, writes);
+		const pending = this._backgroundCatalogStateWrites.get(sessionKey);
+		if (pending) {
+			pending.trailing = true;
+			Object.assign(pending.trailingOverrides, metadataOverrides);
+			return;
 		}
-		const write = this._persistListVisibleSessionStateNow(session, metadataOverrides);
-		writes.add(write);
-		const clear = () => {
-			writes.delete(write);
-			if (writes.size === 0) {
+		const write: IBackgroundCatalogStateWrite = {
+			promise: Promise.resolve(),
+			trailing: false,
+			trailingOverrides: {},
+		};
+		this._backgroundCatalogStateWrites.set(sessionKey, write);
+		write.promise = this._drainBackgroundCatalogStateWrites(session, metadataOverrides, write);
+	}
+
+	private async _drainBackgroundCatalogStateWrites(session: URI, initialOverrides: Readonly<Record<string, string>>, write: IBackgroundCatalogStateWrite): Promise<void> {
+		const sessionKey = session.toString();
+		let metadataOverrides = initialOverrides;
+		try {
+			while (true) {
+				try {
+					await this._persistListVisibleSessionStateNow(session, metadataOverrides);
+				} catch (error) {
+					this._logService.warn(`[AgentService] Failed to persist list-visible session state for ${sessionKey}`, error);
+				}
+				if (!write.trailing) {
+					return;
+				}
+				metadataOverrides = write.trailingOverrides;
+				write.trailingOverrides = {};
+				write.trailing = false;
+			}
+		} finally {
+			if (this._backgroundCatalogStateWrites.get(sessionKey) === write) {
 				this._backgroundCatalogStateWrites.delete(sessionKey);
 			}
-		};
-		void write.then(clear, error => {
-			clear();
-			this._logService.warn(`[AgentService] Failed to persist list-visible session state for ${session.toString()}`, error);
-		});
+		}
 	}
 
 	private async _persistListVisibleSessionState(session: URI, metadataOverrides: Readonly<Record<string, string>>, chatsOverride?: readonly ICatalogChat[]): Promise<void> {
@@ -1771,10 +1797,7 @@ export class AgentService extends Disposable implements IAgentService {
 		const sessionKey = session.toString();
 		const deferredOverrides = this._deferredCatalogMetadataOverrides.get(sessionKey);
 		this._deferredCatalogMetadataOverrides.delete(sessionKey);
-		const backgroundWrites = this._backgroundCatalogStateWrites.get(sessionKey);
-		if (backgroundWrites) {
-			await Promise.allSettled([...backgroundWrites]);
-		}
+		await this._whenBackgroundCatalogStateWritesIdle(sessionKey);
 		await this._persistListVisibleSessionStateNow(session, { ...deferredOverrides, ...metadataOverrides }, chatsOverride);
 	}
 
@@ -4892,11 +4915,11 @@ export class AgentService extends Disposable implements IAgentService {
 
 	private async _whenBackgroundCatalogStateWritesIdle(sessionKey: string): Promise<void> {
 		while (true) {
-			const writes = this._backgroundCatalogStateWrites.get(sessionKey);
-			if (!writes || writes.size === 0) {
+			const write = this._backgroundCatalogStateWrites.get(sessionKey);
+			if (!write) {
 				return;
 			}
-			await Promise.allSettled([...writes]);
+			await Promise.allSettled([write.promise]);
 		}
 	}
 

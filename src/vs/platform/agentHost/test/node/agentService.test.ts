@@ -3866,6 +3866,59 @@ suite('AgentService (node dispatcher)', () => {
 			});
 		});
 
+		test('coalesces bursty catalog synchronization into one trailing write', async () => {
+			class RecordingCatalogDatabase extends TestSessionDatabase {
+				readonly catalogWrites: Readonly<Record<string, string>>[] = [];
+
+				override async setMetadataValuesAndCatalogSyncSnapshot(values: Readonly<Record<string, string>>, snapshot: ISessionCatalogSyncPendingSnapshot): Promise<SessionCatalogSyncWriteResult> {
+					this.catalogWrites.push({ ...values });
+					return super.setMetadataValuesAndCatalogSyncSnapshot(values, snapshot);
+				}
+			}
+
+			const database = new RecordingCatalogDatabase();
+			const svc = disposables.add(createTestAgentService(new NullLogService(), fileService, createSessionDataService(database), { _serviceBrand: undefined } as IProductService, createNoopGitService()));
+			registerTestAgentProvider(svc, copilotAgent);
+			const session = await svc.createSession({ provider: 'copilot' });
+			await svc.whenCatalogReconciliationIdle();
+			const initialWriteCount = database.catalogWrites.length;
+			const internals = svc as unknown as {
+				_catalogSyncService: {
+					runExclusive(session: URI, operation: () => Promise<void>): Promise<void>;
+				};
+				_queueCatalogSync(session: URI, metadataOverrides: Readonly<Record<string, string>>): void;
+			};
+			const blockerStarted = new DeferredPromise<void>();
+			const releaseBlocker = new DeferredPromise<void>();
+			const blocker = internals._catalogSyncService.runExclusive(session, async () => {
+				blockerStarted.complete();
+				await releaseBlocker.p;
+			});
+			await blockerStarted.p;
+
+			internals._queueCatalogSync(session, { [SESSION_CUSTOM_TITLE_KEY]: 'First title' });
+			internals._queueCatalogSync(session, { [SESSION_CUSTOM_TITLE_KEY]: 'Latest title' });
+			internals._queueCatalogSync(session, { [SESSION_CUSTOM_TITLE_SOURCE_KEY]: 'user' });
+			internals._queueCatalogSync(session, { [SESSION_ARTIFACTS_KEY]: '[]' });
+			internals._queueCatalogSync(session, {});
+			releaseBlocker.complete();
+			await blocker;
+			await svc.whenCatalogReconciliationIdle();
+
+			const writes = database.catalogWrites.slice(initialWriteCount);
+			assert.deepStrictEqual({
+				writeCount: writes.length,
+				titles: writes.map(write => write[SESSION_CUSTOM_TITLE_KEY]),
+				trailingTitleSource: writes.at(-1)?.[SESSION_CUSTOM_TITLE_SOURCE_KEY],
+				trailingArtifacts: writes.at(-1)?.[SESSION_ARTIFACTS_KEY],
+			}, {
+				writeCount: 2,
+				titles: ['First title', 'Latest title'],
+				trailingTitleSource: 'user',
+				trailingArtifacts: '[]',
+			});
+		});
+
 		test('is a no-op for unknown sessions', async () => {
 			registerTestAgentProvider(service, copilotAgent);
 			const unknownSession = URI.from({ scheme: 'unknown', path: '/nope' });
