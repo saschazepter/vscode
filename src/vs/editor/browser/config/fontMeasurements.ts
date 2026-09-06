@@ -98,12 +98,13 @@ export class FontMeasurementsImpl extends Disposable {
 	}
 
 	/**
-	 * Serialized currently cached font information.
+	 * Returns trusted cached font information, or undefined when the cache contains only restored readings.
 	 */
-	public serializeFontInfo(targetWindow: Window): ISerializedFontInfo[] {
-		// Only save trusted font info (that has been measured in this running instance)
+	public serializeFontInfo(targetWindow: Window): ISerializedFontInfo[] | undefined {
 		const cache = this._ensureCache(targetWindow);
-		return cache.getValues().filter(item => item.isTrusted);
+		const fontInfo = cache.getValues();
+		const trustedFontInfo = fontInfo.filter(item => item.isTrusted);
+		return fontInfo.length > 0 && trustedFontInfo.length === 0 ? undefined : trustedFontInfo;
 	}
 
 	/**
