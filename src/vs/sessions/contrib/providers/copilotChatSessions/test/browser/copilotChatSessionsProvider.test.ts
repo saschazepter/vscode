@@ -16,6 +16,7 @@ import { isWeb } from '../../../../../../base/common/platform.js';
 import { mock, upcastPartial } from '../../../../../../base/test/common/mock.js';
 import { autorun, constObservable, ISettableObservable, observableValue } from '../../../../../../base/common/observable.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
+import { runWithFakedTimers } from '../../../../../../base/test/common/timeTravelScheduler.js';
 import { IConfigurationService, IConfigurationValue } from '../../../../../../platform/configuration/common/configuration.js';
 import { TestConfigurationService } from '../../../../../../platform/configuration/test/common/testConfigurationService.js';
 import { ICommandService } from '../../../../../../platform/commands/common/commands.js';
@@ -2577,6 +2578,85 @@ suite('CopilotChatSessionsProvider', () => {
 
 			await assert.rejects(provider.sendRequest(session.sessionId, session.mainChat.get().resource, { query: 'Review changes' }), actual => actual === error);
 			assert.strictEqual(sent, false);
+		});
+
+		test('bounds stalled custom-agent discovery and releases each timed-out lookup', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			let disposed = 0;
+			let sent = false;
+			const provider = createProviderForSendTests(disposables, model, async () => {
+				sent = true;
+				return { kind: 'rejected', reason: 'Unexpected send' };
+			}, {
+				chatModeService: createModeService(() => [], () => new Promise<void>(() => { }), () => disposed++),
+			});
+			const attempts: { elapsed: number; disposed: number; status: SessionStatus }[] = [];
+			for (let attempt = 0; attempt < 3; attempt++) {
+				const session = provider.createNewSession(workspace, CopilotCLISessionType.id, {
+					automationConfiguration: { sessionTemplate: { agent: { uri: 'file:///agents/reviewer.agent.md' } } },
+				});
+				const started = Date.now();
+				await assert.rejects(provider.sendRequest(session.sessionId, session.mainChat.get().resource, { query: 'Review changes' }), /Timed out resolving.*custom agent/);
+				attempts.push({ elapsed: Date.now() - started, disposed, status: session.status.get() });
+				provider.deleteNewSession(session.sessionId);
+			}
+
+			assert.deepStrictEqual({ sent, attempts }, {
+				sent: false,
+				attempts: [
+					{ elapsed: 30_000, disposed: 2, status: SessionStatus.Untitled },
+					{ elapsed: 30_000, disposed: 4, status: SessionStatus.Untitled },
+					{ elapsed: 30_000, disposed: 6, status: SessionStatus.Untitled },
+				],
+			});
+		}));
+
+		test('keeps one discovery deadline when the selected agent changes', () => runWithFakedTimers({ useFakeTimers: true }, async () => {
+			const writer = createAgent('writer');
+			const firstRefresh = new DeferredPromise<void>();
+			let resolutions = 0;
+			let disposed = 0;
+			const provider = createProviderForSendTests(disposables, model, async () => ({ kind: 'rejected', reason: 'Unexpected send' }), {
+				chatModeService: createModeService(() => [writer], () => ++resolutions === 1 ? firstRefresh.p : new Promise<void>(() => { }), () => disposed++),
+			});
+			const session = provider.createNewSession(workspace, CopilotCLISessionType.id, {
+				automationConfiguration: { mode: 'file:///agents/reviewer.agent.md' },
+			});
+			const started = Date.now();
+			const sending = assert.rejects(provider.sendRequest(session.sessionId, session.mainChat.get().resource, { query: 'Review changes' }), /Timed out resolving.*custom agent/);
+			await timeout(20_000);
+			provider.getSession(session.sessionId)?.setMode(writer);
+			await firstRefresh.complete();
+			await sending;
+
+			assert.deepStrictEqual({ elapsed: Date.now() - started, resolutions, disposed }, {
+				elapsed: 30_000,
+				resolutions: 2,
+				disposed: 3,
+			});
+		}));
+
+		test('disposes pending discovery when the provider is disposed', async () => {
+			const discoveryStarted = new DeferredPromise<void>();
+			let disposed = 0;
+			let sent = false;
+			const provider = createProviderForSendTests(disposables, model, async () => {
+				sent = true;
+				return { kind: 'rejected', reason: 'Unexpected send' };
+			}, {
+				chatModeService: createModeService(() => [], () => {
+					void discoveryStarted.complete();
+					return new Promise<void>(() => { });
+				}, () => disposed++),
+			});
+			const session = provider.createNewSession(workspace, CopilotCLISessionType.id, {
+				automationConfiguration: { mode: 'file:///agents/reviewer.agent.md' },
+			});
+			const sending = assert.rejects(provider.sendRequest(session.sessionId, session.mainChat.get().resource, { query: 'Review changes' }), /Canceled/);
+			await discoveryStarted.p;
+			provider.dispose();
+			await sending;
+
+			assert.deepStrictEqual({ sent, disposed }, { sent: false, disposed: 2 });
 		});
 
 		test('disposes pending discovery when its draft is discarded', async () => {

@@ -1439,6 +1439,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	 * catalog that is never coming. Exceeding it is reported to the user, not only logged.
 	 */
 	private static readonly SANDBOX_MODEL_WAIT_MS = 5_000;
+	private static readonly AUTOMATION_AGENT_RESOLUTION_TIMEOUT_MS = 30_000;
 
 	readonly id = COPILOT_PROVIDER_ID;
 	readonly label = localize('copilotChatSessionsProvider', "Copilot Chat");
@@ -1984,15 +1985,25 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	}
 
 	private async _resolveAutomationSessionMode(session: CopilotCLISession): Promise<void> {
+		const deadline = Date.now() + CopilotChatSessionsProvider.AUTOMATION_AGENT_RESOLUTION_TIMEOUT_MS;
 		while (true) {
 			const modeId = session.mode.get()?.id;
 			if (!modeId || modeId === ChatModeKind.Agent || modeId === ChatModeKind.Ask || modeId === ChatModeKind.Edit) {
 				return;
 			}
 			const selectedMode = session.chatMode;
-			const modes = this.chatModeService.createModes(session.resource);
+			const store = new DisposableStore();
+			const cancellation = store.add(new CancellationTokenSource(session.cancellationToken));
 			try {
-				await raceCancellationError(modes.waitForPendingUpdates(), session.cancellationToken);
+				const modes = store.add(this.chatModeService.createModes(session.resource));
+				const remaining = deadline - Date.now();
+				const resolved = remaining > 0 && await raceTimeout(
+					raceCancellationError(modes.waitForPendingUpdates().then(() => true), cancellation.token),
+					remaining,
+				);
+				if (!resolved) {
+					throw new Error(localize('automationAgentResolutionTimeout', "Timed out resolving the Automation's custom agent. Check the provider connection and try again."));
+				}
 				if (this._newSessions.get(session.sessionId) !== session) {
 					throw new CancellationError();
 				}
@@ -2006,7 +2017,8 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 				session.setMode(mode);
 				return;
 			} finally {
-				modes.dispose();
+				cancellation.cancel();
+				store.dispose();
 			}
 		}
 	}
