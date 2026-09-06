@@ -36,6 +36,7 @@ import { basename } from '../../../util/vs/base/common/path';
 import { StringEdit } from '../../../util/vs/editor/common/core/edits/stringEdit';
 import { IInstantiationService } from '../../../util/vs/platform/instantiation/common/instantiation';
 import { createCorrelationId } from '../common/correlationId';
+import { shouldSkipInlineCompletion } from '../../common/meteredInlineCompletions';
 import { NesChangeHint } from '../common/nesTriggerHint';
 import { NESInlineCompletionContext } from '../node/nextEditProvider';
 import { NextEditProviderTelemetryBuilder, TelemetrySender } from '../node/nextEditProviderTelemetry';
@@ -227,7 +228,7 @@ export class InlineCompletionProviderImpl extends Disposable implements InlineCo
 		context: InlineCompletionContext | NESInlineCompletionContext,
 		token: CancellationToken
 	): Promise<NesCompletionList | undefined> {
-		if (context.triggerKind === InlineCompletionTriggerKind.Automatic && env.isMeteredConnection) {
+		if (shouldSkipInlineCompletion(context.triggerKind === InlineCompletionTriggerKind.Automatic, env.isMeteredConnection)) {
 			return undefined;
 		}
 
