@@ -8,7 +8,7 @@ import { CancellationToken } from '../../../common/cancellation.js';
 import { canceled } from '../../../common/errors.js';
 import { IHeaders, IRequestContext, IRequestOptions, OfflineError } from './request.js';
 
-export async function request(options: IRequestOptions, token: CancellationToken, isOnline?: () => boolean, fetcher: typeof fetch = fetch): Promise<IRequestContext> {
+export async function request(options: IRequestOptions, token: CancellationToken, isOnline?: () => boolean): Promise<IRequestContext> {
 	if (token.isCancellationRequested) {
 		throw canceled();
 	}
@@ -33,7 +33,7 @@ export async function request(options: IRequestOptions, token: CancellationToken
 		if (options.followRedirects === 0) {
 			fetchInit.redirect = 'manual';
 		}
-		const res = await fetcher(options.url || '', fetchInit);
+		const res = await fetch(options.url || '', fetchInit);
 		return {
 			res: {
 				statusCode: res.status,
