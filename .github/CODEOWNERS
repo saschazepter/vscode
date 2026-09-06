@@ -22,4 +22,4 @@ src/vs/workbench/services/extensions/common/extensionPoints.json @TylerLeonhardt
 # Allowlist for the `local/code-no-bracket-notation-for-identifiers` lint rule.
 # Adding entries here permits bracket notation for identifier properties;
 # review is required to make sure dot notation cannot be used instead.
-.eslint-allowed-bracket-notation-files @alexr00 @alexdima @sbatten @TylerLeonhardt
+.eslint-allowed-bracket-notation-files @alexdima @dmitrivMS
