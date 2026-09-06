@@ -103,7 +103,14 @@ function getMcpServerUrlInGallery(mcpServerUrl: string, mcpGalleryManifest: IMcp
 	try {
 		const serverUrl = new URL(mcpServerUrl);
 		const galleryUrl = new URL(mcpGalleryUrl);
-		if (serverUrl.username || serverUrl.password || galleryUrl.username || galleryUrl.password || serverUrl.origin !== galleryUrl.origin) {
+		if (
+			(serverUrl.protocol !== `${Schemas.http}:` && serverUrl.protocol !== `${Schemas.https}:`)
+			|| serverUrl.username
+			|| serverUrl.password
+			|| galleryUrl.username
+			|| galleryUrl.password
+			|| serverUrl.origin !== galleryUrl.origin
+		) {
 			return undefined;
 		}
 

@@ -285,6 +285,25 @@ suite('McpGalleryService - getMcpServer validation', () => {
 		assert.deepStrictEqual(requestService.requests, []);
 	});
 
+	test('rejects opaque-origin gallery URLs before requesting them', async () => {
+		const requestService = new StatusRequestService(200, serverDocument());
+		const service = createService(requestService, {
+			version: 'v0.1',
+			url: 'file:///registry',
+			resources: [{ id: 'file:///registry/servers', type: McpGalleryResourceType.McpServersQueryService }]
+		});
+
+		for (const url of [
+			'file:///registry/servers/server',
+			'data:/registry/servers/server',
+			'custom:/registry/servers/server',
+		]) {
+			await assert.rejects(() => service.getMcpServer(url), /outside the configured MCP gallery/);
+		}
+
+		assert.deepStrictEqual(requestService.requests, []);
+	});
+
 	test('does not follow redirects when requesting a gallery server', async () => {
 		const requestService = new StatusRequestService(302, serverDocument());
 		const service = createService(requestService);
