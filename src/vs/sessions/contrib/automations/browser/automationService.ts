@@ -15,9 +15,11 @@ import {
 	AutomationRunTrigger,
 	AutomationTarget,
 	AutomationWorkspaceIsolation,
+	assertAutomationSessionTemplate,
 	IAutomationDescriptor,
 	IAutomationRun,
 	IAutomationSessionTemplate,
+	isAutomationModelConfiguration,
 } from '../../../../workbench/contrib/chat/common/automations/automation.js';
 import {
 	type AutomationMutationGuard,
@@ -619,6 +621,7 @@ export class AutomationService extends AutomationStore implements IAutomationSer
 }
 
 function serializeAutomation(a: IAutomationDescriptor): ISerializedAutomation {
+	assertAutomationSessionTemplate(a.sessionTemplate);
 	return {
 		id: a.id,
 		name: a.name,
@@ -790,6 +793,10 @@ function deserializeAutomationSessionTemplate(value: unknown): IAutomationSessio
 	if (modelId !== undefined && typeof modelId !== 'string') {
 		throw new Error('Automation session template model must be a string.');
 	}
+	const modelConfiguration = value['modelConfiguration'];
+	if (modelConfiguration !== undefined && !isAutomationModelConfiguration(modelConfiguration)) {
+		throw new Error('Automation model configuration must contain only JSON primitive values.');
+	}
 	const rawAgent = value['agent'];
 	let agent: IAutomationSessionTemplate['agent'];
 	if (rawAgent !== undefined) {
@@ -802,11 +809,14 @@ function deserializeAutomationSessionTemplate(value: unknown): IAutomationSessio
 	if (config !== undefined && !isRecord(config)) {
 		throw new Error('Automation session template config must be an object.');
 	}
-	return {
+	const template: IAutomationSessionTemplate = {
 		...(modelId !== undefined ? { modelId } : {}),
+		...(modelConfiguration !== undefined ? { modelConfiguration: { ...modelConfiguration } } : {}),
 		...(agent ? { agent } : {}),
 		...(config !== undefined ? { config: { ...config } } : {}),
 	};
+	assertAutomationSessionTemplate(template);
+	return template;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

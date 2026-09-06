@@ -51,7 +51,8 @@ import { IChatWidgetService } from '../../../../../workbench/contrib/chat/browse
 import { ChatMode } from '../../../../../workbench/contrib/chat/common/chatModes.js';
 import { IChatSendRequestOptions, IChatService, type IChatModelReference } from '../../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { IChatSessionFileChange, IChatSessionFileChange2, IChatSessionsService } from '../../../../../workbench/contrib/chat/common/chatSessionsService.js';
-import { IAutomationSessionTemplate } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
+import { assertAutomationSessionTemplate, IAutomationSessionTemplate } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
+import { AutomationModelConfiguration } from '../../../automations/browser/automationModelConfiguration.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, ChatPermissionLevel, getChatPermissionLevelFromDefaultConfiguration, isChatPermissionLevel, type IChatDefaultConfiguration } from '../../../../../workbench/contrib/chat/common/constants.js';
 import { isAutoApprovePolicyRestricted, normalizeSessionConfigValue } from '../../../../../workbench/contrib/chat/common/agentHostConfigPolicy.js';
 import { ILanguageModelChatMetadata, ILanguageModelsService } from '../../../../../workbench/contrib/chat/common/languageModels.js';
@@ -2113,6 +2114,7 @@ class NewSession extends Disposable {
 	private readonly _activeClientScope: IAgentCustomizationScope;
 	private readonly _initialMetadata: Record<string, unknown> | undefined;
 	private readonly _initialSessionTemplate: IAutomationSessionTemplate | undefined;
+	readonly modelConfiguration: AutomationModelConfiguration;
 	get initialMetadata(): Record<string, unknown> | undefined { return this._initialMetadata; }
 
 	private readonly _logService: ILogService;
@@ -2122,8 +2124,10 @@ class NewSession extends Disposable {
 		ctx: INewSessionConstructionContext,
 		private readonly _options: IAgentHostAdapterOptions,
 		@ISessionsService sessionsService: ISessionsService,
+		@ILanguageModelsService languageModelsService: ILanguageModelsService,
 	) {
 		super();
+		this.modelConfiguration = this._register(new AutomationModelConfiguration(languageModelsService, ctx.initialSessionTemplate));
 		const workspaceUri = ctx.workspace?.folders[0]?.root;
 		this._kind = sessionKind(!!ctx.quickChat);
 		if (this._kind.requiresWorkspace && !workspaceUri) {
@@ -2239,6 +2243,18 @@ class NewSession extends Disposable {
 
 	getSelectedModelId(): string | undefined { return this._selectedModelId; }
 	clearSelectedModelId(): void { this._selectedModelId = undefined; }
+	getSelectedModel(): ModelSelection | undefined {
+		const modelId = this._selectedModelId;
+		if (!modelId) {
+			return undefined;
+		}
+		const prefix = `${this.session.resource.scheme}:`;
+		const config = this.modelConfiguration.getModelConfigurationForRequest(modelId);
+		return {
+			id: modelId.startsWith(prefix) ? modelId.slice(prefix.length) : modelId,
+			...(config !== undefined ? { config } : {}),
+		};
+	}
 	/** Untitled skeleton title used until the first request commits the session. */
 	get untitledTitle(): string { return this._kind.untitledTitle; }
 	setSelectedAgent(agent: ISessionAgentRef | undefined): void {
@@ -2536,6 +2552,7 @@ class NewSession extends Disposable {
 				await connection.createSession({
 					provider: this.agentProvider,
 					session: backendUri,
+					...(this._initialSessionTemplate?.modelId ? { model: this.getSelectedModel() } : {}),
 					workingDirectories: this.workspaceUri ? [this.workspaceUri] : undefined,
 					config: this._config?.values,
 					_meta: this._initialMetadata,
@@ -3588,8 +3605,8 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		// composer re-seeds a fresh draft).
 		const connection = this.connection;
 		const resourceScheme = this.resourceSchemeForProvider(sessionType.id);
-		const activeClientScope = this._activeClientService.acquireScope(resourceScheme, workspace?.folders.map(folder => folder.root) ?? []);
 		const initialSessionTemplate = this._resolveAutomationSessionTemplate(sessionType.id, initialAutomationConfiguration);
+		const activeClientScope = this._activeClientService.acquireScope(resourceScheme, workspace?.folders.map(folder => folder.root) ?? []);
 		const initialConfigValues = initialAutomationConfiguration
 			? {
 				...this._derivedNewSessionConfig(workspace),
@@ -3662,9 +3679,11 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		}
 		if (configuration.sessionTemplate) {
 			const template = configuration.sessionTemplate;
+			assertAutomationSessionTemplate(template);
 			const config = omitAutomationSessionTemplateConfigValues({ ...template.config });
 			return {
 				...(template.modelId ? { modelId: template.modelId } : {}),
+				...(template.modelConfiguration !== undefined ? { modelConfiguration: template.modelConfiguration } : {}),
 				...(template.agent ? { agent: template.agent } : {}),
 				...(Object.keys(config).length > 0 ? { config } : {}),
 			};
@@ -3913,6 +3932,10 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 
 	// -- Dynamic session config ----------------------------------------------
 
+	getAutomationModelConfiguration(sessionId: string): AutomationModelConfiguration | undefined {
+		return this._getNewSession(sessionId)?.modelConfiguration;
+	}
+
 	async getAutomationSessionConfiguration(sessionId: string): Promise<IAutomationSessionConfiguration | undefined> {
 		const newSession = this._getNewSession(sessionId);
 		if (!newSession) {
@@ -3942,11 +3965,13 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		}
 		const templateConfig = omitAutomationSessionTemplateConfigValues(config);
 		const modelId = newSession.getSelectedModelId();
+		const modelConfiguration = newSession.modelConfiguration.captureModelConfiguration(modelId);
 		const agent = newSession.getSelectedAgent();
-		const sessionTemplate = !modelId && !agent && Object.keys(templateConfig).length === 0
+		const sessionTemplate: IAutomationSessionTemplate | undefined = !modelId && !agent && Object.keys(templateConfig).length === 0
 			? undefined
 			: {
 				...(modelId ? { modelId } : {}),
+				...(modelConfiguration !== undefined ? { modelConfiguration } : {}),
 				...(agent ? { agent: { uri: agent.uri } } : {}),
 				...(Object.keys(templateConfig).length > 0 ? { config: templateConfig } : {}),
 			};
@@ -4466,6 +4491,13 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 	setModel(sessionId: string, chatResource: URI, modelId: string, source: ChatModelSource): void {
 		const newSession = this._getNewSession(sessionId);
 		if (newSession) {
+			const previousModelId = newSession.getSelectedModelId();
+			if (previousModelId && previousModelId !== modelId) {
+				const resolution = this.getModelsSnapshot(sessionId, previousModelId).desiredModelResolution;
+				if (resolution.kind === 'available' && resolution.model.identifier === modelId) {
+					newSession.modelConfiguration.rebindModelConfiguration(previousModelId, modelId);
+				}
+			}
 			newSession.setSelectedModelId(modelId, source);
 			return;
 		}
@@ -5121,6 +5153,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		const sendOptions: IChatSendRequestOptions = {
 			location: ChatAgentLocation.Chat,
 			userSelectedModelId: selectedModelId,
+			userSelectedModelConfiguration: newSession.modelConfiguration.getModelConfigurationForRequest(selectedModelId),
 			modeInfo: selectedAgent ? {
 				kind: ChatModeKind.Agent,
 				isBuiltin: false,

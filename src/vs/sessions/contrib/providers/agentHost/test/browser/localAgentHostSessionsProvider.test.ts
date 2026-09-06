@@ -191,7 +191,7 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 	}
 
 	public createdSessionUris: URI[] = [];
-	public createSessionConfigs: { config?: Record<string, unknown>; metadata?: Record<string, unknown>; workingDirectory?: URI }[] = [];
+	public createSessionConfigs: { model?: IAgentCreateSessionConfig['model']; config?: Record<string, unknown>; metadata?: Record<string, unknown>; workingDirectory?: URI }[] = [];
 	/**
 	 * Per-call hook used by tests to interleave operations across the
 	 * `createSession` await — e.g. to verify that no subscription is opened
@@ -208,6 +208,7 @@ class MockAgentHostService extends mock<IAgentHostService>() {
 	override async createSession(config?: IAgentCreateSessionConfig): Promise<URI> {
 		const uri = config?.session ?? URI.parse('copilotcli:///auto-' + this._nextSeq);
 		this.createSessionConfigs.push({
+			...(config?.model ? { model: config.model } : {}),
 			config: config?.config,
 			...(config?._meta ? { metadata: config._meta } : {}),
 			workingDirectory: config?.workingDirectories?.[0],
@@ -469,7 +470,7 @@ class BackendSchemeTestProvider extends LocalAgentHostSessionsProvider {
 
 function createProvider(disposables: DisposableStore, agentHostService: MockAgentHostService, contributions = [
 	{ type: 'agent-host-copilotcli', name: 'copilot', displayName: 'Copilot', description: 'test', icon: undefined },
-], options?: { sendRequest?: (resource: URI, message: string, options?: IChatSendRequestOptions) => Promise<ChatSendResult>; acquireOrLoadSession?: (resource: URI) => Promise<IChatModelReference | undefined>; languageModelIds?: string[]; lookupLanguageModel?: (modelId: string) => ILanguageModelChatMetadata | undefined; languageModelChanges?: Event<string>; hiddenLanguageModelIds?: ReadonlySet<string>; languageModelVisibilityChanges?: Event<void>; openSession?: boolean; configurationService?: IConfigurationService; activeSession?: IObservable<IActiveSession | undefined>; visibleSessions?: IObservable<readonly (IActiveSession | undefined)[]>; activeClient?: Omit<SessionActiveClient, 'clientId'>; activeClientAgents?: IObservable<readonly AgentCustomization[]>; activeClientScope?: (sessionType: string, roots: readonly URI[]) => IAgentCustomizationScope; storageService?: IStorageService; isSessionsWindow?: boolean; confirmDelete?: boolean; workspaceTrusted?: boolean; requestWorkspaceTrust?: (uri: URI) => Promise<boolean>; workspaceTrustBarrier?: DeferredPromise<void>; workspaceTrustError?: Error; setUrisTrust?: (uris: URI[], trusted: boolean) => Promise<void>; gitHubService?: IGitHubService; devContainerAgentHostService?: IDevContainerAgentHostService; sessionsProvidersService?: ISessionsProvidersService; pathService?: IPathService; labelService?: ILabelService; providerCtor?: typeof LocalAgentHostSessionsProvider }): LocalAgentHostSessionsProvider {
+], options?: { sendRequest?: (resource: URI, message: string, options?: IChatSendRequestOptions) => Promise<ChatSendResult>; acquireOrLoadSession?: (resource: URI) => Promise<IChatModelReference | undefined>; languageModelsService?: Partial<ILanguageModelsService>; languageModelIds?: string[]; lookupLanguageModel?: (modelId: string) => ILanguageModelChatMetadata | undefined; languageModelChanges?: Event<string>; hiddenLanguageModelIds?: ReadonlySet<string>; languageModelVisibilityChanges?: Event<void>; openSession?: boolean; configurationService?: IConfigurationService; activeSession?: IObservable<IActiveSession | undefined>; visibleSessions?: IObservable<readonly (IActiveSession | undefined)[]>; activeClient?: Omit<SessionActiveClient, 'clientId'>; activeClientAgents?: IObservable<readonly AgentCustomization[]>; activeClientScope?: (sessionType: string, roots: readonly URI[]) => IAgentCustomizationScope; storageService?: IStorageService; isSessionsWindow?: boolean; confirmDelete?: boolean; workspaceTrusted?: boolean; requestWorkspaceTrust?: (uri: URI) => Promise<boolean>; workspaceTrustBarrier?: DeferredPromise<void>; workspaceTrustError?: Error; setUrisTrust?: (uris: URI[], trusted: boolean) => Promise<void>; gitHubService?: IGitHubService; devContainerAgentHostService?: IDevContainerAgentHostService; sessionsProvidersService?: ISessionsProvidersService; pathService?: IPathService; labelService?: ILabelService; providerCtor?: typeof LocalAgentHostSessionsProvider }): LocalAgentHostSessionsProvider {
 	const instantiationService = disposables.add(new TestInstantiationService());
 
 	instantiationService.stub(IAgentHostService, agentHostService);
@@ -511,10 +512,13 @@ function createProvider(disposables: DisposableStore, agentHostService: MockAgen
 	instantiationService.stub(ILanguageModelsService, {
 		getLanguageModelIds: () => options?.languageModelIds ?? [],
 		lookupLanguageModel: options?.lookupLanguageModel ?? (() => undefined),
+		getModelConfiguration: () => undefined,
+		setModelConfiguration: async () => { },
 		hasResolvedVendor: () => true,
 		isModelHidden: (modelId: string) => options?.hiddenLanguageModelIds?.has(modelId) ?? false,
 		onDidChangeLanguageModels: options?.languageModelChanges ?? Event.None,
 		onDidChangeModelVisibility: options?.languageModelVisibilityChanges ?? Event.None,
+		...options?.languageModelsService,
 	});
 	instantiationService.stub(ILabelService, options?.labelService ?? new MockLabelService());
 	instantiationService.stub(ILogService, new NullLogService());
@@ -4508,6 +4512,7 @@ suite('LocalAgentHostSessionsProvider', () => {
 	test('createNewSession restores and captures an Automation session template', async () => {
 		const sessionTemplate = {
 			modelId: 'agent-host-copilotcli:auto',
+			modelConfiguration: { thinkingLevel: 'low', futureOption: true },
 			agent: { uri: 'file:///agents/reviewer.agent.md' },
 			config: {
 				mode: 'plan',
@@ -4572,6 +4577,102 @@ suite('LocalAgentHostSessionsProvider', () => {
 			},
 			modelId: sessionTemplate.modelId,
 			agentUri: sessionTemplate.agent.uri,
+		});
+	});
+
+	test('rejects Automation model configuration without a model before acquiring a draft', async () => {
+		const provider = createProvider(disposables, agentHost);
+		assert.throws(() => provider.createNewSession(URI.file('/home/user/project'), provider.sessionTypes[0].id, {
+			automationConfiguration: { sessionTemplate: { modelConfiguration: { thinkingLevel: 'low' } } },
+		}), /model configuration requires a model identifier/);
+		await timeout(0);
+		assert.deepStrictEqual(agentHost.createSessionConfigs, []);
+	});
+
+	test('Automation model options reach eager creation and the browser-executed first request', async () => {
+		const modelId = 'agent-host-copilotcli:model';
+		const metadata: ILanguageModelChatMetadata = {
+			...createTestLanguageModel('model'),
+			targetChatSessionType: 'agent-host-copilotcli',
+			configurationSchema: {
+				type: 'object',
+				properties: { thinkingLevel: { type: 'string', enum: ['low', 'medium', 'high'], default: 'medium' } },
+			},
+		};
+		const sent: IChatSendRequestOptions[] = [];
+		const sharedWrites: Record<string, unknown>[] = [];
+		const provider = createProvider(disposables, agentHost, undefined, {
+			languageModelIds: [modelId],
+			lookupLanguageModel: () => metadata,
+			languageModelsService: {
+				getModelConfiguration: () => ({ thinkingLevel: 'high' }),
+				setModelConfiguration: async (_modelId, values) => { sharedWrites.push(values); },
+			},
+			sendRequest: async (_resource, _message, options) => {
+				if (options) {
+					sent.push(options);
+				}
+				return { kind: 'rejected', reason: 'Test request captured' };
+			},
+		});
+		const session = provider.createNewSession(URI.file('/home/user/project'), provider.sessionTypes[0].id, {
+			automationConfiguration: {
+				sessionTemplate: { modelId, modelConfiguration: { thinkingLevel: 'low', futureOption: true } },
+			},
+		});
+		const captured = await provider.getAutomationSessionConfiguration(session.sessionId);
+		const chat = await provider.createNewChat(session.sessionId);
+		await assert.rejects(provider.sendRequest(session.sessionId, chat.resource, { query: 'hello' }), /Test request captured/);
+
+		assert.deepStrictEqual({
+			eagerModel: agentHost.createSessionConfigs[0]?.model,
+			captured: captured?.sessionTemplate?.modelConfiguration,
+			sent: sent.map(options => ({ model: options.userSelectedModelId, configuration: options.userSelectedModelConfiguration })),
+			sharedWrites,
+		}, {
+			eagerModel: { id: 'model', config: { thinkingLevel: 'low' } },
+			captured: { thinkingLevel: 'low', futureOption: true },
+			sent: [{ model: modelId, configuration: { thinkingLevel: 'low' } }],
+			sharedWrites: [],
+		});
+	});
+
+	test('Automation picker edits are captured independently and survive provider model qualification', async () => {
+		const modelId = 'agent-host-copilotcli:model';
+		const metadata: ILanguageModelChatMetadata = {
+			...createTestLanguageModel('model'),
+			targetChatSessionType: 'agent-host-copilotcli',
+			configurationSchema: {
+				type: 'object',
+				properties: { thinkingLevel: { type: 'string', enum: ['low', 'medium', 'high'], default: 'medium' } },
+			},
+		};
+		const writes: Record<string, unknown>[] = [];
+		const provider = createProvider(disposables, agentHost, undefined, {
+			languageModelIds: [modelId],
+			lookupLanguageModel: id => id === modelId ? metadata : id === 'model' ? { ...metadata, targetChatSessionType: 'copilotcli' } : undefined,
+			languageModelsService: {
+				getModelConfiguration: () => ({ thinkingLevel: 'high' }),
+				setModelConfiguration: async (_modelId, values) => { writes.push(values); },
+			},
+		});
+		const session = provider.createNewSession(URI.file('/home/user/project'), provider.sessionTypes[0].id, {
+			automationConfiguration: { sessionTemplate: { modelId: 'model', modelConfiguration: { thinkingLevel: 'low' } } },
+		});
+		provider.setModel(session.sessionId, session.mainChat.get().resource, modelId, ChatModelSource.Chosen);
+		const restored = await provider.getAutomationSessionConfiguration(session.sessionId);
+		await provider.getAutomationModelConfiguration(session.sessionId)!.setModelConfiguration(modelId, { thinkingLevel: 'medium' });
+		const edited = await provider.getAutomationSessionConfiguration(session.sessionId);
+		provider.deleteNewSession(session.sessionId);
+
+		assert.deepStrictEqual({
+			restored: restored?.sessionTemplate?.modelConfiguration,
+			edited: edited?.sessionTemplate?.modelConfiguration,
+			writes,
+		}, {
+			restored: { thinkingLevel: 'low' },
+			edited: { thinkingLevel: 'medium' },
+			writes: [{ thinkingLevel: 'medium' }],
 		});
 	});
 

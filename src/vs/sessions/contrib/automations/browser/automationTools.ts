@@ -15,7 +15,7 @@ import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextke
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IWorkbenchContribution } from '../../../../workbench/common/contributions.js';
 import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
-import { AutomationInterval, AutomationTarget, AutomationWorkspaceIsolation, IAutomationDescriptor, IAutomationRun, IAutomationSchedule, IAutomationSessionTemplate } from '../../../../workbench/contrib/chat/common/automations/automation.js';
+import { AutomationInterval, AutomationTarget, AutomationWorkspaceIsolation, IAutomationDescriptor, IAutomationRun, IAutomationSchedule, IAutomationSessionTemplate, isAutomationModelConfiguration } from '../../../../workbench/contrib/chat/common/automations/automation.js';
 import { IAutomationRunDispatch, IAutomationRunner } from '../../../../workbench/contrib/chat/common/automations/automationRunner.js';
 import { type AutomationMutationGuard, AutomationSessionTemplateAuthorityError, ConfigureAutomationToolReferenceName, IAutomationService, ICreateAutomationOptions, IUpdateAutomationOptions, serializeAutomationEditableState } from '../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { ChatAutomationsEnabledContext, CHAT_AUTOMATIONS_ENABLED_SETTING } from '../../../../workbench/contrib/chat/common/automations/automationsEnabled.js';
@@ -484,6 +484,11 @@ The change uses the current tool-approval policy. When approval is required, the
 								type: ['string', 'null'],
 								description: 'Provider model identifier, or null to use its default.',
 							},
+							modelConfiguration: {
+								type: ['object', 'null'],
+								description: 'Preferences for the selected model, such as thinking effort. Requires modelId.',
+								additionalProperties: { type: ['string', 'number', 'boolean', 'null'] },
+							},
 							agent: {
 								type: ['object', 'null'],
 								additionalProperties: false,
@@ -896,8 +901,15 @@ function parseSessionTemplate(input: Record<string, unknown>): IAutomationSessio
 	if (!isRecord(value)) {
 		throw new AutomationToolInputError('"sessionTemplate" must be an object or null.');
 	}
-	assertKnownProperties(value, ['modelId', 'agent', 'config'], '"sessionTemplate"');
+	assertKnownProperties(value, ['modelId', 'modelConfiguration', 'agent', 'config'], '"sessionTemplate"');
 	const modelId = readOptionalNullableNonEmptyString(value, 'modelId');
+	const modelConfiguration = parseSessionTemplateConfiguration(value['modelConfiguration'], 'sessionTemplate.modelConfiguration');
+	if (modelConfiguration !== undefined && !isAutomationModelConfiguration(modelConfiguration)) {
+		throw new AutomationToolInputError('"sessionTemplate.modelConfiguration" must contain only JSON primitive values.');
+	}
+	if (modelConfiguration && !modelId) {
+		throw new AutomationToolInputError('"sessionTemplate.modelConfiguration" requires "sessionTemplate.modelId".');
+	}
 
 	const rawAgent = value['agent'];
 	let agent: IAutomationSessionTemplate['agent'];
@@ -913,27 +925,32 @@ function parseSessionTemplate(input: Record<string, unknown>): IAutomationSessio
 		agent = { uri };
 	}
 
-	const rawConfig = value['config'];
-	let config: Readonly<Record<string, unknown>> | undefined;
-	if (rawConfig !== undefined && rawConfig !== null) {
-		if (!isRecord(rawConfig)) {
-			throw new AutomationToolInputError('"sessionTemplate.config" must be an object or null.');
-		}
-		const cloneState = { nodes: 0 };
-		assertJsonComplexity('sessionTemplate.config', cloneState, 0);
-		config = cloneJsonObject(rawConfig, 'sessionTemplate.config', cloneState, 0);
-		if (JSON.stringify(config).length > MAX_SESSION_TEMPLATE_CONFIG_LENGTH) {
-			throw new AutomationToolInputError(`"sessionTemplate.config" must not exceed ${MAX_SESSION_TEMPLATE_CONFIG_LENGTH} characters.`);
-		}
-	}
+	const config = parseSessionTemplateConfiguration(value['config'], 'sessionTemplate.config');
 	return {
 		...(modelId ? { modelId } : {}),
+		...(modelConfiguration ? { modelConfiguration } : {}),
 		...(agent ? { agent } : {}),
 		...(config ? { config } : {}),
 	};
 }
 
-function cloneJsonObject(value: Record<string, unknown>, field: string, state: { nodes: number }, depth: number): Record<string, unknown> {
+function parseSessionTemplateConfiguration(rawConfig: unknown, field: string): Readonly<Record<string, unknown>> | undefined {
+	if (rawConfig !== undefined && rawConfig !== null) {
+		if (!isRecord(rawConfig)) {
+			throw new AutomationToolInputError(`"${field}" must be an object or null.`);
+		}
+		const cloneState = { nodes: 0, rootField: field };
+		assertJsonComplexity(field, cloneState, 0);
+		const config = cloneJsonObject(rawConfig, field, cloneState, 0);
+		if (JSON.stringify(config).length > MAX_SESSION_TEMPLATE_CONFIG_LENGTH) {
+			throw new AutomationToolInputError(`"${field}" must not exceed ${MAX_SESSION_TEMPLATE_CONFIG_LENGTH} characters.`);
+		}
+		return config;
+	}
+	return undefined;
+}
+
+function cloneJsonObject(value: Record<string, unknown>, field: string, state: { nodes: number; readonly rootField: string }, depth: number): Record<string, unknown> {
 	const prototype = Object.getPrototypeOf(value);
 	if (prototype !== Object.prototype && prototype !== null) {
 		throw new AutomationToolInputError(`"${field}" must contain only JSON values.`);
@@ -941,7 +958,7 @@ function cloneJsonObject(value: Record<string, unknown>, field: string, state: {
 	return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, cloneJsonValue(entry, `${field}.${key}`, state, depth + 1)]));
 }
 
-function cloneJsonValue(value: unknown, field: string, state: { nodes: number }, depth: number): unknown {
+function cloneJsonValue(value: unknown, field: string, state: { nodes: number; readonly rootField: string }, depth: number): unknown {
 	assertJsonComplexity(field, state, depth);
 	if (value === null || typeof value === 'string' || typeof value === 'boolean') {
 		return value;
@@ -958,13 +975,13 @@ function cloneJsonValue(value: unknown, field: string, state: { nodes: number },
 	throw new AutomationToolInputError(`"${field}" must be JSON-safe.`);
 }
 
-function assertJsonComplexity(field: string, state: { nodes: number }, depth: number): void {
+function assertJsonComplexity(field: string, state: { nodes: number; readonly rootField: string }, depth: number): void {
 	if (depth > MAX_SESSION_TEMPLATE_CONFIG_DEPTH) {
 		throw new AutomationToolInputError(`"${field}" exceeds the maximum nesting depth of ${MAX_SESSION_TEMPLATE_CONFIG_DEPTH}.`);
 	}
 	state.nodes++;
 	if (state.nodes > MAX_SESSION_TEMPLATE_CONFIG_NODES) {
-		throw new AutomationToolInputError(`"sessionTemplate.config" must not contain more than ${MAX_SESSION_TEMPLATE_CONFIG_NODES} values.`);
+		throw new AutomationToolInputError(`"${state.rootField}" must not contain more than ${MAX_SESSION_TEMPLATE_CONFIG_NODES} values.`);
 	}
 }
 

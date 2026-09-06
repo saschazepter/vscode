@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from '../../../../../base/common/uri.js';
+import type { JsonPrimitive } from '../../../../../platform/agentHost/common/state/protocol/state.js';
 
 /**
  * How often an automation runs. `hourly` fires every hour from creation/update;
@@ -56,10 +57,33 @@ export type AutomationTarget =
 export interface IAutomationSessionTemplate {
 	/** Optional language model identifier. */
 	readonly modelId?: string;
+	/** Model-specific preferences, independent of provider session configuration. */
+	readonly modelConfiguration?: Readonly<Record<string, JsonPrimitive>>;
 	/** Optional custom agent selection. */
 	readonly agent?: { readonly uri: string };
 	/** Provider-owned session configuration values. */
 	readonly config?: Readonly<Record<string, unknown>>;
+}
+
+export function isAutomationModelConfiguration(value: unknown): value is NonNullable<IAutomationSessionTemplate['modelConfiguration']> {
+	return !!value && typeof value === 'object' && !Array.isArray(value)
+		&& (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
+		&& Object.values(value).every(entry => entry === null
+			|| typeof entry === 'string'
+			|| typeof entry === 'boolean'
+			|| (typeof entry === 'number' && Number.isFinite(entry)));
+}
+
+export function assertAutomationSessionTemplate(template: IAutomationSessionTemplate | undefined): void {
+	if (template?.modelConfiguration === undefined) {
+		return;
+	}
+	if (typeof template.modelId !== 'string' || !template.modelId.trim()) {
+		throw new Error('Automation model configuration requires a model identifier.');
+	}
+	if (!isAutomationModelConfiguration(template.modelConfiguration)) {
+		throw new Error('Automation model configuration must contain only JSON primitive values.');
+	}
 }
 
 /**

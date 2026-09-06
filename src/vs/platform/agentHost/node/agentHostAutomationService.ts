@@ -701,7 +701,11 @@ export class AgentHostAutomationService extends Disposable implements IAgentHost
 				await this._execution.cancelSession(session);
 				return;
 			}
-			await this._execution.startSession(session, definition.message);
+			// Clients restore the last turn's model configuration, not the SDK's creation defaults.
+			const message: Message = definition.message.model === undefined && definition.session.model !== undefined
+				? { ...definition.message, model: definition.session.model }
+				: definition.message;
+			await this._execution.startSession(session, message);
 		} catch (error) {
 			try {
 				await this._enqueueMutation(() => this._failRun(initialRun.resource, error));

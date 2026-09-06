@@ -471,10 +471,10 @@ suite('Automation session draft synchronization', () => {
 
 	test('carries captured configuration when returning to a previous target', async () => {
 		const initialConfiguration: IAutomationSessionConfiguration = {
-			sessionTemplate: { config: { mode: 'interactive' } },
+			sessionTemplate: { modelId: 'model', modelConfiguration: { thinkingLevel: 'high' }, config: { mode: 'interactive' } },
 		};
 		const capturedConfiguration: IAutomationSessionConfiguration = {
-			sessionTemplate: { config: { mode: 'plan', autoApprove: 'assisted' } },
+			sessionTemplate: { modelId: 'model', modelConfiguration: { thinkingLevel: 'low' }, config: { mode: 'plan', autoApprove: 'assisted' } },
 		};
 		const { service, created, sessionConfigurations } = createAutomationDraftService();
 		const synchronizer = disposables.add(new AutomationSessionDraftSynchronizer(service, async () => true, () => { }));

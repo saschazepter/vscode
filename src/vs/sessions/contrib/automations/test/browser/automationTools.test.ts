@@ -904,6 +904,7 @@ suite('AutomationTools', () => {
 		);
 		const sessionTemplate = {
 			modelId: 'new-model',
+			modelConfiguration: { thinkingLevel: 'low', contextSize: 200_000, futureOption: null },
 			agent: { uri: 'file:///agents/reviewer.agent.md' },
 			config: {
 				mode: 'plan',
@@ -921,6 +922,52 @@ suite('AutomationTools', () => {
 			id: existing.id,
 			patch: { sessionTemplate },
 		}]);
+	});
+
+	test('listAutomations preserves model options for a configureAutomation round-trip', async () => {
+		const sessionTemplate = { modelId: 'model', modelConfiguration: { thinkingLevel: 'low', futureOption: true } };
+		const existing = createAutomation({ sessionTemplate });
+		const automationService = new FakeAutomationService([existing]);
+		const configurationService = createConfigurationService();
+		const listed = await invoke(new ListAutomationsTool(automationService, configurationService), {});
+		const returnedTemplate = JSON.parse(getText(listed)).automations[0].sessionTemplate;
+		const tool = new ConfigureAutomationTool(automationService, new FakeSessionsManagementService(undefined), configurationService);
+		await invoke(tool, { automationId: existing.id, sessionTemplate: returnedTemplate });
+
+		assert.deepStrictEqual(automationService.updated, [{ id: existing.id, patch: { sessionTemplate } }]);
+	});
+
+	test('configureAutomation validates and bounds model-specific configuration', async () => {
+		const automationService = new FakeAutomationService();
+		const tool = new ConfigureAutomationTool(automationService, new FakeSessionsManagementService(undefined), createConfigurationService());
+		const errors: IToolResult['toolResultError'][] = [];
+		for (const sessionTemplate of [
+			{ modelConfiguration: { thinkingLevel: 'low' } },
+			{ modelId: 'model', modelConfiguration: { nested: { value: true } } },
+			{ modelId: 'model', modelConfiguration: { value: Number.POSITIVE_INFINITY } },
+			{ modelId: 'model', modelConfiguration: { value: 'x'.repeat(70_000) } },
+			{ modelId: 'model', modelConfiguration: Object.fromEntries(Array.from({ length: 10_001 }, (_, index) => [index, null])) },
+		]) {
+			const result = await invoke(tool, {
+				name: 'Invalid model configuration',
+				prompt: 'Do not save',
+				schedule: { interval: 'manual' },
+				target: { kind: 'workspace', folderUri: FOLDER.toString() },
+				sessionTemplate,
+			});
+			errors.push(result.toolResultError);
+		}
+
+		assert.deepStrictEqual({ errors, created: automationService.created }, {
+			errors: [
+				'"sessionTemplate.modelConfiguration" requires "sessionTemplate.modelId".',
+				'"sessionTemplate.modelConfiguration" must contain only JSON primitive values.',
+				'"sessionTemplate.modelConfiguration.value" must be JSON-safe.',
+				'"sessionTemplate.modelConfiguration" must not exceed 65536 characters.',
+				'"sessionTemplate.modelConfiguration" must not contain more than 10000 values.',
+			],
+			created: [],
+		});
 	});
 
 	test('configureAutomation reports legacy alias updates to a canonical template as input errors', async () => {

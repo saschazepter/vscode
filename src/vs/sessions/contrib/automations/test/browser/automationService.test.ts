@@ -123,6 +123,7 @@ suite('AutomationService', () => {
 		const service = teardown.add(createAutomationService(storage, new NullLogService(), NullTelemetryService));
 		const sessionTemplate = {
 			modelId: 'agent-host-copilotcli:auto',
+			modelConfiguration: { thinkingLevel: 'low', contextSize: 200_000, futureOption: true },
 			agent: { uri: 'file:///agents/reviewer.agent.md' },
 			config: {
 				mode: 'plan',
@@ -160,6 +161,7 @@ suite('AutomationService', () => {
 		const { service } = createService();
 		const sessionTemplate = {
 			modelId: 'old-model',
+			modelConfiguration: { thinkingLevel: 'unavailable-value' },
 			config: { mode: 'ask', autoApprove: 'autopilot', providerOption: true },
 		};
 		const automation = await service.createAutomation({
@@ -188,10 +190,48 @@ suite('AutomationService', () => {
 		});
 	});
 
+	test('rejects model configuration without a model identifier before changing persistence', async () => {
+		const { service, storage } = createService();
+		for (const modelId of [undefined, '', ' ']) {
+			await assert.rejects(service.createAutomation({
+				name: 'Invalid model configuration',
+				prompt: 'Do not save',
+				schedule: dailySchedule(),
+				target: workspaceTarget(),
+				sessionTemplate: { modelId, modelConfiguration: { thinkingLevel: 'low' } },
+			}), /model configuration requires a model identifier/);
+		}
+		const sessionTemplate = { modelId: 'model', modelConfiguration: { thinkingLevel: 'low' } };
+		const automation = await service.createAutomation({
+			name: 'Valid model configuration',
+			prompt: 'Keep the saved configuration',
+			schedule: dailySchedule(),
+			target: workspaceTarget(),
+			sessionTemplate,
+		});
+		const persisted = storage.get('chat.automations.ledger', StorageScope.APPLICATION);
+		await assert.rejects(service.updateAutomation(automation.id, {
+			sessionTemplate: { modelConfiguration: {} },
+		}), /model configuration requires a model identifier/);
+		await assert.rejects(service.importAutomationSnapshot({
+			automation: { ...automation, id: 'invalid-import', sessionTemplate: { modelConfiguration: { thinkingLevel: 'low' } } },
+			runs: [],
+		}), /model configuration requires a model identifier/);
+
+		assert.deepStrictEqual({
+			templates: service.automations.get().map(entry => entry.sessionTemplate),
+			persisted: storage.get('chat.automations.ledger', StorageScope.APPLICATION),
+		}, {
+			templates: [sessionTemplate],
+			persisted,
+		});
+	});
+
 	test('rejects legacy alias updates to a canonical session template', async () => {
 		const { service } = createService();
 		const sessionTemplate = {
 			modelId: 'model',
+			modelConfiguration: { thinkingLevel: 'low' },
 			config: { mode: 'ask', autoApprove: 'autopilot' },
 		};
 		const automation = await service.createAutomation({
@@ -339,7 +379,7 @@ suite('AutomationService', () => {
 		const a = await service.createAutomation({
 			name: 'A', prompt: 'p', schedule: dailySchedule(),
 			target: workspaceTarget(),
-			sessionTemplate: { config: { mode: 'autopilot' } },
+			sessionTemplate: { modelId: 'model', modelConfiguration: { thinkingLevel: 'low' }, config: { mode: 'autopilot' } },
 			modelId: 'gpt-4',
 			mode: 'agent',
 			permissionLevel: 'autopilot',

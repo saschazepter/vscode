@@ -650,6 +650,8 @@ suite('AgentHostAutomationStore', () => {
 			schedule: { interval: 'daily', scheduleHour: 9, scheduleMinute: 30, scheduleDay: 0 },
 			target: { kind: 'quickChat', providerId: 'local-agent-host', sessionTypeId: 'claude' },
 			sessionTemplate: {
+				modelId: 'model',
+				modelConfiguration: { thinkingLevel: 'low' },
 				agent: { uri: 'file:///agents/reviewer.agent.md' },
 				config: { mode: 'plan', providerOption: true },
 			},
@@ -728,6 +730,7 @@ suite('AgentHostAutomationStore', () => {
 		}, new NullLogService(), storage, NullTelemetryService, new TestAutomationStorageService(storage)));
 		const sessionTemplate = {
 			modelId: 'agent-host-copilotcli:auto',
+			modelConfiguration: { thinkingLevel: 'low', futureOption: 'preserved' },
 			agent: { uri: 'file:///agents/reviewer.agent.md' },
 			config: {
 				mode: 'plan',
@@ -775,7 +778,7 @@ suite('AgentHostAutomationStore', () => {
 			projected: updatedTemplate,
 			updatedSession: {
 				provider: 'copilotcli',
-				model: { id: 'gpt-5' },
+				model: { id: 'gpt-5', config: sessionTemplate.modelConfiguration },
 				agent: { uri: 'file:///agents/reviewer.agent.md' },
 				workingDirectories: ['file:///workspace'],
 				config: {
@@ -785,6 +788,65 @@ suite('AgentHostAutomationStore', () => {
 					isolation: 'folder',
 				},
 			},
+		});
+	});
+
+	test('rejects model configuration without a model identifier instead of dropping it', async () => {
+		const connection = disposables.add(new TestAutomationConnection(true));
+		const storage = disposables.add(new InMemoryStorageService());
+		const store = disposables.add(new AgentHostAutomationStore('local-agent-host', connection, undefined, undefined, new NullLogService(), storage, NullTelemetryService, new TestAutomationStorageService(storage)));
+		const options = {
+			name: 'Model configuration',
+			prompt: 'Review changes.',
+			schedule: { interval: 'manual', scheduleHour: 0, scheduleMinute: 0, scheduleDay: 0 },
+			target: { kind: 'quickChat', providerId: 'local-agent-host', sessionTypeId: 'copilotcli' },
+		} as const;
+		await assert.rejects(store.createAutomation({
+			...options,
+			sessionTemplate: { modelConfiguration: { thinkingLevel: 'low' } },
+		}), /model configuration requires a model identifier/);
+		const sessionTemplate = { modelId: 'model', modelConfiguration: { thinkingLevel: 'low' } };
+		const automation = await store.createAutomation({ ...options, sessionTemplate });
+		const dispatched = connection.dispatched.length;
+		await assert.rejects(store.updateAutomation(automation.id, {
+			sessionTemplate: { modelConfiguration: {} },
+		}), /model configuration requires a model identifier/);
+
+		assert.deepStrictEqual({
+			template: store.getAutomation(automation.id)?.sessionTemplate,
+			additionalActions: connection.dispatched.length - dispatched,
+		}, {
+			template: sessionTemplate,
+			additionalActions: 0,
+		});
+	});
+
+	test('explicit empty and omitted model configuration replace stale model options', async () => {
+		const connection = disposables.add(new TestAutomationConnection(true));
+		const storage = disposables.add(new InMemoryStorageService());
+		const store = disposables.add(new AgentHostAutomationStore('local-agent-host', connection, undefined, undefined, new NullLogService(), storage, NullTelemetryService, new TestAutomationStorageService(storage)));
+		const automation = await store.createAutomation({
+			name: 'Reset model configuration',
+			prompt: 'Review changes.',
+			schedule: { interval: 'manual', scheduleHour: 0, scheduleMinute: 0, scheduleDay: 0 },
+			target: { kind: 'quickChat', providerId: 'local-agent-host', sessionTypeId: 'copilotcli' },
+			sessionTemplate: { modelId: 'model', modelConfiguration: { thinkingLevel: 'low', futureOption: true } },
+		});
+		const empty = await store.updateAutomation(automation.id, { sessionTemplate: { modelId: 'model', modelConfiguration: {} } });
+		const emptyAction = connection.dispatched.at(-1)?.action;
+		const reset = await store.updateAutomation(automation.id, { sessionTemplate: { modelId: 'model' } });
+		const resetAction = connection.dispatched.at(-1)?.action;
+
+		assert.deepStrictEqual({
+			empty: empty.sessionTemplate,
+			emptyModel: emptyAction?.type === ActionType.AutomationUpdateRequested ? emptyAction.changes.session?.model : undefined,
+			reset: reset.sessionTemplate,
+			resetModel: resetAction?.type === ActionType.AutomationUpdateRequested ? resetAction.changes.session?.model : undefined,
+		}, {
+			empty: { modelId: 'model', modelConfiguration: {} },
+			emptyModel: { id: 'model', config: {} },
+			reset: { modelId: 'model' },
+			resetModel: { id: 'model' },
 		});
 	});
 

@@ -613,6 +613,7 @@ suite('AutomationRunner', () => {
 		sessionsMgmt.nextSession = fakeSession('s1');
 		const sessionTemplate = {
 			modelId: 'model',
+			modelConfiguration: { thinkingLevel: 'low' },
 			agent: { uri: 'file:///agents/reviewer.agent.md' },
 			config: {
 				mode: 'plan',

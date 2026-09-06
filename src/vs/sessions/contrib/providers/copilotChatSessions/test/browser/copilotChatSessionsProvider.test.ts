@@ -348,7 +348,7 @@ function createProviderWithConfig(
 		lastFocusedWidget: undefined,
 		onDidChangeFocusedSession: Event.None,
 	});
-	instantiationService.stub(ILanguageModelsService, opts?.languageModelsService ?? { lookupLanguageModel: () => undefined });
+	instantiationService.stub(ILanguageModelsService, { lookupLanguageModel: () => undefined, getModelConfiguration: () => undefined, setModelConfiguration: async () => { }, ...opts?.languageModelsService });
 	instantiationService.stub(INotificationService, new class extends mock<INotificationService>() {
 		override warn(): void { }
 	}());
@@ -405,7 +405,7 @@ function createProviderForSendTests(
 	disposables: DisposableStore,
 	model: MockAgentSessionsModel,
 	sendRequest: (resource: URI, message: string, options?: IChatSendRequestOptions) => Promise<ChatSendResult>,
-	opts?: { onDidCommitSession?: Event<{ original: URI; committed: URI }>; configurationService?: TestConfigurationService; agentHostEnabled?: boolean; getOptionGroups?: () => IChatSessionProviderOptionGroup[] | undefined; notifications?: string[]; chatModeService?: IChatModeService },
+	opts?: { onDidCommitSession?: Event<{ original: URI; committed: URI }>; configurationService?: TestConfigurationService; agentHostEnabled?: boolean; getOptionGroups?: () => IChatSessionProviderOptionGroup[] | undefined; notifications?: string[]; chatModeService?: IChatModeService; languageModelsService?: Partial<ILanguageModelsService> },
 ): TestSandboxCopilotProvider {
 	const instantiationService = disposables.add(new TestInstantiationService());
 
@@ -450,7 +450,7 @@ function createProviderForSendTests(
 		lastFocusedWidget: undefined,
 		onDidChangeFocusedSession: Event.None,
 	});
-	instantiationService.stub(ILanguageModelsService, { lookupLanguageModel: () => undefined });
+	instantiationService.stub(ILanguageModelsService, { lookupLanguageModel: () => undefined, getModelConfiguration: () => undefined, setModelConfiguration: async () => { }, ...opts?.languageModelsService });
 	instantiationService.stub(INotificationService, new class extends mock<INotificationService>() {
 		override warn(message: unknown): void { opts?.notifications?.push(String(message)); }
 	}());
@@ -2297,6 +2297,7 @@ suite('CopilotChatSessionsProvider', () => {
 			const provider = createProviderForSendTests(disposables, model, () => new Promise(() => { }));
 			const sessionTemplate = {
 				modelId: 'model',
+				modelConfiguration: { thinkingLevel: 'low', futureOption: true },
 				config: {
 					providerOption: true,
 				},
@@ -2324,6 +2325,7 @@ suite('CopilotChatSessionsProvider', () => {
 				captured: {
 					sessionTemplate: {
 						modelId: 'model',
+						modelConfiguration: sessionTemplate.modelConfiguration,
 						config: {
 							providerOption: true,
 							mode: ChatModeKind.Ask,
@@ -2335,6 +2337,61 @@ suite('CopilotChatSessionsProvider', () => {
 					permissionLevel: ChatPermissionLevel.Autopilot,
 				},
 			});
+		});
+
+		for (const restored of [true, false]) {
+			test(`sends ${restored ? 'restored' : 'explicitly selected'} Automation model options through the fallback provider`, async () => {
+				const sent: IChatSendRequestOptions[] = [];
+				const writes: Record<string, unknown>[] = [];
+				const provider = createProviderForSendTests(disposables, model, async (_resource, _message, options) => {
+					if (options) {
+						sent.push(options);
+					}
+					return { kind: 'rejected', reason: 'Test request captured' };
+				}, {
+					languageModelsService: {
+						lookupLanguageModel: () => ({
+							extension: new ExtensionIdentifier('test'),
+							id: 'model', name: 'Model', vendor: 'test', family: 'test', version: '1',
+							maxInputTokens: 1, maxOutputTokens: 1, isDefaultForLocation: {},
+							configurationSchema: {
+								type: 'object',
+								properties: { thinkingLevel: { type: 'string', enum: ['low', 'medium', 'high'], default: 'medium' } },
+							},
+						}),
+						getModelConfiguration: () => ({ thinkingLevel: 'high' }),
+						setModelConfiguration: async (_modelId, values) => { writes.push(values); },
+					},
+				});
+				const session = provider.createNewSession(workspace, CopilotCLISessionType.id, {
+					automationConfiguration: {
+						sessionTemplate: { modelId: 'model', ...(restored ? { modelConfiguration: { thinkingLevel: 'low' } } : {}) },
+					},
+				});
+				if (!restored) {
+					await provider.getAutomationModelConfiguration(session.sessionId)!.setModelConfiguration('model', { thinkingLevel: 'low' });
+				}
+				const captured = await provider.getAutomationSessionConfiguration(session.sessionId);
+				await assert.rejects(provider.sendRequest(session.sessionId, session.mainChat.get().resource, { query: 'hello' }), /Test request captured/);
+
+				assert.deepStrictEqual({
+					captured: captured?.sessionTemplate?.modelConfiguration,
+					sent: sent.map(options => ({ model: options.userSelectedModelId, configuration: options.userSelectedModelConfiguration })),
+					writes,
+				}, {
+					captured: { thinkingLevel: 'low' },
+					sent: [{ model: 'model', configuration: { thinkingLevel: 'low' } }],
+					writes: restored ? [] : [{ thinkingLevel: 'low' }],
+				});
+			});
+		}
+
+		test('rejects Automation model configuration without a model before creating a fallback draft', () => {
+			const provider = createProviderForSendTests(disposables, model, async () => ({ kind: 'rejected', reason: 'Unexpected send' }));
+			assert.throws(() => provider.createNewSession(workspace, CopilotCLISessionType.id, {
+				automationConfiguration: { sessionTemplate: { modelConfiguration: { thinkingLevel: 'low' } } },
+			}), /model configuration requires a model identifier/);
+			assert.deepStrictEqual(provider.getSessions(), []);
 		});
 
 		test('preserves an Automation mode while custom modes resolve', async () => {

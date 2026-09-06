@@ -25,7 +25,8 @@ import { AgentSessionProviders, AgentSessionTarget } from '../../../../../workbe
 import { IChatService, IChatSendRequestOptions } from '../../../../../workbench/contrib/chat/common/chatService/chatService.js';
 import { IChatResponseModel } from '../../../../../workbench/contrib/chat/common/model/chatModel.js';
 import { ChatSessionStatus, IChatSessionsService, IChatSessionProviderOptionGroup, IChatSessionProviderOptionItem, SessionType } from '../../../../../workbench/contrib/chat/common/chatSessionsService.js';
-import { IAutomationSessionTemplate } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
+import { assertAutomationSessionTemplate, IAutomationSessionTemplate } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
+import { AutomationModelConfiguration } from '../../../automations/browser/automationModelConfiguration.js';
 import { ChatModelSource, ISession, IChat, ISessionGitRepository, ISessionFolder, ISessionWorkspace, ISideChatSelection, SessionStatus, GITHUB_REMOTE_FILE_SCHEME, IGitHubInfo, ISessionType, ISessionWorkspaceBrowseAction, ISessionFileChange, sessionFileChangesEqual, gitHubInfoEqual, sessionWorkspaceEqual, toSessionId, SESSION_WORKSPACE_GROUP_LOCAL, SESSION_WORKSPACE_GROUP_GITHUB, ISessionChangeset, IChatCheckpoints, ChatInteractivity, SessionTypeAuthRequirement, ISessionChangesSummary } from '../../../../services/sessions/common/session.js';
 import { ChatAgentLocation, ChatConfiguration, ChatModeKind, ChatPermissionLevel, isChatPermissionLevel } from '../../../../../workbench/contrib/chat/common/constants.js';
 import { basename, dirname, isEqual } from '../../../../../base/common/resources.js';
@@ -324,6 +325,7 @@ class CopilotCLISession extends Disposable implements ICopilotChatSession {
 	private _query: string | undefined;
 	private _attachedContext: IChatRequestVariableEntry[] | undefined;
 	private readonly _lifetimeCts = this._register(new CancellationTokenSource());
+	readonly modelConfiguration: AutomationModelConfiguration;
 
 	readonly target = AgentSessionProviders.Background;
 	readonly selectedOptions = new Map<string, IChatSessionProviderOptionItem>();
@@ -355,8 +357,10 @@ class CopilotCLISession extends Disposable implements ICopilotChatSession {
 		@IPullRequestIconCache private readonly pullRequestIconCache: IPullRequestIconCache,
 		@IStorageService private readonly storageService: IStorageService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@ILanguageModelsService languageModelsService: ILanguageModelsService,
 	) {
 		super();
+		this.modelConfiguration = this._register(new AutomationModelConfiguration(languageModelsService, initialAutomationSessionConfiguration?.sessionTemplate));
 		this.sessionId = toSessionId(providerId, resource);
 		this.providerId = providerId;
 		this.sessionType = AgentSessionProviders.Background;
@@ -705,6 +709,7 @@ export class RemoteNewSession extends Disposable implements ICopilotChatSession 
 	}
 
 	private readonly _whenClauseKeys = new Set<string>();
+	readonly modelConfiguration: AutomationModelConfiguration;
 
 	constructor(
 		readonly resource: URI,
@@ -715,8 +720,10 @@ export class RemoteNewSession extends Disposable implements ICopilotChatSession 
 		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IStorageService private readonly storageService: IStorageService,
+		@ILanguageModelsService languageModelsService: ILanguageModelsService,
 	) {
 		super();
+		this.modelConfiguration = this._register(new AutomationModelConfiguration(languageModelsService, initialAutomationSessionConfiguration?.sessionTemplate));
 		this.sessionId = toSessionId(providerId, resource);
 		this.providerId = providerId;
 		this.sessionType = target;
@@ -1710,6 +1717,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			throw new Error(`Cannot resolve workspace for URI: ${workspaceUri.toString()}`);
 		}
 		const automationConfiguration = options?.automationConfiguration;
+		assertAutomationSessionTemplate(automationConfiguration?.sessionTemplate);
 		let session: NewSession;
 
 		if (workspaceUri.scheme === GITHUB_REMOTE_FILE_SCHEME) {
@@ -1736,12 +1744,17 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		}
 	}
 
+	getAutomationModelConfiguration(sessionId: string): AutomationModelConfiguration | undefined {
+		return this._newSessions.get(sessionId)?.modelConfiguration;
+	}
+
 	async getAutomationSessionConfiguration(sessionId: string): Promise<IAutomationSessionConfiguration | undefined> {
 		const session = this._newSessions.get(sessionId);
 		if (!session) {
 			return undefined;
 		}
 		const modelId = session.modelId.get();
+		const modelConfiguration = session.modelConfiguration.captureModelConfiguration(modelId);
 		const initialConfiguration = session.initialAutomationSessionConfiguration;
 		const initialTemplate = initialConfiguration?.sessionTemplate;
 		const initialMode = initialConfiguration?.mode ?? initialTemplate?.config?.[SessionConfigKey.Mode];
@@ -1765,6 +1778,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			: initialTemplate?.agent && mode === initialTemplate.agent.uri ? initialTemplate.agent : undefined;
 		const sessionTemplate: IAutomationSessionTemplate = {
 			...(modelId ? { modelId } : {}),
+			...(modelConfiguration !== undefined ? { modelConfiguration } : {}),
 			...(agent ? { agent } : {}),
 			...(Object.keys(config).length > 0 ? { config } : {}),
 		};
@@ -1914,6 +1928,13 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 	setModel(sessionId: string, chatResource: URI, modelId: string, source: ChatModelSource): void {
 		const newSession = this._newSessions.get(sessionId);
 		if (newSession) {
+			const previousModelId = newSession.modelId.get();
+			if (previousModelId && previousModelId !== modelId) {
+				const resolution = this.getModelsSnapshot(sessionId, previousModelId).desiredModelResolution;
+				if (resolution.kind === 'available' && resolution.model.identifier === modelId) {
+					newSession.modelConfiguration.rebindModelConfiguration(previousModelId, modelId);
+				}
+			}
 			newSession.setModelId(modelId, source);
 			// Cloud sessions additionally persist the selection as the value of
 			// the `models` option group so the extension host honours it.
@@ -2562,6 +2583,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		const sendOptions: IChatSendRequestOptions = {
 			location: ChatAgentLocation.Chat,
 			userSelectedModelId: session.selectedModelId,
+			userSelectedModelConfiguration: session.modelConfiguration.getModelConfigurationForRequest(session.selectedModelId),
 			modeInfo: {
 				kind: modeKind,
 				isBuiltin: modeIsBuiltin,

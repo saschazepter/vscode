@@ -1214,7 +1214,7 @@ export function renderForm(
 	ChatContextKeys.inChatSession.bindTo(scopedContextKeyService).set(true);
 	ChatContextKeys.inAutomationsDialog.bindTo(scopedContextKeyService).set(true);
 	const newChatModelPickerService = new NewChatModelPickerService();
-	const sessionModelSelection = disposables.add(instantiationService.createInstance(SessionModelSelection, activeAutomationSession));
+	const sessionModelSelection = disposables.add(instantiationService.createInstance(SessionModelSelection, activeAutomationSession, { modelConfiguration: true }));
 	const scopedInstantiationService = disposables.add(instantiationService.createChild(new ServiceCollection(
 		[IContextKeyService, scopedContextKeyService],
 		[ISessionContext, new SessionContext(activeAutomationSession)],
