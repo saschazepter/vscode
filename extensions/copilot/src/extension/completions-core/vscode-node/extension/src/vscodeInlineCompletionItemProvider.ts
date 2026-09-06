@@ -32,7 +32,6 @@ import { LineBasedText } from '../../../../../util/vs/editor/common/core/text/ab
 import { IInstantiationService, ServicesAccessor } from '../../../../../util/vs/platform/instantiation/common/instantiation';
 import { NextEditProviderTelemetryBuilder, TelemetrySender } from '../../../../inlineEdits/node/nextEditProviderTelemetry';
 import { InlineEditLogger } from '../../../../inlineEdits/vscode-node/parts/inlineEditLogger';
-import { shouldSkipInlineCompletion } from '../../../../common/meteredInlineCompletions';
 import { GhostTextLogContext } from '../../../common/ghostTextContext';
 import { ICompletionsTelemetryService } from '../../bridge/src/completionsTelemetryServiceBridge';
 import { ICompletionsCopilotTokenManager } from '../../lib/src/auth/copilotTokenManager';
@@ -104,7 +103,7 @@ export class CopilotInlineCompletionItemProvider extends Disposable implements I
 		token: CancellationToken
 	): Promise<GhostTextCompletionList | undefined> {
 
-		if (shouldSkipInlineCompletion(context.triggerKind === InlineCompletionTriggerKind.Automatic, env.isMeteredConnection)) {
+		if (context.triggerKind === InlineCompletionTriggerKind.Automatic && env.isMeteredConnection) {
 			return;
 		}
 
