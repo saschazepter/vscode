@@ -698,7 +698,7 @@ namespace McpServerSchemaVersion_v0 {
 				return undefined;
 			}
 			const metadata = candidate.metadata as { readonly count?: unknown; readonly nextCursor?: unknown; readonly next_cursor?: unknown };
-			if (typeof metadata.count !== 'number') {
+			if (metadata.count !== undefined && typeof metadata.count !== 'number') {
 				return undefined;
 			}
 
@@ -711,7 +711,7 @@ namespace McpServerSchemaVersion_v0 {
 			}
 			return {
 				metadata: {
-					count: metadata.count,
+					count: metadata.count ?? 0,
 					nextCursor: isString(metadata.nextCursor) ? metadata.nextCursor : isString(metadata.next_cursor) ? metadata.next_cursor : undefined,
 				},
 				servers,

@@ -400,4 +400,23 @@ suite('McpGalleryService - getMcpServer validation', () => {
 			hasMore: true
 		});
 	});
+
+	test('accepts a gallery page without optional count metadata', async () => {
+		const data = {
+			metadata: { next_cursor: 'next-page' },
+			servers: [modernServerDocumentData('io.github.owner/supported', ['npm'])]
+		};
+		const requestService = new StatusRequestService(200, JSON.stringify(data));
+		const service = createService(requestService);
+
+		const page = (await service.query()).firstPage;
+
+		assert.deepStrictEqual({
+			names: page.items.map(server => server.name),
+			hasMore: page.hasMore
+		}, {
+			names: ['io.github.owner/supported'],
+			hasMore: true
+		});
+	});
 });
