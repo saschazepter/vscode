@@ -18,7 +18,6 @@ paths-ignore:
   - 'extensions/copilot/.mocharc.js'
   - 'extensions/copilot/.vscode-test.mjs'
   - 'extensions/copilot/.vscode/**'
-  - 'extensions/copilot/chat-lib/script/**'
   - 'extensions/copilot/chat-lib/vitest.config.ts'
   - 'extensions/copilot/script/**'
   - 'extensions/copilot/vite.config.ts'
