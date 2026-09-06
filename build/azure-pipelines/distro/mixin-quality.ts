@@ -28,7 +28,7 @@ function log(...args: unknown[]): void {
 }
 
 function main() {
-	const quality = process.env['VSCODE_QUALITY'];
+	const quality = process.env.VSCODE_QUALITY;
 
 	if (!quality) {
 		throw new Error('Missing VSCODE_QUALITY, skipping mixin');
@@ -51,8 +51,8 @@ function main() {
 				throw new Error('Unexpected builtInExtensions array, expected object with include/exclude or array of extensions');
 
 			} else if (distro.builtInExtensions) {
-				const include = distro.builtInExtensions['include'] ?? [];
-				const exclude = distro.builtInExtensions['exclude'] ?? [];
+				const include = distro.builtInExtensions.include ?? [];
+				const exclude = distro.builtInExtensions.exclude ?? [];
 
 				log('OSS built-in extensions:', builtInExtensions.map(e => e.name));
 				log('Including built-in extensions:', include.map(e => e.name));

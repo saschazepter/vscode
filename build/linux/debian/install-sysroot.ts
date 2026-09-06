@@ -103,7 +103,7 @@ type SysrootDictEntry = {
 export async function getVSCodeSysroot(arch: DebianArchString, isMusl: boolean = false): Promise<string> {
 	let expectedName: string;
 	let triple: string;
-	const prefix = process.env['VSCODE_SYSROOT_PREFIX'] ?? '-glibc-2.28-gcc-10.5.0';
+	const prefix = process.env.VSCODE_SYSROOT_PREFIX ?? '-glibc-2.28-gcc-10.5.0';
 	switch (arch) {
 		case 'amd64':
 			expectedName = `x86_64-linux-gnu${prefix}.tar.gz`;
@@ -128,7 +128,7 @@ export async function getVSCodeSysroot(arch: DebianArchString, isMusl: boolean =
 	if (!checksumSha256) {
 		throw new Error(`Could not find checksum for ${expectedName}`);
 	}
-	const sysroot = process.env['VSCODE_SYSROOT_DIR'] ?? path.join(tmpdir(), `vscode-${arch}-sysroot`);
+	const sysroot = process.env.VSCODE_SYSROOT_DIR ?? path.join(tmpdir(), `vscode-${arch}-sysroot`);
 	const stamp = path.join(sysroot, '.stamp');
 	let result = `${sysroot}/${triple}/${triple}/sysroot`;
 	if (isMusl) {
@@ -159,9 +159,9 @@ export async function getChromiumSysroot(arch: DebianArchString): Promise<string
 	const sysrootInfo = JSON.parse(fs.readFileSync(sysrootDictLocation, 'utf8'));
 	const sysrootArch = `bullseye_${arch}`;
 	const sysrootDict: SysrootDictEntry = sysrootInfo[sysrootArch];
-	const tarballFilename = sysrootDict['Tarball'];
-	const tarballSha = sysrootDict['Sha256Sum'];
-	const sysroot = path.join(tmpdir(), sysrootDict['SysrootDir']);
+	const tarballFilename = sysrootDict.Tarball;
+	const tarballSha = sysrootDict.Sha256Sum;
+	const sysroot = path.join(tmpdir(), sysrootDict.SysrootDir);
 	const url = [URL_PREFIX, URL_PATH, tarballSha].join('/');
 	const stamp = path.join(sysroot, '.stamp');
 	if (fs.existsSync(stamp) && fs.readFileSync(stamp).toString() === url) {
