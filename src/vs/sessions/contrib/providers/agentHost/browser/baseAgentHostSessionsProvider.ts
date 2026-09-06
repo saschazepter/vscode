@@ -2066,6 +2066,7 @@ class NewSession extends Disposable {
 	private _config: ResolveSessionConfigResult | undefined = { schema: { type: 'object', properties: {} }, values: {} };
 	private _configResolution: Promise<void> | undefined;
 	private _configOperation: Promise<void> | undefined;
+	private _unresolvedConfigValues: Record<string, unknown> | undefined;
 	private readonly _explicitlySetConfigProperties = new Set<string>();
 
 	/**
@@ -2378,7 +2379,7 @@ class NewSession extends Disposable {
 	 */
 	setConfigValue(property: string, value: unknown, explicitlySet = false): void {
 		const current = this._config;
-		const values = { ...(current?.values ?? {}) };
+		const values = { ...(current?.values ?? this._unresolvedConfigValues) };
 		if (value === undefined) {
 			delete values[property];
 		} else {
@@ -2429,17 +2430,19 @@ class NewSession extends Disposable {
 	 */
 	async resolveConfig(connection: IAgentConnection, strict = false): Promise<boolean> {
 		const seq = ++this._configRequestSeq;
+		const values = this._config?.values ?? this._unresolvedConfigValues;
 		this._isResolvingConfig.set(true, undefined);
 		try {
 			const result = await connection.resolveSessionConfig({
 				provider: this.agentProvider,
 				workingDirectory: this.workspaceUri,
-				config: this._config?.values,
+				config: values,
 			});
 			if (seq !== this._configRequestSeq) {
 				return false;
 			}
 			this._config = result;
+			this._unresolvedConfigValues = undefined;
 			this._syncWorktreePending();
 			return true;
 		} catch (error) {
@@ -2447,6 +2450,7 @@ class NewSession extends Disposable {
 				return false;
 			}
 			this._config = undefined;
+			this._unresolvedConfigValues = values;
 			this._syncWorktreePending();
 			if (strict) {
 				throw error;
@@ -3727,8 +3731,10 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 	private async _refreshNewSessionConfig(session: NewSession, options: {
 		readonly expected?: Readonly<Record<string, unknown>>;
 		readonly markSessionLoading?: boolean;
+		readonly strict?: boolean;
 	} = {}): Promise<void> {
 		const { expected, markSessionLoading } = options;
+		const strict = options.strict || expected !== undefined;
 		const connection = this.connection;
 		if (!connection) {
 			// {@link resolveConfig} (the only other clear path) is skipped
@@ -3737,8 +3743,8 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 			session.endResolveConfigSync();
 			session.setLoading(false);
 			this._onDidChangeSessionConfig.fire(session.sessionId);
-			if (expected) {
-				throw new Error('Cannot set session repository config without an agent host connection.');
+			if (strict) {
+				throw new Error('Cannot resolve session config without an agent host connection.');
 			}
 			return;
 		}
@@ -3747,7 +3753,7 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		}
 		let applied: boolean;
 		try {
-			applied = await session.resolveConfig(connection, !!expected);
+			applied = await session.resolveConfig(connection, strict);
 		} catch (error) {
 			session.setLoading(false);
 			this._onDidChangeSessionConfig.fire(session.sessionId);
@@ -3755,8 +3761,8 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		}
 		// Bail if a newer call superseded us — its own pulse will take over.
 		if (!applied || this._newSessions.get(session.sessionId) !== session) {
-			if (expected) {
-				throw new Error('Session repository config was superseded before it could be applied.');
+			if (strict) {
+				throw new Error('Session config was superseded before it could be applied.');
 			}
 			return;
 		}
@@ -3912,11 +3918,22 @@ export abstract class BaseAgentHostSessionsProvider extends Disposable implement
 		if (!newSession) {
 			return undefined;
 		}
-		await newSession.waitForConfigResolution();
+		await newSession.waitForConfigurationReady();
 		if (this._getNewSession(sessionId) !== newSession) {
 			return undefined;
 		}
-		const config = { ...newSession.getConfigValues() };
+		if (!newSession.getConfig()) {
+			await newSession.trackConfigResolution(this._refreshNewSessionConfig(newSession, { strict: true }));
+			await newSession.waitForConfigurationReady();
+		}
+		if (this._getNewSession(sessionId) !== newSession) {
+			return undefined;
+		}
+		const resolvedConfig = newSession.getConfig();
+		if (!resolvedConfig) {
+			throw new Error('Cannot capture unresolved Automation session configuration.');
+		}
+		const config = { ...resolvedConfig.values };
 		const initialConfig = newSession.getInitialSessionTemplate()?.config ?? {};
 		for (const [key, value] of Object.entries(initialConfig)) {
 			if (!newSession.wasConfigValueExplicitlySet(key)) {

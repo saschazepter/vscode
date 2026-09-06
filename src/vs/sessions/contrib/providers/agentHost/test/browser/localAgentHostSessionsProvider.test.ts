@@ -4575,6 +4575,98 @@ suite('LocalAgentHostSessionsProvider', () => {
 		});
 	});
 
+	test('Automation capture rejects failed initial configuration resolution', async () => {
+		agentHost.failResolveSessionConfig = true;
+		const provider = createProvider(disposables, agentHost);
+		const session = provider.createNewSession(
+			URI.parse('file:///home/user/project'),
+			provider.sessionTypes[0].id,
+			{ automationConfiguration: { sessionTemplate: { config: { mode: 'plan' } } } },
+		);
+
+		await assert.rejects(provider.getAutomationSessionConfiguration(session.sessionId), /resolveSessionConfig unavailable/);
+	});
+
+	test('Automation capture retries failed resolution without dropping edited preferences', async () => {
+		const initialConfig = { mode: 'interactive', autoApprove: 'default', providerOption: true };
+		const updatedConfig = { ...initialConfig, mode: 'plan', autoApprove: 'assisted' };
+		agentHost.resolveSessionConfigResult = {
+			schema: { type: 'object', properties: {} },
+			values: initialConfig,
+		};
+		const provider = createProvider(disposables, agentHost);
+		const session = provider.createNewSession(
+			URI.parse('file:///home/user/project'),
+			provider.sessionTypes[0].id,
+			{ automationConfiguration: { sessionTemplate: { config: initialConfig } } },
+		);
+		await provider.getAutomationSessionConfiguration(session.sessionId);
+
+		agentHost.failResolveSessionConfig = true;
+		await provider.setSessionConfigValue(session.sessionId, SessionConfigKey.Mode, 'plan');
+		await provider.setSessionConfigValue(session.sessionId, SessionConfigKey.AutoApprove, 'assisted');
+		await assert.rejects(provider.getAutomationSessionConfiguration(session.sessionId), /resolveSessionConfig unavailable/);
+
+		agentHost.failResolveSessionConfig = false;
+		agentHost.resolveSessionConfigResult = {
+			schema: { type: 'object', properties: {} },
+			values: updatedConfig,
+		};
+		const captured = await provider.getAutomationSessionConfiguration(session.sessionId);
+
+		assert.deepStrictEqual({
+			retriedConfig: agentHost.resolveSessionConfigRequests.at(-1)?.config,
+			capturedConfig: captured?.sessionTemplate?.config,
+			initialConfig,
+		}, {
+			retriedConfig: updatedConfig,
+			capturedConfig: updatedConfig,
+			initialConfig: { mode: 'interactive', autoApprove: 'default', providerOption: true },
+		});
+	});
+
+	test('Automation capture waits for tracked configuration operations before reading values', async () => {
+		const initialConfig = { mode: 'interactive' };
+		agentHost.resolveSessionConfigResult = {
+			schema: { type: 'object', properties: {} },
+			values: initialConfig,
+		};
+		const provider = createProvider(disposables, agentHost);
+		const session = provider.createNewSession(
+			URI.parse('file:///home/user/project'),
+			provider.sessionTypes[0].id,
+			{ automationConfiguration: { sessionTemplate: { config: initialConfig } } },
+		);
+		await provider.getAutomationSessionConfiguration(session.sessionId);
+
+		const barrier = new DeferredPromise<void>();
+		const operation = (async () => {
+			await barrier.p;
+			agentHost.resolveSessionConfigResult = {
+				schema: { type: 'object', properties: {} },
+				values: { mode: 'plan' },
+			};
+			await provider.setSessionConfigValue(session.sessionId, SessionConfigKey.Mode, 'plan');
+		})();
+		provider.trackSessionConfigOperation(session.sessionId, operation);
+		let captured = false;
+		const capture = provider.getAutomationSessionConfiguration(session.sessionId).then(result => {
+			captured = true;
+			return result;
+		});
+		await timeout(0);
+		const capturedBeforeOperation = captured;
+		await barrier.complete();
+
+		assert.deepStrictEqual({
+			capturedBeforeOperation,
+			config: (await capture)?.sessionTemplate?.config,
+		}, {
+			capturedBeforeOperation: false,
+			config: { mode: 'plan' },
+		});
+	});
+
 	test('createNewSession restores legacy Automation fields at the provider boundary', async () => {
 		const provider = createProvider(disposables, agentHost);
 		const session = provider.createNewSession(
