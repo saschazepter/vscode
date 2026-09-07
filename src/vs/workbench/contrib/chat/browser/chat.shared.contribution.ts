@@ -295,6 +295,12 @@ configurationRegistry.registerConfiguration({
 			default: false,
 			tags: ['experimental'],
 		},
+		[ChatConfiguration.ExperimentalModePermissionsPicker]: {
+			type: 'boolean',
+			description: nls.localize('chat.experimentalModePermissionsPicker', "Shows permissions alongside the mode in a combined picker for Copilot Agent Host sessions. Permissions are configured in a flyout from the mode picker."),
+			default: false,
+			tags: ['experimental'],
+		},
 		'chat.fontSize': {
 			type: 'number',
 			description: nls.localize('chat.fontSize', "Controls the font size in pixels in chat messages."),
