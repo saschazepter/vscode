@@ -5,6 +5,7 @@
 
 import assert from 'assert';
 import { Emitter } from '../../../../../base/common/event.js';
+import { autorun, observableValue } from '../../../../../base/common/observable.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { upcastPartial } from '../../../../../base/test/common/mock.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
@@ -15,8 +16,8 @@ import { InMemoryStorageService, IStorageService, StorageScope, StorageTarget } 
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { NullTelemetryService } from '../../../../../platform/telemetry/common/telemetryUtils.js';
 import { ISessionsProvidersChangeEvent, ISessionsProvidersService } from '../../../../services/sessions/browser/sessionsProvidersService.js';
-import { IAutomation, IAutomationSnapshotImportResult, ISessionsProvider } from '../../../../services/sessions/common/sessionsProvider.js';
-import { AutomationActiveRunError } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
+import { IAutomation, IAutomationSnapshotImportResult, ISessionsProvider, ISessionsProviderAutomations } from '../../../../services/sessions/common/sessionsProvider.js';
+import { AutomationActiveRunError, AutomationInitialDiscoveryState } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { AutomationStore } from '../../browser/automationService.js';
 import { ProviderAutomationService } from '../../browser/providerAutomationService.js';
 import { AUTOMATION_STORAGE_KEY, IAutomationStorageService, providerAutomationStorageKey } from '../../common/automationStorageService.js';
@@ -222,6 +223,44 @@ suite('ProviderAutomationService', () => {
 			},
 		};
 	}
+
+	test('aggregates discovery precedence and reacts to provider registration and state changes', async () => {
+		const { service, addProvider } = createService();
+		const states: AutomationInitialDiscoveryState[] = [];
+		teardown.add(autorun(reader => states.push(service.initialDiscoveryState.read(reader))));
+
+		const firstDiscovery = observableValue<AutomationInitialDiscoveryState>(teardown, 'pending');
+		addProvider(upcastPartial<ISessionsProvider>({
+			id: 'first-discovery-provider',
+			order: 1,
+			automations: upcastPartial<ISessionsProviderAutomations>({ initialDiscoveryState: firstDiscovery }),
+		}));
+		const secondDiscovery = observableValue<AutomationInitialDiscoveryState>(teardown, 'unavailable');
+		addProvider(upcastPartial<ISessionsProvider>({
+			id: 'second-discovery-provider',
+			order: 2,
+			automations: upcastPartial<ISessionsProviderAutomations>({ initialDiscoveryState: secondDiscovery }),
+		}));
+
+		secondDiscovery.set('ready', undefined);
+		firstDiscovery.set('ready', undefined);
+		firstDiscovery.set('unavailable', undefined);
+		secondDiscovery.set('pending', undefined);
+		firstDiscovery.set('ready', undefined);
+		secondDiscovery.set('ready', undefined);
+		await service.waitForMigrationForTesting();
+
+		assert.deepStrictEqual(states, [
+			'ready',
+			'pending',
+			'unavailable',
+			'pending',
+			'ready',
+			'unavailable',
+			'pending',
+			'ready',
+		]);
+	});
 
 	test('routes new Automations to their provider store', async () => {
 		const { service, providerStore, storage } = createService();

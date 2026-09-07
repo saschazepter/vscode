@@ -216,7 +216,7 @@ Provider Automation stores may expose an initial-discovery state through `ISessi
 - `ready` means its initial authoritative catalogue is definitive;
 - `unavailable` means it cannot currently establish a definitive catalogue.
 
-Stores without this state are synchronously initialized. Agent Host stores become ready only after their initial catalogue and migration state are authoritative. A host without Automation capability is ready because its synchronous legacy store remains authoritative; a disconnected host is unavailable because host-owned definitions cannot be projected.
+Stores without this state are synchronously initialized. Agent Host stores become ready only after their initial catalogue and migration state are authoritative. A host without Automation capability forwards its provider-scoped legacy store's discovery state, so it is ready only when that legacy storage is readable; a disconnected host is unavailable because host-owned definitions cannot be projected.
 
 `ProviderAutomationService` exposes the aggregate state through `IAutomationService`. It combines every provider state with the global legacy ledger's readability, so consumers never infer successful discovery from empty projected arrays alone.
 
