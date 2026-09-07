@@ -11,7 +11,7 @@ import { localize } from '../../../../nls.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IAutomationDescriptor, IAutomationRun, AutomationRunTrigger } from '../../../../workbench/contrib/chat/common/automations/automation.js';
-import { AutomationMutationGuard, IAutomationRunClaim, IAutomationService, ICreateAutomationOptions, IGuardedAutomationUpdateResult, isAutomationActiveRunError, serializeAutomationEditableState, IUpdateAutomationOptions, IUpdateAutomationRunOptions } from '../../../../workbench/contrib/chat/common/automations/automationService.js';
+import { AutomationInitialDiscoveryState, AutomationMutationGuard, IAutomationRunClaim, IAutomationService, ICreateAutomationOptions, IGuardedAutomationUpdateResult, isAutomationActiveRunError, serializeAutomationEditableState, IUpdateAutomationOptions, IUpdateAutomationRunOptions } from '../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { IAutomation, ISessionsProviderAutomations } from '../../../services/sessions/common/sessionsProvider.js';
 import { AutomationService } from './automationService.js';
@@ -40,6 +40,7 @@ export class ProviderAutomationService extends Disposable implements IAutomation
 
 	readonly automations: IObservable<readonly IAutomationDescriptor[]>;
 	readonly runs: IObservable<readonly IAutomationRun[]>;
+	readonly initialDiscoveryState: IObservable<AutomationInitialDiscoveryState>;
 
 	constructor(
 		@ISessionsProvidersService private readonly sessionsProvidersService: ISessionsProvidersService,
@@ -49,6 +50,14 @@ export class ProviderAutomationService extends Disposable implements IAutomation
 		super();
 		this.legacyStore = this._register(instantiationService.createInstance(AutomationService));
 		this.providersChanged = observableSignalFromEvent(this, sessionsProvidersService.onDidChangeProviders);
+		this.initialDiscoveryState = derived(this, reader => {
+			this.providersChanged.read(reader);
+			const states = this.getStores().map(entry => entry.store.initialDiscoveryState?.read(reader) ?? 'ready');
+			if (states.includes('unavailable')) {
+				return 'unavailable';
+			}
+			return states.includes('pending') ? 'pending' : 'ready';
+		});
 		this.automations = derived(this, reader => {
 			this.providersChanged.read(reader);
 			return distinctById(

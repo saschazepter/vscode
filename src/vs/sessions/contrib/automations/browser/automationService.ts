@@ -22,6 +22,7 @@ import {
 	isAutomationModelConfiguration,
 } from '../../../../workbench/contrib/chat/common/automations/automation.js';
 import {
+	AutomationInitialDiscoveryState,
 	type AutomationMutationGuard,
 	assertAutomationSessionTemplateAuthority,
 	IAutomationRunClaim,
@@ -126,8 +127,9 @@ export class AutomationStore extends Disposable implements IAutomationStore {
 	private readonly _runsForCache = new Map<string, IObservable<readonly IAutomationRun[]>>();
 
 	private _lastSeenRevision = 0;
-	private _canCompleteMigration = true;
+	private readonly _canCompleteMigration: ISettableObservable<boolean>;
 
+	readonly initialDiscoveryState: IObservable<AutomationInitialDiscoveryState>;
 	readonly automations: IObservable<readonly IAutomationDescriptor[]>;
 	readonly runs: IObservable<readonly IAutomationRun[]>;
 
@@ -144,12 +146,13 @@ export class AutomationStore extends Disposable implements IAutomationStore {
 
 		const result = this.readLedger(this.storageService.get(this.storageKey, StorageScope.APPLICATION));
 		const initial = result.kind === 'unsupportedSchema' ? EMPTY_LEDGER : result.ledger;
-		this._canCompleteMigration = result.kind === 'ledger';
+		this._canCompleteMigration = observableValue(this, result.kind === 'ledger');
 		if (result.kind !== 'unsupportedSchema') {
 			this._lastSeenRevision = result.revision;
 		}
 		this._automations = observableValue<readonly IAutomationDescriptor[]>(this, initial.automations);
 		this._runs = observableValue<readonly IAutomationRun[]>(this, initial.runs);
+		this.initialDiscoveryState = derived(this, reader => this._canCompleteMigration.read(reader) ? 'ready' : 'unavailable');
 		this.automations = this._automations;
 		this.runs = this._runs;
 
@@ -168,7 +171,7 @@ export class AutomationStore extends Disposable implements IAutomationStore {
 	}
 
 	canCompleteMigration(): boolean {
-		return this._canCompleteMigration;
+		return this._canCompleteMigration.get();
 	}
 
 	runsFor(automationId: string): IObservable<readonly IAutomationRun[]> {
@@ -530,11 +533,11 @@ export class AutomationStore extends Disposable implements IAutomationStore {
 	private refreshFromStorage(): void {
 		const result = this.readLedger(this.storageService.get(this.storageKey, StorageScope.APPLICATION));
 		if (result.kind === 'unsupportedSchema') {
-			this._canCompleteMigration = false;
+			this._canCompleteMigration.set(false, undefined);
 			return;
 		}
 
-		this._canCompleteMigration = result.kind === 'ledger';
+		this._canCompleteMigration.set(result.kind === 'ledger', undefined);
 		this.acceptLedger(result.ledger, result.revision);
 	}
 

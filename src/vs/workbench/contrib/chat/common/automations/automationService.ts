@@ -13,6 +13,8 @@ import { IAutomationDescriptor, IAutomationRun, AutomationRunTrigger, IAutomatio
 export const IAutomationService = createDecorator<IAutomationService>('automationService');
 export const ConfigureAutomationToolReferenceName = 'configureAutomation';
 
+export type AutomationInitialDiscoveryState = 'pending' | 'ready' | 'unavailable';
+
 /** Invoked immediately before each storage CAS attempt; throwing aborts before that attempt. */
 export type AutomationMutationGuard = () => void;
 
@@ -207,6 +209,8 @@ export interface IAutomationStore {
 
 export interface IAutomationService extends IAutomationStore {
 	readonly _serviceBrand: undefined;
+	/** Whether every Automation storage authority has produced a definitive initial catalogue. */
+	readonly initialDiscoveryState: IObservable<AutomationInitialDiscoveryState>;
 	canRunAutomation?(automationId: string): boolean;
 	canUpdateAutomation?(automationId: string): boolean;
 	canDeleteAutomation?(automationId: string): boolean;

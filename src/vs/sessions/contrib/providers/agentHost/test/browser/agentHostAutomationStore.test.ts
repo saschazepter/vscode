@@ -23,7 +23,7 @@ import { AUTOMATION_CATALOG_URI, ROOT_STATE_URI, StateComponents } from '../../.
 import type { InitializeResult } from '../../../../../../platform/agentHost/common/state/protocol/common/commands.js';
 import { TestInstantiationService } from '../../../../../../platform/instantiation/test/common/instantiationServiceMock.js';
 import { ILogService, NullLogService } from '../../../../../../platform/log/common/log.js';
-import { InMemoryStorageService, IStorageService } from '../../../../../../platform/storage/common/storage.js';
+import { InMemoryStorageService, IStorageService, StorageScope, StorageTarget } from '../../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../../platform/telemetry/common/telemetry.js';
 import { NullTelemetryService, NullTelemetryServiceShape } from '../../../../../../platform/telemetry/common/telemetryUtils.js';
 import { AgentHostAutomationStore } from '../../browser/agentHostAutomationStore.js';
@@ -39,8 +39,10 @@ class TestAutomationConnection {
 	private readonly _onDidAction = new Emitter<ActionEnvelope>();
 	readonly onDidAction = this._onDidAction.event;
 	private readonly _onDidCatalogChange = new Emitter<AutomationState>();
+	private readonly _onDidCatalogError = new Emitter<Error>();
 	private readonly _onDidRootChange = new Emitter<RootState>();
 	private _catalog: AutomationState = { entries: [] };
+	private _catalogError: Error | undefined;
 	private _root: RootState;
 	private _serverSeq = 0;
 	private _migrationComplete: boolean;
@@ -110,14 +112,25 @@ class TestAutomationConnection {
 		const connection = this;
 		return {
 			object: {
-				get value() { return connection._catalog; },
-				get verifiedValue() { return connection._catalog; },
+				get value() { return connection._catalogError ?? connection._catalog; },
+				get verifiedValue() { return connection._catalogError ? undefined : connection._catalog; },
 				onDidChange: this._onDidCatalogChange.event,
+				onDidError: this._onDidCatalogError.event,
 				onWillApplyAction: Event.None,
 				onDidApplyAction: Event.None,
 			},
 			dispose: () => { },
 		};
+	}
+
+	setCatalogError(error: Error): void {
+		this._catalogError = error;
+		this._onDidCatalogError.fire(error);
+	}
+
+	restoreCatalog(): void {
+		this._catalogError = undefined;
+		this._onDidCatalogChange.fire(this._catalog);
 	}
 
 	dispatch(channel: string, action: Parameters<IAgentConnection['dispatch']>[1]): void {
@@ -287,6 +300,7 @@ class TestAutomationConnection {
 	dispose(): void {
 		this._onDidAction.dispose();
 		this._onDidCatalogChange.dispose();
+		this._onDidCatalogError.dispose();
 		this._onDidRootChange.dispose();
 	}
 }
@@ -384,6 +398,38 @@ suite('AgentHostAutomationStore', () => {
 
 	teardown(() => disposables.clear());
 	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('initial discovery follows current catalogue health after migration', async () => {
+		const connection = disposables.add(new TestAutomationConnection(true));
+		const storage = disposables.add(new InMemoryStorageService());
+		const automationStorage = new TestAutomationStorageService(storage);
+		const store = disposables.add(new AgentHostAutomationStore(
+			'local-agent-host',
+			connection,
+			undefined,
+			undefined,
+			new NullLogService(),
+			storage,
+			NullTelemetryService,
+			automationStorage,
+		));
+		await store.completeMigration();
+		const ready = store.initialDiscoveryState.get();
+
+		connection.setCatalogError(new Error('Catalogue unavailable.'));
+		const unavailable = store.initialDiscoveryState.get();
+		connection.restoreCatalog();
+
+		assert.deepStrictEqual({
+			ready,
+			unavailable,
+			recovered: store.initialDiscoveryState.get(),
+		}, {
+			ready: 'ready',
+			unavailable: 'unavailable',
+			recovered: 'ready',
+		});
+	});
 
 	function archivedSnapshot(id: string, runId: string): IAutomation {
 		return {
@@ -2190,6 +2236,43 @@ suite('AgentHostAutomationStore', () => {
 			subscribedChannel: undefined,
 			completionRequests: 0,
 		});
+	});
+
+	test('unsupported hosts expose unreadable provider legacy discovery', () => {
+		const connection = disposables.add(new TestAutomationConnection(false));
+		connection.initializeResult.set({
+			protocolVersion: '1',
+			serverSeq: 0,
+			snapshots: [],
+		}, undefined);
+		const configurationService = new TestConfigurationService({ [CHAT_AUTOMATIONS_ENABLED_SETTING]: true });
+		const instantiationService = disposables.add(new TestInstantiationService());
+		const storage = disposables.add(new InMemoryStorageService());
+		storage.store(providerAutomationStorageKey('local-agent-host'), JSON.stringify({
+			schemaVersion: 999,
+			revision: 1,
+			automations: [],
+			runs: [],
+		}), StorageScope.APPLICATION, StorageTarget.MACHINE);
+		const automationStorage = new TestAutomationStorageService(storage);
+		const legacy = disposables.add(new AutomationStore(providerAutomationStorageKey('local-agent-host'), storage, new NullLogService(), NullTelemetryService, automationStorage));
+		instantiationService.stub(IConfigurationService, configurationService);
+		instantiationService.stub(ILogService, new NullLogService());
+		instantiationService.stub(IStorageService, storage);
+		instantiationService.stub(ITelemetryService, NullTelemetryService);
+		instantiationService.stub(IAutomationStorageService, automationStorage);
+		const store = disposables.add(new ReconnectableAgentHostAutomationStore(
+			'local-agent-host',
+			legacy,
+			undefined,
+			instantiationService,
+			new NullLogService(),
+			configurationService,
+		));
+
+		store.setConnection(connection);
+
+		assert.strictEqual(store.initialDiscoveryState.get(), 'unavailable');
 	});
 
 	test('stalled capability initialization cannot block migration indefinitely', () => runWithFakedTimers({ useFakeTimers: true }, async () => {

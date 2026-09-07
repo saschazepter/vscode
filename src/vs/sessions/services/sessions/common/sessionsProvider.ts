@@ -13,7 +13,7 @@ import { IChatRequestVariableEntry } from '../../../../workbench/contrib/chat/co
 import { ILanguageModelChatMetadataAndIdentifier, type IModelConfigurationAccess } from '../../../../workbench/contrib/chat/common/languageModels.js';
 import { ModelIdentifierResolution } from '../../../../workbench/contrib/chat/common/modelSelection.js';
 import { IAutomationDescriptor, IAutomationRun, IAutomationSessionTemplate } from '../../../../workbench/contrib/chat/common/automations/automation.js';
-import { IAutomationStore } from '../../../../workbench/contrib/chat/common/automations/automationService.js';
+import { AutomationInitialDiscoveryState, IAutomationStore } from '../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { ChatModelSource, IChat, ISession, ISessionType, ISessionWorkspace, ISessionWorkspaceBrowseAction, ISideChatSelection } from './session.js';
 
 /**
@@ -119,8 +119,6 @@ export type IGuardedAutomationSnapshotRemovalResult =
 	| { readonly kind: 'removed' }
 	| { readonly kind: 'conflict'; readonly current: IAutomation }
 	| { readonly kind: 'missing' };
-
-export type AutomationInitialDiscoveryState = 'pending' | 'ready' | 'unavailable';
 
 export interface ISessionsProviderAutomations extends IAutomationStore {
 	/** Initial provider catalogue state. Absent for synchronously initialized stores. */

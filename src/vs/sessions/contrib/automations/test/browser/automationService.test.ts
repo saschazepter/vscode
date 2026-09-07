@@ -78,8 +78,15 @@ suite('AutomationService', () => {
 
 	test('starts with an empty ledger when nothing is persisted', () => {
 		const { service } = createService();
-		assert.deepStrictEqual(service.automations.get(), []);
-		assert.deepStrictEqual(service.runs.get(), []);
+		assert.deepStrictEqual({
+			automations: service.automations.get(),
+			runs: service.runs.get(),
+			initialDiscoveryState: service.initialDiscoveryState.get(),
+		}, {
+			automations: [],
+			runs: [],
+			initialDiscoveryState: 'ready',
+		});
 	});
 
 	test('provider stores isolate ledgers by storage key', async () => {
@@ -809,8 +816,15 @@ suite('AutomationService', () => {
 
 		// Observables remain empty (no prior in-memory state to preserve)
 		// but the service is now in read-only mode.
-		assert.deepStrictEqual(service.automations.get(), []);
-		assert.deepStrictEqual(service.runs.get(), []);
+		assert.deepStrictEqual({
+			automations: service.automations.get(),
+			runs: service.runs.get(),
+			initialDiscoveryState: service.initialDiscoveryState.get(),
+		}, {
+			automations: [],
+			runs: [],
+			initialDiscoveryState: 'unavailable',
+		});
 
 		// A subsequent mutation must be rejected (read-only mode) and must not
 		// destroy the on-disk newer ledger.
@@ -836,7 +850,13 @@ suite('AutomationService', () => {
 
 		// The onDidChangeValue refresh must NOT clear our observables to
 		// empty. We keep displaying what we last knew about.
-		assert.strictEqual(service.automations.get().length, 1);
+		assert.deepStrictEqual({
+			automationCount: service.automations.get().length,
+			initialDiscoveryState: service.initialDiscoveryState.get(),
+		}, {
+			automationCount: 1,
+			initialDiscoveryState: 'unavailable',
+		});
 	});
 
 	test('persist bumps the revision counter on every write', async () => {

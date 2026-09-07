@@ -5,6 +5,7 @@
 
 import { disposableTimeout, timeout } from '../../../../../base/common/async.js';
 import { CancellationError, isCancellationError } from '../../../../../base/common/errors.js';
+import { Event } from '../../../../../base/common/event.js';
 import { Disposable, DisposableMap, DisposableStore, toDisposable, type IReference } from '../../../../../base/common/lifecycle.js';
 import { autorun, derived, type IObservable, observableSignalFromEvent, observableValue } from '../../../../../base/common/observable.js';
 import { hasKey } from '../../../../../base/common/types.js';
@@ -23,9 +24,9 @@ import { ILogService } from '../../../../../platform/log/common/log.js';
 import { IStorageService, StorageScope } from '../../../../../platform/storage/common/storage.js';
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 import { assertAutomationSessionTemplate, type AutomationRunTrigger, type AutomationTarget, type IAutomationDescriptor, type IAutomationRun, type IAutomationSchedule, type IAutomationSessionTemplate } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
-import { AutomationActiveRunError, assertAutomationSessionTemplateAuthority, type AutomationMutationGuard, type IAutomationRunClaim, type ICreateAutomationOptions, type IGuardedAutomationUpdateResult, isAutomationActiveRunError, serializeAutomationEditableState, type IUpdateAutomationOptions, type IUpdateAutomationRunOptions } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
+import { AutomationActiveRunError, AutomationInitialDiscoveryState, assertAutomationSessionTemplateAuthority, type AutomationMutationGuard, type IAutomationRunClaim, type ICreateAutomationOptions, type IGuardedAutomationUpdateResult, isAutomationActiveRunError, serializeAutomationEditableState, type IUpdateAutomationOptions, type IUpdateAutomationRunOptions } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { publishAutomationMigration } from '../../../../../workbench/contrib/chat/common/automations/automationTelemetry.js';
-import type { AutomationInitialDiscoveryState, IAutomation, IAutomationSnapshotImportResult, IGuardedAutomationSnapshotRemovalResult, ISessionsProviderAutomations } from '../../../../services/sessions/common/sessionsProvider.js';
+import type { IAutomation, IAutomationSnapshotImportResult, IGuardedAutomationSnapshotRemovalResult, ISessionsProviderAutomations } from '../../../../services/sessions/common/sessionsProvider.js';
 import { IAutomationStorageService } from '../../../automations/common/automationStorageService.js';
 
 const MUTATION_TIMEOUT_MS = 30_000;
@@ -85,7 +86,7 @@ export class AgentHostAutomationStore extends Disposable implements ISessionsPro
 	private _migrationPromise: Promise<void> | undefined;
 	private _lastPreflightDeferralKey: string | undefined;
 
-	readonly initialDiscoveryState = derived<AutomationInitialDiscoveryState>(this, reader => this._ready.read(reader) ? 'ready' : 'pending');
+	readonly initialDiscoveryState: IObservable<AutomationInitialDiscoveryState>;
 	readonly automations: IObservable<readonly IAutomationDescriptor[]>;
 	readonly runs: IObservable<readonly IAutomationRun[]>;
 
@@ -115,7 +116,14 @@ export class AgentHostAutomationStore extends Disposable implements ISessionsPro
 			'AgentHostAutomationStore',
 		));
 		this._catalog = this._catalogReference.object;
-		this._catalogChanged = observableSignalFromEvent(this, this._catalog.onDidChange);
+		this._catalogChanged = observableSignalFromEvent(this, Event.any(this._catalog.onDidChange, this._catalog.onDidError ?? Event.None));
+		this.initialDiscoveryState = derived<AutomationInitialDiscoveryState>(this, reader => {
+			this._catalogChanged.read(reader);
+			if (this._catalog.value instanceof Error) {
+				return 'unavailable';
+			}
+			return this._ready.read(reader) ? 'ready' : 'pending';
+		});
 		if (this._catalog.onDidError) {
 			this._register(this._catalog.onDidError(error => this._logService.error(`[AgentHostAutomationStore] Catalogue subscription failed: ${error.message}`)));
 		}
