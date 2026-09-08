@@ -77,6 +77,7 @@ const STORAGE_KEY_ISOLATION_MODE = 'sessions.isolationPicker.selectedMode';
 
 /** Remembers the cloud sandbox choice across new sessions, like the isolation picker above. */
 const STORAGE_KEY_USE_SANDBOX = 'sessions.cloudSandboxPicker.useSandbox';
+const CLOUD_SANDBOX_CONFIG_KEY = 'useSandbox';
 
 export type IsolationMode = 'worktree' | 'workspace';
 
@@ -672,8 +673,8 @@ export class RemoteNewSession extends Disposable implements ICopilotChatSession 
 	readonly gitHubInfo: IObservable<IGitHubInfo | undefined> = constObservable(undefined);
 	readonly branch: IObservable<string | undefined> = constObservable(undefined);
 	readonly isolationMode: IObservable<IsolationMode | undefined> = constObservable(undefined);
-	private readonly _useSandbox = observableValue<boolean | undefined>(this, false);
-	readonly useSandbox: IObservable<boolean | undefined> = this._useSandbox;
+	private readonly _useSandbox = observableValue(this, false);
+	readonly useSandbox: IObservable<boolean> = this._useSandbox;
 	readonly branches: IObservable<readonly string[]> = constObservable([]);
 	readonly gitRepository?: IGitRepository | undefined;
 
@@ -735,7 +736,8 @@ export class RemoteNewSession extends Disposable implements ICopilotChatSession 
 		this.sessionType = target;
 		this.icon = CopilotCloudSessionType.icon;
 		this.createdAt = new Date();
-		this._useSandbox.set(storageService.getBoolean(STORAGE_KEY_USE_SANDBOX, StorageScope.PROFILE, false), undefined);
+		const useSandbox = initialAutomationSessionConfiguration?.sessionTemplate?.config?.[CLOUD_SANDBOX_CONFIG_KEY];
+		this._useSandbox.set(typeof useSandbox === 'boolean' ? useSandbox : storageService.getBoolean(STORAGE_KEY_USE_SANDBOX, StorageScope.PROFILE, false), undefined);
 
 		this._updateWhenClauseKeys();
 		this._register(this.chatSessionsService.onDidChangeOptionGroups(() => {
@@ -1789,6 +1791,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 			if (config[SessionConfigKey.AutoApprove] === undefined) {
 				config[SessionConfigKey.AutoApprove] = initialConfiguration?.permissionLevel ?? session.permissionLevel.get();
 			}
+			config[CLOUD_SANDBOX_CONFIG_KEY] = session.useSandbox.get();
 		}
 		const configuredMode = config[SessionConfigKey.Mode];
 		const mode = typeof configuredMode === 'string' ? configuredMode : undefined;
