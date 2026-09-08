@@ -1347,6 +1347,7 @@ class MobileAgentHostSessionConfigPicker extends AgentHostSessionConfigPicker {
 
 interface IConfigPickerWidget extends IDisposable {
 	render(container: HTMLElement): HTMLElement | void;
+	focus?(): void;
 	showPicker?(anchor: HTMLElement, onHide?: () => void): boolean | void;
 }
 
@@ -1368,7 +1369,9 @@ export class PickerActionViewItem extends BaseActionViewItem implements IChatInp
 	}
 
 	override focus(): void {
-		if (this._focusableElement) {
+		if (this._picker.focus) {
+			this._picker.focus();
+		} else if (this._focusableElement) {
 			this._focusableElement.focus();
 		} else if (this.element) {
 			this._focusFirstTabStop(this.element);
