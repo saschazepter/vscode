@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { disposableTimeout, raceTimeout } from '../../../../base/common/async.js';
+import { disposableTimeout, Limiter, raceTimeout } from '../../../../base/common/async.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { isCancellationError, onUnexpectedError } from '../../../../base/common/errors.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
@@ -47,6 +47,8 @@ const RESTORE_RESOLVE_BUDGET_MS = 10_000;
  * listeners — alive indefinitely.
  */
 const RESTORE_SESSION_WAIT_TIMEOUT = 30_000;
+
+const CUSTOMIZATION_MIGRATION_TELEMETRY_CONCURRENCY = 2;
 
 /** Maximum number of recently opened sessions reported by {@link SessionsService.getRecentlyOpenedSessions}. */
 const MAX_RECENTLY_OPENED_SESSIONS = 10;
@@ -371,6 +373,9 @@ export class SessionsService extends Disposable implements ISessionsService {
 
 	/** The in-flight foreground send's "keep newest chat active" follow. */
 	private readonly _sendFollow = this._register(new MutableDisposable<DisposableStore>());
+	private readonly _customizationMigrationTelemetryLimiter = this._register(new Limiter<void>(CUSTOMIZATION_MIGRATION_TELEMETRY_CONCURRENCY));
+	private _customizationMigrationTelemetryActiveSessionId: string | undefined;
+	private _customizationMigrationTelemetryActiveSessionReported = false;
 
 	constructor(
 		@IStorageService private readonly storageService: IStorageService,
@@ -403,6 +408,13 @@ export class SessionsService extends Disposable implements ISessionsService {
 		));
 		this.visibleSessions = this._visibility.visibleSessions;
 		this.activeSession = this._visibility.activeSession;
+		this._register(autorun(reader => {
+			const activeSessionId = this.activeSession.read(reader)?.sessionId;
+			if (activeSessionId !== this._customizationMigrationTelemetryActiveSessionId) {
+				this._customizationMigrationTelemetryActiveSessionId = activeSessionId;
+				this._customizationMigrationTelemetryActiveSessionReported = false;
+			}
+		}));
 
 		this._closedItems = this._register(this.instantiationService.createInstance(
 			ClosedItemHistory,
@@ -786,7 +798,7 @@ export class SessionsService extends Disposable implements ISessionsService {
 			this.logService.trace(`[SessionsView] openChat cancelled while waiting for session to load uri=${chatUri.toString()}`);
 			return;
 		}
-		void this._reportCustomizationMigrationTelemetry(session, CustomizationMigrationTrigger.AgentsSessionOpen, token);
+		this._reportCustomizationMigrationTelemetryForActiveSession(session, token);
 
 		// Find the chat and update active chat
 		let chat: IChat | undefined;
@@ -893,7 +905,7 @@ export class SessionsService extends Disposable implements ISessionsService {
 			this._showSession(sessionData, options);
 			await this._waitForOpenSessionToLoad(sessionData, token, telemetryAttempt);
 			if (!token.isCancellationRequested) {
-				void this._reportCustomizationMigrationTelemetry(sessionData, CustomizationMigrationTrigger.AgentsSessionOpen, token);
+				this._reportCustomizationMigrationTelemetryForActiveSession(sessionData, token);
 			}
 		});
 	}
@@ -904,21 +916,33 @@ export class SessionsService extends Disposable implements ISessionsService {
 		const token = this._startOpenSession();
 		const session = this._getSession(sessionResource);
 		this._showSession(session, options);
+		this._reportCustomizationMigrationTelemetryForActiveSession(session, token);
+	}
+
+	private _reportCustomizationMigrationTelemetryForActiveSession(session: ISession, token: CancellationToken): void {
+		if (this._customizationMigrationTelemetryActiveSessionId !== session.sessionId || this._customizationMigrationTelemetryActiveSessionReported) {
+			return;
+		}
 		void this._reportCustomizationMigrationTelemetry(session, CustomizationMigrationTrigger.AgentsSessionOpen, token);
 	}
 
 	private async _reportCustomizationMigrationTelemetry(session: ISession, trigger: CustomizationMigrationTrigger, token: CancellationToken): Promise<void> {
-		if (session.status.get() === SessionStatus.Untitled) {
+		if (session.status.get() === SessionStatus.Untitled || token.isCancellationRequested || this._store.isDisposed) {
 			return;
 		}
-
-		try {
-			await reportCustomizationMigrationTelemetry(this.customizationMigrationService, session.resource, trigger, token);
-		} catch (error) {
-			if (!isCancellationError(error)) {
-				this.logService.warn(`[SessionsView] Failed to report customization migration telemetry for ${session.resource.toString()}`, error);
-			}
+		if (this._customizationMigrationTelemetryActiveSessionId === session.sessionId) {
+			this._customizationMigrationTelemetryActiveSessionReported = true;
 		}
+
+		await this._customizationMigrationTelemetryLimiter.queue(async () => {
+			try {
+				await reportCustomizationMigrationTelemetry(this.customizationMigrationService, session.resource, trigger);
+			} catch (error) {
+				if (!isCancellationError(error)) {
+					this.logService.warn(`[SessionsView] Failed to report customization migration telemetry for ${session.resource.toString()}`, error);
+				}
+			}
+		});
 	}
 
 	async canOpenSession(session: ISession): Promise<boolean> {

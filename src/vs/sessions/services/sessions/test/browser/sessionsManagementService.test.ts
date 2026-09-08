@@ -226,14 +226,42 @@ class TestSessionsProvider extends mock<ISessionsProvider>() {
 }
 
 class TestCustomizationMigrationService extends mock<ICustomizationMigrationService>() {
+	readonly computedResources: URI[] = [];
 	readonly reports: { readonly trigger: CustomizationMigrationTrigger; readonly migrations: readonly CustomizationMigration[] }[] = [];
 
-	override computeMigrations(): Promise<CustomizationMigration[]> {
+	override computeMigrations(sessionResource: URI): Promise<CustomizationMigration[]> {
+		this.computedResources.push(sessionResource);
 		return Promise.resolve([]);
 	}
 
 	override reportMigrationTelemetry(trigger: CustomizationMigrationTrigger, migrations: readonly CustomizationMigration[]): void {
 		this.reports.push({ trigger, migrations });
+	}
+}
+
+class BlockingCustomizationMigrationService extends TestCustomizationMigrationService {
+	private blockers: DeferredPromise<void>[] = [];
+	started = 0;
+	active = 0;
+	maxActive = 0;
+
+	override async computeMigrations(): Promise<CustomizationMigration[]> {
+		this.started++;
+		this.active++;
+		this.maxActive = Math.max(this.maxActive, this.active);
+		const blocker = new DeferredPromise<void>();
+		this.blockers.push(blocker);
+		await blocker.p;
+		this.active--;
+		return [];
+	}
+
+	releaseActive(): void {
+		const blockers = this.blockers;
+		this.blockers = [];
+		for (const blocker of blockers) {
+			blocker.complete();
+		}
 	}
 }
 
@@ -396,13 +424,19 @@ suite('SessionsManagementService', () => {
 		assert.deepStrictEqual({ resolved }, { resolved: true });
 	});
 
-	test('openSession reports customization migration telemetry from the session-open lifecycle', async () => {
+	test('session entry reports customization migration telemetry once across child chat navigation', async () => {
+		const childChat = {
+			...stubChat,
+			resource: URI.parse('test:///child-chat'),
+			title: constObservable('Child chat'),
+		};
 		const session = stubSession({
 			sessionId: 'opened',
 			providerId: 'test',
 			status: constObservable(SessionStatus.Completed),
+			chats: constObservable([stubChat, childChat]),
 		});
-		const migrationService = new TestCustomizationMigrationService();
+		const migrationService = new BlockingCustomizationMigrationService();
 		const { view } = createSessionsManagementService(
 			session,
 			disposables,
@@ -414,6 +448,9 @@ suite('SessionsManagementService', () => {
 		);
 
 		await view.openSession(session.resource);
+		await timeout(0);
+		await view.openChat(session, childChat.resource);
+		migrationService.releaseActive();
 		await timeout(0);
 
 		assert.deepStrictEqual(migrationService.reports, [{
@@ -1243,7 +1280,7 @@ suite('SessionsManagementService', () => {
 		const sessionB = stubSession({ sessionId: 'b', providerId: 'test', status: constObservable(SessionStatus.Completed) });
 		const sessionC = stubSession({ sessionId: 'c', providerId: 'test', status: constObservable(SessionStatus.Completed) });
 		const sessions = [sessionA, sessionB, sessionC];
-		const migrationService = new TestCustomizationMigrationService();
+		const migrationService = new BlockingCustomizationMigrationService();
 
 		const provider = new class extends TestSessionsProvider {
 			constructor() { super(sessionA); }
@@ -1279,17 +1316,42 @@ suite('SessionsManagementService', () => {
 		const view = createView(instantiationService, service, disposables, undefined, migrationService);
 
 		await view.restoreVisibleSessions();
+		const initialMigrationTelemetry = {
+			started: migrationService.started,
+			active: migrationService.active,
+			maxActive: migrationService.maxActive,
+		};
+		migrationService.releaseActive();
+		await timeout(0);
+		const afterFirstBatch = {
+			started: migrationService.started,
+			active: migrationService.active,
+			maxActive: migrationService.maxActive,
+		};
+		migrationService.releaseActive();
 		await timeout(0);
 
 		assert.deepStrictEqual({
 			visible: view.visibleSessions.get().map(s => s?.sessionId ?? null),
 			sticky: view.visibleSessions.get().map(s => s?.sticky.get() ?? false),
 			active: view.activeSession.get()?.sessionId,
+			initialMigrationTelemetry,
+			afterFirstBatch,
 			migrationTriggers: migrationService.reports.map(report => report.trigger),
 		}, {
 			visible: ['a', 'b', 'c'],
 			sticky: [true, false, false],
 			active: 'b',
+			initialMigrationTelemetry: {
+				started: 2,
+				active: 2,
+				maxActive: 2,
+			},
+			afterFirstBatch: {
+				started: 3,
+				active: 1,
+				maxActive: 2,
+			},
 			migrationTriggers: [
 				CustomizationMigrationTrigger.AgentsSessionRestore,
 				CustomizationMigrationTrigger.AgentsSessionRestore,
@@ -3233,25 +3295,31 @@ suite('SessionsManagementService', () => {
 		const firstChat = { ...stubChat, resource: URI.parse('test:///first/main') };
 		const targetMain = { ...stubChat, resource: URI.parse('test:///target/main') };
 		const targetPeer = { ...stubChat, resource: URI.parse('test:///target/peer') };
-		const first = stubSession({ sessionId: 'first', providerId: 'test', chats: constObservable([firstChat]), mainChat: constObservable(firstChat) });
-		const target = stubSession({ sessionId: 'target', providerId: 'test', chats: constObservable([targetMain, targetPeer]), mainChat: constObservable(targetMain) });
+		const first = stubSession({ sessionId: 'first', providerId: 'test', status: constObservable(SessionStatus.Completed), chats: constObservable([firstChat]), mainChat: constObservable(firstChat) });
+		const target = stubSession({ sessionId: 'target', providerId: 'test', status: constObservable(SessionStatus.Completed), chats: constObservable([targetMain, targetPeer]), mainChat: constObservable(targetMain) });
 		const provider = new class extends TestSessionsProvider {
 			constructor() { super(first); }
 			override getSessions(): ISession[] { return [first, target]; }
 		};
-		const { view } = createSessionsManagementService(first, disposables, provider);
+		const migrationService = new TestCustomizationMigrationService();
+		const { view } = createSessionsManagementService(first, disposables, provider, undefined, undefined, undefined, migrationService);
 		await view.openSession(first.resource);
+		await timeout(0);
+		migrationService.computedResources.length = 0;
 
 		await view.openSessionToSide(target, { chatResource: targetPeer.resource });
+		await timeout(0);
 
 		assert.deepStrictEqual({
 			visible: view.visibleSessions.get().map(session => session?.sessionId),
 			activeSession: view.activeSession.get()?.sessionId,
 			activeChat: view.activeSession.get()?.activeChat.get().resource.toString(),
+			migrationAssessmentResources: migrationService.computedResources.map(resource => resource.toString()),
 		}, {
 			visible: ['first', 'target'],
 			activeSession: 'target',
 			activeChat: targetPeer.resource.toString(),
+			migrationAssessmentResources: [target.resource.toString()],
 		});
 	});
 
