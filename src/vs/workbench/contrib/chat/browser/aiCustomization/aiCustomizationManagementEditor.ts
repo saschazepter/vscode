@@ -1139,8 +1139,8 @@ export class AICustomizationManagementEditor extends EditorPane {
 		}));
 
 		// Handle manual create actions - open editor directly
-		this.editorDisposables.add(this.listWidget.onDidRequestCreateManual(({ type, target, rootFileName }) => {
-			this.createNewItemManual(type, target, rootFileName);
+		this.editorDisposables.add(this.listWidget.onDidRequestCreateManual(({ type, target, rootFileName, workspaceFolder }) => {
+			this.createNewItemManual(type, target, rootFileName, workspaceFolder);
 		}));
 		this.editorDisposables.add(this.listWidget.onDidRequestBrowse(() => {
 			this.selectSection(AICustomizationManagementSection.Skills, { showMarketplace: true });
@@ -3371,7 +3371,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 	/**
 	 * Creates a new prompt file and opens it in the embedded editor.
 	 */
-	private async createNewItemManual(type: PromptsType, target: 'local' | 'user' | 'workspace-root', rootFileName?: string): Promise<void> {
+	private async createNewItemManual(type: PromptsType, target: 'local' | 'user' | 'workspace-root', rootFileName?: string, workspaceFolder?: URI): Promise<void> {
 		this.telemetryService.publicLog2<CustomizationEditorCreateItemEvent, CustomizationEditorCreateItemClassification>('chatCustomizationEditor.createItem', {
 			section: this.selectedSection ?? 'welcome',
 			promptType: type,
@@ -3383,7 +3383,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 		// rootFileName is passed from rootFileShortcuts; falls back to
 		// the section override's rootFile, then AGENTS.md as the default.
 		if (target === 'workspace-root') {
-			const projectRoot = this.workspaceService.getActiveProjectRoot();
+			const projectRoot = workspaceFolder ?? this.workspaceService.getActiveProjectRoot();
 			if (!projectRoot) {
 				return;
 			}
@@ -3412,6 +3412,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 					},
 					target: Target.GitHubCopilot,
 					preferredStorage,
+					workspaceFolder,
 				});
 			} else {
 				// Core: use the default core behaviour
@@ -3421,6 +3422,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 						return;
 					},
 					preferredStorage,
+					workspaceFolder,
 				});
 			}
 			return;
@@ -3431,6 +3433,7 @@ export class AICustomizationManagementEditor extends EditorPane {
 			sessionResource,
 			type,
 			target,
+			workspaceFolder,
 		);
 		if (targetDir === null) {
 			return; // User cancelled the picker
