@@ -225,6 +225,8 @@ export interface IAutomationStore {
 
 export interface IAutomationService extends IAutomationStore {
 	readonly _serviceBrand: undefined;
+	/** Display labels of providers whose known Automation catalogues are currently unavailable. */
+	readonly unavailableProviderLabels: IObservable<readonly string[]>;
 	canRunAutomation?(automationId: string): boolean;
 	canUpdateAutomation?(automationId: string): boolean;
 	canDeleteAutomation?(automationId: string): boolean;

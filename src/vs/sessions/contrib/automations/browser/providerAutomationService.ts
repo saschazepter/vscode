@@ -18,6 +18,7 @@ import { AutomationService } from './automationService.js';
 
 interface IAutomationStoreEntry {
 	readonly providerId: string | undefined;
+	readonly providerLabel: string | undefined;
 	readonly store: ISessionsProviderAutomations;
 }
 
@@ -41,6 +42,7 @@ export class ProviderAutomationService extends Disposable implements IAutomation
 	readonly automations: IObservable<readonly IAutomationDescriptor[]>;
 	readonly runs: IObservable<readonly IAutomationRun[]>;
 	readonly catalogueState: IObservable<AutomationCatalogueState>;
+	readonly unavailableProviderLabels: IObservable<readonly string[]>;
 
 	constructor(
 		initialProvidersSettled: IObservable<boolean>,
@@ -53,11 +55,22 @@ export class ProviderAutomationService extends Disposable implements IAutomation
 		this.providersChanged = observableSignalFromEvent(this, sessionsProvidersService.onDidChangeProviders);
 		this.catalogueState = derived(this, reader => {
 			this.providersChanged.read(reader);
-			const states = this.getStores().map(entry => entry.store.catalogueState.read(reader));
+			const states = this.getStores().map(entry => {
+				const state = entry.store.catalogueState.read(reader);
+				return entry.providerId !== undefined && state === 'unavailable' && !entry.store.hasKnownAutomations.read(reader)
+					? 'ready'
+					: state;
+			});
 			if (!initialProvidersSettled.read(reader)) {
 				states.push('loading');
 			}
 			return combineAutomationCatalogueStates(states);
+		});
+		this.unavailableProviderLabels = derived(this, reader => {
+			this.providersChanged.read(reader);
+			return this.getProviderStores()
+				.filter(entry => entry.store.catalogueState.read(reader) === 'unavailable' && entry.store.hasKnownAutomations.read(reader))
+				.flatMap(entry => entry.providerLabel === undefined ? [] : [entry.providerLabel]);
 		});
 		this.automations = derived(this, reader => {
 			this.providersChanged.read(reader);
@@ -215,11 +228,11 @@ export class ProviderAutomationService extends Disposable implements IAutomation
 	private getProviderStores(): IAutomationStoreEntry[] {
 		return this.sessionsProvidersService.getProviders()
 			.filter(provider => provider.automations)
-			.map(provider => ({ providerId: provider.id, store: provider.automations! }));
+			.map(provider => ({ providerId: provider.id, providerLabel: provider.label, store: provider.automations! }));
 	}
 
 	private getStores(): IAutomationStoreEntry[] {
-		return [...this.getProviderStores(), { providerId: undefined, store: this.legacyStore }];
+		return [...this.getProviderStores(), { providerId: undefined, providerLabel: undefined, store: this.legacyStore }];
 	}
 
 	private getCreationStore(options: ICreateAutomationOptions): ISessionsProviderAutomations {

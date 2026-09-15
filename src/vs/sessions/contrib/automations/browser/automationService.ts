@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { derived, IObservable, ISettableObservable, observableValue, transaction } from '../../../../base/common/observable.js';
+import { constObservable, derived, IObservable, ISettableObservable, observableValue, transaction } from '../../../../base/common/observable.js';
 import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -130,6 +130,7 @@ export class AutomationStore extends Disposable implements IAutomationStore {
 	readonly automations: IObservable<readonly IAutomationDescriptor[]>;
 	readonly runs: IObservable<readonly IAutomationRun[]>;
 	readonly catalogueState: IObservable<AutomationCatalogueState>;
+	readonly hasKnownAutomations: IObservable<boolean>;
 
 	constructor(
 		private readonly storageKey: string,
@@ -152,6 +153,7 @@ export class AutomationStore extends Disposable implements IAutomationStore {
 		this.automations = this._automations;
 		this.runs = this._runs;
 		this.catalogueState = this._catalogueState;
+		this.hasKnownAutomations = derived(this, reader => this._automations.read(reader).length > 0);
 
 		this._register(this.storageService.onDidChangeValue(StorageScope.APPLICATION, this.storageKey, this._store)(() => {
 			this.refreshFromStorage();
@@ -598,6 +600,7 @@ export class AutomationStore extends Disposable implements IAutomationStore {
 export class AutomationService extends AutomationStore implements IAutomationService {
 
 	declare readonly _serviceBrand: undefined;
+	readonly unavailableProviderLabels = constObservable<readonly string[]>([]);
 
 	constructor(
 		@IStorageService storageService: IStorageService,

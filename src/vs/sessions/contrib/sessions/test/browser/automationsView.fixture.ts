@@ -84,12 +84,14 @@ class FixtureAutomationService extends mock<IAutomationService>() {
 	override readonly automations: IObservable<readonly IAutomationDescriptor[]>;
 	override readonly runs: IObservable<readonly IAutomationRun[]>;
 	override readonly catalogueState: IObservable<AutomationCatalogueState>;
+	override readonly unavailableProviderLabels: IObservable<readonly string[]>;
 
-	constructor(automations: readonly IAutomationDescriptor[], runs: readonly IAutomationRun[], catalogueState: AutomationCatalogueState) {
+	constructor(automations: readonly IAutomationDescriptor[], runs: readonly IAutomationRun[], catalogueState: AutomationCatalogueState, unavailableProviderLabels: readonly string[]) {
 		super();
 		this.automations = constObservable(automations);
 		this.runs = constObservable(runs);
 		this.catalogueState = constObservable(catalogueState);
+		this.unavailableProviderLabels = constObservable(unavailableProviderLabels);
 	}
 
 	override async deleteRun(): Promise<void> { }
@@ -168,6 +170,7 @@ interface IAutomationsFixtureOptions {
 	readonly height: number;
 	readonly populated: boolean;
 	readonly catalogueState?: AutomationCatalogueState;
+	readonly unavailableProviderLabels?: readonly string[];
 	readonly pluginTemplate?: boolean;
 	readonly showDropTarget?: boolean;
 }
@@ -208,7 +211,7 @@ export default defineThemedFixtureGroup({ path: 'sessions/automations/' }, {
 	Unavailable: defineComponentFixture({
 		labels: { kind: 'screenshot' },
 		additionalThemes: ['darkHighContrast'],
-		render: ctx => renderAutomations(ctx, { width: 1000, height: 620, populated: false, catalogueState: 'unavailable' }),
+		render: ctx => renderAutomations(ctx, { width: 1000, height: 620, populated: false, catalogueState: 'unavailable', unavailableProviderLabels: ['Remote build host'] }),
 	}),
 	NarrowUnavailable: defineComponentFixture({
 		labels: { kind: 'screenshot' },
@@ -219,7 +222,7 @@ export default defineThemedFixtureGroup({ path: 'sessions/automations/' }, {
 	}),
 	PartialUnavailable: defineComponentFixture({
 		labels: { kind: 'screenshot' },
-		render: ctx => renderAutomations(ctx, { width: 1000, height: 720, populated: true, catalogueState: 'unavailable' }),
+		render: ctx => renderAutomations(ctx, { width: 1000, height: 720, populated: true, catalogueState: 'unavailable', unavailableProviderLabels: ['Remote build host'] }),
 	}),
 	PartialError: defineComponentFixture({
 		labels: { kind: 'screenshot' },
@@ -243,7 +246,7 @@ function renderAutomations(ctx: ComponentFixtureContext, options: IAutomationsFi
 	const contextKeyService = new ContextKeyService(configurationService);
 	const actionViewItemService = new FixtureActionViewItemService();
 	const customViewService = ctx.disposableStore.add(new CustomViewService(new NullLogService(), ctx.disposableStore.add(new InMemoryStorageService())));
-	const automationService = new FixtureAutomationService(data.automations, data.runs, options.catalogueState ?? 'ready');
+	const automationService = new FixtureAutomationService(data.automations, data.runs, options.catalogueState ?? 'ready', options.unavailableProviderLabels ?? []);
 	const sessionsManagementService = new FixtureSessionsManagementService(data.runs);
 	const agentPluginService = new class extends mock<IAgentPluginService>() {
 		override readonly plugins = constObservable(options.pluginTemplate ? [
