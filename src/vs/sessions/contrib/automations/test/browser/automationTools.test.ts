@@ -816,7 +816,7 @@ suite('AutomationTools', () => {
 	test('configureAutomation rejects a current session without an available Automation authority', async () => {
 		const automationService = new FakeAutomationService();
 		automationService.available = false;
-		const tool = new ConfigureAutomationTool(automationService, new FakeSessionsManagementService(createSession({ quickChat: true })), createConfigurationService());
+		const tool = createConfigureAutomationTool(automationService, new FakeSessionsManagementService(createSession({ quickChat: true })), createConfigurationService());
 		const result = await invoke(tool, { name: 'Review', prompt: 'Review changes', schedule: { interval: 'manual' } });
 		assert.match(getText(result), /does not support automations/);
 		assert.deepStrictEqual(automationService.created, []);
@@ -829,7 +829,7 @@ suite('AutomationTools', () => {
 				throw new AutomationUnavailableError('Duplicate the automation on the new host. The original continues scheduling until you disable it.');
 			}
 		}([automation]);
-		const tool = new ConfigureAutomationTool(automationService, new FakeSessionsManagementService(undefined, false, [providerSessionType('another-host', 'copilot')]), createConfigurationService());
+		const tool = createConfigureAutomationTool(automationService, new FakeSessionsManagementService(undefined, false, [providerSessionType('another-host', 'copilot')]), createConfigurationService());
 		const result = await invoke(tool, { automationId: automation.id, target: { kind: 'workspace', folderUri: FOLDER.toString(), providerId: 'another-host', sessionTypeId: 'copilot' } });
 		assert.match(getText(result), /original continues scheduling/);
 		assert.deepStrictEqual({ created: automationService.created, updated: automationService.updated, original: automationService.getAutomation(automation.id) }, { created: [], updated: [], original: automation });
@@ -1158,7 +1158,7 @@ suite('AutomationTools', () => {
 			const automationService = new FakeAutomationService([existing]);
 			automationService.creationAllowed = false;
 			const candidates = [providerSessionType('local-agent-host', 'copilot', true), providerSessionType('local-agent-host', 'claude', true)];
-			const tool = new ConfigureAutomationTool(
+			const tool = createConfigureAutomationTool(
 				automationService, new FakeSessionsManagementService(undefined, false, candidates, candidates), createConfigurationService(),
 			);
 			const result = await invoke(tool, { automationId: existing.id, target });
@@ -1182,7 +1182,7 @@ suite('AutomationTools', () => {
 		const existing = createAutomation();
 		const automationService = new FakeAutomationService([existing]);
 		automationService.creationAllowed = false;
-		const tool = new ConfigureAutomationTool(
+		const tool = createConfigureAutomationTool(
 			automationService,
 			new FakeSessionsManagementService(createSession({ quickChat: true }), false, [], [providerSessionType('local-agent-host', 'copilot')]),
 			createConfigurationService(),
@@ -1201,7 +1201,7 @@ suite('AutomationTools', () => {
 		const existing = createAutomation();
 		const automationService = new FakeAutomationService([existing]);
 		automationService.creationAllowed = false;
-		const tool = new ConfigureAutomationTool(automationService, new FakeSessionsManagementService(undefined), createConfigurationService());
+		const tool = createConfigureAutomationTool(automationService, new FakeSessionsManagementService(undefined), createConfigurationService());
 		const parameters = {
 			automationId: existing.id,
 			target: { kind: 'quickChat', providerId: 'another-host', sessionTypeId: 'copilot' },
