@@ -708,6 +708,7 @@ per-word capitalization does not survive translation. */
 
 .ai-customization-list-item .item-name {
 	font-size: var(--vscode-fontSize-body1);
+	font-weight: var(--vscode-fontWeight-semiBold);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -1760,14 +1761,11 @@ per-word capitalization does not survive translation. */
 
 .ai-customization-management-editor .tools-list-row-label {
 	font-size: var(--vscode-fontSize-body1);
+	font-weight: var(--vscode-fontWeight-semiBold);
 	line-height: 18px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-}
-
-.ai-customization-management-editor .tools-list-setrow .tools-list-row-label {
-	font-weight: var(--vscode-fontWeight-semiBold);
 }
 
 /* Search match highlighting in tool set / tool names */
@@ -2732,6 +2730,7 @@ per-word capitalization does not survive translation. */
 
 .mcp-server-item .mcp-server-name {
 	font-size: var(--vscode-fontSize-body1);
+	font-weight: var(--vscode-fontWeight-semiBold);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
