@@ -109,6 +109,15 @@ interface ITestPeer {
 function createTestPeer(): ITestPeer {
 	const stdin = new PassThrough();
 	const stdout = new PassThrough();
+	const outbound = new PassThrough();
+	stdin.on('data', (chunk: Buffer) => {
+		const request = JSON.parse(chunk.toString('utf8')) as ITestWireRequest;
+		if (request.method === 'skills/list' || request.method === 'hooks/list') {
+			stdout.write(JSON.stringify({ id: request.id, result: { data: [] } }) + '\n');
+		} else {
+			outbound.write(chunk);
+		}
+	});
 	const onExit = new Emitter<{ readonly code: number | null; readonly signal: NodeJS.Signals | null }>();
 	const onceExitListeners: ((event: { readonly code: number | null; readonly signal: NodeJS.Signals | null }) => void)[] = [];
 	const fireExit = () => {
@@ -127,7 +136,7 @@ function createTestPeer(): ITestPeer {
 	};
 	return {
 		transport,
-		outbound: stdin,
+		outbound,
 		push: message => stdout.write(JSON.stringify(message) + '\n'),
 		exit: fireExit,
 		dispose: () => {
@@ -135,6 +144,7 @@ function createTestPeer(): ITestPeer {
 			onExit.dispose();
 			stdin.destroy();
 			stdout.destroy();
+			outbound.destroy();
 		},
 	};
 }
@@ -1545,6 +1555,12 @@ suite('CodexAgent prewarm eviction', () => {
 	test('does not discover workspace customizations from managed scratch', async () => {
 		const agent = await createAgent(disposables);
 		agent['_schedulePrewarm'] = () => { };
+		const peer = disposables.add(createTestPeer());
+		agent['_connection'] = {
+			kind: 'ready',
+			client: disposables.add(new CodexAppServerClient(peer.transport)),
+			child: { kill: () => true },
+		} as never;
 		const created = await createSession(agent);
 		const chat = defaultChatOf(created.session);
 		const entry = agent['_sessions'].get(AgentSession.id(created.session))!;
@@ -1572,6 +1588,9 @@ suite('CodexAgent prewarm eviction', () => {
 	test('workspace skill roots stay session-scoped rather than process-global', async () => {
 		const agent = await createAgent(disposables);
 		agent['_schedulePrewarm'] = () => { };
+		const peer = disposables.add(createTestPeer());
+		const client = disposables.add(new CodexAppServerClient(peer.transport));
+		agent['_connection'] = { kind: 'ready', client, child: { kill: () => true } } as never;
 		const workspace = URI.file('/repo');
 		const skillRoot = URI.joinPath(workspace, '.github', 'skills');
 		await agent['_fileService'].writeFile(URI.joinPath(skillRoot, 'website', 'SKILL.md'), VSBuffer.fromString('---\nname: website\ndescription: Builds websites\n---\nInclude a footer.'));
@@ -1581,9 +1600,6 @@ suite('CodexAgent prewarm eviction', () => {
 		const unrelatedLaunch = await agent['_buildCustomizationLaunch'](agent['_sessions'].get(AgentSession.id(unrelated.session))!);
 		const unrelatedChat = defaultChatOf(unrelated.session);
 		const unrelatedCustomizations = await agent.getChatCustomizations(unrelatedChat, chatContext(unrelated.session, unrelatedChat));
-		const peer = disposables.add(createTestPeer());
-		const client = disposables.add(new CodexAppServerClient(peer.transport));
-
 		try {
 			const applying = agent['_applySkillExtraRoots'](client);
 			const request = await readNextRequest(peer.outbound);
@@ -3189,11 +3205,10 @@ suite('CodexAgent prewarm eviction', () => {
 					selectedCapabilityRoots: undefined,
 					approvalPolicy: 'on-request',
 					approvalsReviewer: 'user',
-					permissions: 'vscode-workspace',
+					permissions: undefined,
 				},
 				autoReview: {
 					approvalPolicy: 'on-request',
-					permissions: 'vscode-workspace',
 					approvalsReviewer: 'auto_review',
 					effort: 'medium',
 					personality: 'none',
@@ -3206,21 +3221,21 @@ suite('CodexAgent prewarm eviction', () => {
 				},
 				networkAccess: {
 					runtimeWorkspaceRoots: [repoA.fsPath, repoB.fsPath, additionalDirectory],
-					permissions: 'vscode-workspace-network',
+					permissions: undefined,
 				},
 				fullAccess: {
 					approvalPolicy: 'never',
 					runtimeWorkspaceRoots: [repoA.fsPath, repoB.fsPath],
-					permissions: ':danger-full-access',
+					permissions: undefined,
 				},
 				agentMerge: {
 					approvalPolicy: 'on-request',
 					runtimeWorkspaceRoots: [repoA.fsPath, repoB.fsPath, additionalDirectory],
-					permissions: 'vscode-workspace',
+					permissions: undefined,
 				},
 				readOnly: {
 					runtimeWorkspaceRoots: [repoA.fsPath, repoB.fsPath],
-					permissions: 'vscode-workspace-read-only',
+					permissions: undefined,
 				},
 			});
 		} finally {
@@ -3283,13 +3298,13 @@ suite('CodexAgent prewarm eviction', () => {
 					method: 'turn/start',
 					threadId: 'thread',
 					runtimeWorkspaceRoots: [repoA.fsPath, repoC.fsPath],
-					permissions: 'vscode-workspace',
+					permissions: undefined,
 				},
 				third: {
 					method: 'turn/start',
 					threadId: 'thread',
 					runtimeWorkspaceRoots: [repoA.fsPath],
-					permissions: 'vscode-workspace',
+					permissions: undefined,
 				},
 			});
 		} finally {
@@ -3339,7 +3354,7 @@ suite('CodexAgent prewarm eviction', () => {
 				startSelectedCapabilityRoots: undefined,
 				turnRuntimeWorkspaceRoots: [repoA.fsPath, additionalDirectory],
 				turnSelectedCapabilityRoots: undefined,
-				permissions: 'vscode-workspace',
+				permissions: undefined,
 			});
 		} finally {
 			peer.exit();
@@ -3411,15 +3426,15 @@ suite('CodexAgent prewarm eviction', () => {
 				turn: {
 					runtimeWorkspaceRoots: [repo.fsPath, additionalDirectory],
 					selectedCapabilityRoots: undefined,
-					permissions: 'vscode-workspace',
+					permissions: undefined,
 				},
 				fullAccess: {
 					runtimeWorkspaceRoots: undefined,
-					permissions: ':danger-full-access',
+					permissions: undefined,
 				},
 				readOnly: {
 					runtimeWorkspaceRoots: [repo.fsPath],
-					permissions: 'vscode-workspace-read-only',
+					permissions: undefined,
 				},
 			});
 		} finally {
@@ -3633,7 +3648,7 @@ suite('CodexAgent prewarm eviction', () => {
 			runtimeWorkspaceRoots: sourceTurn.params.runtimeWorkspaceRoots,
 		}, {
 			approvalPolicy: 'on-request',
-			permissions: 'vscode-workspace-network',
+			permissions: undefined,
 			runtimeWorkspaceRoots: [start.params.cwd],
 		});
 		peer.push({ id: sourceTurn.id, result: {} });
@@ -3729,7 +3744,7 @@ suite('CodexAgent prewarm eviction', () => {
 		entry.managedWorkingDirectory = URI.file('/scratch/permissions');
 		const options = agent['_turnStartOptions'](entry, 'gpt-test');
 		assert.deepStrictEqual({ approvalPolicy: options.approvalPolicy, permissions: options.permissions }, {
-			approvalPolicy: 'never', permissions: ':danger-full-access',
+			approvalPolicy: 'never', permissions: undefined,
 		});
 		entry.managedWorkingDirectory = undefined;
 	});
@@ -4014,7 +4029,7 @@ suite('CodexAgent prewarm eviction', () => {
 					selectedCapabilityRoots: undefined,
 					approvalPolicy: 'on-request',
 					approvalsReviewer: 'auto_review',
-					permissions: 'vscode-workspace',
+					permissions: undefined,
 				},
 			});
 		} finally {

@@ -90,7 +90,7 @@ import { resolveCodexInput } from './codexPromptResolver.js';
 import { buildUserInputRequest, emptyUserInputResponse, userInputResponseFromAnswers } from './codexUserInputMapper.js';
 import { replayThreadToTurns } from './codexReplayMapper.js';
 import { CodexSessionMetadataStore } from './codexSessionMetadataStore.js';
-import { buildCodexLaunchConfig, buildCodexResumeParams, codexPermissionProfile, CODEX_DEFAULT_MODE_REQUEST_USER_INPUT_CONFIG_KEY } from './codexLaunchConfig.js';
+import { buildCodexLaunchConfig, buildCodexResumeParams, codexPermissionProfile, codexReadAccessConfig, CODEX_DEFAULT_MODE_REQUEST_USER_INPUT_CONFIG_KEY } from './codexLaunchConfig.js';
 import { codexDelegationDisplayText } from './codexDelegation.js';
 import { THREAD_LIST_MAX_PAGES, collectThreadListPages } from './codexThreadList.js';
 import { ICodexRolloutMetadata, ICodexRolloutModel, readCodexRolloutMetadata } from './codexRolloutMetadata.js';
@@ -1867,7 +1867,6 @@ export class CodexAgent extends Disposable implements IAgent {
 		const approvalPolicy = session.agentMergeTurn ? 'on-request' : resolvedPermissions.approvalPolicy;
 		const sandboxMode = session.agentMergeTurn && resolvedPermissions.sandboxMode === 'danger-full-access' ? 'workspace-write' : resolvedPermissions.sandboxMode;
 		const approvalsReviewer = resolvedPermissions.approvalsReviewer;
-		const permissions = this._permissionProfile(config, sandboxMode, session.agentMergeTurn ? false : undefined);
 		const runtimeWorkspaceRoots = this._permissionRuntimeWorkspaceRoots(this._runtimeWorkspaceRoots(session), config, sandboxMode);
 		const effort = this._getReasoningEffort(session, configResource);
 		const personality = narrowPersonality(config[CodexSessionConfigKey.Personality]) ?? codexSessionConfigDefaults[CodexSessionConfigKey.Personality];
@@ -1884,7 +1883,9 @@ export class CodexAgent extends Disposable implements IAgent {
 		};
 		return {
 			approvalPolicy,
-			permissions,
+			// Selecting a named profile here reloads the process-level config and
+			// loses the thread's read grants. Profile changes are applied on resume
+			// through the customization launch signature instead.
 			approvalsReviewer,
 			effort,
 			personality,
@@ -1927,18 +1928,23 @@ export class CodexAgent extends Disposable implements IAgent {
 		return resolved.filter(candidate => candidate !== undefined);
 	}
 
-	private async _buildCustomizationLaunch(session: ICodexSession): Promise<ICodexCustomizationLaunch> {
+	private async _buildCustomizationLaunch(session: ICodexSession, configResource: URI = session.configurationResource): Promise<ICodexCustomizationLaunch> {
 		const plugins = this._enabledClientPlugins(session);
-		const [workspaceAgents, workspaceSkills] = await Promise.all([
+		const sessionConfig = this._readSessionConfig(configResource);
+		const resolvedPermissions = this._resolveSessionPermissions(configResource);
+		const sandboxMode = session.agentMergeTurn && resolvedPermissions.sandboxMode === 'danger-full-access' ? 'workspace-write' : resolvedPermissions.sandboxMode;
+		const permissions = this._permissionProfile(sessionConfig, sandboxMode, session.agentMergeTurn ? false : undefined);
+		const [workspaceAgents, workspaceSkills, customizationReadRoots] = await Promise.all([
 			discoverCodexWorkspaceAgents(this._customizationWorkingDirectories(session), this._fileService),
 			discoverCodexWorkspaceSkills(this._customizationWorkingDirectories(session), this._fileService),
+			this._customizationReadRoots(session, plugins, sessionConfig, sandboxMode),
 		]);
 		const customization = await codexCustomizationConfig(workspaceAgents.agents, plugins, session.agent, this._fileService);
 		const developerInstructions = [
 			customization.developerInstructions,
 			session.managedWorkingDirectory ? AGENT_HOST_WORKSPACELESS_INSTRUCTIONS : '',
 		].filter(instruction => instruction.length > 0).join('\n\n');
-		const config: Record<string, JsonValue> = {};
+		const config = codexReadAccessConfig(customizationReadRoots);
 		if (customization.agentRoles.length > 0) {
 			const root = session.customizationDirectory?.fsPath
 				?? await fs.promises.mkdtemp(join(os.tmpdir(), 'vscode-agent-codex-customizations-'));
@@ -1969,6 +1975,8 @@ export class CodexAgent extends Disposable implements IAgent {
 			agentRoles: customization.agentRoles,
 			developerInstructions,
 			selectedCapabilityRoots: selectedCapabilityRoots.map(root => root.location.path),
+			customizationReadRoots,
+			permissions,
 			workspaceTrust: this._configurationService.getRootValue(platformRootSchema, AgentHostWorkspaceTrustConfigKey),
 		});
 		return {
@@ -1977,6 +1985,37 @@ export class CodexAgent extends Disposable implements IAgent {
 			selectedCapabilityRoots,
 			signature,
 		};
+	}
+
+	/** Grant read access to enabled skills and plugins, preserving workspace access. */
+	private async _customizationReadRoots(session: ICodexSession, plugins: readonly ICodexClientPlugin[], config: ReturnType<typeof codexSessionConfigSchema.validateOrDefault>, sandboxMode: SandboxMode): Promise<string[]> {
+		if (process.platform === 'win32') {
+			return [];
+		}
+		const connection = await this._ensureConnection();
+		const skills = await this._fetchSkills(session, connection.client);
+		const roots = distinctAbsolutePaths((skills?.data ?? []).flatMap(entry =>
+			(entry.skills ?? []).filter(skill => skill.enabled).map(skill => dirname(skill.path))));
+		const pluginRoots = plugins.flatMap(plugin => plugin.synced.pluginDir ? [plugin.synced.pluginDir.fsPath] : []);
+		const workspaceRoots = this._permissionRuntimeWorkspaceRoots(this._runtimeWorkspaceRoots(session), config, sandboxMode) ?? [];
+		const canonicalUri = async (path: string): Promise<URI> => URI.file(await fs.promises.realpath(path).catch(() => path));
+		const [canonicalRoots, canonicalPluginRoots, canonicalWorkspaceRoots, pluginCacheRoot] = await Promise.all([
+			Promise.all(roots.map(canonicalUri)),
+			Promise.all(pluginRoots.map(canonicalUri)),
+			Promise.all(workspaceRoots.map(canonicalUri)),
+			canonicalUri(this._pluginManager.basePath.fsPath),
+		]);
+		// Native extra skill roots are process-global. Synced plugins must use
+		// this session's enablement, not another session's discovered catalog.
+		const readableRoots = [
+			...canonicalRoots.filter(root => !extUriBiasedIgnorePathCase.isEqualOrParent(root, pluginCacheRoot)),
+			...canonicalPluginRoots,
+		];
+		// A more-specific read entry would take precedence over an existing
+		// workspace write grant. Compare canonical paths to handle symlink roots.
+		return distinctAbsolutePaths(readableRoots
+			.filter(root => !canonicalWorkspaceRoots.some(workspace => extUriBiasedIgnorePathCase.isEqualOrParent(root, workspace)))
+			.map(root => root.fsPath)).sort();
 	}
 
 	private _enabledClientPlugins(session: ICodexSession): readonly ICodexClientPlugin[] {
@@ -5453,15 +5492,17 @@ export class CodexAgent extends Disposable implements IAgent {
 			return;
 		}
 		const resolvedPermissions = this._resolveSessionPermissions(configResource);
-		const { approvalPolicy, sandboxMode, approvalsReviewer } = resolvedPermissions;
-		const permissions = this._permissionProfile(config, sandboxMode);
+		const approvalPolicy = session.agentMergeTurn ? 'on-request' : resolvedPermissions.approvalPolicy;
+		const sandboxMode = session.agentMergeTurn && resolvedPermissions.sandboxMode === 'danger-full-access' ? 'workspace-write' : resolvedPermissions.sandboxMode;
+		const { approvalsReviewer } = resolvedPermissions;
+		const permissions = this._permissionProfile(config, sandboxMode, session.agentMergeTurn ? false : undefined);
 		// Attach the session's MCP servers per-thread (verified: codex starts
 		// them for this thread only): the workbench's root `mcpServers` config
 		// merged with this session's enabled client-plugin servers. Passing them
 		// per-thread means a new session always reflects the current root config.
 		// Mid-session MCP enablement changes apply only when Codex starts or resumes a thread.
 		const mcpServers = this._buildSessionMcpServers(session);
-		const customizationLaunch = await this._buildCustomizationLaunch(session);
+		const customizationLaunch = await this._buildCustomizationLaunch(session, configResource);
 		if (session.disposed || !session.chatChannel) {
 			return;
 		}
@@ -5832,7 +5873,7 @@ export class CodexAgent extends Disposable implements IAgent {
 		// client tools / MCP servers were known, restart it now — before any
 		// turn commits history, so nothing is lost — so the tools land in
 		// `dynamicTools` and the servers in `config.mcp_servers`.
-		const customizationLaunch = await this._buildCustomizationLaunch(session);
+		const customizationLaunch = await this._buildCustomizationLaunch(session, configResource);
 		const toolsChanged = toolsSignature(session.clientToolSet.merged()) !== session.materializedToolsSig;
 		const mcpChanged = mcpServersSignature(this._buildSessionMcpServers(session)) !== session.materializedMcpSig;
 		const customizationsChanged = customizationLaunch.signature !== session.materializedCustomizationsSig;
@@ -6002,7 +6043,7 @@ export class CodexAgent extends Disposable implements IAgent {
 			if (session.disposed) {
 				throw new CancellationError();
 			}
-			const customizationLaunch = await this._buildCustomizationLaunch(session);
+			const customizationLaunch = await this._buildCustomizationLaunch(session, configResource);
 			if (session.disposed) {
 				throw new CancellationError();
 			}
@@ -7522,12 +7563,19 @@ export class CodexAgent extends Disposable implements IAgent {
 		});
 	}
 
+	/** Fetch the native skill catalog for every workspace root. */
+	private async _fetchSkills(session: ICodexSession, client: ICodexAppServerClient): Promise<SkillsListResponse | undefined> {
+		const skills = await client.request<'skills/list', SkillsListResponse>('skills/list', {
+			cwds: this._workingDirectories(session).map(directory => directory.fsPath),
+		}).catch(err => { this._logService.warn(`[Codex] skills/list failed: ${err instanceof Error ? err.message : String(err)}`); return undefined; });
+		return session.managedWorkingDirectory && skills
+			? { ...skills, data: skills.data.map(entry => ({ ...entry, skills: entry.skills.filter(skill => skill.scope !== 'repo') })) }
+			: skills;
+	}
+
 	/**
-	 * Fetches the skills and hooks codex has loaded for `session`'s working
-	 * directory (`skills/list` + `hooks/list`, both cwd-scoped) and projects
-	 * them into {@link DirectoryCustomization} containers. Best-effort: returns
-	 * an empty array when no connection is ready, no working directory is known,
-	 * or the app-server rejects the request.
+	 * Projects native skills and primary-workspace hooks into customization
+	 * containers. Best-effort when no connection or working directory is known.
 	 */
 	private async _fetchSkillHookContainers(session: ICodexSession): Promise<DirectoryCustomization[]> {
 		if (this._connection.kind !== 'ready' || !session.workingDirectory) {
@@ -7536,18 +7584,14 @@ export class CodexAgent extends Disposable implements IAgent {
 		const cwd = session.workingDirectory.fsPath;
 		const client = this._connection.client;
 		const [skills, hooks] = await Promise.all([
-			client.request<'skills/list', SkillsListResponse>('skills/list', { cwds: [cwd] })
-				.catch(err => { this._logService.warn(`[Codex] skills/list failed: ${err instanceof Error ? err.message : String(err)}`); return undefined; }),
+			this._fetchSkills(session, client),
 			client.request<'hooks/list', HooksListResponse>('hooks/list', { cwds: [cwd] })
 				.catch(err => { this._logService.warn(`[Codex] hooks/list failed: ${err instanceof Error ? err.message : String(err)}`); return undefined; }),
 		]);
-		const effectiveSkills = session.managedWorkingDirectory && skills
-			? { ...skills, data: skills.data.map(entry => ({ ...entry, skills: entry.skills.filter(skill => skill.scope !== 'repo') })) }
-			: skills;
 		const effectiveHooks = session.managedWorkingDirectory && hooks
 			? { ...hooks, data: hooks.data.map(entry => ({ ...entry, hooks: entry.hooks.filter(hook => hook.source !== 'project') })) }
 			: hooks;
-		return [...codexSkillsToContainers(effectiveSkills), ...codexHooksToContainers(effectiveHooks)];
+		return [...codexSkillsToContainers(skills), ...codexHooksToContainers(effectiveHooks)];
 	}
 
 	/** Builds per-thread trust for the project hooks Codex discovered from the primary workspace. */

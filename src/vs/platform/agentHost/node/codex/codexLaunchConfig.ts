@@ -13,18 +13,32 @@ const CODEX_VSCODE_WORKSPACE_PERMISSION_PROFILE = 'vscode-workspace';
 const CODEX_VSCODE_WORKSPACE_NETWORK_PERMISSION_PROFILE = 'vscode-workspace-network';
 const CODEX_VSCODE_WORKSPACE_READ_ONLY_PERMISSION_PROFILE = 'vscode-workspace-read-only';
 
-export function codexPermissionProfileOverrides(platform: NodeJS.Platform = process.platform): string[] {
+function codexWorkspaceFileSystem(platform: NodeJS.Platform, readRoots: readonly string[] = []): Record<string, JsonValue> {
 	// Codex materializes its Linux sandbox helper below /tmp before entering bwrap.
 	// Keep it executable from inside the sandbox without granting shared temp write access.
-	const slashTmpAccess = platform === 'linux' ? 'read' : 'deny';
+	return {
+		':root': 'deny',
+		':minimal': 'read',
+		':tmpdir': 'write',
+		':slash_tmp': platform === 'linux' ? 'read' : 'deny',
+		...Object.fromEntries(readRoots.map(path => [path, 'read'])),
+	};
+}
+
+/** Adds discovered resources without replacing the profile's baseline restrictions. */
+export function codexReadAccessConfig(readRoots: readonly string[], platform: NodeJS.Platform = process.platform): Record<string, JsonValue> {
+	// Windows retains Codex's native filesystem policy.
+	return platform === 'win32' ? {} : {
+		// A config override replaces this whole table, so include the deny rules
+		// even when the discovered roots are empty (for example after removal).
+		[`permissions.${CODEX_VSCODE_WORKSPACE_PERMISSION_PROFILE}.filesystem`]: codexWorkspaceFileSystem(platform, readRoots),
+	};
+}
+
+export function codexPermissionProfileOverrides(platform: NodeJS.Platform = process.platform): string[] {
 	const fileSystemOverride = platform === 'win32'
 		? ''
-		: `, filesystem = { ${[
-			`":root" = "deny"`,
-			`":minimal" = "read"`,
-			`":tmpdir" = "write"`,
-			`":slash_tmp" = "${slashTmpAccess}"`,
-		].join(', ')} }`;
+		: `, filesystem = { ${Object.entries(codexWorkspaceFileSystem(platform)).map(([path, access]) => `${JSON.stringify(path)} = ${JSON.stringify(access)}`).join(', ')} }`;
 	const readOnlyProfile = platform === 'win32'
 		? `permissions.${CODEX_VSCODE_WORKSPACE_READ_ONLY_PERMISSION_PROFILE}={ extends = ":read-only" }`
 		: `permissions.${CODEX_VSCODE_WORKSPACE_READ_ONLY_PERMISSION_PROFILE}={ extends = "${CODEX_VSCODE_WORKSPACE_PERMISSION_PROFILE}", filesystem = { ":workspace_roots" = { "." = "read" } } }`;
