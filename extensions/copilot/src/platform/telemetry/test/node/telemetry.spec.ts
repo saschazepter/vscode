@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, expect, Mock, suite, test, vi } from 'vitest';
 import type { TelemetryLogger } from 'vscode';
 import * as zlib from 'zlib';
+import { Event } from '../../../../util/vs/base/common/event';
 import { CopilotToken, createTestExtendedTokenInfo } from '../../../authentication/common/copilotToken';
 import { ICopilotTokenStore } from '../../../authentication/common/copilotTokenStore';
 import { IConfigurationService } from '../../../configuration/common/configurationService';
@@ -78,6 +79,8 @@ suite('Microsoft Telemetry Sender', function () {
 		mockTokenStore = {
 			_serviceBrand: undefined,
 			copilotToken: mockToken,
+			githubEnterpriseUri: undefined,
+			onDidChangeGitHubEnterpriseUri: Event.None,
 			onDidStoreUpdate: vi.fn((callback) => {
 				callback();
 				return { dispose: vi.fn() };
@@ -181,6 +184,8 @@ suite('GitHub Telemetry Sender', function () {
 		mockTokenStore = {
 			_serviceBrand: undefined,
 			copilotToken: mockToken,
+			githubEnterpriseUri: undefined,
+			onDidChangeGitHubEnterpriseUri: Event.None,
 			onDidStoreUpdate: vi.fn((callback) => {
 				callback();
 				return { dispose: vi.fn() };
