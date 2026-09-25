@@ -33,6 +33,7 @@ import { ChatSetupAnonymous, ChatSetupError, ChatSetupStep, ChatSetupResultValue
 import { IDefaultAccount } from '../../../../../base/common/defaultAccount.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
+import { addGitHubEnterpriseUri, getConfiguredGitHubEnterpriseUris, gitHubEnterpriseUrisSetting } from '../../../../services/accounts/common/githubEnterprise.js';
 
 const defaultChat = {
 	chatExtensionId: product.defaultChatAgent?.chatExtensionId ?? '',
@@ -319,6 +320,11 @@ export class ChatSetupController extends Disposable {
 				},
 				[defaultChat.providerUriSetting]: {
 					'type': 'string'
+				},
+				[gitHubEnterpriseUrisSetting]: {
+					'type': 'array',
+					'items': { 'type': 'string' },
+					'restricted': true
 				}
 			}
 		});
@@ -358,9 +364,8 @@ export class ChatSetupController extends Disposable {
 		const domainRegEx = /^[a-zA-Z\-_]+$/;
 		const fullUriRegEx = /^(https:\/\/)?([a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+\.ghe\.com\/?$/;
 
-		const uri = this.configurationService.getValue<string>(defaultChat.providerUriSetting);
-		if (typeof uri === 'string' && fullUriRegEx.test(uri)) {
-			return true; // already setup with a valid URI
+		if (getConfiguredGitHubEnterpriseUris(this.configurationService, defaultChat.providerUriSetting).length) {
+			return true;
 		}
 
 		let isSingleWord = false;
@@ -368,7 +373,6 @@ export class ChatSetupController extends Disposable {
 			prompt: localize('enterpriseInstance', "What is your {0} instance?", defaultChat.provider.enterprise.name),
 			placeHolder: localize('enterpriseInstancePlaceholder', 'i.e. "octocat" or "https://octocat.ghe.com"...'),
 			ignoreFocusLost: true,
-			value: uri,
 			validateInput: async value => {
 				isSingleWord = false;
 				if (!value) {
@@ -407,7 +411,7 @@ export class ChatSetupController extends Disposable {
 			}
 		}
 
-		await this.configurationService.updateValue(defaultChat.providerUriSetting, resolvedUri, ConfigurationTarget.USER);
+		await addGitHubEnterpriseUri(this.configurationService, resolvedUri, defaultChat.providerUriSetting);
 
 		return true;
 	}

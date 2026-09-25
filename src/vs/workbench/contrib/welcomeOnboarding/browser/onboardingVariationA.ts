@@ -43,11 +43,11 @@ import {
 	IOnboardingThemeOption,
 	getOnboardingStepTitle,
 	getOnboardingStepSubtitle,
-	GHE_FULL_URI_REGEX,
 	GheParseResultKind,
 	parseGheInstanceInput,
 } from '../common/onboardingTypes.js';
 import { IOnboardingService } from '../common/onboardingService.js';
+import { addGitHubEnterpriseUri, getConfiguredGitHubEnterpriseUris } from '../../../services/accounts/common/githubEnterprise.js';
 
 type OnboardingStepViewClassification = {
 	owner: 'cwebster-99';
@@ -739,21 +739,26 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 	}
 
 	private async _handleEnterpriseSignIn(): Promise<void> {
-		const existingUri = this.configurationService.getValue<string>(defaultChat.providerUriSetting);
-		if (typeof existingUri !== 'string' || !GHE_FULL_URI_REGEX.test(existingUri)) {
-			this.enterpriseInstanceValue = existingUri ?? '';
+		let uris: readonly string[];
+		try {
+			uris = getConfiguredGitHubEnterpriseUris(this.configurationService, defaultChat.providerUriSetting);
+		} catch {
+			this._notifyEnterpriseSignInError();
+			return;
+		}
+		if (!uris.length) {
+			this.enterpriseInstanceValue = '';
 			this.enterpriseSignInWatch = StopWatch.create();
 			this._setEnterpriseSignInUiState('instance');
 			return;
 		}
 
-		this.enterpriseInstanceValue = existingUri;
 		await this._runEnterpriseSignInSetup();
 	}
 
 	private async _submitEnterpriseInstance(resolvedUri: string): Promise<void> {
 		try {
-			await this.configurationService.updateValue(defaultChat.providerUriSetting, resolvedUri, ConfigurationTarget.USER);
+			await addGitHubEnterpriseUri(this.configurationService, resolvedUri, defaultChat.providerUriSetting);
 			this.enterpriseInstanceValue = resolvedUri;
 			await this._runEnterpriseSignInSetup();
 		} catch {

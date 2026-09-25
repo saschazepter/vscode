@@ -4,6 +4,29 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from '../../../../base/common/uri.js';
+import { localize } from '../../../../nls.js';
+import { ConfigurationTarget, IConfigurationService, isConfigured } from '../../../../platform/configuration/common/configuration.js';
+
+export const gitHubEnterpriseUrisSetting = 'github-enterprise.uris';
+
+/** Reads enrollment configuration, never the destination for an authenticated request. */
+export function getConfiguredGitHubEnterpriseUris(configurationService: IConfigurationService, legacySetting = 'github-enterprise.uri'): readonly string[] {
+	const inspected = configurationService.inspect<readonly string[]>(gitHubEnterpriseUrisSetting);
+	const legacy = configurationService.getValue<string>(legacySetting);
+	const uris = isConfigured(inspected) ? configurationService.getValue<readonly string[]>(gitHubEnterpriseUrisSetting) : legacy ? [legacy] : [];
+	if (!Array.isArray(uris) || uris.some(uri => typeof uri !== 'string')) {
+		throw new Error(localize('invalidGitHubEnterpriseUris', "GitHub Enterprise URIs must be an array of instance URLs."));
+	}
+	return uris;
+}
+
+export async function addGitHubEnterpriseUri(configurationService: IConfigurationService, uri: string, legacySetting = 'github-enterprise.uri'): Promise<void> {
+	const uris = getConfiguredGitHubEnterpriseUris(configurationService, legacySetting);
+	if (!uris.includes(uri)) {
+		const target = configurationService.inspect(gitHubEnterpriseUrisSetting).workspaceValue !== undefined ? ConfigurationTarget.WORKSPACE : ConfigurationTarget.USER;
+		await configurationService.updateValue(gitHubEnterpriseUrisSetting, [...uris, uri], target);
+	}
+}
 
 /** Returns the enterprise base identified by a session's OAuth issuer, never by configuration. */
 export function getGitHubEnterpriseUri(authorizationServer: URI | undefined): URI | undefined {
