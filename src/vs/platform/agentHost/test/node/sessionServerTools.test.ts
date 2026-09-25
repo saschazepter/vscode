@@ -110,9 +110,10 @@ suite('SessionServerTools', () => {
 		assert.match(sessionServerToolDefinitions.find(definition => definition.name === SessionServerToolName.ListSessions)?.description ?? '', /`openLink` for clickable Markdown links/);
 		assert.match(sessionServerToolDefinitions.find(definition => definition.name === SessionServerToolName.SendMessage)?.description ?? '', /target chat is busy.*message is queued/);
 		assert.deepStrictEqual(sessionServerToolDefinitions.filter(definition => definition.enabledForEphemeralSessions).map(definition => definition.name), []);
+		const deferredDefinitions = sessionServerToolDefinitions.filter(({ name }) => name !== SessionServerToolName.RenameChat);
 		assert.deepStrictEqual(
-			sessionServerToolDefinitions.map(({ name, deferLoading }) => ({ name, deferLoading })),
-			sessionServerToolDefinitions.map(({ name }) => ({ name, deferLoading: name !== SessionServerToolName.RenameChat })),
+			deferredDefinitions.map(({ name, deferLoading }) => ({ name, deferLoading })),
+			deferredDefinitions.map(({ name }) => ({ name, deferLoading: true })),
 		);
 		assert.strictEqual(sessionToolRequiresConfirmation(SessionServerToolName.CreateSession), true);
 		assert.strictEqual(sessionToolRequiresConfirmation(SessionServerToolName.CreateChat), true);
