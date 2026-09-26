@@ -21,6 +21,8 @@ The single `github-enterprise` provider authenticates to all GHE.com and GitHub 
 
 The list is unordered: its first entry is **not** a default. An explicitly configured list takes precedence over the deprecated `github-enterprise.uri`, including an empty list, which configures no enterprise instances. Only when the new setting is absent is the deprecated setting used as a one-item list.
 
+Workspace and folder settings are ignored in untrusted workspaces; they cannot override the user's configured hosts or suppress the legacy fallback. Enrollment in an untrusted workspace updates user settings. Enterprise initialization failures leave public GitHub available and surface an enterprise-specific error; correcting the configuration retries enterprise initialization.
+
 Session reads return all eligible sessions, filtered by scopes, account, and authorization server when supplied. They never show a host picker. Creating a session uses an explicit configured authorization server or a host-identifying account hint. Otherwise, it uses the sole configured instance or shows a standard Quick Pick when several are configured. Dismissing the picker cancels sign-in without selecting a host.
 
 Use **Manage Extension Account Preferences...** to choose an extension's account independently of other extensions. **Use a new account...** delegates to this provider's instance picker. Enterprise account labels include their instance so identical logins on different hosts remain distinguishable.

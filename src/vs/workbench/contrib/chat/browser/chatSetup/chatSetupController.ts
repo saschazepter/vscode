@@ -34,6 +34,7 @@ import { IDefaultAccount } from '../../../../../base/common/defaultAccount.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IProductService } from '../../../../../platform/product/common/productService.js';
 import { addGitHubEnterpriseUri, getConfiguredGitHubEnterpriseUris, gitHubEnterpriseUrisSetting } from '../../../../services/accounts/common/githubEnterprise.js';
+import { IWorkspaceTrustManagementService } from '../../../../../platform/workspace/common/workspaceTrust.js';
 
 const defaultChat = {
 	chatExtensionId: product.defaultChatAgent?.chatExtensionId ?? '',
@@ -74,6 +75,7 @@ export class ChatSetupController extends Disposable {
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
 		@IProductService private readonly productService: IProductService,
+		@IWorkspaceTrustManagementService private readonly workspaceTrustManagementService: IWorkspaceTrustManagementService,
 	) {
 		super();
 
@@ -364,7 +366,7 @@ export class ChatSetupController extends Disposable {
 		const domainRegEx = /^[a-zA-Z\-_]+$/;
 		const fullUriRegEx = /^(https:\/\/)?([a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+\.ghe\.com\/?$/;
 
-		if (getConfiguredGitHubEnterpriseUris(this.configurationService, defaultChat.providerUriSetting).length) {
+		if (getConfiguredGitHubEnterpriseUris(this.configurationService, this.workspaceTrustManagementService.isWorkspaceTrusted(), defaultChat.providerUriSetting).length) {
 			return true;
 		}
 
@@ -411,7 +413,7 @@ export class ChatSetupController extends Disposable {
 			}
 		}
 
-		await addGitHubEnterpriseUri(this.configurationService, resolvedUri, defaultChat.providerUriSetting);
+		await addGitHubEnterpriseUri(this.configurationService, resolvedUri, this.workspaceTrustManagementService.isWorkspaceTrusted(), defaultChat.providerUriSetting);
 
 		return true;
 	}

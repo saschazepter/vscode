@@ -25,7 +25,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		const configuration = vscode.workspace.getConfiguration();
 		let uris: vscode.Uri[];
 		try {
-			uris = getEnterpriseUris(configuration);
+			uris = getEnterpriseUris(configuration, vscode.workspace.isTrusted);
 		} catch (error) {
 			await githubEnterpriseAuthProvider.update([], { error: error.message });
 			void vscode.window.showErrorMessage(error.message);
@@ -35,12 +35,22 @@ export async function activate(context: vscode.ExtensionContext) {
 		const legacyUri = typeof legacy === 'string' && /^https?:\/\//i.test(legacy) ? vscode.Uri.parse(legacy) : undefined;
 		await githubEnterpriseAuthProvider.update(uris, { legacyUri });
 	};
+	const refreshEnterpriseConfiguration = () => {
+		void updateEnterpriseConfiguration().catch(error => vscode.window.showErrorMessage(vscode.l10n.t('Could not update GitHub Enterprise authentication: {0}', error.message)));
+	};
 	context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
 		if (e.affectsConfiguration(enterpriseUrisSetting) || e.affectsConfiguration(enterpriseUriSetting)) {
-			void updateEnterpriseConfiguration().catch(error => vscode.window.showErrorMessage(vscode.l10n.t('Could not update GitHub Enterprise authentication: {0}', error.message)));
+			refreshEnterpriseConfiguration();
 		}
 	}));
-	await updateEnterpriseConfiguration();
+	context.subscriptions.push(vscode.workspace.onDidGrantWorkspaceTrust(refreshEnterpriseConfiguration));
+	try {
+		await updateEnterpriseConfiguration();
+	} catch (error) {
+		const message = vscode.l10n.t('Could not initialize GitHub Enterprise authentication: {0}', error instanceof Error ? error.message : String(error));
+		await githubEnterpriseAuthProvider.update([], { error: message });
+		void vscode.window.showErrorMessage(message);
+	}
 
 	// Listener to prompt for reload when the fetch implementation setting changes
 	const beforeFetchSetting = vscode.workspace.getConfiguration().get<boolean>('github-authentication.useElectronFetch', true);

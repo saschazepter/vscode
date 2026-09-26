@@ -28,7 +28,7 @@ suite('GitHub Enterprise enrollment configuration', () => {
 			{ 'github-enterprise.uri': legacy },
 			{ 'github-enterprise.uri': legacy, [gitHubEnterpriseUrisSetting]: ['https://b.ghe.com', 'https://a.ghe.com'] },
 			{ 'github-enterprise.uri': legacy, [gitHubEnterpriseUrisSetting]: [] },
-		].map(values => getConfiguredGitHubEnterpriseUris(configuration(values))), [
+		].map(values => getConfiguredGitHubEnterpriseUris(configuration(values), true)), [
 			[], [legacy], ['https://b.ghe.com', 'https://a.ghe.com'], []
 		]);
 	});
@@ -36,31 +36,31 @@ suite('GitHub Enterprise enrollment configuration', () => {
 	test('schema defaults do not disable the deprecated setting', () => {
 		const service = configuration({ 'github-enterprise.uri': 'https://legacy.ghe.com' });
 		sinon.stub(service, 'inspect').returns({ defaultValue: [], value: [] });
-		assert.deepStrictEqual(getConfiguredGitHubEnterpriseUris(service), ['https://legacy.ghe.com']);
+		assert.deepStrictEqual(getConfiguredGitHubEnterpriseUris(service, true), ['https://legacy.ghe.com']);
 	});
 
 	test('an explicit host list shared across profiles takes precedence over the deprecated setting', () => {
 		const uris = ['https://shared.ghe.com'];
 		const service = configuration({ 'github-enterprise.uri': 'https://legacy.ghe.com', [gitHubEnterpriseUrisSetting]: uris });
 		sinon.stub(service, 'inspect').returns({ applicationValue: uris, value: uris });
-		assert.deepStrictEqual(getConfiguredGitHubEnterpriseUris(service), uris);
+		assert.deepStrictEqual(getConfiguredGitHubEnterpriseUris(service, true), uris);
 	});
 
 	test('invalid plural configuration never falls back to the deprecated setting', () => {
 		const service = configuration({ 'github-enterprise.uri': 'https://legacy.ghe.com', [gitHubEnterpriseUrisSetting]: 'https://invalid.ghe.com' });
-		assert.throws(() => getConfiguredGitHubEnterpriseUris(service), /must be an array/);
+		assert.throws(() => getConfiguredGitHubEnterpriseUris(service, true), /must be an array/);
 	});
 
 	test('enrollment appends to the effective host list without overwriting it or the legacy setting', async () => {
 		const service = configuration({ 'github-enterprise.uri': 'https://legacy.ghe.com' });
 		const write = sinon.stub(service, 'updateValue').callsFake((key, value) => service.setUserConfiguration(key, value));
-		await addGitHubEnterpriseUri(service, 'https://second.ghe.com');
-		await addGitHubEnterpriseUri(service, 'https://third.ghe.com');
-		await addGitHubEnterpriseUri(service, 'https://third.ghe.com');
+		await addGitHubEnterpriseUri(service, 'https://second.ghe.com', true);
+		await addGitHubEnterpriseUri(service, 'https://third.ghe.com', true);
+		await addGitHubEnterpriseUri(service, 'https://third.ghe.com', true);
 		assert.deepStrictEqual({
 			writes: write.getCalls().map(call => call.args),
 			legacy: service.getValue('github-enterprise.uri'),
-			hosts: getConfiguredGitHubEnterpriseUris(service)
+			hosts: getConfiguredGitHubEnterpriseUris(service, true)
 		}, {
 			writes: [
 				[gitHubEnterpriseUrisSetting, ['https://legacy.ghe.com', 'https://second.ghe.com'], ConfigurationTarget.USER],
@@ -75,9 +75,40 @@ suite('GitHub Enterprise enrollment configuration', () => {
 		const service = configuration({ 'github-enterprise.uri': 'https://legacy.ghe.com', [gitHubEnterpriseUrisSetting]: [] });
 		sinon.stub(service, 'inspect').returns({ workspaceValue: [], value: [] });
 		const write = sinon.stub(service, 'updateValue').resolves();
-		await addGitHubEnterpriseUri(service, 'https://new.ghe.com');
+		await addGitHubEnterpriseUri(service, 'https://new.ghe.com', true);
 		assert.deepStrictEqual(write.firstCall.args, [gitHubEnterpriseUrisSetting, ['https://new.ghe.com'], ConfigurationTarget.WORKSPACE]);
 	});
+
+	for (const scope of ['workspaceValue', 'workspaceFolderValue'] as const) {
+		test(`untrusted ${scope} does not disable the legacy user host or redirect enrollment`, async () => {
+			const legacy = 'https://legacy.ghe.com';
+			const service = configuration({ 'github-enterprise.uri': legacy, [gitHubEnterpriseUrisSetting]: [] });
+			sinon.stub(service, 'inspect').returns({ defaultValue: [], [scope]: [], value: [] });
+			const write = sinon.stub(service, 'updateValue').resolves();
+			const hosts = getConfiguredGitHubEnterpriseUris(service, false);
+			await addGitHubEnterpriseUri(service, 'https://new.ghe.com', false);
+			assert.deepStrictEqual({
+				hosts,
+				writes: write.getCalls().map(call => call.args)
+			}, { hosts: [legacy], writes: [[gitHubEnterpriseUrisSetting, [legacy, 'https://new.ghe.com'], ConfigurationTarget.USER]] });
+		});
+	}
+
+	for (const scope of ['applicationValue', 'userValue', 'userLocalValue', 'userRemoteValue'] as const) {
+		for (const uris of [[], ['https://user.ghe.com']]) {
+			test(`untrusted workspace preserves explicit ${scope} (${JSON.stringify(uris)})`, async () => {
+				const service = configuration({ 'github-enterprise.uri': 'https://legacy.ghe.com', [gitHubEnterpriseUrisSetting]: uris });
+				sinon.stub(service, 'inspect').returns({ [scope]: uris, workspaceValue: [], value: uris });
+				const write = sinon.stub(service, 'updateValue').resolves();
+				const hosts = getConfiguredGitHubEnterpriseUris(service, false);
+				await addGitHubEnterpriseUri(service, 'https://new.ghe.com', false);
+				assert.deepStrictEqual({
+					hosts,
+					writes: write.getCalls().map(call => call.args)
+				}, { hosts: uris, writes: [[gitHubEnterpriseUrisSetting, [...uris, 'https://new.ghe.com'], ConfigurationTarget.USER]] });
+			});
+		}
+	}
 });
 
 suite('GitHub Enterprise session provenance', () => {

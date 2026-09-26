@@ -8,9 +8,9 @@ import * as vscode from 'vscode';
 export const enterpriseUrisSetting = 'github-enterprise.uris';
 export const enterpriseUriSetting = 'github-enterprise.uri';
 
-export function getEnterpriseUris(configuration: vscode.WorkspaceConfiguration): vscode.Uri[] {
+export function getEnterpriseUris(configuration: vscode.WorkspaceConfiguration, isWorkspaceTrusted: boolean): vscode.Uri[] {
 	const inspected = configuration.inspect<string[]>(enterpriseUrisSetting);
-	const hasPluralValue = inspected && [inspected.globalValue, inspected.workspaceValue, inspected.workspaceFolderValue].some(value => value !== undefined);
+	const hasPluralValue = inspected && (inspected.globalValue !== undefined || (isWorkspaceTrusted && (inspected.workspaceValue !== undefined || inspected.workspaceFolderValue !== undefined)));
 	const legacy = configuration.get<string>(enterpriseUriSetting);
 	const values = hasPluralValue ? configuration.get<string[]>(enterpriseUrisSetting) : legacy ? [legacy] : [];
 	if (!Array.isArray(values)) {

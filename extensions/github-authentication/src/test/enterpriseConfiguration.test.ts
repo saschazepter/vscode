@@ -27,25 +27,43 @@ suite('GitHub Enterprise configuration', () => {
 		{ name: 'invalid legacy is ignored when plural is configured', legacy: 'not a URL', plural: ['https://a.example'], expected: ['https://a.example'] },
 	]) {
 		test(name, () => {
-			assert.deepStrictEqual(getEnterpriseUris(configuration(legacy, plural)).map(uri => uri.toString()), expected.map(value => vscode.Uri.parse(value).toString()));
+			assert.deepStrictEqual(getEnterpriseUris(configuration(legacy, plural), true).map(uri => uri.toString()), expected.map(value => vscode.Uri.parse(value).toString()));
 		});
 	}
 
 	for (const scope of ['globalValue', 'workspaceValue', 'workspaceFolderValue'] as const) {
 		test(`explicit empty at ${scope} disables legacy`, () => {
-			assert.deepStrictEqual(getEnterpriseUris(configuration('https://legacy.example', [], scope)), []);
+			assert.deepStrictEqual(getEnterpriseUris(configuration('https://legacy.example', [], scope), true), []);
 		});
+	}
+
+	for (const scope of ['workspaceValue', 'workspaceFolderValue'] as const) {
+		test(`untrusted ${scope} cannot suppress a legacy user host`, () => {
+			const config = configuration('https://legacy.example', [], scope);
+			assert.deepStrictEqual({
+				untrusted: getEnterpriseUris(config, false).map(uri => uri.toString()),
+				trusted: getEnterpriseUris(config, true).map(uri => uri.toString())
+			}, { untrusted: ['https://legacy.example/'], trusted: [] });
+		});
+
+		for (const uris of [[], ['https://user.example']]) {
+			test(`a user list wins over raw untrusted ${scope} (${JSON.stringify(uris)})`, () => {
+				const config = configuration('https://legacy.example', uris);
+				config.inspect = sinon.stub().returns({ key: enterpriseUrisSetting, globalValue: uris, [scope]: [] });
+				assert.deepStrictEqual(getEnterpriseUris(config, false).map(uri => uri.toString()), uris.map(value => vscode.Uri.parse(value).toString()));
+			});
+		}
 	}
 
 	for (const plural of [null, 'https://a.example', [42], ['not a URL'], ['https://github.com'], ['https://a.example?query'], ['https://a.example#fragment'], ['https://user:password@a.example'], ['file:///a'], ['https://a.example/../b'], ['https://a.example/a//b']]) {
 		test(`invalid plural ${JSON.stringify(plural)} never falls back to legacy`, () => {
-			assert.throws(() => getEnterpriseUris(configuration('https://legacy.example', plural)), /GitHub Enterprise/);
+			assert.throws(() => getEnterpriseUris(configuration('https://legacy.example', plural), true), /GitHub Enterprise/);
 		});
 	}
 
 	test('canonical identity preserves path case, ports and HTTP support', () => {
 		const values = ['https://GHE.EXAMPLE:8443/Team%20One/', 'https://ghe.example:8443/Team%20One', 'http://ghe.example/Team', 'https://ghe.example/team'];
-		assert.deepStrictEqual(getEnterpriseUris(configuration(undefined, values)).map(getEnterpriseUriKey), [
+		assert.deepStrictEqual(getEnterpriseUris(configuration(undefined, values), true).map(getEnterpriseUriKey), [
 			'https://ghe.example:8443/Team%20One',
 			'https://ghe.example:8443/Team%20One',
 			'http://ghe.example/Team',

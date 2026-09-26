@@ -48,6 +48,7 @@ import {
 } from '../common/onboardingTypes.js';
 import { IOnboardingService } from '../common/onboardingService.js';
 import { addGitHubEnterpriseUri, getConfiguredGitHubEnterpriseUris } from '../../../services/accounts/common/githubEnterprise.js';
+import { IWorkspaceTrustManagementService } from '../../../../platform/workspace/common/workspaceTrust.js';
 
 type OnboardingStepViewClassification = {
 	owner: 'cwebster-99';
@@ -146,6 +147,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IAccessibilityService private readonly accessibilityService: IAccessibilityService,
+		@IWorkspaceTrustManagementService private readonly workspaceTrustManagementService: IWorkspaceTrustManagementService,
 	) {
 		super();
 
@@ -741,7 +743,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 	private async _handleEnterpriseSignIn(): Promise<void> {
 		let uris: readonly string[];
 		try {
-			uris = getConfiguredGitHubEnterpriseUris(this.configurationService, defaultChat.providerUriSetting);
+			uris = getConfiguredGitHubEnterpriseUris(this.configurationService, this.workspaceTrustManagementService.isWorkspaceTrusted(), defaultChat.providerUriSetting);
 		} catch {
 			this._notifyEnterpriseSignInError();
 			return;
@@ -758,7 +760,7 @@ export class OnboardingVariationA extends Disposable implements IOnboardingServi
 
 	private async _submitEnterpriseInstance(resolvedUri: string): Promise<void> {
 		try {
-			await addGitHubEnterpriseUri(this.configurationService, resolvedUri, defaultChat.providerUriSetting);
+			await addGitHubEnterpriseUri(this.configurationService, resolvedUri, this.workspaceTrustManagementService.isWorkspaceTrusted(), defaultChat.providerUriSetting);
 			this.enterpriseInstanceValue = resolvedUri;
 			await this._runEnterpriseSignInSetup();
 		} catch {

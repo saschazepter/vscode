@@ -16,6 +16,7 @@ import { TestConfigurationService } from '../../../../../platform/configuration/
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IExtensionGalleryService, IExtensionManagementService } from '../../../../../platform/extensionManagement/common/extensionManagement.js';
 import { ILayoutService } from '../../../../../platform/layout/browser/layoutService.js';
+import { IWorkspaceTrustManagementService } from '../../../../../platform/workspace/common/workspaceTrust.js';
 import { ColorThemeData } from '../../../../services/themes/common/colorThemeData.js';
 import { IWorkbenchThemeService } from '../../../../services/themes/common/workbenchThemeService.js';
 import { workbenchInstantiationService } from '../../../../test/browser/workbenchTestServices.js';
@@ -27,7 +28,7 @@ suite('OnboardingVariationA', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 	teardown(() => sinon.restore());
 
-	function createOnboarding(configuration = new TestConfigurationService(), settingsUrl?: string) {
+	function createOnboarding(configuration = new TestConfigurationService(), settingsUrl?: string, trusted = true) {
 		const container = mainWindow.document.body.appendChild($('div'));
 		store.add(toDisposable(() => container.remove()));
 		store.add(configuration.onDidChangeConfigurationEmitter);
@@ -38,6 +39,7 @@ suite('OnboardingVariationA', () => {
 		instantiationService.stub(IExtensionManagementService, {});
 		instantiationService.stub(IDefaultAccountService, { resolveGitHubUrl: () => settingsUrl });
 		instantiationService.stub(IConfigurationService, configuration);
+		instantiationService.stub(IWorkspaceTrustManagementService, { isWorkspaceTrusted: () => trusted });
 		const commandInvoked = new DeferredPromise<void>();
 		const executeCommand = sinon.stub().callsFake(async () => {
 			await commandInvoked.complete();
@@ -125,5 +127,34 @@ suite('OnboardingVariationA', () => {
 			writes: [[gitHubEnterpriseUrisSetting, ['https://other.ghe.com', 'https://chosen.ghe.com'], ConfigurationTarget.USER]],
 			setupCalls: 1
 		});
+	});
+
+	test('untrusted workspace configuration does not prompt over a legacy user host', async () => {
+		const configuration = new TestConfigurationService({ [gitHubEnterpriseUrisSetting]: [], 'github-enterprise.uri': 'https://legacy.ghe.com' });
+		sinon.stub(configuration, 'inspect').returns({ defaultValue: [], workspaceValue: [], value: [] });
+		const { container, executeCommand, commandInvoked } = createOnboarding(configuration, undefined, false);
+		clickEnterpriseSignIn(container);
+		await commandInvoked;
+		await executeCommand.firstCall.returnValue;
+		assert.deepStrictEqual({
+			setupCalls: executeCommand.callCount,
+			hasInstanceInput: !!container.querySelector('.onboarding-a-signin-ghe-input')
+		}, { setupCalls: 1, hasInstanceInput: false });
+	});
+
+	test('untrusted enrollment writes a user host rather than the ignored workspace setting', async () => {
+		const configuration = new TestConfigurationService({ [gitHubEnterpriseUrisSetting]: [] });
+		sinon.stub(configuration, 'inspect').returns({ defaultValue: [], workspaceValue: [], value: [] });
+		const update = sinon.stub(configuration, 'updateValue').resolves();
+		const { container, executeCommand, commandInvoked } = createOnboarding(configuration, undefined, false);
+		clickEnterpriseSignIn(container);
+		const input = container.querySelector<HTMLInputElement>('.onboarding-a-signin-ghe-input input');
+		assert.ok(input);
+		input.value = 'chosen';
+		input.dispatchEvent(new mainWindow.Event('input', { bubbles: true }));
+		input.dispatchEvent(new mainWindow.KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+		await commandInvoked;
+		await executeCommand.firstCall.returnValue;
+		assert.deepStrictEqual(update.firstCall.args, [gitHubEnterpriseUrisSetting, ['https://chosen.ghe.com'], ConfigurationTarget.USER]);
 	});
 });

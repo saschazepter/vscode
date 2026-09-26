@@ -10,20 +10,21 @@ import { ConfigurationTarget, IConfigurationService, isConfigured } from '../../
 export const gitHubEnterpriseUrisSetting = 'github-enterprise.uris';
 
 /** Reads enrollment configuration, never the destination for an authenticated request. */
-export function getConfiguredGitHubEnterpriseUris(configurationService: IConfigurationService, legacySetting = 'github-enterprise.uri'): readonly string[] {
+export function getConfiguredGitHubEnterpriseUris(configurationService: IConfigurationService, isWorkspaceTrusted: boolean, legacySetting = 'github-enterprise.uri'): readonly string[] {
 	const inspected = configurationService.inspect<readonly string[]>(gitHubEnterpriseUrisSetting);
+	const configured = isConfigured(isWorkspaceTrusted ? inspected : { ...inspected, workspaceValue: undefined, workspaceFolderValue: undefined });
 	const legacy = configurationService.getValue<string>(legacySetting);
-	const uris = isConfigured(inspected) ? configurationService.getValue<readonly string[]>(gitHubEnterpriseUrisSetting) : legacy ? [legacy] : [];
+	const uris = configured ? configurationService.getValue<readonly string[]>(gitHubEnterpriseUrisSetting) : legacy ? [legacy] : [];
 	if (!Array.isArray(uris) || uris.some(uri => typeof uri !== 'string')) {
 		throw new Error(localize('invalidGitHubEnterpriseUris', "GitHub Enterprise URIs must be an array of instance URLs."));
 	}
 	return uris;
 }
 
-export async function addGitHubEnterpriseUri(configurationService: IConfigurationService, uri: string, legacySetting = 'github-enterprise.uri'): Promise<void> {
-	const uris = getConfiguredGitHubEnterpriseUris(configurationService, legacySetting);
+export async function addGitHubEnterpriseUri(configurationService: IConfigurationService, uri: string, isWorkspaceTrusted: boolean, legacySetting = 'github-enterprise.uri'): Promise<void> {
+	const uris = getConfiguredGitHubEnterpriseUris(configurationService, isWorkspaceTrusted, legacySetting);
 	if (!uris.includes(uri)) {
-		const target = configurationService.inspect(gitHubEnterpriseUrisSetting).workspaceValue !== undefined ? ConfigurationTarget.WORKSPACE : ConfigurationTarget.USER;
+		const target = isWorkspaceTrusted && configurationService.inspect(gitHubEnterpriseUrisSetting).workspaceValue !== undefined ? ConfigurationTarget.WORKSPACE : ConfigurationTarget.USER;
 		await configurationService.updateValue(gitHubEnterpriseUrisSetting, [...uris, uri], target);
 	}
 }
