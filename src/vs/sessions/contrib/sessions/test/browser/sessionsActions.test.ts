@@ -27,7 +27,6 @@ import { ILogService } from '../../../../../platform/log/common/log.js';
 import { CloseEditorTabAction } from '../../../../../workbench/browser/parts/editor/editorActions.js';
 import { workbenchInstantiationService } from '../../../../../workbench/test/browser/workbenchTestServices.js';
 import { IWorkbenchAssignmentService } from '../../../../../workbench/services/assignment/common/assignmentService.js';
-import { IViewsService } from '../../../../../workbench/services/views/common/viewsService.js';
 import { Menus } from '../../../../browser/menus.js';
 import { SESSION_CONVERSATION_SIDE_CHATS_GROUP } from '../../../../browser/sessionConversationGroups.js';
 import { SessionView } from '../../../../browser/parts/sessionView.js';
@@ -42,11 +41,10 @@ import { Action } from '../../../../../base/common/actions.js';
 import { NewSessionActionViewItem, type NewSessionButtonStyle, SessionConversationActionsContribution, SessionListActionsExperimentContribution } from '../../browser/sessionsActions.js';
 import '../../../chat/browser/chat.contribution.js';
 import { NEW_SESSION_ACTION_ID, UNIFIED_WORKSPACE_PICKER_SETTING } from '../../../chat/common/constants.js';
-import { ArchiveSessionAction, SHOW_SESSION_ARCHIVED_CHATS_COMMAND_ID, ShowArchivedChatsAction } from '../../browser/views/sessionsViewActions.js';
+import { ArchiveSessionAction } from '../../browser/views/sessionsViewActions.js';
 import { createTestSession, TestCommandService } from './sessionsListTestUtils.js';
 import { INewSessionComposerService, NewSessionComposerService } from '../../../chat/browser/newSessionComposerService.js';
-import { ISessionSection, NEW_SESSION_FOR_WORKSPACE_ACTION_ID, SessionsList } from '../../browser/views/sessionsList.js';
-import { SessionsView, SessionsViewId } from '../../browser/views/sessionsView.js';
+import { ISessionSection, NEW_SESSION_FOR_WORKSPACE_ACTION_ID } from '../../browser/views/sessionsList.js';
 import { ISelectWorkspaceOptions } from '../../../../browser/parts/chatView.js';
 import { WorkspaceSelectionOrigin } from '../../../../common/workspaceSelection.js';
 import { ARCHIVE_SESSION_COMMAND_ID, CLOSE_CHAT_COMMAND_ID, CLOSE_SESSION_COMMAND_ID, MARK_SESSION_READ_COMMAND_ID, MARK_SESSION_UNREAD_COMMAND_ID, RENAME_CHAT_COMMAND_ID, TOGGLE_PIN_CHAT_COMMAND_ID, TOGGLE_PIN_SESSION_COMMAND_ID } from '../../../../common/sessionCommands.js';
@@ -270,6 +268,7 @@ suite('Sessions - Actions', () => {
 		]);
 	});
 
+<<<<<<< HEAD
 	test('contributes per-session archived chat visibility actions', () => {
 		const actionRegistration = new DisposableStore();
 		actionRegistration.add(registerAction2(ShowArchivedChatsAction));
@@ -331,6 +330,58 @@ suite('Sessions - Actions', () => {
 			{ session, visible: true },
 			{ session, visible: false },
 		]);
+=======
+	test('the main session context menu opens its main chat to the side', async () => {
+		const instantiationService = disposables.add(workbenchInstantiationService(undefined, disposables));
+		const { session } = createTestSession('Session');
+		const activeSession = upcastPartial<IActiveSession>({
+			...session,
+			activeChat: session.mainChat,
+			isCreated: constObservable(true),
+			sticky: constObservable(false),
+		});
+		const opens: IOpenSessionOptions[] = [];
+		instantiationService.stub(ISessionsService, new class extends mock<ISessionsService>() {
+			override readonly visibleSessions = constObservable([activeSession]);
+			override async openSessionToSide(_session: ISession, options?: IOpenSessionOptions): Promise<void> {
+				if (options) {
+					opens.push(options);
+				}
+			}
+		});
+		instantiationService.stub(ISessionsPartService, new class extends mock<ISessionsPartService>() {
+			override focusSession(): void { }
+		});
+
+		const command = CommandsRegistry.getCommand('sessionsViewPane.openToTheSide');
+		assert.ok(command);
+		await command.handler(instantiationService, session);
+
+		assert.deepStrictEqual(opens, [{ source: 'sessionsList', forceMainChat: true }]);
+	});
+
+	test('disables single-session context menu actions for multiselection', () => {
+		const actionIds = new Set([
+			'sessions.chatCompositeBar.addChat',
+			RENAME_SESSION_COMMAND_ID,
+		]);
+		const actions = MenuRegistry.getMenuItems(Menus.SessionItemContextMenu)
+			.filter(isIMenuItem)
+			.filter(item => actionIds.has(item.command.id))
+			.map(item => ({
+				id: item.command.id,
+				precondition: item.command.precondition?.serialize(),
+			}))
+			.sort((a, b) => a.id.localeCompare(b.id));
+
+		assert.deepStrictEqual(actions, [{
+			id: 'sessions.chatCompositeBar.addChat',
+			precondition: '!sessionItem.isMultiSelection',
+		}, {
+			id: RENAME_SESSION_COMMAND_ID,
+			precondition: '!sessionItem.isMultiSelection',
+		}]);
+>>>>>>> ad7afd04c60 (sessions: Use global archive filter for nested chats (#338535))
 	});
 
 	test('groups session management actions before creation and close', () => {
