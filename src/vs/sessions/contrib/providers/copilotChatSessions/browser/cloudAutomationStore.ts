@@ -73,6 +73,7 @@ export class CloudAutomationStore extends Disposable {
 		}
 		const result = observableValue<IAutomationWorkspaceTarget>(this, {
 			disabledReason: localize('cloudAutomations.checkingRepository', "Checking repository access..."),
+			pending: true,
 		});
 		this.targetEligibility.set(key, result);
 		const token = this.lifetime.value!.token;

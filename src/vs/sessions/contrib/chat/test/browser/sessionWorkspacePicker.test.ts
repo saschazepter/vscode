@@ -47,7 +47,7 @@ import { WebWorkspacePicker } from '../../browser/webWorkspacePicker.js';
 import { NewSessionWorkspacePreselectionSource } from '../../browser/newSessionComposerService.js';
 import { WorkspaceSelectionOrigin } from '../../../../common/workspaceSelection.js';
 import { ISessionsRecentWorkspacesService, SessionsRecentWorkspacesService } from '../../../../services/sessions/browser/sessionsRecentWorkspacesService.js';
-import { AutomationsWorkspacePicker } from '../../../automations/browser/automationDialog.js';
+import { AutomationsWorkspacePicker, MobileAutomationsWorkspacePicker } from '../../../automations/browser/automationDialog.js';
 import { AutomationIsolationModel } from '../../../automations/common/isolationGroupModel.js';
 import { buildMobileWorkspacePickerRows, showMobileWorkspacePickerSheet } from '../../browser/mobile/mobileWorkspacePickerSheet.js';
 import { IWorkbenchLayoutService } from '../../../../../workbench/services/layout/browser/layoutService.js';
@@ -302,6 +302,10 @@ class TestWebWorkspacePicker extends WebWorkspacePicker {
 }
 
 class TestAutomationsWorkspacePicker extends AutomationsWorkspacePicker {
+	waitForTargets(token: CancellationToken): Promise<boolean> {
+		return this.waitForWorkspaceTargets(token);
+	}
+
 	getItems() {
 		return this._buildItems();
 	}
@@ -4047,6 +4051,64 @@ suite('AutomationsWorkspacePicker', () => {
 		assert.deepStrictEqual({ enabled, errors, selected: picker.selectedFolderUri }, {
 			enabled: false, errors: ['Requires a private repository.', 'Repository access changed.'], selected: undefined,
 		});
+	});
+
+	test('mobile snapshot waits for pending eligibility and can be cancelled before opening', async () => {
+		const providersService = disposables.add(new MockSessionsProvidersService());
+		const provider = createMockProvider('local-1');
+		const folderUri = URI.file('/local/project');
+		const storage = disposables.add(new TestStorageService());
+		seedStorage(storage, [{ uri: folderUri, providerId: provider.id, checked: false }]);
+		providersService.setProviders([provider]);
+		const picker = createTestPicker(disposables, providersService, storage, undefined, TestAutomationsWorkspacePicker,
+			undefined, undefined, undefined, { restoreFromSessions: false, canRestoreWorkspace: () => false });
+		assert.ok(picker instanceof TestAutomationsWorkspacePicker);
+		const target = observableValue<IAutomationWorkspaceTarget>('target', { pending: true, disabledReason: 'Checking repository access...' });
+		picker.setCloudConfiguration(constObservable<IAutomationProviderConfiguration>({
+			sessionTypes: ['cloud-agent'], description: '', timeZone: 'UTC', targetChangeDisabledReason: '', tools: [],
+			getWorkspaceTarget: () => target,
+		}));
+		const cancellation = disposables.add(new CancellationTokenSource());
+		const cancelled = picker.waitForTargets(cancellation.token);
+		cancellation.cancel();
+		await assert.rejects(cancelled, CancellationError);
+		let ready = false;
+		const waiting = picker.waitForTargets(CancellationToken.None).then(value => { ready = value; });
+		await timeout(0);
+		assert.strictEqual(ready, false);
+		target.set({ workspace: folderUri }, undefined);
+		await waiting;
+		assert.deepStrictEqual({ ready, disabled: picker.getItems()[0].disabled }, { ready: true, disabled: false });
+	});
+
+	test('replacing and disposing a mobile opening cancels pending eligibility subscriptions', async () => {
+		const providersService = disposables.add(new MockSessionsProvidersService());
+		const provider = createMockProvider('local-1');
+		const folderUri = URI.file('/local/project');
+		const storage = disposables.add(new TestStorageService());
+		seedStorage(storage, [{ uri: folderUri, providerId: provider.id, checked: false }]);
+		providersService.setProviders([provider]);
+		const picker = createTestPicker(disposables, providersService, storage, undefined, MobileAutomationsWorkspacePicker,
+			undefined, undefined, undefined, { restoreFromSessions: false, canRestoreWorkspace: () => false });
+		assert.ok(picker instanceof MobileAutomationsWorkspacePicker);
+		const target = observableValue<IAutomationWorkspaceTarget>('target', { pending: true, disabledReason: 'Checking repository access...' });
+		picker.setCloudConfiguration(constObservable<IAutomationProviderConfiguration>({
+			sessionTypes: ['cloud-agent'], description: '', timeZone: 'UTC', targetChangeDisabledReason: '', tools: [],
+			getWorkspaceTarget: () => target,
+		}));
+		const workbench = document.createElement('div');
+		workbench.classList.add('phone-layout');
+		document.body.appendChild(workbench);
+		disposables.add(toDisposable(() => workbench.remove()));
+		const trigger = workbench.appendChild(document.createElement('button'));
+		picker.setLayoutService(upcastPartial<IWorkbenchLayoutService>({ mainContainer: workbench }));
+		picker.showPicker(false, trigger);
+		picker.showPicker(false, trigger);
+		picker.dispose();
+		await timeout(0);
+		assert.deepStrictEqual({
+			busy: trigger.getAttribute('aria-busy'), sheet: workbench.querySelector('.mobile-picker-sheet'),
+		}, { busy: null, sheet: null });
 	});
 
 	for (const checked of [true, false]) {

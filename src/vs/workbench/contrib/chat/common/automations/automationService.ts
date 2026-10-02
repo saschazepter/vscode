@@ -29,6 +29,7 @@ export interface IAutomationProviderConfiguration {
 export interface IAutomationWorkspaceTarget {
 	readonly workspace?: URI;
 	readonly disabledReason?: string;
+	readonly pending?: boolean;
 }
 
 /** Catalogue completeness; only `ready` makes an empty snapshot authoritative. */

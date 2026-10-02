@@ -169,6 +169,7 @@ class FakeAutomationService extends mock<IAutomationService>() {
 	override readonly runs: IObservable<readonly IAutomationRun[]> = this.runValue;
 	override readonly catalogueState: IObservable<AutomationCatalogueState> = this.catalogueStateValue;
 	override readonly unavailableProviders: IObservable<readonly IAutomationProviderDescriptor[]> = this.unavailableProvidersValue;
+	override readonly availableProviders = constObservable<readonly IAutomationProviderDescriptor[]>([]);
 	updateResult: IGuardedAutomationUpdateResult | undefined;
 	updateCalls = 0;
 	createError: Error | undefined;

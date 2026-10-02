@@ -71,7 +71,7 @@ const FOLDER = URI.file('/workspace');
 suite('Automation dialog creation', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
 
-	function openDialog(options: IShowAutomationDialogOptions = {}, cloudConfiguration?: IAutomationProviderConfiguration) {
+	function openDialog(options: IShowAutomationDialogOptions = {}, cloudConfiguration?: IAutomationProviderConfiguration, sessionOverrides?: Partial<ISessionsManagementService>, repository?: IGitRepository) {
 		const configurationService = new TestConfigurationService();
 		const contextKeyService = disposables.add(new ContextKeyService(configurationService));
 		const instantiationService = workbenchInstantiationService({
@@ -81,7 +81,7 @@ suite('Automation dialog creation', () => {
 		instantiationService.stub(ICommandService, new class extends mock<ICommandService>() { });
 		instantiationService.stub(IMenuService, disposables.add(instantiationService.createInstance(MenuService)));
 		instantiationService.stub(IActionWidgetService, new RecordingActionWidgetService());
-		instantiationService.stub(IGitService, upcastPartial<IGitService>({ openRepository: async () => undefined }));
+		instantiationService.stub(IGitService, upcastPartial<IGitService>({ openRepository: async () => repository }));
 		instantiationService.stub(ISessionsProvidersService, upcastPartial<ISessionsProvidersService>({
 			onDidChangeProviders: Event.None,
 			getProviders: () => [],
@@ -107,6 +107,7 @@ suite('Automation dialog creation', () => {
 			supportsAutomationSessionConfiguration: () => false,
 			getAutomationSessionConfiguration: async () => null,
 			discardAutomationSession: () => { },
+			...sessionOverrides,
 		}));
 		instantiationService.stub(IAutomationService, upcastPartial<IAutomationService>({
 			availableProviders: providers,
@@ -188,6 +189,7 @@ suite('Automation dialog creation', () => {
 		dialog.setPrompt('Review changes');
 		const toggle = dialog.container.querySelector<HTMLButtonElement>('[role="switch"]')!;
 		toggle.click();
+		await timeout(0);
 		dialog.selectWorkspace(FOLDER);
 		const disabledWhileChecking = dialog.saveButton.getAttribute('aria-disabled');
 		target.set({ workspace: URI.parse('vscode-vfs://github/owner/private/HEAD') }, undefined);
@@ -216,6 +218,7 @@ suite('Automation dialog creation', () => {
 		const dialog = openDialog({}, cloudConfiguration());
 		dialog.setPrompt('Review changes');
 		dialog.container.querySelector<HTMLButtonElement>('[role="switch"]')!.click();
+		await timeout(0);
 		dialog.selectWorkspace(FOLDER);
 		dialog.providers.set([{ id: 'host', label: 'Host' }], undefined);
 		assert.deepStrictEqual({
@@ -232,14 +235,76 @@ suite('Automation dialog creation', () => {
 		dialog.setPrompt('Review changes');
 		const toggle = dialog.container.querySelector<HTMLButtonElement>('[role="switch"]')!;
 		toggle.click();
+		await timeout(0);
 		dialog.selectWorkspace(FOLDER);
 		toggle.click();
+		await timeout(0);
 		dialog.saveButton.click();
 		const result = await dialog.result;
 		assert.ok(result?.kind === 'create');
 		assert.deepStrictEqual({
 			target: result.value.target, timeZone: result.value.schedule.timeZone, template: result.value.sessionTemplate,
 		}, { target: { kind: 'quickChat', providerId: 'host', sessionTypeId: 'copilotcli' }, timeZone: undefined, template: undefined });
+	});
+
+	test('closing during an execution-target switch cancels pending configuration capture', async () => {
+		const capture = new DeferredPromise<IAutomationSessionConfiguration>();
+		const dialog = openDialog({}, cloudConfiguration(), { getAutomationSessionConfiguration: () => capture.p });
+		await timeout(0);
+		dialog.container.querySelector<HTMLButtonElement>('[role="switch"]')!.click();
+		await timeout(0);
+		dialog.cancelButton.click();
+		assert.strictEqual(await dialog.result, undefined);
+		await timeout(0);
+	});
+
+	test('cloud roundtrip captures unsaved local configuration before retargeting and restores Worktree', async () => {
+		const localConfiguration = { sessionTemplate: { modelId: 'selected-model', config: { mode: 'plan', autoApprove: 'assisted' } } };
+		const captures: string[] = [];
+		const restored: Array<IAutomationSessionConfiguration | undefined> = [];
+		const dialog = openDialog({
+			initialValues: {
+				name: 'Review', prompt: 'Review changes', enabled: true,
+				schedule: { interval: 'daily', scheduleHour: 9, scheduleMinute: 0, scheduleDay: 1 },
+				target: { kind: 'workspace', folderUri: FOLDER, providerId: 'host', sessionTypeId: 'copilotcli', isolation: { kind: 'worktree', branch: 'release' } },
+			},
+		}, cloudConfiguration(), {
+			getSessionTypesForFolder: () => [
+				{ providerId: 'host', sessionType: { id: 'copilotcli', label: 'Copilot', icon: Codicon.copilot, authRequirement: SessionTypeAuthRequirement.None, supportsWorktreeConfiguration: true } },
+				{ providerId: 'cloud', sessionType: { id: 'cloud-agent', label: 'Cloud', icon: Codicon.cloud, authRequirement: SessionTypeAuthRequirement.None } },
+			],
+			createAutomationSession: (_uri, options) => {
+				if (options?.providerId === 'host') {
+					restored.push(options.automationConfiguration);
+				}
+				return upcastPartial<ISession>({ sessionId: `draft-${options?.providerId}`, providerId: options?.providerId });
+			},
+			getAutomationSessionConfiguration: async session => {
+				captures.push(session.providerId);
+				return session.providerId === 'host' ? localConfiguration : { sessionTemplate: { modelId: 'cloud-model' } };
+			},
+		}, upcastPartial<IGitRepository>({
+			rootUri: FOLDER,
+			state: constObservable({ HEAD: { type: GitRefType.Head, name: 'main', commit: 'abc123' }, remotes: [], mergeChanges: [], indexChanges: [], workingTreeChanges: [], untrackedChanges: [] }),
+			getRefs: async () => [{ type: GitRefType.Head, name: 'release' }],
+		}));
+		await timeout(0);
+		const toggle = dialog.container.querySelector<HTMLButtonElement>('[role="switch"]')!;
+		toggle.click();
+		await timeout(0);
+		toggle.click();
+		await timeout(0);
+		dialog.saveButton.click();
+		const result = await dialog.result;
+		assert.ok(result?.kind === 'create');
+		assert.deepStrictEqual({
+			capturedBeforeCloud: captures[0], restored: restored.at(-1),
+			isolation: result.value.target.kind === 'workspace' ? result.value.target.isolation : undefined,
+			configuration: result.value.sessionTemplate,
+		}, {
+			capturedBeforeCloud: 'host', restored: localConfiguration,
+			isolation: { kind: 'worktree', branch: 'release' }, configuration: localConfiguration.sessionTemplate,
+		});
 	});
 
 	test('cloud edit retains target pickers, unknown tools, model, UTC and disabled state', async () => {

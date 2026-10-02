@@ -14,13 +14,13 @@ import { ISelectBoxOptions, ISelectOptionItem, SelectBox } from '../../../../bas
 import { Checkbox } from '../../../../base/browser/ui/toggle/toggle.js';
 import { Switch } from '../../../../base/browser/ui/toggle/switch.js';
 import { IAction } from '../../../../base/common/actions.js';
-import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
+import { cancelOnDispose, CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { getErrorMessage, onUnexpectedError } from '../../../../base/common/errors.js';
+import { getErrorMessage, isCancellationError, onUnexpectedError } from '../../../../base/common/errors.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, IDisposable, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
-import { autorun, constObservable, derived, disposableObservableValue, IObservable, observableSignalFromEvent, observableValue, transaction } from '../../../../base/common/observable.js';
+import { autorun, constObservable, derived, disposableObservableValue, IObservable, observableSignalFromEvent, observableValue, transaction, waitForState } from '../../../../base/common/observable.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { isStringArray } from '../../../../base/common/types.js';
@@ -1139,6 +1139,7 @@ export function renderForm(
 	const selectedProviders = derived(reader => allowedProviders.read(reader).filter(id => (getProviderConfiguration(id) !== undefined) === runInCloud.read(reader)));
 	const cloudConfiguration = derived(reader => runInCloud.read(reader) ? getProviderConfiguration(cloudProvider.read(reader)) : undefined);
 	const sessionConfigurationErrorMessage = observableValue<string | undefined>(form, undefined);
+	let switchingTarget = false;
 	const isolationModel = new AutomationIsolationModel(state);
 	const workspaceControlsVisible = derived(reader => !runInCloud.read(reader) && !isolationModel.isQuickChatObs.read(reader) && isolationModel.folderUriObs.read(reader)?.scheme !== GITHUB_REMOTE_FILE_SCHEME && isolationModel.folderUriObs.read(reader) !== undefined);
 	const sessionTypesChanged = observableSignalFromEvent(form, sessionsManagementService.onDidChangeSessionTypes);
@@ -1173,6 +1174,9 @@ export function renderForm(
 		onDidChangeActiveSessionProvider: onDidChangeSessionType.event,
 	};
 	const syncStateFromPicker = () => {
+		if (switchingTarget) {
+			return;
+		}
 		const pick = sessionTypePicker.selectedPick;
 		state.providerId = pick?.providerId;
 		state.sessionTypeId = pick?.sessionTypeId;
@@ -1180,7 +1184,7 @@ export function renderForm(
 		const target = configuration?.getWorkspaceTarget(state.folderUri).get();
 		state.resolvedFolderUri = target?.workspace;
 		state.targetDisabledReason = target?.disabledReason;
-		state.timeZone = runInCloud.get() ? 'UTC' : undefined;
+		state.timeZone = configuration?.timeZone;
 		if (runInCloud.get()) {
 			state.isolationMode = undefined;
 			state.branch = undefined;
@@ -1242,6 +1246,9 @@ export function renderForm(
 		return initialSessionConfiguration;
 	};
 	const updateAutomationSessionTarget = () => {
+		if (switchingTarget) {
+			return;
+		}
 		const folderUri = runInCloud.get() ? state.resolvedFolderUri : isolationModel.folderUriObs.get();
 		const pick = sessionTypePicker.selectedPick;
 		const isQuickChat = isolationModel.isQuickChatObs.get();
@@ -1316,36 +1323,71 @@ export function renderForm(
 	disposables.add(autorun(reader => {
 		const available = cloudProvider.read(reader) !== undefined;
 		setAutomationControlVisible(cloudPill, available);
-		cloudToggle.disabled = isEdit || !available;
+		cloudToggle.disabled = switchingTarget || isEdit || !available;
 		cloudToggle.checked = runInCloud.read(reader);
 	}));
 	let localTarget = { ...state };
-	disposables.add(cloudToggle.onChange(checked => {
+	const targetSwitchCancellation = cancelOnDispose(disposables);
+	disposables.add(cloudToggle.onChange(async checked => {
 		if (checked) {
-			localTarget = { ...state };
+			localTarget = { ...state, branch: isolationModel.persistedBranch };
 		}
-		transaction(() => {
-			isolationModel.setQuickChat(checked ? false : localTarget.isQuickChat, checked ? isolationModel.folderUri : localTarget.folderUri);
-			if (!checked) {
-				state.isolationMode = localTarget.isolationMode;
-				state.branch = localTarget.branch;
-				if (localTarget.folderUri) {
-					workspacePicker.setSelectedWorkspace(localTarget.folderUri, { fireEvent: false, persist: false });
-				} else {
-					workspacePicker.clearSelection();
-				}
-			}
-			runInCloud.set(checked, undefined);
-		});
-		const first = sessionTypes.get().find(type => selectedProviders.get().includes(type.providerId));
-		sessionTypePicker.setFolderSource(isolationModel.folderUriObs, {
-			initialPick: !checked && localTarget.providerId && localTarget.sessionTypeId
-				? { providerId: localTarget.providerId, sessionTypeId: localTarget.sessionTypeId }
-				: first ? { providerId: first.providerId, sessionTypeId: first.sessionType.id } : undefined,
-		});
-		syncStateFromPicker();
-		updateAutomationSessionTarget();
+		switchingTarget = true;
+		cloudToggle.disabled = true;
+		formContent.toggleAttribute('inert', true);
+		formContent.setAttribute('aria-busy', 'true');
+		state.targetDisabledReason = localize('automation.form.switchingTarget', "Saving the current session configuration...");
 		revalidate();
+		try {
+			const capture = await automationSessionDraftSynchronizer.getSessionConfiguration(targetSwitchCancellation);
+			if (capture.kind === 'failed') {
+				throw capture.error;
+			}
+			if (disposables.isDisposed || checked && cloudProvider.get() === undefined) {
+				return;
+			}
+			transaction(() => {
+				runInCloud.set(checked, undefined);
+				isolationModel.setQuickChat(checked ? false : localTarget.isQuickChat, checked ? isolationModel.folderUri : localTarget.folderUri);
+				const first = sessionTypes.get().find(type => selectedProviders.get().includes(type.providerId));
+				const pick = !checked && localTarget.providerId && localTarget.sessionTypeId
+					? { providerId: localTarget.providerId, sessionTypeId: localTarget.sessionTypeId }
+					: first ? { providerId: first.providerId, sessionTypeId: first.sessionType.id } : undefined;
+				sessionTypePicker.setFolderSource(isolationModel.folderUriObs, { initialPick: pick });
+				state.providerId = pick?.providerId;
+				state.sessionTypeId = pick?.sessionTypeId;
+				if (!checked) {
+					state.isolationMode = localTarget.isolationMode;
+					if (localTarget.branch) {
+						isolationModel.selectBranch(localTarget.branch);
+					}
+					if (localTarget.folderUri) {
+						workspacePicker.setSelectedWorkspace(localTarget.folderUri, { fireEvent: false, persist: false });
+					} else {
+						workspacePicker.clearSelection();
+					}
+				}
+			});
+		} catch (error) {
+			if (!isCancellationError(error) && !disposables.isDisposed) {
+				logService.error('[AutomationDialog] Failed to capture the outgoing session configuration.', error);
+				sessionConfigurationErrorMessage.set(getErrorMessage(error), undefined);
+			}
+		} finally {
+			switchingTarget = false;
+			if (!disposables.isDisposed) {
+				formContent.toggleAttribute('inert', false);
+				formContent.setAttribute('aria-busy', 'false');
+				cloudToggle.disabled = isEdit || cloudProvider.get() === undefined;
+				cloudToggle.checked = runInCloud.get();
+				if (!cloudToggle.disabled) {
+					cloudToggle.domNode.focus();
+				}
+				syncStateFromPicker();
+				updateAutomationSessionTarget();
+				revalidate();
+			}
+		}
 	}));
 	const targetContainer = DOM.append(targetRow, $('.automation-target-toolbar', {
 		role: 'group',
@@ -1571,7 +1613,7 @@ export function renderForm(
 		toolDisposables.clear();
 		DOM.clearNode(toolsContainer);
 		setAutomationControlVisible(providerDetails, configuration !== undefined);
-		timeLabel.textContent = configuration ? localize('automation.form.timeUtc', "Time (UTC)") : localize('automation.form.time', "Time");
+		timeLabel.textContent = configuration?.timeZone === 'UTC' ? localize('automation.form.timeUtc', "Time (UTC)") : localize('automation.form.time', "Time");
 		timeSelect.setAriaLabel(timeLabel.textContent);
 		if (!configuration) {
 			return;
@@ -1579,7 +1621,7 @@ export function renderForm(
 		providerDescription.textContent = configuration.description;
 		if (!toolsInitialized) {
 			const stored = initialProviderConfiguration ? initialSessionConfiguration?.sessionTemplate?.config?.tools : undefined;
-			selectedTools = isStringArray(stored) ? [...stored] : initialProviderConfiguration ? undefined : configuration.tools.map(tool => tool.id);
+			selectedTools = isStringArray(stored) ? [...stored] : isEdit && initialProviderConfiguration ? undefined : configuration.tools.map(tool => tool.id);
 			toolsInitialized = true;
 		}
 		const tools = [...configuration.tools];
@@ -1806,6 +1848,17 @@ export class AutomationsWorkspacePicker extends WorkspacePicker {
 		super.showPicker(force, anchor);
 	}
 
+	protected async waitForWorkspaceTargets(token: CancellationToken): Promise<boolean> {
+		const configuration = this.cloudConfiguration.get();
+		if (!configuration) {
+			return true;
+		}
+		await Promise.all(super._buildItems().flatMap(item => item.item?.folderUri
+			? [waitForState(configuration.getWorkspaceTarget(item.item.folderUri), target => !target.pending, undefined, token)]
+			: []));
+		return !token.isCancellationRequested && configuration === this.cloudConfiguration.get();
+	}
+
 	setTargetModel(model: AutomationIsolationModel): void {
 		this.targetModel = model;
 		this.targetModelWatch.value = autorun(reader => {
@@ -1906,6 +1959,7 @@ export class AutomationsWorkspacePicker extends WorkspacePicker {
 
 export class MobileAutomationsWorkspacePicker extends AutomationsWorkspacePicker {
 	private layoutService: IWorkbenchLayoutService | undefined;
+	private readonly pendingPicker = this._register(new MutableDisposable<DisposableStore>());
 
 	setLayoutService(layoutService: IWorkbenchLayoutService): void {
 		this.layoutService = layoutService;
@@ -1917,12 +1971,33 @@ export class MobileAutomationsWorkspacePicker extends AutomationsWorkspacePicker
 			super.showPicker(force, anchor);
 			return;
 		}
-		void showMobileWorkspacePickerSheet(
-			this.layoutService,
-			triggerElement,
-			this._buildItems(),
-			item => { void this._dispatchPickerItem(item); },
-			this._getAllBrowseActions(),
+		this.pendingPicker.clear();
+		const pending = new DisposableStore();
+		this.pendingPicker.value = pending;
+		const cancellation = cancelOnDispose(pending);
+		pending.add(toDisposable(() => {
+			triggerElement.removeAttribute('aria-busy');
+		}));
+		triggerElement.setAttribute('aria-busy', 'true');
+		void this.showReadyMobilePicker(triggerElement, this.layoutService, cancellation).catch(error => {
+			if (!isCancellationError(error)) {
+				this.onSelectionError(error instanceof Error ? error : new Error(getErrorMessage(error)));
+			}
+		}).finally(() => {
+			if (this.pendingPicker.value === pending) {
+				this.pendingPicker.clear();
+			}
+		});
+	}
+
+	private async showReadyMobilePicker(trigger: HTMLElement, layoutService: IWorkbenchLayoutService, token: CancellationToken): Promise<void> {
+		if (!await this.waitForWorkspaceTargets(token) || !trigger.isConnected) {
+			return;
+		}
+		trigger.removeAttribute('aria-busy');
+		await showMobileWorkspacePickerSheet(
+			layoutService, trigger, this._buildItems(),
+			item => { void this._dispatchPickerItem(item); }, this._getAllBrowseActions(),
 		);
 	}
 }
