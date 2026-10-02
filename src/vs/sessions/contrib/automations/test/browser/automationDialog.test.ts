@@ -48,7 +48,7 @@ import { createWorkbenchDialogOptions } from '../../../../../workbench/browser/p
 import { ChatContextKeys } from '../../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 import { ChatInputPart } from '../../../../../workbench/contrib/chat/browser/widget/input/chatInputPart.js';
 import { IAutomationDescriptor, IAutomationSessionTemplate } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
-import { AutomationCatalogueState, IAutomationService } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
+import { AutomationCatalogueState, IAutomationProviderConfiguration, IAutomationService, IAutomationWorkspaceTarget } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { IShowAutomationDialogOptions } from '../../../../../workbench/contrib/chat/common/automations/automationDialogService.js';
 import { GitRefType, IGitRepository, IGitService } from '../../../../../workbench/contrib/git/common/gitService.js';
 import { IHostService } from '../../../../../workbench/services/host/browser/host.js';
@@ -71,7 +71,7 @@ const FOLDER = URI.file('/workspace');
 suite('Automation dialog creation', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
 
-	function openDialog(options: IShowAutomationDialogOptions = {}) {
+	function openDialog(options: IShowAutomationDialogOptions = {}, cloudConfiguration?: IAutomationProviderConfiguration) {
 		const configurationService = new TestConfigurationService();
 		const contextKeyService = disposables.add(new ContextKeyService(configurationService));
 		const instantiationService = workbenchInstantiationService({
@@ -91,11 +91,14 @@ suite('Automation dialog creation', () => {
 			providerId: 'host',
 			sessionType: { id: 'copilotcli', label: 'Copilot', icon: Codicon.copilot, authRequirement: SessionTypeAuthRequirement.None },
 		}];
+		const cloudTypes = [{ providerId: 'cloud', sessionType: { ...types[0].sessionType, id: 'cloud-agent', label: 'Cloud' } }];
+		const providers = observableValue('providers', [{ id: 'host', label: 'Host' }, ...(cloudConfiguration ? [{ id: 'cloud', label: 'Cloud' }] : [])]);
 		instantiationService.stub(ISessionsManagementService, upcastPartial<ISessionsManagementService>({
 			automationSession: constObservable(undefined),
 			onDidChangeSessionTypes: Event.None,
 			getSessionTypesForFolder: () => types,
 			getQuickChatSessionTypes: () => types,
+			getAllProviderSessionTypes: () => [...types, ...cloudTypes],
 			isNewSessionTargetAvailable: () => true,
 			isQuickChatTargetAvailable: () => true,
 			resolveWorkspace: () => ({ providerId: 'host', workspace: createWorkspace(false) }),
@@ -106,7 +109,8 @@ suite('Automation dialog creation', () => {
 			discardAutomationSession: () => { },
 		}));
 		instantiationService.stub(IAutomationService, upcastPartial<IAutomationService>({
-			availableProviders: constObservable([{ id: 'host', label: 'Host' }]),
+			availableProviders: providers,
+			getProviderConfiguration: id => id === 'cloud' && providers.get().some(provider => provider.id === id) ? cloudConfiguration : undefined,
 			automations: constObservable(options.existing ? [options.existing] : []),
 			catalogueState: constObservable('ready'),
 			canUpdateAutomation: () => true,
@@ -114,12 +118,15 @@ suite('Automation dialog creation', () => {
 		ChatContextKeys.enabled.bindTo(contextKeyService).set(true);
 		let targetModel: AutomationIsolationModel | undefined;
 		let selectedWorkspace: URI | undefined;
+		const workspaceSelected = disposables.add(new Emitter<URI>());
 		instantiationService.stubInstance(MobileAutomationsWorkspacePicker, {
 			setTargetModel: model => { targetModel = model; },
+			setCloudConfiguration: () => { },
 			setLayoutService: () => { },
 			setSelectedWorkspace: uri => { selectedWorkspace = uri; },
-			onDidSelectWorkspace: Event.None,
-			render: container => container,
+			clearSelection: () => { selectedWorkspace = undefined; },
+			onDidSelectWorkspace: workspaceSelected.event,
+			render: container => container.appendChild(DOM.$('button', { type: 'button' }, 'Select workspace')),
 			dispose: () => { },
 		});
 		instantiationService.stubInstance(SessionModelSelection, { dispose: () => { } });
@@ -152,7 +159,8 @@ suite('Automation dialog creation', () => {
 		disposables.add(toDisposable(() => cancelButton.click()));
 		const nameInput = container.querySelector<HTMLInputElement>('.automation-form-input-host input')!;
 		return {
-			result, saveButton, nameInput,
+			result, saveButton, cancelButton, nameInput, container, providers,
+			selectWorkspace: (uri: URI) => workspaceSelected.fire(uri),
 			getTarget: () => ({ quickChat: targetModel?.isQuickChat, workspace: selectedWorkspace }),
 			setPrompt: (prompt: string) => {
 				promptInput.value = prompt;
@@ -164,6 +172,95 @@ suite('Automation dialog creation', () => {
 			},
 		};
 	}
+
+	function cloudConfiguration(target = observableValue<IAutomationWorkspaceTarget>('target', { workspace: URI.parse('vscode-vfs://github/owner/private/HEAD') })): IAutomationProviderConfiguration {
+		return {
+			sessionTypes: ['cloud-agent'], timeZone: 'UTC', description: 'Runs on GitHub',
+			targetChangeDisabledReason: 'Duplicate to change repository.',
+			tools: [{ id: 'read', label: 'Read Files' }, { id: 'edit', label: 'Edit Files' }],
+			getWorkspaceTarget: uri => uri ? target : constObservable({ disabledReason: 'Choose a repository.' }),
+		};
+	}
+
+	test('cloud creation uses checked repository, UTC and selected tools without an Enabled control', async () => {
+		const target = observableValue<IAutomationWorkspaceTarget>('target', { disabledReason: 'Checking repository access...' });
+		const dialog = openDialog({}, cloudConfiguration(target));
+		dialog.setPrompt('Review changes');
+		const toggle = dialog.container.querySelector<HTMLButtonElement>('[role="switch"]')!;
+		toggle.click();
+		dialog.selectWorkspace(FOLDER);
+		const disabledWhileChecking = dialog.saveButton.getAttribute('aria-disabled');
+		target.set({ workspace: URI.parse('vscode-vfs://github/owner/private/HEAD') }, undefined);
+		dialog.container.querySelector<HTMLElement>('[role="checkbox"][aria-label="Edit Files"]')!.click();
+		assert.deepStrictEqual({
+			checked: toggle.getAttribute('aria-checked'),
+			disabledWhileChecking,
+			disabledAfterCheck: dialog.saveButton.getAttribute('aria-disabled'),
+			enabledControl: dialog.container.querySelector('[role="checkbox"][aria-label="Enabled"]'),
+			utc: dialog.container.textContent?.includes('Time (UTC)'),
+		}, { checked: 'true', disabledWhileChecking: 'true', disabledAfterCheck: 'false', enabledControl: null, utc: true });
+		dialog.saveButton.click();
+		const result = await dialog.result;
+		assert.ok(result?.kind === 'create');
+		assert.ok(result.value.target.kind === 'workspace');
+		assert.deepStrictEqual({
+			target: { ...result.value.target, folderUri: result.value.target.folderUri.toString() }, schedule: result.value.schedule, template: result.value.sessionTemplate, enabled: result.value.enabled,
+		}, {
+			target: { kind: 'workspace', folderUri: 'vscode-vfs://github/owner/private/HEAD', providerId: 'cloud', sessionTypeId: 'cloud-agent', isolation: { kind: 'default' } },
+			schedule: { interval: 'daily', scheduleHour: 9, scheduleMinute: 0, scheduleDay: 1, timeZone: 'UTC' },
+			template: { config: { tools: ['read'] } }, enabled: true,
+		});
+	});
+
+	test('cloud gate revocation blocks save and removes cloud controls without falling back locally', async () => {
+		const dialog = openDialog({}, cloudConfiguration());
+		dialog.setPrompt('Review changes');
+		dialog.container.querySelector<HTMLButtonElement>('[role="switch"]')!.click();
+		dialog.selectWorkspace(FOLDER);
+		dialog.providers.set([{ id: 'host', label: 'Host' }], undefined);
+		assert.deepStrictEqual({
+			disabled: dialog.saveButton.getAttribute('aria-disabled'),
+			hiddenSwitch: dialog.container.querySelector<HTMLElement>('.automation-cloud-toggle')!.style.display,
+			hiddenTools: dialog.container.querySelector<HTMLElement>('.automation-provider-details')!.style.display,
+		}, { disabled: 'true', hiddenSwitch: 'none', hiddenTools: 'none' });
+		dialog.cancelButton.click();
+		await dialog.result;
+	});
+
+	test('switching cloud off restores the local quick-chat draft and local schedule semantics', async () => {
+		const dialog = openDialog({}, cloudConfiguration());
+		dialog.setPrompt('Review changes');
+		const toggle = dialog.container.querySelector<HTMLButtonElement>('[role="switch"]')!;
+		toggle.click();
+		dialog.selectWorkspace(FOLDER);
+		toggle.click();
+		dialog.saveButton.click();
+		const result = await dialog.result;
+		assert.ok(result?.kind === 'create');
+		assert.deepStrictEqual({
+			target: result.value.target, timeZone: result.value.schedule.timeZone, template: result.value.sessionTemplate,
+		}, { target: { kind: 'quickChat', providerId: 'host', sessionTypeId: 'copilotcli' }, timeZone: undefined, template: undefined });
+	});
+
+	test('cloud edit retains target pickers, unknown tools, model, UTC and disabled state', async () => {
+		const existing: IAutomationDescriptor = {
+			id: 'cloud-existing', name: 'Review', prompt: 'Review changes', enabled: false, createdAt: '', updatedAt: '',
+			target: { kind: 'workspace', folderUri: URI.parse('vscode-vfs://github/owner/private/HEAD'), providerId: 'cloud', sessionTypeId: 'cloud-agent', isolation: { kind: 'default' } },
+			schedule: { interval: 'weekly', scheduleHour: 15, scheduleMinute: 30, scheduleDay: 2, timeZone: 'UTC' },
+			sessionTemplate: { modelId: 'saved-model', config: { tools: ['read', 'future-tool'], reasoningEffort: 'high' } },
+		};
+		const dialog = openDialog({ existing }, cloudConfiguration());
+		assert.deepStrictEqual({
+			workspacePicker: dialog.container.querySelector('.automation-target-toolbar')?.textContent?.includes('Select workspace'),
+			guidance: dialog.container.querySelector('.automation-form-hint')?.textContent,
+			switchDisabled: dialog.container.querySelector<HTMLButtonElement>('[role="switch"]')?.disabled,
+		}, { workspacePicker: true, guidance: 'Duplicate to change repository.', switchDisabled: true });
+		dialog.saveButton.click();
+		assert.deepStrictEqual(await dialog.result, {
+			kind: 'update', id: existing.id,
+			value: { name: existing.name, prompt: existing.prompt, schedule: existing.schedule, target: existing.target, sessionTemplate: existing.sessionTemplate, enabled: false },
+		});
+	});
 
 	for (const { label, prompt, name } of [
 		{ label: 'short prompt', prompt: '  Review changes  ', name: 'Review changes' },
@@ -278,6 +375,7 @@ suite('Automation dialog layout', () => {
 		let targetModel: AutomationIsolationModel | undefined;
 		instantiationService.stubInstance(MobileAutomationsWorkspacePicker, {
 			setTargetModel: model => { targetModel = model; },
+			setCloudConfiguration: () => { },
 			setLayoutService: () => { },
 			onDidSelectWorkspace: Event.None,
 			render: container => container.appendChild(workspaceButton),
@@ -352,7 +450,7 @@ suite('Automation dialog layout', () => {
 			targetLabel: targetRow.querySelector('.automation-target-toolbar')?.getAttribute('aria-label'),
 			targetContainsWorkspace: targetRow.contains(workspaceButton),
 			targetBeforePrompt: !!(targetRow.compareDocumentPosition(promptSection) & Node.DOCUMENT_POSITION_FOLLOWING),
-			targetControls: Array.from(targetRow.querySelectorAll('button, a[href]'), element => element.textContent),
+			targetControls: Array.from(targetRow.querySelectorAll('button:not([disabled]), a[href]'), element => element.textContent),
 			hintInTarget: !!targetRow.querySelector('.automation-target-hint'),
 			promptFocused: document.activeElement === promptInput,
 			prompt: handle.getPrompt(),

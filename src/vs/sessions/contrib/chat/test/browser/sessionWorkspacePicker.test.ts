@@ -51,6 +51,7 @@ import { AutomationsWorkspacePicker } from '../../../automations/browser/automat
 import { AutomationIsolationModel } from '../../../automations/common/isolationGroupModel.js';
 import { buildMobileWorkspacePickerRows, showMobileWorkspacePickerSheet } from '../../browser/mobile/mobileWorkspacePickerSheet.js';
 import { IWorkbenchLayoutService } from '../../../../../workbench/services/layout/browser/layoutService.js';
+import { IAutomationProviderConfiguration, IAutomationWorkspaceTarget } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { IWorkspacesService } from '../../../../../platform/workspaces/common/workspaces.js';
 import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
 import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
@@ -4016,6 +4017,37 @@ suite('AutomationsWorkspacePicker', () => {
 	teardown(() => disposables.clear());
 
 	ensureNoDisposablesAreLeakedInTestSuite();
+
+	test('cloud mode offers only known repository rows and rechecks eligibility at selection', async () => {
+		const providersService = disposables.add(new MockSessionsProvidersService());
+		const provider = createMockProvider('local-1');
+		const folderUri = URI.file('/local/project');
+		const storage = disposables.add(new TestStorageService());
+		seedStorage(storage, [{ uri: folderUri, providerId: provider.id, checked: false }]);
+		providersService.setProviders([provider]);
+		const picker = createTestPicker(disposables, providersService, storage, undefined, TestAutomationsWorkspacePicker,
+			undefined, undefined, undefined, { restoreFromSessions: false, canRestoreWorkspace: () => false });
+		assert.ok(picker instanceof TestAutomationsWorkspacePicker);
+		const target = observableValue<IAutomationWorkspaceTarget>('target', { disabledReason: 'Requires a private repository.' });
+		picker.setCloudConfiguration(constObservable<IAutomationProviderConfiguration>({
+			sessionTypes: ['cloud-agent'], description: '', timeZone: 'UTC', targetChangeDisabledReason: '', tools: [],
+			getWorkspaceTarget: () => target,
+		}));
+		const errors: string[] = [];
+		picker.onSelectionError = error => errors.push(error.message);
+		const rows = picker.getItems();
+		assert.deepStrictEqual(rows.map(row => ({
+			label: row.label, disabled: row.disabled, reason: row.ariaDescription, icon: row.group?.icon?.id,
+		})), [{ label: 'local/project', disabled: true, reason: 'Requires a private repository.', icon: 'lock' }]);
+		await picker.select('local/project');
+		target.set({ workspace: folderUri }, undefined);
+		const enabled = picker.getItems()[0].disabled;
+		target.set({ disabledReason: 'Repository access changed.' }, undefined);
+		await picker.select('local/project');
+		assert.deepStrictEqual({ enabled, errors, selected: picker.selectedFolderUri }, {
+			enabled: false, errors: ['Requires a private repository.', 'Repository access changed.'], selected: undefined,
+		});
+	});
 
 	for (const checked of [true, false]) {
 		test(`does not inherit a ${checked ? 'checked' : 'recent'} cloud workspace when restoration is disabled`, async () => {

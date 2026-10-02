@@ -1084,7 +1084,7 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 
 	get supportsLocalWorkspaces(): boolean { return this.providerMode !== 'sandbox'; }
 	readonly automations: CloudAutomationProvider | undefined;
-	readonly supportsAutomationSessionConfiguration = false;
+	get supportsAutomationSessionConfiguration(): boolean { return this.providerMode === 'default' && this.automations?.enabled.get() === true; }
 
 	constructor(
 		private readonly providerMode: 'default' | 'sandbox',
@@ -1390,6 +1390,17 @@ export class CopilotChatSessionsProvider extends Disposable implements ISessions
 		const modelConfiguration = session.modelConfiguration.captureModelConfiguration(modelId);
 		const initialConfiguration = session.initialAutomationSessionConfiguration;
 		const initialTemplate = initialConfiguration?.sessionTemplate;
+		if (this.automations?.enabled.get()) {
+			if (modelConfiguration !== undefined || initialConfiguration?.mode !== undefined || initialConfiguration?.permissionLevel !== undefined) {
+				throw new Error(localize('cloudAutomationConfigurationUnsupported', "Cloud automations do not support local mode, approval, or model-specific settings. Remove those settings before saving."));
+			}
+			return {
+				sessionTemplate: {
+					...(modelId !== undefined ? { modelId } : {}),
+					...(initialTemplate?.config !== undefined ? { config: initialTemplate.config } : {}),
+				},
+			};
+		}
 		// Cloud sessions have no client-side mode or permission pickers, so the initial
 		// Automation configuration is carried through unchanged.
 		const initialMode = initialConfiguration?.mode ?? initialTemplate?.config?.[SessionConfigKey.Mode];

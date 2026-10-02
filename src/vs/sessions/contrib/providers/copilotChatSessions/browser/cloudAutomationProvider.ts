@@ -18,7 +18,7 @@ import { IDefaultAccountService } from '../../../../../platform/defaultAccount/c
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { AutomationTarget, IAutomationDescriptor, IAutomationRun, IAutomationSchedule, IAutomationSessionTemplate } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
-import { AutomationCatalogueState, AutomationMutationGuard, AutomationUnavailableError, assertAutomationSessionTemplateAuthority, ICreateAutomationOptions, IGuardedAutomationUpdateResult, IUpdateAutomationOptions, serializeAutomationEditableState } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
+import { AutomationCatalogueState, AutomationMutationGuard, AutomationUnavailableError, assertAutomationSessionTemplateAuthority, IAutomationProviderConfiguration, ICreateAutomationOptions, IGuardedAutomationUpdateResult, IUpdateAutomationOptions, serializeAutomationEditableState } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { CHAT_AUTOMATIONS_ENABLED_SETTING, CHAT_CLOUD_AUTOMATIONS_ENABLED_SETTING } from '../../../../../workbench/contrib/chat/common/automations/automationsEnabled.js';
 import { IChatEntitlementService } from '../../../../../workbench/services/chat/common/chatEntitlementService.js';
 import { GITHUB_REMOTE_FILE_SCHEME } from '../../../../services/sessions/common/session.js';
@@ -38,6 +38,20 @@ export class CloudAutomationProvider extends Disposable implements ISessionsProv
 		this.enabled.read(reader) && this.catalogueState.read(reader) === 'ready' && this.store.read(reader)?.mutationUncertain.read(reader) === false);
 	readonly automations = derived(this, reader => (this.store.read(reader)?.entries.read(reader) ?? []).map(entry => this.toAutomation(entry)));
 	readonly runs = derived(this, reader => (this.store.read(reader)?.history.read(reader) ?? []).map(entry => this.toRun(entry)));
+	readonly configuration: IAutomationProviderConfiguration = {
+		sessionTypes: [this.sessionTypeId],
+		description: localize('cloudAutomations.description', "Runs on GitHub even when VS Code is closed and may consume credits. Requires a private or internal repository."),
+		timeZone: 'UTC',
+		targetChangeDisabledReason: localize('cloudAutomations.targetImmutable', "The repository and provider cannot be changed for an existing cloud automation. Duplicate this automation to use another target."),
+		tools: [
+			{ id: 'read', label: localize('cloudAutomations.read', "Read Files") },
+			{ id: 'edit', label: localize('cloudAutomations.edit', "Edit Files") },
+			{ id: 'bash', label: localize('cloudAutomations.commands', "Run Commands") },
+			{ id: 'github/*', label: localize('cloudAutomations.github', "GitHub Tools") },
+		],
+		getWorkspaceTarget: workspace => derived(reader => this.store.read(reader)?.getWorkspaceTarget(workspace).read(reader)
+			?? { disabledReason: localize('cloudAutomations.targetUnavailable', "Cloud automations are unavailable.") }),
+	};
 
 	constructor(
 		private readonly providerId: string,

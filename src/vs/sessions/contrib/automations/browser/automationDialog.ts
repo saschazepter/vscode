@@ -11,15 +11,20 @@ import { IButton } from '../../../../base/browser/ui/button/button.js';
 import { InputBox } from '../../../../base/browser/ui/inputbox/inputBox.js';
 import { AnchorPosition } from '../../../../base/browser/ui/contextview/contextview.js';
 import { ISelectBoxOptions, ISelectOptionItem, SelectBox } from '../../../../base/browser/ui/selectBox/selectBox.js';
+import { Checkbox } from '../../../../base/browser/ui/toggle/toggle.js';
+import { Switch } from '../../../../base/browser/ui/toggle/switch.js';
 import { IAction } from '../../../../base/common/actions.js';
 import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
+import { getErrorMessage, onUnexpectedError } from '../../../../base/common/errors.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { Disposable, DisposableStore, IDisposable, MutableDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
-import { autorun, constObservable, derived, disposableObservableValue, IObservable, observableSignalFromEvent, observableValue } from '../../../../base/common/observable.js';
+import { autorun, constObservable, derived, disposableObservableValue, IObservable, observableSignalFromEvent, observableValue, transaction } from '../../../../base/common/observable.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
+import { isStringArray } from '../../../../base/common/types.js';
+import { generateUuid } from '../../../../base/common/uuid.js';
 import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
 import { EditorOptions } from '../../../../editor/common/config/editorOptions.js';
 import { EditorContextKeys } from '../../../../editor/common/editorContextKeys.js';
@@ -38,16 +43,16 @@ import { KeybindingsRegistry, KeybindingWeight } from '../../../../platform/keyb
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
 import { IWorkspaceTrustRequestService } from '../../../../platform/workspace/common/workspaceTrust.js';
-import { defaultInputBoxStyles, defaultSelectBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
+import { defaultCheckboxStyles, defaultInputBoxStyles, defaultSelectBoxStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { hasNativeContextMenu } from '../../../../platform/window/common/window.js';
 import { IWorkspacePickerItem, WorkspacePicker } from '../../chat/browser/sessionWorkspacePicker.js';
 import { BranchPicker, IBranchPickerBranch } from '../../chat/browser/branchPicker.js';
 import { MobileSessionTypePicker } from '../../chat/browser/mobile/mobileSessionTypePicker.js';
 import { isMobilePickerSheetTarget } from '../../../browser/parts/mobile/mobilePickerSheet.js';
-import { ISession, ISessionWorkspaceBrowseAction, SESSION_WORKSPACE_GROUP_LOCAL } from '../../../services/sessions/common/session.js';
+import { GITHUB_REMOTE_FILE_SCHEME, ISession, ISessionWorkspaceBrowseAction, SESSION_WORKSPACE_GROUP_LOCAL } from '../../../services/sessions/common/session.js';
 import { IGitRepository, IGitService } from '../../../../workbench/contrib/git/common/gitService.js';
 import { AutomationInterval, AutomationTarget, IAutomationDescriptor } from '../../../../workbench/contrib/chat/common/automations/automation.js';
-import { IAutomationService } from '../../../../workbench/contrib/chat/common/automations/automationService.js';
+import { IAutomationProviderConfiguration, IAutomationService } from '../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { DAYS_OF_WEEK } from '../../../../workbench/contrib/chat/common/automations/schedule.js';
 import { ChatContextKeys } from '../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
 import { ChatAgentLocation } from '../../../../workbench/contrib/chat/common/constants.js';
@@ -214,6 +219,9 @@ export interface IFormState {
 	isolationMode: string | undefined;
 	branch: string | undefined;
 	enabled: boolean;
+	timeZone?: 'UTC';
+	resolvedFolderUri?: URI;
+	targetDisabledReason?: string;
 }
 
 export interface IValidationState {
@@ -1034,6 +1042,8 @@ export function renderForm(
 	initialTarget: AutomationTarget | undefined,
 	initialSessionConfiguration: IAutomationSessionConfiguration | undefined,
 	allowedProviders: IObservable<readonly string[]>,
+	getProviderConfiguration: (providerId: string | undefined) => IAutomationProviderConfiguration | undefined = () => undefined,
+	isEdit = false,
 ): IRenderFormHandle {
 	const formContent = DOM.append(form, $('.automation-form-content'));
 	const nameRow = DOM.append(formContent, $('.automation-form-row'));
@@ -1073,7 +1083,7 @@ export function renderForm(
 	intervalSelect.render(intervalSelectContainer);
 
 	const timeGroup = DOM.append(scheduleRow, $('.automation-form-schedule-group.automation-form-time-group'));
-	DOM.append(timeGroup, $('span.automation-form-label', undefined, localize('automation.form.time', "Time")));
+	const timeLabel = DOM.append(timeGroup, $('span.automation-form-label', undefined, localize('automation.form.time', "Time")));
 	const timeOptions = buildTimeOptions();
 	const initialTimeIndex = nearestTimeOptionIndex(state.hour, state.minute);
 	state.hour = timeOptions[initialTimeIndex].hour;
@@ -1119,16 +1129,34 @@ export function renderForm(
 	disposables.add(intervalSelect.onDidSelect(e => {
 		state.interval = INTERVALS[e.index].value;
 		applyIntervalVisibility();
+		revalidate();
 	}));
 
 	// The picker is authoritative for the session type
+	const initialProviderConfiguration = getProviderConfiguration(state.providerId);
+	const runInCloud = observableValue(form, initialProviderConfiguration !== undefined);
+	const cloudProvider = derived(reader => allowedProviders.read(reader).find(id => getProviderConfiguration(id) !== undefined));
+	const selectedProviders = derived(reader => allowedProviders.read(reader).filter(id => (getProviderConfiguration(id) !== undefined) === runInCloud.read(reader)));
+	const cloudConfiguration = derived(reader => runInCloud.read(reader) ? getProviderConfiguration(cloudProvider.read(reader)) : undefined);
+	const sessionConfigurationErrorMessage = observableValue<string | undefined>(form, undefined);
 	const isolationModel = new AutomationIsolationModel(state);
-	const workspaceControlsVisible = derived(reader => !isolationModel.isQuickChatObs.read(reader) && isolationModel.folderUriObs.read(reader) !== undefined);
+	const workspaceControlsVisible = derived(reader => !runInCloud.read(reader) && !isolationModel.isQuickChatObs.read(reader) && isolationModel.folderUriObs.read(reader)?.scheme !== GITHUB_REMOTE_FILE_SCHEME && isolationModel.folderUriObs.read(reader) !== undefined);
+	const sessionTypesChanged = observableSignalFromEvent(form, sessionsManagementService.onDidChangeSessionTypes);
+	const sessionTypes = derived(reader => {
+		sessionTypesChanged.read(reader);
+		const configuration = cloudConfiguration.read(reader);
+		const folder = isolationModel.folderUriObs.read(reader);
+		const quickChat = isolationModel.isQuickChatObs.read(reader);
+		return configuration
+			? sessionsManagementService.getAllProviderSessionTypes().filter(type => type.providerId === cloudProvider.read(reader) && configuration.sessionTypes.includes(type.sessionType.id))
+			: quickChat ? sessionsManagementService.getQuickChatSessionTypes() : folder ? sessionsManagementService.getSessionTypesForFolder(folder) : [];
+	});
 	const sessionTypePicker = disposables.add(instantiationService.createInstance(MobileSessionTypePicker, constObservable<ISession | undefined>(undefined), {
 		persistSelection: false,
 		preserveUnavailableSelection: true,
 		telemetrySource: 'AutomationSessionTypePicker',
-		allowedProviders,
+		allowedProviders: selectedProviders,
+		sessionTypes,
 	}));
 	sessionTypePicker.setQuickChatSource(isolationModel.isQuickChatObs);
 	sessionTypePicker.setFolderSource(isolationModel.folderUriObs, {
@@ -1148,6 +1176,20 @@ export function renderForm(
 		const pick = sessionTypePicker.selectedPick;
 		state.providerId = pick?.providerId;
 		state.sessionTypeId = pick?.sessionTypeId;
+		const configuration = cloudConfiguration.get();
+		const target = configuration?.getWorkspaceTarget(state.folderUri).get();
+		state.resolvedFolderUri = target?.workspace;
+		state.targetDisabledReason = target?.disabledReason;
+		state.timeZone = runInCloud.get() ? 'UTC' : undefined;
+		if (runInCloud.get()) {
+			state.isolationMode = undefined;
+			state.branch = undefined;
+			if (!configuration) {
+				state.targetDisabledReason = localize('automation.form.cloudUnavailable', "Cloud automations are unavailable.");
+			} else if (isEdit && initialTarget?.kind === 'workspace' && target?.workspace && !isEqual(initialTarget.folderUri, target.workspace)) {
+				state.targetDisabledReason = configuration.targetChangeDisabledReason;
+			}
+		}
 		onDidChangeSessionTarget.fire();
 	};
 	disposables.add(autorun(reader => {
@@ -1166,10 +1208,17 @@ export function renderForm(
 		restoreFromSessions: false,
 		canRestoreWorkspace: () => false,
 		canSelectWorkspace: (folderUri, preferredProviderId) =>
-			canSelectAutomationWorkspace(folderUri, preferredProviderId, sessionsManagementService, workspaceTrustRequestService),
+			runInCloud.get()
+				? Promise.resolve(cloudConfiguration.get()?.getWorkspaceTarget(folderUri).get().workspace !== undefined)
+				: canSelectAutomationWorkspace(folderUri, preferredProviderId, sessionsManagementService, workspaceTrustRequestService),
 	}));
 	workspacePicker.setTargetModel(isolationModel);
 	workspacePicker.setLayoutService(layoutService);
+	workspacePicker.setCloudConfiguration(cloudConfiguration);
+	workspacePicker.onSelectionError = error => {
+		logService.error('[AutomationDialog] Workspace selection failed.', error);
+		sessionConfigurationErrorMessage.set(getErrorMessage(error), undefined);
+	};
 
 	const automationSessionDraftSynchronizer = disposables.add(new AutomationSessionDraftSynchronizer(
 		sessionsManagementService,
@@ -1193,10 +1242,10 @@ export function renderForm(
 		return initialSessionConfiguration;
 	};
 	const updateAutomationSessionTarget = () => {
-		const folderUri = isolationModel.folderUriObs.get();
+		const folderUri = runInCloud.get() ? state.resolvedFolderUri : isolationModel.folderUriObs.get();
 		const pick = sessionTypePicker.selectedPick;
 		const isQuickChat = isolationModel.isQuickChatObs.get();
-		if (!pick || pick.providerId === undefined || !allowedProviders.get().includes(pick.providerId) || (!isQuickChat && !folderUri)) {
+		if (!pick || state.targetDisabledReason || pick.providerId === undefined || !selectedProviders.get().includes(pick.providerId) || (!isQuickChat && !folderUri)) {
 			automationSessionDraftSynchronizer.update(undefined);
 			return;
 		}
@@ -1230,7 +1279,9 @@ export function renderForm(
 		revalidate();
 	}));
 	disposables.add(autorun(reader => {
-		allowedProviders.read(reader);
+		selectedProviders.read(reader);
+		cloudConfiguration.read(reader)?.getWorkspaceTarget(isolationModel.folderUriObs.read(reader)).read(reader);
+		syncStateFromPicker();
 		updateAutomationSessionTarget();
 		revalidate();
 	}));
@@ -1241,6 +1292,7 @@ export function renderForm(
 
 	disposables.add(workspacePicker.onDidSelectWorkspace(uri => {
 		if (isolationModel.setWorkspace(uri)) {
+			syncStateFromPicker();
 			updateAutomationSessionTarget();
 			revalidate();
 		}
@@ -1253,6 +1305,48 @@ export function renderForm(
 	}));
 
 	const targetRow = DOM.append(sessionSection, $('.automation-form-row.automation-target-row'));
+	const cloudLabel = localize('automation.form.runInCloud', "Run in the Cloud");
+	const cloudPill = DOM.append(targetRow, $<HTMLLabelElement>('label.automation-cloud-toggle.chat-pill-item'));
+	const cloudToggle = disposables.add(new Switch({ ariaLabel: cloudLabel, checked: runInCloud.get(), disabled: isEdit }));
+	cloudToggle.domNode.id = `automation-cloud-toggle-${generateUuid()}`;
+	cloudPill.htmlFor = cloudToggle.domNode.id;
+	DOM.append(cloudPill, renderIcon(Codicon.cloud)).setAttribute('aria-hidden', 'true');
+	DOM.append(cloudPill, $('span', undefined, cloudLabel));
+	cloudPill.appendChild(cloudToggle.domNode);
+	disposables.add(autorun(reader => {
+		const available = cloudProvider.read(reader) !== undefined;
+		setAutomationControlVisible(cloudPill, available);
+		cloudToggle.disabled = isEdit || !available;
+		cloudToggle.checked = runInCloud.read(reader);
+	}));
+	let localTarget = { ...state };
+	disposables.add(cloudToggle.onChange(checked => {
+		if (checked) {
+			localTarget = { ...state };
+		}
+		transaction(() => {
+			isolationModel.setQuickChat(checked ? false : localTarget.isQuickChat, checked ? isolationModel.folderUri : localTarget.folderUri);
+			if (!checked) {
+				state.isolationMode = localTarget.isolationMode;
+				state.branch = localTarget.branch;
+				if (localTarget.folderUri) {
+					workspacePicker.setSelectedWorkspace(localTarget.folderUri, { fireEvent: false, persist: false });
+				} else {
+					workspacePicker.clearSelection();
+				}
+			}
+			runInCloud.set(checked, undefined);
+		});
+		const first = sessionTypes.get().find(type => selectedProviders.get().includes(type.providerId));
+		sessionTypePicker.setFolderSource(isolationModel.folderUriObs, {
+			initialPick: !checked && localTarget.providerId && localTarget.sessionTypeId
+				? { providerId: localTarget.providerId, sessionTypeId: localTarget.sessionTypeId }
+				: first ? { providerId: first.providerId, sessionTypeId: first.sessionType.id } : undefined,
+		});
+		syncStateFromPicker();
+		updateAutomationSessionTarget();
+		revalidate();
+	}));
 	const targetContainer = DOM.append(targetRow, $('.automation-target-toolbar', {
 		role: 'group',
 		'aria-label': localize('automation.form.target', "Target"),
@@ -1264,6 +1358,9 @@ export function renderForm(
 		'aria-atomic': 'true',
 	}));
 	DOM.hide(targetError);
+	if (isEdit && initialProviderConfiguration) {
+		DOM.append(targetRow, $('span.automation-form-hint', undefined, initialProviderConfiguration.targetChangeDisabledReason));
+	}
 	const promptSection = DOM.append(sessionSection, $('.automation-prompt-section'));
 	const promptRow = DOM.append(promptSection, $('.automation-form-row'));
 	const promptHost = DOM.append(promptRow, $('.automation-form-prompt-host.interactive-session'));
@@ -1287,7 +1384,6 @@ export function renderForm(
 		[ISessionModelSelection, sessionModelSelection],
 	)));
 	const usesCombinedConfigPicker = SessionUsesCombinedConfigPickerContext.bindTo(scopedContextKeyService);
-	const sessionTypesChanged = observableSignalFromEvent(form, sessionsManagementService.onDidChangeSessionTypes);
 	disposables.add(autorun(reader => {
 		sessionTypesChanged.read(reader);
 		const session = activeAutomationSession.read(reader);
@@ -1414,15 +1510,20 @@ export function renderForm(
 	DOM.hide(sessionConfigurationError);
 	disposables.add(autorun(reader => {
 		const hasTarget = isolationModel.isQuickChatObs.read(reader) || isolationModel.folderUriObs.read(reader) !== undefined;
-		setAutomationControlVisible(sessionConfiguration, hasTarget);
+		const cloud = runInCloud.read(reader);
+		const errorMessage = sessionConfigurationErrorMessage.read(reader);
+		setAutomationControlVisible(sessionConfigurationError, !!errorMessage);
+		sessionConfigurationError.textContent = errorMessage ?? '';
 		setAutomationControlVisible(sessionConfigContainer, hasTarget);
+		setAutomationControlVisible(sessionControlsContainer, hasTarget && !cloud);
 		const availability = automationSessionDraftSynchronizer.availability.read(reader);
 		const pending = availability === 'pending';
 		const controlsUnavailable = availability !== 'available';
+		setAutomationControlVisible(sessionConfiguration, !!errorMessage || hasTarget && (!cloud || controlsUnavailable));
 		for (const container of [sessionConfigContainer, sessionControlsContainer]) {
 			container.classList.toggle('controls-unavailable', controlsUnavailable);
 			container.toggleAttribute('inert', controlsUnavailable);
-			container.setAttribute('aria-hidden', String(!hasTarget || controlsUnavailable));
+			container.setAttribute('aria-hidden', String(!hasTarget || controlsUnavailable || cloud && container === sessionControlsContainer));
 			container.setAttribute('aria-busy', String(pending));
 		}
 		sessionConfigurationUnavailable.textContent = pending
@@ -1459,6 +1560,59 @@ export function renderForm(
 	}, DOM.getWindow(promptHost)));
 	disposables.add(resizeObserver.observe(promptHost));
 
+	const providerDetails = DOM.append(promptSection, $('.automation-provider-details'));
+	const providerDescription = DOM.append(providerDetails, $('p'));
+	const toolsContainer = DOM.append(providerDetails, $('.automation-provider-tools', { role: 'group', 'aria-label': localize('automation.tools', "Cloud Tools") }));
+	const toolDisposables = disposables.add(new DisposableStore());
+	let selectedTools: string[] | undefined;
+	let toolsInitialized = false;
+	disposables.add(autorun(reader => {
+		const configuration = cloudConfiguration.read(reader);
+		toolDisposables.clear();
+		DOM.clearNode(toolsContainer);
+		setAutomationControlVisible(providerDetails, configuration !== undefined);
+		timeLabel.textContent = configuration ? localize('automation.form.timeUtc', "Time (UTC)") : localize('automation.form.time', "Time");
+		timeSelect.setAriaLabel(timeLabel.textContent);
+		if (!configuration) {
+			return;
+		}
+		providerDescription.textContent = configuration.description;
+		if (!toolsInitialized) {
+			const stored = initialProviderConfiguration ? initialSessionConfiguration?.sessionTemplate?.config?.tools : undefined;
+			selectedTools = isStringArray(stored) ? [...stored] : initialProviderConfiguration ? undefined : configuration.tools.map(tool => tool.id);
+			toolsInitialized = true;
+		}
+		const tools = [...configuration.tools];
+		for (const id of selectedTools ?? []) {
+			if (!tools.some(tool => tool.id === id)) {
+				tools.push({ id, label: id });
+			}
+		}
+		for (const tool of tools) {
+			const row = DOM.append(toolsContainer, $('.automation-form-checkbox-row'));
+			const checkbox = toolDisposables.add(new Checkbox(tool.label, selectedTools?.includes(tool.id) === true, defaultCheckboxStyles));
+			row.appendChild(checkbox.domNode);
+			const label = DOM.append(row, $('span.automation-form-checkbox-label', undefined, tool.label));
+			const update = () => {
+				const tools = new Set(selectedTools ?? []);
+				if (checkbox.checked) {
+					tools.add(tool.id);
+				} else {
+					tools.delete(tool.id);
+				}
+				selectedTools = [...tools];
+			};
+			toolDisposables.add(checkbox.onChange(update));
+			toolDisposables.add(DOM.addDisposableListener(label, DOM.EventType.CLICK, () => {
+				checkbox.checked = !checkbox.checked;
+				update();
+			}));
+		}
+		DOM.append(toolsContainer, $('p', undefined, selectedTools === undefined
+			? localize('automation.toolsNotReported', "GitHub did not report the saved tool selection. Unchanged permissions will be preserved. Select tools to replace it explicitly.")
+			: localize('automation.toolsReview', "These tools can read or change repository content and run commands. GitHub enforces the effective permissions.")));
+	}));
+
 	const saveStatus = DOM.append(form, $('span.automation-form-save-status', {
 		role: 'status',
 		'aria-atomic': 'true',
@@ -1467,7 +1621,22 @@ export function renderForm(
 
 	return {
 		getPrompt: () => chatInput.inputEditor.getValue(),
-		getSessionConfiguration: token => automationSessionDraftSynchronizer.getSessionConfiguration(token),
+		getSessionConfiguration: async token => {
+			const captured = await automationSessionDraftSynchronizer.getSessionConfiguration(token);
+			if (captured.kind === 'failed' || !cloudConfiguration.get() || selectedTools === undefined) {
+				return captured;
+			}
+			return {
+				kind: 'captured',
+				configuration: {
+					...captured.configuration,
+					sessionTemplate: {
+						...captured.configuration?.sessionTemplate,
+						config: { ...captured.configuration?.sessionTemplate?.config, tools: selectedTools },
+					},
+				},
+			};
+		},
 		getBranch: () => isolationModel.persistedBranch,
 		showTargetValidationError: message => {
 			const text = message ?? '';
@@ -1502,13 +1671,7 @@ export function renderForm(
 			}
 		},
 		showSessionConfigurationError: message => {
-			if (message) {
-				DOM.show(sessionConfigurationError);
-				sessionConfigurationError.textContent = message;
-			} else {
-				DOM.hide(sessionConfigurationError);
-				sessionConfigurationError.textContent = '';
-			}
+			sessionConfigurationErrorMessage.set(message, undefined);
 		},
 		focusSessionConfigurationError: () => sessionConfigurationError.focus(),
 		getFocusableElements: () => {
@@ -1589,6 +1752,8 @@ export function updateSaveButtonState(
 		: undefined;
 	if (originalProviderId !== undefined && state.providerId !== originalProviderId) {
 		validation.sessionTypeError = localize('automation.form.hostChanged', "To use another Agent Host, duplicate this automation. The original keeps its schedule until you disable it.");
+	} else if (state.targetDisabledReason !== undefined) {
+		validation.sessionTypeError = state.targetDisabledReason;
 	} else if (!providerAvailable) {
 		validation.sessionTypeError = localize('automation.form.hostUnavailable', "Choose an available Agent Host that supports automations.");
 	} else if (!state.sessionTypeId || !state.providerId) {
@@ -1597,7 +1762,7 @@ export function updateSaveButtonState(
 		const target = { providerId: state.providerId, sessionTypeId: state.sessionTypeId };
 		if (state.isQuickChat && !sessionsManagementService.isQuickChatTargetAvailable(target)) {
 			validation.sessionTypeError = localize('automation.form.quickChatUnavailable', "The selected Agent Host and session type cannot run without a workspace. Choose a workspace or another session type.");
-		} else if (!state.isQuickChat && state.folderUri !== undefined && !sessionsManagementService.isNewSessionTargetAvailable(state.folderUri, target)) {
+		} else if (!state.isQuickChat && state.folderUri !== undefined && !sessionsManagementService.isNewSessionTargetAvailable(state.resolvedFolderUri ?? state.folderUri, target)) {
 			validation.sessionTypeError = localize('automation.form.workspaceTargetUnavailable', "The selected Agent Host and session type cannot use this workspace. Choose another workspace or session type.");
 		} else {
 			validation.sessionTypeError = undefined;
@@ -1614,10 +1779,32 @@ export function updateSaveButtonState(
 	form.classList.toggle('automation-form-invalid', !valid);
 }
 
-// Local-only workspace picker: hides category tabs and non-local browse actions.
 export class AutomationsWorkspacePicker extends WorkspacePicker {
 	private readonly targetModelWatch = this._register(new MutableDisposable<IDisposable>());
+	private readonly eligibilityWatch = this._register(new MutableDisposable<IDisposable>());
+	private cloudConfiguration: IObservable<IAutomationProviderConfiguration | undefined> = constObservable(undefined);
 	private targetModel: AutomationIsolationModel | undefined;
+	onSelectionError: (error: Error) => void = onUnexpectedError;
+
+	setCloudConfiguration(configuration: IObservable<IAutomationProviderConfiguration | undefined>): void {
+		this.cloudConfiguration = configuration;
+		this.eligibilityWatch.value = autorun(reader => {
+			const value = configuration.read(reader);
+			for (const item of super._buildItems()) {
+				if (item.item?.folderUri) {
+					value?.getWorkspaceTarget(item.item.folderUri).read(reader);
+				}
+			}
+			if (this.actionWidgetService.isVisible && this._triggerElement?.getAttribute('aria-expanded') === 'true') {
+				this.actionWidgetService.updateItems(this._buildItems(), undefined, { preserveHover: true, preserveScrollPosition: true });
+			}
+		});
+	}
+
+	override showPicker(force = false, anchor?: HTMLElement): void {
+		this.setCloudConfiguration(this.cloudConfiguration);
+		super.showPicker(force, anchor);
+	}
 
 	setTargetModel(model: AutomationIsolationModel): void {
 		this.targetModel = model;
@@ -1637,6 +1824,24 @@ export class AutomationsWorkspacePicker extends WorkspacePicker {
 
 	protected override _buildItems(): IActionListItem<IWorkspacePickerItem>[] {
 		const items = super._buildItems();
+		const configuration = this.cloudConfiguration.get();
+		if (configuration) {
+			return items.filter(item => item.item?.folderUri !== undefined).map(item => {
+				const reason = configuration.getWorkspaceTarget(item.item!.folderUri).get().disabledReason;
+				return {
+					...item,
+					submenuActions: undefined,
+					...(reason === undefined ? {} : {
+						disabled: true,
+						description: reason,
+						ariaDescription: reason,
+						tooltip: reason,
+						hover: { content: reason },
+						group: { title: '', icon: Codicon.lock },
+					}),
+				};
+			});
+		}
 		const noWorkspace: IActionListItem<IWorkspacePickerItem> = {
 			kind: ActionListItemKind.Action,
 			label: localize('automation.form.noWorkspace', "No workspace"),
@@ -1653,6 +1858,14 @@ export class AutomationsWorkspacePicker extends WorkspacePicker {
 	}
 
 	protected override async _dispatchPickerItem(item: IWorkspacePickerItem): Promise<boolean> {
+		const configuration = this.cloudConfiguration.get();
+		if (configuration) {
+			const target = configuration.getWorkspaceTarget(item.folderUri).get();
+			if (!item.folderUri || !target.workspace || target.disabledReason) {
+				this.onSelectionError(new Error(target.disabledReason ?? localize('automation.form.cloudRepositoryRequired', "Choose a known private or internal repository.")));
+				return false;
+			}
+		}
 		const applied = await super._dispatchPickerItem(item);
 		const selectedFolder = this.selectedFolderUri;
 		if (applied && selectedFolder && (item.folderUri || item.browseActionIndex !== undefined)) {

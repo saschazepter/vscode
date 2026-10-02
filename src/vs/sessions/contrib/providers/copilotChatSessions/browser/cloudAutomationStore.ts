@@ -8,14 +8,14 @@ import { CancellationToken, CancellationTokenSource } from '../../../../../base/
 import { IDefaultAccount } from '../../../../../base/common/defaultAccount.js';
 import { CancellationError, isCancellationError } from '../../../../../base/common/errors.js';
 import { Disposable, DisposableStore, MutableDisposable } from '../../../../../base/common/lifecycle.js';
-import { IObservable, observableValue, transaction } from '../../../../../base/common/observable.js';
+import { constObservable, IObservable, observableValue, transaction } from '../../../../../base/common/observable.js';
 import { isObject } from '../../../../../base/common/types.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { localize } from '../../../../../nls.js';
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
-import { AutomationCatalogueState } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
+import { AutomationCatalogueState, IAutomationWorkspaceTarget } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { ISessionsRecentWorkspacesService } from '../../../../services/sessions/browser/sessionsRecentWorkspacesService.js';
 import { GITHUB_REMOTE_FILE_SCHEME } from '../../../../services/sessions/common/session.js';
 import { CloudAutomationApiClient, CloudAutomationMutationUncertainError, ICloudAutomationDefinition, ICloudAutomationMutation, ICloudAutomationRepository, ICloudAutomationTask } from './cloudAutomationApiClient.js';
@@ -45,6 +45,8 @@ export class CloudAutomationStore extends Disposable {
 	readonly history: IObservable<readonly ICloudAutomationHistoryEntry[]> = this.cachedHistory;
 	private readonly uncertain = observableValue(this, false);
 	readonly mutationUncertain: IObservable<boolean> = this.uncertain;
+	private readonly targetEligibility = new Map<string, ReturnType<typeof observableValue<IAutomationWorkspaceTarget>>>();
+	private readonly targetEligibilityLimiter = this._register(new Limiter<void>(5));
 
 	constructor(
 		private readonly resolveRepositoryUri: (workspace: URI) => URI | undefined | Promise<URI | undefined>,
@@ -57,6 +59,55 @@ export class CloudAutomationStore extends Disposable {
 		super();
 		this._register(defaultAccountService.onDidChangeDefaultAccount(() => this.reset()));
 		this.reset();
+	}
+
+	getWorkspaceTarget(workspace: URI | undefined): IObservable<IAutomationWorkspaceTarget> {
+		const required = localize('cloudAutomations.repositoryTargetRequired', "Choose a private or internal GitHub.com repository.");
+		if (!workspace || this._store.isDisposed || this.lifetime.value?.token.isCancellationRequested) {
+			return constObservable({ disabledReason: required });
+		}
+		const key = workspace.toString();
+		const cached = this.targetEligibility.get(key);
+		if (cached) {
+			return cached;
+		}
+		const result = observableValue<IAutomationWorkspaceTarget>(this, {
+			disabledReason: localize('cloudAutomations.checkingRepository', "Checking repository access..."),
+		});
+		this.targetEligibility.set(key, result);
+		const token = this.lifetime.value!.token;
+		void this.targetEligibilityLimiter.queue(async () => {
+			try {
+				const account = this.requireAccount();
+				this.assertCurrent(account, token);
+				const repository = await this.resolveRepository(workspace);
+				this.assertCurrent(account, token);
+				const eligible = repository && await this.api.isPrivateRepository(account.accountName, repository, token);
+				this.assertCurrent(account, token);
+				if (this.targetEligibility.get(key) !== result) {
+					return;
+				}
+				result.set(eligible ? {
+					workspace: URI.from({ scheme: GITHUB_REMOTE_FILE_SCHEME, authority: 'github', path: `/${repository.owner}/${repository.name}/HEAD` }),
+				} : { disabledReason: required }, undefined);
+			} catch (error) {
+				if (!isCancellationError(error)) {
+					this.logService.warn('[CloudAutomations] Repository eligibility check failed', error);
+				}
+				if (!token.isCancellationRequested && !this._store.isDisposed && this.targetEligibility.get(key) === result) {
+					result.set({ disabledReason: localize('cloudAutomations.repositoryCheckFailed', "Unable to verify repository access. Refresh automations to try again.") }, undefined);
+				}
+			}
+		});
+		return result;
+	}
+
+	private clearTargetEligibility(): void {
+		const targets = [...this.targetEligibility.values()];
+		this.targetEligibility.clear();
+		for (const target of targets) {
+			target.set({ disabledReason: localize('cloudAutomations.repositoryRecheckRequired', "Repository access must be verified again.") }, undefined);
+		}
 	}
 
 	/** Remembers an eligible repository for subsequent explicit refreshes; no definitions are fetched. */
@@ -78,6 +129,7 @@ export class CloudAutomationStore extends Disposable {
 		if (this.refreshPromise) {
 			return this.refreshPromise;
 		}
+		this.clearTargetEligibility();
 		const token = this.lifetime.value!.token;
 		this.state.set('loading', undefined);
 		const refresh = this.operations.queue(async () => {
@@ -289,6 +341,7 @@ export class CloudAutomationStore extends Disposable {
 
 	private reset(): void {
 		this.lifetime.value?.cancel();
+		this.clearTargetEligibility();
 		this.lifetime.value = new CancellationTokenSource();
 		this.refreshPromise = undefined;
 		this.operations = new Sequencer();
@@ -303,6 +356,7 @@ export class CloudAutomationStore extends Disposable {
 
 	override dispose(): void {
 		this.lifetime.value?.cancel();
+		this.clearTargetEligibility();
 		super.dispose();
 		transaction(tx => {
 			this.cachedEntries.set([], tx);

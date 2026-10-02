@@ -5,6 +5,7 @@
 
 import { IObservable } from '../../../../../base/common/observable.js';
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
+import { URI } from '../../../../../base/common/uri.js';
 import { stableStringify } from '../../../../../base/common/objects.js';
 import { localize } from '../../../../../nls.js';
 import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
@@ -13,6 +14,22 @@ import { IAutomationDescriptor, IAutomationRun, IAutomationSchedule, IAutomation
 
 export const IAutomationService = createDecorator<IAutomationService>('automationService');
 export const ConfigureAutomationToolReferenceName = 'configureAutomation';
+
+/** Provider-owned cloud configuration consumed only by the Automation dialog. */
+export interface IAutomationProviderConfiguration {
+	readonly sessionTypes: readonly string[];
+	readonly description: string;
+	readonly timeZone: 'UTC';
+	readonly targetChangeDisabledReason: string;
+	readonly tools: readonly { readonly id: string; readonly label: string }[];
+	getWorkspaceTarget(workspace: URI | undefined): IObservable<IAutomationWorkspaceTarget>;
+}
+
+/** A checked canonical workspace, or an explanation while checking or unavailable. */
+export interface IAutomationWorkspaceTarget {
+	readonly workspace?: URI;
+	readonly disabledReason?: string;
+}
 
 /** Catalogue completeness; only `ready` makes an empty snapshot authoritative. */
 export type AutomationCatalogueState = 'loading' | 'ready' | 'unavailable' | 'error';
@@ -223,6 +240,7 @@ export interface IAutomationService extends IAutomationStore {
 	canCreateAutomation(providerId: string | undefined): boolean;
 	/** Whether provider-owned session configuration is supported by the Automation dialog. */
 	canConfigureAutomation?(providerId: string | undefined): boolean;
+	getProviderConfiguration?(providerId: string | undefined): IAutomationProviderConfiguration | undefined;
 }
 
 export type AutomationUnavailableReasonCode = 'disconnected' | 'initializing' | 'disabled' | 'unsupported' | 'incompatible';

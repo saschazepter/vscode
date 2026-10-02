@@ -105,6 +105,11 @@ export class ProviderAutomationService extends Disposable implements IAutomation
 		return providerId !== undefined && this.sessionsProvidersService.getProvider(providerId)?.supportsAutomationSessionConfiguration === true;
 	}
 
+	getProviderConfiguration(providerId: string | undefined) {
+		const store = providerId ? this.sessionsProvidersService.getProvider(providerId)?.automations : undefined;
+		return store?.enabled?.get() === false ? undefined : store?.configuration;
+	}
+
 	/** Routes creation only to the explicitly selected provider, rejecting unavailable destinations. */
 	createAutomation(options: ICreateAutomationOptions, mutationGuard?: AutomationMutationGuard): Promise<IAutomationDescriptor> {
 		const providerId = options.target.providerId;

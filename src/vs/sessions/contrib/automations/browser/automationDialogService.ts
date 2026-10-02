@@ -116,6 +116,7 @@ export class AutomationDialogService implements IAutomationDialogService {
 				: initialWorkspaceTarget?.isolation.kind === 'worktree' ? 'worktree' : 'workspace',
 			branch: initialWorkspaceTarget?.isolation.kind === 'worktree' ? initialWorkspaceTarget.isolation.branch : undefined,
 			enabled: initial?.enabled ?? true,
+			timeZone: initial?.schedule.timeZone,
 		};
 
 		const validation: IValidationState = { nameError: undefined, promptError: undefined, folderError: undefined, sessionTypeError: undefined, branchError: undefined };
@@ -151,6 +152,7 @@ export class AutomationDialogService implements IAutomationDialogService {
 				scheduleHour: state.hour,
 				scheduleMinute: state.minute,
 				scheduleDay: state.day,
+				...(state.timeZone !== undefined ? { timeZone: state.timeZone } : {}),
 			};
 			const prompt = getPrompt();
 			const sessionConfiguration = sessionConfigurationCapture.configuration;
@@ -316,7 +318,7 @@ export class AutomationDialogService implements IAutomationDialogService {
 
 					const formPane = DOM.append(container, $('.automation-form-pane'));
 					const form = DOM.append(formPane, $('.automation-form'));
-					const handle = renderForm(form, state, disposables, validation, () => revalidate(), this.instantiationService, this.contextKeyService, this.contextViewService, this.configurationService, this.layoutService, this.logService, this.sessionsManagementService, this.workspaceTrustRequestService, initial?.prompt ?? '', initialTarget, initialSessionConfiguration, allowedProviders);
+					const handle = renderForm(form, state, disposables, validation, () => revalidate(), this.instantiationService, this.contextKeyService, this.contextViewService, this.configurationService, this.layoutService, this.logService, this.sessionsManagementService, this.workspaceTrustRequestService, initial?.prompt ?? '', initialTarget, initialSessionConfiguration, allowedProviders, providerId => this.automationService.getProviderConfiguration?.(providerId), isEdit);
 					getPrompt = handle.getPrompt;
 					getSessionConfiguration = handle.getSessionConfiguration;
 					getBranch = handle.getBranch;
@@ -393,7 +395,7 @@ function createAutomationTarget(state: IFormState, branch: string | undefined): 
 	return isolation
 		? {
 			kind: 'workspace',
-			folderUri: state.folderUri,
+			folderUri: state.resolvedFolderUri ?? state.folderUri,
 			providerId: state.providerId,
 			sessionTypeId: state.sessionTypeId,
 			isolation,

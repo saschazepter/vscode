@@ -79,6 +79,8 @@ const DEFAULT_TELEMETRY_SOURCE = 'NewChatSessionTypePicker';
  * new-chat telemetry would be incorrect side effects.
  */
 export interface ISessionTypePickerOptions {
+	/** Caller-owned choices for configuration drafts, without changing the New Session catalogue. */
+	readonly sessionTypes?: IObservable<readonly IProviderSessionType[]>;
 	/** When present, only session types from these providers are offered. */
 	readonly allowedProviders?: IObservable<readonly string[]>;
 	/** Retain a chosen provider/type if it becomes unavailable instead of selecting a replacement. */
@@ -216,6 +218,7 @@ export class SessionTypePicker extends Disposable {
 
 		this._register(autorun(reader => {
 			this._session.read(reader);
+			this._options?.sessionTypes?.read(reader);
 			this._options?.providerId?.read(reader);
 			this._options?.allowedProviders?.read(reader);
 			this._recompute();
@@ -265,6 +268,9 @@ export class SessionTypePicker extends Disposable {
 	}
 
 	private _resolveUnfilteredSessionTypes(): IProviderSessionType[] {
+		if (this._options?.sessionTypes) {
+			return [...this._options.sessionTypes.get()];
+		}
 		const providerId = this._options?.providerId?.get();
 		if (providerId) {
 			const provider = this.sessionsProvidersService.getProvider(providerId);
