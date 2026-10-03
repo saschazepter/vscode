@@ -5,7 +5,7 @@
 
 import * as assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
-import { Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../../../../platform/configuration/common/configurationRegistry.js';
+import { ConfigurationScope, Extensions as ConfigurationExtensions, IConfigurationRegistry } from '../../../../../platform/configuration/common/configurationRegistry.js';
 import product from '../../../../../platform/product/common/product.js';
 import { Registry } from '../../../../../platform/registry/common/platform.js';
 import { ConfigurationMigration, Extensions as WorkbenchConfigurationExtensions, IConfigurationMigrationRegistry } from '../../../../common/configuration.js';
@@ -22,6 +22,7 @@ const registeredAgentSessionsSettings = [
 	ChatConfiguration.AutoMarkAsDoneMergedSessionsAfterDays,
 	ChatConfiguration.AutoDeleteMarkedAsDoneMergedSessionsAfterDays,
 ].map(key => configurationProperties[key] !== undefined);
+const unifiedWorkspacePickerSetting = configurationProperties[ChatConfiguration.UnifiedWorkspacePicker];
 const migrations = Registry.as<IConfigurationMigrationRegistry & { readonly migrations: readonly ConfigurationMigration[] }>(WorkbenchConfigurationExtensions.ConfigurationMigration).migrations;
 const legacyAutoArchiveMigration = migrations.find(migration => migration.key === 'chat.agentSessions.autoArchiveMergedSessionsAfterDays');
 const legacyAutoDeleteArchivedMigration = migrations.find(migration => migration.key === 'chat.agentSessions.autoDeleteArchivedMergedSessionsAfterDays');
@@ -35,6 +36,20 @@ suite('Chat configuration', () => {
 
 	test('registers Agents Window settings in the shared workbench contribution', () => {
 		assert.deepStrictEqual(registeredAgentSessionsSettings, [true, true, true]);
+	});
+
+	test('enables the unified workspace picker by default while allowing experiment overrides', () => {
+		assert.deepStrictEqual({
+			type: unifiedWorkspacePickerSetting.type,
+			default: unifiedWorkspacePickerSetting.default,
+			scope: unifiedWorkspacePickerSetting.scope,
+			experiment: unifiedWorkspacePickerSetting.experiment,
+		}, {
+			type: 'boolean',
+			default: true,
+			scope: ConfigurationScope.APPLICATION,
+			experiment: { mode: 'auto' },
+		});
 	});
 
 	test('Marketplace visibility is experiment-controlled and default-off while the GitHub Feed is default-on', () => {
