@@ -109,13 +109,25 @@
 ![screenshot](https://hediet-screenshots.azurewebsites.net/images/56b9ac7ce8ad6692c3269e73900a765e59c5705d6dc93d35b3134cf9ff571cde)
 
 #### sessions/chat/newWidget/newChatWidget/NewSessionExperimentalComposerBackground/Light
-![screenshot](https://hediet-screenshots.azurewebsites.net/images/0a3c74937b93bcb837064e1f4bb790a2de1d03146adcbf3016e6ed2cf79fe4f5)
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/37acfa78c3414a0a7b59287068ac2a60405bbd614a4704bd85cb006f3b9dd271)
 
 #### sessions/chat/newWidget/newChatWidget/NewSessionGitHubContextPicker/Light
 ![screenshot](https://hediet-screenshots.azurewebsites.net/images/bd4b7314d7d4e2bb7f1765f25901efdb6d4b6d08f6acc5766f95d597d87ea968)
 
 #### sessions/chat/newWidget/newChatWidget/NewSessionPhoneAttachedContext/Light
-![screenshot](https://hediet-screenshots.azurewebsites.net/images/44a9a72f5d00532c1586d755d73b51034bcde48fe6b4f3a103f4cb9517d6e579)
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/b2fdc20a2a6ced07151298dca6b595192ab1fb724985e3672dacf7062fea576c)
+
+#### sessions/chat/newWidget/newChatWidget/NewSessionPhoneExperimentalComposer/Light
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/29690a523fdb3f8fa9ac1daa5bb53980204ab256793949ac1912b858dd88d495)
+
+#### sessions/chat/newWidget/newChatWidget/NewSessionPhoneSettingsDisabled/Light
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/356b19cafd3c58087ea0729eaf2110ace6b5761920b4bb13fb2e80e7303667fc)
+
+#### sessions/chat/newWidget/newChatWidget/NewSessionPhoneUnifiedWorkspacePicker/Light
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/fbf99fab3b3a68d2517bce54a2781eda00095033cc97a87f64efbbb0faad234d)
+
+#### sessions/chat/newWidget/newChatWidget/NewSessionPhoneWelcomePhrase/Light
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/6ffde361db43854329405e26225f718f0421d069654823f92de75675466c94e5)
 
 #### sessions/chat/newWidget/newChatWidget/NewSessionRemoteWorkspace/Light
 ![screenshot](https://hediet-screenshots.azurewebsites.net/images/310fc08cf62e403c7d3e5edf9a4eb6123c85ba89823af0b1322283f643017417)
@@ -132,6 +144,15 @@
 #### sessions/chat/view/chatView/CheckpointControlsBackground/Light
 ![screenshot](https://hediet-screenshots.azurewebsites.net/images/8103a4528aa4899566d3316f213ebb0775ba6e6021882c99877aa8c2f131ee77)
 
+#### sessions/chat/view/chatView/PhoneChatComposerExperimentalComposer/Light
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/d4070d6770a7ac14829576d3dc63edee4f7aa1584c617ad51791de56f7033364)
+
+#### sessions/chat/view/chatView/PhoneChatComposerSettingsDisabled/Light
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/d4070d6770a7ac14829576d3dc63edee4f7aa1584c617ad51791de56f7033364)
+
+#### sessions/chat/view/chatView/PhoneChatComposerUnifiedWorkspacePicker/Light
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/d4070d6770a7ac14829576d3dc63edee4f7aa1584c617ad51791de56f7033364)
+
 #### sessions/chat/view/chatView/RequestAttachmentBackground/Light
 ![screenshot](https://hediet-screenshots.azurewebsites.net/images/b143a14c0a785fd33a98619f34607323a542186bbaef728e4cacef566686d013)
 
@@ -139,22 +160,22 @@
 ![screenshot](https://hediet-screenshots.azurewebsites.net/images/35a21ea76e17222fe3540b27aa2f73712155fd385986747428def909d23513ce)
 
 #### sessions/sessionsList/SessionsList_AutomationsNewBadge_Accent/Light
-![screenshot](https://hediet-screenshots.azurewebsites.net/images/94f7cde512c7f36230bb9c28a00da607606deae120aaadaec21cb3f897d75665)
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/50043fc5cbae5da2ebe57a244cefc2f77d1282e771425edc745694021d966385)
 
 #### sessions/sessionsList/SessionsList_AutomationsNewBadge_Narrow/Light
-![screenshot](https://hediet-screenshots.azurewebsites.net/images/2606a555f61bee5a888a37ea70017c5f49586f690fe7a422a4effcc8fc0fbcfe)
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/e6be267da84d1eb280418f66888bdb00c6b8f2dedf0814422acc21cf0a74cdb1)
 
 #### sessions/sessionsList/SessionsList_AutomationsNewBadge_Running/Light
-![screenshot](https://hediet-screenshots.azurewebsites.net/images/4595a2d9daba193936585fb0639d0391a78a6784ef5cea49e071a432c5248195)
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/dac619eec2d496d392fc76894cbfe72d6c620e8d0d916fbc092259ce219c16ad)
 
 #### sessions/sessionsList/SessionsList_AutomationsNewBadge_Soft/Light
-![screenshot](https://hediet-screenshots.azurewebsites.net/images/061e8c6fb21a2dfbdcb23b8fd06b55f36b0a5813f6de60a471846445fe62d2c2)
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/ca6546aa31546f8a75488b82490bd52cf59ab71fe20bfde1c42d5f687eefed09)
 
 #### sessions/sessionsList/SessionsList_AutomationsNewBadge_Unread/Light
-![screenshot](https://hediet-screenshots.azurewebsites.net/images/f13d49c292f750405a446a3f96f36105e30b72218a2a4b8a4f3361138227a89c)
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/94534fd6bddbf17182ad94cd457d7beda6e90dc2143a7ddae86f97df8b82e60c)
 
 #### sessions/sessionsList/SessionsList_AutomationsNewBadge/Light
-![screenshot](https://hediet-screenshots.azurewebsites.net/images/c9af7a19fa45814fce40ae49349c72d8841ed534fef87404c76514322ce7dad4)
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/6932cbdc45bc378bdeaa0da2840d0bba374c472e5db0fce94f649e6a6b17352a)
 
 #### sessions/sessionsList/SessionsList_CompactArchivedNestedChat/Light
 ![screenshot](https://hediet-screenshots.azurewebsites.net/images/00755bbb9f478b7fe3720b508d1c0b53897fa6e4511eb3a241284e5dcd0c6d55)
@@ -166,7 +187,7 @@
 ![screenshot](https://hediet-screenshots.azurewebsites.net/images/755ab63f991baa7ceb71e029a5a141e62b5e671ae0f31a23b8e2b02c7debbe42)
 
 #### sessions/sessionsList/SessionsList_CompactNestedChatActions/Light
-![screenshot](https://hediet-screenshots.azurewebsites.net/images/ad740bb5983dd2e6b0b78ad43978da175fcaf4b770d97575441867ab165bb38c)
+![screenshot](https://hediet-screenshots.azurewebsites.net/images/8806d13377c47bb5e81a5ddda8756bb91d06b05a07b0a997b6a9947311649169)
 
 #### sessions/sessionsList/SessionsList_CompactNestedChatApprovals/Light
 ![screenshot](https://hediet-screenshots.azurewebsites.net/images/89e8410a46cf95b089742f8ea803b22513115f4c198ace28f6384e6b63cd4f8f)

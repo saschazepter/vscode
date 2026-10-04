@@ -3,168 +3,34 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IReference, toDisposable } from '../../../base/common/lifecycle.js';
-import { GitHubRequestError } from './githubTypes.js';
 import { CooldownState } from './cooldownState.js';
 import { parseHeaderNumber, parseRetryAfter } from './httpHeaders.js';
 import { RequestQueue } from './requestQueue.js';
 import { RequestAccount } from './types.js';
 
-/** Pinned route observation used consistently for admission and response accounting. */
-export interface IGitHubRestRateLimitResource {
-	readonly name: string;
-	readonly responseName: string;
-	observe(headers: Headers): void;
-}
-
-/** Bounded client-specific route feedback retained by queued and active operations. */
-interface IRestResourceMapping {
-	readonly account: RequestAccount;
-	readonly accountKey: string;
-	readonly route: string;
-	readonly resources: Set<string>;
-	resource: string;
-	references: number;
-	overflow: boolean;
-}
-
 /** GitHub's documented floor for retrying a rate limit it gave no reset hint for. */
 const unhintedRateLimitCooldown = 60_000;
+const unclassifiedRestResource = '<unclassified-rest>';
 
 /** Interprets GitHub quota headers and GraphQL feedback using shared cooldown storage. */
 export class GitHubRateLimitCoordinator extends CooldownState {
 
-	static readonly maximumRestResourceMappings = 512;
-	private static readonly maximumResourcesPerRoute = 16;
-	private static readonly unobservedRestResource = '<unobserved-rest>';
-	private readonly _restResources = new Map<string, IRestResourceMapping>();
-
-	/** Pins a bounded route-family observation while preserving evicted quota feedback. */
-	acquireRestResource(account: RequestAccount, url: string, scope = ''): IReference<IGitHubRestRateLimitResource> {
-		if (this._store.isDisposed) {
-			throw new GitHubRequestError('GitHub rate-limit coordinator was disposed', 'unknown');
-		}
-		const route = restRateLimitRoute(url);
-		const key = this._restResourceKey(account, route.key, scope);
-		let entry = this._restResources.get(key);
-		if (!entry) {
-			if (this._restResources.size >= GitHubRateLimitCoordinator.maximumRestResourceMappings) {
-				const idle = [...this._restResources].filter(([, candidate]) => candidate.references === 0);
-				const unused = idle.find(([, candidate]) => this._restResourceDelay(candidate) === 0) ?? idle[0];
-				if (!unused) {
-					throw new GitHubRequestError('GitHub resource mapping capacity exceeded', 'overloaded');
-				}
-				const cooldown = this._restResourceDelay(unused[1]);
-				this._restResources.delete(unused[0]);
-				// Compact lost feedback without letting one idle account monopolize the registry.
-				this.preserveCooldown(unused[1].account, GitHubRateLimitCoordinator.unobservedRestResource, cooldown);
+	override getDelay(account: RequestAccount, resource: string): number {
+		let delay = super.getDelay(account, resource);
+		if (resource !== 'graphql') {
+			delay = Math.max(delay, super.getDelay(account, unclassifiedRestResource));
+			for (const alias of restResourceAliases(resource)) {
+				delay = Math.max(delay, super.getDelay(account, alias));
 			}
-			entry = { account, accountKey: RequestQueue.accountKey(account), route: route.key, resource: route.fallback, resources: new Set(), references: 0, overflow: false };
-		}
-		if (entry.overflow) {
-			this._pruneRestResources(entry);
-			if (entry.resources.size >= GitHubRateLimitCoordinator.maximumResourcesPerRoute && !entry.resources.has(entry.resource)) {
-				throw new GitHubRequestError('GitHub resource mapping capacity exceeded', 'overloaded');
-			}
-			entry.resources.add(entry.resource);
-			entry.overflow = false;
-		}
-		if (!entry.resources.size) {
-			const resource = this.getRestResource(account, url, scope);
-			entry.resource = resource === GitHubRateLimitCoordinator.unobservedRestResource ? route.fallback : resource;
-		}
-		this._restResources.delete(key);
-		this._restResources.set(key, entry);
-		entry.references++;
-		const retained = entry;
-		const owner = this;
-		const release = toDisposable(() => retained.references--);
-		return {
-			object: {
-				get name() { return owner.getRestResource(account, url, scope); },
-				get responseName() { return retained.resource; },
-				observe(headers) {
-					const resource = readRateLimitResource(headers);
-					if (!resource) {
-						return;
-					}
-					owner._pruneRestResources(retained);
-					// Retain the latest response bucket even when its variant exceeds the bound.
-					retained.resource = resource;
-					if (!retained.resources.has(resource) && retained.resources.size >= GitHubRateLimitCoordinator.maximumResourcesPerRoute) {
-						retained.overflow = true;
-						throw new GitHubRequestError('GitHub resource mapping capacity exceeded', 'overloaded');
-					}
-					retained.resources.add(resource);
-				},
-			},
-			dispose: () => release.dispose(),
-		};
-	}
-
-	getRestResource(account: RequestAccount, url: string, scope = ''): string {
-		const route = restRateLimitRoute(url);
-		const entry = this._restResources.get(this._restResourceKey(account, route.key, scope));
-		const accountKey = RequestQueue.accountKey(account);
-		const unresolvedKey = account.kind === 'bootstrap' && account.accountId !== undefined
-			? RequestQueue.accountKey({ ...account, accountId: undefined })
-			: undefined;
-		const observed = entry ? [entry] : [];
-		let selected = entry?.resource ?? route.fallback;
-		if (!entry?.resources.size || unresolvedKey) {
-			for (const candidate of this._restResources.values()) {
-				if (candidate === entry || candidate.route !== route.key
-					|| !candidate.resources.size && this.getDelay(candidate.account, candidate.resource) === 0) {
-					continue;
-				}
-				if (!entry?.resources.size && candidate.accountKey === accountKey) {
-					observed.push(candidate);
-					selected = candidate.resource;
-				} else if (candidate.accountKey === unresolvedKey) {
-					observed.push(candidate);
-				}
-			}
-		}
-		for (const mapping of observed) {
-			for (const resource of [mapping.resource, ...mapping.resources]) {
-				if (this.getDelay(account, resource) > this.getDelay(account, selected)) {
-					selected = resource;
-				}
-			}
-		}
-		if (!entry?.resources.size && this.getDelay(account, GitHubRateLimitCoordinator.unobservedRestResource) > this.getDelay(account, selected)) {
-			return GitHubRateLimitCoordinator.unobservedRestResource;
-		}
-		return selected;
-	}
-
-	getRestResponseResource(account: RequestAccount, url: string, scope = ''): string {
-		const route = restRateLimitRoute(url);
-		return this._restResources.get(this._restResourceKey(account, route.key, scope))?.resource ?? route.fallback;
-	}
-
-	private _restResourceKey(account: RequestAccount, route: string, scope: string): string {
-		return `${RequestQueue.accountKey(account)}\x00${scope}\x00${route}`;
-	}
-
-	private _restResourceDelay(mapping: IRestResourceMapping): number {
-		let delay = this.getDelay(mapping.account, mapping.resource);
-		for (const resource of mapping.resources) {
-			delay = Math.max(delay, this.getDelay(mapping.account, resource));
 		}
 		return delay;
 	}
 
-	private _pruneRestResources(mapping: IRestResourceMapping): void {
-		for (const resource of mapping.resources) {
-			if (this.getDelay(mapping.account, resource) === 0) {
-				mapping.resources.delete(resource);
-			}
-		}
-	}
-
-	updateFromResponse(account: RequestAccount, response: Response, responseBody?: string, fallbackResource = 'core'): void {
-		const resource = readRateLimitResource(response.headers) ?? fallbackResource;
+	updateFromResponse(account: RequestAccount, response: Response, responseBody?: string, fallbackResource?: string): void {
+		const reportedResource = response.headers.get('x-ratelimit-resource') ?? fallbackResource ?? 'core';
+		const resource = fallbackResource !== undefined && fallbackResource !== 'graphql'
+			&& reportedResource !== fallbackResource && !restResourceAliases(fallbackResource).includes(reportedResource)
+			? unclassifiedRestResource : reportedResource;
 		const isGraphQL = resource === 'graphql';
 		const key = this._key(account, resource);
 		const previous = this._states.get(key);
@@ -174,28 +40,20 @@ export class GitHubRateLimitCoordinator extends CooldownState {
 		const resetSeconds = parseHeaderNumber(response.headers.get('x-ratelimit-reset'), true);
 		const remaining = parseHeaderNumber(response.headers.get('x-ratelimit-remaining'), true);
 		const rateLimit = classifyGitHubHttpRateLimit(response, responseBody);
-		const rateLimited = rateLimit !== undefined;
 		const secondaryLimited = rateLimit === 'secondary';
-		// GitHub's documented order: honour `retry-after`; otherwise wait for the
-		// reset only once the quota is actually spent. A secondary limit reports
-		// the primary window, so obeying its reset would park the account for up
-		// to an hour over a refusal that needs a minute.
+		// A secondary limit can report an unspent primary quota window.
 		const hinted = retryAfter !== undefined
 			? now + retryAfter * 1000
-			: !secondaryLimited && remaining === 0 && resetSeconds !== undefined ? resetSeconds * 1000 : undefined;
-		// A refusal must always park the caller, including when the only hint
-		// GitHub gave has already elapsed and would otherwise retry at once.
+			: remaining === 0 && resetSeconds !== undefined ? resetSeconds * 1000 : undefined;
+		// Expired hints must not let a rate-limited refusal retry immediately.
 		const refusedUntil = hinted !== undefined && hinted > now ? hinted : now + unhintedRateLimitCooldown;
 		const blockedUntil = secondaryLimited
 			? undefined
-			: rateLimited || (isGraphQL && remaining === 0)
+			: rateLimit !== undefined || (isGraphQL && remaining === 0)
 				? refusedUntil
-				: retryAfter !== undefined ? now + retryAfter * 1000 : undefined;
+				: hinted;
 		if (secondaryLimited) {
 			const accountKey = RequestQueue.accountKey(account);
-			// GitHub asks clients that hit a secondary limit to wait at least a
-			// minute when it gives no usable hint, and the refusal parks the
-			// whole account rather than only the resource that observed it.
 			this._accountBlockedUntil.set(accountKey, Math.max(refusedUntil, this._accountBlockedUntil.get(accountKey) ?? 0));
 		}
 		this._states.set(key, {
@@ -242,44 +100,30 @@ export class GitHubRateLimitCoordinator extends CooldownState {
 		});
 		this._onDidChange.fire();
 	}
-
-	protected override _clearAccount(accountKey: string): void {
-		const prefix = `${accountKey}\x00`;
-		for (const key of this._restResources.keys()) {
-			if (key.startsWith(prefix)) {
-				this._restResources.delete(key);
-			}
-		}
-		super._clearAccount(accountKey);
-	}
-
-	override dispose(): void {
-		this._restResources.clear();
-		super.dispose();
-	}
 }
 
-function restRateLimitRoute(url: string): { key: string; fallback: string } {
+export function getGitHubRestResource(url: string): string {
 	const target = new URL(url);
-	const path = target.pathname.replace(/%[0-9a-f]{2}/gi, encoded => {
-		const character = String.fromCharCode(parseInt(encoded.slice(1), 16));
-		return /^[\w.~\-]$/.test(character) ? character : encoded.toUpperCase();
-	});
-	const checks = /^(?<base>.*?)(?:\/repos\/[^/]+\/[^/]+|\/repositories\/[^/]+)\/(?:commits\/.+\/check-(?:runs|suites)|check-(?:runs|suites)(?:\/.*)?)\/?$/.exec(path);
-	const search = /^(?<base>.*?)\/search\/(?<kind>[^/]+)\/?$/.exec(path);
-	const semantic = search?.groups?.kind === 'issues' && ['semantic', 'hybrid'].includes(target.searchParams.get('search_type') ?? '');
-	const key = checks ? JSON.stringify([target.origin, checks.groups?.base, 'checks'])
-		: search ? JSON.stringify([target.origin, search.groups?.base, 'search', search.groups?.kind, semantic])
-			: JSON.stringify([target.origin, path]);
-	if (key.length > 4096) {
-		throw new GitHubRequestError('GitHub request route exceeds the resource mapping limit', 'validation');
+	const path = target.pathname.replace(/^\/api\/v3(?=\/)/, '');
+	if (/^\/(?:repos\/[^/]+\/[^/]+|repositories\/[^/]+)\/(?:commits\/.+\/)?check-(?:runs|suites)(?:\/|$)/.test(path)) {
+		return 'checks';
 	}
-	return { key, fallback: search || /^(?:\/api\/v3)?\/search\//.test(path) ? 'search' : 'core' };
+	if (/^\/search\/code\/?$/.test(path)) {
+		return 'code_search';
+	}
+	if (/^\/search\/issues\/?$/.test(path) && ['semantic', 'hybrid'].includes(target.searchParams.get('search_type') ?? '')) {
+		return 'semantic_search';
+	}
+	return path.startsWith('/search/') ? 'search' : 'core';
 }
 
-function readRateLimitResource(headers: Headers): string | undefined {
-	const value = headers.get('x-ratelimit-resource')?.trim().toLowerCase();
-	return value && /^[a-z][a-z0-9_-]{0,63}$/.test(value) ? value : undefined;
+function restResourceAliases(resource: string): readonly string[] {
+	switch (resource) {
+		case 'checks': return ['core'];
+		case 'code_search': return ['search', 'code_search_expanded'];
+		case 'semantic_search': return ['search'];
+		default: return [];
+	}
 }
 
 /** A generic "Rate Limit Exceeded" message can also accompany non-quota 403 denials. */

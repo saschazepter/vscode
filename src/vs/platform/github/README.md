@@ -15,6 +15,7 @@ Reusable GitHub engine and cross-target architecture.
 
 - The [workbench binding](../../workbench/services/github/browser/githubService.ts) runs per editor or Agents window. Existing features explicitly acquire a client for the selected default account; other callers can select a specific existing session.
 - The [Agent Host binding](../agentHost/node/agentHostGitHubService.ts) selects its host-owned repository credential resource without an attached workbench. Repository/PR association, creation, merge settings, auto-merge and issue/PR title context use its explicit clients. Copilot discovery and model requests still use the existing [Agent Host Copilot service](../agentHost/node/shared/copilotApiService.ts); migrating them is a separate change.
+- The [shared-process binding](electron-utility/githubService.ts) hosts an additional engine with the existing default fetch implementation. Its separate, opt-in [typed service boundary](common/githubIpc.ts) currently exposes anonymous JSON reads only. Existing desktop callers have not moved there.
 - The [legacy Sessions service](../../sessions/contrib/github/browser/githubService.ts) and extension clients still own independent requests and polling.
 
 These instances do not currently share application-wide request state.
@@ -87,10 +88,14 @@ Internal requests carry caller attribution and a deadline. Current transport def
 - Equivalent reads share a request with at most 64 waiters and independent cancellation/deadlines; detached waiters are released immediately. Credential invalidation preserves live cooldowns and reclaims inactive account state once they expire.
 - Reads receive at most one transient-failure retry when not rate-limited. Writes are not automatically retried by the transport; mutation services reconcile ambiguous writes, but never a request that timed out before network dispatch.
 - Server cooldowns also gate repeated identity lookups and authenticated download redirects. Download error classification inspects at most an 8 KiB diagnostic prefix, without exposing it in errors or telemetry.
-- HTTP 403 is throttling only with quota evidence: spent `remaining`, a valid `Retry-After`, explicit secondary-limit feedback, or an unambiguous primary-limit diagnostic when counters are absent. REST and GraphQL quota counters require decimal nonnegative safe integers; `Retry-After` accepts integer delay-seconds or HTTP dates. Malformed numeric lookalikes do not establish quota exhaustion or override a valid reset. Generic "Rate Limit Exceeded" denials with available quota remain authorization errors; they do not invalidate credentials or park unrelated traffic.
-- Server-reported REST resources govern admission, retries and bootstrap waiters, rather than only the initial core/search estimate. Account/API-origin/base-scoped route families group checks across repositories/refs and separate code/semantic/keyword searches; legacy hosts retain reported core/search behavior. Each credential client retains its own observed mapping so integration-specific buckets cannot overwrite a peer's; fresh clients conservatively consult existing account/family observations until receiving their own feedback. Mappings live in the existing coordinator, capped at 512 with bounded keys and 16 retained resource variants per route. Active mappings remain pinned. When only cooldown-bearing idle mappings can be evicted, their waits are compacted into an account-scoped guard for unobserved REST routes, without blocking other accounts or known independent buckets. Headerless feedback retains its inherited response bucket through admission and eviction. Variant overflow recovers after expired observations are pruned without losing the latest rejected bucket's cooldown. Eviction cannot bypass a wait, and account cleanup removes idle observations after required waits expire.
 - Credential resolution has a separate five-minute caller deadline covering token acquisition, identity backoff and shared identity lookup. A caller timing out does not erase server cooldowns or cancel another caller's identity lookup.
 - Long server cooldowns use bounded native timer chunks. Queue drains also expire overdue active requests after wall-clock jumps; rejected unique reads never retain coalescing entries or waiter timers.
+
+HTTP error classification, response telemetry and cooldowns share the same quota-evidence check. A generic HTTP 403 with "Rate Limit Exceeded" wording remains an authorization failure unless valid exhausted-quota or `Retry-After` headers, an explicit primary message without usable remaining-quota feedback, or explicit secondary-limit evidence establish throttling. HTTP 429 still establishes throttling; malformed refusal headers do not invent cooldowns, healthy quota observations do not erase existing waits, and storage-origin download denials do not establish GitHub account limits. Later exhausted-quota responses extend existing waits while preserving `Retry-After` precedence.
+
+REST admission recognizes fixed core, checks, code-search, semantic-search and other-search route families, including the Enterprise `/api/v3` prefix. Checks also honor legacy core waits; specialized searches honor legacy search waits, and code search honors its expanded bucket. This deliberately favors safe backoff over exact credential-specific quota isolation.
+
+An unexpected REST resource uses one account-scoped REST cooldown in the existing storage instead of a learned route mapping. Valid server retry/reset timing governs admission, retries, authenticated downloads and bootstrap waiters; an exhausted successful response also establishes a wait. Such a wait can delay otherwise independent REST requests, but does not block another account or GraphQL. HTTP quota counters and retry hints are validated strictly, and healthy feedback cannot erase a live wait.
 
 ### Request identification
 
@@ -99,6 +104,24 @@ Bindings supply trusted product/channel/version and originating component/versio
 `X-Is-Retry` is `"true"` only for an engine-controlled retry and `"false"` for an initial attempt. New polls, pages, refreshes, and redirect hops are not retries. Higher-layer authentication or feature retries are not currently labeled, and these headers do not introduce retries or mutation replay.
 
 Browser fetch, including desktop renderers, sends only `X-Client-Application` to `https://api.github.com`. The other headers are not in GitHub.com's CORS allowlist. Enterprise browser endpoints receive no identification headers until their allowlists are established; CAPI requires its own endpoint policy. This is an explicit egress policy, not a fallback after failed requests. Cross-origin download storage hops receive no identification or retry headers.
+
+### Shared-process preparation
+
+`IGitHubService` is registered locally in the shared process. Desktop consumers may explicitly use `ISharedProcessGitHubService` for an anonymous, API-relative GET, with a cancellation token, request options and serializable result metadata. The boundary preserves domain error kinds, HTTP details, rate-limit delays and timeout dispatch status; disconnecting one caller cancels only its waiter and releases its lease. The complete shared engine still owns admission, cooldowns and response limits.
+
+This is not a proxy for `IGitHubClient`'s nested functions, resources or disposables. There is no credential provider, token transfer, account selection or authenticated-client IPC in this preparation. Authenticated client/subscription migration requires a separately authorized rollout. Existing workbench engines, standalone hosting and web support remain in place.
+
+This preparation uses the engine's existing default fetch. Host-specific fetch, proxy and certificate integration is deferred; it does not modify the Agent Host proxy resolver or any existing workbench networking. Resolve that transport integration before migrating production callers.
+
+Focused offline validation (from the repository root, with `COPILOT_HOME` cleared and an isolated test home):
+
+```powershell
+npm run transpile-client
+npm run test-node -- --run src\vs\platform\github\test\common\githubIpc.test.ts --run src\vs\platform\github\test\common\githubAnonymousClient.test.ts --run src\vs\platform\github\test\node\githubService.test.ts
+.\scripts\test.bat --run src\vs\platform\github\test\electron-utility\githubService.test.ts
+```
+
+Tests use injected fetchers, not live GitHub requests or inference.
 
 ### Telemetry
 
