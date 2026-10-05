@@ -157,6 +157,7 @@ suite('SessionsListFilters', () => {
 			getSessionApplication('visual_studio_code_remote_agent_tool_invoked'),
 			getSessionApplication('github/cli'),
 			getSessionApplication('github/autopilot'),
+			getSessionApplication('issues_agent_assignment'),
 			getSessionApplication('CUSTOM_EVENT'),
 			getSessionApplication('third-party-client', 'Third Party'),
 		], [
@@ -165,7 +166,14 @@ suite('SessionsListFilters', () => {
 			{ id: 'vscode', label: 'VS Code' },
 			{ id: 'github/cli', label: 'Copilot CLI' },
 			{ id: 'github/autopilot', label: 'Copilot App' },
+<<<<<<< HEAD
 			{ id: 'CUSTOM_EVENT', label: 'Custom_event' },
+=======
+			{ id: 'issues_agent_assignment', label: 'Issues Assignment' },
+			{ id: 'CUSTOM_EVENT', label: 'Custom Event' },
+			{ id: 'custom_cloud_APPLICATION', label: 'Custom Cloud Application' },
+			{ id: 'another cloud application', label: 'Another Cloud Application' },
+>>>>>>> a3939e9ddcd (sessions: Refine filter menu labels and submenu motion (#339729))
 			{ id: 'third-party-client', label: 'Third Party' },
 		]);
 	});
