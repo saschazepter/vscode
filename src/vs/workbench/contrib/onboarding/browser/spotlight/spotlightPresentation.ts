@@ -366,6 +366,7 @@ export class SpotlightPresentation extends Disposable implements IOnboardingPres
 			placement: step.placement,
 			allowTargetInteraction: step.allowTargetInteraction,
 			advanceOnTargetClick: step.advanceOnTargetClick,
+			onDidActivateTarget: target.onDidActivate,
 			hideNext: step.advanceWhen ? true : step.hideNext,
 			targetOverlayVisible: openTarget,
 			padding: step.padding,
