@@ -8,6 +8,7 @@ import { DeferredPromise } from '../../../../../../base/common/async.js';
 import { CancellationToken } from '../../../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../../../base/common/codicons.js';
 import { IDefaultAccount } from '../../../../../../base/common/defaultAccount.js';
+import { isCancellationError } from '../../../../../../base/common/errors.js';
 import { Emitter } from '../../../../../../base/common/event.js';
 import { autorun } from '../../../../../../base/common/observable.js';
 import { URI } from '../../../../../../base/common/uri.js';
@@ -38,6 +39,8 @@ class TestApi extends mock<CloudAutomationApiClient>() {
 	readonly calls: string[] = [];
 	definitions: readonly ICloudAutomationDefinition[] = [definition];
 	tasks: readonly ICloudAutomationTask[] = [];
+	listError: Error | undefined;
+	historyError: Error | undefined;
 	pendingVisibility: Promise<boolean> | undefined;
 	lastToken: CancellationToken | undefined;
 	patch: ICloudAutomationMutation | undefined;
@@ -49,8 +52,20 @@ class TestApi extends mock<CloudAutomationApiClient>() {
 			await this.pendingVisibility;
 		}
 	}
-	override async list(): Promise<readonly ICloudAutomationDefinition[]> { this.calls.push('list'); return this.definitions; }
-	override async listRuns(): Promise<readonly ICloudAutomationTask[]> { this.calls.push('history'); return this.tasks; }
+	override async list(): Promise<readonly ICloudAutomationDefinition[]> {
+		this.calls.push('list');
+		if (this.listError) {
+			throw this.listError;
+		}
+		return this.definitions;
+	}
+	override async listRuns(): Promise<readonly ICloudAutomationTask[]> {
+		this.calls.push('history');
+		if (this.historyError) {
+			throw this.historyError;
+		}
+		return this.tasks;
+	}
 	override async getTask(): Promise<ICloudAutomationTask> { return this.tasks[0]; }
 	override async get(): Promise<ICloudAutomationDefinition> { return this.definitions[0]; }
 	override async create(_account: string, _repository: ICloudAutomationRepository, value: ICloudAutomationMutation): Promise<ICloudAutomationDefinition> {
@@ -139,6 +154,73 @@ suite('CloudAutomationStore', () => {
 		changed.fire(accounts.currentDefaultAccount);
 		assert.deepStrictEqual({ automation: provider.getAutomation(old.id), canCreate: provider.canCreateAutomation.get(), state: provider.catalogueState.get() },
 			{ automation: undefined, canCreate: false, state: 'unavailable' });
+	});
+
+	for (const previousDefinitionError of [false, true]) {
+		test(`history failure preserves a ready catalogue${previousDefinitionError ? ' after a definition failure' : ''}`, async () => {
+			const { provider, api, set } = setup();
+			api.tasks = [{ id: 'task', state: 'completed', created_at: definition.created_at }];
+			await set(CHAT_CLOUD_AUTOMATIONS_ENABLED_SETTING, true);
+			await provider.refresh();
+			const runs = provider.runs.get();
+			if (previousDefinitionError) {
+				api.listError = new Error('Definitions unavailable');
+				await assert.rejects(provider.refresh(), /Some GitHub repositories could not be refreshed/);
+				api.listError = undefined;
+			}
+			api.definitions = [{ ...definition, name: 'Updated' }];
+			api.historyError = new Error('History unavailable');
+			await assert.rejects(provider.refresh(), error => error === api.historyError);
+			const automation = provider.automations.get()[0];
+			assert.deepStrictEqual({
+				state: provider.catalogueState.get(),
+				reason: provider.unavailableReason.get(),
+				canCreate: provider.canCreateAutomation.get(),
+				canRun: provider.canRunAutomation(automation.id),
+				name: automation.name,
+				runs: provider.runs.get(),
+			}, { state: 'ready', reason: undefined, canCreate: true, canRun: true, name: 'Updated', runs });
+			assert.deepStrictEqual(await provider.runAutomation(automation.id), { kind: 'accepted' });
+		});
+	}
+
+	test('definition failure blocks mutations and skips history refresh without clearing cards', async () => {
+		const { provider, api, set } = setup();
+		await set(CHAT_CLOUD_AUTOMATIONS_ENABLED_SETTING, true);
+		await provider.refresh();
+		const automations = provider.automations.get();
+		api.calls.length = 0;
+		api.listError = new Error('Definitions unavailable');
+		await assert.rejects(provider.refresh(), /Some GitHub repositories could not be refreshed/);
+		assert.deepStrictEqual({
+			state: provider.catalogueState.get(),
+			canCreate: provider.canCreateAutomation.get(),
+			canRun: provider.canRunAutomation(automations[0].id),
+			automations: provider.automations.get(),
+			historyRequested: api.calls.includes('history'),
+		}, { state: 'error', canCreate: false, canRun: false, automations, historyRequested: false });
+	});
+
+	test('hiding AI after definition refresh cancels before requesting history', async () => {
+		const { provider, api, set, entitlement, sentimentChanged } = setup();
+		await set(CHAT_CLOUD_AUTOMATIONS_ENABLED_SETTING, true);
+		await provider.refresh();
+		api.calls.length = 0;
+		let hideOnReady = false;
+		disposables.add(autorun(reader => {
+			if (provider.catalogueState.read(reader) === 'ready' && hideOnReady) {
+				hideOnReady = false;
+				entitlement.sentiment = { hidden: true };
+				sentimentChanged.fire();
+			}
+		}));
+		hideOnReady = true;
+		await assert.rejects(provider.refresh(), isCancellationError);
+		assert.deepStrictEqual({
+			enabled: provider.enabled.get(),
+			automations: provider.automations.get(),
+			historyRequested: api.calls.includes('history'),
+		}, { enabled: false, automations: [], historyRequested: false });
 	});
 
 	test('202 remains acknowledgement only and cloud history has no native session resource', async () => {

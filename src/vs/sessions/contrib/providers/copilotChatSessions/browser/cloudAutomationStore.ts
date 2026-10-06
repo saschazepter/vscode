@@ -87,7 +87,6 @@ export class CloudAutomationStore extends Disposable implements ISessionsProvide
 		const store = this.requireStore();
 		try {
 			await store.refresh();
-			await store.refreshHistory();
 			if (this.store.get() === store) {
 				this.refreshError.set(undefined, undefined);
 			}
@@ -97,6 +96,8 @@ export class CloudAutomationStore extends Disposable implements ISessionsProvide
 			}
 			throw error;
 		}
+		this.assertCurrentStore(store);
+		await store.refreshHistory();
 	}
 
 	getAutomation(id: string): IAutomationDescriptor | undefined {
