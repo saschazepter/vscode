@@ -4158,6 +4158,51 @@ suite('AutomationsWorkspacePicker', () => {
 		assert.strictEqual(picker.selectedFolderUri?.toString(), folderUri.toString());
 	});
 
+	for (const selected of [true, false]) {
+		test(`Work in GitHub reuses a matching ${selected ? 'selected' : 'recent'} local checkout and retains repository intent`, async () => {
+			const providersService = disposables.add(new MockSessionsProvidersService());
+			const folder = URI.file('/local/project');
+			const repository = URI.from({ scheme: GITHUB_REMOTE_FILE_SCHEME, authority: 'github', path: '/owner/project/HEAD' });
+			const local = createMockProvider('local-1', { group: SESSION_WORKSPACE_GROUP_LOCAL });
+			const cloud = createMockProvider('github', { group: SESSION_WORKSPACE_GROUP_GITHUB });
+			providersService.setProviders([{
+				...local,
+				resolveWorkspace: uri => {
+					const workspace = local.resolveWorkspace(uri);
+					return workspace && {
+						...workspace,
+						folders: workspace.folders.map(folder => ({
+							...folder,
+							gitRepository: {
+								uri: folder.root, workTreeUri: undefined, baseBranchName: undefined,
+								gitHubInfo: constObservable({ owner: 'owner', repo: 'project' }),
+							},
+						})),
+					};
+				},
+			}, cloud]);
+			const storage = disposables.add(new TestStorageService());
+			seedStorage(storage, [{ uri: folder, providerId: local.id, checked: false }]);
+			const picker = createTestPicker(disposables, providersService, storage, undefined, TestAutomationsWorkspacePicker,
+				undefined, undefined, undefined, { restoreFromSessions: false, canRestoreWorkspace: () => false });
+			assert.ok(picker instanceof TestAutomationsWorkspacePicker);
+			if (selected) {
+				picker.setSelectedWorkspace(folder, { persist: false, fireEvent: false });
+			}
+			picker.setCloudConfiguration(constObservable<IAutomationProviderConfiguration>({
+				sessionTypes: ['cloud-agent'], description: '', timeZone: 'UTC', targetChangeDisabledReason: '', tools: [],
+				pickWorkspace: async () => repository,
+				getWorkspaceTarget: () => constObservable({ workspace: repository }),
+			}));
+			const selections: Array<{ folder: string | undefined; repository: boolean }> = [];
+			disposables.add(picker.onDidSelectWorkspace(uri => selections.push({ folder: uri?.toString(), repository: picker.isSelectingRepository })));
+			await picker.select('Work in GitHub');
+			assert.deepStrictEqual({ selections, folder: picker.selectedFolderUri?.toString() }, {
+				selections: [{ folder: folder.toString(), repository: true }], folder: folder.toString(),
+			});
+		});
+	}
+
 	test('mobile snapshot waits for pending eligibility and can be cancelled before opening', async () => {
 		const providersService = disposables.add(new MockSessionsProvidersService());
 		const provider = createMockProvider('github');

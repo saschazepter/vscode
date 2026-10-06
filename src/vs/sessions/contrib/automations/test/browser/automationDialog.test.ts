@@ -48,6 +48,8 @@ import { defaultButtonStyles, defaultCheckboxStyles, defaultDialogStyles, defaul
 import { IWorkspaceTrustRequestService, ResourceTrustRequestOptions } from '../../../../../platform/workspace/common/workspaceTrust.js';
 import { createWorkbenchDialogOptions } from '../../../../../workbench/browser/parts/dialogs/dialog.js';
 import { ChatContextKeys } from '../../../../../workbench/contrib/chat/common/actions/chatContextKeys.js';
+import { IChatSessionsService } from '../../../../../workbench/contrib/chat/common/chatSessionsService.js';
+import { ChatEntitlement, IChatEntitlementService } from '../../../../../workbench/services/chat/common/chatEntitlementService.js';
 import { ChatInputPart } from '../../../../../workbench/contrib/chat/browser/widget/input/chatInputPart.js';
 import { IAutomationDescriptor, IAutomationSessionTemplate } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
 import { AutomationCatalogueState, IAutomationCustomizationChoice, IAutomationProviderConfiguration, IAutomationService, IAutomationWorkspaceTarget } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
@@ -85,7 +87,10 @@ suite('Automation dialog creation', () => {
 		}, disposables);
 		instantiationService.stub(ICommandService, new class extends mock<ICommandService>() { });
 		instantiationService.stub(IMenuService, disposables.add(instantiationService.createInstance(MenuService)));
-		instantiationService.stub(IActionWidgetService, new RecordingActionWidgetService());
+		const actionWidgetService = new RecordingActionWidgetService();
+		instantiationService.stub(IActionWidgetService, actionWidgetService);
+		instantiationService.stub(IChatSessionsService, upcastPartial<IChatSessionsService>({ getChatSessionContribution: () => undefined }));
+		instantiationService.stub(IChatEntitlementService, upcastPartial<IChatEntitlementService>({ entitlement: ChatEntitlement.Pro }));
 		instantiationService.stub(IGitService, upcastPartial<IGitService>({ openRepository: async () => repository }));
 		instantiationService.stub(ISessionsProvidersService, upcastPartial<ISessionsProvidersService>({
 			onDidChangeProviders: Event.None,
@@ -101,7 +106,7 @@ suite('Automation dialog creation', () => {
 		instantiationService.stub(ISessionsManagementService, upcastPartial<ISessionsManagementService>({
 			automationSession: constObservable(undefined),
 			onDidChangeSessionTypes: Event.None,
-			getSessionTypesForFolder: () => types,
+			getSessionTypesForFolder: uri => uri.scheme === GITHUB_REMOTE_FILE_SCHEME ? cloudTypes : [...types, ...(cloudConfiguration ? cloudTypes : [])],
 			getQuickChatSessionTypes: () => types,
 			getAllProviderSessionTypes: () => [...types, ...cloudTypes],
 			isNewSessionTargetAvailable: () => true,
@@ -125,8 +130,10 @@ suite('Automation dialog creation', () => {
 		ChatContextKeys.enabled.bindTo(contextKeyService).set(true);
 		let targetModel: AutomationIsolationModel | undefined;
 		let selectedWorkspace: URI | undefined;
+		let selectingRepository = false;
 		const workspaceSelected = disposables.add(new Emitter<URI | undefined>());
 		const workspacePicker: Partial<MobileAutomationsWorkspacePicker> = {
+			get isSelectingRepository() { return selectingRepository; },
 			setTargetModel: model => { targetModel = model; },
 			setCloudConfiguration: () => { },
 			setLayoutService: () => { },
@@ -168,10 +175,23 @@ suite('Automation dialog creation', () => {
 		const nameInput = container.querySelector<HTMLInputElement>('.automation-form-input-host input')!;
 		return {
 			result, saveButton, cancelButton, nameInput, container, providers,
-			selectWorkspace: async (uri: URI | undefined) => {
+			selectWorkspace: async (uri: URI | undefined, fromRepository = uri?.scheme === GITHUB_REMOTE_FILE_SCHEME) => {
 				if (await workspacePicker.onWillSelectWorkspace?.()) {
-					workspaceSelected.fire(uri);
+					selectingRepository = fromRepository;
+					try {
+						selectedWorkspace = uri;
+						workspaceSelected.fire(uri);
+					} finally {
+						selectingRepository = false;
+					}
 				}
+			},
+			selectSessionType: async (label: string) => {
+				const trigger = container.querySelector<HTMLElement>('.automation-target-toolbar [aria-label^="Pick Session Type"]');
+				assert.ok(trigger, 'Expected an enabled session type picker');
+				trigger.click();
+				actionWidgetService.select(label);
+				await timeout(0);
 			},
 			getTarget: () => ({ quickChat: targetModel?.isQuickChat, workspace: selectedWorkspace }),
 			setWorkspace: (folder: URI) => targetModel?.setQuickChat(false, folder),
@@ -296,6 +316,7 @@ suite('Automation dialog creation', () => {
 		await timeout(0);
 		await dialog.selectWorkspace(REPOSITORY);
 		await dialog.selectWorkspace(FOLDER);
+		await dialog.selectSessionType('Copilot');
 		dialog.saveButton.click();
 		const result = await dialog.result;
 		assert.ok(result?.kind === 'create');
@@ -327,6 +348,62 @@ suite('Automation dialog creation', () => {
 			kind: 'update', id: existing.id,
 			value: { name: existing.name, prompt: existing.prompt, schedule: existing.schedule, target: existing.target, sessionTemplate: existing.sessionTemplate, enabled: false },
 		});
+	});
+
+	test('a local GitHub folder offers Cloud without changing its displayed workspace', async () => {
+		const dialog = openDialog({}, cloudConfiguration());
+		dialog.setPrompt('Review changes');
+		await dialog.selectWorkspace(FOLDER);
+		await dialog.selectSessionType('Cloud');
+		assert.deepStrictEqual({
+			workspace: dialog.getTarget().workspace,
+			enabledPicker: dialog.container.querySelector('[aria-label="Pick Session Type, Cloud"]')?.getAttribute('aria-disabled'),
+			utc: dialog.container.textContent?.includes('Time (UTC)'),
+		}, { workspace: FOLDER, enabledPicker: 'false', utc: true });
+		dialog.saveButton.click();
+		const result = await dialog.result;
+		assert.ok(result?.kind === 'create' && result.value.target.kind === 'workspace');
+		assert.deepStrictEqual({
+			folder: result.value.target.folderUri.toString(), provider: result.value.target.providerId, timeZone: result.value.schedule.timeZone,
+		}, { folder: REPOSITORY.toString(), provider: 'cloud', timeZone: 'UTC' });
+	});
+
+	test('a non-private local folder cannot save with Cloud but can switch back to Copilot', async () => {
+		const target = observableValue<IAutomationWorkspaceTarget>('target', { disabledReason: 'The repository must be private.' });
+		const dialog = openDialog({}, cloudConfiguration(target));
+		dialog.setPrompt('Review changes');
+		await dialog.selectWorkspace(FOLDER);
+		await dialog.selectSessionType('Cloud');
+		const cloud = {
+			disabled: dialog.saveButton.getAttribute('aria-disabled'),
+			message: dialog.container.querySelector('.automation-target-error')?.textContent,
+		};
+		await dialog.selectSessionType('Copilot');
+		assert.deepStrictEqual({ cloud, localDisabled: dialog.saveButton.getAttribute('aria-disabled') }, {
+			cloud: { disabled: 'true', message: 'The repository must be private.' }, localDisabled: 'false',
+		});
+		dialog.cancelButton.click();
+		await dialog.result;
+	});
+
+	test('Work in GitHub retains a matching folder, defaults to Cloud and permits switching to Copilot', async () => {
+		const dialog = openDialog({}, cloudConfiguration());
+		dialog.setPrompt('Review changes');
+		await dialog.selectWorkspace(FOLDER);
+		await dialog.selectWorkspace(FOLDER, true);
+		const cloudPicker = dialog.container.querySelector('[aria-label="Pick Session Type, Cloud"]')?.getAttribute('aria-disabled');
+		await dialog.selectSessionType('Copilot');
+		assert.deepStrictEqual({
+			workspace: dialog.getTarget().workspace, cloudPicker,
+			utc: dialog.container.textContent?.includes('Time (UTC)'),
+			toolsHidden: dialog.container.querySelector<HTMLElement>('.automation-provider-details')?.style.display,
+		}, { workspace: FOLDER, cloudPicker: 'false', utc: false, toolsHidden: 'none' });
+		dialog.saveButton.click();
+		const result = await dialog.result;
+		assert.ok(result?.kind === 'create' && result.value.target.kind === 'workspace');
+		assert.deepStrictEqual({
+			folder: result.value.target.folderUri.toString(), provider: result.value.target.providerId, timeZone: result.value.schedule.timeZone,
+		}, { folder: FOLDER.toString(), provider: 'host', timeZone: undefined });
 	});
 
 	test('keeps the dialog open during commit and ignores cancel, close, and Escape', async () => {

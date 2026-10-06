@@ -1141,31 +1141,33 @@ export function renderForm(
 
 	// The picker is authoritative for the session type
 	const initialProviderConfiguration = getProviderConfiguration(state.providerId);
-	const runInCloud = observableValue(form, initialProviderConfiguration !== undefined || state.folderUri?.scheme === GITHUB_REMOTE_FILE_SCHEME);
+	const selectedProvider = observableValue(form, state.providerId);
 	const cloudProvider = derived(reader => allowedProviders.read(reader).find(id => getProviderConfiguration(id) !== undefined));
 	const availableCloudConfiguration = derived(reader => getProviderConfiguration(cloudProvider.read(reader)));
-	const selectedProviders = derived(reader => allowedProviders.read(reader).filter(id => (getProviderConfiguration(id) !== undefined) === runInCloud.read(reader)));
-	const cloudConfiguration = derived(reader => runInCloud.read(reader) ? getProviderConfiguration(cloudProvider.read(reader)) : undefined);
+	const cloudConfiguration = derived(reader => {
+		allowedProviders.read(reader);
+		return getProviderConfiguration(selectedProvider.read(reader));
+	});
+	const runInCloud = derived(reader => cloudConfiguration.read(reader) !== undefined);
 	const sessionConfigurationErrorMessage = observableValue<string | undefined>(form, undefined);
 	let switchingTarget = false;
+	let localTarget = { ...state };
 	const isolationModel = new AutomationIsolationModel(state);
 	const workspaceControlsVisible = derived(reader => !runInCloud.read(reader) && !isolationModel.isQuickChatObs.read(reader) && isolationModel.folderUriObs.read(reader)?.scheme !== GITHUB_REMOTE_FILE_SCHEME && isolationModel.folderUriObs.read(reader) !== undefined);
 	const sessionTypesChanged = observableSignalFromEvent(form, sessionsManagementService.onDidChangeSessionTypes);
 	const sessionTypes = derived(reader => {
 		sessionTypesChanged.read(reader);
-		const configuration = cloudConfiguration.read(reader);
 		const folder = isolationModel.folderUriObs.read(reader);
 		const quickChat = isolationModel.isQuickChatObs.read(reader);
-		return configuration
-			? sessionsManagementService.getAllProviderSessionTypes().filter(type => type.providerId === cloudProvider.read(reader) && configuration.sessionTypes.includes(type.sessionType.id))
-			: quickChat ? sessionsManagementService.getQuickChatSessionTypes() : folder ? sessionsManagementService.getSessionTypesForFolder(folder) : [];
+		return quickChat ? sessionsManagementService.getQuickChatSessionTypes() : folder ? sessionsManagementService.getSessionTypesForFolder(folder) : [];
 	});
 	const sessionTypePicker = disposables.add(instantiationService.createInstance(MobileSessionTypePicker, constObservable<ISession | undefined>(undefined), {
 		persistSelection: false,
 		preserveUnavailableSelection: true,
 		telemetrySource: 'AutomationSessionTypePicker',
-		allowedProviders: selectedProviders,
+		allowedProviders,
 		sessionTypes,
+		prepareSessionTypeSelection: () => workspacePicker.onWillSelectWorkspace(),
 	}));
 	sessionTypePicker.setQuickChatSource(isolationModel.isQuickChatObs);
 	sessionTypePicker.setFolderSource(isolationModel.folderUriObs, {
@@ -1188,6 +1190,8 @@ export function renderForm(
 		const pick = sessionTypePicker.selectedPick;
 		state.providerId = pick?.providerId;
 		state.sessionTypeId = pick?.sessionTypeId;
+		const wasCloud = selectedProvider.get() !== undefined && getProviderConfiguration(selectedProvider.get()) !== undefined;
+		selectedProvider.set(state.providerId, undefined);
 		const configuration = cloudConfiguration.get();
 		const target = configuration?.getWorkspaceTarget(state.folderUri).get();
 		state.resolvedFolderUri = target?.workspace;
@@ -1196,10 +1200,13 @@ export function renderForm(
 		if (runInCloud.get()) {
 			state.isolationMode = undefined;
 			state.branch = undefined;
-			if (!configuration) {
-				state.targetDisabledReason = localize('automation.form.cloudUnavailable', "Cloud automations are unavailable.");
-			} else if (isEdit && initialTarget?.kind === 'workspace' && target?.workspace && !isEqual(initialTarget.folderUri, target.workspace)) {
+			if (configuration && isEdit && initialTarget?.kind === 'workspace' && target?.workspace && !isEqual(initialTarget.folderUri, target.workspace)) {
 				state.targetDisabledReason = configuration.targetChangeDisabledReason;
+			}
+		} else if (wasCloud && isEqual(state.folderUri, localTarget.folderUri)) {
+			state.isolationMode = localTarget.isolationMode;
+			if (localTarget.branch) {
+				isolationModel.selectBranch(localTarget.branch);
 			}
 		}
 		onDidChangeSessionTarget.fire();
@@ -1259,7 +1266,7 @@ export function renderForm(
 		const folderUri = runInCloud.get() ? state.resolvedFolderUri : isolationModel.folderUriObs.get();
 		const pick = sessionTypePicker.selectedPick;
 		const isQuickChat = isolationModel.isQuickChatObs.get();
-		if (!pick || state.targetDisabledReason || pick.providerId === undefined || !selectedProviders.get().includes(pick.providerId) || (!isQuickChat && !folderUri)) {
+		if (!pick || state.targetDisabledReason || pick.providerId === undefined || !allowedProviders.get().includes(pick.providerId) || (!isQuickChat && !folderUri)) {
 			automationSessionDraftSynchronizer.update(undefined);
 			return;
 		}
@@ -1293,7 +1300,7 @@ export function renderForm(
 		revalidate();
 	}));
 	disposables.add(autorun(reader => {
-		selectedProviders.read(reader);
+		allowedProviders.read(reader);
 		cloudConfiguration.read(reader)?.getWorkspaceTarget(isolationModel.folderUriObs.read(reader)).read(reader);
 		syncStateFromPicker();
 		updateAutomationSessionTarget();
@@ -1305,7 +1312,6 @@ export function renderForm(
 	}
 
 	const targetSwitchCancellation = cancelOnDispose(disposables);
-	let localTarget = { ...state };
 	workspacePicker.onWillSelectWorkspace = async () => {
 		if (switchingTarget) {
 			return false;
@@ -1347,18 +1353,21 @@ export function renderForm(
 		}
 		switchingTarget = true;
 		transaction(() => {
-			const cloud = uri?.scheme === GITHUB_REMOTE_FILE_SCHEME;
-			const changedMode = cloud !== runInCloud.get();
-			runInCloud.set(cloud, undefined);
+			const wasCloud = runInCloud.get();
+			const currentPick = sessionTypePicker.selectedPick;
 			isolationModel.setQuickChat(!uri, uri);
-			const first = sessionTypes.get().find(type => selectedProviders.get().includes(type.providerId));
-			const pick = !cloud && localTarget.providerId && localTarget.sessionTypeId
-				? { providerId: localTarget.providerId, sessionTypeId: localTarget.sessionTypeId }
-				: first ? { providerId: first.providerId, sessionTypeId: first.sessionType.id } : undefined;
+			const types = sessionTypes.get().filter(type => allowedProviders.get().includes(type.providerId));
+			const preferred = workspacePicker.isSelectingRepository
+				? types.find(type => getProviderConfiguration(type.providerId)?.sessionTypes.includes(type.sessionType.id))
+				: types.find(type => type.providerId === currentPick?.providerId && type.sessionType.id === currentPick.sessionTypeId)
+				?? types.find(type => type.providerId === localTarget.providerId && type.sessionType.id === localTarget.sessionTypeId);
+			const first = preferred ?? types[0];
+			const pick = first ? { providerId: first.providerId, sessionTypeId: first.sessionType.id } : undefined;
 			sessionTypePicker.setFolderSource(isolationModel.folderUriObs, { initialPick: pick });
 			state.providerId = pick?.providerId;
 			state.sessionTypeId = pick?.sessionTypeId;
-			if (!cloud && changedMode && isEqual(uri, localTarget.folderUri)) {
+			selectedProvider.set(state.providerId, undefined);
+			if (!runInCloud.get() && wasCloud && isEqual(uri, localTarget.folderUri)) {
 				state.isolationMode = localTarget.isolationMode;
 				if (localTarget.branch) {
 					isolationModel.selectBranch(localTarget.branch);
@@ -2021,6 +2030,8 @@ export class AutomationsWorkspacePicker extends WorkspacePicker {
 	private targetModel: AutomationIsolationModel | undefined;
 	private readonly repositorySelection = this._register(new MutableDisposable<DisposableStore>());
 	private selectionGeneration = 0;
+	private selectingRepository = false;
+	get isSelectingRepository(): boolean { return this.selectingRepository; }
 	onSelectionError: (error: Error) => void = onUnexpectedError;
 	onWillSelectWorkspace: () => Promise<boolean> = async () => true;
 
@@ -2149,6 +2160,17 @@ export class AutomationsWorkspacePicker extends WorkspacePicker {
 			if (!await this.onWillSelectWorkspace() || token.isCancellationRequested || generation !== this.selectionGeneration) {
 				return false;
 			}
+			this.selectingRepository = item.folderUri?.scheme === GITHUB_REMOTE_FILE_SCHEME;
+			if (this.selectingRepository && item.folderUri) {
+				const repositoryUri = item.folderUri;
+				const workspace = this.sessionsProvidersService.getProviders()
+					.map(provider => provider.resolveWorkspace(repositoryUri))
+					.find(workspace => workspace !== undefined);
+				const related = workspace && this._findRelatedLocalWorkspace(workspace);
+				if (related) {
+					item = { folderUri: related.workspace.folders[0].root, providerId: related.providerId };
+				}
+			}
 			const applied = await super._dispatchPickerItem(item);
 			const selectedFolder = this.selectedFolderUri;
 			if (applied && selectedFolder && (item.folderUri || item.browseActionIndex !== undefined)) {
@@ -2162,6 +2184,7 @@ export class AutomationsWorkspacePicker extends WorkspacePicker {
 			return false;
 		} finally {
 			if (this.repositorySelection.value === resources) {
+				this.selectingRepository = false;
 				this.repositorySelection.clear();
 			}
 		}
