@@ -38,7 +38,7 @@ import {
 	AgentHostE2EServerLease, assertToolCallCompleteText, createRealSession, dispatchTurn,
 	driveTurnToCompletion, driveTurnWithAttachmentsToCompletion, removeTempDirs, resolveGitHubToken, runAhpSnapshotTest,
 } from '../harness/agentHostE2ETestHarness.js';
-import { assertRecordedAhpSnapshot } from '../harness/ahpSnapshot.js';
+import { assertRecordedAhpSnapshot, waitForChatUnreadAfterTurn } from '../harness/ahpSnapshot.js';
 import { summarizeAnthropicRequest, summarizeResponsesRequest } from '../harness/capiWireCodec.js';
 import { defineAgentHostE2ETests } from '../suites/agentHostE2ESuites.js';
 import { fetchSessionWithChat, getActionEnvelope, isActionNotification, TestProtocolClient } from '../../serverIntegrationTestHelpers.js';
@@ -61,6 +61,7 @@ async function waitForTurnCompletion(client: TestProtocolClient, chatUri: string
 	if (action.type === ActionType.ChatError) {
 		throw new Error(`Resumed turn failed: ${action.part.error.errorType}: ${action.part.error.message}`);
 	}
+	await waitForChatUnreadAfterTurn(client, chatUri, getActionEnvelope(notification).serverSeq);
 }
 
 defineAgentHostE2ETests(COPILOT_CONFIG);
@@ -256,6 +257,7 @@ suite('Agent Host E2E — Copilot (Copilot-specific)', function () {
 		const errorEnvelope = getActionEnvelope(errorNotification);
 		const errorAction = errorEnvelope.action as ChatErrorAction;
 		assert.strictEqual(errorAction.part.resumable, true);
+		await waitForChatUnreadAfterTurn(client, chatUri, errorEnvelope.serverSeq);
 
 		const peerClientId = 'copilot-failed-turn-resume-peer';
 		const peer = await lease.connectClient();
