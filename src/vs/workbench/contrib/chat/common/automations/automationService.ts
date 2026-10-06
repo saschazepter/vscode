@@ -22,6 +22,7 @@ export interface IAutomationProviderConfiguration {
 	readonly timeZone: 'UTC';
 	readonly targetChangeDisabledReason: string;
 	readonly tools: readonly { readonly id: string; readonly label: string }[];
+	pickWorkspace(token: CancellationToken): Promise<URI | undefined>;
 	getWorkspaceTarget(workspace: URI | undefined): IObservable<IAutomationWorkspaceTarget>;
 }
 

@@ -12,7 +12,6 @@ import { Checkbox } from '../../../../base/browser/ui/toggle/toggle.js';
 import { InputBox } from '../../../../base/browser/ui/inputbox/inputBox.js';
 import { AnchorPosition } from '../../../../base/browser/ui/contextview/contextview.js';
 import { ISelectBoxOptions, ISelectOptionItem, SelectBox } from '../../../../base/browser/ui/selectBox/selectBox.js';
-import { Switch } from '../../../../base/browser/ui/toggle/switch.js';
 import { IAction } from '../../../../base/common/actions.js';
 import { cancelOnDispose, CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js';
 import { Codicon } from '../../../../base/common/codicons.js';
@@ -24,7 +23,6 @@ import { autorun, constObservable, derived, disposableObservableValue, IObservab
 import { getComparisonKey, isEqual } from '../../../../base/common/resources.js';
 import { URI } from '../../../../base/common/uri.js';
 import { isStringArray } from '../../../../base/common/types.js';
-import { generateUuid } from '../../../../base/common/uuid.js';
 import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
 import { EditorOptions } from '../../../../editor/common/config/editorOptions.js';
 import { EditorContextKeys } from '../../../../editor/common/editorContextKeys.js';
@@ -1046,6 +1044,7 @@ export function renderForm(
 	getProviderConfiguration: (providerId: string | undefined) => IAutomationProviderConfiguration | undefined = () => undefined,
 	isEdit = false,
 	customizations?: { readonly service: IAutomationService; readonly hoverService: IHoverService; readonly existingId?: string },
+	notifyError: (error: Error) => void = onUnexpectedError,
 ): IRenderFormHandle {
 	let reloadCustomizations: () => void = () => { };
 	const validateForm = revalidate;
@@ -1142,8 +1141,9 @@ export function renderForm(
 
 	// The picker is authoritative for the session type
 	const initialProviderConfiguration = getProviderConfiguration(state.providerId);
-	const runInCloud = observableValue(form, initialProviderConfiguration !== undefined);
+	const runInCloud = observableValue(form, initialProviderConfiguration !== undefined || state.folderUri?.scheme === GITHUB_REMOTE_FILE_SCHEME);
 	const cloudProvider = derived(reader => allowedProviders.read(reader).find(id => getProviderConfiguration(id) !== undefined));
+	const availableCloudConfiguration = derived(reader => getProviderConfiguration(cloudProvider.read(reader)));
 	const selectedProviders = derived(reader => allowedProviders.read(reader).filter(id => (getProviderConfiguration(id) !== undefined) === runInCloud.read(reader)));
 	const cloudConfiguration = derived(reader => runInCloud.read(reader) ? getProviderConfiguration(cloudProvider.read(reader)) : undefined);
 	const sessionConfigurationErrorMessage = observableValue<string | undefined>(form, undefined);
@@ -1219,17 +1219,16 @@ export function renderForm(
 	const workspacePicker = disposables.add(instantiationService.createInstance(MobileAutomationsWorkspacePicker, {
 		restoreFromSessions: false,
 		canRestoreWorkspace: () => false,
-		canSelectWorkspace: (folderUri, preferredProviderId) =>
-			runInCloud.get()
-				? Promise.resolve(cloudConfiguration.get()?.getWorkspaceTarget(folderUri).get().workspace !== undefined)
-				: canSelectAutomationWorkspace(folderUri, preferredProviderId, sessionsManagementService, workspaceTrustRequestService),
+		canSelectWorkspace: (folderUri, preferredProviderId) => folderUri.scheme === GITHUB_REMOTE_FILE_SCHEME
+			? Promise.resolve(availableCloudConfiguration.get()?.getWorkspaceTarget(folderUri).get().workspace !== undefined)
+			: canSelectAutomationWorkspace(folderUri, preferredProviderId, sessionsManagementService, workspaceTrustRequestService),
 	}));
 	workspacePicker.setTargetModel(isolationModel);
 	workspacePicker.setLayoutService(layoutService);
-	workspacePicker.setCloudConfiguration(cloudConfiguration);
+	workspacePicker.setCloudConfiguration(availableCloudConfiguration);
 	workspacePicker.onSelectionError = error => {
 		logService.error('[AutomationDialog] Workspace selection failed.', error);
-		sessionConfigurationErrorMessage.set(getErrorMessage(error), undefined);
+		notifyError(error);
 	};
 
 	const automationSessionDraftSynchronizer = disposables.add(new AutomationSessionDraftSynchronizer(
@@ -1305,43 +1304,16 @@ export function renderForm(
 		workspacePicker.setSelectedWorkspace(state.folderUri, { fireEvent: false, persist: false });
 	}
 
-	disposables.add(workspacePicker.onDidSelectWorkspace(uri => {
-		if (isolationModel.setWorkspace(uri)) {
-			syncStateFromPicker();
-			updateAutomationSessionTarget();
-			revalidate();
-		}
-	}));
-
-	disposables.add(autorun(reader => {
-		isolationModel.isQuickChatObs.read(reader);
-		updateAutomationSessionTarget();
-		revalidate();
-	}));
-
-	const targetRow = DOM.append(sessionSection, $('.automation-form-row.automation-target-row'));
-	const cloudLabel = localize('automation.form.runInCloud', "Run in the Cloud");
-	const cloudPill = DOM.append(targetRow, $<HTMLLabelElement>('label.automation-cloud-toggle.chat-pill-item'));
-	const cloudToggle = disposables.add(new Switch({ ariaLabel: cloudLabel, checked: runInCloud.get(), disabled: isEdit }));
-	cloudToggle.domNode.id = `automation-cloud-toggle-${generateUuid()}`;
-	cloudPill.htmlFor = cloudToggle.domNode.id;
-	DOM.append(cloudPill, renderIcon(Codicon.cloud)).setAttribute('aria-hidden', 'true');
-	DOM.append(cloudPill, $('span', undefined, cloudLabel));
-	cloudPill.appendChild(cloudToggle.domNode);
-	disposables.add(autorun(reader => {
-		const available = cloudProvider.read(reader) !== undefined;
-		setAutomationControlVisible(cloudPill, available);
-		cloudToggle.disabled = switchingTarget || isEdit || !available;
-		cloudToggle.checked = runInCloud.read(reader);
-	}));
-	let localTarget = { ...state };
 	const targetSwitchCancellation = cancelOnDispose(disposables);
-	disposables.add(cloudToggle.onChange(async checked => {
-		if (checked) {
+	let localTarget = { ...state };
+	workspacePicker.onWillSelectWorkspace = async () => {
+		if (switchingTarget) {
+			return false;
+		}
+		if (!runInCloud.get()) {
 			localTarget = { ...state, branch: isolationModel.persistedBranch };
 		}
 		switchingTarget = true;
-		cloudToggle.disabled = true;
 		formContent.toggleAttribute('inert', true);
 		formContent.setAttribute('aria-busy', 'true');
 		state.targetDisabledReason = localize('automation.form.switchingTarget', "Saving the current session configuration...");
@@ -1351,52 +1323,61 @@ export function renderForm(
 			if (capture.kind === 'failed') {
 				throw capture.error;
 			}
-			if (disposables.isDisposed || checked && cloudProvider.get() === undefined) {
-				return;
-			}
-			transaction(() => {
-				runInCloud.set(checked, undefined);
-				isolationModel.setQuickChat(checked ? false : localTarget.isQuickChat, checked ? isolationModel.folderUri : localTarget.folderUri);
-				const first = sessionTypes.get().find(type => selectedProviders.get().includes(type.providerId));
-				const pick = !checked && localTarget.providerId && localTarget.sessionTypeId
-					? { providerId: localTarget.providerId, sessionTypeId: localTarget.sessionTypeId }
-					: first ? { providerId: first.providerId, sessionTypeId: first.sessionType.id } : undefined;
-				sessionTypePicker.setFolderSource(isolationModel.folderUriObs, { initialPick: pick });
-				state.providerId = pick?.providerId;
-				state.sessionTypeId = pick?.sessionTypeId;
-				if (!checked) {
-					state.isolationMode = localTarget.isolationMode;
-					if (localTarget.branch) {
-						isolationModel.selectBranch(localTarget.branch);
-					}
-					if (localTarget.folderUri) {
-						workspacePicker.setSelectedWorkspace(localTarget.folderUri, { fireEvent: false, persist: false });
-					} else {
-						workspacePicker.clearSelection();
-					}
-				}
-			});
+			return !disposables.isDisposed;
 		} catch (error) {
 			if (!isCancellationError(error) && !disposables.isDisposed) {
 				logService.error('[AutomationDialog] Failed to capture the outgoing session configuration.', error);
 				sessionConfigurationErrorMessage.set(getErrorMessage(error), undefined);
 			}
+			return false;
 		} finally {
 			switchingTarget = false;
 			if (!disposables.isDisposed) {
 				formContent.toggleAttribute('inert', false);
 				formContent.setAttribute('aria-busy', 'false');
-				cloudToggle.disabled = isEdit || cloudProvider.get() === undefined;
-				cloudToggle.checked = runInCloud.get();
-				if (!cloudToggle.disabled) {
-					cloudToggle.domNode.focus();
-				}
 				syncStateFromPicker();
 				updateAutomationSessionTarget();
 				revalidate();
 			}
 		}
+	};
+	const applyWorkspaceTarget = (uri: URI | undefined) => {
+		if (switchingTarget) {
+			return;
+		}
+		switchingTarget = true;
+		transaction(() => {
+			const cloud = uri?.scheme === GITHUB_REMOTE_FILE_SCHEME;
+			const changedMode = cloud !== runInCloud.get();
+			runInCloud.set(cloud, undefined);
+			isolationModel.setQuickChat(!uri, uri);
+			const first = sessionTypes.get().find(type => selectedProviders.get().includes(type.providerId));
+			const pick = !cloud && localTarget.providerId && localTarget.sessionTypeId
+				? { providerId: localTarget.providerId, sessionTypeId: localTarget.sessionTypeId }
+				: first ? { providerId: first.providerId, sessionTypeId: first.sessionType.id } : undefined;
+			sessionTypePicker.setFolderSource(isolationModel.folderUriObs, { initialPick: pick });
+			state.providerId = pick?.providerId;
+			state.sessionTypeId = pick?.sessionTypeId;
+			if (!cloud && changedMode && isEqual(uri, localTarget.folderUri)) {
+				state.isolationMode = localTarget.isolationMode;
+				if (localTarget.branch) {
+					isolationModel.selectBranch(localTarget.branch);
+				}
+			}
+		});
+		switchingTarget = false;
+		syncStateFromPicker();
+		updateAutomationSessionTarget();
+		revalidate();
+	};
+	disposables.add(workspacePicker.onDidSelectWorkspace(applyWorkspaceTarget));
+	disposables.add(autorun(reader => {
+		if (isolationModel.isQuickChatObs.read(reader)) {
+			applyWorkspaceTarget(undefined);
+		}
 	}));
+
+	const targetRow = DOM.append(sessionSection, $('.automation-form-row.automation-target-row'));
 	const targetContainer = DOM.append(targetRow, $('.automation-target-toolbar', {
 		role: 'group',
 		'aria-label': localize('automation.form.target', "Target"),
@@ -2038,14 +2019,17 @@ export class AutomationsWorkspacePicker extends WorkspacePicker {
 	private readonly eligibilityWatch = this._register(new MutableDisposable<IDisposable>());
 	private cloudConfiguration: IObservable<IAutomationProviderConfiguration | undefined> = constObservable(undefined);
 	private targetModel: AutomationIsolationModel | undefined;
+	private readonly repositorySelection = this._register(new MutableDisposable<DisposableStore>());
+	private selectionGeneration = 0;
 	onSelectionError: (error: Error) => void = onUnexpectedError;
+	onWillSelectWorkspace: () => Promise<boolean> = async () => true;
 
 	setCloudConfiguration(configuration: IObservable<IAutomationProviderConfiguration | undefined>): void {
 		this.cloudConfiguration = configuration;
 		this.eligibilityWatch.value = autorun(reader => {
 			const value = configuration.read(reader);
 			for (const item of super._buildItems()) {
-				if (item.item?.folderUri) {
+				if (item.item?.folderUri?.scheme === GITHUB_REMOTE_FILE_SCHEME) {
 					value?.getWorkspaceTarget(item.item.folderUri).read(reader);
 				}
 			}
@@ -2065,7 +2049,7 @@ export class AutomationsWorkspacePicker extends WorkspacePicker {
 		if (!configuration) {
 			return true;
 		}
-		await Promise.all(super._buildItems().flatMap(item => item.item?.folderUri
+		await Promise.all(super._buildItems().flatMap(item => item.item?.folderUri?.scheme === GITHUB_REMOTE_FILE_SCHEME
 			? [waitForState(configuration.getWorkspaceTarget(item.item.folderUri), target => !target.pending, undefined, token)]
 			: []));
 		return !token.isCancellationRequested && configuration === this.cloudConfiguration.get();
@@ -2088,23 +2072,33 @@ export class AutomationsWorkspacePicker extends WorkspacePicker {
 	}
 
 	protected override _buildItems(): IActionListItem<IWorkspacePickerItem>[] {
-		const items = super._buildItems();
 		const configuration = this.cloudConfiguration.get();
+		const items = super._buildItems().map(item => {
+			if (item.item?.folderUri?.scheme !== GITHUB_REMOTE_FILE_SCHEME) {
+				return item;
+			}
+			const reason = configuration
+				? configuration.getWorkspaceTarget(item.item.folderUri).get().disabledReason
+				: localize('automation.form.cloudUnavailable', "Cloud automations are unavailable.");
+			return {
+				...item,
+				submenuActions: undefined,
+				...(reason === undefined ? {} : {
+					disabled: true,
+					description: reason,
+					ariaDescription: reason,
+					tooltip: reason,
+					hover: { content: reason },
+					group: { title: '', icon: Codicon.lock },
+				}),
+			};
+		});
 		if (configuration) {
-			return items.filter(item => item.item?.folderUri !== undefined).map(item => {
-				const reason = configuration.getWorkspaceTarget(item.item!.folderUri).get().disabledReason;
-				return {
-					...item,
-					submenuActions: undefined,
-					...(reason === undefined ? {} : {
-						disabled: true,
-						description: reason,
-						ariaDescription: reason,
-						tooltip: reason,
-						hover: { content: reason },
-						group: { title: '', icon: Codicon.lock },
-					}),
-				};
+			items.unshift({
+				kind: ActionListItemKind.Action,
+				label: localize('automation.form.workInGitHub', "Work in GitHub"),
+				group: { title: '', icon: Codicon.github },
+				item: { id: 'automation.workInGitHub' },
 			});
 		}
 		const noWorkspace: IActionListItem<IWorkspacePickerItem> = {
@@ -2123,20 +2117,54 @@ export class AutomationsWorkspacePicker extends WorkspacePicker {
 	}
 
 	protected override async _dispatchPickerItem(item: IWorkspacePickerItem): Promise<boolean> {
-		const configuration = this.cloudConfiguration.get();
-		if (configuration) {
-			const target = configuration.getWorkspaceTarget(item.folderUri).get();
-			if (!item.folderUri || !target.workspace || target.disabledReason) {
-				this.onSelectionError(new Error(target.disabledReason ?? localize('automation.form.cloudRepositoryRequired', "Choose a known private or internal repository.")));
+		const generation = ++this.selectionGeneration;
+		this.repositorySelection.clear();
+		const resources = new DisposableStore();
+		this.repositorySelection.value = resources;
+		const token = cancelOnDispose(resources);
+		try {
+			const configuration = this.cloudConfiguration.get();
+			if (item.id === 'automation.workInGitHub') {
+				if (!configuration) {
+					throw new Error(localize('automation.form.cloudUnavailable', "Cloud automations are unavailable."));
+				}
+				const folderUri = await configuration.pickWorkspace(token);
+				if (!folderUri || token.isCancellationRequested || generation !== this.selectionGeneration) {
+					return false;
+				}
+				item = { folderUri };
+			}
+			if (item.folderUri?.scheme === GITHUB_REMOTE_FILE_SCHEME) {
+				if (!configuration) {
+					throw new Error(localize('automation.form.cloudUnavailable', "Cloud automations are unavailable."));
+				}
+				const target = await waitForState(configuration.getWorkspaceTarget(item.folderUri), target => !target.pending, undefined, token);
+				if (!target.workspace || target.disabledReason) {
+					throw new Error(target.disabledReason ?? localize('automation.form.privateRepositoryRequired', "The repository must be private."));
+				}
+				if (configuration !== this.cloudConfiguration.get()) {
+					return false;
+				}
+			}
+			if (!await this.onWillSelectWorkspace() || token.isCancellationRequested || generation !== this.selectionGeneration) {
 				return false;
 			}
+			const applied = await super._dispatchPickerItem(item);
+			const selectedFolder = this.selectedFolderUri;
+			if (applied && selectedFolder && (item.folderUri || item.browseActionIndex !== undefined)) {
+				this.targetModel?.setQuickChat(false, selectedFolder);
+			}
+			return applied;
+		} catch (error) {
+			if (!isCancellationError(error) && !token.isCancellationRequested) {
+				this.onSelectionError(error instanceof Error ? error : new Error(getErrorMessage(error)));
+			}
+			return false;
+		} finally {
+			if (this.repositorySelection.value === resources) {
+				this.repositorySelection.clear();
+			}
 		}
-		const applied = await super._dispatchPickerItem(item);
-		const selectedFolder = this.selectedFolderUri;
-		if (applied && selectedFolder && (item.folderUri || item.browseActionIndex !== undefined)) {
-			this.targetModel?.setQuickChat(false, selectedFolder);
-		}
-		return applied;
 	}
 
 	protected override _isSelectedFolder(folderUri: URI | undefined): boolean {

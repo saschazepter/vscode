@@ -18,7 +18,7 @@ import { URI } from '../../../../../base/common/uri.js';
 import { ICommandService } from '../../../../../platform/commands/common/commands.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { AgentSession } from '../../../../../platform/agentHost/common/agent.js';
-import { parseGitHubIssueUrl } from '../../../../../platform/github/common/githubUrls.js';
+import { getGitHubRepositoryId, parseGitHubIssueUrl } from '../../../../../platform/github/common/githubUrls.js';
 import { getAgentSessionPullRequestUri, IAgentSession } from '../../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsModel.js';
 import { getRepositoryName } from '../../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsViewer.js';
 import { IAgentSessionsService } from '../../../../../workbench/contrib/chat/browser/agentSessions/agentSessionsService.js';
@@ -90,11 +90,6 @@ interface IStoredSessionCreationReference {
 	readonly session: string;
 	readonly chat?: string;
 	readonly turnId?: string;
-}
-
-function getGitHubRepositoryId(repository: string): string | undefined {
-	const match = /^(?:(?:https?|ssh|git):\/\/(?:git@)?github\.com\/|git@github\.com:)?(?<owner>[^/:\s]+)\/(?<repo>[^/\s]+?)(?:\.git)?\/?$/i.exec(repository);
-	return match?.groups ? `${match.groups.owner}/${match.groups.repo}` : undefined;
 }
 
 export interface ICopilotChatSession {

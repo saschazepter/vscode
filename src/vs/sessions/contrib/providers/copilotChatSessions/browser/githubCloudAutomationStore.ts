@@ -62,7 +62,7 @@ export class GitHubCloudAutomationStore extends Disposable {
 	}
 
 	getWorkspaceTarget(workspace: URI | undefined): IObservable<IAutomationWorkspaceTarget> {
-		const required = localize('cloudAutomations.repositoryTargetRequired', "Choose a private or internal GitHub.com repository.");
+		const required = localize('cloudAutomations.repositoryTargetRequired', "Choose a private GitHub.com repository.");
 		if (!workspace || this._store.isDisposed || this.lifetime.value?.token.isCancellationRequested) {
 			return constObservable({ disabledReason: required });
 		}
@@ -90,7 +90,7 @@ export class GitHubCloudAutomationStore extends Disposable {
 				}
 				result.set(eligible ? {
 					workspace: URI.from({ scheme: GITHUB_REMOTE_FILE_SCHEME, authority: 'github', path: `/${repository.owner}/${repository.name}/HEAD` }),
-				} : { disabledReason: required }, undefined);
+				} : { disabledReason: repository ? localize('cloudAutomations.privateRepositoryRequired', "The repository must be private.") : required }, undefined);
 			} catch (error) {
 				if (!isCancellationError(error)) {
 					this.logService.warn('[CloudAutomations] Repository eligibility check failed', error);

@@ -4125,41 +4125,43 @@ suite('AutomationsWorkspacePicker', () => {
 
 	ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('cloud mode offers only known repository rows and rechecks eligibility at selection', async () => {
+	test('Work in GitHub rejects a non-private repository and rechecks eligibility at selection', async () => {
 		const providersService = disposables.add(new MockSessionsProvidersService());
-		const provider = createMockProvider('local-1');
-		const folderUri = URI.file('/local/project');
+		const provider = createMockProvider('github');
+		const folderUri = URI.from({ scheme: GITHUB_REMOTE_FILE_SCHEME, authority: 'github', path: '/owner/project/HEAD' });
 		const storage = disposables.add(new TestStorageService());
 		seedStorage(storage, [{ uri: folderUri, providerId: provider.id, checked: false }]);
 		providersService.setProviders([provider]);
 		const picker = createTestPicker(disposables, providersService, storage, undefined, TestAutomationsWorkspacePicker,
 			undefined, undefined, undefined, { restoreFromSessions: false, canRestoreWorkspace: () => false });
 		assert.ok(picker instanceof TestAutomationsWorkspacePicker);
-		const target = observableValue<IAutomationWorkspaceTarget>('target', { disabledReason: 'Requires a private repository.' });
+		const target = observableValue<IAutomationWorkspaceTarget>('target', { disabledReason: 'The repository must be private.' });
 		picker.setCloudConfiguration(constObservable<IAutomationProviderConfiguration>({
 			sessionTypes: ['cloud-agent'], description: '', timeZone: 'UTC', targetChangeDisabledReason: '', tools: [],
+			pickWorkspace: async () => folderUri,
 			getWorkspaceTarget: () => target,
 		}));
 		const errors: string[] = [];
 		picker.onSelectionError = error => errors.push(error.message);
-		const rows = picker.getItems();
-		assert.deepStrictEqual(rows.map(row => ({
-			label: row.label, disabled: row.disabled, reason: row.ariaDescription, icon: row.group?.icon?.id,
-		})), [{ label: 'local/project', disabled: true, reason: 'Requires a private repository.', icon: 'lock' }]);
-		await picker.select('local/project');
+		const github = picker.getItems().find(row => row.item?.id === 'automation.workInGitHub');
+		assert.deepStrictEqual({ label: github?.label, icon: github?.group?.icon?.id }, { label: 'Work in GitHub', icon: 'github' });
+		await picker.select('Work in GitHub');
 		target.set({ workspace: folderUri }, undefined);
-		const enabled = picker.getItems()[0].disabled;
+		const enabled = picker.getItems().find(row => row.item?.folderUri)?.disabled;
 		target.set({ disabledReason: 'Repository access changed.' }, undefined);
-		await picker.select('local/project');
+		await picker.select('Work in GitHub');
 		assert.deepStrictEqual({ enabled, errors, selected: picker.selectedFolderUri }, {
-			enabled: false, errors: ['Requires a private repository.', 'Repository access changed.'], selected: undefined,
+			enabled: false, errors: ['The repository must be private.', 'Repository access changed.'], selected: undefined,
 		});
+		target.set({ workspace: folderUri }, undefined);
+		await picker.select('Work in GitHub');
+		assert.strictEqual(picker.selectedFolderUri?.toString(), folderUri.toString());
 	});
 
 	test('mobile snapshot waits for pending eligibility and can be cancelled before opening', async () => {
 		const providersService = disposables.add(new MockSessionsProvidersService());
-		const provider = createMockProvider('local-1');
-		const folderUri = URI.file('/local/project');
+		const provider = createMockProvider('github');
+		const folderUri = URI.from({ scheme: GITHUB_REMOTE_FILE_SCHEME, authority: 'github', path: '/owner/project/HEAD' });
 		const storage = disposables.add(new TestStorageService());
 		seedStorage(storage, [{ uri: folderUri, providerId: provider.id, checked: false }]);
 		providersService.setProviders([provider]);
@@ -4169,6 +4171,7 @@ suite('AutomationsWorkspacePicker', () => {
 		const target = observableValue<IAutomationWorkspaceTarget>('target', { pending: true, disabledReason: 'Checking repository access...' });
 		picker.setCloudConfiguration(constObservable<IAutomationProviderConfiguration>({
 			sessionTypes: ['cloud-agent'], description: '', timeZone: 'UTC', targetChangeDisabledReason: '', tools: [],
+			pickWorkspace: async () => folderUri,
 			getWorkspaceTarget: () => target,
 		}));
 		const cancellation = disposables.add(new CancellationTokenSource());
@@ -4181,13 +4184,13 @@ suite('AutomationsWorkspacePicker', () => {
 		assert.strictEqual(ready, false);
 		target.set({ workspace: folderUri }, undefined);
 		await waiting;
-		assert.deepStrictEqual({ ready, disabled: picker.getItems()[0].disabled }, { ready: true, disabled: false });
+		assert.deepStrictEqual({ ready, disabled: picker.getItems().find(row => row.item?.folderUri)?.disabled }, { ready: true, disabled: false });
 	});
 
 	test('replacing and disposing a mobile opening cancels pending eligibility subscriptions', async () => {
 		const providersService = disposables.add(new MockSessionsProvidersService());
-		const provider = createMockProvider('local-1');
-		const folderUri = URI.file('/local/project');
+		const provider = createMockProvider('github');
+		const folderUri = URI.from({ scheme: GITHUB_REMOTE_FILE_SCHEME, authority: 'github', path: '/owner/project/HEAD' });
 		const storage = disposables.add(new TestStorageService());
 		seedStorage(storage, [{ uri: folderUri, providerId: provider.id, checked: false }]);
 		providersService.setProviders([provider]);
@@ -4197,6 +4200,7 @@ suite('AutomationsWorkspacePicker', () => {
 		const target = observableValue<IAutomationWorkspaceTarget>('target', { pending: true, disabledReason: 'Checking repository access...' });
 		picker.setCloudConfiguration(constObservable<IAutomationProviderConfiguration>({
 			sessionTypes: ['cloud-agent'], description: '', timeZone: 'UTC', targetChangeDisabledReason: '', tools: [],
+			pickWorkspace: async () => folderUri,
 			getWorkspaceTarget: () => target,
 		}));
 		const workbench = document.createElement('div');

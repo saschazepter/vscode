@@ -59,7 +59,7 @@ import { workbenchInstantiationService } from '../../../../../workbench/test/bro
 import { Menus } from '../../../../browser/menus.js';
 import { MobileSessionTypePicker } from '../../../chat/browser/mobile/mobileSessionTypePicker.js';
 import { SessionModelSelection } from '../../../chat/browser/sessionModelSelection.js';
-import { ISession, ISessionWorkspace, SessionTypeAuthRequirement } from '../../../../services/sessions/common/session.js';
+import { GITHUB_REMOTE_FILE_SCHEME, ISession, ISessionWorkspace, SessionTypeAuthRequirement } from '../../../../services/sessions/common/session.js';
 import { IAutomationSessionConfiguration } from '../../../../services/sessions/common/sessionsProvider.js';
 import { ISessionsManagementService } from '../../../../services/sessions/common/sessionsManagement.js';
 import { ISessionsProvidersService } from '../../../../services/sessions/browser/sessionsProvidersService.js';
@@ -69,6 +69,7 @@ import { AutomationInputCompletions } from '../../browser/automationInputComplet
 import { AutomationIsolationModel } from '../../common/isolationGroupModel.js';
 
 const FOLDER = URI.file('/workspace');
+const REPOSITORY = URI.from({ scheme: GITHUB_REMOTE_FILE_SCHEME, authority: 'github', path: '/owner/private/HEAD' });
 
 suite('Automation dialog creation', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
@@ -124,8 +125,8 @@ suite('Automation dialog creation', () => {
 		ChatContextKeys.enabled.bindTo(contextKeyService).set(true);
 		let targetModel: AutomationIsolationModel | undefined;
 		let selectedWorkspace: URI | undefined;
-		const workspaceSelected = disposables.add(new Emitter<URI>());
-		instantiationService.stubInstance(MobileAutomationsWorkspacePicker, {
+		const workspaceSelected = disposables.add(new Emitter<URI | undefined>());
+		const workspacePicker: Partial<MobileAutomationsWorkspacePicker> = {
 			setTargetModel: model => { targetModel = model; },
 			setCloudConfiguration: () => { },
 			setLayoutService: () => { },
@@ -134,7 +135,8 @@ suite('Automation dialog creation', () => {
 			onDidSelectWorkspace: workspaceSelected.event,
 			render: container => container.appendChild(DOM.$('button', { type: 'button' }, 'Select workspace')),
 			dispose: () => { },
-		});
+		};
+		instantiationService.stubInstance(MobileAutomationsWorkspacePicker, workspacePicker);
 		instantiationService.stubInstance(SessionModelSelection, { dispose: () => { } });
 		instantiationService.stubInstance(AutomationInputCompletions, { dispose: () => { } });
 		const promptChanged = disposables.add(new Emitter<void>());
@@ -166,7 +168,11 @@ suite('Automation dialog creation', () => {
 		const nameInput = container.querySelector<HTMLInputElement>('.automation-form-input-host input')!;
 		return {
 			result, saveButton, cancelButton, nameInput, container, providers,
-			selectWorkspace: (uri: URI) => workspaceSelected.fire(uri),
+			selectWorkspace: async (uri: URI | undefined) => {
+				if (await workspacePicker.onWillSelectWorkspace?.()) {
+					workspaceSelected.fire(uri);
+				}
+			},
 			getTarget: () => ({ quickChat: targetModel?.isQuickChat, workspace: selectedWorkspace }),
 			setWorkspace: (folder: URI) => targetModel?.setQuickChat(false, folder),
 			setPrompt: (prompt: string) => {
@@ -180,11 +186,12 @@ suite('Automation dialog creation', () => {
 		};
 	}
 
-	function cloudConfiguration(target = observableValue<IAutomationWorkspaceTarget>('target', { workspace: URI.parse('vscode-vfs://github/owner/private/HEAD') })): IAutomationProviderConfiguration {
+	function cloudConfiguration(target = observableValue<IAutomationWorkspaceTarget>('target', { workspace: REPOSITORY })): IAutomationProviderConfiguration {
 		return {
 			sessionTypes: ['cloud-agent'], timeZone: 'UTC', description: 'Runs on GitHub',
 			targetChangeDisabledReason: 'Duplicate to change repository.',
 			tools: [{ id: 'read', label: 'Read Files' }, { id: 'edit', label: 'Edit Files' }],
+			pickWorkspace: async () => REPOSITORY,
 			getWorkspaceTarget: uri => uri ? target : constObservable({ disabledReason: 'Choose a repository.' }),
 		};
 	}
@@ -193,20 +200,18 @@ suite('Automation dialog creation', () => {
 		const target = observableValue<IAutomationWorkspaceTarget>('target', { disabledReason: 'Checking repository access...' });
 		const dialog = openDialog({}, cloudConfiguration(target));
 		dialog.setPrompt('Review changes');
-		const toggle = dialog.container.querySelector<HTMLButtonElement>('[role="switch"]')!;
-		toggle.click();
-		await timeout(0);
-		dialog.selectWorkspace(FOLDER);
+		await dialog.selectWorkspace(REPOSITORY);
 		const disabledWhileChecking = dialog.saveButton.getAttribute('aria-disabled');
-		target.set({ workspace: URI.parse('vscode-vfs://github/owner/private/HEAD') }, undefined);
+		target.set({ workspace: REPOSITORY }, undefined);
 		dialog.container.querySelector<HTMLElement>('[role="checkbox"][aria-label="Edit Files"]')!.click();
 		assert.deepStrictEqual({
-			checked: toggle.getAttribute('aria-checked'),
+			switch: dialog.container.querySelector('[role="switch"]'),
+			cloudDisabled: dialog.container.querySelector('[aria-label="Session Type, Cloud"]')?.getAttribute('aria-disabled'),
 			disabledWhileChecking,
 			disabledAfterCheck: dialog.saveButton.getAttribute('aria-disabled'),
 			enabledControl: dialog.container.querySelector('[role="checkbox"][aria-label="Enabled"]'),
 			utc: dialog.container.textContent?.includes('Time (UTC)'),
-		}, { checked: 'true', disabledWhileChecking: 'true', disabledAfterCheck: 'false', enabledControl: null, utc: true });
+		}, { switch: null, cloudDisabled: 'true', disabledWhileChecking: 'true', disabledAfterCheck: 'false', enabledControl: null, utc: true });
 		dialog.saveButton.click();
 		const result = await dialog.result;
 		assert.ok(result?.kind === 'create');
@@ -214,37 +219,30 @@ suite('Automation dialog creation', () => {
 		assert.deepStrictEqual({
 			target: { ...result.value.target, folderUri: result.value.target.folderUri.toString() }, schedule: result.value.schedule, template: result.value.sessionTemplate, enabled: result.value.enabled,
 		}, {
-			target: { kind: 'workspace', folderUri: 'vscode-vfs://github/owner/private/HEAD', providerId: 'cloud', sessionTypeId: 'cloud-agent', isolation: { kind: 'default' } },
+			target: { kind: 'workspace', folderUri: REPOSITORY.toString(), providerId: 'cloud', sessionTypeId: 'cloud-agent', isolation: { kind: 'default' } },
 			schedule: { interval: 'daily', scheduleHour: 9, scheduleMinute: 0, scheduleDay: 1, timeZone: 'UTC' },
 			template: { config: { tools: ['read'] } }, enabled: true,
 		});
 	});
 
-	test('cloud gate revocation blocks save and removes cloud controls without falling back locally', async () => {
+	test('cloud gate revocation blocks save without falling back locally', async () => {
 		const dialog = openDialog({}, cloudConfiguration());
 		dialog.setPrompt('Review changes');
-		dialog.container.querySelector<HTMLButtonElement>('[role="switch"]')!.click();
-		await timeout(0);
-		dialog.selectWorkspace(FOLDER);
+		await dialog.selectWorkspace(REPOSITORY);
 		dialog.providers.set([{ id: 'host', label: 'Host' }], undefined);
 		assert.deepStrictEqual({
 			disabled: dialog.saveButton.getAttribute('aria-disabled'),
-			hiddenSwitch: dialog.container.querySelector<HTMLElement>('.automation-cloud-toggle')!.style.display,
 			hiddenTools: dialog.container.querySelector<HTMLElement>('.automation-provider-details')!.style.display,
-		}, { disabled: 'true', hiddenSwitch: 'none', hiddenTools: 'none' });
+		}, { disabled: 'true', hiddenTools: 'none' });
 		dialog.cancelButton.click();
 		await dialog.result;
 	});
 
-	test('switching cloud off restores the local quick-chat draft and local schedule semantics', async () => {
+	test('selecting No workspace restores the local quick-chat draft and local schedule semantics', async () => {
 		const dialog = openDialog({}, cloudConfiguration());
 		dialog.setPrompt('Review changes');
-		const toggle = dialog.container.querySelector<HTMLButtonElement>('[role="switch"]')!;
-		toggle.click();
-		await timeout(0);
-		dialog.selectWorkspace(FOLDER);
-		toggle.click();
-		await timeout(0);
+		await dialog.selectWorkspace(REPOSITORY);
+		await dialog.selectWorkspace(undefined);
 		dialog.saveButton.click();
 		const result = await dialog.result;
 		assert.ok(result?.kind === 'create');
@@ -257,10 +255,11 @@ suite('Automation dialog creation', () => {
 		const capture = new DeferredPromise<IAutomationSessionConfiguration>();
 		const dialog = openDialog({}, cloudConfiguration(), { getAutomationSessionConfiguration: () => capture.p });
 		await timeout(0);
-		dialog.container.querySelector<HTMLButtonElement>('[role="switch"]')!.click();
+		const selection = dialog.selectWorkspace(REPOSITORY);
 		await timeout(0);
 		dialog.cancelButton.click();
 		assert.strictEqual(await dialog.result, undefined);
+		await selection;
 		await timeout(0);
 	});
 
@@ -295,11 +294,8 @@ suite('Automation dialog creation', () => {
 			getRefs: async () => [{ type: GitRefType.Head, name: 'release' }],
 		}));
 		await timeout(0);
-		const toggle = dialog.container.querySelector<HTMLButtonElement>('[role="switch"]')!;
-		toggle.click();
-		await timeout(0);
-		toggle.click();
-		await timeout(0);
+		await dialog.selectWorkspace(REPOSITORY);
+		await dialog.selectWorkspace(FOLDER);
 		dialog.saveButton.click();
 		const result = await dialog.result;
 		assert.ok(result?.kind === 'create');
@@ -316,7 +312,7 @@ suite('Automation dialog creation', () => {
 	test('cloud edit retains target pickers, unknown tools, model, UTC and disabled state', async () => {
 		const existing: IAutomationDescriptor = {
 			id: 'cloud-existing', name: 'Review', prompt: 'Review changes', enabled: false, createdAt: '', updatedAt: '',
-			target: { kind: 'workspace', folderUri: URI.parse('vscode-vfs://github/owner/private/HEAD'), providerId: 'cloud', sessionTypeId: 'cloud-agent', isolation: { kind: 'default' } },
+			target: { kind: 'workspace', folderUri: REPOSITORY, providerId: 'cloud', sessionTypeId: 'cloud-agent', isolation: { kind: 'default' } },
 			schedule: { interval: 'weekly', scheduleHour: 15, scheduleMinute: 30, scheduleDay: 2, timeZone: 'UTC' },
 			sessionTemplate: { modelId: 'saved-model', config: { tools: ['read', 'future-tool'], reasoningEffort: 'high' } },
 		};
@@ -324,8 +320,8 @@ suite('Automation dialog creation', () => {
 		assert.deepStrictEqual({
 			workspacePicker: dialog.container.querySelector('.automation-target-toolbar')?.textContent?.includes('Select workspace'),
 			guidance: dialog.container.querySelector('.automation-form-hint')?.textContent,
-			switchDisabled: dialog.container.querySelector<HTMLButtonElement>('[role="switch"]')?.disabled,
-		}, { workspacePicker: true, guidance: 'Duplicate to change repository.', switchDisabled: true });
+			cloudDisabled: dialog.container.querySelector('[aria-label="Session Type, Cloud"]')?.getAttribute('aria-disabled'),
+		}, { workspacePicker: true, guidance: 'Duplicate to change repository.', cloudDisabled: 'true' });
 		dialog.saveButton.click();
 		assert.deepStrictEqual(await dialog.result, {
 			kind: 'update', id: existing.id,

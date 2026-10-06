@@ -5,7 +5,7 @@
 
 import { CancellationToken } from '../../../../../base/common/cancellation.js';
 import { CancellationError, isCancellationError } from '../../../../../base/common/errors.js';
-import { Disposable } from '../../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore } from '../../../../../base/common/lifecycle.js';
 import { Schemas } from '../../../../../base/common/network.js';
 import { autorun, derived, IObservable, observableSignalFromEvent, observableValue, transaction } from '../../../../../base/common/observable.js';
 import { isEqual } from '../../../../../base/common/resources.js';
@@ -17,6 +17,9 @@ import { IConfigurationService } from '../../../../../platform/configuration/com
 import { IDefaultAccountService } from '../../../../../platform/defaultAccount/common/defaultAccount.js';
 import { IInstantiationService } from '../../../../../platform/instantiation/common/instantiation.js';
 import { ILogService } from '../../../../../platform/log/common/log.js';
+import { getGitHubRepositoryId } from '../../../../../platform/github/common/githubUrls.js';
+import { RepositoryPicker } from '../../../../../workbench/contrib/chat/browser/agentSessions/repositoryPicker.js';
+import { IGitHubService } from '../../../github/browser/githubService.js';
 import { AutomationTarget, IAutomationDescriptor, IAutomationRun, IAutomationSchedule, IAutomationSessionTemplate } from '../../../../../workbench/contrib/chat/common/automations/automation.js';
 import { AutomationCatalogueState, AutomationMutationGuard, AutomationUnavailableError, assertAutomationSessionTemplateAuthority, IAutomationProviderConfiguration, ICreateAutomationOptions, IGuardedAutomationUpdateResult, IUpdateAutomationOptions, serializeAutomationEditableState } from '../../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { CHAT_AUTOMATIONS_ENABLED_SETTING, CHAT_CLOUD_AUTOMATIONS_ENABLED_SETTING } from '../../../../../workbench/contrib/chat/common/automations/automationsEnabled.js';
@@ -49,6 +52,7 @@ export class CloudAutomationStore extends Disposable implements ISessionsProvide
 			{ id: 'bash', label: localize('cloudAutomations.commands', "Run Commands") },
 			{ id: 'github/*', label: localize('cloudAutomations.github', "GitHub Tools") },
 		],
+		pickWorkspace: token => this.pickWorkspace(token),
 		getWorkspaceTarget: workspace => derived(reader => this.store.read(reader)?.getWorkspaceTarget(workspace).read(reader)
 			?? { disabledReason: localize('cloudAutomations.targetUnavailable', "Cloud automations are unavailable.") }),
 	};
@@ -60,8 +64,9 @@ export class CloudAutomationStore extends Disposable implements ISessionsProvide
 		@IConfigurationService configurationService: IConfigurationService,
 		@IDefaultAccountService private readonly defaultAccountService: IDefaultAccountService,
 		@IChatEntitlementService entitlementService: IChatEntitlementService,
-		@IInstantiationService instantiationService: IInstantiationService,
+		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ILogService private readonly logService: ILogService,
+		@IGitHubService private readonly gitHubService: IGitHubService,
 	) {
 		super();
 		const configurationChanged = observableSignalFromEvent(this, configurationService.onDidChangeConfiguration);
@@ -95,6 +100,46 @@ export class CloudAutomationStore extends Disposable implements ISessionsProvide
 				});
 			}
 		}));
+	}
+
+	private async pickWorkspace(token: CancellationToken): Promise<URI | undefined> {
+		const store = this.requireStore();
+		const resources = new DisposableStore();
+		const checkAccount = () => {
+			this.assertCurrentStore(store);
+			if (token.isCancellationRequested) {
+				throw new CancellationError();
+			}
+			if (this.gitHubService.enterpriseHost !== undefined) {
+				throw new Error(localize('cloudAutomations.githubRequired', "Select a private repository on GitHub.com."));
+			}
+		};
+		try {
+			checkAccount();
+			await this.gitHubService.authenticateForRepositoryAccess(token);
+			checkAccount();
+			const picker = resources.add(this.instantiationService.createInstance(RepositoryPicker));
+			const result = await picker.pickRepository(async (query, requestToken) => {
+				checkAccount();
+				const repositories = await this.gitHubService.getRepositories(getGitHubRepositoryId(query.trim()) ?? query, requestToken);
+				checkAccount();
+				return repositories.map(repository => repository.fullName);
+			}, {
+				allowRepositoryUrl: true,
+				placeholder: localize('cloudAutomations.searchPrivateRepository', "Search for a private repository or paste a repository URL..."),
+			}, token);
+			checkAccount();
+			if (!result) {
+				return undefined;
+			}
+			const repository = getGitHubRepositoryId(result.repository ?? result.cloneUrl ?? '');
+			if (!repository) {
+				throw new Error(localize('cloudAutomations.githubRequired', "Select a private repository on GitHub.com."));
+			}
+			return URI.from({ scheme: GITHUB_REMOTE_FILE_SCHEME, authority: 'github', path: `/${repository}/HEAD` });
+		} finally {
+			resources.dispose();
+		}
 	}
 
 	async refresh(): Promise<void> {

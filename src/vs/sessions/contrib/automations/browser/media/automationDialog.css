@@ -227,26 +227,6 @@
 	padding: 2px 2px 4px;
 }
 
-.automation-cloud-toggle {
-	display: inline-flex;
-	align-self: flex-start;
-	align-items: center;
-	gap: var(--vscode-spacing-size80);
-	padding: var(--vscode-spacing-size40) var(--vscode-spacing-size80);
-	border: var(--vscode-strokeThickness) solid var(--vscode-editorWidget-border, var(--vscode-contrastBorder, transparent));
-	border-radius: var(--vscode-cornerRadius-circle);
-	font-size: var(--vscode-fontSize-label1);
-	cursor: pointer;
-}
-
-.automation-cloud-toggle:hover {
-	background: var(--vscode-toolbar-hoverBackground);
-}
-
-.automation-cloud-toggle > .codicon {
-	font-size: var(--vscode-codiconFontSize);
-}
-
 .automation-provider-details {
 	color: var(--vscode-descriptionForeground);
 	font-size: var(--vscode-fontSize-label1);
