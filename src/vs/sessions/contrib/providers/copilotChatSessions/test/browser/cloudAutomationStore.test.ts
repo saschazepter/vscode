@@ -82,7 +82,7 @@ class TestApi extends mock<CloudAutomationApiClient>() {
 
 suite('CloudAutomationStore', () => {
 	const disposables = ensureNoDisposablesAreLeakedInTestSuite();
-	function setup() {
+	function setup(logService: ILogService = new NullLogService()) {
 		const instantiation = disposables.add(new TestInstantiationService());
 		const configuration = new TestConfigurationService({ chat: { automations: { enabled: true, cloud: { enabled: false } } } });
 		const changed = disposables.add(new Emitter<IDefaultAccount | null>());
@@ -102,7 +102,7 @@ suite('CloudAutomationStore', () => {
 		instantiation.stub(IDefaultAccountService, accounts);
 		instantiation.stub(IChatEntitlementService, entitlement);
 		instantiation.stub(IStorageService, disposables.add(new InMemoryStorageService()));
-		instantiation.stub(ILogService, new NullLogService());
+		instantiation.stub(ILogService, logService);
 		instantiation.stub(ISessionsRecentWorkspacesService, upcastPartial<ISessionsRecentWorkspacesService>({
 			getRecentWorkspaces: () => [{ workspace: { uri: workspace, label: 'private', icon: Codicon.repo, requiresWorkspaceTrust: false, folders: [{ root: workspace, workingDirectory: workspace, name: 'private', description: undefined }], isVirtualWorkspace: true }, providerId: 'cloud', checked: true, source: 'agents' }],
 		}));
@@ -235,6 +235,31 @@ suite('CloudAutomationStore', () => {
 			{ status: 'running', trigger: 'external', needsInput: true, session: undefined, url: 'https://github.com/owner/private/tasks/task' });
 	});
 
+	test('logs and hides unknown run states without hiding valid history and restores recognized runs', async () => {
+		const warnings: string[] = [];
+		const logService = new class extends NullLogService {
+			override warn(message: string): void { warnings.push(message); }
+		}();
+		const { provider, api, set } = setup(logService);
+		api.tasks = [
+			{ id: 'completed', state: 'completed', created_at: definition.created_at },
+			{ id: 'unknown', state: 'future_state', created_at: definition.created_at },
+			{ id: 'failed', state: 'failed', created_at: definition.created_at },
+		];
+		await set(CHAT_CLOUD_AUTOMATIONS_ENABLED_SETTING, true);
+		await provider.refresh();
+		const statuses = provider.runs.get().map(run => run.status);
+		assert.deepStrictEqual({
+			statuses,
+			logged: warnings.includes('[CloudAutomations] Skipping run unknown with unsupported state: future_state'),
+			catalogue: provider.catalogueState.get(),
+			canCreate: provider.canCreateAutomation.get(),
+		}, { statuses: ['completed', 'failed'], logged: true, catalogue: 'ready', canCreate: true });
+		api.tasks = api.tasks.map(task => task.id === 'unknown' ? { ...task, state: 'completed' } : task);
+		await provider.refresh();
+		assert.deepStrictEqual(provider.runs.get().map(run => run.status), ['completed', 'completed', 'failed']);
+	});
+
 	test('preflight conflicts and partial patches preserve remote configuration', async () => {
 		const { provider, api, set } = setup();
 		api.definitions = [{ ...definition, tools: ['future-tool'], reasoning_effort: 'future' }];
@@ -245,6 +270,47 @@ suite('CloudAutomationStore', () => {
 		const conflict = await provider.updateAutomationIfUnchanged(expected.id, { name: 'New' }, expected);
 		await provider.updateAutomation(expected.id, { name: 'New' });
 		assert.deepStrictEqual({ kind: conflict.kind, patch: api.patch }, { kind: 'conflict', patch: { name: 'New' } });
+	});
+
+	test('rejects configuration reset before dispatch for ordinary and guarded updates', async () => {
+		const { provider, api, set } = setup();
+		api.definitions = [{ ...definition, model: 'saved-model', tools: ['read'], reasoning_effort: 'high' }];
+		await set(CHAT_CLOUD_AUTOMATIONS_ENABLED_SETTING, true);
+		await provider.refresh();
+		const automation = provider.automations.get()[0];
+		await assert.rejects(provider.updateAutomation(automation.id, { sessionTemplate: null }), /Resetting cloud automation configuration is not supported/);
+		await assert.rejects(provider.updateAutomationIfUnchanged(automation.id, { sessionTemplate: null }, automation), /Resetting cloud automation configuration is not supported/);
+		assert.deepStrictEqual({
+			dispatched: api.calls.includes('update'),
+			patch: api.patch,
+			template: provider.getAutomation(automation.id)?.sessionTemplate,
+			canCreate: provider.canCreateAutomation.get(),
+		}, { dispatched: false, patch: undefined, template: automation.sessionTemplate, canCreate: true });
+		await provider.updateAutomation(automation.id, { sessionTemplate: { modelId: 'new-model', config: { tools: ['read'], reasoningEffort: 'low' } } });
+		assert.deepStrictEqual(api.patch, { model: 'new-model', tools: ['read'], reasoning_effort: 'low' });
+	});
+
+	// The API replaces triggers as a whole: https://gist.github.com/timrogers/81271876a2f5384a41d1261b62ed6792#update-an-automation
+	test('switching a scheduled automation to manual sends empty triggers while unrelated edits omit them', async () => {
+		const { provider, api, set } = setup();
+		api.definitions = [{ ...definition, triggers: { interval: { types: ['daily'], hour_utc: 9, minute_utc: 30 } } }];
+		await set(CHAT_CLOUD_AUTOMATIONS_ENABLED_SETTING, true);
+		await provider.refresh();
+		const automation = provider.automations.get()[0];
+		const renamed = await provider.updateAutomation(automation.id, { name: 'Renamed' });
+		const renamePatch = api.patch;
+		const updated = await provider.updateAutomation(automation.id, { schedule: manual });
+		assert.deepStrictEqual({
+			renamePatch,
+			renamedSchedule: renamed.schedule,
+			manualPatch: api.patch,
+			updatedInterval: updated.schedule.interval,
+		}, {
+			renamePatch: { name: 'Renamed' },
+			renamedSchedule: { interval: 'daily', timeZone: 'UTC', scheduleHour: 9, scheduleMinute: 30, scheduleDay: 0 },
+			manualPatch: { triggers: {} },
+			updatedInterval: 'manual',
+		});
 	});
 
 	test('creation is explicit and rejects local configuration and unsupported schedules', async () => {

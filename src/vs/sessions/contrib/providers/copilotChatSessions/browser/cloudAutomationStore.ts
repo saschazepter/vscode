@@ -37,7 +37,7 @@ export class CloudAutomationStore extends Disposable implements ISessionsProvide
 	readonly canCreateAutomation = derived(this, reader =>
 		this.enabled.read(reader) && this.catalogueState.read(reader) === 'ready' && this.store.read(reader)?.mutationUncertain.read(reader) === false);
 	readonly automations = derived(this, reader => (this.store.read(reader)?.entries.read(reader) ?? []).map(entry => this.toAutomation(entry)));
-	readonly runs = derived(this, reader => (this.store.read(reader)?.history.read(reader) ?? []).map(entry => this.toRun(entry)));
+	readonly runs = derived(this, reader => (this.store.read(reader)?.history.read(reader) ?? []).map(entry => this.toRun(entry)).filter(run => run !== undefined));
 
 	constructor(
 		private readonly providerId: string,
@@ -174,15 +174,18 @@ export class CloudAutomationStore extends Disposable implements ISessionsProvide
 
 	async stopRun(run: IAutomationRun): Promise<void> {
 		const store = this.requireWritableStore();
-		const entry = store.history.get().find(entry => this.toRun(entry).id === run.id);
+		const entry = store.history.get().find(entry => this.toRun(entry)?.id === run.id);
 		if (!entry || !this.canStopRun(run)) {
-			throw new AutomationUnavailableError(localize('cloudAutomations.stopUnavailable', "This cloud automation run cannot be stopped."));
+			throw new AutomationUnavailableError(localize('cloudAutomations.stopUnavailable', "Unable to stop this cloud automation run."));
 		}
 		await store.stop(entry);
 	}
 
 	private updateValue(definition: ICloudAutomationDefinition, id: string, patch: IUpdateAutomationOptions): ICloudAutomationMutation {
 		validateLocalOptions(patch);
+		if (patch.sessionTemplate === null) {
+			throw new Error(localize('cloudAutomations.resetUnsupported', "Resetting cloud automation configuration is not supported."));
+		}
 		const current = this.getAutomation(id)!;
 		assertAutomationSessionTemplateAuthority(current, patch);
 		if (cloudAutomationSchedule(definition.triggers).interval === 'custom') {
@@ -204,7 +207,7 @@ export class CloudAutomationStore extends Disposable implements ISessionsProvide
 			...(patch.prompt !== undefined ? { prompt: patch.prompt } : {}),
 			...(patch.enabled !== undefined ? { disabled: !patch.enabled } : {}),
 			...(triggers !== undefined ? { triggers } : {}),
-			...(patch.sessionTemplate !== undefined ? templateMutation(patch.sessionTemplate ?? undefined) : {}),
+			...(patch.sessionTemplate !== undefined ? templateMutation(patch.sessionTemplate) : {}),
 			...(patch.modelId !== undefined ? { model: patch.modelId ?? '' } : {}),
 		};
 	}
@@ -261,9 +264,13 @@ export class CloudAutomationStore extends Disposable implements ISessionsProvide
 		};
 	}
 
-	private toRun({ entry, task }: ICloudAutomationHistoryEntry): IAutomationRun {
-		const automationId = this.toAutomation(entry).id;
+	private toRun({ entry, task }: ICloudAutomationHistoryEntry): IAutomationRun | undefined {
 		const status = cloudTaskStatus(task);
+		if (status === undefined) {
+			this.logService.warn(`[CloudAutomations] Skipping run ${task.id} with unsupported state: ${task.state}`);
+			return undefined;
+		}
+		const automationId = this.toAutomation(entry).id;
 		return {
 			id: JSON.stringify([automationId, task.id]), automationId, status, trigger: 'external',
 			startedAt: task.created_at, updatedAt: task.updated_at,
@@ -332,12 +339,12 @@ export function cloudAutomationTriggers(schedule: IAutomationSchedule): Readonly
 	return { interval: { types: [schedule.interval], hour_utc: schedule.scheduleHour, minute_utc: schedule.scheduleMinute, ...(schedule.interval === 'weekly' ? { day_of_week: schedule.scheduleDay } : {}) } };
 }
 
-function cloudTaskStatus(task: ICloudAutomationTask): IAutomationRun['status'] {
+function cloudTaskStatus(task: ICloudAutomationTask): IAutomationRun['status'] | undefined {
 	switch (task.state) {
 		case 'queued': return 'pending';
 		case 'in_progress': case 'running': case 'waiting_for_user': return 'running';
 		case 'completed': case 'idle': return 'completed';
 		case 'failed': case 'timed_out': case 'cancelled': case 'canceled': case 'error': return 'failed';
-		default: throw new Error(localize('cloudAutomations.unknownRunState', "GitHub returned an unsupported cloud run state: {0}.", task.state));
+		default: return undefined;
 	}
 }
