@@ -7,8 +7,8 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { derived, IObservable, IReader, observableSignalFromEvent } from '../../../../base/common/observable.js';
 import { localize } from '../../../../nls.js';
-import { IAutomationDescriptor, IAutomationRun } from '../../../../workbench/contrib/chat/common/automations/automation.js';
-import { AutomationCatalogueState, AutomationMutationGuard, AutomationUnavailableError, assertAutomationTargetAuthority, combineAutomationCatalogueStates, IAutomationProviderDescriptor, IAutomationRunRequestResult, IAutomationService, ICreateAutomationOptions, IGuardedAutomationUpdateResult, serializeAutomationEditableState, IUpdateAutomationOptions } from '../../../../workbench/contrib/chat/common/automations/automationService.js';
+import { AutomationTarget, IAutomationDescriptor, IAutomationRun } from '../../../../workbench/contrib/chat/common/automations/automation.js';
+import { AutomationCatalogueState, AutomationMutationGuard, AutomationUnavailableError, assertAutomationTargetAuthority, combineAutomationCatalogueStates, IAutomationCustomizationChoice, IAutomationProviderDescriptor, IAutomationRunRequestResult, IAutomationService, ICreateAutomationOptions, IGuardedAutomationUpdateResult, serializeAutomationEditableState, IUpdateAutomationOptions } from '../../../../workbench/contrib/chat/common/automations/automationService.js';
 import { ISessionsProvidersService } from '../../../services/sessions/browser/sessionsProvidersService.js';
 import { ISessionsProviderAutomations } from '../../../services/sessions/common/sessionsProvider.js';
 
@@ -83,6 +83,11 @@ export class ProviderAutomationService extends Disposable implements IAutomation
 		return this.findAutomationStore(id)?.getAutomation(id);
 	}
 
+	async getCustomizationChoices(target: AutomationTarget, existingId: string | undefined, token: CancellationToken): Promise<readonly IAutomationCustomizationChoice[] | undefined> {
+		const store = target.providerId ? this.sessionsProvidersService.getProvider(target.providerId)?.automations : undefined;
+		return store?.getCustomizationChoices?.(target, existingId, token);
+	}
+
 	runsFor(automationId: string): IObservable<readonly IAutomationRun[]> {
 		let result = this.runsForCache.get(automationId);
 		if (!result) {
@@ -99,10 +104,6 @@ export class ProviderAutomationService extends Disposable implements IAutomation
 
 	async refresh(): Promise<void> {
 		await Promise.all(this.getStores().map(store => store.refresh?.()));
-	}
-
-	canConfigureAutomation(providerId: string | undefined): boolean {
-		return providerId !== undefined && this.sessionsProvidersService.getProvider(providerId)?.supportsAutomationSessionConfiguration === true;
 	}
 
 	getProviderConfiguration(providerId: string | undefined) {

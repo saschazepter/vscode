@@ -13,8 +13,8 @@ flowchart TD
 	UI["Automations UI, blueprints, and tools"] --> Service["IAutomationService<br/>ProviderAutomationService"]
 	Service --> Providers["ISessionsProvider.automations<br/>one per concrete Agent Host"]
 	Providers --> Connection["ReconnectableAgentHostAutomationStore<br/>connection and capability boundary"]
-	Providers --> Cloud["CloudAutomationProvider<br/>account and feature boundary"]
-	Cloud --> CloudStore["CloudAutomationStore<br/>repository cache and operation coordination"]
+	Providers --> Cloud["CloudAutomationStore<br/>account and feature boundary"]
+	Cloud --> CloudStore["GitHubCloudAutomationStore<br/>repository cache and operation coordination"]
 	CloudStore --> GitHub["GitHub cloud execution authority"]
 	Connection --> Projection["AgentHostAutomationStore<br/>AHP dispatch and state projection"]
 	Projection --> Authority["AgentHostAutomationService<br/>durable execution authority"]
@@ -31,8 +31,8 @@ The Sessions layer direction remains defined by [LAYERS.md](LAYERS.md). Non-prov
 | One provider's Automation interface and observable capabilities | [`ISessionsProviderAutomations`](services/sessions/common/sessionsProvider.ts) |
 | Injected, multi-provider Automation API | [`IAutomationService`](../workbench/contrib/chat/common/automations/automationService.ts) |
 | Unified catalogue and concrete-provider routing | [`ProviderAutomationService`](contrib/automations/browser/providerAutomationService.ts) |
-| Cloud gate, shared-contract adaptation, and account-scoped identity | [`CloudAutomationProvider`](contrib/providers/copilotChatSessions/browser/cloudAutomationProvider.ts) |
-| Cloud repository discovery, mutation serialization, and bounded history reads | [`CloudAutomationStore`](contrib/providers/copilotChatSessions/browser/cloudAutomationStore.ts) |
+| Cloud gate, shared-contract adaptation, and account-scoped identity | [`CloudAutomationStore`](contrib/providers/copilotChatSessions/browser/cloudAutomationStore.ts) |
+| Cloud repository discovery, mutation serialization, and bounded history reads | [`GitHubCloudAutomationStore`](contrib/providers/copilotChatSessions/browser/githubCloudAutomationStore.ts) |
 | Connection, feature enablement, and negotiated capability | [`ReconnectableAgentHostAutomationStore`](contrib/providers/agentHost/browser/reconnectableAgentHostAutomationStore.ts) |
 | Definition commands, manual dispatch, and AHP state projection | [`AgentHostAutomationStore`](contrib/providers/agentHost/browser/agentHostAutomationStore.ts) |
 | Manual invocation feedback and observation | [`IAutomationRunner`](../workbench/contrib/chat/common/automations/automationRunner.ts), implemented by [`AutomationRunner`](contrib/automations/browser/automationRunner.ts) |
@@ -71,9 +71,13 @@ Compatibility decoding for configuration values in existing AHP definitions is s
 
 When the host advertises `automations.customizations`, the client sends its enabled plugins for the target's harness and workspace in the AHP session template on creation and when the target changes. Ordinary edits resubmit the saved entries unchanged. The client keeps the customization scope alive until the host accepts or rejects the mutation.
 
+The automation dialog's Advanced section lets the user choose which of those plugins to sync. When editing, it marks saved entries whose local `nonce` changed as outdated. Saving always sends the selection, so outdated entries are refreshed, and saved entries that are no longer available locally keep their copy while selected. The dialog stays open with progress until the host accepts the mutation, and shows a rejection inline.
+
 The host copies each new or changed entry from the dispatching client into an immutable host-owned directory, and reuses the existing copy for entries whose `id`, `uri`, and `nonce` are unchanged. Any capture failure rejects the mutation. The catalogue reports the copies in `AutomationEntry.customizations`.
 
-A run session receives the copies as a static, host-owned active client created with the session, so providers load them through the same path as any other client plugin, without contacting the originating client. That client contributes no tools and is not re-attached when a session is restored. A selected custom agent inside a captured plugin is remapped to the copy.
+For a local VS Code window connected through MessagePort, `file:` plugins are parsed and used at their original host paths instead of copied; edits to their contents on disk take effect in later runs. Virtual bundles and plugins from remote clients are still copied, and garbage collection only removes host-owned copies, never these in-place paths.
+
+A run session receives the copies as a static, host-owned active client created with the session, so providers load them through the same path as any other client plugin, without contacting the originating client. That client's plugin URIs use the `vscode-agent-host-file:` scheme, which tells the plugin manager to use the host directory in place; a `file:` URI always names a client resource. That client contributes no tools and is not re-attached when a session is restored. A selected custom agent inside a captured plugin is remapped to the copy.
 
 After each create, update, or removal, the host deletes copies that no automation references, including those of a rejected capture. Copies used by a run session stay until the host restarts, because that session keeps using them in place for follow-up turns.
 
@@ -102,8 +106,6 @@ A store's catalogue is `loading`, `ready`, `unavailable`, or in `error`. Only `r
 The aggregate waits for AfterRestored provider registration. A window without an Automation-capable provider then settles to unavailable, not loading or empty-ready. Across providers, errors take precedence, followed by loading, unavailability, and finally ready. Available hosts remain usable even while another host is unavailable.
 
 Providers may expose observable enablement. Disabled providers are excluded from every aggregate and command route, not represented as unavailable hosts. Cloud enablement requires the cloud experiment setting, parent Automations enablement, and visible AI features; account changes or disabling the feature dispose pending requests and clear projected definitions and history. Disabling client access does not stop schedules already owned by GitHub.
-
-Dialog configuration support is separate from mutation authority. Provider selection and dialog editing require the provider's session-configuration capability; a provider may still expose definitions, manual dispatch, deletion, and programmatic updates without that capability. Opening the Automations view or listing Automations refreshes remote state, providing reconciliation after uncertain writes or read failures.
 
 Cloud dialog configuration is supplied by the enabled provider through the shared Automation contract. It resolves known workspace selections to checked canonical repository targets, retains provider-owned model/tool drafts, and declares UTC scheduling and immutable-target guidance. Eligibility is advisory UI state; mutations still revalidate access at the provider boundary. Other workspace pickers and local Automation targets retain their existing behavior.
 
