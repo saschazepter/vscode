@@ -117,22 +117,26 @@ suite('CloudAutomationStore', () => {
 		return { provider, api, accounts, changed, entitlement, sentimentChanged, set, instantiation };
 	}
 
-	test('repository search reuses the shared picker with private wording and accepts GitHub URLs', async () => {
+	test('repository search offers only private repositories and accepts GitHub URLs', async () => {
 		const queries: string[] = [];
 		let authenticated = false;
 		const { provider, set, instantiation } = setup(undefined, upcastPartial<IGitHubService>({
 			authenticateForRepositoryAccess: async () => { authenticated = true; },
 			getRepositories: async query => {
 				queries.push(query);
-				return [{ owner: 'owner', name: 'private', fullName: 'owner/private', defaultBranch: 'main', isPrivate: true, description: '' }];
+				return [
+					{ owner: 'owner', name: 'public', fullName: 'owner/public', defaultBranch: 'main', isPrivate: false, description: '' },
+					{ owner: 'owner', name: 'private', fullName: 'owner/private', defaultBranch: 'main', isPrivate: true, description: '' },
+				];
 			},
 		}));
 		let placeholder: string | undefined;
-		let repositories: readonly string[] = [];
+		const repositories: Array<readonly string[]> = [];
 		instantiation.stubInstance(RepositoryPicker, {
 			pickRepository: async (search, options) => {
 				placeholder = options?.placeholder;
-				repositories = await search('https://github.com/owner/private.git', CancellationToken.None);
+				repositories.push(await search('', CancellationToken.None));
+				repositories.push(await search('https://github.com/owner/private.git', CancellationToken.None));
 				return { cloneUrl: 'https://github.com/owner/private.git' };
 			},
 			dispose: () => { },
@@ -140,9 +144,9 @@ suite('CloudAutomationStore', () => {
 		await set(CHAT_CLOUD_AUTOMATIONS_ENABLED_SETTING, true);
 		const selected = await provider.configuration.pickWorkspace(CancellationToken.None);
 		assert.deepStrictEqual({ authenticated, queries, placeholder, repositories, selected: selected?.toString() }, {
-			authenticated: true, queries: ['owner/private'],
+			authenticated: true, queries: ['', 'owner/private'],
 			placeholder: 'Search for a private repository or paste a repository URL...',
-			repositories: ['owner/private'], selected: workspace.toString(),
+			repositories: [['owner/private'], ['owner/private']], selected: workspace.toString(),
 		});
 	});
 

@@ -123,7 +123,7 @@ export class CloudAutomationStore extends Disposable implements ISessionsProvide
 				checkAccount();
 				const repositories = await this.gitHubService.getRepositories(getGitHubRepositoryId(query.trim()) ?? query, requestToken);
 				checkAccount();
-				return repositories.map(repository => repository.fullName);
+				return repositories.filter(repository => repository.isPrivate).map(repository => repository.fullName);
 			}, {
 				allowRepositoryUrl: true,
 				placeholder: localize('cloudAutomations.searchPrivateRepository', "Search for a private repository or paste a repository URL..."),
