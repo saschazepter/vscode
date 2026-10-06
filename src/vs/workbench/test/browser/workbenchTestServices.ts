@@ -193,6 +193,7 @@ import { IWorkingCopyFileService, WorkingCopyFileService } from '../../services/
 import { IWorkingCopyService, WorkingCopyService } from '../../services/workingCopy/common/workingCopyService.js';
 import { TestChatEntitlementService, TestContextService, TestExtensionService, TestFileService, TestHistoryService, TestLifecycleService, TestLoggerService, TestMarkerService, TestProductService, TestStorageService, TestTextResourcePropertiesService, TestWorkspaceTrustManagementService, TestWorkspaceTrustRequestService } from '../common/workbenchTestServices.js';
 import { DefaultAccountService } from '../../services/accounts/browser/defaultAccount.js';
+import { IAgentHostConnectionsService } from '../../../platform/agentHost/common/agentHostConnectionsService.js';
 
 // Backcompat export
 export { TestFileService, TestLifecycleService };
@@ -380,6 +381,7 @@ export function workbenchInstantiationService(
 	instantiationService.stub(ICustomEditorLabelService, disposables.add(new CustomEditorLabelService(configService, workspaceContextService)));
 	instantiationService.stub(IHoverService, NullHoverService);
 	instantiationService.stub(IChatEntitlementService, new TestChatEntitlementService());
+	instantiationService.stub(IAgentHostConnectionsService, { resolveSessionResourceIdentity: () => undefined });
 	instantiationService.stub(IManagedSettingsService, new NullManagedSettingsService());
 	instantiationService.stub(IMarkdownRendererService, instantiationService.createInstance(MarkdownRendererService));
 	instantiationService.stub(IChatWidgetService, instantiationService.createInstance(TestChatWidgetService));

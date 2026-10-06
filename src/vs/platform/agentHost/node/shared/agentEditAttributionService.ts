@@ -51,6 +51,7 @@ interface ISourceStatistics {
 	readonly sourceKeyCleaned: string;
 	readonly modelId: string | undefined;
 	readonly conversationId: string;
+	readonly agentSessionId: string;
 	readonly chatSessionId: string | undefined;
 	readonly requestId: string;
 	readonly harness: string;
@@ -308,8 +309,10 @@ export class AgentEditAttributionService extends Disposable implements IAgentEdi
 		const sourceKey = `source:Chat.applyEdits${modelSegment}-$harness:${provider}-$origin:agentHost`;
 		const conversationId = AgentSession.id(edit.sessionUri);
 		const chatUri = edit.chatUri ?? (isAhpChatChannel(edit.sessionUri) ? edit.sessionUri : undefined);
+		const attributionSession = chatUri ?? edit.sessionUri;
+		const agentSessionId = AgentSession.id(isAhpChatChannel(attributionSession) ? parseRequiredSessionUriFromChatUri(attributionSession) : attributionSession);
 		const chatSessionId = chatUri === undefined ? undefined : getTelemetryChatSessionId(chatUri);
-		const trackingKey = chatSessionId === undefined ? sourceKey : JSON.stringify([sourceKey, conversationId, chatSessionId]);
+		const trackingKey = JSON.stringify([sourceKey, agentSessionId, conversationId, chatSessionId]);
 		let source = resource.sources.get(trackingKey);
 		if (!source) {
 			source = {
@@ -318,6 +321,7 @@ export class AgentEditAttributionService extends Disposable implements IAgentEdi
 				sourceKeyCleaned: `source:Chat.applyEdits-$harness:${provider}-$origin:agentHost`,
 				modelId: edit.modelId,
 				conversationId,
+				agentSessionId,
 				chatSessionId,
 				requestId: edit.turnId,
 				harness: provider,
@@ -336,6 +340,7 @@ export class AgentEditAttributionService extends Disposable implements IAgentEdi
 			source: {
 				modelId: edit.modelId,
 				conversationId,
+				agentSessionId,
 				...(chatSessionId !== undefined ? { chatSessionId } : {}),
 				requestId: edit.turnId,
 				harness: provider,
@@ -801,6 +806,7 @@ export class AgentEditAttributionService extends Disposable implements IAgentEdi
 				languageId: prepared.languageId,
 				statsUuid: prepared.statsUuid,
 				conversationId: source.conversationId,
+				agentSessionId: source.agentSessionId,
 				...(source.chatSessionId !== undefined ? { chatSessionId: source.chatSessionId } : {}),
 				requestId: source.requestId,
 				origin: 'agentHost',
@@ -823,6 +829,7 @@ export class AgentEditAttributionService extends Disposable implements IAgentEdi
 					languageId: data.languageId ?? '',
 					statsUuid: data.statsUuid,
 					conversationId: data.conversationId,
+					agentSessionId: data.agentSessionId,
 					...(data.chatSessionId !== undefined ? { chatSessionId: data.chatSessionId } : {}),
 					requestId: data.requestId,
 					origin: data.origin,

@@ -172,6 +172,8 @@ import { ChatPetAchievementIds, didExplicitlySwitchChatPetModel } from '../../ch
 import { IChatPetService } from '../../chatPetService.js';
 import { DelegationSessionPickerActionItem } from './delegationSessionPickerActionItem.js';
 import { ModelPickerActionItem, IModelPickerDelegate, IModelPickerPresentationOptions } from './modelPicker/modelPickerActionItem.js';
+import { getChatSessionTelemetryContext, getChatSessionTelemetryIds } from '../../../common/chatService/chatServiceTelemetry.js';
+import { IAgentHostConnectionsService } from '../../../../../../platform/agentHost/common/agentHostConnectionsService.js';
 import { IModePickerDelegate, ModePickerActionItem } from './modePickerActionItem.js';
 import { IPermissionPickerDelegate, PermissionPickerActionItem } from './permissionPickerActionItem.js';
 import { SessionTypePickerActionItem } from './sessionTargetPickerActionItem.js';
@@ -1019,6 +1021,7 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		@IChatPetService private readonly chatPetService: IChatPetService,
 		@IActionViewItemService private readonly actionViewItemService: IActionViewItemService,
 		@IAccountPolicyGateService private readonly accountPolicyGateService: IAccountPolicyGateService,
+		@IAgentHostConnectionsService private readonly agentHostConnectionsService: IAgentHostConnectionsService,
 	) {
 		super();
 		this._modelSelectionDiagnostics = new ChatModelSelectionDiagnostics(this.logService, this.storageService, () => ({
@@ -1504,6 +1507,14 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 				this.renderAttachedContext();
 			},
 			getModels: () => this.getModels(),
+			getChatSessionId: () => {
+				const resource = this._widget?.viewModel?.sessionResource;
+				return resource ? getChatSessionTelemetryContext(resource).chatSessionId : undefined;
+			},
+			getAgentSessionId: () => {
+				const resource = this._widget?.viewModel?.sessionResource;
+				return resource ? getChatSessionTelemetryIds(resource, this.agentHostConnectionsService).agentSessionId : undefined;
+			},
 			getProvider: () => getAgentHostProviderForTelemetry(this.getCurrentSessionType(), this.chatSessionsService),
 			getSessionType: () => this.modelTargetSessionType,
 			isCacheWarm: () => (this._widget?.viewModel?.model.getRequests().length ?? 0) > 0,
